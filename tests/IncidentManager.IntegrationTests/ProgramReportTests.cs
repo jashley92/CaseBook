@@ -109,6 +109,49 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_close_dated_before_the_case_was_filed_still_counts_as_closed(/* WF-97 */)
+    {
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            // Handled before it was filed: filed on 10 Apr, detected on 1 Apr, closed "as of" 5 Apr.
+            var e = Case.Open(2026, 6, "F", "Filed late", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", Apr(10));
+            e.DetectedAtUtc = Apr(1);
+            e.ChangePhase(CasePhase.Closed, "Done", "ic", Apr(10, 1), effectiveAtUtc: Apr(5), outcomeKey: "Confirmed");
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+        }
+
+        var q2 = (await Service().BuildAsync(Q2)).Current;
+        q2.Closed.Should().Be(1);
+        q2.OpenAtEnd.Should().Be(0, "the opening row comes before the close it was recorded before");
+    }
+
+    [Fact]
+    public async Task Raising_the_severity_later_does_not_turn_a_past_met_into_missed(/* WF-76 */)
+    {
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var e = Case.Open(2026, 7, "G", "Contained in time", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", Apr(2));
+            e.DetectedAtUtc = Apr(2);
+            e.ContainedAtUtc = Apr(2, 20);   // 20 h: inside Medium's 24 h, outside High's 8 h
+            e.ChangeSeverity(Severity.High, "Scope grew", "ic", Apr(2).AddMonths(3));
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+        }
+        var targets = new SlaTargets(new Dictionary<(SlaClock, Severity), int>
+        {
+            [(SlaClock.Containment, Severity.Medium)] = 24,
+            [(SlaClock.Containment, Severity.High)] = 8,
+        }, 80);
+
+        var q2 = (await Service(targets).BuildAsync(Q2)).Current;
+        q2.Sla.Should().ContainSingle(x => x.Clock == SlaClock.Containment).Which.Should().Be(new SlaAttainment(SlaClock.Containment, 1, 0));
+        q2.ContainmentBySeverity.Should().ContainSingle(x => x.Severity == Severity.Medium).Which.Met.Should().Be(1);
+    }
+
+    [Fact]
     public async Task A_review_recorded_after_the_quarter_does_not_change_it(/* REV-59 */)
     {
         await SeedAsync();

@@ -265,25 +265,55 @@ public sealed class DashboardService
         var bounds = monthStarts.Select(m => ZonedMonths.StartUtc(m.Year, m.Month, zone)).ToList();
         var windowStart = bounds[0];
 
-        // BUG-55: an archived case that was never closed is out of the open count, as on the dashboard's Open tile.
-        var carriedOpen = await cases.CountAsync(c => c.CreatedAtUtc < windowStart && c.ClosedAtUtc == null && !c.IsArchived, ct);
-        // A closed case's classification is the one it closed with: closing ends reclassification.
+        // WF-78: past months as the record stood then (the program report's rule, WF-38): a case closed in June and reopened
+        // in October still closed in June, and its classification is the one it had when it closed (a closed case can still
+        // be lowered, BUG-107). So a case touched by a closure in the window comes with its closure and class history.
         var spans = await cases
-            .Where(c => c.CreatedAtUtc >= windowStart || c.ClosedAtUtc >= windowStart)
-            .Select(c => new { c.CreatedAtUtc, c.ClosedAtUtc, c.Classification, c.IsArchived })
+            .Where(c => c.CreatedAtUtc >= windowStart || c.ClosedAtUtc >= windowStart
+                        || c.StatusChanges.Any(s => (s.To == CasePhase.Closed || s.From == CasePhase.Closed) && s.ChangedAtUtc >= windowStart))
+            .Select(c => new
+            {
+                c.Id, c.CreatedAtUtc, c.ClosedAtUtc, c.Classification, c.IsArchived,
+                Closures = c.StatusChanges.Where(s => s.To == CasePhase.Closed || s.From == CasePhase.Closed)
+                    .Select(s => new { s.To, At = s.EffectiveAtUtc ?? s.ChangedAtUtc, s.ChangedAtUtc }).ToList(),
+                Classes = c.ClassificationChanges
+                    .Select(s => new { s.From, s.To, At = s.EffectiveAtUtc ?? s.ChangedAtUtc, s.ChangedAtUtc }).ToList(),
+            })
             .ToListAsync(ct);
+        var inSpans = spans.Select(s => s.Id).ToList();
+        // BUG-55: an archived case that was never closed is out of the open count, as on the dashboard's Open tile.
+        var carriedOpen = await cases.CountAsync(c => c.CreatedAtUtc < windowStart && c.ClosedAtUtc == null && !c.IsArchived
+                                                      && !inSpans.Contains(c.Id), ct);
+
+        // In recording order (WF-97): the order the states followed each other, whatever dates they carry.
+        var history = spans.ToDictionary(s => s.Id, s => (
+            Closures: s.Closures.OrderBy(x => x.ChangedAtUtc).Select(x => (Closed: x.To == CasePhase.Closed, x.At)).ToList(),
+            Classes: s.Classes.OrderBy(x => x.ChangedAtUtc).Select(x => (x.From, To: (Classification?)x.To, x.At)).ToList()));
+        bool ClosedAt(Guid id, DateTimeOffset? closedNow, DateTimeOffset t) =>
+            history[id].Closures is { Count: > 0 } h
+                ? h.Where(x => x.At < t).Select(x => (bool?)x.Closed).LastOrDefault() == true
+                : closedNow is { } c && c < t;
+        List<DateTimeOffset> ClosedTimes(Guid id, DateTimeOffset? closedNow) =>
+            history[id].Closures is { Count: > 0 } h ? h.Where(x => x.Closed).Select(x => x.At).ToList()
+            : closedNow is { } c ? [c] : [];
+        Classification? ClassAt(Guid id, Classification? now, DateTimeOffset t) =>
+            history[id].Classes is { Count: > 0 } h
+                ? (h.Any(x => x.At <= t) ? h.Last(x => x.At <= t).To : h[0].From)
+                : now;
 
         int OpenAt(DateTimeOffset t) => carriedOpen
-            + spans.Count(s => s.CreatedAtUtc < t && (s.ClosedAtUtc is null ? !s.IsArchived : s.ClosedAtUtc >= t));
+            + spans.Count(s => s.CreatedAtUtc < t && !ClosedAt(s.Id, s.ClosedAtUtc, t) && !(s.ClosedAtUtc is null && s.IsArchived));
 
         return Enumerable.Range(0, months).Select(i =>
         {
             var (start, end) = (bounds[i], bounds[i + 1]);
             var opened = spans.Where(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end).ToList();
-            var closed = spans.Where(s => s.ClosedAtUtc is { } c && c >= start && c < end).ToList();
+            var closed = spans.SelectMany(s => ClosedTimes(s.Id, s.ClosedAtUtc).Where(c => c >= start && c < end)
+                    .Take(1).Select(c => ClassAt(s.Id, s.Classification, c)))
+                .ToList();
             return new TrendPoint(monthStarts[i].Year, monthStarts[i].Month, opened.Count, closed.Count, OpenAt(end),
-                OpenAt(start), ClassificationCounts.Of(opened.Select(s => s.Classification)),
-                ClassificationCounts.Of(closed.Select(s => s.Classification)));
+                OpenAt(start), ClassificationCounts.Of(opened.Select(s => ClassAt(s.Id, s.Classification, end))),
+                ClassificationCounts.Of(closed));
         }).ToList();
     }
 }

@@ -366,6 +366,10 @@ else
         public string? Owner { get; set; }
         public string? OwnerExternal { get; set; }
         public DateTime? Target { get; set; }
+        // WF-82: the target as shown when the editor opened, and as stored, so an untouched day keeps its instant (a
+        // value saved before WF-64 from another zone would otherwise move a day on any edit).
+        public DateTime? TargetShown { get; set; }
+        public DateTimeOffset? TargetStored { get; set; }
         public ImprovementActionStatus Status { get; set; } = ImprovementActionStatus.Open;
         public string? DetailsSeed { get; set; }
         public string? OutcomeSeed { get; set; }
@@ -565,6 +569,7 @@ else
             Target = a.TargetDateUtc is { } t ? IncidentManager.Web.Components.Pages.Workspace.DayValues.DayOf(t, TimeDisp.Zone, OrgZone.Current) : null,   // WF-64
             Status = a.Status, DetailsSeed = a.Details, OutcomeSeed = a.OutcomeNote
         };
+        (_edit.TargetShown, _edit.TargetStored) = (_edit.Target, a.TargetDateUtc);
     }
 
     private void CancelEdit() => _editingId = null;
@@ -598,7 +603,8 @@ else
     }
 
     private ImprovementActionInput ToInput(ActionForm f, string? details, string? outcome) => new(
-        f.Title, f.Area, details, OwnerSelect.Resolve(f.Owner, f.OwnerExternal), ToTargetUtc(f.Target),
+        f.Title, f.Area, details, OwnerSelect.Resolve(f.Owner, f.OwnerExternal),
+        f.TargetStored is { } kept && f.Target == f.TargetShown ? kept : ToTargetUtc(f.Target),
         f.Status, outcome);
 
     // A target date is picked in the viewer's display zone and means "by end of that day" — stored as UTC.

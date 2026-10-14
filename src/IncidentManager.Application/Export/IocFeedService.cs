@@ -1,7 +1,9 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Reporting;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace IncidentManager.Application.Export;
 
@@ -28,11 +30,13 @@ public sealed class IocFeedService
 {
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
+    private readonly IOptionsMonitor<ReportingOptions>? _reporting;
 
-    public IocFeedService(IAppDbContextFactory factory, ICurrentUser user)
+    public IocFeedService(IAppDbContextFactory factory, ICurrentUser user, IOptionsMonitor<ReportingOptions>? reporting = null)
     {
         _factory = factory;
         _user = user;
+        _reporting = reporting;
     }
 
     /// <summary>
@@ -57,6 +61,10 @@ public sealed class IocFeedService
             select new { e.Type, e.Value, e.Source, e.CreatedAtUtc, c.CaseNumber, e.Tlp }
         ).ToListAsync(ct);
 
+        // WF-79: an occurrence without its own marking carries the default (as in the report and STIX, BUG-73), so it isn't
+        // outranked by a looser marking elsewhere, and an indicator marked nowhere still goes out marked.
+        var fallback = (_reporting?.CurrentValue ?? new ReportingOptions()).EffectiveDefaultTlp;
+
         // Dedupe by (type, value) in memory — case-insensitive to match the E-08 overlap engine,
         // and to keep DateTimeOffset aggregation off SQLite (see F-08).
         return rows
@@ -76,7 +84,7 @@ public sealed class IocFeedService
                               .Distinct(StringComparer.OrdinalIgnoreCase)
                               .OrderBy(s => s)
                               .ToList(),
-                    Tlp: g.Max(x => x.Tlp));
+                    Tlp: g.Max(x => (TlpLevel?)(x.Tlp ?? fallback)));
             })
             .OrderBy(r => r.Type)
             .ThenBy(r => r.Value, StringComparer.OrdinalIgnoreCase)

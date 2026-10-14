@@ -149,5 +149,28 @@ public sealed class IocFeedTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task An_unmarked_occurrence_carries_the_default_marking(/* WF-79 */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            var a = (await svc.CreateAsync(Req("Alpha"))).Id;
+            var b = (await svc.CreateAsync(Req("Beta"))).Id;
+            await svc.AddEntityAsync(a, EntityType.IpAddress, "192.0.2.50", null, EntityDisposition.Malicious, null, "SIEM");   // unmarked
+            await svc.AddEntityAsync(b, EntityType.IpAddress, "192.0.2.50", null, EntityDisposition.Malicious, null, "EDR");
+            await svc.AddEntityAsync(a, EntityType.Domain, "unmarked.example", null, EntityDisposition.Malicious, null, null);
+            var onB = await db.CaseEntities.SingleAsync(e => e.CaseId == b && e.Value == "192.0.2.50");
+            onB.Tlp = TlpLevel.Green;
+            await db.SaveChangesAsync();
+        }
+
+        var feed = await new IocFeedService(NewFactory(), _user).GetMaliciousIocsAsync();
+
+        feed.Single(f => f.Value == "192.0.2.50").Tlp.Should().Be(TlpLevel.Amber, "unmarked reads as the default (AMBER), which outranks GREEN");
+        feed.Single(f => f.Value == "unmarked.example").Tlp.Should().Be(TlpLevel.Amber);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

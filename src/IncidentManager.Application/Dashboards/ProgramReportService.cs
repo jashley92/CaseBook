@@ -234,16 +234,18 @@ public sealed class ProgramReportService
                 notices[id] = head.State;
         }
 
-        // WF-38: the history each quarter is figured from (effective times, as the record dates them).
+        // WF-38: the history each quarter is figured from (effective times, as the record dates them). WF-97: in the order
+        // it was recorded, which is the order the states followed each other: a change dated before the case was filed
+        // (allowed) sorted by its date put the opening row after it, and the case read as never closed.
         var phases = (await db.StatusChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
-                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.At).Select(x => ((CasePhase?)x.From, x.To, x.At)).ToList());
+                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
+            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => ((CasePhase?)x.From, x.To, x.At)).ToList());
         var classes = (await db.ClassificationChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
-                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.At).Select(x => (x.From, (Classification?)x.To, x.At)).ToList());
+                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
+            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => (x.From, (Classification?)x.To, x.At)).ToList());
         var severities = (await db.SeverityChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
-                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.At).Select(x => ((Severity?)x.From, x.To, x.At)).ToList());
+                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
+            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => ((Severity?)x.From, x.To, x.At)).ToList());
 
         return new Loaded(rows, breachFirstAt, reviews, actions, _sla.Current, notices, new History(phases, classes, severities));
     }
@@ -283,8 +285,10 @@ public sealed class ProgramReportService
         var bySeverity = new Dictionary<Severity, (int Met, int Missed)>();
         foreach (var r in rows)
         {
-            var (cont, res) = SlaPolicy.Breakdown(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
-                targets, end, r.Classification);
+            // WF-76: judged on the severity and classification the case had at the quarter's end, as it's bucketed, so a
+            // later raise doesn't turn a past quarter's Met into Missed.
+            var (cont, res) = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
+                targets, end, ClassAtEnd(r));
             if (In(r.ContainedAtUtc) && cont.State is SlaState.Met or SlaState.Missed)
             {
                 var met = cont.State == SlaState.Met;
@@ -300,7 +304,7 @@ public sealed class ProgramReportService
             if (In(r.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
             if (In(r.DetectedAtUtc))
             {
-                var det = SlaPolicy.EvaluateDetection(r.Severity, r.OccurredAtUtc, r.DetectedAtUtc, targets);
+                var det = SlaPolicy.EvaluateDetection(SevAtEnd(r), r.OccurredAtUtc, r.DetectedAtUtc, targets);
                 if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMiss++;
             }
         }
