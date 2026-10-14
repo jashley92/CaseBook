@@ -477,6 +477,9 @@ else
         if (Id != loadingFor) return;   // REV-22: a later navigation took over while this case loaded
         _panelEntity = QEntity;   // INV-11: an entity tag link opens the entity panel
         _panelEvidence = QEntity is null ? QEvidence : null;   // RD-06: a cited-file chip opens the evidence panel
+        // BUG-491: on a phone, another case opens as RD-25 says (Now, or the link's target); a link within this one shows its target.
+        if (_phone && _phoneOpenedFor != Id) OpenOnPhone();
+        else if (_phone && HasDeepLink) _phoneTab = null;
         // Honor an explicit ?tab=, otherwise refresh whatever tab is already active. The Id can change
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.

@@ -48,13 +48,19 @@ public partial class CaseWorkspace
     {
         if (_phone == phone) return Task.CompletedTask;
         _phone = phone;
-        if (phone && _phoneOpenedFor != Id)
-        {
-            _phoneOpenedFor = Id;
-            if (string.IsNullOrEmpty(QTab) && QEntry is null && QNote is null && QEntity is null && QEvidence is null) _phoneTab = "Now";
-        }
+        if (phone && _phoneOpenedFor != Id) OpenOnPhone();
         return InvokeAsync(StateHasChanged);
     }
+
+    // RD-25: a case opens on Now on a phone, unless a link points somewhere in it. BUG-491: also on a move to another case
+    // within the workspace, so the last case's Now/Next or view isn't kept over the new one, nor over its link's target.
+    private void OpenOnPhone()
+    {
+        _phoneOpenedFor = Id;
+        _phoneTab = HasDeepLink ? null : "Now";
+    }
+
+    private bool HasDeepLink => !string.IsNullOrEmpty(QTab) || QEntry is not null || QNote is not null || QEntity is not null || QEvidence is not null;
 
     private bool PhoneNowNext => _phone && _phoneTab is "Now" or "Next";
 
