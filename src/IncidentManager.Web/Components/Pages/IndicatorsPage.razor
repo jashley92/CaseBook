@@ -194,28 +194,55 @@
     /// <summary>WF-91: "Across cases" from Find for an entity on an exercise opens with exercises included.</summary>
     [SupplyParameterFromQuery(Name = "exercises")] public string? ExercisesRaw { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    // BUG-343: the query as last applied. A pivot to this page while it is open (the palette, a case's IOC link) only
+    // sets parameters, so it is read here rather than once on first load; the page's own filter edits leave it alone.
+    private bool _queryRead;
+    private string? _lastEntityRaw, _lastExercisesRaw;
+    private int _loadSeq;   // the newest load wins: a pivot can overtake a filter change still loading
+
+    protected override async Task OnParametersSetAsync()
     {
-        if (ExercisesRaw is "1" or "true" or "yes") _includeExercises = true;
+        if (_queryRead && EntityIdRaw == _lastEntityRaw && ExercisesRaw == _lastExercisesRaw) return;
+        var pivot = _queryRead;
+        _queryRead = true;
+        _lastEntityRaw = EntityIdRaw;
+        _lastExercisesRaw = ExercisesRaw;
+        if (pivot)
+        {
+            // A new pivot starts from the default filters, as a first load does, and drops the old rows' expansion.
+            if (_searchDebounce is not null) await _searchDebounce.CancelAsync();
+            _search = "";
+            _typeKey = "ioc";
+            _disposition = null;
+            _sharedOnly = false;
+            _expanded.Clear();
+            _allCases.Clear();
+        }
+        _includeExercises = QueryValue.Flag(ExercisesRaw);
+        var (raw, rawEx) = (EntityIdRaw, ExercisesRaw);
         if (EntityId is { } id && await Indicators.ResolveEntityAsync(id) is { } hit)
         {
+            if (raw != _lastEntityRaw || rawEx != _lastExercisesRaw) return;   // a newer pivot took over
             _search = hit.Value;
             _typeKey = hit.Type.ToString();
         }
         await Load();
+        if (raw != _lastEntityRaw || rawEx != _lastExercisesRaw) return;
         // A pivot lands on one indicator: open its case list straight away.
         if (EntityId is not null && _library is { Rows.Count: 1 }) _expanded.Add(RowKey(_library.Rows[0]));
     }
 
     private async Task Load(CancellationToken ct = default)
     {
+        var seq = ++_loadSeq;
         var (scope, type) = _typeKey switch
         {
             "ioc" => (IndicatorTypeScope.Indicators, (EntityType?)null),
             "all" => (IndicatorTypeScope.AllTypes, null),
             var k => (IndicatorTypeScope.AllTypes, Enum.TryParse<EntityType>(k, out var t) ? t : (EntityType?)null),
         };
-        _library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises), ct);
+        var library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises), ct);
+        if (seq == _loadSeq) _library = library;
     }
 
     private const int CasesShown = 10;

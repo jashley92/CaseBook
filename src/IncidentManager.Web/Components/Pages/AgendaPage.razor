@@ -134,15 +134,32 @@
     private readonly HashSet<AgendaBucketKind> _expanded = [];
     private IEnumerable<AgendaItem> Shown(AgendaBucket b) => _expanded.Contains(b.Kind) ? b.Items : b.Items.Take(PageRows);
 
-    protected override async Task OnInitializedAsync()
+    // BUG-343: the query is read whenever parameters are set, so a nav link or palette pivot to this page while it is
+    // open applies its owner. The last value seen keeps the page's own owner change (written to the address) from
+    // reloading twice.
+    private bool _queryRead;
+    private string? _lastOwnerQuery;
+    private int _loadSeq;   // the newest load wins
+
+    protected override async Task OnParametersSetAsync()
     {
-        if (!string.IsNullOrWhiteSpace(OwnerQuery)) _owner = OwnerQuery!;
+        if (_queryRead && OwnerQuery == _lastOwnerQuery) return;
+        _queryRead = true;
+        _lastOwnerQuery = OwnerQuery;
+        _owner = string.IsNullOrWhiteSpace(OwnerQuery) ? "" : OwnerQuery!;
+        _board = null;
+        _expanded.Clear();
         await Load();
     }
 
     // Today / this week follow the zone the viewer's timestamps are shown in (UTC, or their local zone), so the
     // groups agree with the times on each row.
-    private async Task Load() => _board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner, TimeDisp.Zone);
+    private async Task Load()
+    {
+        var seq = ++_loadSeq;
+        var board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner, TimeDisp.Zone);
+        if (seq == _loadSeq) _board = board;
+    }
 
     private async Task OnOwnerChanged(ChangeEventArgs e) => await ChangeOwner(e.Value?.ToString() ?? "");
 
@@ -152,6 +169,7 @@
         _board = null;
         _expanded.Clear();
         // Keep the choice in the address so Back, a refresh or a shared link returns to the same view.
+        _lastOwnerQuery = string.IsNullOrEmpty(owner) ? null : owner;   // BUG-343: already applied
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("owner", string.IsNullOrEmpty(owner) ? null : owner), replace: true);
         await Load();
     }
