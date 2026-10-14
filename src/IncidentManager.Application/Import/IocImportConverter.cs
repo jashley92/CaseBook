@@ -306,6 +306,15 @@ public static partial class IocImportConverter
         var header = rows[0].Select(h => h.Trim().ToLowerInvariant()).ToList();
         int Col(params string[] names) => header.FindIndex(h => names.Contains(h));
         var valueCol = Col("value", "indicator", "ioc", "observable", "indicator_value");
+        // BUG-351: a header can name the indicator column by its type ("ip,first_seen,comment"): the column is the value
+        // and its word the type. Only the first cell is tried, and only a type word, which no indicator is, so a
+        // headerless list (whose first cell is an indicator) still reads as one.
+        string? headerType = null;
+        if (valueCol < 0 && CsvType(rows[0][0]) is { } named)
+        {
+            valueCol = 0;
+            headerType = named;
+        }
         var hasHeader = valueCol >= 0;
         var typeCol = hasHeader ? Col("type", "indicator_type", "ioc_type", "kind") : -1;
         var dispCol = hasHeader ? Col("disposition", "verdict", "status") : -1;
@@ -323,7 +332,7 @@ public static partial class IocImportConverter
             string? Cell(int i) => i >= 0 && i < r.Count && Clean(r[i]) is { Length: > 0 } v ? v : null;
             if (Cell(valueCol) is not { } value) continue;
 
-            string? type = null;
+            var type = typeCol < 0 ? headerType : null;
             if (Cell(typeCol) is { } rawType)
             {
                 type = CsvType(rawType);

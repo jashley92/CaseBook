@@ -201,6 +201,27 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void A_header_naming_the_indicator_column_by_its_type_is_a_header(/* BUG-351 */)
+    {
+        var r = IocImportConverter.Convert("ip,verdict,comment,tlp\r\n198.51.100.7,suspect,seen in wave 2,TLP:AMBER\r\n203.0.113.9,,,\r\n");
+
+        r.Document!.Entities!.Select(e => (e.Type, e.Value, e.Disposition)).Should().Equal(
+            ("IpAddress", "198.51.100.7", "Suspicious"),
+            ("IpAddress", "203.0.113.9", null));
+        r.Document.Entities![0].Description.Should().Be("seen in wave 2");
+        r.Document.Entities![0].Tlp.Should().Be("TLP:AMBER");
+        r.Notes.Should().NotContain(n => n.Contains("No header row"));
+
+        // A type column, when there is one, still decides each row's type.
+        IocImportConverter.Convert("Domain,Type\nevil.example,url\nbad.example,\n").Document!.Entities!
+            .Select(e => (e.Type, e.Value)).Should().Equal(("Url", "evil.example"), (null, "bad.example"));
+        IocImportConverter.Convert("hash\n44d88612fea8a8f36de82e1278abb02f\n").Document!.Entities!.Single().Type.Should().Be("FileHash");
+        // A headerless list whose first column is an indicator isn't mistaken for one.
+        IocImportConverter.Convert("evil.example,domain\n1.2.3.4,ip\n").Document!.Entities!.Select(e => e.Value)
+            .Should().Equal("evil.example", "1.2.3.4");
+    }
+
+    [Fact]
     public void A_casebook_import_document_passes_through_and_bad_input_is_a_friendly_error()
     {
         IocImportConverter.Convert("""{ "format": "casebook-case-import", "schemaVersion": 1, "entities": [ { "value": "1.2.3.4" } ] }""")
