@@ -250,8 +250,11 @@ public static class CaseMilestones
                 RecordedAtUtc: t.CompletionRecordedAtUtc is { } rec ? Later(t.CompletedAtUtc!.Value, rec) : null));
 
         // A screenshot pasted into a timeline entry already shows on that entry; so does a file an entry cites (HR-07).
-        var onEntries = c.TimelineEntries.Where(e => e.EvidenceId is not null).Select(e => e.EvidenceId!.Value)
-            .Concat(c.Citations.Select(x => x.EvidenceId)).ToHashSet();
+        // BUG-443: only a current entry shows it; a retracted (or superseded) one is off the timeline.
+        var current = c.TimelineEntries.Where(e => e.IsCurrent).ToList();
+        var currentIds = current.Select(e => e.Id).ToHashSet();
+        var onEntries = current.Where(e => e.EvidenceId is not null).Select(e => e.EvidenceId!.Value)
+            .Concat(c.Citations.Where(x => currentIds.Contains(x.TimelineEntryId)).Select(x => x.EvidenceId)).ToHashSet();
         foreach (var ev in c.Evidence.Where(ev => !onEntries.Contains(ev.Id)))
             list.Add(new CaseMilestone($"ev:{ev.Id}", ev.CreatedAtUtc, MilestoneKind.EvidenceAdded,
                 $"Evidence added: {ev.OriginalFileName}", Blank(ev.Description), ev.CreatedBy, "evidence"));

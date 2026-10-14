@@ -85,7 +85,7 @@
                                     <button type="button" class="btn btn-link p-0 text-start im-evp-open" @onclick="() => OnOpenEvidence.InvokeAsync(ev.Id)"
                                             title="Open the file's panel">@ev.OriginalFileName</button><br /><small class="text-muted">@ev.Description</small>
                                     @{
-                                        var citedBy = Citations.Count(x => x.EvidenceId == ev.Id);
+                                        var citedBy = Citations.Count(x => x.EvidenceId == ev.Id && _currentEntries.Contains(x.TimelineEntryId));   // BUG-443
                                         var inBrief = BriefText?.Contains($"evidence:{ev.Id}", StringComparison.OrdinalIgnoreCase) == true;   // INV-33
                                         var cites = new List<string>();
                                         if (citedBy > 0) cites.Add(IncidentManager.Application.Common.Plural.Of(citedBy, "timeline entry", "timeline entries"));
@@ -232,6 +232,10 @@
     [Parameter, EditorRequired] public IReadOnlyList<Evidence> EvidenceItems { get; set; } = [];
     /// <summary>INV-10: timeline entries' citations, to say what relies on each item.</summary>
     [Parameter] public IReadOnlyList<EvidenceCitation> Citations { get; set; } = [];
+    /// <summary>BUG-443: the case's timeline entries; only citations by current ones count (a retracted entry's stay on it).</summary>
+    [Parameter] public IReadOnlyList<TimelineEntry> Entries { get; set; } = [];
+    private HashSet<Guid> _currentEntries = [];
+    protected override void OnParametersSet() => _currentEntries = Entries.Where(e => e.IsCurrent).Select(e => e.Id).ToHashSet();
     /// <summary>Open the parent-owned screenshot lightbox (shared with the Timeline) for an image evidence id.</summary>
     [Parameter] public EventCallback<Guid> OnPreview { get; set; }
     /// <summary>Reload the case after an upload so the rest of the workspace reflects the new evidence.</summary>

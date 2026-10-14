@@ -102,6 +102,27 @@ public class CaseMilestonesTests
     }
 
     [Fact]
+    public void Files_shown_or_cited_only_by_retracted_entries_are_evidence_milestones(/* BUG-443 */)
+    {
+        var c = Case.Open(2026, 9, "Ph", "Phish", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
+        var shot = new Evidence { CaseId = c.Id, OriginalFileName = "shot.png", CreatedAtUtc = T0.AddHours(1), CreatedBy = "an1" };
+        var log = new Evidence { CaseId = c.Id, OriginalFileName = "signin.csv", CreatedAtUtc = T0.AddHours(2), CreatedBy = "an1" };
+        var kept = new Evidence { CaseId = c.Id, OriginalFileName = "mail.eml", CreatedAtUtc = T0.AddHours(3), CreatedBy = "an1" };
+        c.Evidence.AddRange([shot, log, kept]);
+        var withShot = c.AddEventStep(T0, [], null, null, null, "Step with a screenshot", null, "an1", T0.AddHours(1), evidenceId: shot.Id);
+        var citing = c.AddEventStep(T0.AddMinutes(5), [], null, null, null, "Step citing the log", null, "an1", T0.AddHours(2));
+        var stays = c.AddEventStep(T0.AddMinutes(9), [], null, null, null, "Step citing the mail", null, "an1", T0.AddHours(3));
+        c.Citations.Add(new EvidenceCitation { CaseId = c.Id, TimelineEntryId = citing.Id, EvidenceId = log.Id });
+        c.Citations.Add(new EvidenceCitation { CaseId = c.Id, TimelineEntryId = stays.Id, EvidenceId = kept.Id });
+
+        c.RetractTimelineEntry(withShot.Id, "Wrong host", "an1", T0.AddHours(4));
+        c.RetractTimelineEntry(citing.Id, "Wrong host", "an1", T0.AddHours(4));
+
+        CaseMilestones.Project(c, Labels).Where(m => m.Kind == MilestoneKind.EvidenceAdded).Select(m => m.Title)
+            .Should().BeEquivalentTo("Evidence added: shot.png", "Evidence added: signin.csv");
+    }
+
+    [Fact]
     public void Notices_converted_from_a_whole_case_report_are_not_the_editors_new_work(/* BUG-406 */)
     {
         var c = Case.Open(2026, 9, "Br", "Breach", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);

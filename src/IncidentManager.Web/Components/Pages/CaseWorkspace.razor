@@ -177,7 +177,7 @@ else
         @* UX-13: extracted to CaseEvidenceTab. The screenshot lightbox (OpenShot) + live-collab flash stay
            in this parent and are threaded in; the paste/drop shim is still registered by this component's
            OnAfterRenderAsync against the element IDs the child keeps (evidence-dropzone / -file-input / -file-drop). *@
-        <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" Citations="_case.Citations" OnPreview="OpenShot" OnOpenEvidence="OpenEvidence"
+        <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" Citations="_case.Citations" Entries="_case.TimelineEntries" OnPreview="OpenShot" OnOpenEvidence="OpenEvidence"
                          OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" CanEdit="_canEdit" Tasks="_case.ActionItems"
                          BriefText="@CurrentBriefText()" />
     }
