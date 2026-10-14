@@ -68,7 +68,15 @@ public sealed class ReportProfileService
         await EnsureTemplateAsync(db, input.TemplateId, ct);
         ApplyContent(profile, input);
         db.ReportProfiles.Add(profile);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex)
+        {
+            // BUG-339: the same name was saved between the check above and this insert (the unique index refused it).
+            using var check = _factory.CreateDbContext();
+            if (await check.ReportProfiles.AnyAsync(p => p.Name == name, ct))
+                throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.", ex);
+            throw;
+        }
         return profile.Id;
     }
 

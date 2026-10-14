@@ -99,7 +99,15 @@ public sealed class NotificationRuleService
             });
         }
 
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (id is null)
+        {
+            // BUG-339: a rule for the same code was added between the check above and this insert.
+            using var check = _factory.CreateDbContext();
+            if (await check.NotificationRules.AnyAsync(r => r.Code == code, ct))
+                throw new InvalidOperationException($"A rule for '{code}' already exists. Edit that rule instead.", ex);
+            throw;
+        }
     }
 
     /// <summary>Archives or restores a rule (built-in ones included). Archiving drops it from the clock; the

@@ -73,7 +73,7 @@
             }
         </div>
         <div class="card-footer d-flex gap-2">
-            <button class="btn btn-sm btn-primary" @onclick="SaveRole">Save</button>
+            <button class="btn btn-sm btn-primary" @onclick="SaveRole" disabled="@_saving">Save</button>
             <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editing = null">Cancel</button>
         </div>
     </div>
@@ -141,7 +141,7 @@ write <code>DOMAIN\Group</code>.</p>
             </select>
         </div>
         <div class="col-sm-2">
-            <button class="btn btn-sm btn-primary w-100" @onclick="AddMapping">Add</button>
+            <button class="btn btn-sm btn-primary w-100" @onclick="AddMapping" disabled="@_saving">Add</button>
         </div>
     </div>
 }
@@ -328,7 +328,20 @@ else
         if (on) _editing.Permissions.Add(p); else _editing.Permissions.Remove(p);
     }
 
-    private async Task SaveRole()
+    // BUG-339: a double click on Save or Add ran the insert twice; the second hit the unique index.
+    private bool _saving;
+
+    private async Task Saving(Func<Task> action)
+    {
+        if (_saving) return;
+        _saving = true;
+        try { await action(); }
+        finally { _saving = false; }
+    }
+
+    private Task SaveRole() => Saving(SaveRoleCore);
+
+    private async Task SaveRoleCore()
     {
         if (_editing is null) return;
         try
@@ -367,7 +380,9 @@ else
         Saved($"Deleted role '{r.Name}'");
     }
 
-    private async Task AddMapping()
+    private Task AddMapping() => Saving(AddMappingCore);
+
+    private async Task AddMappingCore()
     {
         try { await Roles.AddMappingAsync(_newGroup, _newRole); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)

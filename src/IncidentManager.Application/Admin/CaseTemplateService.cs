@@ -82,7 +82,15 @@ public sealed class CaseTemplateService
         var template = new CaseTemplate { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
         ApplyContent(template, input);
         db.CaseTemplates.Add(template);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex)
+        {
+            // BUG-339: the same name was saved between the check above and this insert (the unique index refused it).
+            using var check = _factory.CreateDbContext();
+            if (await check.CaseTemplates.AnyAsync(t => t.Name == name, ct))
+                throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.", ex);
+            throw;
+        }
         return template.Id;
     }
 

@@ -38,7 +38,7 @@ else
                     <input id="rdr-window" type="number" min="1" class="form-control form-control-sm" style="max-width:8rem" @bind="_window" />
                 </div>
                 <div class="col-auto">
-                    <button class="btn btn-sm btn-primary" @onclick="Save">@(_editId is null ? "Add rule" : "Save")</button>
+                    <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">@(_editId is null ? "Add rule" : "Save")</button>
                     @if (_editId is not null)
                     {
                         <button class="btn btn-sm btn-outline-secondary" @onclick="ResetForm">Cancel</button>
@@ -151,7 +151,18 @@ else
         _window = 72;
     }
 
+    // BUG-339: a double click on Add rule inserted the rule twice; the second hit the unique index.
+    private bool _saving;
+
     private async Task Save()
+    {
+        if (_saving) return;
+        _saving = true;
+        try { await SaveCore(); }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveCore()
     {
         try
         {

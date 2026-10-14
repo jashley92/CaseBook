@@ -128,7 +128,7 @@
             </div>
         </div>
         <div class="card-footer d-flex gap-2">
-            <button class="btn btn-sm btn-primary" @onclick="Save">Save</button>
+            <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">Save</button>
             <button class="btn btn-sm btn-outline-secondary" @onclick="() => _edit = null">Cancel</button>
         </div>
     </div>
@@ -246,7 +246,18 @@ else
         (_edit.Steps[i], _edit.Steps[j]) = (_edit.Steps[j], _edit.Steps[i]);
     }
 
+    // BUG-339: a double click on Save for a new template inserted it twice; the second hit the unique index.
+    private bool _saving;
+
     private async Task Save()
+    {
+        if (_edit is null || _saving) return;
+        _saving = true;
+        try { await SaveCore(); }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveCore()
     {
         if (_edit is null) return;
 

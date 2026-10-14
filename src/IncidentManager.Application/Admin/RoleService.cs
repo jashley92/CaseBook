@@ -50,16 +50,24 @@ public sealed class RoleService
         if (Role.NameProblem(name) is { } problem) throw new ArgumentException(problem);
         // BUG-18: role names are matched regardless of case everywhere else, so "sysadmin" is SysAdmin.
         var lower = name.ToLowerInvariant();
+        var exists = $"A role named '{name}' already exists. Choose a different name.";
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
         if (await db.Roles.AnyAsync(r => r.Name.ToLower() == lower, ct))
-#pragma warning restore CA1304, CA1311, CA1862
-            throw new InvalidOperationException($"A role named '{name}' already exists. Choose a different name.");
+            throw new InvalidOperationException(exists);
 
         var role = new Role { Name = name, Description = description?.Trim(), IsSystem = false };
         role.SetPermissions(permissions, _user.UserId, _clock.UtcNow);
 
         db.Roles.Add(role);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex)
+        {
+            // BUG-339: the same name was saved between the check above and this insert (the unique index refused it).
+            using var check = _factory.CreateDbContext();
+            if (await check.Roles.AnyAsync(r => r.Name.ToLower() == lower, ct)) throw new InvalidOperationException(exists, ex);
+            throw;
+        }
+#pragma warning restore CA1304, CA1311, CA1862
         _directory.Invalidate();
         _siem?.Emit(SecurityEvents.RoleChanged("RoleCreated", _user.UserId, _user.UserPrincipalName, name));
     }
@@ -162,7 +170,15 @@ public sealed class RoleService
             UpdatedAtUtc = _clock.UtcNow,
             UpdatedBy = _user.UserId
         });
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex)
+        {
+            // BUG-339: the same mapping was added between the check above and this insert.
+            using var check = _factory.CreateDbContext();
+            if (await check.RoleMappings.AnyAsync(m => m.AdGroup == adGroup && m.RoleName == roleName, ct))
+                throw new InvalidOperationException("That mapping already exists.", ex);
+            throw;
+        }
         _directory.Invalidate();
         _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingAdded", _user.UserId, _user.UserPrincipalName, $"{adGroup} → {roleName}"));
     }

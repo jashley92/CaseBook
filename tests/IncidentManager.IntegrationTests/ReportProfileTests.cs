@@ -262,6 +262,49 @@ public sealed class ReportProfileTests : IDisposable
         _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_profile_saved_between_the_name_check_and_the_insert_is_reported_as_a_duplicate(/* BUG-339 */)
+    {
+        // The other save lands after CreateAsync's AnyAsync check but before its own insert reaches the unique index.
+        var racer = new BeforeFirstSave(async () =>
+        {
+            await using var other = NewContext();
+            other.ReportProfiles.Add(new IncidentManager.Domain.Entities.ReportProfile
+                { Name = "Executive summary", CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow });
+            await other.SaveChangesAsync();
+        });
+        var factory = new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(racer,
+                new AuditChainInterceptor(_hasher, _user, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()))
+            .Options);
+
+        var create = async () => await new ReportProfileService(factory, _user, _clock)
+            .CreateAsync(new ReportProfileInput("Executive summary", null, true, 1, null));
+
+        (await create.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*already exists*");
+        await using var db = NewContext();
+        (await db.ReportProfiles.CountAsync(p => p.Name == "Executive summary")).Should().Be(1);
+    }
+
+    /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
+    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private bool _done;
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_done)
+            {
+                _done = true;
+                await during();
+            }
+            return result;
+        }
+    }
+
     private static async Task<string> ReadWordXmlAsync(ReportService svc, Guid reportId)
     {
         var (_, stream) = await svc.OpenAsync(reportId);

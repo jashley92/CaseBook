@@ -29,7 +29,7 @@ else
     <div class="card mb-3">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span><span class="bi bi-flag me-1"></span>Active outcomes</span>
-            <button class="btn btn-sm btn-primary" @onclick="Save">Save changes</button>
+            <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">Save changes</button>
         </div>
         <div class="card-body">
             <ol class="list-group mb-3">
@@ -160,7 +160,18 @@ else
         (_active[index], _active[target]) = (_active[target], _active[index]);
     }
 
+    // BUG-339: a double click on Save inserted the new rows twice; the second hit the unique key index.
+    private bool _saving;
+
     private async Task Save()
+    {
+        if (_active is null || _saving) return;
+        _saving = true;
+        try { await SaveCore(); }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveCore()
     {
         if (_active is null) return;
         var payload = _active.Select(r => new CaseOutcomeRow(r.Id, r.Label, r.Description, r.Stamp)).ToList();
