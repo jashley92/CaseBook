@@ -2371,7 +2371,9 @@ else
             if (steps.Any(s => s.Id == next.Id)) return next.Id.ToString();
             gone = next;
         }
-        if (gone is null) return "";
+        // Entries are never deleted, so one this case doesn't hold yet is a step just added whose reload hasn't landed (the
+        // render while Reload awaits passes the old case): keep it, or the next "not stated" step would go first.
+        if (gone is null) return after;
         var order = steps.Append(gone).InTimelineOrder().ToList();
         var at = order.IndexOf(gone);
         return at > 0 ? order[at - 1].Id.ToString() : "";

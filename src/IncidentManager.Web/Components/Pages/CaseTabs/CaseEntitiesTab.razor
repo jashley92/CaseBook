@@ -35,8 +35,7 @@
             <ul class="list-unstyled mb-0">
                 @foreach (var r in _related)
                 {
-                    @* BUG-425: Ctrl/Cmd+Enter in a suggestion links it (keymap.js leaves .im-own-keys to it). *@
-                    <li class="d-flex flex-wrap align-items-center gap-2 py-2 border-top im-own-keys" @onkeydown="e => SaveOnKey(e, () => LinkRelated(r.CaseId))">
+                    <li class="d-flex flex-wrap align-items-center gap-2 py-2 border-top">
                         <a href="cases/@r.CaseId" class="fw-semibold text-decoration-none"><code>@r.CaseNumber</code></a>
                         <span>@r.Title</span>
                         <span class="@Ui.ClassificationBadge(r.Classification)">@Ui.Label(r.Classification)</span>
@@ -49,7 +48,9 @@
                         {
                             <span class="text-muted small">+@(r.SharedIndicators.Count - 6) more</span>
                         }
-                        <span class="ms-auto d-flex align-items-center gap-1">
+                        @* BUG-425: Ctrl/Cmd+Enter in the suggestion's controls links it (keymap.js leaves .im-own-keys to it); not on
+                           the case-number link, where it opens the case in a new tab as a link should. *@
+                        <span class="ms-auto d-flex align-items-center gap-1 im-own-keys" @onkeydown='e => SaveOnKey(e, "link", () => LinkRelated(r.CaseId))'>
                             <select class="form-select form-select-sm" style="width:auto" aria-label="Relationship type"
                                     @onchange="e => SetRelatedType(r.CaseId, e.Value?.ToString())">
                                 @foreach (var t in Enum.GetValues<CaseLinkType>())
@@ -57,7 +58,7 @@
                                     <option value="@t" selected="@(RelatedTypeFor(r.CaseId) == t)">@Ui.CaseLinkLabel(t, true)</option>
                                 }
                             </select>
-                            <button class="btn btn-sm btn-outline-primary" @onclick="() => Once(() => LinkRelated(r.CaseId))">Link</button>
+                            <button class="btn btn-sm btn-outline-primary" @onclick='() => Once("link", () => LinkRelated(r.CaseId))'>Link</button>
                         </span>
                     </li>
                 }
@@ -172,11 +173,11 @@
                         <a href="@($"cases/import?into={CaseId}")">import it into this case</a> instead.
                     </p>
                     @* BUG-425: Ctrl/Cmd+Enter in the pasted text parses it; in the review below it adds the selected ones. *@
-                    <div class="im-own-keys" @onkeydown="e => SaveOnKey(e, ParseBulkOnKey)">
+                    <div class="im-own-keys" @onkeydown='e => SaveOnKey(e, "paste", ParseBulkOnKey)'>
                     <textarea class="form-control form-control-sm mb-2" rows="4" aria-label="Paste indicators" @bind="_bulkText" @bind:event="oninput"
                               placeholder="1.2.3.4, evil.example[.]com&#10;hxxp://bad[.]site/x&#10;44d88612fea8a8f36de82e1278abb02f&#10;user@phish.example"></textarea>
                     <div class="d-flex gap-2 mb-2">
-                        <button class="btn btn-sm btn-outline-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(ParseBulk)"
+                        <button class="btn btn-sm btn-outline-primary" title="Ctrl / ⌘ + Enter" @onclick='() => Once("paste", ParseBulk)'
                                 disabled="@string.IsNullOrWhiteSpace(_bulkText)">Parse &amp; preview</button>
                         @if (_bulkRows.Count > 0)
                         {
@@ -192,7 +193,7 @@
 
                     @if (_bulkRows.Count > 0)
                     {
-                        <div class="im-own-keys" @onkeydown="e => SaveOnKey(e, AddBulk)">
+                        <div class="im-own-keys" @onkeydown='e => SaveOnKey(e, "paste", AddBulk)'>
                         <div class="row g-2 align-items-end mb-2">
                             <div class="col-md-3">
                                 <label class="form-label small mb-0" for="ent-bulk-disposition">Disposition (all)</label>
@@ -243,7 +244,7 @@
                             </table>
                         </div>
 
-                        <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(AddBulk)"
+                        <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick='() => Once("paste", AddBulk)'
                                 disabled="@(_bulkBusy || !_bulkRows.Any(r => r.Include))">
                             @if (_bulkBusy) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
                             Add @_bulkRows.Count(r => r.Include) indicator(s)
@@ -399,7 +400,7 @@ else
             <div class="card mb-3">
                 <div class="card-header">Add relationship</div>
                 @* BUG-425: Ctrl/Cmd+Enter here adds the relationship, not the entity composer's entity. *@
-                <div class="card-body row g-2 align-items-end im-own-keys" @onkeydown="e => SaveOnKey(e, AddRelationship)">
+                <div class="card-body row g-2 align-items-end im-own-keys" @onkeydown='e => SaveOnKey(e, "relationship", AddRelationship)'>
                     <div class="col-md-4">
                         <label class="form-label small mb-0" for="ent-rel-source">Source</label>
                         <select id="ent-rel-source" class="form-select form-select-sm" @bind="_relSource">
@@ -430,7 +431,7 @@ else
                         </select>
                     </div>
                     <div class="col-md-1">
-                        <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="() => Once(AddRelationship)"
+                        <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick='() => Once("relationship", AddRelationship)'
                                 disabled="@(string.IsNullOrEmpty(_relSource) || string.IsNullOrEmpty(_relTarget))">Add</button>
                     </div>
                     @if (_relError is not null) { <div class="col-12"><div class="text-danger small">@_relError</div></div> }
@@ -452,7 +453,7 @@ else
                             {
                                 @* INV-49: correct the type, description or direction in place — one audited change. BUG-425: its own
                                    Ctrl/Cmd+Enter saves it. *@
-                                <tr class="im-own-keys" @onkeydown="e => SaveOnKey(e, SaveRelationship)">
+                                <tr class="im-own-keys" @onkeydown='e => SaveOnKey(e, "relationship-edit", SaveRelationship)'>
                                     <td colspan="2">
                                         <div class="row g-2 align-items-end">
                                             <div class="col-md-4">
@@ -495,7 +496,7 @@ else
                                             </div>
                                             <div class="col-md-3 d-flex gap-2 justify-content-end">
                                                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _relEditId = null">Cancel</button>
-                                                <button type="button" class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(SaveRelationship)">Save</button>
+                                                <button type="button" class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick='() => Once("relationship-edit", SaveRelationship)'>Save</button>
                                             </div>
                                             @if (_relEditError is not null) { <div class="col-12"><div class="text-danger small" role="alert">@_relEditError</div></div> }
                                         </div>
@@ -704,19 +705,19 @@ else
         _defangView && IocObservable.IsRefangable(e.Type) ? IocObservable.Defang(e.Value) : e.Value;
 
     // BUG-425: the relationship forms, the paste and the suggestions each save themselves on Ctrl/Cmd+Enter (they're marked
-    // .im-own-keys, which keymap.js leaves alone), as their buttons do; one save at a time, and a held key doesn't repeat.
-    private bool _formSaving;
+    // .im-own-keys, which keymap.js leaves alone), as their buttons do; one save at a time per form (a paste waiting on the
+    // directory doesn't hold up a relationship save), and a held key doesn't repeat.
+    private readonly HashSet<string> _formSaving = new(StringComparer.Ordinal);
 
-    private async Task Once(Func<Task> save)
+    private async Task Once(string form, Func<Task> save)
     {
-        if (_formSaving) return;
-        _formSaving = true;
+        if (!_formSaving.Add(form)) return;
         try { await save(); }
-        finally { _formSaving = false; }
+        finally { _formSaving.Remove(form); }
     }
 
-    private Task SaveOnKey(KeyboardEventArgs e, Func<Task> save) =>
-        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : Once(save);
+    private Task SaveOnKey(KeyboardEventArgs e, string form, Func<Task> save) =>
+        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : Once(form, save);
 
     private Task ParseBulkOnKey() => string.IsNullOrWhiteSpace(_bulkText) ? Task.CompletedTask : ParseBulk();
 

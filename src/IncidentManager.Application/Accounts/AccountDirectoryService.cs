@@ -85,12 +85,14 @@ public sealed class AccountDirectoryService
     /// </summary>
     public sealed class CaptureAllowance(TimeSpan? budget = null)
     {
-        private readonly long _start = System.Diagnostics.Stopwatch.GetTimestamp();
         private readonly TimeSpan _budget = budget ?? CaptureBudget;
 
         internal int Lookups { get; set; } = MaxCapturedPerAdd;
         internal bool Stopped { get; set; }
-        internal TimeSpan Left => _budget - System.Diagnostics.Stopwatch.GetElapsedTime(_start);
+        // Only time spent waiting on the directory counts: an import's batches spend their own time saving, and a large
+        // one would otherwise have used the budget up before its later batches' accounts were asked about.
+        internal TimeSpan Spent { get; set; }
+        internal TimeSpan Left => _budget - Spent;
     }
 
     /// <summary>
@@ -123,11 +125,13 @@ public sealed class AccountDirectoryService
                 if (allowance.Lookups <= 0 || left <= TimeSpan.Zero) { allowance.Stopped = true; break; }
                 allowance.Lookups--;
                 DirectoryLookup lookup;
+                var asked = System.Diagnostics.Stopwatch.GetTimestamp();
                 using (var budget = CancellationTokenSource.CreateLinkedTokenSource(ct))
                 {
                     budget.CancelAfter(left);
                     try { lookup = await _directory.LookupAsync(e.Value, budget.Token); }
                     catch (OperationCanceledException) when (!ct.IsCancellationRequested) { allowance.Stopped = true; break; }
+                    finally { allowance.Spent += System.Diagnostics.Stopwatch.GetElapsedTime(asked); }
                 }
                 // BUG-420: an unavailable directory isn't asked again for the rest of the add.
                 if (lookup.Outcome == DirectoryLookupOutcome.Unavailable) { allowance.Stopped = true; break; }

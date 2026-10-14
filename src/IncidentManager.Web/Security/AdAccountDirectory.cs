@@ -96,6 +96,7 @@ public sealed class AdAccountDirectory : IAccountDirectory
             finally { Interlocked.Decrement(ref _inFlight); }
         }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         DirectoryLookup result;
+        var domainFailed = false;   // only the directory not answering backs the domain off, not one name's own trouble
         try
         {
             result = await query.WaitAsync(Timeout, _time, ct);
@@ -103,16 +104,24 @@ public sealed class AdAccountDirectory : IAccountDirectory
         catch (TimeoutException)
         {
             result = DirectoryLookup.Unavailable("Active Directory didn't answer in time.");
+            domainFailed = true;
+        }
+        catch (MultipleMatchesException)
+        {
+            // An indicator's text (or a partial name typed) matching more than one account says nothing about the domain,
+            // so it's this name not being looked up (capture carries on with the rest), not the directory being down.
+            result = DirectoryLookup.NotLookedUp("More than one directory account matches this name.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _log?.LogWarning(ex, "Couldn't look an account up in Active Directory.");
             result = DirectoryLookup.Unavailable("Active Directory couldn't be reached.");
+            domainFailed = true;
         }
         lock (_gate)
         {
-            if (result.Outcome == DirectoryLookupOutcome.Unavailable) _failedUntil[domainKey] = _time.GetUtcNow() + BackOff;
-            else _failedUntil.Remove(domainKey);
+            if (domainFailed) _failedUntil[domainKey] = _time.GetUtcNow() + BackOff;
+            else if (result.Outcome != DirectoryLookupOutcome.Unavailable) _failedUntil.Remove(domainKey);
         }
         return result;
     }
