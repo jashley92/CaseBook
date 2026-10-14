@@ -138,7 +138,7 @@
         {
                 <select class="form-select form-select-sm w-auto" @bind="_tlFilterTacticStr" aria-label="Filter by tactic">
                     <option value="">All tactics</option>
-                    @foreach (var t in Enum.GetValues<MitreTactic>().Where(x => x != MitreTactic.Unspecified))
+                    @foreach (var t in Enum.GetValues<MitreTactic>().Where(x => x != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
                     {
                         <option value="@t">@Ui.Label(t)</option>
                     }

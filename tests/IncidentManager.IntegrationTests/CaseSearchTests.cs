@@ -498,6 +498,12 @@ public sealed class CaseSearchTests : IDisposable
         (await Snippet(a, "staging host")).Should().StartWith("note, 7 Aug 2026: ");
         (await Snippet(b, "dropbox")).Should().StartWith("timeline entry, 5 Aug 2026: ");
         (await Snippet(c, "enumeration")).Should().StartWith("timeline entry: ", "a step whose time isn't stated has no day");
+
+        // An exact time at the calendar's start (an imported or typed year 1): ConvertTime clamps rather than throwing.
+        var d = (await svc.CreateAsync(Req("Delta"))).Id;
+        await svc.AddEventStepAsync(d, new DateTimeOffset(1, 1, 1, 2, 0, 0, TimeSpan.Zero), [MitreTactic.Discovery], null, null, null,
+            "Odd timestamp from the parser", null);
+        (await Snippet(d, "parser")).Should().StartWith("timeline entry, 1 Jan 0001: ");
     }
 
     public void Dispose() => _connection.Dispose();
