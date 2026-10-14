@@ -37,9 +37,14 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     // BUG-113: a case whose only change is its concurrency token (renewed because something on it changed) isn't a change
     // to the case: nothing to audit or hash, and the live update names what did change.
-    private static bool OnlyEditVersionBumped(EntityEntry e) =>
+    // BUG-392: nor when one of its owned value objects changed (they're tracked as their own entries, so the case's own
+    // columns can show only the token): dropping it would skip the case's new row hash and its audit line.
+    private static bool OnlyEditVersionBumped(EntityEntry e, IReadOnlyList<EntityEntry> removedOwned) =>
         e.Entity is Case && e.State == EntityState.Modified
-        && e.Properties.Where(p => p.IsModified).All(p => p.Metadata.Name == AppDbContext.CaseEditVersion);
+        && e.Properties.Where(p => p.IsModified).All(p => p.Metadata.Name == AppDbContext.CaseEditVersion)
+        && !e.References.Any(r => r.TargetEntry is { } t && t.Metadata.IsOwned()
+                                  && t.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+        && !removedOwned.Any(d => OwnedBy(d, e));
 
     // REV-05: every token-authenticated API call stamps LastUsedAtUtc, which the token's row hash leaves out. Drop that
     // save here rather than in Apply's touch skip, so it never waits on the process-wide gate or reads the chain head.
@@ -229,19 +234,19 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         var actor = _user.IsAuthenticated ? _user.UserId : "system";
         var now = _clock.UtcNow;
 
+        // BUG-333: a replaced owned value object is tracked as the new instance (Added) plus the old one (Deleted). The old
+        // ones are taken now, while change detection is current, so the update's diff can read the real before-values.
+        var replacedOwned = ctx.ChangeTracker.Entries()
+            .Where(x => x.Metadata.IsOwned() && x.State == EntityState.Deleted).ToList();
+
         var auditable = ctx.ChangeTracker.Entries()
             .Where(e => e.Entity is Entity
                         && !e.Metadata.IsOwned()
                         && !NotAudited.Contains(e.Entity.GetType())
                         && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
-                        && !OnlyEditVersionBumped(e)
+                        && !OnlyEditVersionBumped(e, replacedOwned)
                         && !OnlyTokenUseStamped(e))
             .ToList();
-
-        // BUG-333: a replaced owned value object is tracked as the new instance (Added) plus the old one (Deleted). The old
-        // ones are taken now, while change detection is current, so the update's diff can read the real before-values.
-        var replacedOwned = ctx.ChangeTracker.Entries()
-            .Where(x => x.Metadata.IsOwned() && x.State == EntityState.Deleted).ToList();
 
         // Map cases by id so child-entity audit lines can carry the case number.
         var (caseNumbers, evidenceCases) = CaseNumbersFor(ctx, auditable);
@@ -372,9 +377,9 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         switch (e.State)
         {
             case EntityState.Added:
-                return (AuditAction.Create, null, Serialize(e.CurrentValues, e.CurrentValues.Properties), NoFields);
+                return (AuditAction.Create, null, Snapshot(e, current: true), NoFields);
             case EntityState.Deleted:
-                return (AuditAction.Delete, Serialize(e.OriginalValues, e.OriginalValues.Properties), null, NoFields);
+                return (AuditAction.Delete, Snapshot(e, current: false), null, NoFields);
             default:
                 return DescribeUpdate(e, replacedOwned);
         }
@@ -451,13 +456,44 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     // BUG-333: the owned instance an Added one replaced: the Deleted entry of the same owned type (one per navigation)
     // whose owner key is this owner's.
-    private static EntityEntry? ReplacedBy(EntityEntry added, EntityEntry owner, IReadOnlyList<EntityEntry> replacedOwned)
+    private static EntityEntry? ReplacedBy(EntityEntry added, EntityEntry owner, IReadOnlyList<EntityEntry> replacedOwned) =>
+        replacedOwned.FirstOrDefault(d => d.Metadata == added.Metadata && OwnedBy(d, owner));
+
+    // Whether an owned entry belongs to this owner (its ownership key is the owner's key).
+    private static bool OwnedBy(EntityEntry owned, EntityEntry owner)
     {
-        if (added.Metadata.FindOwnership() is not { } ownership) return null;
+        if (owned.Metadata.FindOwnership() is not { } ownership || ownership.PrincipalEntityType.ClrType != owner.Metadata.ClrType)
+            return false;
         var fk = ownership.Properties;
         var pk = ownership.PrincipalKey.Properties;
-        return replacedOwned.FirstOrDefault(d => d.Metadata == added.Metadata
-            && Enumerable.Range(0, fk.Count).All(i => Equals(d.Property(fk[i].Name).CurrentValue, owner.Property(pk[i].Name).CurrentValue)));
+        return Enumerable.Range(0, fk.Count).All(i => Equals(owned.Property(fk[i].Name).CurrentValue, owner.Property(pk[i].Name).CurrentValue));
+    }
+
+    /// <summary>
+    /// BUG-392: a Create (current values) or Delete (original values) snapshot with the owned value objects folded in,
+    /// keyed "Nav.Prop" as <see cref="DescribeUpdate"/> keys them. They're tracked as their own (unaudited) entries, so a
+    /// third-party case's vendor details, or a referral made at creation, never reached the trail.
+    /// </summary>
+    private static string Snapshot(EntityEntry e, bool current)
+    {
+        var values = current ? e.CurrentValues : e.OriginalValues;
+        var map = new Dictionary<string, object?>();
+        foreach (var p in values.Properties)
+        {
+            if (p.IsShadowProperty()) continue;
+            map[p.Name] = Shown(p, values[p.Name]);
+        }
+        foreach (var reference in e.References)
+        {
+            if (reference.TargetEntry is not { } target || !target.Metadata.IsOwned()) continue;
+            var owned = current ? target.CurrentValues : target.OriginalValues;
+            foreach (var p in owned.Properties)
+            {
+                if (p.IsShadowProperty()) continue;   // owner FK / key
+                map[$"{reference.Metadata.Name}.{p.Name}"] = owned[p.Name];
+            }
+        }
+        return JsonSerializer.Serialize(map, Json);
     }
 
     // The "empty" prior value for a property whose owned VO was added wholesale: the zero of a value type
@@ -465,16 +501,6 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     private static object? DefaultOf(Type clrType) =>
         clrType.IsValueType && Nullable.GetUnderlyingType(clrType) is null ? Activator.CreateInstance(clrType) : null;
 
-    private static string Serialize(PropertyValues values, IEnumerable<Microsoft.EntityFrameworkCore.Metadata.IProperty> props)
-    {
-        var map = new Dictionary<string, object?>();
-        foreach (var p in props)
-        {
-            if (p.IsShadowProperty()) continue;
-            map[p.Name] = Shown(p, values[p.Name]);
-        }
-        return JsonSerializer.Serialize(map, Json);
-    }
 
     /// <summary>
     /// REV-02: the case number for every case this save's entries belong to. Cases tracked by the save are read from

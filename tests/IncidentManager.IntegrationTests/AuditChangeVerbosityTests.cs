@@ -279,5 +279,66 @@ public sealed class AuditChangeVerbosityTests : IDisposable
         resolved.After.Should().Be("203.0.113.66");
     }
 
+    [Fact]
+    public async Task A_cases_create_and_delete_lines_carry_its_vendor_details(/* BUG-392 */)
+    {
+        await using var db = NewContext();
+        var c = await NewService(db).CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Vendor", Title = "Vendor breach", Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.ThirdParty, VendorName = "Acme Hosting", VendorReference = "INC-42",
+        });
+        static Dictionary<string, System.Text.Json.JsonElement> Parse(string? json) =>
+            System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(json!)!;
+
+        await using (var read = NewContext())
+        {
+            var create = await read.AuditLog.AsNoTracking()
+                .SingleAsync(a => a.EntityType == "Case" && a.Action == AuditAction.Create && a.EntityId == c.Id.ToString());
+            var after = Parse(create.AfterJson);
+            after["ThirdParty.VendorName"].GetString().Should().Be("Acme Hosting");
+            after["ThirdParty.VendorReference"].GetString().Should().Be("INC-42");
+            after.Should().ContainKey("Materiality.Status");
+        }
+
+        await using (var del = NewContext())
+        {
+            del.Cases.Remove(await del.Cases.SingleAsync(x => x.Id == c.Id));
+            await del.SaveChangesAsync();
+        }
+        await using var check = NewContext();
+        var delete = await check.AuditLog.AsNoTracking()
+            .SingleAsync(a => a.EntityType == "Case" && a.Action == AuditAction.Delete && a.EntityId == c.Id.ToString());
+        Parse(delete.BeforeJson)["ThirdParty.VendorName"].GetString().Should().Be("Acme Hosting");
+        _hasher.VerifyChain(await check.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync()).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Changing_only_an_owned_value_still_audits_and_rehashes_the_case(/* BUG-392 */)
+    {
+        await using var db = NewContext();
+        var c = await NewService(db).CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Vendor2", Title = "Vendor case", Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.ThirdParty, VendorName = "Acme Hosting",
+        });
+
+        await using (var edit = NewContext())
+        {
+            var tracked = await edit.Cases.SingleAsync(x => x.Id == c.Id);
+            tracked.ThirdParty!.VendorContact = "soc@acme.example";   // only the owned value; no touch on the case row
+            await edit.SaveChangesAsync();
+        }
+
+        await using var check = NewContext();
+        var update = await check.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == "Case" && a.Action == AuditAction.Update && a.EntityId == c.Id.ToString())
+            .OrderByDescending(a => a.Sequence).FirstOrDefaultAsync();
+        update.Should().NotBeNull("the change to the vendor contact is a change to the case");
+        update!.AfterJson.Should().Contain("ThirdParty.VendorContact");
+        var stored = await check.Cases.AsNoTracking().SingleAsync(x => x.Id == c.Id);
+        stored.RowHash.Should().Be(_hasher.ComputeRowHash(stored), "the case's row hash covers its vendor details");
+    }
+
     public void Dispose() => _connection.Dispose();
 }
