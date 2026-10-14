@@ -81,7 +81,7 @@ public sealed class DataElementServiceTests : IDisposable
 
         await svc.SaveAsync(rows);
 
-        var keys = (await svc.ListAllAsync()).Where(e => e.Label.StartsWith(label)).Select(e => e.Key).ToList();
+        var keys = (await svc.ListAllAsync()).Where(e => e.Label.StartsWith(label, StringComparison.Ordinal)).Select(e => e.Key).ToList();
         keys.Should().HaveCount(2).And.OnlyHaveUniqueItems();
         keys.Should().OnlyContain(k => k.Length <= DataElementService.MaxKeyLength);
     }
