@@ -85,7 +85,7 @@ public sealed partial class EmailComposer : IEmailComposer
     [GeneratedRegex(@"<[^>]+>")]
     private static partial Regex TagRegex();
 
-    [GeneratedRegex(@"\s*[\p{Cc}  ]+\s*")]
+    [GeneratedRegex(@"\s*[\p{Cc}\u2028\u2029]+\s*")]
     private static partial Regex LineBreakRegex();
 
     /// <summary>

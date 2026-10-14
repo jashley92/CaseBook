@@ -135,4 +135,11 @@ public class EmailComposerSubjectLineTests
         var (subject, _) = await TestEmail.Composer().PreviewAsync("mention", "Hi\r\n{{CaseNumber}}", "<p>x</p>");
         subject.Should().Be("Hi 2026-01_Phishing_Wave");
     }
+
+    [Fact]
+    public async Task Unicode_line_and_paragraph_separators_collapse_too()
+    {
+        var (subject, _) = await TestEmail.Composer().PreviewAsync("mention", "Hi" + (char)0x2028 + "there" + (char)0x2029 + "{{CaseNumber}}", "<p>x</p>");
+        subject.Should().Be("Hi there 2026-01_Phishing_Wave");
+    }
 }
