@@ -54,11 +54,11 @@
     <form id="po-custom" class="po-custom" @onsubmit="ApplyCustom" @onsubmit:preventDefault>
         <div>
             <label class="form-label small mb-0" for="po-from">From</label>
-            <DateInput id="po-from" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd")" @bind-Value="_from" />
+            <DateInput id="po-from" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_from" />
         </div>
         <div>
             <label class="form-label small mb-0" for="po-to">To</label>
-            <DateInput id="po-to" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd")" @bind-Value="_to" />
+            <DateInput id="po-to" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_to" />
         </div>
         <button type="submit" class="btn btn-sm btn-primary">Show</button>
         <span class="po-custom-hint">Both days included, in the reporting time zone. It's compared with the same number of
@@ -354,7 +354,7 @@ else
                             <span class="track">
                                 @foreach (var sv in ph.BySeverity.Where(x => x.Count > 0))
                                 {
-                                    <span class="pseg sev-@sv.Key.ToString().ToLowerInvariant()" style="width:@(sv.Count * 100.0 / maxPhase)%"
+                                    <span class="pseg sev-@sv.Key.ToString().ToLowerInvariant()" style="width:@Num(sv.Count * 100.0 / maxPhase)%"
                                           title="@($"{SevLabels.For(sv.Key)}: {sv.Count}")"></span>
                                 }
                             </span>
@@ -426,8 +426,8 @@ else
                             <span class="pbar">
                                 <span class="tq-name">@t.Name</span>
                                 <span class="track tq-track">
-                                    <span class="pseg tq-ours" style="width:@((t.Cases - t.AtVendor) * 100.0 / maxTech)%"></span>
-                                    <span class="pseg tq-vendor" style="width:@(t.AtVendor * 100.0 / maxTech)%"></span>
+                                    <span class="pseg tq-ours" style="width:@Num((t.Cases - t.AtVendor) * 100.0 / maxTech)%"></span>
+                                    <span class="pseg tq-vendor" style="width:@Num(t.AtVendor * 100.0 / maxTech)%"></span>
                                 </span>
                             </span>
                             <span class="tq-tag">@(t.AtVendor > 0 ? $"at a vendor ×{t.AtVendor}" : "")</span>
@@ -470,7 +470,7 @@ else
                         {
                             <div class="prow ll-row">
                                 <span class="pl">@ar.Key</span>
-                                <span class="track"><span class="pseg tq-ours" style="width:@(ar.Count * 100.0 / maxArea)%"></span></span>
+                                <span class="track"><span class="pseg tq-ours" style="width:@Num(ar.Count * 100.0 / maxArea)%"></span></span>
                                 <span class="pc">@ar.Count</span>
                             </div>
                         }
@@ -533,8 +533,8 @@ else
 
     private void ApplyCustom()
     {
-        var (f, t) = (_from is { } a ? DateOnly.FromDateTime(a).ToString("yyyy-MM-dd") : null,
-                      _to is { } b ? DateOnly.FromDateTime(b).ToString("yyyy-MM-dd") : null);
+        var (f, t) = (_from is { } a ? DateOnly.FromDateTime(a).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) : null,
+                      _to is { } b ? DateOnly.FromDateTime(b).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) : null);
         if (OverviewWindows.TryRange(f, t, Today, out var error) is null)
         {
             _customError = error ?? "Give both dates.";
@@ -626,7 +626,8 @@ else
         _bars = t.Select(x =>
         {
             var d = new DateTime(x.Year, x.Month, 1);
-            return new BarPoint(d.ToString("yyyy-MM"), d.ToString("MMMM yyyy"), d.ToString("MMM"),
+            // BUG-476: the key drives the Cases opened= drill-in, so it is Gregorian whatever the server culture.
+            return new BarPoint(d.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture), d.ToString("MMMM yyyy"), d.ToString("MMM"),
                 x.OpenAtStart, x.Opened, x.Closed, x.OpenAtEnd, x.OpenedBy ?? None, x.ClosedBy ?? None);
         }).ToList();
         _sel = Math.Max(0, _bars.Count - 1);   // the latest month until another is picked
