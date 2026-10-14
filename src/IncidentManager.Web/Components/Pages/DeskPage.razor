@@ -236,7 +236,7 @@
                                 <li>
                                     <a href="cases/@c.Id"><code>@c.CaseNumber</code></a>
                                     <span class="im-desk-sub im-clamp-2">@c.Title</span>
-                                    <button class="btn btn-link btn-sm p-0 text-muted" title="Unpin" aria-label="@($"Unpin {c.CaseNumber}")" @onclick="() => Unpin(c.Id)">Unpin</button>
+                                    <button class="btn btn-link btn-sm p-0 text-muted" title="Unpin" aria-label="@($"Unpin {c.CaseNumber}")" @onclick="() => Unpin(c.Id)" disabled="@_unpinning">Unpin</button>
                                 </li>
                             }
                         </ul>
@@ -362,15 +362,21 @@
         0 => "Overdue", 1 => "Today", 2 => "Tomorrow", 3 => "This week", 4 => "Later", _ => "No date"
     };
 
+    private bool _unpinning;   // BUG-391: one unpin at a time (a double click)
+
     private async Task Unpin(Guid caseId)
     {
+        if (_unpinning) return;
+        _unpinning = true;
         try
         {
-            await Shortcuts.TogglePinAsync(caseId);
+            // BUG-391: an unpin, not the toggle, so a second click (or another tab's unpin) can't pin the case again.
+            await Shortcuts.UnpinAsync(caseId);
             await Reload();
             Toasts.Info("Unpinned.");
         }
         catch (InvalidOperationException ex) { Toasts.Error(ex.Message); }
+        finally { _unpinning = false; }
     }
 
     private async Task OnQuickAddKey(KeyboardEventArgs e)

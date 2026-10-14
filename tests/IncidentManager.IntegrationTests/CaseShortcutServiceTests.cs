@@ -75,6 +75,20 @@ public sealed class CaseShortcutServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Unpin_is_idempotent(/* BUG-391 */)
+    {
+        var id = await SeedCaseAsync(1, "Pin me");
+        var svc = NewService();
+        (await svc.TogglePinAsync(id)).Should().BeTrue();
+
+        await svc.UnpinAsync(id);
+        await svc.UnpinAsync(id);   // a double click: stays unpinned (the toggle pinned it again)
+        (await svc.IsPinnedAsync(id)).Should().BeFalse();
+
+        await svc.UnpinAsync(Guid.NewGuid());   // never pinned, or not visible: nothing to do
+    }
+
+    [Fact]
     public async Task Recent_lists_opened_cases_newest_first()
     {
         var a = await SeedCaseAsync(1, "Case A");

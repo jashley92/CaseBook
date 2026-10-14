@@ -79,7 +79,8 @@ public sealed class CaseShortcutService
         if (existing is not null)
         {
             db.PinnedCases.Remove(existing);
-            await db.SaveChangesAsync(ct);
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) { /* BUG-391: a concurrent unpin removed it first; it's unpinned either way */ }
             return false;
         }
 
@@ -90,6 +91,22 @@ public sealed class CaseShortcutService
         db.PinnedCases.Add(new PinnedCase { UserId = me, CaseId = caseId, PinnedAtUtc = _clock.UtcNow });
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    /// <summary>
+    /// BUG-391: unpins a case for the current user. Idempotent: a case that isn't pinned (a second click, or another tab
+    /// unpinned it first) stays unpinned, where the toggle would pin it again.
+    /// </summary>
+    public async Task UnpinAsync(Guid caseId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var me = _user.UserId;
+
+        var existing = await db.PinnedCases.FirstOrDefaultAsync(p => p.UserId == me && p.CaseId == caseId, ct);
+        if (existing is null) return;
+        db.PinnedCases.Remove(existing);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { /* removed by a concurrent unpin meanwhile: the outcome wanted */ }
     }
 
     // Fetch the given ids as list items, need-to-know scoped (order restored by the caller).
