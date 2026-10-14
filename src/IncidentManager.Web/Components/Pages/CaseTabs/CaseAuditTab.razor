@@ -2,6 +2,7 @@
    trail for one case, with server-side filtering (E-24) and, for leads/admins, the "Viewed by" read-log
    (C-05). Self-contained: it loads its own data; the parent passes the case identity, the lead flag, a
    persisted filter object, and a RefreshToken it bumps when a collaborator changes the case. *@
+@implements IDisposable
 @inject IntegrityService Integrity
 @inject IncidentManager.Application.Access.IAccessLogService AccessLog
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
@@ -196,7 +197,13 @@ else
     // Sequences whose raw before/after JSON is expanded in the GUI (per-viewer, reset on each (re)load).
     private readonly HashSet<long> _expandedRows = new();
 
-    private bool AuditFiltered => !BuildAuditFilter().IsEmpty;
+    // BUG-388: the filter the shown rows were loaded with, so the count, "(filtered)" and the CSV link describe the table.
+    private AuditQueryFilter? _shownFilter;
+    private DateTime? _shownFrom, _shownTo;
+    private CancellationTokenSource? _loadCts;
+    private int _loadSeq;
+
+    private bool AuditFiltered => !(_shownFilter ?? BuildAuditFilter()).IsEmpty;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -209,19 +216,46 @@ else
         }
     }
 
+    // BUG-388: a filter change (or a live refresh) supersedes the load before it, which is cancelled, and its rows are
+    // dropped if they land anyway, so an earlier filter's rows never overwrite a later one's.
     private async Task LoadAudit()
     {
-        _expandedRows.Clear(); // a fresh result set — collapse any open raw panels
-        if (!State.FacetsLoaded)
+        var previous = _loadCts;   // replaced before the await, so a load started meanwhile never has its own disposed
+        var seq = ++_loadSeq;
+        var cts = _loadCts = new CancellationTokenSource();
+        var ct = cts.Token;   // read now: the tab may be disposed (and cts with it) while the last load is cancelled
+        if (previous is not null)
         {
-            (State.Actors, State.EntityTypes) = await Integrity.AuditFacetsAsync(CaseNumber);
-            State.FacetsLoaded = true;
+            await previous.CancelAsync();
+            previous.Dispose();
         }
-        _audit = await Integrity.QueryAsync(BuildAuditFilter(), AuditPageSize);
-        _entityLabels = await Cases.GetEntityLabelsAsync(CaseId); // resolve reference GUIDs in the diff to IOC labels
-        // C-05: leads/admins see who has read this case (coalesced view-sessions).
-        if (CanViewAll)
-            _viewedBy = await AccessLog.ForCaseAsync(CaseId);
+        var filter = BuildAuditFilter();
+        var (from, to) = (State.From, State.To);
+        try
+        {
+            if (!State.FacetsLoaded)
+            {
+                var facets = await Integrity.AuditFacetsAsync(CaseNumber, ct);
+                if (seq != _loadSeq) return;
+                (State.Actors, State.EntityTypes) = facets;
+                State.FacetsLoaded = true;
+            }
+            var audit = await Integrity.QueryAsync(filter, AuditPageSize, ct);
+            var labels = await Cases.GetEntityLabelsAsync(CaseId, ct); // resolve reference GUIDs in the diff to IOC labels
+            // C-05: leads/admins see who has read this case (coalesced view-sessions).
+            var viewedBy = CanViewAll ? await AccessLog.ForCaseAsync(CaseId, ct: ct) : _viewedBy;
+            if (seq != _loadSeq) return;
+            _expandedRows.Clear(); // a fresh result set — collapse any open raw panels
+            (_audit, _entityLabels, _viewedBy) = (audit, labels, viewedBy);
+            (_shownFilter, _shownFrom, _shownTo) = (filter, from, to);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* superseded */ }
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
     }
 
     // E-24: build the server-side filter from the tab's controls. "To" is inclusive to the end of the day.
@@ -247,13 +281,14 @@ else
     // Deep-link to the scoped CSV export mirroring the active filter (dates as yyyy-MM-dd, UTC).
     private string AuditExportHref()
     {
-        var f = BuildAuditFilter();
+        // BUG-388: the filter the table was loaded with (the controls can be ahead of it while a load runs).
+        var (f, fromDay, toDay) = _shownFilter is { } shown ? (shown, _shownFrom, _shownTo) : (BuildAuditFilter(), State.From, State.To);
         var qs = new List<string> { $"case={Uri.EscapeDataString(CaseNumber)}" };
         if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
         if (f.Action is { } act) qs.Add($"action={act}");
         if (f.EntityType is { } et) qs.Add($"entity={Uri.EscapeDataString(et)}");
-        if (State.From is { } from) qs.Add($"from={from:yyyy-MM-dd}");
-        if (State.To is { } to) qs.Add($"to={to:yyyy-MM-dd}");
+        if (fromDay is { } from) qs.Add($"from={from:yyyy-MM-dd}");
+        if (toDay is { } to) qs.Add($"to={to:yyyy-MM-dd}");
         return "export/case-audit.csv?" + string.Join("&", qs);
     }
 
