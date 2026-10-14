@@ -152,6 +152,27 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task An_action_reopened_later_still_counts_as_completed_in_its_quarter(/* WF-80 */)
+    {
+        await SeedAsync();   // "MFA for finance" completed on 25 Apr (Q2)
+        var before = (await Service().BuildAsync(Q2)).Current;
+        await using (var db = new AppDbContext(Options()))
+        {
+            var a = await db.ImprovementActions.SingleAsync(x => x.Title == "MFA for finance");
+            a.Status = ImprovementActionStatus.Open;   // reopened in Q3 (the clock reads September)
+            a.ClosedAtUtc = null;
+            var t = await db.ImprovementActions.SingleAsync(x => x.Title == "Phish training");
+            t.TargetDateUtc = Apr(20).AddMonths(4);   // and the other's target pushed out
+            await db.SaveChangesAsync();
+        }
+
+        var q2 = (await Service().BuildAsync(Q2)).Current;
+        q2.ActionsCompleted.Should().Be(before.ActionsCompleted).And.Be(1);
+        q2.ActionsOpenAtEnd.Should().Be(before.ActionsOpenAtEnd);
+        q2.ActionsPastTargetAtEnd.Should().Be(before.ActionsPastTargetAtEnd).And.Be(1);
+    }
+
+    [Fact]
     public async Task A_review_recorded_after_the_quarter_does_not_change_it(/* REV-59 */)
     {
         await SeedAsync();

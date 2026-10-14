@@ -1198,6 +1198,7 @@ public sealed class CaseService
             c.ReportedFromNotices(inPlay, _user.UserId, now);
         }
         await db.SaveChangesAsync(ct);
+        await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
 
     /// <summary>BUG-09: records (or corrects) when one regulator was notified; the case counts as reported once all in play are.</summary>
@@ -1211,6 +1212,14 @@ public sealed class CaseService
         c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
             db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
+        await FreezeNoticeDuesAsync(id, ct);   // WF-77
+    }
+
+    // WF-77: a new notice's deadline is kept as it stands when the notice is recorded, so its on-time outcome is fixed.
+    private async Task FreezeNoticeDuesAsync(Guid id, CancellationToken ct)
+    {
+        if (_notifySettings is null || _notifyRules is null) return;
+        await new Compliance.NotificationDeadlineService(_factory, _notifySettings, _notifyRules, _clock).FreezeNoticeDuesAsync(id, ct);
     }
 
     /// <summary>BUG-09: removes one regulator's notice (a mis-entry); its clock runs again.</summary>
@@ -1362,6 +1371,7 @@ public sealed class CaseService
         var wasReported = c.ReportedAtUtc is not null;
         c.ReportedFromNotices(after, _user.UserId, now);
         await db.SaveChangesAsync(ct);
+        await FreezeNoticeDuesAsync(id, ct);   // WF-77: notices a BUG-104 conversion recorded
         if (wasReported && c.ReportedAtUtc is null) _deadlineReminders?.ForgetCase(id);   // BUG-156: reminded again
     }
 

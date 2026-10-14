@@ -253,6 +253,25 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_notice_keeps_the_deadline_it_was_made_against(/* WF-77 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);   // material 10 h ago: due in 62 h under 72 h
+        EnableClock();
+        await using var db = NewContext();
+        await NewCases(db).RecordNoticeAsync(id, "NY", _clock.UtcNow);
+
+        await using var check = NewContext();
+        var due = (await check.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).DueAtUtc;
+        due.Should().Be(_clock.UtcNow.AddHours(62));
+
+        // The default window shrinks later: the notice's recorded deadline doesn't move, so it stays on time.
+        _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 1, 80);
+        (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(0);
+        await using var after = NewContext();
+        (await after.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).DueAtUtc.Should().Be(due);
+    }
+
+    [Fact]
     public async Task Editing_a_reported_cases_count_after_an_admin_change_keeps_it_reported(/* WF-65 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);

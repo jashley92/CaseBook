@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
@@ -220,9 +221,21 @@ public sealed class ProgramReportService
             .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.Min(x => x.EffectiveAtUtc ?? x.ChangedAtUtc));
         var reviews = (await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
             .Select(r => new { r.CaseId, r.CreatedAtUtc }).ToListAsync(ct)).Select(r => (r.CaseId, r.CreatedAtUtc)).ToList();
-        var actions = await db.ImprovementActions.AsNoTracking().Where(a => ids.Contains(a.CaseId))
-            .Select(a => new ActionRow(a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea))
+        var actionRows = await db.ImprovementActions.AsNoTracking().Where(a => ids.Contains(a.CaseId))
+            .Select(a => new { a.Id, a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea })
             .ToListAsync(ct);
+        // WF-80: each action's edits (what each changed field held before), so a quarter is figured from the action as it
+        // stood at the quarter's end: reopened, re-statused or re-targeted later, it doesn't move a quarter already reported.
+        var actionIds = actionRows.Select(a => a.Id.ToString()).ToList();
+        var edits = (await db.AuditLog.AsNoTracking()
+                .Where(x => x.EntityType == "ImprovementAction" && x.Action == AuditAction.Update && x.BeforeJson != null
+                            && x.EntityId != null && actionIds.Contains(x.EntityId))
+                .Select(x => new { x.EntityId, x.AtUtc, x.Sequence, x.BeforeJson })
+                .ToListAsync(ct))
+            .GroupBy(x => x.EntityId!)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Sequence).Select(x => (x.AtUtc, x.BeforeJson!)).ToList());
+        var actions = actionRows.Select(a => new ActionRow(a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea,
+            edits.GetValueOrDefault(a.Id.ToString()) ?? [])).ToList();
 
         // Each reported case's notice outcome against its jurisdictions' windows, when deadlines are tracked.
         var notices = new Dictionary<Guid, SlaState>();
@@ -232,6 +245,14 @@ public sealed class ProgramReportService
             foreach (var (id, head) in await NotificationDeadlineService.HeadlinesAsync(db,
                          cases.Where(c => c.ReportedAtUtc != null), nd, ruleSet, _clock.UtcNow, reported: true, ct))
                 notices[id] = head.State;
+            // WF-77: a case whose notices all carry the deadline in force when they were made is judged on those, so a
+            // later change to a rule's window or to the materiality decision doesn't move a past quarter.
+            var kept = (await db.JurisdictionNotices.AsNoTracking()
+                    .Where(n => cases.Where(c => c.ReportedAtUtc != null).Select(c => c.Id).Contains(n.CaseId))
+                    .Select(n => new { n.CaseId, n.NotifiedAtUtc, n.DueAtUtc }).ToListAsync(ct))
+                .GroupBy(n => n.CaseId).Where(g => g.All(n => n.DueAtUtc is not null));
+            foreach (var g in kept)
+                notices[g.Key] = g.All(n => n.NotifiedAtUtc <= n.DueAtUtc) ? SlaState.Met : SlaState.Missed;
         }
 
         // WF-38: the history each quarter is figured from (effective times, as the record dates them). WF-97: in the order
@@ -255,7 +276,33 @@ public sealed class ProgramReportService
         DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc, DateTimeOffset? ClosedAtUtc, bool IsArchived);
 
     private sealed record ActionRow(DateTimeOffset CreatedAtUtc, DateTimeOffset? ClosedAtUtc, ImprovementActionStatus Status,
-        DateTimeOffset? TargetDateUtc, string? RelatedArea);
+        DateTimeOffset? TargetDateUtc, string? RelatedArea, IReadOnlyList<(DateTimeOffset At, string Before)> Edits)
+    {
+        /// <summary>WF-80: the action as it stood just before <paramref name="t"/>: every edit made at or after it undone,
+        /// newest first, from the values its audit entry records as before.</summary>
+        public ActionRow At(DateTimeOffset t)
+        {
+            var a = this;
+            foreach (var (at, before) in Edits)
+            {
+                if (at < t) break;
+                try
+                {
+                    using var doc = JsonDocument.Parse(before);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty(nameof(Status), out var st) && st.TryGetInt32(out var s)) a = a with { Status = (ImprovementActionStatus)s };
+                    if (root.TryGetProperty(nameof(ClosedAtUtc), out var cl)) a = a with { ClosedAtUtc = Instant(cl) };
+                    if (root.TryGetProperty(nameof(TargetDateUtc), out var td)) a = a with { TargetDateUtc = Instant(td) };
+                    if (root.TryGetProperty(nameof(RelatedArea), out var ra)) a = a with { RelatedArea = ra.ValueKind == JsonValueKind.String ? ra.GetString() : null };
+                }
+                catch (JsonException) { /* an entry it can't read leaves the fields as they are */ }
+            }
+            return a;
+
+            static DateTimeOffset? Instant(JsonElement e) =>
+                e.ValueKind == JsonValueKind.String && e.TryGetDateTimeOffset(out var v) ? v : null;
+        }
+    }
 
     // Everything is computed in memory: DateTimeOffset comparison and arithmetic stay off SQLite (F-08).
     private static ProgramSnapshot Snapshot(DateTimeOffset start, DateTimeOffset end, Loaded data)
@@ -309,6 +356,7 @@ public sealed class ProgramReportService
             }
         }
 
+        actions = actions.Where(a => a.CreatedAtUtc < end).Select(a => a.At(end)).ToList();   // WF-80: as they stood at the end
         var openAtEnd = actions.Where(a => a.CreatedAtUtc < end && (a.ClosedAtUtc is null || a.ClosedAtUtc >= end)).ToList();
         // REV-59: a review recorded by the end of the quarter, so one recorded later doesn't change a quarter already reported.
         var reviewed = reviews.Where(r => r.At < end).Select(r => r.CaseId).ToHashSet();

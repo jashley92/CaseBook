@@ -338,6 +338,16 @@ using (var scope = app.Services.CreateScope())
         scope.ServiceProvider.GetRequiredService<IHashChainService>());
     // WF-11: reported cases record the jurisdictions in play when they were reported (a no-op once all do).
     await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db);
+    // WF-77: notices recorded before their deadline was kept get it now (today's rules are the best record there is).
+    try
+    {
+        await scope.ServiceProvider.GetRequiredService<IncidentManager.Application.Compliance.NotificationDeadlineService>()
+            .FreezeNoticeDuesAsync();
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException)
+    {
+        app.Logger.LogWarning(ex, "Couldn't record the deadlines of earlier regulator notices; past quarters' notice figures use today's rules.");
+    }
 
     // Seed system roles (from code) and migrate the file-based AD mapping into the DB on first run,
     // then prime the in-memory role directory so authentication resolves permissions immediately.

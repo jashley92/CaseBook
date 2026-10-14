@@ -158,6 +158,34 @@ public sealed class NotificationDeadlineService
         return await StatusesAsync(db, cases, settings, ruleSet, _clock.UtcNow, reported: false, ct);
     }
 
+    /// <summary>
+    /// WF-77: records each new notice's deadline as it stands now (see <see cref="JurisdictionNotice.DueAtUtc"/>), for one
+    /// case or, with null, every case with a notice lacking one (start-up). Written straight to the column, not audited:
+    /// it's derived from the rules. A no-op while the deadline clock is off. Returns how many notices it filled.
+    /// </summary>
+    public async Task<int> FreezeNoticeDuesAsync(Guid? caseId = null, CancellationToken ct = default)
+    {
+        var settings = _settings.Current;
+        if (!settings.Enabled) return 0;
+        using var db = _factory.CreateDbContext();
+        var cases = db.Cases.AsNoTracking().Where(c => c.JurisdictionNotices.Any(n => n.DueAtUtc == null));
+        if (caseId is { } one) cases = cases.Where(c => c.Id == one);
+        var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
+        var now = _clock.UtcNow;
+        var filled = 0;
+        foreach (var reported in new[] { true, false })   // a notice can be on a case not yet reported to every regulator
+            foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
+                foreach (var s in statuses.Where(s => s.DueAtUtc is not null))
+                {
+                    var code = s.JurisdictionCode;
+                    var due = s.DueAtUtc;
+                    filled += await db.JurisdictionNotices
+                        .Where(n => n.CaseId == id && n.Jurisdiction == code && n.DueAtUtc == null)
+                        .ExecuteUpdateAsync(u => u.SetProperty(n => n.DueAtUtc, due), ct);
+                }
+        return filled;
+    }
+
     private static IReadOnlyList<string>? Frozen(string? csv) =>
         csv?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
