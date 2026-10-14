@@ -283,6 +283,11 @@
     protected override async Task OnParametersSetAsync()
     {
         if (_ranFor == Q && (_result is not null || _failed is not null)) return;
+        await Run();
+    }
+
+    private async Task Run()
+    {
         _ranFor = Q;
         _draft = Q ?? "";
         _cts?.Cancel();
@@ -316,7 +321,13 @@
         _cts?.Dispose();
     }
 
-    private void Submit() => Go(_draft);
+    // BUG-380: the same query again after a failure is a retry. Its URL doesn't change, so the parameters guard above
+    // (which keeps a re-render from repeating a search) would skip it; run it here instead.
+    private async Task Submit()
+    {
+        if (_failed is not null && _draft.Trim() == (Q ?? "").Trim()) await Run();
+        else Go(_draft);
+    }
 
     private void Go(string query) =>
         Nav.NavigateTo(string.IsNullOrWhiteSpace(query) ? "find" : $"find?q={Uri.EscapeDataString(query.Trim())}");
