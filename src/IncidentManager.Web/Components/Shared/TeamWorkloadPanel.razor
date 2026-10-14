@@ -277,6 +277,8 @@ else
     private CaseAssignmentRole _reassignRole = CaseAssignmentRole.Analyst;
     private bool _reassignConfirm;
     private bool _reassigning;
+    // BUG-345: each open of the dialog, so a slower load for an earlier analyst can't fill the dialog opened for another.
+    private int _reassignSeq;
 
     private async Task OpenReassign(string? fromId, string fromName)
     {
@@ -288,6 +290,7 @@ else
         _reassignRole = CaseAssignmentRole.Analyst;
         _reassignConfirm = false;
         _reassignCases = null;
+        var seq = ++_reassignSeq;
 
         // Load only this queue's open cases — the coherent cohort the reassign is scoped to.
         var page = await Cases.ListAsync(new CaseFilter
@@ -298,10 +301,11 @@ else
             Page = 1,
             PageSize = 200
         });
+        if (seq != _reassignSeq) return;   // BUG-345: the dialog was closed, or reopened for someone else, meanwhile
         _reassignCases = page.Items;
     }
 
-    private void CloseReassign() { _reassignOpen = false; _reassignCases = null; _reassignSelected.Clear(); }
+    private void CloseReassign() { _reassignSeq++; _reassignOpen = false; _reassignCases = null; _reassignSelected.Clear(); }
 
     private void ToggleReassign(Guid id, bool on)
     {
