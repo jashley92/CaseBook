@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Enums;
 
 namespace IncidentManager.Web.Security;
@@ -35,7 +36,7 @@ public sealed class UserMirrorMiddleware
                 // De-duped since a principal can carry the same role claim more than once.
                 var roles = string.Join(',', principal.FindAll(ClaimTypes.Role)
                     .Select(c => c.Value)
-                    .Where(v => Enum.TryParse<AppRole>(v, out _) || roleDirectory.IsRole(v))
+                    .Where(v => RoleDefinitions.TryParseRole(v, out _) || roleDirectory.IsRole(v))
                     .Distinct(StringComparer.OrdinalIgnoreCase));
 
                 // S8949: flow the request's cancellation token — the mirror is a best-effort, throttled

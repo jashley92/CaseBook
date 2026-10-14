@@ -75,7 +75,7 @@ public sealed class CurrentUser : ICurrentUser
 
     public IReadOnlySet<AppRole> Roles =>
         Principal.FindAll(ClaimTypes.Role)
-            .Select(c => Enum.TryParse<AppRole>(c.Value, out var r) ? (AppRole?)r : null)
+            .Select(c => RoleDefinitions.TryParseRole(c.Value, out var r) ? (AppRole?)r : null)
             .Where(r => r is not null)
             .Select(r => r!.Value)
             .ToHashSet();
@@ -87,7 +87,7 @@ public sealed class CurrentUser : ICurrentUser
     public IReadOnlyList<string> RoleNames =>
         Principal.FindAll(ClaimTypes.Role)
             .Select(c => c.Value)
-            .Where(v => Enum.TryParse<AppRole>(v, out _) || (_roles()?.IsRole(v) ?? false))
+            .Where(v => RoleDefinitions.TryParseRole(v, out _) || (_roles()?.IsRole(v) ?? false))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 

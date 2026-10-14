@@ -14,6 +14,27 @@ public class RoleDefinitionsTests
         perms.Should().BeEquivalentTo(Enum.GetValues<Permission>());
     }
 
+    [Theory]
+    [InlineData("4")]
+    [InlineData("0")]
+    [InlineData(" SysAdmin")]
+    [InlineData("Analyst, SysAdmin")]
+    [InlineData("+4")]
+    public void A_role_name_that_is_not_a_built_in_name_grants_nothing(string name /* BUG-352 */)
+    {
+        RoleDefinitions.PermissionsForRoleNames([name]).Should().BeEmpty();
+        RoleDefinitions.TryParseRole(name, out _, ignoreCase: true).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Built_in_role_names_still_parse(/* BUG-352 */)
+    {
+        RoleDefinitions.PermissionsForRoleNames(["sysadmin"]).Should().BeEquivalentTo(Enum.GetValues<Permission>());
+        RoleDefinitions.TryParseRole("SysAdmin", out var r).Should().BeTrue();
+        r.Should().Be(AppRole.SysAdmin);
+        RoleDefinitions.TryParseRole("sysadmin", out _).Should().BeFalse("case-sensitive unless asked");
+    }
+
     [Fact]
     public void Analyst_can_view_edit_and_classify_but_no_more()
     {

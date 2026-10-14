@@ -186,7 +186,7 @@
         // S-14: built-in and custom roles. The most-privileged built-in role is primary; a user with only custom
         // roles shows the first of those.
         var ordered = Ui.OrderRoles(CurrentUser.RoleNames);
-        var builtIn = ordered.Where(n => Enum.TryParse<AppRole>(n, out _)).ToList();
+        var builtIn = ordered.Where(n => RoleDefinitions.TryParseRole(n, out _)).ToList();
         _roles = ordered.ToArray();
         if (_roles.Length > 0)
         {

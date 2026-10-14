@@ -50,9 +50,22 @@ public static class RoleDefinitions
     public static IReadOnlySet<Permission> PermissionsForRoleNames(IEnumerable<string> roleNames)
     {
         var roles = roleNames
-            .Select(n => Enum.TryParse<AppRole>(n, ignoreCase: true, out var r) ? (AppRole?)r : null)
+            .Select(n => TryParseRole(n, out var r, ignoreCase: true) ? (AppRole?)r : null)
             .Where(r => r is not null)
             .Select(r => r!.Value);
         return PermissionsFor(roles);
+    }
+
+    /// <summary>
+    /// BUG-352: a built-in role by its name only. <see cref="Enum.TryParse{TEnum}(string, out TEnum)"/> also takes a number
+    /// ("4" is SysAdmin), a padded name and a comma list, so a custom role named "4" read as a built-in one.
+    /// </summary>
+    public static bool TryParseRole(string? name, out AppRole role, bool ignoreCase = false)
+    {
+        var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        foreach (var r in Enum.GetValues<AppRole>())
+            if (string.Equals(r.ToString(), name, comparison)) { role = r; return true; }
+        role = default;
+        return false;
     }
 }

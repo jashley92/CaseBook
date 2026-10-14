@@ -71,5 +71,5 @@ public sealed class SessionPermissionRefresher
 
     // A CaseBook role (built-in or custom) — as opposed to a Windows group SID carried as a role claim.
     private bool IsAppRoleClaim(Claim c) =>
-        c.Type == ClaimTypes.Role && (Enum.TryParse<AppRole>(c.Value, out _) || Directory.IsRole(c.Value));
+        c.Type == ClaimTypes.Role && (RoleDefinitions.TryParseRole(c.Value, out _) || Directory.IsRole(c.Value));
 }

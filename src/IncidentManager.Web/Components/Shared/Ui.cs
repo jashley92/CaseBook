@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Enums;
 
@@ -102,7 +103,7 @@ public static class Ui
     /// </summary>
     public static string RolePhrase(IReadOnlyList<string> roleNames)
     {
-        var labels = roleNames.Select(n => Enum.TryParse<AppRole>(n, out var r) ? Label(r) : n).ToList();
+        var labels = roleNames.Select(n => RoleDefinitions.TryParseRole(n, out var r) ? Label(r) : n).ToList();
         var list = labels.Count <= 1
             ? string.Concat(labels)
             : string.Join(", ", labels.Take(labels.Count - 1)) + " or " + labels[^1];
@@ -110,12 +111,12 @@ public static class Ui
     }
 
     /// <summary>S-14: a role name's label — built-in roles get their friendly label, custom roles show as named.</summary>
-    public static string RoleLabel(string name) => Enum.TryParse<AppRole>(name, out var r) ? Label(r) : name;
+    public static string RoleLabel(string name) => RoleDefinitions.TryParseRole(name, out var r) ? Label(r) : name;
 
     /// <summary>S-14: role names in display order — built-in roles least to most privileged, then custom roles A–Z.</summary>
     public static IReadOnlyList<string> OrderRoles(IEnumerable<string> names) =>
-        names.OrderBy(n => Enum.TryParse<AppRole>(n, out var r) ? 0 : 1)
-             .ThenBy(n => Enum.TryParse<AppRole>(n, out var r) ? (int)r : 0)
+        names.OrderBy(n => RoleDefinitions.TryParseRole(n, out var r) ? 0 : 1)
+             .ThenBy(n => RoleDefinitions.TryParseRole(n, out var r) ? (int)r : 0)
              .ThenBy(n => n, StringComparer.OrdinalIgnoreCase)
              .ToList();
 
