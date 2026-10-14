@@ -384,16 +384,16 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label small mb-0" for="ov-detection">@DetectionLabel case ID</label>
-                        <input id="ov-detection" class="form-control form-control-sm" @bind="_edDetection" />
+                        <input id="ov-detection" class="form-control form-control-sm" @bind="_edDetection" @bind:event="oninput" />
                     </div>
                     <div class="mb-2">
                         <label class="form-label small mb-0" for="ov-data-context">Data context <span class="text-muted">(notes)</span></label>
-                        <input id="ov-data-context" class="form-control form-control-sm" @bind="_edDataTypes" />
+                        <input id="ov-data-context" class="form-control form-control-sm" @bind="_edDataTypes" @bind:event="oninput" />
                         <div class="form-text mt-0">Free-text notes. The impact assessment's data elements are the official list.</div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label small mb-0" for="ov-impacted">Impacted assets</label>
-                        <input id="ov-impacted" class="form-control form-control-sm" @bind="_edImpacted" />
+                        <input id="ov-impacted" class="form-control form-control-sm" @bind="_edImpacted" @bind:event="oninput" />
                     </div>
                     <div class="row g-2 mb-2">
                         <div class="col-sm-6">
