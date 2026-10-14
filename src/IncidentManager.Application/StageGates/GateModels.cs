@@ -158,6 +158,18 @@ public static class GateFacts
 /// <summary>Builds the tamper-evident detail string stored on a <c>GatePassage</c>.</summary>
 public static class GateDetail
 {
+    /// <summary>The passage's Detail column.</summary>
+    public const int ColumnLength = 8000;
+
+    /// <summary>
+    /// BUG-485: room left after the summary for what the caller appends (the close gate's WF-13 lowered-classification
+    /// note, under 200 characters), so the detail always fits its column.
+    /// </summary>
+    public const int Reserved = 500;
+
+    /// <summary>The longest summary <see cref="Summarize"/> returns.</summary>
+    public const int MaxLength = ColumnLength - Reserved;
+
     /// <param name="date">WF-15: how a date in a shown fact is written, as the checklist showed it (the caller passes the
     /// organization's day); UTC "d MMM yyyy" when not given.</param>
     public static string Summarize(GateEvaluation eval, IReadOnlySet<Guid> attestedIds, Func<DateTimeOffset, string>? date = null)
@@ -171,8 +183,22 @@ public static class GateDetail
             var kind = r.Kind == GateRequirementKind.Attestation ? "attest" : "check";
             // HR-12: what was in front of the analyst when they attested.
             return eval.FactFor(r, date) is { } fact ? $"[{status}] {r.Label} ({kind}; shown: {fact})" : $"[{status}] {r.Label} ({kind})";
-        });
-        sb.Append(string.Join("; ", parts));
+        }).ToList();
+        // BUG-485: a large gate, or a climb through several, ran past the column, and the length guard then blocked the
+        // close or escalation the passage records. The requirements are kept in order while they fit, then counted.
+        const int marker = 40;   // room for "; … 1,000 more requirements"
+        var kept = 0;
+        for (; kept < parts.Count; kept++)
+        {
+            var room = kept == parts.Count - 1 ? MaxLength : MaxLength - marker;
+            if (sb.Length + (kept > 0 ? 2 : 0) + parts[kept].Length > room) break;
+            if (kept > 0) sb.Append("; ");
+            sb.Append(parts[kept]);
+        }
+        if (kept == parts.Count) return sb.ToString();
+        // A gate name too long to leave room for any requirement (not possible within today's limits) is cut, not kept whole.
+        if (sb.Length > MaxLength - marker) sb.Length = MaxLength - marker;
+        sb.Append(kept > 0 ? "; … " : "… ").Append(Common.Plural.Of(parts.Count - kept, "more requirement"));
         return sb.ToString();
     }
 }

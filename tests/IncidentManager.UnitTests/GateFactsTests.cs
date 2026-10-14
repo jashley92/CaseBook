@@ -66,6 +66,35 @@ public class GateFactsTests
     }
 
     [Fact]
+    public void A_large_gate_s_detail_fits_its_column_with_room_for_the_close_note_and_counts_what_it_leaves_out(/* BUG-485 */)
+    {
+        // 40 requirements with 400-character labels (the label column's limit), as a climb through several gates can reach.
+        var reqs = Enumerable.Range(0, 40)
+            .Select(i => Attest($"R{i:00} " + new string('x', 396)) with { Order = i }).ToList();
+        var eval = new GateEvaluation(true, StageGateTrigger.EscalateToBreach, new string('G', 200) + " + " + new string('H', 200), reqs);
+
+        var detail = GateDetail.Summarize(eval, new HashSet<Guid>());
+
+        detail.Length.Should().BeLessThanOrEqualTo(GateDetail.MaxLength);
+        (GateDetail.MaxLength + 200).Should().BeLessThanOrEqualTo(GateDetail.ColumnLength, "the WF-13 note is appended after");
+        var shown = Enumerable.Range(0, 40).Count(i => detail.Contains($"R{i:00} "));
+        shown.Should().BeGreaterThan(0);
+        detail.Should().EndWith($"; … {40 - shown} more requirements");
+        detail.Should().Contain("[UNMET(OVERRIDDEN)] R00 ");
+    }
+
+    [Fact]
+    public void A_gate_that_fits_is_written_whole(/* BUG-485 */)
+    {
+        var reqs = Enumerable.Range(0, 3).Select(i => Attest($"Step {i}") with { Order = i }).ToList();
+        var eval = new GateEvaluation(true, StageGateTrigger.CloseCase, "Close", reqs);
+
+        GateDetail.Summarize(eval, new HashSet<Guid> { reqs[0].RequirementId }).Should()
+            .Be("Gate 'Close': [MET] Step 0 (attest); [UNMET(OVERRIDDEN)] Step 1 (attest); [UNMET(OVERRIDDEN)] Step 2 (attest)");
+        GateDetail.Summarize(eval with { Requirements = [] }, new HashSet<Guid>()).Should().Be("Gate 'Close': ");
+    }
+
+    [Fact]
     public void A_shown_date_is_written_as_the_caller_says(/* WF-15 */)
     {
         var a = Attest("Post-incident review complete");

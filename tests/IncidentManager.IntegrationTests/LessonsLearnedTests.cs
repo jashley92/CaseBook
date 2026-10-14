@@ -278,6 +278,32 @@ public sealed class LessonsLearnedTests : IDisposable
     }
 
     [Fact]
+    public async Task A_large_close_gate_with_the_lowered_note_still_fits_the_passage_and_the_close_goes_through(/* BUG-485 */)
+    {
+        var id = await NewCaseAsync("Large Gate Case");
+        await using (var db = NewContext())
+        {
+            var gate = new StageGate { Trigger = StageGateTrigger.CloseCase, Name = "Closure readiness", IsActive = true,
+                CreatedBy = "system", CreatedAtUtc = _clock.UtcNow };
+            // Advisory, so nothing needs overriding: 30 labels at the column's 400 characters run well past 8,000.
+            for (var i = 0; i < 30; i++)
+                gate.Requirements.Add(new StageGateRequirement { GateId = gate.Id, Order = i, Kind = GateRequirementKind.Attestation,
+                    Label = $"Step {i:00} " + new string('x', 392), IsBlocking = false });
+            db.StageGates.Add(gate);
+            await db.SaveChangesAsync();
+            await IncidentManager.Infrastructure.Persistence.DevDataSeeder.SeedCaseOutcomesAsync(db, _clock);
+            await Cases(db).ReclassifyAsync(id, Classification.AdverseEvent, "Turned out to be contained to one mailbox");
+            await Cases(db).ChangePhaseAsync(id, CasePhase.Closed, "done", closing: TestOutcomes.Closing());
+        }
+
+        await using var check = NewContext();
+        var passage = await check.GatePassages.AsNoTracking().SingleAsync(p => p.CaseId == id && p.Trigger == StageGateTrigger.CloseCase);
+        passage.Detail!.Length.Should().BeLessThanOrEqualTo(8000);
+        passage.Detail.Should().Contain("[UNMET(advisory)] Step 00 ").And.MatchRegex("; … [0-9]+ more requirements · Note: ")
+            .And.EndWith("judged on the current classification.");
+    }
+
+    [Fact]
     public async Task A_close_gate_requiring_lessons_blocks_an_incident_until_the_review_is_complete()
     {
         var id = await NewCaseAsync("Gate Case");
