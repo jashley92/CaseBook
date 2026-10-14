@@ -140,11 +140,12 @@ public static partial class IocObservable
         if (string.IsNullOrWhiteSpace(block)) return result;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        // BUG-415: a line that reads as a command line is one indicator; its commas and semicolons are part of it.
-        var tokens = block.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .SelectMany(line => DetectType(line) == EntityType.CommandLine
-                ? [line]
-                : line.Split([',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        // BUG-415: a cell that reads as a command line is one indicator; its commas and semicolons are part of it.
+        // BUG-435: tabs (a pasted spreadsheet row's cells) are split first, so a command line can't swallow the hash beside it.
+        var tokens = block.Split(['\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .SelectMany(cell => DetectType(cell) == EntityType.CommandLine
+                ? [cell]
+                : cell.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         foreach (var token in tokens)
         {
             var type = DetectType(token);

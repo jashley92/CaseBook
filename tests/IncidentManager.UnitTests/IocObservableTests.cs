@@ -211,6 +211,20 @@ public class IocObservableTests
     }
 
     [Fact]
+    public void ParseIndicators_splits_a_pasted_row_on_tabs_before_reading_a_command_line()   // BUG-435
+    {
+        var parsed = IocObservable.ParseIndicators(
+            "powershell.exe\t44d88612fea8a8f36de82e1278abb02f\t203.0.113.9\ncmd /c whoami /all\tevil.com");
+
+        parsed.Should().Equal(
+            new IocObservable.ParsedIndicator("powershell.exe", EntityType.FileName),
+            new IocObservable.ParsedIndicator("44d88612fea8a8f36de82e1278abb02f", EntityType.FileHash),
+            new IocObservable.ParsedIndicator("203.0.113.9", EntityType.IpAddress),
+            new IocObservable.ParsedIndicator("cmd /c whoami /all", EntityType.CommandLine),
+            new IocObservable.ParsedIndicator("evil.com", EntityType.Domain));
+    }
+
+    [Fact]
     public void ParseIndicators_splits_refangs_and_auto_types_a_mixed_block()
     {
         const string block = "1.2.3.4, evil.example[.]com\nhxxp://bad[.]site/x\n44d88612fea8a8f36de82e1278abb02f\nuser[at]phish.example";
