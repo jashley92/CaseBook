@@ -58,10 +58,11 @@ An *unrecognized* classification value is said back ("Filing it as a Complex Eve
 
 A machine producer (an XSIAM playbook, a script) posts the same document to `POST /api/import/cases` with an
 API token ([API.md](../API.md)). Nothing is written to a case: a **pending import** is stored, and the response
-points at `/cases/import?pending=<id>`. The *Pending imports* table on the Import page lists them (to anyone
-with `EditCases`, regardless of the target case's restriction). A reviewer opens one, edits the preview and
-chooses **Confirm & apply** or **Reject** (with an optional note). If the document targets a case the reviewer
-can't see, a new case is prepared instead, with a warning.
+points at `/cases/import?pending=<id>`. The *Pending imports* table on the Import page lists them to anyone with
+`EditCases`, except one into an existing case the reviewer can't see (the queue names that case). A reviewer opens
+one, edits the preview and chooses **Confirm & apply** or **Reject** (with an optional note). The target is the case
+the submitting token could see: a document naming a case the token can't see is queued as a new case, as its preview
+said.
 
 ## 3. Promoting and reclassifying
 

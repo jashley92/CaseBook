@@ -47,6 +47,9 @@ public sealed record FindResult(
     IReadOnlyList<FindTask> Tasks, IReadOnlyList<FindEvidence> Evidence, IReadOnlyList<FindNote> Notes)
 {
     public int Total => Counts.Values.Sum();
+    /// <summary>BUG-280: whether there's anything to say back: the query had something in it, even if only filters Find
+    /// couldn't use.</summary>
+    public bool Said => !Query.IsEmpty || Filters.Count > 0;
     public static FindResult Empty(FindQuery q) => new(q, FindReadAs.Nothing, "", [], new Dictionary<FindKind, int>(),
         [], [], [], [], [], []);
 }
@@ -80,7 +83,10 @@ public sealed class FindService
     public async Task<FindResult> FindAsync(string? raw, int limit = DefaultLimit, CancellationToken ct = default)
     {
         var q = FindQuery.Parse(raw);
-        if (q.IsEmpty) return FindResult.Empty(q);
+        // BUG-280: only filters it can't use (status:pending, after:2026-13-01) is said back as such, not shown as nothing.
+        if (q.IsEmpty)
+            return q.Unread.Count == 0 ? FindResult.Empty(q)
+                : FindResult.Empty(q) with { Reading = "nothing it can use", Filters = q.Unread.Select(u => $"not understood: {u}").ToList() };
 
         using var db = _factory.CreateDbContext();
         var zone = _zone?.Current ?? TimeZoneInfo.Utc;
@@ -189,7 +195,7 @@ public sealed class FindService
         var terms = q.Terms.Select(t => t.ToLowerInvariant()).ToList();
         // WF-84: stored text holds link targets the reader never sees ([name](entity:<id>), evidence:, a GUID's hex), so
         // a word that could be part of one is checked again against the text as shown before a match counts.
-        var recheck = readAs == FindReadAs.Words && terms.Any(CouldBeHidden);
+        var recheck = readAs == FindReadAs.Words && terms.Any(HiddenText.CouldBeHidden);
         var counts = new Dictionary<FindKind, int>();
         var caseIds = cases.Select(c => c.Id);
 
@@ -300,6 +306,19 @@ public sealed class FindService
                 break;
         }
 #pragma warning restore CA1304, CA1311, CA1862
+        // BUG-273: the summary and the brief are Markdown too, so a case matched only inside a link's target isn't listed.
+        if (recheck)
+        {
+            var hidden = await HiddenOnlyAsync(caseQ
+                .Where(c => (c.Summary != null && c.Summary.Contains(HiddenText.LinkMark))
+                            || c.Briefs.Any(b => b.IsCurrent && ((b.Summary != null && b.Summary.Contains(HiddenText.LinkMark))
+                                                                 || (b.WorkingAssessment != null && b.WorkingAssessment.Contains(HiddenText.LinkMark)))))
+                .OrderByDescending(c => c.CreatedAtUtc)
+                .Select(c => new Texts(c.Id, c.CaseNumber + " " + c.Title, c.Summary,
+                    c.Briefs.Where(b => b.IsCurrent).Select(b => b.Summary).FirstOrDefault(),
+                    c.Briefs.Where(b => b.IsCurrent).Select(b => b.WorkingAssessment).FirstOrDefault(), null)), terms, ct);
+            caseQ = caseQ.Where(c => !hidden.Contains(c.Id));
+        }
         // Entry-, task- and person-only filters don't narrow the case list; the record entries carry those.
         var casesApply = by is null && owner is null && q.EntryKind is null && q.EntryType is null;
         List<FindCase> foundCases = [];
@@ -354,9 +373,11 @@ public sealed class FindService
             if (to is not null) eq = eq.Where(e => e.OccurredAtUtc < to);
             if (recheck)
             {
-                var seen = await eq.Select(e => new { e.Id, e.Description, e.Rationale }).ToListAsync(ct);
-                var shown = seen.Where(e => Shows(terms, e.Description, e.Rationale)).Select(e => e.Id).ToList();
-                eq = eq.Where(e => shown.Contains(e.Id));
+                var hidden = await HiddenOnlyAsync(eq
+                    .Where(e => e.Description.Contains(HiddenText.LinkMark) || (e.Rationale != null && e.Rationale.Contains(HiddenText.LinkMark)))
+                    .OrderByDescending(e => e.OccurredAtUtc)
+                    .Select(e => new Texts(e.Id, null, e.Description, e.Rationale, null, null)), terms, ct);
+                eq = eq.Where(e => !hidden.Contains(e.Id));
             }
             var entryCount = await eq.CountAsync(ct);
             var rows = await eq.OrderByDescending(e => e.OccurredAtUtc).Take(limit)
@@ -381,9 +402,11 @@ public sealed class FindService
 #pragma warning restore CA1304, CA1311, CA1862
                 if (recheck)
                 {
-                    var seen = await bq.Select(b => new { b.Id, b.WorkingAssessment, b.Summary }).ToListAsync(ct);
-                    var shown = seen.Where(b => Shows(terms, b.WorkingAssessment, b.Summary)).Select(b => b.Id).ToList();
-                    bq = bq.Where(b => shown.Contains(b.Id));
+                    var hidden = await HiddenOnlyAsync(bq
+                        .Where(b => b.WorkingAssessment!.Contains(HiddenText.LinkMark) || (b.Summary != null && b.Summary.Contains(HiddenText.LinkMark)))
+                        .OrderByDescending(b => b.CreatedAtUtc)
+                        .Select(b => new Texts(b.Id, null, b.WorkingAssessment, b.Summary, null, null)), terms, ct);
+                    bq = bq.Where(b => !hidden.Contains(b.Id));
                 }
                 var brows = await bq.Join(db.Cases, b => b.CaseId, c => c.Id,
                         (b, c) => new { b.Id, b.CaseId, c.CaseNumber, c.ClosedAtUtc, b.CreatedAtUtc, b.WorkingAssessment })
@@ -429,9 +452,11 @@ public sealed class FindService
             if (to is not null) tq = tq.Where(x => x.CreatedAtUtc < to);
             if (recheck)
             {
-                var seen = await tq.Select(x => new { x.Id, x.Title, x.Description }).ToListAsync(ct);
-                var shown = seen.Where(x => Shows(terms, x.Title, x.Description)).Select(x => x.Id).ToList();
-                tq = tq.Where(x => shown.Contains(x.Id));
+                var hidden = await HiddenOnlyAsync(tq
+                    .Where(x => x.Title.Contains(HiddenText.LinkMark) || (x.Description != null && x.Description.Contains(HiddenText.LinkMark)))
+                    .OrderByDescending(x => x.CreatedAtUtc)
+                    .Select(x => new Texts(x.Id, null, x.Title, x.Description, null, null)), terms, ct);
+                tq = tq.Where(x => !hidden.Contains(x.Id));
             }
             counts[FindKind.Tasks] = await tq.CountAsync(ct);
             // Open first (by when they're due), then done.
@@ -499,9 +524,11 @@ public sealed class FindService
             if (to is not null) nq = nq.Where(n => n.CreatedAtUtc < to);
             if (recheck)
             {
-                var seen = await nq.Select(n => new { n.Id, n.Body }).ToListAsync(ct);
-                var shown = seen.Where(n => Shows(terms, n.Body)).Select(n => n.Id).ToList();
-                nq = nq.Where(n => shown.Contains(n.Id));
+                var hidden = await HiddenOnlyAsync(nq
+                    .Where(n => n.Body.Contains(HiddenText.LinkMark))
+                    .OrderByDescending(n => n.CreatedAtUtc)
+                    .Select(n => new Texts(n.Id, null, n.Body, null, null, null)), terms, ct);
+                nq = nq.Where(n => !hidden.Contains(n.Id));
             }
             counts[FindKind.Notes] = await nq.CountAsync(ct);
             var notes0 = (await nq.OrderByDescending(n => n.CreatedAtUtc).Take(limit)   // WF-06
@@ -523,19 +550,13 @@ public sealed class FindService
         return new FindResult(q, readAs, reading, filters, counts, entities, foundCases, entries, tasks, evidence, notes);
     }
 
-    private static readonly string[] LinkSchemes = ["entity:", "evidence:", "entry:", "note:"];
+    // A result's text for the WF-84 re-check: Plain as it's shown, the rest Markdown.
+    private sealed record Texts(Guid Id, string? Plain, string? A, string? B, string? C, string? D);
 
-    // A word that a link target could hold: part of a scheme name, or hex digits and dashes (a GUID's).
-    private static bool CouldBeHidden(string term) =>
-        LinkSchemes.Any(s => s.Contains(term, StringComparison.Ordinal))
-        || (term.Length >= 2 && term.All(ch => ch is (>= '0' and <= '9') or (>= 'a' and <= 'f') or '-'));
-
-    // Whether every word is in one of the texts as the reader sees them (links shown by their names).
-    private static bool Shows(IReadOnlyList<string> terms, params string?[] texts)
-    {
-        var shown = string.Join('\n', texts.Where(t => t is not null).Select(t => Content.RichText.ToText(t).ToLowerInvariant()));
-        return terms.All(t => shown.Contains(t, StringComparison.Ordinal));
-    }
+    // BUG-272: the rows (linked text only, newest first, capped) where a word is only in a link's hidden target.
+    private static async Task<List<Guid>> HiddenOnlyAsync(IQueryable<Texts> linked, IReadOnlyList<string> terms, CancellationToken ct) =>
+        (await linked.Take(HiddenText.MaxRecheck).ToListAsync(ct))
+            .Where(t => !HiddenText.Shows(terms, t.Plain, t.A, t.B, t.C, t.D)).Select(t => t.Id).ToList();
 
     // WF-83: how many of an entity's occurrences are looked for as tags (one query per kind each; a value is on few cases).
     private const int MaxTagRefs = 25;

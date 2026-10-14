@@ -235,6 +235,23 @@ public sealed class CaseSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_doesnt_match_a_links_hidden_target(/* BUG-273 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = await svc.CreateAsync(Req("Alpha"));
+        var beta = await svc.CreateAsync(Req("Beta"));
+        var evidenceId = Guid.Parse("deadbeef-0000-4000-8000-000000000001");
+        await svc.AddNoteAsync(alpha.Id, $"See the [proxy log](evidence:{evidenceId}).");
+        await svc.AddNoteAsync(beta.Id, "Hash prefix deadbeef seen on the host.");
+
+        // The word is only in Alpha's link target; Beta says it where it's read.
+        (await svc.ListAsync(new CaseFilter { Search = "deadbeef" })).Items.Select(i => i.Id).Should().Equal(beta.Id);
+        (await svc.ListAsync(new CaseFilter { Search = "evidence" })).Items.Should().BeEmpty();
+        (await svc.ListAsync(new CaseFilter { Search = "proxy log" })).Items.Select(i => i.Id).Should().Equal(alpha.Id);
+    }
+
+    [Fact]
     public async Task Overlap_finds_a_shared_ioc_on_another_visible_case()
     {
         await using var db = NewContext();

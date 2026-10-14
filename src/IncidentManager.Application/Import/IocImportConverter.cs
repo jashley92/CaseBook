@@ -66,8 +66,23 @@ public static partial class IocImportConverter
             var parsed = CaseImportService.Parse(trimmed);
             return new(ImportSourceFormat.CaseImport, parsed.Document, parsed.Error, []);
         }
+        // BUG-274: a JSON list (an indicator export from another tool) isn't a CSV; it was read as one, line by line.
+        // (Only when it parses as one: a headerless CSV can start with a bracketed IPv6 address.)
+        if (trimmed.StartsWith('[') && IsJsonList(trimmed))
+            return new(ImportSourceFormat.CaseImport, null,
+                "This is a JSON list, which CaseBook doesn't import. Use a CaseBook case-import document, a STIX 2.1 bundle, or an indicator CSV.", []);
 
         return FromCsv(trimmed, fileName);
+    }
+
+    private static bool IsJsonList(string text)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(text, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+            return doc.RootElement.ValueKind == JsonValueKind.Array;
+        }
+        catch (JsonException) { return false; }
     }
 
     // ------------------------------------------------------------------ STIX 2.1
@@ -297,6 +312,8 @@ public static partial class IocImportConverter
         var labelCol = hasHeader ? Col("label", "name", "title") : -1;
         var descCol = hasHeader ? Col("description", "comment", "notes", "context") : -1;
         var sourceCol = hasHeader ? Col("source", "sources", "feed", "provider") : -1;
+        // BUG-274: CaseBook's own feed carries each indicator's marking (WF-37); without it a re-imported TLP:RED one had none.
+        var tlpCol = hasHeader ? Col("tlp", "marking", "tlp_marking", "traffic_light_protocol") : -1;
         if (!hasHeader) valueCol = 0;
 
         var entities = new List<CaseImportEntity>();
@@ -316,7 +333,7 @@ public static partial class IocImportConverter
             {
                 Type = type, Value = value,
                 Disposition = Cell(dispCol) is { } d ? CsvDisposition(d) : null,
-                Label = Cell(labelCol), Description = Cell(descCol), Source = Cell(sourceCol),
+                Label = Cell(labelCol), Description = Cell(descCol), Source = Cell(sourceCol), Tlp = Cell(tlpCol),
             });
         }
 

@@ -159,6 +159,22 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void The_feeds_tlp_column_comes_back_and_a_json_list_is_named(/* BUG-274 */)
+    {
+        var feed = IocFeedCsv.Build(
+            [new IocFeedRow(EntityType.Domain, "evil.example", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, ["2026-01"], [], TlpLevel.Red)],
+            DateTimeOffset.UnixEpoch);
+
+        IocImportConverter.Convert(feed).Document!.Entities!.Single().Tlp.Should().Be("TLP:RED");
+
+        var list = IocImportConverter.Convert("[ { \"value\": \"evil.example\" } ]");
+        list.Ok.Should().BeFalse();
+        list.Error.Should().Contain("JSON list");
+        // A headerless CSV may start with a bracketed IPv6 address; it's still a CSV.
+        IocImportConverter.Convert("[2001:db8::1]\r\n").Format.Should().Be(ImportSourceFormat.IocCsv);
+    }
+
+    [Fact]
     public void A_vendor_csv_with_quoted_fields_and_unknown_types_still_imports()
     {
         const string csv = "Indicator,Type,Verdict,Comment\r\n" +

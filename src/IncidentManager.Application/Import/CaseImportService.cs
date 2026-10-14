@@ -279,7 +279,8 @@ public sealed class CaseImportService
         if (v.StartsWith("TLP:", StringComparison.OrdinalIgnoreCase)) v = v[4..];
         v = v.Replace("+", "", StringComparison.Ordinal).Replace("_", "", StringComparison.Ordinal).Replace(" ", "", StringComparison.Ordinal);
         if (v.Equals("white", StringComparison.OrdinalIgnoreCase)) return TlpLevel.Clear;   // TLP 1.0
-        if (Enum.TryParse<TlpLevel>(v, ignoreCase: true, out var t) && Enum.IsDefined(t)) return t;
+        // BUG-282: by name only. Enum.TryParse also took "2" (Amber) and "Green,Amber" (OR-ed to AmberStrict).
+        if (ImportEnums.TryName<TlpLevel>(v, out var t)) return t;
         warnings.Add($"Unknown TLP marking '{raw}'. The indicator was given none, so the case's default applies.");
         return null;
     }
@@ -352,7 +353,10 @@ public sealed class CaseImportService
             Summary = SummariseForQueue(preview),
             RawJson = rawJson,
             RawJsonSha256 = Sha256(rawJson),   // WF-23
-            TargetCaseId = doc.Target?.CaseId,
+            // BUG-279: the target as the submitter's preview resolved it. A case they can't see was prepared as a new case, and
+            // keeping its id hid the row from them and every reviewer outside that case, applied it into the restricted case
+            // under a "New case" summary, and told the submitter the id was a real case.
+            TargetCaseId = preview.ExistingCaseId,
             Status = PendingImportStatus.Pending
         };
 

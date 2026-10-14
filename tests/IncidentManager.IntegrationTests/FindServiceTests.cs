@@ -457,6 +457,15 @@ public sealed class FindServiceTests : IDisposable
         // WF-84: a word only in a link's hidden target doesn't match; the link's shown name does.
         (await NewFind().FindAsync("evidence")).Entries.Should().NotContain(e => e.Text.Contains("proxy log"));
         (await NewFind().FindAsync("proxy log")).Entries.Should().Contain(e => e.Text.Contains("proxy log"));
+
+        // BUG-273: the case summary is Markdown too.
+        using (var db = NewContext())
+        {
+            db.Cases.Single(c => c.Id == _alpha).Summary = "Started from the [mailbox audit](evidence:deadbeef-0000-4000-8000-000000000002).";
+            db.SaveChanges();
+        }
+        (await NewFind().FindAsync("deadbeef")).Cases.Should().NotContain(c => c.Id == _alpha);
+        (await NewFind().FindAsync("mailbox audit")).Cases.Should().Contain(c => c.Id == _alpha);
     }
 
     [Fact]

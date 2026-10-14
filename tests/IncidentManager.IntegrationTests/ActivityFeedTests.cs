@@ -91,6 +91,21 @@ public sealed class ActivityFeedTests : IDisposable
     }
 
     [Fact]
+    public async Task What_was_recorded_before_a_renumbering_stays_in_the_feed(/* BUG-277 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = await svc.CreateAsync(Req("Alpha"));
+        await svc.AddNoteAsync(alpha.Id, "Before the rename");
+        await svc.RenumberAsync(alpha.Id, "IR-2026-ALPHA");
+
+        var items = await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory()).RecentAsync(20);
+
+        items.Should().Contain(i => i.Summary.Contains("note") && i.CaseId == alpha.Id && i.CaseNumber == "IR-2026-ALPHA");
+        items.Select(i => i.Sequence).Should().BeInDescendingOrder();
+    }
+
+    [Fact]
     public async Task Opening_a_case_is_one_entry_and_the_bell_leaves_out_your_own_actions()
     {
         await using var db = NewContext();

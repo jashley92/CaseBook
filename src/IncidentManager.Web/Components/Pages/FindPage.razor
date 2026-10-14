@@ -4,6 +4,7 @@
    how it read the query, and the filters beside the results edit the query you can see: there is no hidden state and
    no AI reading of the question, only the documented grammar (FindQuery). Need-to-know scoped by FindService. *@
 @attribute [Authorize(Policy = Policies.ViewCases)]
+@implements IDisposable
 @using IncidentManager.Application.Search
 @inject FindService Finder
 @inject NavigationManager Nav
@@ -24,7 +25,7 @@
     <button type="submit" class="btn btn-primary">Find</button>
 </form>
 
-@if (_result is { } r && !r.Query.IsEmpty)
+@if (_result is { } r && r.Said)
 {
     <div class="im-find-read" aria-live="polite">
         <div><span class="im-find-read-k">Read as</span> <strong>@r.Reading</strong> on cases you can see@(r.Query.Exercises ? "" : ", exercises left out")</div>
@@ -53,7 +54,11 @@
         {
             <LoadingBlock />
         }
-        else if (_result is not { } res || res.Query.IsEmpty)
+        else if (_failed is { } failed)
+        {
+            <div class="alert alert-warning" role="alert">@failed</div>
+        }
+        else if (_result is not { } res || !res.Said)
         {
             <p class="text-muted">Type what you're looking for. Find says how it read it, then lists what matched by kind.</p>
             @Examples()
@@ -196,7 +201,7 @@
     </div>
 
     <aside class="im-find-side" aria-label="Narrow and learn the grammar">
-        @if (_result is { } s && !s.Query.IsEmpty)
+        @if (_result is { } s && s.Said)
         {
             <div class="im-desk-card">
                 <h2 class="im-cap">Show</h2>
@@ -269,15 +274,46 @@
     private string? _ranFor;
     private readonly HashSet<FindKind> _hidden = [];
 
+    // BUG-278: a query superseded before it finishes is cancelled, and its answer dropped if it lands anyway, so a slow
+    // earlier search never overwrites a later one; and a failed query is said, not thrown (which ended the circuit).
+    private CancellationTokenSource? _cts;
+    private int _seq;
+    private string? _failed;
+
     protected override async Task OnParametersSetAsync()
     {
-        if (_ranFor == Q && _result is not null) return;
+        if (_ranFor == Q && (_result is not null || _failed is not null)) return;
         _ranFor = Q;
         _draft = Q ?? "";
-        if (string.IsNullOrWhiteSpace(Q)) { _result = null; return; }
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        _failed = null;
+        if (string.IsNullOrWhiteSpace(Q)) { _result = null; _loading = false; return; }
+        var seq = ++_seq;
+        var cts = _cts = new CancellationTokenSource();
         _loading = true;
-        try { _result = await Finder.FindAsync(Q); }
-        finally { _loading = false; }
+        try
+        {
+            var result = await Finder.FindAsync(Q, ct: cts.Token);
+            if (seq == _seq) _result = result;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (seq == _seq)
+            {
+                _result = null;
+                _failed = "Find couldn't finish that search. Try again, or narrow it with a filter.";
+            }
+        }
+        finally { if (seq == _seq) _loading = false; }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 
     private void Submit() => Go(_draft);

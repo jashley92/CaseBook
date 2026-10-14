@@ -83,7 +83,10 @@ public sealed class DeskService
 
         // WF-26: exercises are left off the Desk, as off Due work and Team (PROD-43, rule L7): a tabletop's deadline,
         // clocks and drill tasks aren't real work. My work, which the Desk is built on, still lists them.
-        var workIds = work.OpenCases.Select(c => c.Id).Concat(work.Tasks.Select(t => t.CaseId)).Distinct().ToList();
+        // BUG-276: and escalations, which come from every visible case, not just mine: a tabletop someone else runs and
+        // escalates to Breach was on everyone's Desk.
+        var workIds = work.OpenCases.Select(c => c.Id).Concat(work.Tasks.Select(t => t.CaseId))
+            .Concat(work.RecentEscalations.Select(e => e.CaseId)).Distinct().ToList();
         var drills = (await db.Cases.AsNoTracking().Where(c => workIds.Contains(c.Id) && c.IsExercise).Select(c => c.Id).ToListAsync(ct))
             .ToHashSet();
         if (drills.Count > 0)

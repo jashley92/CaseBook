@@ -357,32 +357,30 @@ public sealed class CaseService
             // by an indicator or a note as well as by number/title. HR-09: and across the record itself (timeline
             // entries and decisions, the brief, tasks and their results, the review, phase reasons), so an old case
             // can be found by what happened in it.
-            var comments = db.ActionItemComments;
-            var reviews = db.PostIncidentReviews;
-            q = q.Where(c =>
-                c.CaseNumber.ToLower().Contains(s) ||
-                c.Title.ToLower().Contains(s) ||
-                (c.Summary != null && c.Summary.ToLower().Contains(s)) ||
-                c.Entities.Any(e => e.Value.ToLower().Contains(s) || (e.Label != null && e.Label.ToLower().Contains(s))) ||
-                c.Notes.Any(n => n.IsCurrent && n.Body.ToLower().Contains(s)) ||
-                c.TimelineEntries.Any(e => e.IsCurrent && (e.Description.ToLower().Contains(s)
-                                                           || (e.Rationale != null && e.Rationale.ToLower().Contains(s)))) ||
-                c.Briefs.Any(b => b.IsCurrent && ((b.WorkingAssessment != null && b.WorkingAssessment.ToLower().Contains(s))
-                                                  || (b.Known != null && b.Known.ToLower().Contains(s))
-                                                  || (b.OpenQuestions != null && b.OpenQuestions.ToLower().Contains(s)))) ||
-                c.ActionItems.Any(t => t.Title.ToLower().Contains(s)) ||
-                comments.Any(x => x.CaseId == c.Id && x.Body.ToLower().Contains(s)) ||
-                c.StatusChanges.Any(x => x.Reason != null && x.Reason.ToLower().Contains(s)) ||
-                reviews.Any(r => r.CaseId == c.Id && ((r.WhatHappened != null && r.WhatHappened.ToLower().Contains(s))
-                                                      || (r.ContributingFactors != null && r.ContributingFactors.ToLower().Contains(s))
-                                                      || (r.WhatWorkedWell != null && r.WhatWorkedWell.ToLower().Contains(s))
-                                                      || (r.OpportunitiesToImprove != null && r.OpportunitiesToImprove.ToLower().Contains(s)))));
+            q = q.Where(SearchMatch(db, s, unlinkedOnly: false));
+            // BUG-273: as in Find (WF-84), a word that could be part of a link's hidden target (entity:, evidence:, a GUID's
+            // hex) counts only where the reader sees it. Cases it matches in text without links stand; the rest (matched
+            // only in text holding a link) are read back, at most HiddenText.MaxRecheck, and kept only when it shows.
+            if (Search.HiddenText.CouldBeHidden(s))
+            {
+                var plain = q.Where(SearchMatch(db, s, unlinkedOnly: true)).Select(c => c.Id);
+                var linkedOnly = await q.Where(c => !plain.Contains(c.Id)).OrderByDescending(c => c.CreatedAtUtc)
+                    .Select(c => c.Id).Take(Search.HiddenText.MaxRecheck).ToListAsync(ct);
+                if (linkedOnly.Count > 0)
+                {
+                    var shown = await CasesShowingAsync(db, linkedOnly, s, ct);
+                    var hidden = linkedOnly.Where(id => !shown.Contains(id)).ToList();
+                    q = q.Where(c => !hidden.Contains(c.Id));
+                }
+            }
 #pragma warning restore CA1304, CA1311, CA1862
         }
 
         var total = await q.CountAsync(ct);
         var page = filter.Page < 1 ? 1 : filter.Page;
         var size = filter.PageSize < 1 ? 25 : filter.PageSize;
+        // BUG-281: a page past the end is an empty page, never an overflowed (negative) offset, which SQL Server refuses.
+        if ((long)(page - 1) * size > int.MaxValue) page = int.MaxValue / size;
 
         List<CaseListItem> items;
         if (filter.Sort == CaseSort.Sla)
@@ -470,14 +468,19 @@ public sealed class CaseService
         return (start > 0 ? "…" : "") + line[start..end].Trim() + (end < line.Length ? "…" : "");
     }
 
-    private static IQueryable<Case> Ordered(IAppDbContext db, IQueryable<Case> q, CaseSort sort, bool desc) => sort switch
+    // BUG-275: every order ends on the case id, so a page boundary between equal keys (two High cases in Triage) is the same
+    // on every request: SQL Server's OFFSET over ties isn't deterministic, so rows repeated or went missing between pages.
+    private static IQueryable<Case> Ordered(IAppDbContext db, IQueryable<Case> q, CaseSort sort, bool desc) =>
+        OrderedBy(db, q, sort, desc).ThenBy(c => c.Id);
+
+    private static IOrderedQueryable<Case> OrderedBy(IAppDbContext db, IQueryable<Case> q, CaseSort sort, bool desc) => sort switch
     {
         CaseSort.Severity => desc
             ? q.OrderByDescending(c => c.Severity).ThenByDescending(c => c.CreatedAtUtc)
             : q.OrderBy(c => c.Severity).ThenByDescending(c => c.CreatedAtUtc),
         CaseSort.Phase => desc
-            ? q.OrderByDescending(c => c.Phase).ThenByDescending(c => c.Severity)
-            : q.OrderBy(c => c.Phase).ThenByDescending(c => c.Severity),
+            ? q.OrderByDescending(c => c.Phase).ThenByDescending(c => c.Severity).ThenByDescending(c => c.CreatedAtUtc)
+            : q.OrderBy(c => c.Phase).ThenByDescending(c => c.Severity).ThenByDescending(c => c.CreatedAtUtc),
         CaseSort.CaseNumber => desc ? q.OrderByDescending(c => c.CaseNumber) : q.OrderBy(c => c.CaseNumber),
         // REV-15: the latest work on the case, from its audit trail. The case row's own modified time doesn't move for a
         // note, a timeline entry, a task or a hand-off.
@@ -503,8 +506,9 @@ public sealed class CaseService
             Status = Sla.SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification)
         }).ToList();
         var running = ranked.Where(r => r.Status.IsActive && r.Status.Remaining is not null);
-        running = desc ? running.OrderByDescending(r => r.Status.Remaining) : running.OrderBy(r => r.Status.Remaining);
-        var rest = ranked.Where(r => !(r.Status.IsActive && r.Status.Remaining is not null)).OrderByDescending(r => r.CreatedAtUtc);
+        // BUG-275: ties broken by the id, as the database orders are, so a page boundary doesn't move between requests.
+        running = desc ? running.OrderByDescending(r => r.Status.Remaining).ThenBy(r => r.Id) : running.OrderBy(r => r.Status.Remaining).ThenBy(r => r.Id);
+        var rest = ranked.Where(r => !(r.Status.IsActive && r.Status.Remaining is not null)).OrderByDescending(r => r.CreatedAtUtc).ThenBy(r => r.Id);
         return running.Concat(rest).Skip(skip).Take(take).Select(r => r.Id).ToList();
     }
 
@@ -808,6 +812,72 @@ public sealed class CaseService
             }
         }
     }
+
+    /// <summary>
+    /// The case-list search: the case's own fields, its IOCs and notes, and the record itself (HR-09). With
+    /// <paramref name="unlinkedOnly"/>, Markdown text counts only when it holds no link (BUG-273), so what it matches is
+    /// certainly shown.
+    /// </summary>
+#pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower()/Contains() to SQL; culture overloads don't translate.
+    private static System.Linq.Expressions.Expression<Func<Case, bool>> SearchMatch(IAppDbContext db, string s, bool unlinkedOnly)
+    {
+        const string link = Search.HiddenText.LinkMark;
+        var comments = db.ActionItemComments;
+        var reviews = db.PostIncidentReviews;
+        return c =>
+            c.CaseNumber.ToLower().Contains(s) ||
+            c.Title.ToLower().Contains(s) ||
+            (c.Summary != null && c.Summary.ToLower().Contains(s) && (!unlinkedOnly || !c.Summary.Contains(link))) ||
+            c.Entities.Any(e => e.Value.ToLower().Contains(s) || (e.Label != null && e.Label.ToLower().Contains(s))) ||
+            c.Notes.Any(n => n.IsCurrent && n.Body.ToLower().Contains(s) && (!unlinkedOnly || !n.Body.Contains(link))) ||
+            c.TimelineEntries.Any(e => e.IsCurrent
+                && ((e.Description.ToLower().Contains(s) && (!unlinkedOnly || !e.Description.Contains(link)))
+                    || (e.Rationale != null && e.Rationale.ToLower().Contains(s) && (!unlinkedOnly || !e.Rationale.Contains(link))))) ||
+            c.Briefs.Any(b => b.IsCurrent
+                && ((b.WorkingAssessment != null && b.WorkingAssessment.ToLower().Contains(s) && (!unlinkedOnly || !b.WorkingAssessment.Contains(link)))
+                    || (b.Known != null && b.Known.ToLower().Contains(s) && (!unlinkedOnly || !b.Known.Contains(link)))
+                    || (b.OpenQuestions != null && b.OpenQuestions.ToLower().Contains(s) && (!unlinkedOnly || !b.OpenQuestions.Contains(link))))) ||
+            c.ActionItems.Any(t => t.Title.ToLower().Contains(s)) ||
+            comments.Any(x => x.CaseId == c.Id && x.Body.ToLower().Contains(s) && (!unlinkedOnly || !x.Body.Contains(link))) ||
+            c.StatusChanges.Any(x => x.Reason != null && x.Reason.ToLower().Contains(s) && (!unlinkedOnly || !x.Reason.Contains(link))) ||
+            reviews.Any(r => r.CaseId == c.Id && ((r.WhatHappened != null && r.WhatHappened.ToLower().Contains(s))
+                                                  || (r.ContributingFactors != null && r.ContributingFactors.ToLower().Contains(s))
+                                                  || (r.WhatWorkedWell != null && r.WhatWorkedWell.ToLower().Contains(s))
+                                                  || (r.OpportunitiesToImprove != null && r.OpportunitiesToImprove.ToLower().Contains(s)))
+                                             && (!unlinkedOnly || !((r.WhatHappened ?? "") + (r.ContributingFactors ?? "")
+                                                                    + (r.WhatWorkedWell ?? "") + (r.OpportunitiesToImprove ?? "")).Contains(link)));
+    }
+
+    // BUG-273: of these cases (each matched only in text holding a link), the ones where the word shows in that text.
+    private static async Task<HashSet<Guid>> CasesShowingAsync(IAppDbContext db, List<Guid> ids, string s, CancellationToken ct)
+    {
+        const string link = Search.HiddenText.LinkMark;
+        var texts = new List<(Guid CaseId, string? Text)>();
+        texts.AddRange((await db.Cases.AsNoTracking().Where(c => ids.Contains(c.Id) && c.Summary != null && c.Summary.Contains(link))
+            .Select(c => new { c.Id, c.Summary }).ToListAsync(ct)).Select(x => (x.Id, x.Summary)));
+        texts.AddRange((await db.Notes.AsNoTracking().Where(n => n.IsCurrent && ids.Contains(n.CaseId) && n.Body.ToLower().Contains(s))
+            .Select(n => new { n.CaseId, n.Body }).ToListAsync(ct)).Select(x => (x.CaseId, (string?)x.Body)));
+        texts.AddRange((await db.TimelineEntries.AsNoTracking().Where(e => e.IsCurrent && ids.Contains(e.CaseId)
+                && (e.Description.ToLower().Contains(s) || (e.Rationale != null && e.Rationale.ToLower().Contains(s))))
+            .Select(e => new { e.CaseId, e.Description, e.Rationale }).ToListAsync(ct))
+            .Select(x => (x.CaseId, Paragraphs(x.Description, x.Rationale))));
+        texts.AddRange((await db.CaseBriefs.AsNoTracking().Where(b => b.IsCurrent && ids.Contains(b.CaseId))
+            .Select(b => new { b.CaseId, b.WorkingAssessment, b.Known, b.OpenQuestions }).ToListAsync(ct))
+            .Select(x => (x.CaseId, Paragraphs(x.WorkingAssessment, x.Known, x.OpenQuestions))));
+        texts.AddRange((await db.ActionItemComments.AsNoTracking().Where(x => ids.Contains(x.CaseId) && x.Body.ToLower().Contains(s))
+            .Select(x => new { x.CaseId, x.Body }).ToListAsync(ct)).Select(x => (x.CaseId, (string?)x.Body)));
+        texts.AddRange((await db.StatusChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId) && x.Reason != null && x.Reason.ToLower().Contains(s))
+            .Select(x => new { x.CaseId, x.Reason }).ToListAsync(ct)).Select(x => (x.CaseId, x.Reason)));
+        texts.AddRange((await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
+            .Select(r => new { r.CaseId, r.WhatHappened, r.ContributingFactors, r.WhatWorkedWell, r.OpportunitiesToImprove }).ToListAsync(ct))
+            .Select(x => (x.CaseId, Paragraphs(x.WhatHappened, x.ContributingFactors, x.WhatWorkedWell, x.OpportunitiesToImprove))));
+        string[] terms = [s];
+        return texts.Where(t => Search.HiddenText.Shows(terms, null, t.Text)).Select(t => t.CaseId).ToHashSet();
+    }
+
+    // Separate Markdown parts as separate paragraphs, so one part's text doesn't run into the next's.
+    private static string? Paragraphs(params string?[] parts) => string.Join("\n\n", parts.Where(p => p is not null));
+#pragma warning restore CA1304, CA1311, CA1862
 
     /// <summary>BUG-112: <paramref name="utc"/> as the organization's wall clock (UTC when no zone is configured).</summary>
     private DateTimeOffset OrgLocal(DateTimeOffset utc) => _zone is null ? utc : TimeZoneInfo.ConvertTime(utc, _zone.Current);
@@ -2703,7 +2773,7 @@ public sealed class CaseService
                 Title = s.Title,
                 Description = s.Description,
                 Owner = owner,
-                DueAtUtc = s.DueOffsetHours is { } h ? now.AddHours(h) : null,
+                DueAtUtc = s.DueOffsetHours is { } h and > 0 ? now.AddHours(Math.Min(h, CaseTemplateStep.MaxDueOffsetHours)) : null,   // BUG-267
                 Kind = s.Kind,   // INV-28: the step's kind of work
                 CreatedBy = _user.UserId,
                 CreatedAtUtc = now

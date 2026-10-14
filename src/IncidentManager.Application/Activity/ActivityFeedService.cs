@@ -80,19 +80,38 @@ public sealed class ActivityFeedService
                           join c in scoped on a.CaseNumber equals c.CaseNumber
                           where !othersOnly || a.Actor != me
                           orderby a.Sequence descending
-                          select new
-                          {
-                              a.Sequence,
-                              a.AtUtc,
-                              a.Actor,
-                              a.Action,
-                              a.EntityType,
-                              a.Summary,
-                              a.CaseNumber,
-                              CaseId = c.Id
-                          })
+                          select new FeedRow(a.Sequence, a.AtUtc, a.Actor, a.Action, a.EntityType, a.Summary, a.CaseNumber, c.Id))
                          .Take(take * 2)
                          .ToListAsync(ct);
+
+        // BUG-277: what was recorded under a number a case no longer holds (a Complex Event before its promotion, a case
+        // before it was renumbered) is that case's too (WF-99). Those rows are matched to the case through its own
+        // audit rows, which carry each number it held, and shown under its current number.
+        var former = await db.AuditLog.AsNoTracking()
+            .Where(a => a.CaseNumber != null && !db.Cases.Any(c => c.CaseNumber == a.CaseNumber) && (!othersOnly || a.Actor != me))
+            .OrderByDescending(a => a.Sequence)
+            .Select(a => new FeedRow(a.Sequence, a.AtUtc, a.Actor, a.Action, a.EntityType, a.Summary, a.CaseNumber, Guid.Empty))
+            .Take(take * 2)
+            .ToListAsync(ct);
+        if (former.Count > 0)
+        {
+            var numbers = former.Select(f => f.CaseNumber!).Distinct().ToList();
+            var holders = (await db.AuditLog.AsNoTracking()
+                    .Where(a => a.EntityType == "Case" && a.EntityId != null && a.CaseNumber != null && numbers.Contains(a.CaseNumber))
+                    .Select(a => new { a.CaseNumber, a.EntityId }).Distinct().ToListAsync(ct))
+                .Select(h => (h.CaseNumber, Id: Guid.TryParse(h.EntityId, out var id) ? id : Guid.Empty))
+                .Where(h => h.Id != Guid.Empty)
+                .GroupBy(h => h.CaseNumber!)
+                .Where(g => g.Select(h => h.Id).Distinct().Count() == 1)   // a number only one case held
+                .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
+            var ids = holders.Values.Distinct().ToList();
+            var visible = await scoped.Where(c => ids.Contains(c.Id)).Select(c => new { c.Id, c.CaseNumber })
+                .ToDictionaryAsync(c => c.Id, c => c.CaseNumber, ct);
+            rows = rows.Concat(former
+                    .Where(f => holders.TryGetValue(f.CaseNumber!, out var id) && visible.ContainsKey(id))
+                    .Select(f => f with { CaseId = holders[f.CaseNumber!], CaseNumber = visible[holders[f.CaseNumber!]] }))
+                .OrderByDescending(r => r.Sequence).Take(take * 2).ToList();
+        }
 
         // Opening a case also writes its opening phase, classification and severity: that's one act ("Added the
         // case"), so those rows are folded into it rather than listed as three changes nobody made.
@@ -111,6 +130,9 @@ public sealed class ActivityFeedService
             Humanize(r.Summary, r.Action, r.EntityType),
             r.CaseNumber, r.CaseId)).ToList();
     }
+
+    private sealed record FeedRow(long Sequence, DateTimeOffset AtUtc, string Actor, AuditAction Action, string EntityType,
+        string? Summary, string? CaseNumber, Guid CaseId);
 
     private static readonly HashSet<string> OpeningValue = ["StatusChange", "ClassificationChange", "SeverityChange"];
 

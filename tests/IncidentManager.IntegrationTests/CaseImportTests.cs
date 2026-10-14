@@ -1084,6 +1084,19 @@ public sealed class CaseImportTests : IDisposable
         await using (var db = NewContext())
             (await new CaseImportService(NewFactory(), commander, _clock, NewCaseService(db)).ListPendingAsync())
                 .Should().Contain(x => x.Id == intoRestricted);
+
+        // BUG-279: submitted by someone who can't see it, it's queued as the new case its preview prepared: listed to
+        // reviewers, and never applied into the restricted case.
+        await using (var db = NewContext())
+        {
+            var svc = new CaseImportService(NewFactory(), reviewer, _clock, NewCaseService(db));
+            var doc = FullDoc();
+            doc.Target = new CaseImportTarget { CaseId = restrictedId, NewCase = doc.Target?.NewCase };
+            var json = JsonSerializer.Serialize(doc, CaseImportJson.Options);
+            var (blind, _) = await svc.SubmitAsync(json, CaseImportService.Parse(json).Document!);
+            (await svc.ListPendingAsync()).Should().Contain(x => x.Id == blind);
+            (await db.Set<PendingImport>().FirstAsync(p => p.Id == blind)).TargetCaseId.Should().BeNull();
+        }
     }
 
     public void Dispose() => _connection.Dispose();

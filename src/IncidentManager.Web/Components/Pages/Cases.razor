@@ -1066,6 +1066,8 @@ else
         Nav.NavigateTo(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), p));
     }
 
+    private int _reloadSeq;
+
     private async Task Reload()
     {
         _filter.Classification = Enum.TryParse<Classification>(_classification, out var c) ? c : null;
@@ -1084,7 +1086,11 @@ else
         _filter.UnassignedOnly = _assignee == "none";
         _filter.AssigneeUserId = _assignee == "none" ? null : _assignee;
         _targets = SlaProvider.Current;
-        _page = await CaseSvc.ListAsync(_filter);
+        // BUG-278: a slower earlier load (a search typed, then a filter changed) mustn't overwrite a later one.
+        var seq = ++_reloadSeq;
+        var page = await CaseSvc.ListAsync(_filter);
+        if (seq != _reloadSeq) return;
+        _page = page;
         // Baseline the known ids for live-reload diffing; a plain reload (filter/page change) is a fresh
         // cohort, so any pending pop-in flash is dropped (only a live reload re-populates it).
         _knownCaseIds = _page?.Items.Select(i => i.Id).ToHashSet() ?? new();
