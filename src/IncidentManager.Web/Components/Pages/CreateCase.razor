@@ -645,13 +645,14 @@
             _created ??= await Cases.CreateAsync(_request);
 
             // E-23: seed entered indicators as entities (best-effort typed; correctable on the Entities tab).
-            // Skip any already added so a resumed run never duplicates them.
-            foreach (var raw in IndicatorLines(_indicators).Skip(_entitiesSeeded))
-            {
-                await Cases.AddEntityAsync(_created.Id, IocObservable.DetectType(raw), raw, null,
-                    EntityDisposition.Unknown, null, "Filed at case creation");
-                _entitiesSeeded++;
-            }
+            // Skip any already added so a resumed run never duplicates them. BUG-420: added together, so the accounts among
+            // them share one directory-lookup allowance rather than each getting its own (and a retry matches, not repeats).
+            var seed = IndicatorLines(_indicators).Skip(_entitiesSeeded)
+                .Select(raw => new CaseService.EntityToAdd(IocObservable.DetectType(raw), raw, null,
+                    EntityDisposition.Unknown, null, "Filed at case creation"))
+                .ToList();
+            if (seed.Count > 0) await Cases.AddOrMatchEntitiesAsync(_created.Id, seed);
+            _entitiesSeeded += seed.Count;
             // Apply the analyst's chosen relationships to the matched open cases (E-14), tracking which
             // are done so a resume doesn't re-link.
             foreach (var (relatedCaseId, choice) in _linkChoice)
