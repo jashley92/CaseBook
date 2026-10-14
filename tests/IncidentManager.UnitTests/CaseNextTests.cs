@@ -122,4 +122,15 @@ public class CaseNextTests
         var again = () => c.RaiseTaskFromQuestion(question, "ic1", T0);
         again.Should().Throw<InvalidOperationException>();
     }
+
+    [Fact]
+    public void A_question_added_under_prose_pairs_and_the_prose_stays(/* BUG-299 */)
+    {
+        var parts = CaseNext.QuestionParts("We still don't know how the lure got past the filter.\n- Was MFA prompted?")!.Value;
+        parts.Prose.Should().Be("We still don't know how the lure got past the filter.");
+        parts.Items.Should().Equal("Was MFA prompted?");
+        CaseNext.Questions("- One\n- Two").Should().Equal("One", "Two");
+        CaseNext.QuestionParts("Only prose here.").Should().BeNull();
+        CaseNext.QuestionParts("- A list\nthen prose after it").Should().BeNull("mixed some other way, it's shown as written");
+    }
 }

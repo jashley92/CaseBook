@@ -331,9 +331,14 @@
                     {
                         @* HR-01: on a closed case's closing brief, the assessment is the conclusion. *@
                         <dt>@(current && p.Key == "assessment" && Case.Phase == CasePhase.Closed && Case.OutcomeKey is not null ? "Conclusion" : p.Label)</dt>
-                        @if (current && p.Key == OpenKey && CaseNext.Questions(text) is { } questions)
+                        @if (current && p.Key == OpenKey && CaseNext.QuestionParts(text) is { } parts)
                         {
-                            <dd>@Questions(questions)</dd>
+                            @* BUG-299: prose first, as written, then the list's questions with their tasks. *@
+                            @if (parts.Prose is { } prose)
+                            {
+                                <dd class="md-body">@((MarkupString)Md.ToHtml(prose, Case.Id))</dd>
+                            }
+                            <dd>@Questions(parts.Items)</dd>
                         }
                         else
                         {

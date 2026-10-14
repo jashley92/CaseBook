@@ -144,10 +144,20 @@
             @* 4. What remains *@
             <section class="im-bf-q" aria-labelledby="@(IdPrefix)remains">
                 <h2 id="@(IdPrefix)remains">What remains</h2>
-                @{ var questions = CaseNext.Questions(b?.OpenQuestions) ?? []; var gate = GateLine(); var notice = NoticeLine(now); }
-                @if (questions.Count == 0 && gate is null && notice is null)
+                @{
+                    // BUG-299: a list's questions with how each is being answered; prose (before the list, or all of it) as written.
+                    var parts = CaseNext.QuestionParts(b?.OpenQuestions);
+                    var questions = parts?.Items ?? [];
+                    var prose = parts is { } qp ? qp.Prose : string.IsNullOrWhiteSpace(b?.OpenQuestions) ? null : b.OpenQuestions;
+                    var gate = GateLine(); var notice = NoticeLine(now);
+                }
+                @if (questions.Count == 0 && prose is null && gate is null && notice is null)
                 {
                     <p class="im-bf-none">No open questions or outstanding obligations.</p>
+                }
+                @if (prose is not null)
+                {
+                    <div class="md-body im-rec">@((MarkupString)Md.ToHtml(prose, Case.Id))</div>
                 }
                 <ul class="im-bf-list">
                     @foreach (var q in questions)

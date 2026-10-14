@@ -68,21 +68,30 @@ public static class CaseNext
     }
 
     /// <summary>
-    /// The brief's open questions one per line, when the part is a plain list (so each can be followed up as a
-    /// task); null when it's prose, which is shown as written.
+    /// The brief's open questions one per line, when the part is a list or prose followed by one (so each can be followed
+    /// up as a task); null when it's prose, which is shown as written. See <see cref="QuestionParts"/>.
     /// </summary>
-    public static List<string>? Questions(string? openQuestions)
+    public static List<string>? Questions(string? openQuestions) => QuestionParts(openQuestions)?.Items;
+
+    /// <summary>
+    /// BUG-299: the open questions as written prose followed by a list (a question added to a prose part is appended as
+    /// "- …"): the prose, shown as written, and the list's questions, each followed up as a task. A part that's all list
+    /// has no prose; one that's all prose, or mixes them some other way, is null and shown as written.
+    /// </summary>
+    public static (string? Prose, List<string> Items)? QuestionParts(string? openQuestions)
     {
         if (string.IsNullOrWhiteSpace(openQuestions)) return null;
-        var lines = openQuestions.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        var lines = openQuestions.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
+        var first = lines.FindIndex(l => ListItemText(l.Trim()) is not null);
+        if (first < 0) return null;
         var items = new List<string>();
-        foreach (var line in lines)
+        foreach (var line in lines.Skip(first).Select(l => l.Trim()).Where(l => l.Length > 0))
         {
-            var text = ListItemText(line);
-            if (text is null) return null;
+            if (ListItemText(line) is not { } text) return null;   // prose after the list: shown as written
             items.Add(text);
         }
-        return items;
+        var prose = string.Join("\n", lines.Take(first)).Trim();
+        return (prose.Length == 0 ? null : prose, items);
     }
 
     private static string? ListItemText(string line)
