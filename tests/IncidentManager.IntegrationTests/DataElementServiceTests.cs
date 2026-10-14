@@ -71,6 +71,22 @@ public sealed class DataElementServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_long_label_gets_a_key_that_fits_its_column(/* BUG-353 */)
+    {
+        var svc = NewService();
+        var rows = RowsFrom(await svc.ListAllAsync());
+        var label = new string('x', 199);
+        rows.Add(new DataElementRow(null, label + "a", null));
+        rows.Add(new DataElementRow(null, label + "b", null));   // the same key once capped, so it takes a suffix
+
+        await svc.SaveAsync(rows);
+
+        var keys = (await svc.ListAllAsync()).Where(e => e.Label.StartsWith(label)).Select(e => e.Key).ToList();
+        keys.Should().HaveCount(2).And.OnlyHaveUniqueItems();
+        keys.Should().OnlyContain(k => k.Length <= DataElementService.MaxKeyLength);
+    }
+
+    [Fact]
     public async Task A_save_from_a_page_opened_before_another_admins_change_is_refused(/* BUG-235 */)
     {
         var svc = NewService();

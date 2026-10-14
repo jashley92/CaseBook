@@ -306,6 +306,12 @@ public sealed class ConfigBundleServiceTests : IDisposable
         if (noOutcomes.CaseOutcomes!.Count > 0)
             await ((Func<Task>)(() => svc.ImportAsync(Signed(noOutcomes), sourceTrusted: true))).Should().ThrowAsync<ArgumentException>()
                 .WithMessage("*no case outcome active*");
+        // BUG-353: a key longer than its column is named before anything is written.
+        var longKey = live with { DataElements = [.. live.DataElements, new ConfigDataElement(new string('K', 101), "Long one", 99, true, false, null)] };
+        await ((Func<Task>)(() => svc.PreviewAsync(longKey))).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*\"Long one\" has a key longer than 100 characters*");
+        await ((Func<Task>)(() => svc.ImportAsync(Signed(longKey)))).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*key longer than 100*");
 
         await svc.ImportAsync(Signed(live with { NotificationRules = [new ConfigNotificationRule("ny", "New York", 72, true, false)] }));
         (await db.NotificationRules.AsNoTracking().Select(r => r.Code).ToListAsync()).Should().Contain("NY", "codes are upper-case, as the page saves them");

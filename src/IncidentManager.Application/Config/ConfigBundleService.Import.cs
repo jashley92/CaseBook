@@ -254,6 +254,11 @@ public sealed partial class ConfigBundleService
             problems.Add("Every case outcome needs a label.");
         if (incoming.DataElements.Any(d => string.IsNullOrWhiteSpace(d.Label)))
             problems.Add("Every data element needs a label.");
+        // BUG-353: a key longer than its column was refused only at the save, as a generic length error.
+        foreach (var d in incoming.DataElements.Where(d => d.Key is { Length: > DataElementService.MaxKeyLength }))
+            problems.Add($"Data element \"{d.Label}\" has a key longer than {DataElementService.MaxKeyLength} characters.");
+        foreach (var o in (incoming.CaseOutcomes ?? []).Where(o => o.Key is { Length: > CaseOutcomeService.MaxKeyLength }))
+            problems.Add($"Case outcome \"{o.Label}\" has a key longer than {CaseOutcomeService.MaxKeyLength} characters.");
         if (incoming.CaseOutcomes is { Count: > 0 } outcomes)
         {
             var active = (live.CaseOutcomes ?? []).ToDictionary(o => o.Key, o => o.IsActive, StringComparer.OrdinalIgnoreCase);

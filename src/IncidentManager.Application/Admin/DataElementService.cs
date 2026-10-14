@@ -36,6 +36,8 @@ public sealed record DataElementRow(Guid? Id, string Label, string? Notification
 public sealed class DataElementService
 {
     private const int MaxLabelLength = 200;
+    /// <summary>The Key column's length (DataElementConfiguration; a case's ElementKey too).</summary>
+    public const int MaxKeyLength = 100;
 
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
@@ -211,6 +213,8 @@ public sealed class DataElementService
         }
         var baseKey = sb.Length == 0 ? "Element" : sb.ToString();
         if (char.IsDigit(baseKey[0])) baseKey = "E" + baseKey;
+        // BUG-353: room for a uniqueness suffix within the column (a 200-character label made a key too long to save).
+        if (baseKey.Length > MaxKeyLength - 6) baseKey = baseKey[..(MaxKeyLength - 6)];
 
         var key = baseKey;
         var n = 2;

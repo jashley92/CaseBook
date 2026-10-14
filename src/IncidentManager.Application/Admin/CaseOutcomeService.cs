@@ -28,6 +28,8 @@ public sealed record CaseOutcomeRow(Guid? Id, string Label, string? Description,
 public sealed class CaseOutcomeService
 {
     private const int MaxLabelLength = 200;
+    /// <summary>The Key column's length (CaseOutcomeConfiguration; a case's OutcomeKey too).</summary>
+    public const int MaxKeyLength = 64;
     private const int MaxDescriptionLength = 500;
 
     private readonly IAppDbContextFactory _factory;
