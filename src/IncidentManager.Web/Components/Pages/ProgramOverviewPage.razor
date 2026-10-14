@@ -570,11 +570,15 @@ else
             if (rangeError is not null) (_customOpen, _customError) = (true, rangeError);
         }
 
-        _cts?.Cancel();
-        _cts?.Dispose();
+        var previous = _cts;   // replaced before the await, so a load started meanwhile never has its own disposed
         var seq = ++_seq;
         var cts = _cts = new CancellationTokenSource();
-        var ct = cts.Token;
+        var ct = cts.Token;   // read now: the page may be disposed (and cts with it) while the last load is cancelled
+        if (previous is not null)
+        {
+            await previous.CancelAsync();
+            previous.Dispose();
+        }
         var exercises = Exercises;
         DashboardMetrics metrics;
         NeedsAction needs;

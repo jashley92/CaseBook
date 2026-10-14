@@ -221,13 +221,18 @@
 
     private async Task Load()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
+        var previous = _cts;   // replaced before the await, so a load started meanwhile never has its own disposed
         var seq = ++_seq;
         var cts = _cts = new CancellationTokenSource();
+        var ct = cts.Token;   // read now: the page may be disposed (and cts with it) while the last load is cancelled
+        if (previous is not null)
+        {
+            await previous.CancelAsync();
+            previous.Dispose();
+        }
         try
         {
-            var report = await Program.BuildAsync(_period, _includeExercises, cts.Token);
+            var report = await Program.BuildAsync(_period, _includeExercises, ct);
             if (seq == _seq) _report = report;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }

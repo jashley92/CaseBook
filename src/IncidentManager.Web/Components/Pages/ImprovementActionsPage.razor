@@ -132,13 +132,18 @@
 
     private async Task Load()
     {
-        _loadCts?.Cancel();
-        _loadCts?.Dispose();
+        var previous = _loadCts;   // replaced before the await, so a load started meanwhile never has its own disposed
         var seq = ++_loadSeq;
         var cts = _loadCts = new CancellationTokenSource();
+        var ct = cts.Token;   // read now: the page may be disposed (and cts with it) while the last load is cancelled
+        if (previous is not null)
+        {
+            await previous.CancelAsync();
+            previous.Dispose();
+        }
         try
         {
-            var register = await Lessons.GetRegisterAsync(new RegisterFilter(_scope, _search, _includeExercises), cts.Token);
+            var register = await Lessons.GetRegisterAsync(new RegisterFilter(_scope, _search, _includeExercises), ct);
             if (seq == _loadSeq) _register = register;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }
