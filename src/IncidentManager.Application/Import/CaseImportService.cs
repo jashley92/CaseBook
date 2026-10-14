@@ -454,6 +454,9 @@ public sealed class CaseImportService
 
         var parsed = Parse(row.RawJson);
         if (!parsed.Ok) return null; // validated at submit, so this is defensive
+        // BUG-334: the row's recorded target is the only one. Null means the submitter's preview prepared a new case (BUG-279:
+        // they couldn't see the document's), so the document's case id mustn't resolve again under the reviewer.
+        if (parsed.Document!.Target is { } target) target.CaseId = null;
         var preview = await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
         // WF-18/WF-94: an apply that stopped without recording anything may have written before it stopped.
         if (row.DecisionNote is { } note && note.StartsWith(ReopenedMarker, StringComparison.Ordinal))

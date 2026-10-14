@@ -1087,6 +1087,7 @@ public sealed class CaseImportTests : IDisposable
 
         // BUG-279: submitted by someone who can't see it, it's queued as the new case its preview prepared: listed to
         // reviewers, and never applied into the restricted case.
+        Guid blindId;
         await using (var db = NewContext())
         {
             var svc = new CaseImportService(NewFactory(), reviewer, _clock, NewCaseService(db));
@@ -1096,6 +1097,23 @@ public sealed class CaseImportTests : IDisposable
             var (blind, _) = await svc.SubmitAsync(json, CaseImportService.Parse(json).Document!);
             (await svc.ListPendingAsync()).Should().Contain(x => x.Id == blind);
             (await db.Set<PendingImport>().FirstAsync(p => p.Id == blind)).TargetCaseId.Should().BeNull();
+            blindId = blind;
+        }
+
+        // BUG-334: and a reviewer who can see the case still previews it as the new case, not into the restricted one.
+        await using (var db = NewContext())
+        {
+            var preview = await new CaseImportService(NewFactory(), commander, _clock, NewCaseService(db))
+                .BuildPreviewForPendingAsync(blindId);
+            preview.Should().NotBeNull();
+            preview!.TargetKind.Should().Be(CaseImportTargetKind.NewCase);
+            preview.ExistingCaseId.Should().BeNull();
+
+            // A row queued into the case (by someone who could see it) still previews into it.
+            var into = await new CaseImportService(NewFactory(), commander, _clock, NewCaseService(db))
+                .BuildPreviewForPendingAsync(intoRestricted);
+            into!.TargetKind.Should().Be(CaseImportTargetKind.ExistingCase);
+            into.ExistingCaseId.Should().Be(restrictedId);
         }
     }
 
