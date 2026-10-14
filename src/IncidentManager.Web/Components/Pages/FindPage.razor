@@ -294,8 +294,9 @@
         _cts?.Dispose();
         _cts = null;
         _failed = null;
-        if (string.IsNullOrWhiteSpace(Q)) { _result = null; _loading = false; return; }
+        // BUG-454: advance the sequence first, so a search still running when the query is cleared is dropped too.
         var seq = ++_seq;
+        if (string.IsNullOrWhiteSpace(Q)) { _result = null; _loading = false; return; }
         var cts = _cts = new CancellationTokenSource();
         _loading = true;
         try
