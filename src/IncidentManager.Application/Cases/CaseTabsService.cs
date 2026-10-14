@@ -72,18 +72,28 @@ public sealed class CaseTabsService
         if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct)) return;
 
         var now = _clock.UtcNow;
-        var tabs = await db.OpenCaseTabs.Where(t => t.UserId == me).ToListAsync(ct);
-        if (tabs.FirstOrDefault(t => t.CaseId == caseId) is { } tab) tab.LastSeenAtUtc = now;
-        else db.OpenCaseTabs.Add(new OpenCaseTab { UserId = me, CaseId = caseId, OpenedAtUtc = now, LastSeenAtUtc = now });
+        var tabs = await db.OpenCaseTabs.AsNoTracking().Where(t => t.UserId == me)
+            .Select(t => new { t.CaseId, t.LastSeenAtUtc }).ToListAsync(ct);
+        // BUG-458: brought forward, evicted and closed by statement, not by tracked row, so a tab another window closed
+        // or let go of at the same moment is simply gone (OpenCaseTab is outside the audit chain), not a refused save.
+        var seen = await db.OpenCaseTabs.Where(t => t.UserId == me && t.CaseId == caseId)
+            .ExecuteUpdateAsync(u => u.SetProperty(t => t.LastSeenAtUtc, now), ct);
+        if (seen == 0)
+        {
+            db.OpenCaseTabs.Add(new OpenCaseTab { UserId = me, CaseId = caseId, OpenedAtUtc = now, LastSeenAtUtc = now });
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException) { /* the same case opened in another window at the same moment: it's open either way */ }
+        }
 
         // Keep at most MaxOpen tabs that aren't pinned; let go of the least recently seen.
         var pinned = await db.PinnedCases.AsNoTracking().Where(p => p.UserId == me).Select(p => p.CaseId).ToListAsync(ct);
         var unpinned = tabs.Where(t => t.CaseId != caseId && !pinned.Contains(t.CaseId)).OrderBy(t => t.LastSeenAtUtc).ToList();
         var over = unpinned.Count + (pinned.Contains(caseId) ? 0 : 1) - MaxOpen;
-        if (over > 0) db.OpenCaseTabs.RemoveRange(unpinned.Take(over));
-
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException) { /* the same case opened in another window at the same moment: it's open either way */ }
+        if (over > 0)
+        {
+            var letGo = unpinned.Take(over).Select(t => t.CaseId).ToList();
+            await db.OpenCaseTabs.Where(t => t.UserId == me && letGo.Contains(t.CaseId)).ExecuteDeleteAsync(ct);
+        }
     }
 
     /// <summary>Closes a tab. A pinned case stays a tab until it's unpinned.</summary>
@@ -91,9 +101,7 @@ public sealed class CaseTabsService
     {
         var me = _user.UserId;
         using var db = _factory.CreateDbContext();
-        var tab = await db.OpenCaseTabs.FirstOrDefaultAsync(t => t.UserId == me && t.CaseId == caseId, ct);
-        if (tab is null) return;
-        db.OpenCaseTabs.Remove(tab);
-        await db.SaveChangesAsync(ct);
+        // BUG-458: a tab already closed (a double click, or let go of by another window) is closed either way.
+        await db.OpenCaseTabs.Where(t => t.UserId == me && t.CaseId == caseId).ExecuteDeleteAsync(ct);
     }
 }

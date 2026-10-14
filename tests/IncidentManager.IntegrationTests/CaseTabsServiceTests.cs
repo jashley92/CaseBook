@@ -90,5 +90,47 @@ public sealed class CaseTabsServiceTests : IDisposable
         (await tabs.ListAsync()).Select(t => t.CaseId).Should().Equal(ids[0]);
     }
 
+    // Another window removes the tab (closes it, or lets go of it) between this one's read and its delete.
+    private CaseTabsService RacingTabs(Guid closedElsewhere, out RaceCommandInterceptor race)
+    {
+        race = new RaceCommandInterceptor("DELETE FROM", "DELETE FROM OpenCaseTabs WHERE CaseId = @c",
+            ("@c", closedElsewhere.ToString().ToUpperInvariant()));
+        var options = new DbContextOptionsBuilder<AppDbContext>(_db!.OptionsWithoutInterceptors).AddInterceptors(race).Options;
+        return new(new TestDbContextFactory(options), _me, _clock, new TestSlaTargets());
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Closing_a_tab_another_window_just_closed_is_quietly_done(string provider /* BUG-458 */)
+    {
+        _db = TestDatabase.Open(provider);
+        var ids = Seed(2, out _);
+        await NewTabs().OpenAsync(ids[0]);
+        await NewTabs().OpenAsync(ids[1]);
+
+        await RacingTabs(ids[0], out var race).CloseAsync(ids[0]);
+
+        race.Ran.Should().BeTrue();
+        (await NewTabs().ListAsync()).Select(t => t.CaseId).Should().Equal(ids[1]);
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Opening_a_case_whose_evicted_tab_another_window_just_closed_still_opens_it(string provider /* BUG-458 */)
+    {
+        _db = TestDatabase.Open(provider);
+        var ids = Seed(CaseTabsService.MaxOpen + 1, out _);
+        for (var i = 0; i < CaseTabsService.MaxOpen; i++)
+        {
+            _clock.UtcNow = _clock.UtcNow.AddMinutes(1);
+            await NewTabs().OpenAsync(ids[i]);
+        }
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(1);
+
+        await RacingTabs(ids[0], out var race).OpenAsync(ids[^1]);   // lets go of ids[0], which the other window closed
+
+        race.Ran.Should().BeTrue();
+        var open = (await NewTabs().ListAsync()).Select(t => t.CaseId).ToList();
+        open.Should().HaveCount(CaseTabsService.MaxOpen).And.Contain(ids[^1]).And.NotContain(ids[0]);
+    }
+
     public void Dispose() => _db?.Dispose();
 }
