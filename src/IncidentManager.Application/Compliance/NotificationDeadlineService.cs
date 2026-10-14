@@ -190,11 +190,15 @@ public sealed class NotificationDeadlineService
         var filled = 0;
         foreach (var n in open)
         {
-            // BUG-456: a legacy notice coded "NY;CA" covers each code (BUG-428), so it keeps the earliest of their deadlines.
+            // BUG-456: a legacy notice coded "NY;CA" covers each code (BUG-428), and one kept deadline is read for every code
+            // it names. So it's frozen only when its codes all have that same deadline; otherwise it stays on today's clock,
+            // which judges each code against its own.
             if (!dues.TryGetValue(n.CaseId, out var byCode)) continue;
-            var codeDues = SplitCodes(n.Jurisdiction).Where(byCode.ContainsKey).Select(code => byCode[code]).ToList();
-            if (codeDues.Count == 0) continue;
-            DateTimeOffset? due = codeDues.Min();
+            var codes = SplitCodes(n.Jurisdiction).ToList();
+            if (codes.Count == 0 || !codes.All(byCode.ContainsKey)) continue;
+            var codeDues = codes.Select(code => byCode[code]).Distinct().ToList();
+            if (codeDues.Count != 1) continue;
+            DateTimeOffset? due = codeDues[0];
             var noticeId = n.Id;
             filled += await db.JurisdictionNotices
                 .Where(x => x.Id == noticeId && x.DueAtUtc == null)

@@ -442,8 +442,7 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     public async Task A_legacy_combined_notice_keeps_its_deadline_and_outcome(/* BUG-456 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);   // material 10 h ago
-        EnableClock();                                          // 72 h default: NY due in 62 h
-        await new NotificationRuleService(NewFactory(), _user, _clock).SaveAsync(null, "CA", "California", 24);   // CA due in 14 h
+        EnableClock();                                          // 72 h default: NY and CA both due in 62 h
         await SetJurisdictionsAsync("SSN", "NY,CA");
         var notifiedAt = _clock.UtcNow.AddHours(-1);
         await using (var db = NewContext())
@@ -462,16 +461,51 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         }
         (await OutcomesAsync()).Select(o => o.State).Should().Equal(SlaState.Met, SlaState.Met);   // one for each regulator
 
-        // The start-up freeze gives the combined notice the earlier of its codes' deadlines.
+        // The start-up freeze gives the combined notice the deadline its codes share.
         (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(1);
         await using (var check = NewContext())
-            (await check.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).DueAtUtc.Should().Be(_clock.UtcNow.AddHours(14));
+            (await check.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).DueAtUtc.Should().Be(_clock.UtcNow.AddHours(62));
         (await OutcomesAsync()).Select(o => o.State).Should().Equal(SlaState.Met, SlaState.Met);   // still one each
 
         // The default window later shrinks to an hour: the past notice's outcome doesn't move.
         _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 1, 80);
         (await OutcomesAsync()).Select(o => o.State).Should().Equal(SlaState.Met, SlaState.Met);
         (await NewDeadlines().EvaluateAsync(id)).Statuses.Should().OnlyContain(s => s.State == SlaState.Met);
+    }
+
+    [Fact]
+    public async Task A_legacy_combined_notice_between_its_codes_deadlines_is_judged_per_code(/* BUG-456 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 30);   // material 30 h ago
+        EnableClock();                                          // 72 h default: NY due in 42 h
+        await new NotificationRuleService(NewFactory(), _user, _clock).SaveAsync(null, "CA", "California", 24);   // CA was due 6 h ago
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        var notifiedAt = _clock.UtcNow.AddHours(-1);            // after California's deadline, inside New York's
+        await using (var db = NewContext())
+        {
+            db.JurisdictionNotices.Add(new JurisdictionNotice
+            {
+                CaseId = id, Jurisdiction = "NY;CA", NotifiedAtUtc = notifiedAt, CreatedBy = "alice", CreatedAtUtc = notifiedAt
+            });
+            await db.SaveChangesAsync();
+        }
+        async Task<List<SlaState>> OutcomesAsync()
+        {
+            var ruleSet = await new NotificationRuleService(NewFactory(), _user, _clock).LoadRuleSetAsync(_settings.Current.DefaultWindowHours);
+            await using var q = NewContext();
+            return (await NotificationDeadlineService.NoticeOutcomesAsync(q, q.Cases.Where(c => c.Id == id), _settings.Current, ruleSet, _clock.UtcNow))
+                .Select(o => o.State).ToList();
+        }
+        (await OutcomesAsync()).Should().BeEquivalentTo([SlaState.Missed, SlaState.Met]);
+
+        // One kept deadline would be read for both codes, so the freeze leaves this notice on today's clock.
+        (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(0);
+        await using (var check = NewContext())
+            (await check.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).DueAtUtc.Should().BeNull();
+        (await OutcomesAsync()).Should().BeEquivalentTo([SlaState.Missed, SlaState.Met], "New York was told in time");
+        var d = await NewDeadlines().EvaluateAsync(id);
+        d.Statuses.Single(s => s.JurisdictionCode == "NY").State.Should().Be(SlaState.Met);
+        d.Statuses.Single(s => s.JurisdictionCode == "CA").State.Should().Be(SlaState.Missed);
     }
 
     [Fact]

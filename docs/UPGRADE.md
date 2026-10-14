@@ -218,7 +218,7 @@ A fix release with no migration. Things to check:
 - **Program figures:**
   - A campaign's ATT&CK coverage includes its cases' attack-chain techniques.
   - "Open cases" on the Program overview opens all open cases, not your default view.
-  - A notice recorded under a combined code ("NY;CA") keeps its deadline, so its past outcome no longer moves.
+  - A notice recorded under a combined code ("NY;CA") keeps its deadline when its codes share one, so its past outcome no longer moves. One whose codes have different deadlines is still judged code by code against today's rules.
 - **Directory lookups** recover a minute after a domain controller stops answering, instead of staying unavailable
   until the app restarts.
 - **Administration:**
