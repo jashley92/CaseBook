@@ -5,8 +5,10 @@
 #
 # Finds the newest analysis of <sha> on the branch (newest first, paged, from the commit's date on), then reads that
 # analysis's quality gate. Main's CI may still be running when the tag is pushed, so a missing analysis is retried for
-# SONAR_WAIT_SECONDS. A commit that never got an analysis (CI on main never ran or failed before Sonar, e.g. a docs-only
-# commit, or the commit isn't on main) fails once the wait runs out: tag the code commit whose CI on main passed.
+# SONAR_WAIT_SECONDS. A release-notes commit that only touches paths ci.yml ignores (*.md, docs/, LICENSE, .gitignore)
+# gets no CI run of its own when pushed alone, and its changes can't move the gate, so the analysis of the newest
+# commit before it that touches anything else also counts. A commit with neither (CI on main failed before Sonar, or
+# the commit isn't on main) fails once the wait runs out: tag a commit whose CI on main passed.
 #
 # Usage: tools/ci/check-sonar-quality-gate.sh [<sha>]      (default: $GITHUB_SHA, else HEAD)
 # Env:   SONAR_TOKEN (absent: skipped with a warning, as on forks), SONAR_HOST_URL (https://sonarcloud.io),
@@ -56,12 +58,23 @@ if commit_epoch="$(git show -s --format=%ct "$sha" 2>/dev/null)"; then
   from="$(date -u -d "@$((commit_epoch - 86400))" +%Y-%m-%d 2>/dev/null || true)"
 fi
 
-# Prints the key of the newest analysis whose revision is $sha, or nothing.
+# BUG-466 follow-up: the newest commit at or before $sha that CI on main doesn't skip (keep in step with ci.yml's
+# paths-ignore). v1.6.1 and v1.6.4 were tagged on release-notes commits.
+code_sha="$(git log -1 --format=%H "$sha" -- . ':(exclude,glob)**/*.md' ':(exclude)docs' ':(exclude)LICENSE'               ':(exclude).gitignore' 2>/dev/null || true)"
+code_sha="${code_sha:-$sha}"
+if [[ "$code_sha" != "$sha" ]]; then
+  echo "$sha changes only paths CI ignores since $code_sha; that commit's analysis also counts."
+  if commit_epoch="$(git show -s --format=%ct "$code_sha" 2>/dev/null)"; then
+    from="$(date -u -d "@$((commit_epoch - 86400))" +%Y-%m-%d 2>/dev/null || true)"
+  fi
+fi
+
+# Prints the key of the newest analysis whose revision is $sha or $code_sha, or nothing.
 find_analysis() {
   local page=1 json key total
   while :; do
     json="$(api "/api/project_analyses/search?project=$project&branch=$branch&ps=$page_size&p=$page${from:+&from=$from}")" || return 1
-    key="$(jq -r --arg sha "$sha" '[.analyses[]? | select(.revision == $sha)][0].key // empty' <<<"$json")"
+    key="$(jq -r --arg sha "$sha" --arg code "$code_sha"              '[.analyses[]? | select(.revision == $sha or .revision == $code)][0].key // empty' <<<"$json")"
     if [[ -n "$key" ]]; then echo "$key"; return 0; fi
     total="$(jq -r '.paging.total // 0' <<<"$json")"
     (( page * page_size < total )) || return 0
@@ -75,10 +88,10 @@ while :; do
   [[ -n "$analysis" ]] && break
   if (( $(date +%s) >= deadline )); then
     cat >&2 <<EOF
-::error::No SonarQube Cloud analysis of $sha on branch '$branch' (project $project) after ${wait_seconds}s.
-CI on '$branch' analyses every code commit; this one has none, so its quality gate is unknown and the release is refused.
-Either CI on '$branch' never ran for it (a docs-only commit, or a commit that isn't on '$branch'), or it failed before
-the Sonar step, or the analysis is still queued. Tag the code commit whose CI on '$branch' passed, or re-run this job.
+::error::No SonarQube Cloud analysis of $sha (or of $code_sha, its newest commit CI doesn't skip) on branch '$branch'
+(project $project) after ${wait_seconds}s, so its quality gate is unknown and the release is refused. Either CI on
+'$branch' failed before the Sonar step, the commit isn't on '$branch', or the analysis is still queued. Tag a commit
+whose CI on '$branch' passed, or re-run this job.
 EOF
     exit 1
   fi
