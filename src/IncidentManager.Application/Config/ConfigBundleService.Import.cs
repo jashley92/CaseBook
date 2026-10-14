@@ -257,6 +257,9 @@ public sealed partial class ConfigBundleService
         // BUG-353: a key longer than its column was refused only at the save, as a generic length error.
         foreach (var d in incoming.DataElements.Where(d => d.Key is { Length: > DataElementService.MaxKeyLength }))
             problems.Add($"Data element \"{d.Label}\" has a key longer than {DataElementService.MaxKeyLength} characters.");
+        // BUG-404: ";" separates a case's kept jurisdictions from its elements, so a code holding one would split there.
+        foreach (var d in incoming.DataElements.Where(d => d.NotificationJurisdictions?.Contains(';') == true))
+            problems.Add($"Data element \"{d.Label}\" separates its jurisdictions with \";\"; use commas.");
         foreach (var o in (incoming.CaseOutcomes ?? []).Where(o => o.Key is { Length: > CaseOutcomeService.MaxKeyLength }))
             problems.Add($"Case outcome \"{o.Label}\" has a key longer than {CaseOutcomeService.MaxKeyLength} characters.");
         if (incoming.CaseOutcomes is { Count: > 0 } outcomes)
@@ -357,6 +360,8 @@ public sealed partial class ConfigBundleService
         // S-18: an import can grant roles and AD mappings, so it's asserted here, not just by the Administer page.
         AdminActionPermissions.Require<ConfigBundleService>(_user, _siem);
         using var guard = await Admin.GuardGate.EnterAsync(ct);   // BUG-268: its last-admin and outcome checks, with the save
+        // BUG-403: template files are staged and moved under the gate uploads and replaces hold (taken after GuardGate).
+        using var files = await Admin.ReportTemplateService.EnterFileGateAsync(ct);
         if (envelope is not { Format: ConfigBundleJson.FormatTag, Bundle: not null }
             || envelope.SchemaVersion > ConfigBundleJson.CurrentSchemaVersion)
             throw new InvalidOperationException("This file is not a CaseBook configuration bundle this version can import.");
@@ -681,46 +686,63 @@ public sealed partial class ConfigBundleService
             }
         }
 
-        try { await db.SaveChangesAsync(ct); }
+        try
+        {
+            // WF-11: as the Data elements page: cases not yet reported are judged on the imported jurisdictions. BUG-390: in
+            // the import's own save, so a recheck that fails can't leave the import saved and the cases never rechecked.
+            await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, db.DataElements.Local, actor, now, ct);
+            await db.SaveChangesAsync(ct);
+        }
         catch
         {
             foreach (var s in staged) await _templateStore!.DiscardAsync(s);
             throw;
         }
-        // BUG-238: a file that can't be put in place (open, read-only) mustn't stop what follows: the roles, mappings and
-        // settings are already saved, so they're applied and streamed to the SIEM whatever happens to a template file.
-        // Its row goes back to the file still there (or, for a new template, is archived until a file is uploaded).
+        // BUG-390: committed, so the settings reload, the role-cache invalidation and the SIEM events happen whatever fails
+        // after this point (the template row put back, the audit line), not only when all of it works.
         var notPlaced = new List<string>();
-        foreach (var s in staged)
+        try
         {
-            try { await _templateStore!.CommitAsync(s, ct); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            // BUG-238: a file that can't be put in place (open, read-only) mustn't stop what follows: the roles, mappings and
+            // settings are already saved, so they're applied and streamed to the SIEM whatever happens to a template file.
+            // Its row goes back to the file still there (or, for a new template, is archived until a file is uploaded).
+            foreach (var s in staged)
             {
-                var (row, before) = stagedRows[s];
-                notPlaced.Add(row.Name);
-                try { await _templateStore!.DiscardAsync(s); } catch (Exception d) when (d is IOException or UnauthorizedAccessException) { }
-                if (before is { } b) (row.FileName, row.Sha256, row.SizeBytes) = b;
-                else { row.IsActive = false; row.IsLessonsDefault = false; }
+                try { await _templateStore!.CommitAsync(s, ct); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    var (row, before) = stagedRows[s];
+                    notPlaced.Add(row.Name);
+                    try { await _templateStore!.DiscardAsync(s); } catch (Exception d) when (d is IOException or UnauthorizedAccessException) { }
+                    if (before is { } b) (row.FileName, row.Sha256, row.SizeBytes) = b;
+                    else { row.IsActive = false; row.IsLessonsDefault = false; }
+                }
             }
+            if (notPlaced.Count > 0) await db.SaveChangesAsync(CancellationToken.None);
+            await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
+                $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)" +
+                (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : "") +
+                (notPlaced.Count > 0 ? $"; the file for {string.Join(", ", notPlaced)} couldn't be put in place and was left as it was" : ""),
+                CancellationToken.None);
         }
-        if (notPlaced.Count > 0) await db.SaveChangesAsync(CancellationToken.None);
-        // WF-11: as the Data elements page: cases not yet reported are judged on the imported jurisdictions.
-        await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, actor, now, ct);
-        await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
-            $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)" +
-            (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : "") +
-            (notPlaced.Count > 0 ? $"; the file for {string.Join(", ", notPlaced)} couldn't be put in place and was left as it was" : ""), ct);
-
-        // S-18: take effect now (as the settings and roles pages do) rather than at the next restart, and stream each
-        // access-affecting change to the SIEM exactly as the per-item pages would, so an import can't hide one.
-        if (changedSettings.Count > 0) _reloader?.Reload();
-        if (changedRoles.Count > 0 || addedMappings.Count > 0) _roles?.Invalidate();
-        foreach (var key in changedSettings)
-            _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
-        foreach (var role in changedRoles)
-            _siem?.Emit(SecurityEvents.RoleChanged("RoleImported", _user.UserId, _user.UserPrincipalName, role));
-        foreach (var mapping in addedMappings)
-            _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException("The bundle was imported and is in effect, but a step after saving it failed: " +
+                ex.Message, ex);
+        }
+        finally
+        {
+            // S-18: take effect now (as the settings and roles pages do) rather than at the next restart, and stream each
+            // access-affecting change to the SIEM exactly as the per-item pages would, so an import can't hide one.
+            if (changedSettings.Count > 0) _reloader?.Reload();
+            if (changedRoles.Count > 0 || addedMappings.Count > 0) _roles?.Invalidate();
+            foreach (var key in changedSettings)
+                _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
+            foreach (var role in changedRoles)
+                _siem?.Emit(SecurityEvents.RoleChanged("RoleImported", _user.UserId, _user.UserPrincipalName, role));
+            foreach (var mapping in addedMappings)
+                _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
+        }
 
         return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true, notPlaced,
             changedSettings.Count > 0 ? _reloader?.LastError : null);   // BUG-270

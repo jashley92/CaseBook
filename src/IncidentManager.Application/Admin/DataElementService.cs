@@ -138,9 +138,10 @@ public sealed class DataElementService
             }
         }
 
+        // WF-11: cases not yet reported are judged on the new jurisdictions; reported ones keep what was in play. BUG-390:
+        // in the same save, so a recheck that fails doesn't leave the change saved and the cases never rechecked.
+        await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, db.DataElements.Local, _user.UserId, now, ct);
         await db.SaveChangesAsync(ct);
-        // WF-11: cases not yet reported are judged on the new jurisdictions; reported ones keep what was in play.
-        await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, _user.UserId, now, ct);
     }
 
     /// <summary>Archives (<paramref name="archived"/> = true) or restores an element — built-in ones included.
@@ -190,7 +191,8 @@ public sealed class DataElementService
     private static string? Normalize(string? jurisdictions)
     {
         if (string.IsNullOrWhiteSpace(jurisdictions)) return null;
-        var codes = jurisdictions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        // BUG-404: ";" separates codes too (it would split the case's kept "codes;elements" value).
+        var codes = Compliance.NotificationDeadlineService.SplitCodes(jurisdictions)
             .Select(s => s.ToUpperInvariant()).Distinct();
         var joined = string.Join(",", codes);
         return joined.Length == 0 ? null : joined;

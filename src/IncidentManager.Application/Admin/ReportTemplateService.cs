@@ -121,6 +121,26 @@ public sealed class ReportTemplateService
 
     private static readonly SemaphoreSlim FileGate = new(1, 1);
 
+    /// <summary>
+    /// BUG-403: the template file gate, for another writer of template files (a config import), so its staging and commit
+    /// can't interleave with an upload or replace. Taken after <see cref="GuardGate"/>, never before it (nothing here takes
+    /// GuardGate). Dispose the result to release it.
+    /// </summary>
+    public static async Task<IDisposable> EnterFileGateAsync(CancellationToken ct = default)
+    {
+        await FileGate.WaitAsync(ct).ConfigureAwait(false);
+        return new FileGateReleaser();
+    }
+
+    private sealed class FileGateReleaser : IDisposable
+    {
+        private int _released;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _released, 1) == 0) FileGate.Release();
+        }
+    }
+
     // BUG-239: the row is saved first, then the file moved into place. If the move fails for good (the file read-only,
     // no permission), the row is put back as it was (undo) and the staged file removed, so "nothing changed" is true:
     // the row never describes a file that isn't the live one (which would refuse every report from the template).
@@ -203,6 +223,7 @@ public sealed class ReportTemplateService
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportTemplateService>(_user);
+        using var files = await EnterFileGateAsync(ct);   // BUG-403: not between another writer's save and its file move
         using var db = _factory.CreateDbContext();
         var t = await db.ReportTemplates.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (t is null) return;

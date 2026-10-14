@@ -132,6 +132,9 @@ public class Case : AuditableEntity, IHashableEntity
 
     public const int MaxReportedJurisdictionsLength = 1000;
 
+    // BUG-404: the separators of a ReportedJurisdictions value; a jurisdiction code can't hold either.
+    private static readonly char[] CodeSeparators = [',', ';'];
+
     private static string[] Codes(string part) =>
         part.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -163,7 +166,9 @@ public class Case : AuditableEntity, IHashableEntity
     private void FreezeJurisdictions(IEnumerable<string>? inPlay)
     {
         if (ReportedAtUtc is null) return;
-        var codes = string.Join(',', (inPlay ?? []).Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
+        // BUG-404: a code holding a separator (an element's code stored with ";") is split, so it can't end the codes part.
+        var codes = string.Join(',', (inPlay ?? []).SelectMany(j => j.Split(CodeSeparators))
+            .Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
         var elements = string.Join(',', DataElements.Select(d => d.ElementKey).Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(k => k, StringComparer.Ordinal));
@@ -1388,6 +1393,8 @@ public class Case : AuditableEntity, IHashableEntity
         var notice = JurisdictionNotices.FirstOrDefault(n => n.Jurisdiction == code);
         if (notice is null)
         {
+            // BUG-404: a code with "," or ";" would read back as two codes, or split the kept "codes;elements" value.
+            if (code.IndexOfAny(CodeSeparators) >= 0) throw new ArgumentException("A jurisdiction code can't contain a comma or semicolon.");
             notice = new JurisdictionNotice { CaseId = Id, Jurisdiction = code, NotifiedAtUtc = notifiedAtUtc, CreatedBy = actor, CreatedAtUtc = nowUtc };
             JurisdictionNotices.Add(notice);
         }

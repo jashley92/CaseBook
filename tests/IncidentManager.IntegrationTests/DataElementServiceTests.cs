@@ -240,5 +240,64 @@ public sealed class DataElementServiceTests : IDisposable
         _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_semicolon_separates_jurisdiction_codes(/* BUG-404 */)
+    {
+        var svc = NewService();
+        var rows = RowsFrom(await svc.ListAllAsync());
+        rows.Add(new DataElementRow(null, "Health record", "ny; ca,NY"));
+        await svc.SaveAsync(rows);
+        (await svc.ListAllAsync()).Single(e => e.Label == "Health record").NotificationJurisdictions.Should().Be("NY,CA");
+
+        // One stored with ";" before this release reads as two codes.
+        var live = IncidentManager.Application.Compliance.NotificationDeadlineService.Live(
+            new Dictionary<string, string> { ["Old"] = "NY;CA" });
+        live(["Old"]).Should().Equal("NY", "CA");
+    }
+
+    // Fails the database command that updates a case (the WF-11 recheck), as a failure or a conflict there would. The
+    // command fails, not another interceptor, so the save ends through SaveChangesFailed (releasing the audit gate).
+    private sealed class FailCaseSave : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result,
+            CancellationToken cancellationToken = default) =>
+            command.CommandText.Contains("UPDATE \"Cases\"", StringComparison.Ordinal)
+                ? throw new InvalidOperationException("case update failed")
+                : base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+    }
+
+    [Fact]
+    public async Task A_recheck_that_fails_leaves_the_element_change_unsaved(/* BUG-390 */)
+    {
+        await using (var db = NewContext())
+        {
+            db.DataElements.Add(new DataElement { Key = "Tst", Label = "Test element", NotificationJurisdictions = "NY,CA",
+                IsActive = true, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });
+            var c = Case.Open(2026, 1, "Breach", "Breach case", Classification.Breach, Severity.High,
+                CaseOrigin.InternalDetection, "alice", _clock.UtcNow.AddHours(-2));
+            c.SetImpactAssessment(5, ["Tst"], "NY", "alice", _clock.UtcNow);
+            c.RecordNotice("NY", _clock.UtcNow, "alice", _clock.UtcNow);   // CA still outstanding
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+        }
+        var failing = new DataElementService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()), new FailCaseSave())
+            .Options), _user, _clock);
+        var rows = RowsFrom(await failing.ListAllAsync())
+            .Select(r => r.Label == "Test element" ? r with { NotificationJurisdictions = "NY" } : r).ToList();
+
+        await failing.Invoking(s => s.SaveAsync(rows)).Should().ThrowAsync<Exception>();
+
+        await using var check = NewContext();
+        (await check.DataElements.AsNoTracking().SingleAsync(e => e.Key == "Tst")).NotificationJurisdictions
+            .Should().Be("NY,CA", "the change and the recheck are saved together, so the admin can save it again");
+
+        await NewService().SaveAsync(rows);   // without the failure: saved, and the case becomes reported
+        (await check.Cases.AsNoTracking().SingleAsync()).ReportedAtUtc.Should().NotBeNull();
+    }
+
     public void Dispose() => _connection.Dispose();
 }

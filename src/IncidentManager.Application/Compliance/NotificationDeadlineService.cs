@@ -200,15 +200,27 @@ public sealed class NotificationDeadlineService
     /// <summary>The jurisdictions <paramref name="elementJur"/> gives a set of data elements.</summary>
     public static Func<IEnumerable<string>, IReadOnlyList<string>> Live(IReadOnlyDictionary<string, string> elementJur) =>
         keys => keys.Where(elementJur.ContainsKey)
-            .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .SelectMany(k => SplitCodes(elementJur[k]))
             .Select(j => j.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>
+    /// BUG-404: a data element's jurisdiction codes. A ";" separates codes too: it separates the kept jurisdictions from
+    /// the elements in <see cref="Case.ReportedJurisdictions"/>, so a code holding one (stored before the page split on
+    /// it) put a phantom jurisdiction there.
+    /// </summary>
+    public static string[] SplitCodes(string? jurisdictions) =>
+        (jurisdictions ?? "").Split(JurisdictionSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static readonly char[] JurisdictionSeparators = [',', ';'];
 
     /// <summary>
     /// WF-11: after a data element's jurisdictions change, the cases not yet reported that carry it are judged again: one
     /// whose remaining jurisdictions are all notified becomes reported (a case reported already keeps what was in play).
+    /// BUG-390: judged on <paramref name="elements"/> (the elements as the caller is about to save them) and left for the
+    /// caller's own save, so the element change and the recheck are saved together or not at all.
     /// </summary>
-    public static async Task RecheckUnreportedAsync(IAppDbContext db, IReadOnlyCollection<string> elementKeys, string actor,
-        DateTimeOffset now, CancellationToken ct = default)
+    public static async Task RecheckUnreportedAsync(IAppDbContext db, IReadOnlyCollection<string> elementKeys,
+        IEnumerable<DataElement> elements, string actor, DateTimeOffset now, CancellationToken ct = default)
     {
         if (elementKeys.Count == 0) return;
         var cases = await db.Cases.AsSplitQuery()   // S8733: two collections, one query each
@@ -217,10 +229,11 @@ public sealed class NotificationDeadlineService
                         && c.DataElements.Any(d => elementKeys.Contains(d.ElementKey)))
             .ToListAsync(ct);
         // BUG-284: a case once reported keeps what was in play then; only the elements added since follow the change.
-        var live = Live(await ElementJurisdictionsAsync(db, ct));
+        var live = Live(elements.Where(e => !string.IsNullOrEmpty(e.NotificationJurisdictions))
+            .GroupBy(e => e.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().NotificationJurisdictions!, StringComparer.OrdinalIgnoreCase));
         foreach (var c in cases)
             c.ReportedFromNotices(Case.KeptInPlay(c.ReportedJurisdictions, c.DataElements.Select(d => d.ElementKey).ToList(), live), actor, now);
-        if (cases.Count > 0) await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.</summary>
@@ -234,7 +247,7 @@ public sealed class NotificationDeadlineService
             .Select(e => e.NotificationJurisdictions!)
             .ToListAsync(ct);
         return raw
-            .SelectMany(s => s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .SelectMany(SplitCodes)   // BUG-404
             .Select(j => j.ToUpperInvariant())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();

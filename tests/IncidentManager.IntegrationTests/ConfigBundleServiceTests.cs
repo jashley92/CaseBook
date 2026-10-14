@@ -784,6 +784,71 @@ public sealed class ConfigBundleServiceTests : IDisposable
         reloader.Reloads.Should().Be(1);
     }
 
+    private sealed class FailingAudit : IAuditWriter
+    {
+        public Task RecordAsync(AuditAction action, string entityType, string? entityId, string? caseNumber, string summary,
+            CancellationToken ct = default) => throw new InvalidOperationException("audit store unavailable");
+    }
+
+    [Fact]
+    public async Task A_step_failing_after_the_import_is_saved_still_applies_and_streams_it(/* BUG-390 */)
+    {
+        await using var db = NewContext();
+        var sink = new CapturingSecurityEventSink();
+        var directory = new CountingDirectory();
+        var reloader = new CountingReloader();
+        var svc = new ConfigBundleService(NewFactory(), _signer, new FailingAudit(), _user, _clock, reloader, directory, sink);
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with
+        {
+            Roles = live.Roles.Append(new ConfigRole("Shadow Admin", null, false, "ViewCases,Administer")).ToList(),
+            Settings = live.Settings.Append(new ConfigSetting("Security:IdleTimeoutMinutes", "0")).ToList(),
+        };
+
+        (await svc.Invoking(s => s.ImportAsync(Signed(incoming))).Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("The bundle was imported and is in effect*");
+
+        (await db.Roles.AsNoTracking().AnyAsync(r => r.Name == "Shadow Admin")).Should().BeTrue("the import was saved");
+        sink.Events.Select(e => e.Action).Should().Contain(["RoleImported", "SettingChanged"]);
+        directory.Invalidations.Should().Be(1);
+        reloader.Reloads.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_data_element_whose_jurisdictions_use_a_semicolon_is_refused(/* BUG-404 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var first = live.DataElements[0];
+        var incoming = live with
+        {
+            DataElements = live.DataElements.Select(d => d == first ? d with { NotificationJurisdictions = "NY;CA" } : d).ToList()
+        };
+
+        await svc.Invoking(s => s.PreviewAsync(incoming)).Should().ThrowAsync<ArgumentException>().WithMessage("*use commas*");
+        await svc.Invoking(s => s.ImportAsync(Signed(incoming))).Should().ThrowAsync<ArgumentException>();
+        (await db.DataElements.AsNoTracking().SingleAsync(e => e.Key == first.Key)).NotificationJurisdictions
+            .Should().Be(first.NotificationJurisdictions);
+    }
+
+    [Fact]
+    public async Task An_import_waits_for_a_template_file_being_written(/* BUG-403 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var bundle = await svc.BuildBundleAsync();
+        Task import;
+        using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
+        {
+            import = svc.ImportAsync(Signed(bundle));
+            await Task.Delay(200);
+            import.IsCompleted.Should().BeFalse("an upload or replace holds the template file gate");
+        }
+        await import;
+    }
+
     [Fact]
     public async Task An_imported_setting_is_validated_like_the_settings_page()
     {

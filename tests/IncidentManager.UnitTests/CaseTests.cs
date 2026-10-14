@@ -146,6 +146,21 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_jurisdiction_code_with_a_separator_cannot_corrupt_the_kept_jurisdictions(/* BUG-404 */)
+    {
+        var c = Case.Open(2026, 1, "Vendor", "Vendor incident", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "analyst1", Now);
+        c.Invoking(x => x.RecordNotice("NY;CA", Now.AddHours(1), "analyst1", Now.AddHours(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*comma or semicolon*");
+        c.JurisdictionNotices.Should().BeEmpty();
+
+        // A code from an element stored with ";" before this release is split when kept, not read as the elements part.
+        c.MarkReported(Now.AddHours(2), "analyst1", Now.AddHours(2), ["NY;CA"]);
+        c.FrozenJurisdictions.Should().Equal("CA", "NY");
+        c.FrozenElementKeys.Should().BeEmpty();
+    }
+
+    [Fact]
     public void A_two_person_hold_release_needs_a_reason_and_a_different_approver(/* F-12 */)
     {
         var c = NewCase();
