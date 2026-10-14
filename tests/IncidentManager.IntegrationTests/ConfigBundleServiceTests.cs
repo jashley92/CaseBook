@@ -626,6 +626,51 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bundle_exported_before_step_kinds_still_verifies_and_tampering_still_fails(/* BUG-335 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var bundle = await svc.BuildBundleAsync();
+        bundle.CaseTemplates.SelectMany(t => t.Steps).Should().NotBeEmpty().And.OnlyContain(s => s.Kind == TaskKind.General);
+
+        // What v1.0.x / v1.1.x signed and wrote: the same payload, with no "kind" on any step (the field didn't exist).
+        var current = ConfigBundleJson.Canonicalize(bundle);
+        current.Should().Contain(",\"kind\":0}");
+        var legacyCanonical = current.Replace(",\"kind\":0}", "}");
+        byte[] LegacyFile(ConfigBundle b, string signedOver)
+        {
+            var env = new ConfigBundleEnvelope(ConfigBundleJson.FormatTag, 2, "1.1.0", _clock.UtcNow, "admin", "old-host",
+                _signer.Algorithm, _signer.KeyId, _signer.PublicKeyPem, _signer.Sign(signedOver), b);
+            var node = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(env, ConfigBundleJson.File))!;
+            foreach (var t in node["bundle"]!["caseTemplates"]!.AsArray())
+                foreach (var s in t!["steps"]!.AsArray())
+                    s!.AsObject().Remove("kind").Should().BeTrue();
+            return System.Text.Encoding.UTF8.GetBytes(node.ToJsonString(ConfigBundleJson.File));
+        }
+
+        var (parsed, ok) = svc.ParseAndVerify(LegacyFile(bundle, legacyCanonical));
+        ok.SignatureValid.Should().BeTrue("the payload is exactly what v1.1 signed");
+        parsed.Bundle.CaseTemplates.SelectMany(t => t.Steps).Should().OnlyContain(s => s.Kind == TaskKind.General);
+        await svc.ImportAsync(parsed);   // the service's own check agrees
+
+        // Altered after export: a step retitled, or a step given a kind, no longer verifies.
+        var template = bundle.CaseTemplates.First(t => t.Steps.Count > 0);
+        ConfigBundle WithStep(ConfigTemplateStep step) => bundle with
+        {
+            CaseTemplates = bundle.CaseTemplates.Select(t => t == template
+                ? t with { Steps = t.Steps.Skip(1).Prepend(step).ToList() } : t).ToList()
+        };
+        var retitled = WithStep(template.Steps[0] with { Title = "Exfiltrate the evidence" });
+        svc.ParseAndVerify(LegacyFile(retitled, legacyCanonical)).Verification.SignatureValid.Should().BeFalse();
+
+        var kinded = svc.ParseAndVerify(LegacyFile(bundle, legacyCanonical)).Envelope;
+        var withKind = kinded with { Bundle = WithStep(template.Steps[0] with { Kind = TaskKind.Contain }) };
+        await svc.Invoking(s => s.ImportAsync(withKind)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*signature doesn't verify*");
+    }
+
+    [Fact]
     public async Task Import_itself_refuses_a_bundle_whose_signature_does_not_verify()
     {
         // The page disables Apply for a bad signature; the service must refuse too, for any other caller.

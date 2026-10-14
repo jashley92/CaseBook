@@ -118,4 +118,27 @@ public static class ConfigBundleJson
 
     /// <summary>The exact string the signature covers — the bundle payload, compact and order-stable.</summary>
     public static string Canonicalize(ConfigBundle bundle) => JsonSerializer.Serialize(bundle, Canonical);
+
+    // BUG-335: v1.0.x and v1.1.x signed their steps before ConfigTemplateStep.Kind existed (v1.2.0, INV-28), and Kind is
+    // written even at its default. This is the canonical such a bundle was signed over: the same bytes, without a step's
+    // kind where it's General. A step of any other kind keeps it, so it can't verify this way.
+    private static readonly JsonSerializerOptions CanonicalWithoutDefaultStepKind = new(Canonical)
+    {
+        TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver
+        {
+            Modifiers =
+            {
+                info =>
+                {
+                    if (info.Type != typeof(ConfigTemplateStep)) return;
+                    foreach (var p in info.Properties)
+                        if (p.Name == "kind") p.ShouldSerialize = (_, v) => v is TaskKind k && k != TaskKind.General;
+                }
+            }
+        }
+    };
+
+    /// <summary>BUG-335: the canonical form of a bundle exported before step kinds (v1.0.x / v1.1.x).</summary>
+    public static string CanonicalizeWithoutDefaultStepKind(ConfigBundle bundle) =>
+        JsonSerializer.Serialize(bundle, CanonicalWithoutDefaultStepKind);
 }

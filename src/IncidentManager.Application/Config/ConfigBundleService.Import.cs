@@ -90,8 +90,12 @@ public sealed partial class ConfigBundleService
                 "one, so it was made to look like this server's own export. Nothing was imported.");
     }
 
+    // BUG-335: a bundle from v1.0.x / v1.1.x was signed without step kinds (all General then), so it's checked against that
+    // form as well. Any other change to the payload still fails both.
     private static bool SignatureValid(ConfigBundleEnvelope env) =>
-        VerifyWithEmbeddedKey(ConfigBundleJson.Canonicalize(env.Bundle), env.Signature, env.PublicKeyPem, env.Algorithm);
+        VerifyWithEmbeddedKey(ConfigBundleJson.Canonicalize(env.Bundle), env.Signature, env.PublicKeyPem, env.Algorithm)
+        || VerifyWithEmbeddedKey(ConfigBundleJson.CanonicalizeWithoutDefaultStepKind(env.Bundle), env.Signature,
+            env.PublicKeyPem, env.Algorithm);
 
     // Verifies a signature against a caller-supplied SubjectPublicKeyInfo PEM, by the algorithm the bundle records
     // (RSASSA-PSS now; RSASSA-PKCS1-v1_5 from releases before v1.4.0).
