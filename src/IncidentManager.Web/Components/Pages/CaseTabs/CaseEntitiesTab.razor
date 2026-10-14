@@ -105,7 +105,7 @@
             @if (_enEditId is null)
             {
                 <div class="col-md-1">
-                    <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="AddEntity" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
+                    <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="SubmitComposer" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
                 </div>
             }
             <div class="col-md-9">
@@ -130,7 +130,7 @@
                 </div>
                 <div class="col-md-6 d-flex justify-content-end align-items-end gap-2">
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEntityEdit">Cancel</button>
-                    <button class="btn btn-sm btn-primary" @onclick="SaveEntityEdit" disabled="@string.IsNullOrWhiteSpace(_enValue)">
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SubmitComposer" disabled="@string.IsNullOrWhiteSpace(_enValue)">
                         <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
                     </button>
                 </div>
@@ -677,21 +677,34 @@ else
     private string DisplayValue(CaseEntity e) =>
         _defangView && IocObservable.IsRefangable(e.Type) ? IocObservable.Defang(e.Value) : e.Value;
 
-    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — add the entity in the composer.</summary>
-    public async Task SubmitAsync() => await AddEntity();
+    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — add the entity in the composer, or save the edit.</summary>
+    public async Task SubmitAsync() => await SubmitComposer();
 
     // Enter in the value adds the entity, like any one-line form (held Enter doesn't add it twice).
-    private bool _adding;
     private async Task OnValueKey(KeyboardEventArgs e)
     {
-        if (e.Key != "Enter" || e.Repeat || e.CtrlKey || e.MetaKey || _adding) return;
+        if (e.Key != "Enter" || e.Repeat || e.CtrlKey || e.MetaKey) return;
+        await SubmitComposer();
+    }
+
+    // BUG-330: Enter, Ctrl+Enter and the button do what the composer is showing: an edit is saved, never added as a
+    // second entity. One at a time, so Enter and a click don't save twice.
+    private bool _adding;
+    private async Task SubmitComposer()
+    {
+        if (_adding) return;
         _adding = true;
-        try { await AddEntity(); } finally { _adding = false; }
+        try
+        {
+            if (_enEditId is null) await AddEntity();
+            else await SaveEntityEdit();
+        }
+        finally { _adding = false; }
     }
 
     private async Task AddEntity()
     {
-        if (string.IsNullOrWhiteSpace(_enValue)) return;
+        if (_enEditId is not null || string.IsNullOrWhiteSpace(_enValue)) return;   // BUG-330: the form is editing one
         _entityError = null;
         try
         {
