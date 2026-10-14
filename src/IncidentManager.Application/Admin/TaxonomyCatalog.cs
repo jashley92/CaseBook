@@ -63,6 +63,7 @@ public static class TaxonomyCatalog
                 new("EmailAddress", "Email address"),
                 new("Process", "Process"),
                 new("RegistryKey", "Registry key"),
+                new("CommandLine", "Command line"),
                 new("Other", "Other"),
             }) { AllowVisibilityOrder = true },
         new TaxonomyKind("EntityDisposition", "Entity dispositions",

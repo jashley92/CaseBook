@@ -167,6 +167,13 @@ public class IocObservableTests
     [InlineData("Temp\\payload.exe", EntityType.FileName)]
     [InlineData("C:\\Users", EntityType.Other)]
     [InlineData("CONTOSO\\a name with spaces", EntityType.Other)]
+    // BUG-415: a program with arguments is a command line; a bare program is a file name; space-separated domains aren't.
+    [InlineData("powershell.exe -NoProfile -EncodedCommand SQBFAFgA", EntityType.CommandLine)]
+    [InlineData("cmd /c whoami /all", EntityType.CommandLine)]
+    [InlineData("\"C:\\Program Files\\Evil\\run.exe\" --silent", EntityType.CommandLine)]
+    [InlineData("C:\\Windows\\System32\\rundll32.exe shell32.dll,Control_RunDLL", EntityType.CommandLine)]
+    [InlineData("powershell.exe", EntityType.FileName)]
+    [InlineData("evil.com bad.com", EntityType.Other)]
     // Fallbacks: bare hostname, bare sAMAccountName (can't be told from a host), partial IP, odd-length hex.
     [InlineData("WKS-HR-14", EntityType.Other)]
     [InlineData("jdoe", EntityType.Other)]
@@ -189,6 +196,19 @@ public class IocObservableTests
     }
 
     // --- PROD-22: ParseIndicators (bulk paste) ---
+
+    [Fact]
+    public void ParseIndicators_keeps_a_command_line_whole()   // BUG-415
+    {
+        var parsed = IocObservable.ParseIndicators(
+            "C:\\Windows\\System32\\rundll32.exe shell32.dll,Control_RunDLL; foo\nevil.com, 203.0.113.9");
+
+        parsed.Should().HaveCount(3);
+        parsed[0].Should().Be(new IocObservable.ParsedIndicator(
+            "C:\\Windows\\System32\\rundll32.exe shell32.dll,Control_RunDLL; foo", EntityType.CommandLine));
+        parsed[1].Type.Should().Be(EntityType.Domain);
+        parsed[2].Type.Should().Be(EntityType.IpAddress);
+    }
 
     [Fact]
     public void ParseIndicators_splits_refangs_and_auto_types_a_mixed_block()

@@ -26,7 +26,7 @@
 | **Disclosure** | The event lens for third-party cases: what the vendor told you and when. |
 | **Disposition** | An entity's verdict: Unknown, Benign, Suspicious, Malicious, Compromised. |
 | **Effective time** | When a transition actually happened, as opposed to when it was recorded. |
-| **Entity** | Anything an investigation refers to: account, host, IP, domain, URL, hash, file, email address, process, registry key. Includes IOCs. |
+| **Entity** | Anything an investigation refers to: account, host, IP, domain, URL, hash, file, email address, process, command line, registry key. Includes IOCs. |
 | **Event step** | A timeline entry describing what the adversary or vendor did. |
 | **Exercise case** | A tabletop case, excluded from metrics, reminders, feeds and correlation. |
 | **Gate passage** | The stored record that a stage gate was passed or overridden. |

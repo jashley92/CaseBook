@@ -238,7 +238,8 @@
             "EmailAddress",
             "Process",
             "RegistryKey",
-            "Other"
+            "Other",
+            "CommandLine"
           ],
           "description": "Optional \u2014 auto-detected from the value when omitted."
         },

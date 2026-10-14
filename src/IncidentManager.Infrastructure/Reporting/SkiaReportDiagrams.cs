@@ -254,6 +254,7 @@ public sealed class SkiaReportDiagrams : IReportDiagrams
         EntityType.Host => "HOST",
         EntityType.Account => "ACCT",
         EntityType.Process => "PROC",
+        EntityType.CommandLine => "CMD",
         EntityType.RegistryKey => "REG",
         _ => "?"
     };

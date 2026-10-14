@@ -81,7 +81,7 @@ flowchart LR
 | **Severity** | Informational, Low, Medium, High, Critical. Drives SLA targets and stale-case thresholds. |
 | **Origin** | Internal detection, or third-party (a vendor tells you about their breach). Third-party cases record the vendor's incident: the attacker's steps in the vendor's environment and the disclosure milestones. |
 | **Timeline** | Event steps (what the adversary or vendor did), investigation entries (what the team did), decisions, handoffs, and derived milestones. |
-| **Entity / IOC** | An account, host, IP, domain, URL, file hash, file name, email address, process or registry key, with a disposition (Unknown, Benign, Suspicious, Malicious, Compromised). |
+| **Entity / IOC** | An account, host, IP, domain, URL, file hash, file name, email address, process, command line or registry key, with a disposition (Unknown, Benign, Suspicious, Malicious, Compromised). |
 | **Evidence** | A file attached to a case, hashed, with its own custody log. |
 | **Task** | Follow-up work with an owner, due date and kind. Can be "about" an entity, evidence file or timeline entry. |
 | **Brief** | The versioned "Where it stands" summary at the top of a case. Its summary is what the report prints. |

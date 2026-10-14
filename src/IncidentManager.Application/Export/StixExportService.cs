@@ -209,6 +209,7 @@ public sealed class StixExportService
             EntityType.RegistryKey => ("windows-registry-key", new() { ["key"] = v }),
             EntityType.Account => ("user-account", new() { ["account_login"] = v }),
             EntityType.Process => ("process", new() { ["command_line"] = v }),
+            EntityType.CommandLine => ("process", new() { ["command_line"] = v }),   // BUG-415
             // Host and Other have no native SCO — emit a spec-legal custom SCO so the node still exports.
             _ => ("x-casebook-artifact", new() { ["value"] = v }),
         };

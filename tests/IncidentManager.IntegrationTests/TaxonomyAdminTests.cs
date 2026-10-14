@@ -176,7 +176,7 @@ public sealed class TaxonomyAdminTests : IDisposable
     public async Task A_visibility_order_change_is_audited_and_the_chain_stays_valid()
     {
         await NewService().SetVisibilityOrderAsync("EntityType",
-            new[] { "Other", "Account", "Host", "IpAddress", "Domain", "Url", "FileHash", "FileName", "EmailAddress", "Process", "RegistryKey" },
+            new[] { "Other", "Account", "Host", "IpAddress", "Domain", "Url", "FileHash", "FileName", "EmailAddress", "Process", "RegistryKey", "CommandLine" },
             new[] { "RegistryKey" });
 
         await using var db = NewContext();

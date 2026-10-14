@@ -166,7 +166,8 @@ public enum EntityType
     EmailAddress = 7,
     Process = 8,
     RegistryKey = 9,
-    Other = 10
+    Other = 10,
+    CommandLine = 11    // BUG-415: a full command line (Process is the executable)
 }
 
 /// <summary>Analyst verdict on an entity — how it relates to the threat.</summary>

@@ -253,7 +253,7 @@ Analyst (one IC per case is enforced in code, not the database). Unassigning del
 
 | Column | Type | Meaning |
 |---|---|---|
-| `Type` | int | 0 Account, 1 Host, 2 IP address, 3 Domain, 4 URL, 5 File hash, 6 File name, 7 Email address, 8 Process, 9 Registry key, 10 Other. |
+| `Type` | int | 0 Account, 1 Host, 2 IP address, 3 Domain, 4 URL, 5 File hash, 6 File name, 7 Email address, 8 Process, 9 Registry key, 10 Other, 11 Command line (a full command line; Process is the executable). |
 | `Value` | nvarchar(2000) | Normalized: network types are refanged; hashes, file names and accounts are kept exactly. |
 | `Label` | nvarchar(400) | Friendly name ("Jane Doe (Finance)"). |
 | `Disposition` | int | 0 Unknown, 1 Benign, 2 Suspicious, 3 Malicious, 4 Compromised (a legitimate asset taken over). |

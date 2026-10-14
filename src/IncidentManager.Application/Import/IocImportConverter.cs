@@ -221,7 +221,7 @@ public static partial class IocImportConverter
             "file" => FileObservable(o),
             "windows-registry-key" => (EntityType.RegistryKey, Str(o, "key")),
             "user-account" => (EntityType.Account, Str(o, "account_login") ?? Str(o, "user_id")),
-            "process" => (EntityType.Process, Str(o, "command_line") ?? Str(o, "name")),
+            "process" => Str(o, "command_line") is { Length: > 0 } cmd ? (EntityType.CommandLine, cmd) : (EntityType.Process, Str(o, "name")),   // BUG-415
             "x-casebook-artifact" => (EntityType.Other, Str(o, "value")),
             _ => null,
         };
@@ -366,7 +366,8 @@ public static partial class IocImportConverter
         "filename" or "file" => nameof(EntityType.FileName),
         "account" or "user" or "username" or "useraccount" => nameof(EntityType.Account),
         "host" or "device" or "endpoint" => nameof(EntityType.Host),
-        "process" or "commandline" => nameof(EntityType.Process),
+        "process" or "processname" => nameof(EntityType.Process),
+        "commandline" or "cmdline" or "command" => nameof(EntityType.CommandLine),   // BUG-415
         "registrykey" or "registry" or "regkey" => nameof(EntityType.RegistryKey),
         var other => ImportEnums.TryName<EntityType>(other, out var t) ? t.ToString() : null,
     };

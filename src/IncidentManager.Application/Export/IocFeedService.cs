@@ -41,7 +41,7 @@ public sealed class IocFeedService
 
     /// <summary>
     /// IOC-like types worth pushing to a blocklist. Assets (Account/Host) and free-form artifacts
-    /// (FileName/Process/RegistryKey/EmailAddress/Other) are deliberately excluded — mirrors the
+    /// (FileName/Process/CommandLine/RegistryKey/EmailAddress/Other) are deliberately excluded — mirrors the
     /// UI's <c>Ui.IsIocLike</c> so the feed carries only network/file indicators a control can act on.
     /// </summary>
     private static readonly EntityType[] IocTypes =

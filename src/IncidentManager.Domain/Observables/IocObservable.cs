@@ -43,6 +43,9 @@ public static partial class IocObservable
     {
         var v = Refang(value);
         if (v.Length == 0) return EntityType.Other;
+        // BUG-415: a program followed by arguments ("powershell.exe -enc …", "cmd /c …") is a command line. Checked on the
+        // value as typed: refanging could rewrite an argument.
+        if (CommandLineRx().IsMatch((value ?? "").Trim())) return EntityType.CommandLine;
 
         if (UrlRx().IsMatch(v)) return EntityType.Url;
         if (EmailRx().IsMatch(v)) return EntityType.EmailAddress;
@@ -92,6 +95,11 @@ public static partial class IocObservable
     [GeneratedRegex(@"^(?:HKLM|HKCU|HKCR|HKU|HKCC|HKEY_[A-Z_]+)(?::)?\\", RegexOptions.IgnoreCase)]
     private static partial Regex RegistryRx();
 
+    // A program (an executable or script by extension, optionally quoted or with a path, or a well-known shell or LOLBin)
+    // then whitespace and at least one argument.
+    [GeneratedRegex(@"^(?:""[^""]+\.(?:exe|bat|cmd|ps1|vbs|js|msc|cpl|scr)""|\S+\.(?:exe|bat|cmd|ps1|vbs|js|msc|cpl|scr)|(?:\S*[\\/])?(?:powershell|pwsh|cmd|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|wmic|msiexec|schtasks|reg|net|net1|sc|bash|sh|zsh|python3?|perl|curl|wget|nc|ncat))\s+\S", RegexOptions.IgnoreCase)]
+    private static partial Regex CommandLineRx();
+
     /// <summary>
     /// BUG-176: one spelling per address, so the same one written two ways dedupes and matches across cases: IPv6 in its
     /// compressed lower-case form (2001:0db8:0:0:0:0:0:1 is 2001:db8::1), an IPv4-mapped IPv6 address as the IPv4 one
@@ -132,9 +140,12 @@ public static partial class IocObservable
         if (string.IsNullOrWhiteSpace(block)) return result;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var token in block.Split(
-            new[] { '\n', '\r', ',', ';', '\t' },
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        // BUG-415: a line that reads as a command line is one indicator; its commas and semicolons are part of it.
+        var tokens = block.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .SelectMany(line => DetectType(line) == EntityType.CommandLine
+                ? [line]
+                : line.Split([',', ';', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        foreach (var token in tokens)
         {
             var type = DetectType(token);
             var value = Normalize(type, token);

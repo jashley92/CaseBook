@@ -178,6 +178,7 @@ public static class Ui
             EntityType.FileName => "File name",
             EntityType.EmailAddress => "Email address",
             EntityType.RegistryKey => "Registry key",
+            EntityType.CommandLine => "Command line",
             EntityType.Url => "URL",
             _ => t.ToString()
         };
@@ -348,6 +349,7 @@ public static class Ui
         EntityType.FileName => "📄",
         EntityType.EmailAddress => "✉",
         EntityType.Process => "⚙",
+        EntityType.CommandLine => "❯",
         EntityType.RegistryKey => "🗝",
         _ => "•"
     };
