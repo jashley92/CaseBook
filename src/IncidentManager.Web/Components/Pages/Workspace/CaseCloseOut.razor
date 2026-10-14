@@ -98,9 +98,9 @@
     [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
     /// <summary>Back to the case: true discards the draft, false keeps it.</summary>
     [Parameter] public EventCallback<bool> OnLeave { get; set; }
-    /// <summary>The case closed; the message says how.</summary>
-    [Parameter] public EventCallback<string> OnClosed { get; set; }
-    [Parameter] public EventCallback OnForbidden { get; set; }
+    /// <summary>The case closed: which one (BUG-337) and how. The workspace discards the draft if it's still that case's.</summary>
+    [Parameter] public EventCallback<CaseActionApplied> OnClosed { get; set; }
+    [Parameter] public EventCallback<CaseActionFor> OnForbidden { get; set; }
     [Parameter] public EventCallback<string> OnFix { get; set; }
 
     // A child changed the draft (a tick, the justification, the time): re-render so Close reflects it.
@@ -124,15 +124,15 @@
         { Draft.Error = "Enter an override justification for the unmet requirements."; return; }
         if (t.RationaleError(Draft.Conclusion) is { } m) { Draft.Error = m; return; }
         var closing = new CaseService.CaseClosing(Draft.Outcome ?? "", Draft.LinkedSummary(Case) ?? "", Draft.LinkedConclusion(Case) ?? "");
+        var (id, number) = (Case.Id, Case.CaseNumber);   // BUG-337: a case switch may come while this saves
         try
         {
-            await Cases.ChangePhaseAsync(Case.Id, CasePhase.Closed, null,
+            await Cases.ChangePhaseAsync(id, CasePhase.Closed, null,
                 t.Attested.Count > 0 ? t.Attested : null, t.Override, t.EffectiveUtc(TimeDisp.Zone), closing: closing);
             var label = Draft.Outcomes.FirstOrDefault(o => o.Key == closing.OutcomeKey)?.Label ?? closing.OutcomeKey;
-            Draft.Discard();
-            await OnClosed.InvokeAsync($"Case closed: {label}");
+            await OnClosed.InvokeAsync(new(id, number, $"Case closed: {label}", null));
         }
-        catch (ForbiddenException) { await OnForbidden.InvokeAsync(); }
+        catch (ForbiddenException) { await OnForbidden.InvokeAsync(new(id, number)); }
         catch (GateNotSatisfiedException ex) { Draft.Error = ex.Message; }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Draft.Error = ex.Message; }
     }

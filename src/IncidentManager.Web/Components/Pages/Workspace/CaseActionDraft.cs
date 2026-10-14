@@ -101,3 +101,24 @@ public sealed class CaseActionDraft
     public bool HandoffTasks { get; set; } = true;
     public IReadOnlyList<UserSummary> HandoffPeople { get; set; } = [];
 }
+
+/// <summary>BUG-337: the case an action dialog or the close-out acted on. A case switch removes the form while it saves,
+/// so the workspace, not the form, decides whether the follow-up (a reload, the close-out, a demotion) still applies.</summary>
+public readonly record struct CaseActionFor(Guid CaseId, string Number)
+{
+    /// <summary>Whether it was for the case the workspace has open now.</summary>
+    public bool IsFor(Guid openCaseId) => CaseId == openCaseId;
+}
+
+/// <summary>An action dialog applied (BUG-337): the case it was for, what to say, and for a supersede, the reason to
+/// close it with.</summary>
+public readonly record struct CaseActionApplied(Guid CaseId, string Number, string Done, string? CloseReason)
+{
+    public bool IsFor(Guid openCaseId) => CaseId == openCaseId;
+
+    /// <summary>What to say once the workspace has moved to another case: only that it was done, and on which case.</summary>
+    public string ElsewhereMessage => ElsewhereText(Number, Done);
+
+    public static string ElsewhereText(string number, string done) =>
+        string.IsNullOrEmpty(done) ? $"Saved on {number}." : $"{number}: {done.TrimEnd('.')}.";
+}

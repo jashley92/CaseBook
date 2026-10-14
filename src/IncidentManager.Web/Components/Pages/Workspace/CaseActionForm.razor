@@ -7,7 +7,6 @@
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.IExerciseEscalationPolicy ExercisePolicy
-@inject ToastService Toasts
 
 @{ var T = D.Transition; var backdated = T.Backdated(TimeDisp.Zone, Clock.UtcNow); }
 <div class="modal-header">
@@ -337,9 +336,10 @@
     /// <summary>The reclassify or phase target changed ("reclass" or "status"): the workspace loads its gate (and
     /// opens the close-out view for Closed).</summary>
     [Parameter] public EventCallback<string> OnTargetChanged { get; set; }
-    /// <summary>Applied: what to say, and for a supersede, the reason to close this case with.</summary>
-    [Parameter] public EventCallback<(string Done, string? CloseReason)> OnApplied { get; set; }
-    [Parameter] public EventCallback OnForbidden { get; set; }
+    /// <summary>Applied: the case it was for (BUG-337), what to say, and for a supersede, the reason to close it with.</summary>
+    [Parameter] public EventCallback<CaseActionApplied> OnApplied { get; set; }
+    /// <summary>Refused for lack of permission, on the case it was for (BUG-337).</summary>
+    [Parameter] public EventCallback<CaseActionFor> OnForbidden { get; set; }
     /// <summary>Someone else changed what this dialog edits (REL-02): the workspace reloads the case behind it.</summary>
     [Parameter] public EventCallback OnStale { get; set; }
     [Parameter] public EventCallback<string> OnFix { get; set; }
@@ -643,19 +643,14 @@
                     done = "";
                     break;
             }
-            // BUG-179: the workspace may have moved to another case while this saved (Back, the palette, a tab). What
-            // follows an action (a reload, the close-out it opens, "Duplicate of …") belongs to the case it was for.
-            if (Case.Id != id)
-            {
-                Toasts.Success(string.IsNullOrEmpty(done) ? $"Saved on {number}." : $"{number}: {done}.");
-                return;
-            }
-            await OnApplied.InvokeAsync((done, closeReason));
+            // BUG-179/BUG-337: the workspace may have moved to another case while this saved (Back, the palette, a tab).
+            // A switch removes this form, so it can't tell; the workspace checks the case it was for.
+            await OnApplied.InvokeAsync(new(id, number, done, closeReason));
         }
         catch (ForbiddenException)
         {
             // REL-08: access was revoked since the case loaded; the workspace closes the dialog and explains.
-            await OnForbidden.InvokeAsync();
+            await OnForbidden.InvokeAsync(new(id, number));
         }
         catch (GateNotSatisfiedException ex)
         {

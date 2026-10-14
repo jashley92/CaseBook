@@ -154,10 +154,13 @@ public partial class CaseWorkspace
         await SetTab(DefaultPart());
     }
 
-    private async Task ClosedFromView(string done)
+    private async Task ClosedFromView(CaseActionApplied result)
     {
+        // BUG-337: closed after a switch to another case: say so, and leave this case (and its close-out draft) alone.
+        if (!result.IsFor(Id)) { Toasts.Success(result.ElsewhereMessage); return; }
+        _closeOut.Discard();
         await Reload();
-        Toasts.Success(done);
+        Toasts.Success(result.Done);
         await SetTab("Briefing");
     }
 
@@ -250,8 +253,11 @@ public partial class CaseWorkspace
 
 
 
-    private async Task ActionApplied((string Done, string? CloseReason) result)
+    private async Task ActionApplied(CaseActionApplied result)
     {
+        // BUG-179/BUG-337: the follow-up (a reload, the close-out a supersede opens, "Duplicate of ...") belongs to the
+        // case the action was for. A case switch removes the form while it saves, so the check is made here.
+        if (!result.IsFor(Id)) { Toasts.Success(result.ElsewhereMessage); return; }
         _action.Name = null;
         await Reload();
         if (result.Done.Length > 0) Toasts.Success(result.Done);
@@ -266,10 +272,26 @@ public partial class CaseWorkspace
     }
 
     // REL-08: access was revoked since the case loaded: close the dialog, demote the UI and explain.
-    private void ActionForbidden()
+    private void ActionForbidden(CaseActionFor action)
     {
+        if (ForbiddenElsewhere(action)) return;
         _action.Name = null;
         Forbidden();
+    }
+
+    // The close-out view was refused (REL-08).
+    private void CloseOutForbidden(CaseActionFor action)
+    {
+        if (ForbiddenElsewhere(action)) return;
+        Forbidden();
+    }
+
+    // BUG-337: a refusal for the case left behind doesn't demote the one now open; it only says what happened.
+    private bool ForbiddenElsewhere(CaseActionFor action)
+    {
+        if (action.IsFor(Id)) return false;
+        Toasts.Error($"{action.Number}: {PermissionLostMessage}");
+        return true;
     }
 
     private CasePhase? NextPhase() => CaseFlow.NextPhase(_case);
