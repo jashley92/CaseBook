@@ -37,7 +37,7 @@ else
                 {
                     <button type="button"
                             class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(t.Id == _selectedId ? "active" : "")"
-                            @onclick="() => Select(t.Id)">
+                            @onclick="() => Select(t.Id)" disabled="@_busy">
                         <span>@t.Title</span>
                         @if (_drafts.ContainsKey(t.Id) || (t.Id == _selectedId && Unsaved))
                         {
@@ -146,6 +146,9 @@ else
 
     private async Task Select(string id)
     {
+        // BUG-462: no switching while Save, Reset or Send test runs. Each writes the editor back once it lands, which
+        // would overwrite the newly picked template's draft or carry a stale stamp into it.
+        if (_busy) return;
         if (Unsaved) _drafts[_selectedId] = (_subject, _body, _stamp);
         else _drafts.Remove(_selectedId);
         _selectedId = id;
@@ -163,15 +166,18 @@ else
 
     private async Task UpdatePreview()
     {
+        // BUG-462: a preview that lands after another template was picked is dropped, so it can't show over that one.
+        var id = _selectedId;
         try
         {
-            var (_, html) = await Composer.PreviewAsync(_selectedId, _subject, _body);
+            var (_, html) = await Composer.PreviewAsync(id, _subject, _body);
+            if (id != _selectedId) return;
             _previewHtml = html;
             _error = null;
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            if (id == _selectedId) _error = ex.Message;
         }
     }
 
