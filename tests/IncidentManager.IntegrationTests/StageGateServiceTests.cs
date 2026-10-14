@@ -98,9 +98,21 @@ public sealed class StageGateServiceTests : IDisposable
         var svc = NewService();
         await svc.CreateAsync(BreachGate(active: true));
 
-        var act = () => svc.CreateAsync(BreachGate(active: true));
+        var act = () => svc.CreateAsync(BreachGate(active: true) with { Name = "Second breach gate" });
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already governs*");
+    }
+
+    [Fact]
+    public async Task Two_gates_cant_share_a_name(/* BUG-265 */)
+    {
+        var svc = NewService();
+        var first = await svc.CreateAsync(BreachGate(active: true));
+
+        var same = () => svc.CreateAsync(BreachGate(active: false) with { Name = BreachGate(active: false).Name.ToUpperInvariant() });
+
+        await same.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already called*");
+        (await svc.ListAllAsync()).Should().ContainSingle(g => g.Id == first);
     }
 
     [Fact]
