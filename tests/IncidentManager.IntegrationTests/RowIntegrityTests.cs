@@ -166,6 +166,32 @@ public sealed class RowIntegrityTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task A_retracted_entry_put_back_as_current_is_caught(string provider /* BUG-421 */)
+    {
+        using var database = Seeded(provider);
+        Guid id;
+        await using (var db = database.NewContext())
+        {
+            var c = await db.Cases.Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
+                .FirstAsync(x => x.TimelineEntries.Any(t => t.IsCurrent));
+            id = c.TimelineEntries.First(t => t.IsCurrent).Id;
+            c.RetractTimelineEntry(id, "Logged against the wrong host.", _user.UserId, _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        (await VerifyAsync(database))?.Detail.Should().BeNull("a retraction made in CaseBook passes");
+
+        await using (var db = database.NewContext())
+            await db.TimelineEntries.Where(t => t.Id == id).ExecuteUpdateAsync(s => s.SetProperty(t => t.IsCurrent, true));
+
+        var bad = await VerifyAsync(database);
+        bad.Should().NotBeNull();
+        bad!.EntityType.Should().Be(nameof(TimelineEntry));
+        bad.Id.Should().Be(id);
+        bad.Detail.Should().Contain("marked current though it was retracted");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_marking_lowered_in_the_database_is_caught(string provider /* BUG-316 */)
     {
         using var database = Seeded(provider);
@@ -257,6 +283,28 @@ public sealed class RowIntegrityTests
         RolesCsv = roles, TokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Guid.NewGuid().ToByteArray())),
         Prefix = "cbk_x", CreatedBy = "admin1", CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(30),
     };
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_account_snapshot_inserted_without_a_hash_is_caught(string provider /* BUG-422 */)
+    {
+        using var database = Seeded(provider);
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            var entity = await raw.CaseEntities.AsNoTracking().FirstAsync();
+            raw.AccountDirectorySnapshots.Add(new AccountDirectorySnapshot
+            {
+                CaseId = entity.CaseId, EntityId = entity.Id, LookedUp = entity.Value, Trigger = DirectorySnapshotTrigger.Added,
+                Found = true, DisplayName = "Planted", Enabled = true, CreatedBy = "t", CreatedAtUtc = _clock.UtcNow,
+            });
+            await raw.SaveChangesAsync();
+        }
+
+        var bad = await VerifyAsync(database);
+        bad.Should().NotBeNull();
+        bad!.EntityType.Should().Be(nameof(AccountDirectorySnapshot));
+        bad.Detail.Should().Contain("has no hash");
+    }
 
     [Theory]
     [MemberData(nameof(Providers))]

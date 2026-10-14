@@ -163,12 +163,21 @@ public static class RowIntegrityVerifier
                                                  where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
         ?? Lineage(nameof(CaseBrief), await (from later in db.CaseBriefs.AsNoTracking() where later.SupersedesBriefId != null
                                              join earlier in db.CaseBriefs.AsNoTracking() on later.SupersedesBriefId equals (Guid?)earlier.Id
-                                             where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct));
+                                             where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
+        // BUG-421: retracting an entry makes it not current in the same change, and nothing makes it current again, so a
+        // retracted entry marked current (back on the timeline and in every report) was changed outside CaseBook.
+        ?? RetractedButCurrent(await db.TimelineEntries.AsNoTracking().Where(t => t.RetractedAtUtc != null && t.IsCurrent)
+            .Select(t => t.Id).FirstOrDefaultAsync(ct));
 
     private static RowMismatch? Lineage(string type, Guid replacedButCurrent) =>
         replacedButCurrent == Guid.Empty ? null
             : new RowMismatch(type, replacedButCurrent, null,
                 $"{type} {replacedButCurrent} is marked current though a later version replaced it: changed outside CaseBook.");
+
+    private static RowMismatch? RetractedButCurrent(Guid id) =>
+        id == Guid.Empty ? null
+            : new RowMismatch(nameof(TimelineEntry), id, null,
+                $"{nameof(TimelineEntry)} {id} is marked current though it was retracted: changed outside CaseBook.");
 
     private static RowMismatch Missing((string Type, string Id) key, ChainRecords recorded)
     {
@@ -199,6 +208,11 @@ public static class RowIntegrityVerifier
                 $"{type} {entity.Id} was removed (audit entry {last.Sequence}) and put back outside CaseBook.");
         if (row.RowHash is not { Length: > 0 } stored)
         {
+            // BUG-422: a table hashed from its first row has no row from before row hashes, so one without a hash was
+            // added (or had its hash cleared) outside CaseBook, whatever the trail says.
+            if (HashedSinceCreation.Contains(type))
+                return new RowMismatch(type, entity.Id, known ? last.Sequence : null,
+                    $"{type} {entity.Id} has no hash, and every record of its kind has had one: it was added or changed outside CaseBook.");
             // BUG-70: in the tables made hashable later, a row the trail records was given its hash at upgrade; one
             // without a hash that the trail never recorded was added outside CaseBook (an assignment, say).
             if (!known && HashedFromUpgrade.Contains(type))
@@ -244,6 +258,12 @@ public static class RowIntegrityVerifier
         nameof(AssignmentChange), nameof(EntityVerdictChange), nameof(CaseAssignment), nameof(EvidenceCitation),
         nameof(ApiToken),   // REV-05: every token CaseBook issued has a Create entry, so one with neither was added outside it
     };
+
+    /// <summary>
+    /// BUG-422: tables that were hashable from the release that added them, so none of their rows predates row hashes.
+    /// A table added later belongs here, not in <see cref="HashedFromUpgrade"/>.
+    /// </summary>
+    private static readonly HashSet<string> HashedSinceCreation = new(StringComparer.Ordinal) { nameof(AccountDirectorySnapshot) };
 
     /// <summary>
     /// Per record (type, id), the row hash its latest audit entry recorded, that entry's sequence, and whether it was a
