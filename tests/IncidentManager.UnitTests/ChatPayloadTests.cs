@@ -70,14 +70,14 @@ public class ChatPayloadTests
     }
 
     [Fact]
-    public void Teams_case_text_cannot_add_a_link_or_restyle_the_card(/* BUG-361 */)
+    public void Teams_case_text_cannot_add_a_link(/* BUG-361 */)
     {
         var json = ChatPayload.Serialize(ChatWebhookFormat.Teams,
             new ChatNotification("2026-01_Wave *now*", "[Open in CaseBook](https://evil.example) `x` <b>"));
 
         var root = JsonDocument.Parse(json).RootElement;
-        root.GetProperty("title").GetString().Should().Be(@"2026-01\_Wave \*now\*");
-        root.GetProperty("text").GetString().Should().Be(@"\[Open in CaseBook\](https://evil.example) \`x\` \<b\>");
+        root.GetProperty("title").GetString().Should().Be("2026-01_Wave *now*", "only link syntax is escaped");
+        root.GetProperty("text").GetString().Should().Be(@"\[Open in CaseBook\](https://evil.example) `x` <b>");
         root.GetProperty("summary").GetString().Should().Be("2026-01_Wave *now*", "the summary is plain text");
     }
 }

@@ -60,17 +60,9 @@ public static class ChatPayload
         s.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal)
          .Replace(">", "&gt;", StringComparison.Ordinal);
 
-    // BUG-361: a MessageCard's title and text are Markdown, so "[Open in CaseBook](https://evil)" was a disguised link
-    // and * or _ restyled the rest. Those characters are escaped; the summary is plain text and stays as it is.
-    private static string? TeamsEscape(string? s)
-    {
-        if (string.IsNullOrEmpty(s)) return s;
-        var sb = new StringBuilder(s.Length + 8);
-        foreach (var ch in s)
-        {
-            if (ch is '\\' or '[' or ']' or '*' or '_' or '`' or '~' or '<' or '>') sb.Append('\\');
-            sb.Append(ch);
-        }
-        return sb.ToString();
-    }
+    // BUG-361: a MessageCard's title and text are Markdown, so "[Open in CaseBook](https://evil)" was a disguised link.
+    // Only the brackets are escaped: Teams connectors aren't documented to honour every Markdown escape, and an
+    // unhonoured one would show as a stray backslash in ordinary case text (2026-01_Wave). The summary is plain text.
+    private static string? TeamsEscape(string? s) =>
+        string.IsNullOrEmpty(s) ? s : s.Replace("[", @"\[", StringComparison.Ordinal).Replace("]", @"\]", StringComparison.Ordinal);
 }
