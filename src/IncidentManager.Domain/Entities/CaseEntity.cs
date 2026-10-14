@@ -26,21 +26,25 @@ public class CaseEntity : AuditableEntity, IHashableEntity
     public string? Source { get; set; }
 
     /// <summary>
-    /// PROD-45: an optional TLP marking for sharing this indicator; null = the report's marking applies. Kept out of
-    /// the row hash (so existing rows still verify); changes are still recorded in the hash-chained audit trail.
+    /// PROD-45: an optional TLP marking for sharing this indicator; null = the report's marking applies. In the row hash
+    /// from format 3 (BUG-316): a marking lowered in the database would otherwise be shared, unflagged.
     /// </summary>
     public TlpLevel? Tlp { get; set; }
 
     /// <summary>
     /// INV-32: pinned to the case context panel's key entities, whatever its disposition (the most important entity
-    /// may still be Unknown). Kept out of the row hash, like <see cref="Tlp"/>; changes are in the audit trail.
+    /// may still be Unknown). In the row hash from format 3, like <see cref="Tlp"/>.
     /// </summary>
     public bool IsPinned { get; set; }
 
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|',
-        CaseId, (int)Type, Canonical.Text(Value), Canonical.Text(Label), (int)Disposition, Canonical.Text(Description), Canonical.Text(Source), CreatedBy, CreatedAtUtc.ToString("o"));
+    public string BuildCanonicalContent()
+    {
+        var content = string.Join('|',
+            CaseId, (int)Type, Canonical.Text(Value), Canonical.Text(Label), (int)Disposition, Canonical.Text(Description), Canonical.Text(Source), CreatedBy, CreatedAtUtc.ToString("o"));
+        return Canonical.AtLeast(3) ? string.Join('|', content, Canonical.Num(Tlp), IsPinned) : content;   // BUG-316
+    }
 }
 
 /// <summary>

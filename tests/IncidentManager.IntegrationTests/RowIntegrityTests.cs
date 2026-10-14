@@ -166,6 +166,23 @@ public sealed class RowIntegrityTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task A_marking_lowered_in_the_database_is_caught(string provider /* BUG-316 */)
+    {
+        using var database = Seeded(provider);
+        await using (var db = database.NewContext())
+        {
+            var id = await db.CaseEntities.Select(e => e.Id).FirstAsync();
+            await db.CaseEntities.Where(e => e.Id == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.Tlp, TlpLevel.Clear));
+        }
+
+        var bad = await VerifyAsync(database);
+        bad.Should().NotBeNull();
+        bad!.EntityType.Should().Be(nameof(CaseEntity));
+        bad.Detail.Should().Contain("no longer matches its hash");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task An_edit_made_directly_in_the_database_is_caught(string provider)
     {
         using var database = Seeded(provider);

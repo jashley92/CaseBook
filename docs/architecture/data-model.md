@@ -257,8 +257,8 @@ Analyst (one IC per case is enforced in code, not the database). Unassigning del
 | `Label` | nvarchar(400) | Friendly name ("Jane Doe (Finance)"). |
 | `Disposition` | int | 0 Unknown, 1 Benign, 2 Suspicious, 3 Malicious, 4 Compromised (a legitimate asset taken over). |
 | `Description`, `Source` | | |
-| `Tlp` | int | Per-indicator TLP. Not hashed. |
-| `IsPinned` | bit | Shown first in the context rail. Not hashed. |
+| `Tlp` | int | Per-indicator TLP. Hashed from row-hash format 3 (BUG-316). |
+| `IsPinned` | bit | Shown first in the context rail. Hashed from format 3. |
 
 `(Type, Value)` is unique per case, case-insensitively, **in code only**. Adding an existing one never duplicates it
 and never overwrites what's recorded: its disposition changes only while it's Unknown, and label, description and

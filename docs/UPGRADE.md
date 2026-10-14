@@ -264,7 +264,9 @@ From a whole-codebase review (BUG-262 to BUG-326 in the tracker):
   answer it stops, changes nothing, and asks for `-HealthUrl`. A binding with an IP and no host name is probed at that IP.
 - **Releases run every CI check on the tagged commit** (the SQL Server tests, the DBA script, the upgrade path) before
   they publish.
-- **Verify** flags an earlier version of a note, entry or brief set back as current in the database.
+- **Verify** flags an earlier version of a note, entry or brief set back as current in the database, and row hashes now
+  cover an indicator's TLP marking and pin and an evidence file's description (format 3, `v3:`). Existing rows keep
+  verifying as written and move to format 3 when next saved; nothing is re-hashed at upgrade.
 - **Notices** are judged against the deadline kept when they were given everywhere (the case page and the Legal register
   too), a case that goes back to unreported keeps the jurisdictions it was reported against (removing an element added
   by mistake reports it again), and the program report

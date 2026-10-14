@@ -31,14 +31,18 @@ public sealed class HashChainService : IHashChainService
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    // BUG-24: new row hashes are over the escaped (format 2) canonical and say so; older ones are checked as written.
+    // BUG-24: new row hashes are over the escaped canonical and say which format; older ones are checked as written.
+    // BUG-316: format 3 adds the fields the earlier formats left out.
     public string ComputeRowHash(IHashableEntity entity) =>
-        Canonical.V2Prefix + Hash(Canonical.InFormat(2, entity.BuildCanonicalContent));
+        Canonical.V3Prefix + Hash(Canonical.InFormat(Canonical.CurrentFormat, entity.BuildCanonicalContent));
 
-    public bool RowHashMatches(IHashableEntity entity, string stored) =>
-        stored.StartsWith(Canonical.V2Prefix, StringComparison.Ordinal)
-            ? string.Equals(ComputeRowHash(entity), stored, StringComparison.OrdinalIgnoreCase)
-            : string.Equals(Hash(Canonical.InFormat(1, entity.BuildCanonicalContent)), stored, StringComparison.OrdinalIgnoreCase);
+    public bool RowHashMatches(IHashableEntity entity, string stored)
+    {
+        var (format, prefix) = stored.StartsWith(Canonical.V3Prefix, StringComparison.Ordinal) ? (3, Canonical.V3Prefix)
+            : stored.StartsWith(Canonical.V2Prefix, StringComparison.Ordinal) ? (2, Canonical.V2Prefix)
+            : (1, "");
+        return string.Equals(prefix + Hash(Canonical.InFormat(format, entity.BuildCanonicalContent)), stored, StringComparison.OrdinalIgnoreCase);
+    }
 
     public void ChainAppend(AuditLogEntry entry, AuditLogEntry? previous)
     {

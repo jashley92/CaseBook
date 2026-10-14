@@ -24,8 +24,12 @@ public class Evidence : AuditableEntity, IHashableEntity
 
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|',
-        CaseId, Canonical.Text(OriginalFileName), Canonical.Text(ContentType), SizeBytes, Sha256, CreatedBy, CreatedAtUtc.ToString("o"));
+    public string BuildCanonicalContent()
+    {
+        var content = string.Join('|',
+            CaseId, Canonical.Text(OriginalFileName), Canonical.Text(ContentType), SizeBytes, Sha256, CreatedBy, CreatedAtUtc.ToString("o"));
+        return Canonical.AtLeast(3) ? string.Join('|', content, Canonical.Text(Description)) : content;   // BUG-316: and its description
+    }
 }
 
 /// <summary>An access/transfer event in an evidence item's chain of custody.</summary>

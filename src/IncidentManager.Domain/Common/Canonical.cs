@@ -15,6 +15,21 @@ public static class Canonical
     /// <summary>Starts a row hash computed over a format-2 canonical.</summary>
     public const string V2Prefix = "v2:";
 
+    /// <summary>
+    /// BUG-316: starts a row hash over a format-3 canonical: format 2 plus fields the earlier formats left out (an
+    /// indicator's TLP marking and pin, an evidence file's description), so a TLP lowered in the database, then shared
+    /// by the IOC feed and STIX, is caught. New hashes are written in format 3; a row moves to it on its next save, and
+    /// one not saved since keeps verifying in the format it was written in.
+    /// </summary>
+    public const string V3Prefix = "v3:";
+
+    /// <summary>The format row hashes are written in.</summary>
+    public const int CurrentFormat = 3;
+
+    /// <summary>Whether the canonical being built is in <paramref name="format"/> or later (an entity adds the fields
+    /// that format brought in only then).</summary>
+    public static bool AtLeast(int format) => t_format >= format;
+
     [ThreadStatic] private static int t_format;
 
     /// <summary>A free-text field: escaped in format 2, as it is in the first format.</summary>
@@ -23,7 +38,7 @@ public static class Canonical
             ? value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("|", "\\|", StringComparison.Ordinal)
             : value;
 
-    /// <summary>Builds a canonical in the given format (1 or 2). Canonicals are built synchronously, so the format is
+    /// <summary>Builds a canonical in the given format (1, 2 or 3). Canonicals are built synchronously, so the format is
     /// per thread.</summary>
     public static string InFormat(int format, Func<string> build)
     {

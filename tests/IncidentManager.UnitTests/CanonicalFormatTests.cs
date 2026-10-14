@@ -33,16 +33,41 @@ public class CanonicalFormatTests
     public void A_new_row_hash_says_its_format_and_an_older_one_still_verifies_as_written()
     {
         var e = Entity("seen beaconing|EDR", "triage");
-        var v2 = _hasher.ComputeRowHash(e);
+        var v3 = _hasher.ComputeRowHash(e);
+        var v2 = Canonical.V2Prefix + _hasher.Hash(Canonical.InFormat(2, e.BuildCanonicalContent));   // written by v1.5.2-v1.6.2
         var v1 = _hasher.Hash(e.BuildCanonicalContent());   // as an existing row's hash was written
 
-        v2.Should().StartWith(Canonical.V2Prefix).And.HaveLength(Canonical.V2Prefix.Length + 64);
-        _hasher.RowHashMatches(e, v2).Should().BeTrue();
+        v3.Should().StartWith(Canonical.V3Prefix).And.HaveLength(Canonical.V3Prefix.Length + 64);
+        _hasher.RowHashMatches(e, v3).Should().BeTrue();
+        _hasher.RowHashMatches(e, v2).Should().BeTrue("a format-2 hash is checked in format 2");
         _hasher.RowHashMatches(e, v1).Should().BeTrue("a hash without the prefix is checked in the first format");
 
         e.Description = "nothing to see";
+        _hasher.RowHashMatches(e, v3).Should().BeFalse();
         _hasher.RowHashMatches(e, v2).Should().BeFalse();
         _hasher.RowHashMatches(e, v1).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Format_3_covers_an_indicators_marking_and_pin_and_earlier_formats_dont(/* BUG-316 */)
+    {
+        var e = Entity("seen beaconing", "EDR");
+        e.Tlp = TlpLevel.Red;
+        var v3 = _hasher.ComputeRowHash(e);
+        var v2 = Canonical.V2Prefix + _hasher.Hash(Canonical.InFormat(2, e.BuildCanonicalContent));
+
+        e.Tlp = TlpLevel.Clear;   // lowered in the database
+        _hasher.RowHashMatches(e, v3).Should().BeFalse();
+        _hasher.RowHashMatches(e, v2).Should().BeTrue("a row not saved since keeps verifying as it was written");
+
+        e.Tlp = TlpLevel.Red;
+        e.IsPinned = true;
+        _hasher.RowHashMatches(e, v3).Should().BeFalse();
+
+        var ev = new IncidentManager.Domain.Entities.Evidence { OriginalFileName = "a.csv", Sha256 = new string('a', 64), Description = "export" };
+        var hash = _hasher.ComputeRowHash(ev);
+        ev.Description = "nothing";
+        _hasher.RowHashMatches(ev, hash).Should().BeFalse();
     }
 
     [Fact]

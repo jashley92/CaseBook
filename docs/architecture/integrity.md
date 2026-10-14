@@ -13,6 +13,11 @@ text could move between two adjacent fields of one record without changing the h
 format 2, where `\` and `|` in free text are escaped (`Canonical.Text`), and are stored as `v2:` plus the hex digest.
 A hash without the prefix was written in the first format and is checked in it, so existing rows verify unchanged
 until they're next saved. The audit chain's own entry hash is unchanged.
+
+**Canonical format 3 (BUG-316).** Format 2 plus fields the earlier formats left out: an indicator's TLP marking and pin,
+and an evidence file's description. New hashes are stored as `v3:`; a `v2:` or unprefixed hash is checked in its own
+format, so rows not saved since verify unchanged, and move to format 3 on their next save. Verify also flags a replaced
+version of a note, entry or brief marked current (BUG-315), which no row hash covers.
 | Hash chain | Every change appends an `AuditLog` row whose hash covers the previous row's hash | Inserted, deleted, reordered or edited history | `AuditChainInterceptor`, `HashChainService` |
 | Signed seals | Periodic RSA signature over the chain head, stored in the database and as files out of band | A competent rewrite that recomputes every hash | `IntegrityService`, `RsaSealSigner`, `FileSealStore` |
 | Ledger (optional) | SQL Server append-only ledger tables plus external digests | Any UPDATE or DELETE, even by `sysadmin`; page-level tampering | `deploy/sql/02-Enable-Ledger.sql` |
