@@ -615,7 +615,11 @@ public class Case : AuditableEntity, IHashableEntity
                 && detectedAtUtc > firstSeverity)
                 throw new ArgumentException($"The detected time can't be after the severity first changed ({firstSeverity:u}).");
             if (ActionItems.Select(a => a.CompletedAtUtc).Min() is { } firstDone && detectedAtUtc > firstDone)
-                throw new ArgumentException($"The detected time can't be after a task was completed ({firstDone:u}).");            // BUG-209: nor the materiality decision, which can start the notification clock. BUG-231: to the minute (the
+                throw new ArgumentException($"The detected time can't be after a task was completed ({firstDone:u}).");
+            // BUG-436: nor a verdict's "determined at" (BUG-414), which was checked against detection to the minute.
+            if (VerdictChanges.Select(v => (DateTimeOffset?)v.EffectiveAt).Min() is { } firstVerdict
+                && ToMinute(detectedAtUtc) > ToMinute(firstVerdict))
+                throw new ArgumentException($"The detected time can't be after a verdict was reached ({firstVerdict:u}).");            // BUG-209: nor the materiality decision, which can start the notification clock. BUG-231: to the minute (the
             // picker's precision), and saying what to do when the decision was recorded as a date only (before v1.5.1,
             // stored at 00:00 UTC that day).
             if (Materiality.DecidedOnUtc is { } decided && ToMinute(detectedAtUtc) > ToMinute(decided))

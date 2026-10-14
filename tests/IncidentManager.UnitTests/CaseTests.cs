@@ -295,6 +295,22 @@ public class CaseTests
     }
 
     [Fact]
+    public void The_detected_time_cant_move_past_when_a_verdict_was_reached(/* BUG-436 */)
+    {
+        var c = NewCase();
+        var detected = c.DetectedAtUtc!.Value;
+        // Recorded a day later, but determined two hours after detection (BUG-414).
+        c.VerdictChanges.Add(new EntityVerdictChange { CaseId = c.Id, EntityId = Guid.NewGuid(), EntityLabel = "evil.example",
+            From = EntityDisposition.Unknown, To = EntityDisposition.Malicious, ChangedBy = "a1", ChangedAtUtc = Now.AddDays(1),
+            EffectiveAtUtc = detected.AddHours(2) });
+
+        c.Invoking(x => x.UpdateDetails(x.Title, x.Summary, null, null, null, detected.AddHours(3), null, "ic1", Now.AddDays(2)))
+            .Should().Throw<ArgumentException>().WithMessage("*after a verdict was reached*");
+        c.UpdateDetails(c.Title, c.Summary, null, null, null, detected.AddHours(1), null, "ic1", Now.AddDays(2));   // before it: fine
+        c.DetectedAtUtc.Should().Be(detected.AddHours(1));
+    }
+
+    [Fact]
     public void Going_past_containment_without_it_needs_when_it_was_contained_or_why_it_wasnt_needed(/* BUG-165 */)
     {
         var c = NewCase();
