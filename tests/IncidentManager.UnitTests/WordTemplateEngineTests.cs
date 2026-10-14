@@ -252,6 +252,33 @@ public class WordTemplateEngineTests
     }
 
     [Fact]
+    public void A_list_table_inside_a_layout_table_repeats_its_own_rows_only(/* BUG-382 */)
+    {
+        // A one-row layout table whose cell holds a heading, a list table, and the marking.
+        static TableRow Row(params string[] cells) => new(cells.Select(c => new TableCell(new Paragraph(R(c)))));
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var main = doc.AddMainDocumentPart();
+            var inner = new Table(Row("Type", "Indicator"), Row("{{ioc.type}}", "{{ioc.value}}"));
+            var layout = new Table(new TableRow(new TableCell(
+                new Paragraph(R("Case {{case.number}}")), inner, new Paragraph(R("{{report.tlp}}")))));
+            main.Document = new Document(new Body(layout));
+            main.Document.Save();
+        }
+
+        var filled = _engine.Render(ms.ToArray(), Model());
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(filled), false);
+        var body = result.MainDocumentPart!.Document!.Body!;
+        var outer = body.Elements<Table>().Single();
+        outer.Elements<TableRow>().Should().ContainSingle("the layout row isn't repeated per indicator");
+        body.InnerText.Split("Case 2026-01_Phishing_Wave").Length.Should().Be(2, "the case number prints once");
+        var rows = outer.Descendants<Table>().Single().Elements<TableRow>().Select(r => r.InnerText).ToList();
+        rows.Should().Equal("TypeIndicator", "IP Address203[.]0[.]113[.]66", "Urlhxxps://evil[.]test");
+    }
+
+    [Fact]
     public void A_picture_field_alone_in_a_cell_leaves_a_valid_cell_when_theres_no_picture(/* BUG-320 */)
     {
         using var ms = new MemoryStream();

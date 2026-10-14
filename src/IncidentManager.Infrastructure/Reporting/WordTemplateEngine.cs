@@ -195,9 +195,11 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             RemoveBlock(p);
         }
 
-        // Lists: a table row, or a paragraph outside a table, that uses a list's fields repeats per item.
-        foreach (var row in root.Descendants<TableRow>().ToList())
-            if (ListIn(row.InnerText) is { } prefix) Repeat(row, prefix, m, emptyText: "(none)");
+        // Lists: a table row, or a paragraph outside a table, that uses a list's fields repeats per item. BUG-382: a row
+        // repeats for its own fields only, not those of a table nested in it (a layout table around list tables), and
+        // nested rows go first, so the inner list fills its own table instead of repeating the whole layout row.
+        foreach (var row in root.Descendants<TableRow>().OrderByDescending(r => r.Ancestors<TableRow>().Count()).ToList())
+            if (ListIn(OwnText(row)) is { } prefix) Repeat(row, prefix, m, emptyText: "(none)");
         foreach (var p in root.Descendants<Paragraph>().Where(p => !p.Ancestors<Table>().Any()).ToList())
             if (ListIn(p.InnerText) is { } prefix) Repeat(p, prefix, m, emptyText: null);
 
@@ -216,6 +218,10 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
     private static bool Is(string text, string field) =>
         ReportTemplateFields.Placeholder().Match(text) is { Success: true } mt && mt.Value.Length == text.Length
         && mt.Groups[1].Value.Equals(field, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>BUG-382: the text of a row's own cells, leaving out any table nested inside them.</summary>
+    private static string OwnText(TableRow row) =>
+        string.Concat(row.Descendants<Text>().Where(t => ReferenceEquals(t.Ancestors<TableRow>().First(), row)).Select(t => t.Text));
 
     private static string? ListIn(string text) =>
         ReportTemplateFields.Placeholder().Matches(text)
