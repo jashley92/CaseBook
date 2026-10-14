@@ -7,6 +7,8 @@
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.IExerciseEscalationPolicy ExercisePolicy
+@inject ToastService Toasts
+@implements IDisposable
 
 @{ var T = D.Transition; var backdated = T.Backdated(TimeDisp.Zone, Clock.UtcNow); }
 <div class="modal-header">
@@ -578,9 +580,9 @@
                         != (D.SupersedeExposure?.DuplicateExposed, D.SupersedeExposure?.KeptNumberExposed))
                     {
                         (D.SupersedeExposure, D.SupersedeAck) = (exposure, false);
-                        D.Error = exposure is null
+                        Refused(number, exposure is null
                             ? "Who can see these cases has changed: superseding no longer exposes anything. Apply again to go ahead."
-                            : "Who can see these cases has changed since you picked it. Read the warning, then tick the box to go ahead.";
+                            : "Who can see these cases has changed since you picked it. Read the warning, then tick the box to go ahead.");
                         return;
                     }
                     var res = await Cases.SupersedeAsync(id, D.SupersedeTargetId!.Value, D.SupersedeCopy, D.SupersedeReason ?? "",
@@ -663,7 +665,11 @@
         }
         catch (GateNotSatisfiedException ex)
         {
-            D.Error = ex.Message;
+            Refused(number, ex.Message);
+        }
+        catch (StaleEditException ex) when (_gone)
+        {
+            Refused(number, ex.Message + " Your entries weren't saved.");   // BUG-383: nothing left open to review them in
         }
         catch (StaleEditException ex)
         {
@@ -677,8 +683,20 @@
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
-            D.Error = ex.Message;
+            Refused(number, ex.Message);
         }
+    }
+
+    // BUG-383: a refusal that comes back once this dialog is gone (closed, or the workspace moved to another case and
+    // discarded the draft) would set its message where nobody sees it. Say it as a toast naming the case instead, as the
+    // close-out does (BUG-337).
+    private bool _gone;
+    public void Dispose() => _gone = true;
+
+    private void Refused(string number, string message)
+    {
+        if (_gone) Toasts.Error($"{number}: {message}");
+        else D.Error = message;
     }
 
     // The handoff as Markdown: the same text goes on the timeline and, if chosen, in the email to the recipient.
