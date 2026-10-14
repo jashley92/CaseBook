@@ -390,13 +390,13 @@ else if (_pending.Count > 0)
                         @foreach (var e in p.Entities)
                         {
                             <tr class="@(e.Include ? "" : "opacity-50")">
-                                <td><input class="form-check-input" type="checkbox" aria-label="Include entity @(p.Entities.IndexOf(e) + 1)" @bind="e.Include" /></td>
+                                <td><input class="form-check-input" type="checkbox" aria-label="Include entity @(p.Entities.IndexOf(e) + 1)" @bind="e.Include" @bind:after="RefreshGates" /></td>
                                 <td>
                                     <select class="form-select form-select-sm" aria-label="Type" @bind="e.Type">@foreach (var ty in Enum.GetValues<EntityType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select>
                                     @if (e.Type == EntityType.Other) { <div class="form-text text-warning small">Check the type</div> }
                                 </td>
                                 <td><input class="form-control form-control-sm font-monospace" aria-label="Value" @bind="e.Value" /></td>
-                                <td><select class="form-select form-select-sm" aria-label="Disposition" @bind="e.Disposition">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@Ui.Label(d)</option> }</select></td>
+                                <td><select class="form-select form-select-sm" aria-label="Disposition" @bind="e.Disposition" @bind:after="RefreshGates">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@Ui.Label(d)</option> }</select></td>
                                 <td class="small" title="The document's marking, kept on the indicator. None: the case's default applies.">@(e.Tlp is { } tlp ? IncidentManager.Domain.Enums.Tlp.Label(tlp) : "—")</td>
                                 <td><input class="form-control form-control-sm" aria-label="Source" @bind="e.Source" /></td>
                             </tr>
@@ -510,6 +510,7 @@ else if (_pending.Count > 0)
                     Nav.NavigateTo("cases/import");
                     return;
                 }
+                ClearReviewState();
                 _reviewingPendingId = pid;
                 _preview = preview;
                 await RefreshGates();
@@ -521,7 +522,22 @@ else if (_pending.Count > 0)
         {
             _reviewingPendingId = null;
             _preview = null;
+            ClearReviewState();
         }
+    }
+
+    // BUG-386: what belonged to the last preview or review (its related cases, a half-written rejection, a parse error, the
+    // case looked up, the gate's ticks) mustn't carry into the next queued review, or back out of one.
+    private void ClearReviewState()
+    {
+        _related = [];
+        _rejecting = false;
+        _rejectNote = null;
+        _parseError = null;
+        _existingNumber = null;
+        _existingError = null;
+        _fileName = null;
+        _gate.UseGate(null);
     }
 
     private async Task Reject()
@@ -649,13 +665,19 @@ else if (_pending.Count > 0)
 
     private bool GateUnresolved => NewCaseTarget && _gate.NeedsOverride && string.IsNullOrWhiteSpace(_gate.Override);
 
+    // BUG-385: an entity's Include or Disposition changes the gate (WF-16) too, so quick changes can overlap; only the
+    // newest evaluation is kept.
+    private int _gateSeq;
+
     private async Task RefreshGates()
     {
+        var seq = ++_gateSeq;
         if (!NewCaseTarget) { _gate.UseGate(null); return; }
         var nc = _preview!.NewCase!;
         nc.PlannedEntityCount = _preview.Entities.Count(e => e.Include && !e.Applied);
         nc.PlannedDispositions = _preview.Entities.Where(e => e.Include && !e.Applied).Select(e => e.Disposition).ToList();   // WF-16
         var eval = await Cases.EvaluateNewCaseGatesAsync(nc);
+        if (seq != _gateSeq) return;
         if (eval is not { GateExists: true }) { _gate.UseGate(null); return; }
         if (_gate.Gate?.GateName == eval.GateName) _gate.Gate = eval;   // same gates: keep the ticks
         else _gate.UseGate(eval);
