@@ -409,11 +409,17 @@
 
     private bool GateUnresolved => _created is null && _gate.NeedsOverride && string.IsNullOrWhiteSpace(_gate.Override);
 
+    // BUG-447: classification, summary, template and indicator edits each re-check, so checks can overlap; only the
+    // newest one's result is kept (as CaseImport, BUG-385).
+    private int _gateSeq;
+
     private async Task RefreshGates()
     {
         if (_created is not null) return;
+        var seq = ++_gateSeq;
         _request.PlannedEntityCount = PlannedIndicatorCount();
         var eval = await Cases.EvaluateNewCaseGatesAsync(_request);
+        if (seq != _gateSeq) return;
         if (eval is not { GateExists: true }) { _gate.UseGate(null); return; }
         if (_gate.Gate?.GateName == eval.GateName) _gate.Gate = eval;   // same gates: keep the ticks
         else _gate.UseGate(eval);

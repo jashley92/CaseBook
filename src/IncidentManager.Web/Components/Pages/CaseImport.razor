@@ -616,6 +616,10 @@ else if (_pending.Count > 0)
     {
         _error = null;
         _related = [];
+        // BUG-446: a new document starts with no gate ticks or override, and a gate check still running for the last one
+        // is dropped.
+        ++_gateSeq;
+        _gate.UseGate(null);
         // PROD-06: a STIX bundle or IOC CSV is converted into an entities-only import document first.
         var converted = IocImportConverter.Convert(_text, _fileName);
         _parseError = null;
@@ -655,6 +659,8 @@ else if (_pending.Count > 0)
         _existingError = null;
         _fileName = null;
         _related = [];
+        ++_gateSeq;   // BUG-446: as Preview
+        _gate.UseGate(null);
     }
 
     // BUG-61: the gates a new case created by this import passes, judged from the case details and the indicators it adds.
