@@ -133,7 +133,7 @@ else
                     <h5 class="modal-title">
                         @(_reassignFromId is null ? "Assign from the unassigned queue" : $"Reassign from {_reassignFromName}")
                     </h5>
-                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseReassign"></button>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseReassign" disabled="@_reassigning"></button>
                 </div>
 
                 @if (!_reassignConfirm)
@@ -282,6 +282,7 @@ else
 
     private async Task OpenReassign(string? fromId, string fromName)
     {
+        if (_reassigning) return;   // BUG-379: a run in progress owns the dialog
         _reassignOpen = true;
         _reassignFromId = fromId;
         _reassignFromName = fromName;
@@ -305,7 +306,13 @@ else
         _reassignCases = page.Items;
     }
 
-    private void CloseReassign() { _reassignSeq++; _reassignOpen = false; _reassignCases = null; _reassignSelected.Clear(); }
+    private void CloseReassign()
+    {
+        if (_reassigning) return;   // BUG-379: not mid-run (the backdrop or X), so a reopen can't change the run's dialog
+        CloseDialog();
+    }
+
+    private void CloseDialog() { _reassignSeq++; _reassignOpen = false; _reassignCases = null; _reassignSelected.Clear(); }
 
     private void ToggleReassign(Guid id, bool on)
     {
@@ -331,7 +338,8 @@ else
     {
         if (_reassigning || _reassignSelected.Count == 0 || string.IsNullOrEmpty(_reassignToId)) return;
         _reassigning = true;
-        var toName = ToName();
+        // BUG-379: the run's choices, read once. The loop awaits, and the dialog's fields belong to whichever opening is current.
+        var (seq, fromId, toId, toName, role) = (_reassignSeq, _reassignFromId, _reassignToId, ToName(), _reassignRole);
         var done = 0;
         try
         {
@@ -341,7 +349,7 @@ else
                 {
                     // Rebalancing: on to the chosen person, off the source analyst (nobody to remove for the unassigned queue),
                     // in one save. BUG-306: someone already on the case keeps their role, and an IC's seat passes over.
-                    if (await Cases.ReassignAsync(id, _reassignFromId, _reassignToId, toName, _reassignRole)) done++;
+                    if (await Cases.ReassignAsync(id, fromId, toId, toName, role)) done++;
                 }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
                 {
@@ -354,7 +362,7 @@ else
             _reassigning = false;
         }
 
-        CloseReassign();
+        if (seq == _reassignSeq) CloseDialog();   // BUG-379: only the opening this run came from
         if (done > 0)
         {
             Toasts.Success($"Reassigned {done} case{(done == 1 ? "" : "s")} to {toName}.");
