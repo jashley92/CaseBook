@@ -117,11 +117,14 @@ public sealed class ProgramReportService
     private readonly IOrganizationTimeZone? _zone;
     private readonly INotificationDeadlineSettingsProvider? _notify;
     private readonly Admin.NotificationRuleService? _rules;
+    private readonly IServerSettingValues? _server;
 
     public ProgramReportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
         ISlaTargetsProvider sla, AttackCoverageService attack, IOrganizationTimeZone? zone = null,
-        INotificationDeadlineSettingsProvider? notify = null, Admin.NotificationRuleService? rules = null)
+        INotificationDeadlineSettingsProvider? notify = null, Admin.NotificationRuleService? rules = null,
+        IServerSettingValues? server = null)
     {
+        _server = server;
         _zone = zone;
         _notify = notify;
         _rules = rules;
@@ -164,7 +167,7 @@ public sealed class ProgramReportService
 
     private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
         List<ActionRow> Actions, SlaTargets Targets, List<(Guid CaseId, DateTimeOffset At, SlaState State)> Notices, History History,
-        DateTimeOffset NowUtc);
+        DateTimeOffset NowUtc, Func<DateTimeOffset, SlaTargets> TargetsAt);
 
     /// <summary>
     /// WF-38: each case's phase, classification and severity changes, in order, so a quarter is figured as the record stood
@@ -263,7 +266,18 @@ public sealed class ProgramReportService
                 .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
             .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => ((Severity?)x.From, x.To, x.At)).ToList());
 
-        return new Loaded(rows, breachFirstAt, reviews, actions, _sla.Current, notices, new History(phases, classes, severities), _clock.UtcNow);
+        // BUG-322: each milestone is judged against the targets in force when it was reached (rebuilt from the audited
+        // setting changes; the server's own values where the app overrode none). Without the server's values to fall back
+        // on (a test), today's targets throughout.
+        var current = _sla.Current;
+        Func<DateTimeOffset, SlaTargets> targetsAt = _ => current;
+        if (_server is { } server)
+        {
+            var history = await SlaTargetHistory.LoadAsync(db, server.ValueOf, ct);
+            targetsAt = history.At;
+        }
+        return new Loaded(rows, breachFirstAt, reviews, actions, current, notices, new History(phases, classes, severities), _clock.UtcNow,
+            targetsAt);
     }
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
@@ -329,8 +343,11 @@ public sealed class ProgramReportService
         {
             // WF-76: judged on the severity and classification the case had at the quarter's end, as it's bucketed, so a
             // later raise doesn't turn a past quarter's Met into Missed.
-            var (cont, res) = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
-                targets, end, ClassAtEnd(r));
+            // BUG-322: and against the target in force when it was contained, resolved or detected.
+            var cont = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
+                data.TargetsAt(r.ContainedAtUtc ?? end), end, ClassAtEnd(r)).Containment;
+            var res = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
+                data.TargetsAt(r.ResolvedAtUtc ?? end), end, ClassAtEnd(r)).Resolution;
             if (In(r.ContainedAtUtc) && cont.State is SlaState.Met or SlaState.Missed)
             {
                 var met = cont.State == SlaState.Met;
@@ -342,7 +359,7 @@ public sealed class ProgramReportService
             if (In(r.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
             if (In(r.DetectedAtUtc))
             {
-                var det = SlaPolicy.EvaluateDetection(SevAtEnd(r), r.OccurredAtUtc, r.DetectedAtUtc, targets);
+                var det = SlaPolicy.EvaluateDetection(SevAtEnd(r), r.OccurredAtUtc, r.DetectedAtUtc, data.TargetsAt(r.DetectedAtUtc ?? end));
                 if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMiss++;
             }
         }
@@ -388,7 +405,7 @@ public sealed class ProgramReportService
             ActionsPastTargetAtEnd: openAtEnd.Count(a => a.TargetDateUtc is { } t && t < (end < data.NowUtc ? end : data.NowUtc)),
             ActionAreas: Areas(actions.Where(a => In(a.CreatedAtUtc))),
             ContainmentBySeverity: Enum.GetValues<Severity>().OrderByDescending(v => v)
-                .Select(v => new SeverityAttainment(v, targets.HoursFor(SlaClock.Containment, v),
+                .Select(v => new SeverityAttainment(v, data.TargetsAt(end < data.NowUtc ? end : data.NowUtc).HoursFor(SlaClock.Containment, v),   // as it stood at the end
                     bySeverity.GetValueOrDefault(v).Met, bySeverity.GetValueOrDefault(v).Missed)).ToList(),
             NoticesMet: nMet, NoticesMissed: nMiss,
             ClosedWithReview: rows.Count(r => ClosedInQuarter(r) && reviewed.Contains(r.Id)),

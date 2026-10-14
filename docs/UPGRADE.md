@@ -276,6 +276,13 @@ From a whole-codebase review (BUG-262 to BUG-326 in the tracker):
 - **Shared editing**: applying the ATT&CK matrix and saving cited evidence change only what you changed, so a colleague's
   tag or citation added meanwhile stays; Team workload's rebalance keeps an incident commander's seat filled.
 - **Stage gates** need unique names, and a climb's checklist shows a stricter threshold on a higher rung.
+- **Past quarters' SLA figures stay as reported.** The program report (and its quarterly email) judges each containment,
+  resolution and detection against the target in force when it happened, rebuilt from the audited changes to the SLA
+  settings, so tightening a target no longer changes board packs already sent. A target set only in the server's
+  settings file has no history: today's file value applies. The Program Overview's met/missed still uses today's targets.
+- **A cancelled task** can't be set to Done in Edit (reopen it first), as elsewhere.
+- **Open questions written as prose with a list after it** (a question added later) pair each listed question with its
+  task; the Briefing now shows prose questions too.
 - Smaller fixes: the activity feed keeps a renamed case's history; case-list pages don't repeat or drop cases; the indicator
   CSV keeps the feed's TLP column; reports and report layouts after closure aren't "changes after closure"; a Word template's
   picture field alone in a table cell no longer makes an unreadable file; filing a case in the repeated autumn DST hour works.

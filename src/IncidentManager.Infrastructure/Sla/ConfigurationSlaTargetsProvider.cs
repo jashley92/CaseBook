@@ -1,5 +1,4 @@
 using IncidentManager.Application.Sla;
-using IncidentManager.Domain.Enums;
 using Microsoft.Extensions.Configuration;
 
 namespace IncidentManager.Infrastructure.Sla;
@@ -12,44 +11,10 @@ namespace IncidentManager.Infrastructure.Sla;
 /// </summary>
 public sealed class ConfigurationSlaTargetsProvider : ISlaTargetsProvider
 {
-    // Informational carries no SLA; only the four actionable severities have targets.
-    private static readonly Severity[] Severities =
-        { Severity.Low, Severity.Medium, Severity.High, Severity.Critical };
-
-    private static readonly SlaClock[] Clocks = { SlaClock.Containment, SlaClock.Resolution, SlaClock.Detection };
-
-    // PROD-08: clocks a Breach-classified case may override (detection happens before classification).
-    private static readonly SlaClock[] BreachClocks = { SlaClock.Containment, SlaClock.Resolution };
-
     private readonly IConfiguration _config;
 
     public ConfigurationSlaTargetsProvider(IConfiguration config) => _config = config;
 
-    public SlaTargets Current
-    {
-        get
-        {
-            var hours = new Dictionary<(SlaClock, Severity), int>();
-            foreach (var clock in Clocks)
-            foreach (var severity in Severities)
-            {
-                if (int.TryParse(_config[$"Sla:{clock}:{severity}"], out var h) && h is > 0 and <= SlaPolicy.MaxTargetHours)
-                    hours[(clock, severity)] = h;
-            }
-
-            var pct = _config.GetValue<int?>("Sla:AtRiskThresholdPercent")
-                      ?? SlaPolicy.DefaultAtRiskThresholdPercent;
-            if (pct is <= 0 or > 100) pct = SlaPolicy.DefaultAtRiskThresholdPercent;
-
-            var breach = new Dictionary<(SlaClock, Severity), int>();
-            foreach (var clock in BreachClocks)
-            foreach (var severity in Severities)
-            {
-                if (int.TryParse(_config[$"Sla:Breach:{clock}:{severity}"], out var h) && h is > 0 and <= SlaPolicy.MaxTargetHours)
-                    breach[(clock, severity)] = h;
-            }
-
-            return new SlaTargets(hours, pct, breach);
-        }
-    }
+    // BUG-322: built by the same rule the target history uses for past moments.
+    public SlaTargets Current => SlaTargetSettings.From(key => _config[key]);
 }

@@ -152,6 +152,47 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_target_tightened_later_does_not_turn_a_past_met_into_missed(/* BUG-322 */)
+    {
+        var now = _clock.UtcNow;
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            // The Medium containment target was 24 h when the case was contained ...
+            _clock.UtcNow = new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero);
+            var setting = new AppSetting { Key = "Sla:Containment:Medium", Value = "24", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin" };
+            db.AppSettings.Add(setting);
+            await db.SaveChangesAsync();
+            var e = Case.Open(2026, 7, "G", "Contained in time", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", Apr(2));
+            e.DetectedAtUtc = Apr(2);
+            e.ContainedAtUtc = Apr(2, 20);   // 20 h
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+            // ... and was tightened to 8 h after the quarter.
+            _clock.UtcNow = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+            setting.Value = "8";
+            setting.UpdatedAtUtc = _clock.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        _clock.UtcNow = now;
+        var today = new SlaTargets(new Dictionary<(SlaClock, Severity), int> { [(SlaClock.Containment, Severity.Medium)] = 8 }, 80);
+        var f = new TestDbContextFactory(Options());
+        var withHistory = new ProgramReportService(f, _user, _clock, new TestSlaTargets(today), new AttackCoverageService(f, _user, _clock),
+            server: new NoServerValues());
+
+        var q2 = (await withHistory.BuildAsync(Q2)).Current;
+
+        q2.Sla.Should().ContainSingle(x => x.Clock == SlaClock.Containment).Which.Should().Be(new SlaAttainment(SlaClock.Containment, 1, 0));
+        (await Service(today).BuildAsync(Q2)).Current.Sla.Single(x => x.Clock == SlaClock.Containment).Missed
+            .Should().Be(1, "judged against today's target it would read as missed");
+    }
+
+    private sealed class NoServerValues : IncidentManager.Application.Abstractions.IServerSettingValues
+    {
+        public string? ValueOf(string key) => null;
+    }
+
+    [Fact]
     public async Task An_action_reopened_later_still_counts_as_completed_in_its_quarter(/* WF-80 */)
     {
         await SeedAsync();   // "MFA for finance" completed on 25 Apr (Q2)
