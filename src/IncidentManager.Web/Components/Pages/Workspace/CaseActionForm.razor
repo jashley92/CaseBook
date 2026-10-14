@@ -525,6 +525,7 @@
     private async Task ApplyCore()
     {
         D.Error = null;
+        _opening = D.Opening;
         var t = D.Transition;
         var id = Case.Id;
         var number = Case.CaseNumber;
@@ -541,7 +542,7 @@
                     if (t.RationaleError(D.ReclassReason) is { } m1) { D.Error = m1; return; }
                     await Cases.ReclassifyAsync(id, D.NewClass, D.ReclassReason,
                         t.Attested.Count > 0 ? t.Attested : null, t.Override, t.EffectiveUtc(TimeDisp.Zone));
-                    D.ReclassReason = "";
+                    if (!Reopened) D.ReclassReason = "";
                     done = $"Reclassified to {Ui.Label(D.NewClass)}";
                     break;
                 case "handoff":
@@ -552,7 +553,7 @@
                 }
                 case "severity":
                     await Cases.ChangeSeverityAsync(id, D.NewSeverity, D.SeverityReason, t.EffectiveUtc(TimeDisp.Zone));
-                    D.SeverityReason = null;
+                    if (!Reopened) D.SeverityReason = null;
                     done = $"Severity changed to {SevLabels.For(D.NewSeverity)}";
                     break;
                 case "status":
@@ -567,50 +568,51 @@
                                 D.WasContained == false ? D.ContainmentNotNeededReason : null)
                             : null,
                         resolvedAtUtc: Case.SkipsRecovery(D.NewPhase) && D.ResolvedAt is { } ra ? WallClock.ToUtc(ra, TimeDisp.Zone) : null);
-                    D.PhaseReason = null;
-                    (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason, D.ResolvedAt) = (null, null, null, null);
+                    if (!Reopened) D.PhaseReason = null;
+                    if (!Reopened) (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason, D.ResolvedAt) = (null, null, null, null);
                     done = $"Phase changed to {Ui.Label(D.NewPhase)}";
                     break;
                 case "supersede":
                 {
                     // BUG-181: either case's restriction may have changed since the target was picked. Then the warning
                     // shown (or not) is out of date: show the current one and ask again.
-                    var exposure = await Cases.SupersedeExposureAsync(id, D.SupersedeTargetId!.Value);
+                    // BUG-448: what was entered, read before the first wait (the dialog may be reopened meanwhile).
+                    var (target, copy, reason, ack) = (D.SupersedeTargetId!.Value, D.SupersedeCopy, D.SupersedeReason, D.SupersedeAck);
+                    var exposure = await Cases.SupersedeExposureAsync(id, target);
                     if ((exposure?.DuplicateExposed, exposure?.KeptNumberExposed)
                         != (D.SupersedeExposure?.DuplicateExposed, D.SupersedeExposure?.KeptNumberExposed))
                     {
-                        (D.SupersedeExposure, D.SupersedeAck) = (exposure, false);
+                        if (!Reopened) (D.SupersedeExposure, D.SupersedeAck) = (exposure, false);
                         Refused(number, exposure is null
                             ? "Who can see these cases has changed: superseding no longer exposes anything. Apply again to go ahead."
                             : "Who can see these cases has changed since you picked it. Read the warning, then tick the box to go ahead.");
                         return;
                     }
-                    var res = await Cases.SupersedeAsync(id, D.SupersedeTargetId!.Value, D.SupersedeCopy, D.SupersedeReason ?? "",
-                        acknowledgeExposure: D.SupersedeAck);
-                    closeReason = $"Duplicate of {res.PrimaryCaseNumber}: {D.SupersedeReason?.Trim()}";
-                    done = $"Superseded by {res.PrimaryCaseNumber}" + (D.SupersedeCopy ? $" · {IncidentManager.Application.Common.Plural.Of(res.IndicatorsCopied, "indicator")} copied" : "")
+                    var res = await Cases.SupersedeAsync(id, target, copy, reason ?? "", acknowledgeExposure: ack);
+                    closeReason = $"Duplicate of {res.PrimaryCaseNumber}: {reason?.Trim()}";
+                    done = $"Superseded by {res.PrimaryCaseNumber}" + (copy ? $" · {IncidentManager.Application.Common.Plural.Of(res.IndicatorsCopied, "indicator")} copied" : "")
                            + ". Close this case to finish.";
                     break;
                 }
                 case "restrict":
                     await Cases.SetRestrictedAsync(id, true, D.RestrictReason);
-                    D.RestrictReason = null;
+                    if (!Reopened) D.RestrictReason = null;
                     done = "Case restricted to need-to-know";
                     break;
                 case "unrestrict":
                     if (string.IsNullOrWhiteSpace(D.RestrictReason)) { D.Error = "Enter a reason for lifting the restriction."; return; }
                     await Cases.SetRestrictedAsync(id, false, D.RestrictReason);
-                    D.RestrictReason = null;
+                    if (!Reopened) D.RestrictReason = null;
                     done = "Restriction lifted";
                     break;
                 case "holdrelease" when Cases.LegalHoldReleaseNeedsSecondApprover:
                     await Cases.RequestLegalHoldReleaseAsync(id, D.HoldReleaseReason ?? "");
-                    D.HoldReleaseReason = null;
+                    if (!Reopened) D.HoldReleaseReason = null;
                     done = "Release requested. Someone else with Manage Legal must approve it.";
                     break;
                 case "holdrelease":
                     await Cases.SetLegalHoldAsync(id, false, D.HoldReleaseReason);
-                    D.HoldReleaseReason = null;
+                    if (!Reopened) D.HoldReleaseReason = null;
                     done = "Legal hold released";
                     break;
                 case "legal":
@@ -637,8 +639,8 @@
                                 D.WasContained == false ? D.ContainmentNotNeededReason : null)
                             : null,
                         resolvedAtUtc: Case.SkipsRecovery(back) && D.ResolvedAt is { } rra ? WallClock.ToUtc(rra, TimeDisp.Zone) : null);
-                    D.ReopenReason = "";
-                    (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason, D.ResolvedAt) = (null, null, null, null);
+                    if (!Reopened) D.ReopenReason = "";
+                    if (!Reopened) (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason, D.ResolvedAt) = (null, null, null, null);
                     done = "Case reopened";
                     break;
                 case "assign":
@@ -647,8 +649,8 @@
                     var wasOn = CurrentRole(D.AssignUserId) is not null;
                     await Cases.AssignAsync(id, D.AssignUserId, assignName, D.AssignRole);
                     done = wasOn ? $"{assignName} is now {Ui.Label(D.AssignRole)}" : $"Assigned {assignName}";
-                    D.AssignUserId = "";
-                    D.AssignRole = CaseAssignmentRole.Analyst;
+                    if (!Reopened) D.AssignUserId = "";
+                    if (!Reopened) D.AssignRole = CaseAssignmentRole.Analyst;
                     break;
                 default:
                     done = "";
@@ -656,7 +658,7 @@
             }
             // BUG-179/BUG-337: the workspace may have moved to another case while this saved (Back, the palette, a tab).
             // A switch removes this form, so it can't tell; the workspace checks the case it was for.
-            await OnApplied.InvokeAsync(new(id, number, done, closeReason));
+            await OnApplied.InvokeAsync(new(id, number, done, closeReason, _opening));
         }
         catch (ForbiddenException)
         {
@@ -667,7 +669,7 @@
         {
             Refused(number, ex.Message);
         }
-        catch (StaleEditException ex) when (_gone)
+        catch (StaleEditException ex) when (_gone || Reopened)
         {
             Refused(number, ex.Message + " Your entries weren't saved.");   // BUG-383: nothing left open to review them in
         }
@@ -693,9 +695,14 @@
     private bool _gone;
     public void Dispose() => _gone = true;
 
+    // BUG-448: the dialog this save was applied from (CaseActionDraft.Opening). Once another opening has replaced it, the
+    // save's outcome mustn't clear or mark what's entered there now.
+    private int _opening;
+    private bool Reopened => D.Opening != _opening;
+
     private void Refused(string number, string message)
     {
-        if (_gone) Toasts.Error($"{number}: {message}");
+        if (_gone || Reopened) Toasts.Error($"{number}: {message}");
         else D.Error = message;
     }
 

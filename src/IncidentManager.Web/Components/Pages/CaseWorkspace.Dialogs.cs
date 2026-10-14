@@ -25,7 +25,7 @@ public partial class CaseWorkspace
     {
         if (_case is null) return;
         var a = _action;
-        a.Name = name;
+        a.Open(name);
         a.Error = null;
         // Reclassifying is almost always an escalation, so the picker starts on the next rung up (the first rung
         // for a Complex Event); a Breach, the top, starts on itself. Picking a lower rung is still one change.
@@ -258,11 +258,14 @@ public partial class CaseWorkspace
         // BUG-179/BUG-337: the follow-up (a reload, the close-out a supersede opens, "Duplicate of ...") belongs to the
         // case the action was for. A case switch removes the form while it saves, so the check is made here.
         if (!result.IsFor(Id)) { Toasts.Success(result.ElsewhereMessage); return; }
-        _action.Name = null;
+        // BUG-448: it may have finished after its dialog was closed, and another (or the same one, reopened) opened since;
+        // that one stays open with what has been typed in it.
+        var stillOpen = result.Opening == _action.Opening;
+        if (stillOpen) _action.Name = null;
         await Reload();
         if (result.Done.Length > 0) Toasts.Success(result.Done);
         // PROD-11: after superseding, hand straight to the close-out, closing as a duplicate with the reason as its conclusion.
-        if (result.CloseReason is { } closeReason)
+        if (result.CloseReason is { } closeReason && (stillOpen || _action.Name is null))
         {
             await AdvanceTo(CasePhase.Closed);
             if (_closeOut.Outcomes.Any(o => o.Key == IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate))

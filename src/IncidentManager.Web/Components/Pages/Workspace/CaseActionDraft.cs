@@ -16,6 +16,16 @@ public sealed class CaseActionDraft
     public string? Name { get; set; }
     public string? Error { get; set; }
 
+    /// <summary>BUG-448: counts each opening of a dialog, so a save that finishes after its dialog was closed or replaced
+    /// can tell, and leaves the one open now (and its text) alone.</summary>
+    public int Opening { get; private set; }
+
+    public void Open(string name)
+    {
+        Name = name;
+        Opening++;
+    }
+
     /// <summary>RD-15: promoting, reclassifying and changing severity or phase are a sheet under the header, not a modal.</summary>
     public bool IsSheet => Name is "reclass" or "severity" or "status";
 
@@ -111,8 +121,9 @@ public readonly record struct CaseActionFor(Guid CaseId, string Number)
 }
 
 /// <summary>An action dialog applied (BUG-337): the case it was for, what to say, and for a supersede, the reason to
-/// close it with.</summary>
-public readonly record struct CaseActionApplied(Guid CaseId, string Number, string Done, string? CloseReason)
+/// close it with. <paramref name="Opening"/> (BUG-448): the dialog's <see cref="CaseActionDraft.Opening"/> when it was
+/// applied (0 from the close-out view).</summary>
+public readonly record struct CaseActionApplied(Guid CaseId, string Number, string Done, string? CloseReason, int Opening = 0)
 {
     public bool IsFor(Guid openCaseId) => CaseId == openCaseId;
 
