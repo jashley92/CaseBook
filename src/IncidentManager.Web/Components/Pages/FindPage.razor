@@ -73,14 +73,14 @@
                                 <div class="im-find-entity-head">
                                     <code class="im-find-value">@e.Value</code>
                                     <span class="im-find-sub">@Ui.Label(e.Type)@(e.Label is { } l ? $" · {l}" : "")</span>
-                                    <a class="ms-auto small" href="intel/indicators?entity=@anchor.EntityId">Across cases</a>
+                                    <a class="ms-auto small" href="@($"intel/indicators?entity={anchor.EntityId}" + (e.Cases.Any(c => c.IsExercise) ? "&exercises=1" : ""))">Across cases</a>
                                 </div>
                                 <ul class="im-find-verdicts">
                                     @foreach (var c in e.Cases)
                                     {
                                         <li>
                                             <a href="cases/@c.CaseId?entity=@c.EntityId"><code>@c.CaseNumber</code></a>
-                                            <span class="im-find-sub">@(c.Phase == CasePhase.Closed ? "closed" : "open") · @Ui.Label(c.Classification)</span>
+                                            <span class="im-find-sub">@(c.Phase == CasePhase.Closed ? "closed" : c.IsArchived ? "archived" : "open")@(c.Phase == CasePhase.Closed && c.IsArchived ? ", archived" : "")@(c.IsExercise ? " · exercise" : "") · @Ui.Label(c.Classification)</span>
                                             <VerdictMark Value="c.Verdict" />
                                         </li>
                                     }

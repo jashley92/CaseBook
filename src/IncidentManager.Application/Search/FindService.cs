@@ -4,6 +4,7 @@ using IncidentManager.Application.Intel;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace IncidentManager.Application.Search;
@@ -13,7 +14,7 @@ public enum FindKind { Entities, Cases, Entries, Tasks, Evidence, Notes }
 
 /// <summary>One case an entity appears on, with its verdict there.</summary>
 public sealed record FindEntityCase(Guid CaseId, string CaseNumber, CasePhase Phase, Classification? Classification,
-    EntityDisposition Verdict, Guid EntityId);
+    EntityDisposition Verdict, Guid EntityId, bool IsArchived = false, bool IsExercise = false);   // WF-85: the markers
 
 /// <summary>An entity, deduplicated across the caller's cases (like the indicator library), with its verdict on each.</summary>
 public sealed record FindEntity(EntityType Type, string Value, string? Label, IReadOnlyList<FindEntityCase> Cases);
@@ -182,6 +183,19 @@ public sealed class FindService
         var counts = new Dictionary<FindKind, int>();
         var caseIds = cases.Select(c => c.Id);
 
+        // WF-83: an entity is tagged in text as [label](entity:<id>), by its label as often as its value, and a task can be
+        // about it; the entity filter and an indicator search find those too (as the timeline's entity filter does).
+        List<string> tagRefs = [];
+        if (q.Entity is not null) tagRefs = entityIds.Take(MaxTagRefs).Select(id => $"entity:{id}").ToList();
+        else if (readAs == FindReadAs.Indicator)
+        {
+#pragma warning disable CA1304, CA1311, CA1862
+            var exact = IocObservable.Normalize(iocType!.Value, text).ToLower();
+            tagRefs = (await db.CaseEntities.AsNoTracking().Where(e => caseIds.Contains(e.CaseId) && e.Value.Trim().ToLower() == exact)
+                .Select(e => e.Id).Take(MaxTagRefs).ToListAsync(ct)).Select(id => $"entity:{id}").ToList();
+#pragma warning restore CA1304, CA1311, CA1862
+        }
+
         // --- Entities: an indicator by its exact value; words by value or label; the entity: filter by itself.
         List<FindEntity> entities = [];
         // Entry-, task- and person-only filters are about the record, not the entities in it.
@@ -221,7 +235,8 @@ public sealed class FindService
             var rows = (await src.Where(e => topKeys.Contains(e.Value.Trim().ToLower()))
                     .Join(db.Cases, e => e.CaseId, c => c.Id, (e, c) => new
                     {
-                        e.Id, e.Type, e.Value, e.Label, e.Disposition, e.CreatedAtUtc, CaseId = c.Id, c.CaseNumber, c.Phase, c.Classification
+                        e.Id, e.Type, e.Value, e.Label, e.Disposition, e.CreatedAtUtc, CaseId = c.Id, c.CaseNumber, c.Phase, c.Classification,
+                        c.IsArchived, c.IsExercise
                     }).ToListAsync(ct))
                 .Where(r => wanted.Contains((IocObservable.MatchFamily(r.Type), r.Value.Trim().ToLowerInvariant())))
                 .ToList();
@@ -234,7 +249,7 @@ public sealed class FindService
                     var perCase = g.GroupBy(x => x.CaseId)
                         .Select(cg => cg.OrderByDescending(x => IndicatorService.Severity(x.Disposition)).First())
                         .OrderByDescending(x => x.CreatedAtUtc)
-                        .Select(x => new FindEntityCase(x.CaseId, x.CaseNumber, x.Phase, x.Classification, x.Disposition, x.Id))
+                        .Select(x => new FindEntityCase(x.CaseId, x.CaseNumber, x.Phase, x.Classification, x.Disposition, x.Id, x.IsArchived, x.IsExercise))
                         .ToList();
                     return new FindEntity(latest.Type, latest.Value.Trim(), g.Select(x => x.Label).FirstOrDefault(l => l is not null), perCase);
                 })
@@ -295,9 +310,11 @@ public sealed class FindService
         {
             var eq = db.TimelineEntries.AsNoTracking().Where(e => e.IsCurrent && caseIds.Contains(e.CaseId));
 #pragma warning disable CA1304, CA1311, CA1862
+            var taggedEntries = await TaggingAsync(eq, r => e => e.Description.Contains(r), e => e.Id, tagRefs, ct);
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    eq = eq.Where(e => e.Description.ToLower().Contains(t) || (e.Rationale != null && e.Rationale.ToLower().Contains(t)));
+                    eq = eq.Where(e => e.Description.ToLower().Contains(t) || (e.Rationale != null && e.Rationale.ToLower().Contains(t))
+                                       || taggedEntries.Contains(e.Id));
             // WF-09: who recorded it is the first version's author, not whoever last edited it.
             if (readAs == FindReadAs.Person)
             {
@@ -309,7 +326,7 @@ public sealed class FindService
                 var v = ent.ToLower();
                 eq = eq.Where(e => (e.ActorEntityId != null && entityIds.Contains(e.ActorEntityId.Value))
                                    || (e.TargetEntityId != null && entityIds.Contains(e.TargetEntityId.Value))
-                                   || e.Description.ToLower().Contains(v));
+                                   || e.Description.ToLower().Contains(v) || taggedEntries.Contains(e.Id));
             }
 #pragma warning restore CA1304, CA1311, CA1862
             if (by is not null)
@@ -335,9 +352,12 @@ public sealed class FindService
                 var bq = db.CaseBriefs.AsNoTracking().Where(b => b.IsCurrent && b.WorkingAssessment != null
                     && cases.Where(c => c.Phase == CasePhase.Closed && c.OutcomeKey != null).Select(c => c.Id).Contains(b.CaseId));
 #pragma warning disable CA1304, CA1311, CA1862
+                var taggedBriefs = await TaggingAsync(bq, r => b => b.WorkingAssessment!.Contains(r) || (b.Summary != null && b.Summary.Contains(r)),
+                    b => b.Id, tagRefs, ct);
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(t) || (b.Summary != null && b.Summary.ToLower().Contains(t)));
-                if (q.Entity is { } ent2) { var v = ent2.ToLower(); bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(v)); }
+                    bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(t) || (b.Summary != null && b.Summary.ToLower().Contains(t))
+                                       || taggedBriefs.Contains(b.Id));
+                if (q.Entity is { } ent2) { var v = ent2.ToLower(); bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(v) || taggedBriefs.Contains(b.Id)); }
 #pragma warning restore CA1304, CA1311, CA1862
                 var brows = await bq.Join(db.Cases, b => b.CaseId, c => c.Id,
                         (b, c) => new { b.Id, b.CaseId, c.CaseNumber, c.ClosedAtUtc, b.CreatedAtUtc, b.WorkingAssessment })
@@ -358,14 +378,18 @@ public sealed class FindService
         if (tasksApply && q.EntryKind is null && q.EntryType is null && by is null)
         {
             var tq = db.ActionItems.AsNoTracking().Where(t => caseIds.Contains(t.CaseId));
+            var taggedTasks = await TaggingAsync(tq, r => x => x.AboutRef == r || (x.Description != null && x.Description.Contains(r)),
+                x => x.Id, tagRefs, ct);
 #pragma warning disable CA1304, CA1311, CA1862
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    tq = tq.Where(x => x.Title.ToLower().Contains(t) || (x.Description != null && x.Description.ToLower().Contains(t)));
+                    tq = tq.Where(x => x.Title.ToLower().Contains(t) || (x.Description != null && x.Description.ToLower().Contains(t))
+                                       || taggedTasks.Contains(x.Id));
             if (q.Entity is { } ent3)
             {
                 var v = ent3.ToLower();
-                tq = tq.Where(x => x.Title.ToLower().Contains(v) || (x.Description != null && x.Description.ToLower().Contains(v)));
+                tq = tq.Where(x => x.Title.ToLower().Contains(v) || (x.Description != null && x.Description.ToLower().Contains(v))
+                                   || taggedTasks.Contains(x.Id));
             }
 #pragma warning restore CA1304, CA1311, CA1862
             // WF-01: a task's owner is free text, so it's theirs when it names any of their identifiers (the TaskOwner rule
@@ -397,7 +421,9 @@ public sealed class FindService
         if (readAs is FindReadAs.Indicator or FindReadAs.Words && q.EntryKind is null && q.EntryType is null && owner is null)
         {
             var xq = db.Evidence.AsNoTracking().Where(x => caseIds.Contains(x.CaseId));
-            var hash = readAs == FindReadAs.Indicator && iocType == EntityType.FileHash ? text.Trim().ToLowerInvariant() : null;
+            // WF-90: only a SHA-256 can be a file's own hash; an MD5 or SHA-1 is looked for in names and descriptions.
+            var hash = readAs == FindReadAs.Indicator && iocType == EntityType.FileHash && text.Trim().Length == 64
+                ? text.Trim().ToLowerInvariant() : null;
 #pragma warning disable CA1304, CA1311, CA1862
             if (hash is not null) xq = xq.Where(x => x.Sha256.ToLower() == hash);
             else
@@ -421,11 +447,12 @@ public sealed class FindService
         if (q.Notes && (readAs is FindReadAs.Indicator or FindReadAs.Words or FindReadAs.Person || by is not null || q.Entity is not null))
         {
             var nq = db.Notes.AsNoTracking().Where(n => n.IsCurrent && caseIds.Contains(n.CaseId));
+            var taggedNotes = await TaggingAsync(nq, r => n => n.Body.Contains(r), n => n.Id, tagRefs, ct);
 #pragma warning disable CA1304, CA1311, CA1862
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    nq = nq.Where(n => n.Body.ToLower().Contains(t));
-            if (q.Entity is { } ent4) { var v = ent4.ToLower(); nq = nq.Where(n => n.Body.ToLower().Contains(v)); }
+                    nq = nq.Where(n => n.Body.ToLower().Contains(t) || taggedNotes.Contains(n.Id));
+            if (q.Entity is { } ent4) { var v = ent4.ToLower(); nq = nq.Where(n => n.Body.ToLower().Contains(v) || taggedNotes.Contains(n.Id)); }
 #pragma warning restore CA1304, CA1311, CA1862
             // WF-09: as for entries, the note's first author.
             foreach (var who in new[] { readAs == FindReadAs.Person ? personId : null, by }.OfType<string>())
@@ -436,15 +463,35 @@ public sealed class FindService
             if (from is not null) nq = nq.Where(n => n.CreatedAtUtc >= from);
             if (to is not null) nq = nq.Where(n => n.CreatedAtUtc < to);
             counts[FindKind.Notes] = await nq.CountAsync(ct);
-            notes = (await nq.OrderByDescending(n => n.CreatedAtUtc).Take(limit)   // WF-06
-                    .Join(db.Cases, n => n.CaseId, c => c.Id, (n, c) => new { n.Id, n.CaseId, c.CaseNumber, n.CreatedAtUtc, n.CreatedBy, n.Body })
+            var notes0 = (await nq.OrderByDescending(n => n.CreatedAtUtc).Take(limit)   // WF-06
+                    .Join(db.Cases, n => n.CaseId, c => c.Id, (n, c) => new { n.Id, n.CaseId, c.CaseNumber, n.CreatedAtUtc, n.CreatedBy, n.Body, n.Version })
                     .ToListAsync(ct))
                 .OrderByDescending(n => n.CreatedAtUtc)
-                .Select(n => new FindNote(n.Id, n.CaseId, n.CaseNumber, n.CreatedAtUtc, _users.DisplayFor(n.CreatedBy), Clip(Content.RichText.ToText(n.Body))))
+                .ToList();
+            // WF-86: listed under the note's first author, as by: and the person reading match it, not its last editor.
+            var editedOn = notes0.Where(n => n.Version > 1).Select(n => n.CaseId).Distinct().ToList();
+            Dictionary<Guid, string> authors = editedOn.Count == 0 ? [] : FirstAuthors(await db.Notes.AsNoTracking()
+                .Where(n => editedOn.Contains(n.CaseId) && (n.Version > 1 || !n.IsCurrent))
+                .Select(n => new Version(n.Id, n.SupersedesNoteId, n.CreatedBy, n.Version, n.IsCurrent)).ToListAsync(ct));
+            notes = notes0
+                .Select(n => new FindNote(n.Id, n.CaseId, n.CaseNumber, n.CreatedAtUtc,
+                    _users.DisplayFor(authors.GetValueOrDefault(n.Id, n.CreatedBy)), Clip(Content.RichText.ToText(n.Body))))
                 .ToList();
         }
 
         return new FindResult(q, readAs, reading, filters, counts, entities, foundCases, entries, tasks, evidence, notes);
+    }
+
+    // WF-83: how many of an entity's occurrences are looked for as tags (one query per kind each; a value is on few cases).
+    private const int MaxTagRefs = 25;
+
+    // WF-83: the rows of the source whose text tags any of the refs ("entity:<id>"), one query per ref.
+    private static async Task<HashSet<Guid>> TaggingAsync<T>(IQueryable<T> source, Func<string, Expression<Func<T, bool>>> tags,
+        Expression<Func<T, Guid>> id, IReadOnlyList<string> refs, CancellationToken ct)
+    {
+        var found = new HashSet<Guid>();
+        foreach (var r in refs) found.UnionWith(await source.Where(tags(r)).Select(id).ToListAsync(ct));
+        return found;
     }
 
     // WF-09: current versions of edited entries whose first version was recorded by <who>. Edits are few, so only their
@@ -467,15 +514,19 @@ public sealed class FindService
 
     private sealed record Version(Guid Id, Guid? Supersedes, string CreatedBy, int Number, bool IsCurrent);
 
-    private static List<Guid> FirstAuthoredBy(List<Version> rows, string who)
+    private static List<Guid> FirstAuthoredBy(List<Version> rows, string who) =>
+        FirstAuthors(rows).Where(kv => string.Equals(kv.Value, who, StringComparison.Ordinal)).Select(kv => kv.Key).ToList();
+
+    // Each edited current version's first author, by the current version's id.
+    private static Dictionary<Guid, string> FirstAuthors(List<Version> rows)
     {
         var byId = rows.ToDictionary(r => r.Id);
-        var result = new List<Guid>();
+        var result = new Dictionary<Guid, string>();
         foreach (var r in rows.Where(r => r.IsCurrent && r.Number > 1))
         {
             var first = r;
             for (var guard = 0; first.Supersedes is { } prev && byId.TryGetValue(prev, out var p) && guard < 1000; guard++) first = p;
-            if (string.Equals(first.CreatedBy, who, StringComparison.Ordinal)) result.Add(r.Id);
+            result[r.Id] = first.CreatedBy;
         }
         return result;
     }

@@ -305,7 +305,7 @@
                 if (seq != _searchSeq) return; // a newer keystroke already superseded this search
                 foreach (var e in r.Entities.Take(3))
                 {
-                    var anchor = e.Cases[0].EntityId;
+                    var anchor = e.Cases[0].EntityId + (e.Cases.Any(c => c.IsExercise) ? "&exercises=1" : "");   // WF-91
                     items.Add(new Cmd("Entities", "bi-bullseye", e.Value,
                         $"{Ui.Label(e.Type)} · on {e.Cases.Count} case{(e.Cases.Count == 1 ? "" : "s")}, {Ui.Label(e.Cases.Select(c => c.Verdict).MaxBy(IncidentManager.Application.Intel.IndicatorService.Severity))} at worst",
                         () => GoTo($"intel/indicators?entity={anchor}")));
@@ -314,7 +314,8 @@
                 {
                     var caseId = c.Id;
                     items.Add(new Cmd("Cases", "bi-folder2-open", $"{c.CaseNumber} · {c.Title}",
-                        $"{Ui.Label(c.Classification)} · {SevLabels.For(c.Severity)} · {Ui.Label(c.Phase)}",
+                        $"{Ui.Label(c.Classification)} · {SevLabels.For(c.Severity)} · {Ui.Label(c.Phase)}"
+                            + (c.IsArchived ? " · Archived" : "") + (c.IsExercise ? " · Exercise" : ""),   // WF-85
                         () => GoTo(c.Phase == CasePhase.Closed ? $"cases/{caseId}?tab=Briefing" : $"cases/{caseId}")));
                 }
                 foreach (var e in r.Entries.Take(3))

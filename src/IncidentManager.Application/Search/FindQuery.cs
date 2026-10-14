@@ -86,6 +86,15 @@ public sealed partial record FindQuery
             if (key is null || !Keys.Contains(key))
             {
                 // Not a filter: a word or a phrase. A "key:" we don't know stays a word (it may be a URL or an account).
+                // WF-88: an unknown key with a quoted value (subject:"invoice overdue") isn't a URL or an account: say so,
+                // and search the phrase rather than a mangled 'subject:"invoice overdue'.
+                if (key is not null && m.Groups["qv"].Success)
+                {
+                    unread.Add($"{key}: (not a filter; searched for \"{val}\")");
+                    if (val.Length > 0) terms.Add(val);
+                    q = q with { Quoted = true };
+                    continue;
+                }
                 var word = m.Groups["qv"].Success && key is null ? val : m.Value.Trim('"');
                 if (word.Length > 0) terms.Add(word);
                 if (m.Groups["qv"].Success && key is null) q = q with { Quoted = true };
@@ -131,7 +140,13 @@ public sealed partial record FindQuery
                     else unread.Add($"in:{val} (only in:notes)");
                     break;
                 case "exercises":
-                    q = q with { Exercises = val.ToLowerInvariant() is "yes" or "true" or "include" or "on" };
+                    // WF-88: a value that's neither yes nor no is said back, not read as no.
+                    switch (val.ToLowerInvariant())
+                    {
+                        case "yes" or "true" or "include" or "on": q = q with { Exercises = true }; break;
+                        case "no" or "false" or "exclude" or "off": q = q with { Exercises = false }; break;
+                        default: unread.Add($"exercises:{val} (use yes or no)"); break;
+                    }
                     break;
             }
         }

@@ -191,8 +191,12 @@
 
     private bool Filtered => _search.Length > 0 || _typeKey != "ioc" || _disposition is not null || _sharedOnly;
 
+    /// <summary>WF-91: "Across cases" from Find for an entity on an exercise opens with exercises included.</summary>
+    [SupplyParameterFromQuery(Name = "exercises")] public string? ExercisesRaw { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        if (ExercisesRaw is "1" or "true" or "yes") _includeExercises = true;
         if (EntityId is { } id && await Indicators.ResolveEntityAsync(id) is { } hit)
         {
             _search = hit.Value;

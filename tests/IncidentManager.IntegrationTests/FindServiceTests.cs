@@ -388,6 +388,60 @@ public sealed class FindServiceTests : IDisposable
         r.Tasks.Select(t => t.Title).Should().Equal("zzz sooner", "zzz later");
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task An_entity_is_found_where_it_is_tagged_by_its_label(string provider /* WF-83, WF-85, WF-86, WF-90 */)
+    {
+        Use(provider);
+        Guid noteId;
+        using (var db = NewContext())
+        {
+            var ip = db.CaseEntities.Single(e => e.CaseId == _alpha && e.Value == "203.0.113.66");
+            ip.Label = "Foreign ASN egress";
+            var tag = $"[Foreign ASN egress](entity:{ip.Id})";
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = _alpha, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Note,
+                OccurredAtUtc = H(-20), Description = $"Egress seen from {tag} at 02:10", CreatedBy = "robin", CreatedAtUtc = H(-20) });
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "Ask the ISP about it", AboutRef = $"entity:{ip.Id}",
+                CreatedBy = "robin", CreatedAtUtc = H(-20) });
+            // A note written by robin and edited by me: listed under robin.
+            var first = new AnalystNote { CaseId = _alpha, Body = $"Probably {tag}", CreatedBy = "robin", CreatedAtUtc = H(-19), IsCurrent = false };
+            db.Notes.Add(first);
+            var edit = new AnalystNote { CaseId = _alpha, Body = $"Probably {tag}, confirmed", CreatedBy = "analyst1", CreatedAtUtc = H(-18),
+                Version = 2, SupersedesNoteId = first.Id };
+            db.Notes.Add(edit);
+            noteId = edit.Id;
+            db.Evidence.Add(new Evidence { CaseId = _alpha, OriginalFileName = "hashes.txt", Description = "MD5 9e107d9d372bb6826bd81d3542a419d6",
+                Sha256 = new string('b', 64), StoragePath = "y", CreatedBy = "robin", CreatedAtUtc = H(-10) });
+            db.SaveChanges();
+        }
+
+        var r = await NewFind().FindAsync("entity:203.0.113.66 in:notes");
+        r.Entries.Should().Contain(e => e.Text.Contains("Egress seen"), "the entry tags it by its label");
+        r.Tasks.Should().Contain(t => t.Title == "Ask the ISP about it", "the task is about it");
+        r.Notes.Should().ContainSingle(n => n.Id == noteId).Which.By.Should().Be("Robin Reyes");
+        (await NewFind().FindAsync("203.0.113.66")).Entries.Should().Contain(e => e.Text.Contains("Egress seen"));
+
+        // WF-90: an MD5 is looked for in evidence descriptions.
+        (await NewFind().FindAsync("9e107d9d372bb6826bd81d3542a419d6")).Evidence.Should().ContainSingle(e => e.FileName == "hashes.txt");
+
+        // WF-85: the entity's case list marks an archived case.
+        using (var db = NewContext())
+        {
+            db.Cases.Single(c => c.Id == _alpha).IsArchived = true;
+            db.SaveChanges();
+        }
+        (await NewFind().FindAsync("203.0.113.66")).Entities.Single().Cases.Should().Contain(c => c.CaseId == _alpha && c.IsArchived);
+    }
+
+    [Fact]
+    public void A_filter_it_cant_use_is_said_back(/* WF-88 */)
+    {
+        FindQuery.Parse("exercises:maybe").Unread.Should().ContainSingle(u => u.StartsWith("exercises:maybe"));
+        FindQuery.Parse("exercises:no").Exercises.Should().BeFalse();
+        var unknown = FindQuery.Parse("subject:\"invoice overdue\"");
+        unknown.Terms.Should().Equal("invoice overdue");
+        unknown.Unread.Should().ContainSingle(u => u.StartsWith("subject:"));
+    }
+
     [Fact]
     public void The_parser_refuses_what_it_would_misread(/* WF-04, WF-05 */)
     {
