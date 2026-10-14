@@ -45,6 +45,8 @@ public static class SettingsCatalog
 {
     // BUG-262: an interval, a wait or a window becomes a TimeSpan; "999999999" meant as "never" overflowed it and stopped
     // the app. A month is the longest interval any scan needs, a year the longest wait.
+    // BUG-354: an interval (and the access-log coalesce window) is at least 1: its job reads 0 as the default
+    // (JobSchedule.Hours, ConfigurationAccessLogPolicy), so a saved 0 silently behaved as 24, 6 or 30.
     public const int MaxIntervalHours = 24 * 31;
     public const int MaxWaitHours = 24 * 366;
     public const int MaxStaleDays = 366;
@@ -95,7 +97,7 @@ public static class SettingsCatalog
         new SettingDefinition("Notifications:OverdueScan:Enabled", "Overdue task reminders", "Notifications", SettingKind.Bool,
             "Emails a task's owner once when it passes its due date, or the incident commander if the owner can't be reached. Records nothing on the case.", "false"),
         new SettingDefinition("Notifications:OverdueScan:IntervalHours", "Overdue scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between overdue scans. Default 24.", "24", Max: MaxIntervalHours),
+            "Hours between overdue scans. Default 24.", "24", Min: 1, Max: MaxIntervalHours),
         // PROD-03: escalation chain for items that stay overdue. Notifications only; nothing is reassigned.
         new SettingDefinition("Notifications:OverdueScan:Escalation:Enabled", "Escalate items that stay overdue", "Notifications", SettingKind.Bool,
             "Emails the incident commander, then managers, when an overdue task stays open past the hours below. Nothing is reassigned. Needs overdue reminders on.", "false"),
@@ -108,15 +110,15 @@ public static class SettingsCatalog
         new SettingDefinition("Notifications:DueSoonScan:LeadHours", "Due-soon lead window (hours)", "Notifications", SettingKind.Int,
             "How far ahead of the due date to send the reminder. Default 24 (due within a day).", "24", Max: MaxWaitHours),
         new SettingDefinition("Notifications:DueSoonScan:IntervalHours", "Due-soon scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between due-soon scans. Keep this at or below the lead window so no item skips its reminder. Default 6.", "6", Max: MaxIntervalHours),
+            "Hours between due-soon scans. Keep this at or below the lead window so no item skips its reminder. Default 6.", "6", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Notifications:DeadlineScan:Enabled", "Regulatory deadline reminders", "Notifications", SettingKind.Bool,
             "Reminds the incident commander and assignees as a case's regulatory deadline nears, and again if it passes. Needs the deadline clock on under Regulatory deadlines. Reminders only; someone still records when notice was given.", "false"),
         new SettingDefinition("Notifications:DeadlineScan:IntervalHours", "Deadline scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between deadline scans. Keep this small, since a 72-hour clock can pass through its bands in a day. Default 1.", "1", Max: MaxIntervalHours),
+            "Hours between deadline scans. Keep this small, since a 72-hour clock can pass through its bands in a day. Default 1.", "1", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Notifications:StaleScan:Enabled", "Stale-case nudges", "Notifications", SettingKind.Bool,
             "Nudges the incident commander and assignees once when an open case has no activity for longer than its severity's threshold below. New activity resets the nudge.", "false"),
         new SettingDefinition("Notifications:StaleScan:IntervalHours", "Stale-case scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between stale-case scans. Default 12.", "12", Max: MaxIntervalHours),
+            "Hours between stale-case scans. Default 12.", "12", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Notifications:StaleScan:Days:Critical", "Stale after: Critical (days)", "Notifications", SettingKind.Int,
             "Days of no activity before a Critical case is nudged as stale. 0 disables the nudge for Critical cases.", "2", Max: MaxStaleDays),
         new SettingDefinition("Notifications:StaleScan:Days:High", "Stale after: High (days)", "Notifications", SettingKind.Int,
@@ -128,7 +130,7 @@ public static class SettingsCatalog
         new SettingDefinition("Notifications:DigestScan:Enabled", "Personal work digests", "Notifications", SettingKind.Bool,
             "Master switch for opt-in digests of each user's open follow-up items (overdue, due today, due this week). Users choose daily or weekly under account menu → Notifications.", "false"),
         new SettingDefinition("Notifications:DigestScan:IntervalHours", "Digest scan interval (hours)", "Notifications", SettingKind.Int,
-            "How often to check whether a digest is due. Each digest still sends once per day or week. Default 1.", "1", Max: MaxIntervalHours),
+            "How often to check whether a digest is due. Each digest still sends once per day or week. Default 1.", "1", Min: 1, Max: MaxIntervalHours),
         // PROD-15: quarterly executive report email to managers (the E-31 program report's headline figures).
         new SettingDefinition("Notifications:ExecutiveReport:Enabled", "Quarterly executive report email", "Notifications", SettingKind.Bool,
             "In the first week of each quarter, emails everyone with the Manager role last quarter's headline figures and a link to the full program report.", "false"),
@@ -175,13 +177,13 @@ public static class SettingsCatalog
             "Periodically verifies the audit chain and records a signed seal.", "true"),
         new SettingDefinition("Integrity:AutoSeal:IntervalHours", "Auto-seal interval (hours)", "Integrity", SettingKind.Int,
             "Hours between signed seals. Tamper checks still run about every 10 minutes (the whole audit chain re-hashed every 6 hours). This only limits " +
-            "how much recent history waits for a seal. Applies within a few minutes.", "6", Max: MaxIntervalHours),
+            "how much recent history waits for a seal. Applies within a few minutes.", "6", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Integrity:EvidenceVerify:Enabled", "Evidence re-verification enabled", "Integrity", SettingKind.Bool,
             "Periodically re-hashes stored evidence and alerts if a file no longer matches its recorded SHA-256. " +
             "Off by default because a full pass is I/O-heavy. Alerts go to the integrity-alert distribution.", "false"),
         new SettingDefinition("Integrity:EvidenceVerify:IntervalHours", "Evidence re-verification interval (hours)", "Integrity", SettingKind.Int,
             "Hours between full passes. Each pass re-hashes every stored file, so keep it slow. " +
-            "A pass also runs at startup. Default 24.", "24", Max: MaxIntervalHours),
+            "A pass also runs at startup. Default 24.", "24", Min: 1, Max: MaxIntervalHours),
         // PROD-49: the update check. Off by default; the repository and any proxy stay server-side (Updates:Repository, Updates:Proxy).
         new SettingDefinition("Updates:CheckEnabled", "Check for new releases", "Updates", SettingKind.Bool,
             "Asks GitHub (api.github.com) which CaseBook releases are newer than this one and shows them here with their notes. " +
@@ -267,7 +269,7 @@ public static class SettingsCatalog
             Options: [new("All", "Every case open"), new("RestrictedOnly", "Restricted-case opens only"), new("Off", "Off")]),
         new SettingDefinition("Access:CoalesceWindowMinutes", "Access-log coalesce window (minutes)", "Access logging", SettingKind.Int,
             "Repeat views of the same case or artifact by the same user within this window fold into one row " +
-            "with a count. Default 30.", "30", Max: 1440),
+            "with a count. Default 30.", "30", Min: 1, Max: 1440),
         new SettingDefinition("Security:IdleTimeoutMinutes", "Idle session timeout (minutes)", "Security", SettingKind.Int,
             "Locks the app after this many minutes without keyboard or mouse activity. Works alongside the workstation screen lock, not instead of it. 0 turns it off; at most 1,440 (a day). Applies to new sessions.", "15",
             Min: 0, Max: Security.IdleTimeoutPolicy.MaxMinutes),   // REV-46
