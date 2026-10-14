@@ -279,7 +279,8 @@ From a whole-codebase review (BUG-262 to BUG-326 in the tracker):
 - **Past quarters' SLA figures stay as reported.** The program report (and its quarterly email) judges each containment,
   resolution and detection against the target in force when it happened, rebuilt from the audited changes to the SLA
   settings, so tightening a target no longer changes board packs already sent. A target set only in the server's
-  settings file has no history: today's file value applies. The Program Overview's met/missed still uses today's targets.
+  settings file has no history: today's file value applies. The Program Overview's "Within target" figures follow the
+  same rule; the live at-risk and breached flags on open cases use today's targets.
 - **A cancelled task** can't be set to Done in Edit (reopen it first), as elsewhere.
 - **Open questions written as prose with a list after it** (a question added later) pair each listed question with its
   task; the Briefing now shows prose questions too.
