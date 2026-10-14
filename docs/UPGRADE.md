@@ -258,6 +258,11 @@ The DBA script is regenerated; sites where a DBA applies the schema run it first
   - Date and time fields keep what you type, whichever field you type it in.
   - `[[` tags an entity in plain text boxes too, always linking the one you picked.
   - Long IOCs wrap instead of overflowing.
+  - An entity's type follows its value as you type, until you pick a type yourself. A bare name the directory
+    knows is added as an Account, in single adds and bulk pastes.
+  - A case's detected time can't be moved after a verdict was reached; the save says so.
+- **Reassigning:** reassigning or rebalancing a case onto someone who observes it moves them into the seat being handed
+  over (for example Analyst) and tells them, as for anyone newly assigned.
 - **Keyboard:** Ctrl/Cmd+Enter saves the form it's pressed in (an inline task, notice, impact, relationship,
   improvement action or comment), never another form's composer or a hidden tab's.
 - **Locking:** the idle lock and *Lock now* no longer stop at "Leave site?" on Administration with unsaved settings.
