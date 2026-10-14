@@ -707,10 +707,10 @@ else
             try { await JS.InvokeVoidAsync("imMotion.scrollToId", scrollTo); }
             catch (JSException) { } catch (JSDisconnectedException) { }
         }
-        if (_pendingOverviewFix is { } fix && _overviewTab is not null)
+        if (_pendingOverviewFix is { } fix && _overviewTab is { Disposed: false } overview)   // BUG-425: not a removed tab's
         {
             _pendingOverviewFix = null;
-            await _overviewTab.FixReadiness(fix);
+            await overview.FixReadiness(fix);
         }
         if (firstRender)
         {

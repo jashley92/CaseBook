@@ -3,7 +3,8 @@
 @inject CaseService Cases
 @inject ToastService Toasts
 
-<form class="im-quicktask" @onsubmit="Add" @onsubmit:preventDefault>
+@* BUG-425: im-own-keys: Ctrl/Cmd+Enter here adds this task (keymap.js leaves it to KeyDown), not the tab's composer. *@
+<form class="im-quicktask im-own-keys" @onsubmit="Add" @onsubmit:preventDefault @onkeydown="KeyDown">
     <label class="visually-hidden" for="@_id">New task</label>
     <input id="@_id" class="form-control form-control-sm" maxlength="@ActionItem.MaxTitleLength" placeholder="@Placeholder"
            @bind="_title" @bind:event="oninput" @ref="_input" />
@@ -39,6 +40,12 @@
         {
             try { await _input.FocusAsync(); } catch (Exception) { /* not focusable yet; harmless */ }
         }
+    }
+
+    private async Task KeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat) return;
+        await Add();
     }
 
     private async Task Add()

@@ -125,7 +125,8 @@
 </div>
 @if (totalAll > 0 && !_notesOnly && FiltersShown)
 {
-    <div class="tl-filters" id="tl-filter-row">
+    @* BUG-425: im-own-keys: Ctrl/Cmd+Enter in a filter does nothing (keymap.js leaves it alone); it isn't the composer's. *@
+    <div class="tl-filters im-own-keys" id="tl-filter-row">
         @if (_tlLens is null)
         {
             <div class="form-check form-switch mb-0 small" title="Show classification, phase, gate and other response milestones in the chronology">
@@ -1718,7 +1719,7 @@ else
     public async Task SubmitAsync()
     {
         if (!CanEdit) return;
-        if (_newIocFor is not null || _corr is not null) return;   // BUG-328: this tab's own dialog is open
+        if (_newIocFor is not null || _corr is not null || _retract is not null) return;   // BUG-328: this tab's own dialog is open
         if (_notesOnly && _notesList is { IsEditing: true } list) { await list.SubmitAsync(); return; }
         if (_tlEditId is not null)
         {
@@ -2216,7 +2217,8 @@ else
         }
         @if (_citing == e.Id)
         {
-            <div class="tl-cite-pick border rounded p-2 mt-2 bg-body-tertiary">
+            @* BUG-425: im-own-keys: Ctrl/Cmd+Enter in the picker does nothing, rather than add the composer's entry. *@
+            <div class="tl-cite-pick border rounded p-2 mt-2 bg-body-tertiary im-own-keys">
                 <div class="small fw-semibold mb-1">Evidence that supports this entry</div>
                 @foreach (var ev in Case.Evidence.OrderByDescending(x => x.CreatedAtUtc))
                 {
@@ -2933,8 +2935,13 @@ else
         catch { /* circuit tearing down — nothing to stash */ }
     }
 
+    /// <summary>BUG-425: removed from the page (a tab switch, the phone's Now/Next view, the error fallback); the
+    /// workspace's @ref still points here, so its Ctrl/Cmd+Enter checks this first (CaseWorkspace.Keyboard).</summary>
+    internal bool Disposed { get; private set; }
+
     public async ValueTask DisposeAsync()
     {
+        Disposed = true;
         await StashDraft();
         foreach (var id in _mdEditors)
         {

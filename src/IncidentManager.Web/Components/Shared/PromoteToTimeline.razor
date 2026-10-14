@@ -6,7 +6,8 @@
 @inject ToastService Toasts
 @inject IClock Clock
 
-<div class="im-promote border rounded p-2 mt-2 bg-body-tertiary">
+@* BUG-425: im-own-keys: Ctrl/Cmd+Enter here adds it to the timeline (keymap.js leaves it to KeyDown), not the tab's composer. *@
+<div class="im-promote border rounded p-2 mt-2 bg-body-tertiary im-own-keys" @onkeydown="KeyDown">
     <div class="row g-2">
         <div class="col-12">
             <label class="form-label small mb-0" for="@($"promote-text-{_id}")">Add to the timeline</label>
@@ -34,7 +35,7 @@
         </div>
         <div class="col-md-3 d-flex align-items-end justify-content-end gap-2">
             <button class="btn btn-sm btn-outline-secondary" @onclick="OnCancel">Cancel</button>
-            <button class="btn btn-sm btn-primary" disabled="@(_saving || string.IsNullOrWhiteSpace(_text))" @onclick="Save">Add</button>
+            <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" disabled="@(_saving || string.IsNullOrWhiteSpace(_text))" @onclick="Save">Add</button>
         </div>
     </div>
 </div>
@@ -67,6 +68,12 @@
     {
         _text = Text;
         _when = ToWall(WrittenAtUtc);
+    }
+
+    private async Task KeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || string.IsNullOrWhiteSpace(_text)) return;
+        await Save();
     }
 
     private async Task Save()

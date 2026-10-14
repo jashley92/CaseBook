@@ -134,7 +134,8 @@
 
 @if (CanEdit)
 {
-    <div class="card mb-3">
+    @* BUG-425: Ctrl/Cmd+Enter here logs the action (keymap.js leaves .im-own-keys to it), not the open review. *@
+    <div class="card mb-3 im-own-keys" @onkeydown="e => SaveOnKey(e, AddAction)">
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-4">
                 <label class="form-label small mb-0" for="ia-new-title">Improvement action</label>
@@ -155,7 +156,7 @@
                 <input id="ia-new-target" type="date" class="form-control form-control-sm" @bind="_new.Target" />
             </div>
             <div class="col-md-1">
-                <button class="btn btn-sm btn-primary w-100" @onclick="AddAction" disabled="@(string.IsNullOrWhiteSpace(_new.Title) || _saving)">Add</button>
+                <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="AddAction" disabled="@(string.IsNullOrWhiteSpace(_new.Title) || _saving)">Add</button>
             </div>
             <div class="col-12">
                 <label class="form-label small mb-0" for="@NewDetailsEditorId">Details <span class="text-muted">(optional · Markdown)</span></label>
@@ -213,7 +214,8 @@ else
                 </tr>
                 @if (_editingId == a.Id)
                 {
-                    <tr @key="@($"edit-{a.Id}")">
+                    @* BUG-425: Ctrl/Cmd+Enter in the edit row saves it, not the open review. *@
+                    <tr class="im-own-keys" @key="@($"edit-{a.Id}")" @onkeydown="e => SaveOnKey(e, SaveEdit)">
                         <td colspan="6" class="bg-body-tertiary">
                             <div class="row g-2 align-items-end">
                                 <div class="col-md-4">
@@ -253,7 +255,7 @@ else
                                     <textarea id="@EditOutcomeEditorId(a.Id)" class="form-control"></textarea>
                                 </div>
                                 <div class="col-12 d-flex gap-2">
-                                    <button class="btn btn-sm btn-primary" @onclick="SaveEdit"
+                                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveEdit"
                                             disabled="@(string.IsNullOrWhiteSpace(_edit.Title) || _saving)">
                                         Save changes
                                     </button>
@@ -500,14 +502,16 @@ else
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", id, ""); } catch (JSException) { /* best effort */ }
     }
 
-    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — save whichever edit is open.</summary>
+    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher: saves the review while it's being edited. BUG-425: the
+    /// action composer and an action's edit row take their own (SaveOnKey); pressed there they never saved the review.</summary>
     public async Task SubmitAsync()
     {
         if (!CanEdit || _saving) return;   // REV-31: the button is disabled while saving; the shortcut isn't
         if (_editingReview) await SaveReview();
-        else if (_editingId is not null) await SaveEdit();
-        else if (!string.IsNullOrWhiteSpace(_new.Title)) await AddAction();
     }
+
+    private Task SaveOnKey(KeyboardEventArgs e, Func<Task> save) =>
+        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit || _saving ? Task.CompletedTask : save();
 
     // ---- Review --------------------------------------------------------------------------------------
 
@@ -681,8 +685,13 @@ else
         _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
     }
 
+    /// <summary>BUG-425: removed from the page (a tab switch, the phone's Now/Next view, the error fallback); the
+    /// workspace's @ref still points here, so its Ctrl/Cmd+Enter checks this first (CaseWorkspace.Keyboard).</summary>
+    internal bool Disposed { get; private set; }
+
     public async ValueTask DisposeAsync()
     {
+        Disposed = true;
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }

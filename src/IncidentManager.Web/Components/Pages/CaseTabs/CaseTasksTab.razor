@@ -2,6 +2,7 @@
    due date in the viewer's zone), the apply-playbook flow (E-06), and the item list with mark-done.
    Self-contained — it loads its own playbook templates and builds due-dates itself; the parent threads
    the live-collab flash (delegates), a Reload after a write (OnChanged), and Ctrl+Enter (SubmitAsync via @ref). *@
+@implements IDisposable
 @inject CaseService Cases
 @inject IncidentManager.Application.Cases.ActionItemCommentService Comments
 @inject IncidentManager.Application.Admin.CaseTemplateService Templates
@@ -25,7 +26,8 @@
         </div>
         @if (_applyingTemplate)
         {
-            <div class="card mb-3 border-primary">
+            @* BUG-425: Ctrl/Cmd+Enter in the playbook card adds its tasks, not the composer's. *@
+            <div class="card mb-3 border-primary im-own-keys" @onkeydown="ApplyKey">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span><span class="bi bi-clipboard-check me-1"></span>Apply a playbook</span>
                     <button class="btn-close" aria-label="Cancel" @onclick="CancelApplyTemplate"></button>
@@ -494,13 +496,14 @@ else
                             }
                             @* REV-29 / S-16: discussion is open to everyone who can see the case, view-only roles included. *@
                             <AuthorizeView Policy="@Policies.ViewCases">
-                                <div class="d-flex align-items-start gap-2">
+                                @* BUG-425: Ctrl/Cmd+Enter in the comment box posts the comment, not the composer's task. *@
+                                <div class="d-flex align-items-start gap-2 im-own-keys" @onkeydown="e => CommentKey(e, t.Id)">
                                     <textarea class="form-control form-control-sm" rows="2" placeholder="Add a comment…"
                                               aria-label="@($"Comment on task: {t.Title}")"
                                               value="@CommentDraft(t.Id)"
                                               @oninput="e => SetCommentDraft(t.Id, e.Value?.ToString())"></textarea>
                                     <button class="btn btn-sm btn-primary text-nowrap"
-                                            disabled="@string.IsNullOrWhiteSpace(CommentDraft(t.Id))"
+                                            title="Ctrl / ⌘ + Enter" disabled="@string.IsNullOrWhiteSpace(CommentDraft(t.Id))"
                                             @onclick="() => AddComment(t.Id)">Comment</button>
                                 </div>
                             </AuthorizeView>
@@ -837,6 +840,17 @@ else
         await SaveEdit();
     }
 
+    // BUG-425: open to everyone who can comment (view-only roles too), as the button is.
+    private async Task CommentKey(KeyboardEventArgs e, Guid taskId)
+    {
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat) return;
+        await AddComment(taskId);
+    }
+
+    /// <summary>BUG-425: removed from the page; the workspace's @ref still points here (see CaseWorkspace.Keyboard).</summary>
+    internal bool Disposed { get; private set; }
+    public void Dispose() => Disposed = true;
+
     private async Task CompleteKey(KeyboardEventArgs e, ActionItem t)
     {
         if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit) return;
@@ -1058,6 +1072,12 @@ else
     private void ToggleApplyStep(Guid stepId, bool on)
     {
         if (on) _applySelected.Add(stepId); else _applySelected.Remove(stepId);
+    }
+
+    private async Task ApplyKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit) return;
+        await ApplyTemplate();
     }
 
     private async Task ApplyTemplate()

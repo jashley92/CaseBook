@@ -43,15 +43,19 @@ public partial class CaseWorkspace
             }
             if (cmd == "submit:action" || _panelEntity is not null || _panelEvidence is not null) return;
             if (!_canEdit) return;
+            // BUG-425: the phone's Now/Next view replaces the tab, and a tab that threw shows the error fallback. Either way
+            // the @ref still points at the tab removed (Disposed), so there's no composer on the page to submit. Forms
+            // with their own submit (.im-own-keys) never get here: keymap.js leaves Ctrl/Cmd+Enter to them.
+            if (PhoneNowNext) return;
             switch (_activeTab)
             {
-                case "Timeline":
-                    if (_timelineTab is not null) await _timelineTab.SubmitAsync();
+                case "Timeline": if (_timelineTab is { Disposed: false } tl) await tl.SubmitAsync(); break;
+                case "Entities": if (_entitiesTab is { Disposed: false } en) await en.SubmitAsync(); break;
+                case "Tasks": if (_tasksTab is { Disposed: false } ta) await ta.SubmitAsync(); break;
+                case "Review": if (_reviewTab is { Disposed: false } rv) await rv.SubmitAsync(); break;
+                case "Briefing" or "Impact" or "Attack" or "Connections":
+                    if (_overviewTab is { Disposed: false } ov) await ov.SubmitAsync();
                     break;
-                case "Entities": if (_entitiesTab is not null) await _entitiesTab.SubmitAsync(); break;
-                case "Tasks": if (_tasksTab is not null) await _tasksTab.SubmitAsync(); break;
-                case "Review": if (_reviewTab is not null) await _reviewTab.SubmitAsync(); break;
-                case "Briefing" or "Impact" or "Attack" or "Connections": if (_overviewTab is not null) await _overviewTab.SubmitAsync(); break;
             }
             return;
         }

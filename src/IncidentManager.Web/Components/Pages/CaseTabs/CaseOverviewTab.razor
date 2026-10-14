@@ -150,6 +150,8 @@
         </div>
                 @if (_editingImpact)
                 {
+                    @* BUG-425: the impact editor's Ctrl/Cmd+Enter saves it (keymap.js leaves .im-own-keys to it). *@
+                    <div class="im-own-keys" @onkeydown="e => SaveOnKey(e, SaveImpact)">
                     <div class="mb-2">
                         <label class="form-label small mb-0" for="ov-imp-count">Affected individuals (estimate)</label>
                         <input id="ov-imp-count" type="number" min="0" class="form-control form-control-sm" @bind="_impCount" />
@@ -176,8 +178,9 @@
                     {
                         <div class="alert alert-warning py-1 px-2 small mb-2">@ierr</div>
                     }
-                    <button class="btn btn-sm btn-primary" @onclick="SaveImpact">Save</button>
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(SaveImpact)">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editingImpact = false">Cancel</button>
+                    </div>
                 }
                 else if (Case.AffectedIndividualsCount is null && Case.DataElements.Count == 0 && string.IsNullOrWhiteSpace(Case.AffectedStates))
                 {
@@ -281,10 +284,12 @@
                                             }
                                             else if (CanEdit && _noticeFor == s.JurisdictionCode)
                                             {
-                                                <div class="d-flex align-items-center gap-1 flex-wrap">
+                                                @* BUG-425: Ctrl/Cmd+Enter records this notice, not the case record's details. *@
+                                                <div class="d-flex align-items-center gap-1 flex-wrap im-own-keys"
+                                                     @onkeydown="e => SaveOnKey(e, () => SaveNotice(s.JurisdictionCode))">
                                                     <DateTimeInput class="form-control form-control-sm" style="max-width: 13rem" @bind-Value="_noticeAt"
                                                            aria-label="@($"When {s.JurisdictionLabel} was notified ({TimeDisp.Label})")" />
-                                                    <button class="btn btn-sm btn-primary" @onclick="() => SaveNotice(s.JurisdictionCode)">Save</button>
+                                                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(() => SaveNotice(s.JurisdictionCode))">Save</button>
                                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _noticeFor = null">Cancel</button>
                                                 </div>
                                                 @if (_noticeError is not null) { <div class="text-danger small">@_noticeError</div> }
@@ -310,13 +315,14 @@
                         {
                             @if (_markingReported)
                             {
-                                <div class="d-flex align-items-end gap-2 flex-wrap">
+                                @* BUG-425: Ctrl/Cmd+Enter records the reported time, not the case record's details. *@
+                                <div class="d-flex align-items-end gap-2 flex-wrap im-own-keys" @onkeydown="e => SaveOnKey(e, MarkReported)">
                                     <div>
                                         <label class="form-label small mb-0" for="ov-reported-at">@(_deadlines.Statuses.Count > 1 ? "Every regulator not yet recorded was notified at" : "Reported at") (@TimeDisp.Label)</label>
                                         <DateTimeInput id="ov-reported-at" class="form-control form-control-sm" @bind-Value="_reportedAt"
                                                title="When regulators were notified. Saving this stops the notification countdown." />
                                     </div>
-                                    <button class="btn btn-sm btn-primary" @onclick="MarkReported">Save</button>
+                                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(MarkReported)">Save</button>
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _markingReported = false">Cancel</button>
                                 </div>
                                 @if (_reportedError is not null) { <p class="text-danger small mt-1 mb-0">@_reportedError</p> }
@@ -412,7 +418,7 @@
                     {
                         <div class="alert alert-warning py-1 px-2 small mb-2" role="alert">@derr</div>
                     }
-                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(SaveDetails)" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
                 }
                 else
@@ -552,6 +558,8 @@
             </div>
             @if (_addingLink)
             {
+                @* BUG-425: Ctrl/Cmd+Enter adds the link (once a case is picked). *@
+                <div class="im-own-keys" @onkeydown="e => SaveOnKey(e, AddLink)">
                 <div class="mb-2">
                     <label class="form-label small mb-0" for="ov-link-type">Relationship</label>
                     <select id="ov-link-type" class="form-select form-select-sm" @bind="_linkType">
@@ -596,8 +604,9 @@
                     <label class="form-label small mb-0" for="ov-link-note">Note (optional)</label>
                     <input id="ov-link-note" class="form-control form-control-sm" @bind="_linkDesc" placeholder="Why are these related?" />
                 </div>
-                <button class="btn btn-sm btn-primary" @onclick="AddLink" disabled="@(_linkTargetId is null)">Add link</button>
+                <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(AddLink)" disabled="@(_linkTargetId is null)">Add link</button>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="CancelAddLink">Cancel</button>
+                </div>
             }
             @if (_links.Count == 0 && !_addingLink)
             {
@@ -948,8 +957,25 @@
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — save the details edit if open.</summary>
     public async Task SubmitAsync()
     {
-        if (CanEdit && _editingDetails) await SaveDetails();
+        // BUG-425: only on the Briefing, where the details editor is; the Impact, ATT&CK and Connections parts share this
+        // component (and _editingDetails) but don't show it. Forms with their own Save take their own keys (SaveOnKey).
+        if (CanEdit && _editingDetails && Section == "Briefing") await Once(SaveDetails);
     }
+
+    // BUG-425: one of this tab's saves at a time, by click or Ctrl/Cmd+Enter; a form marked .im-own-keys (keymap.js leaves
+    // it alone) saves itself on Ctrl/Cmd+Enter, not the details editor. A held key doesn't repeat it.
+    private bool _formSaving;
+
+    private async Task Once(Func<Task> save)
+    {
+        if (_formSaving) return;
+        _formSaving = true;
+        try { await save(); }
+        finally { _formSaving = false; }
+    }
+
+    private Task SaveOnKey(KeyboardEventArgs e, Func<Task> save) =>
+        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : Once(save);
 
     private Task Confirm(string message, Func<Task> action, string verb = "Remove") => RequestConfirm.InvokeAsync((message, verb, action));
 
@@ -1256,8 +1282,13 @@
         await LoadLinks();
     }
 
+    /// <summary>BUG-425: removed from the page (a tab switch, the phone's Now/Next view, the error fallback); the
+    /// workspace's @ref still points here, so its Ctrl/Cmd+Enter checks this first (CaseWorkspace.Keyboard).</summary>
+    internal bool Disposed { get; private set; }
+
     public async ValueTask DisposeAsync()
     {
+        Disposed = true;
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
