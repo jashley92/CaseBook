@@ -244,22 +244,21 @@
         // Retire the previous keystroke's check (cancel + dispose its source) before starting a new one, so
         // a burst of typing doesn't leak a CancellationTokenSource per keystroke (S2930). The token below is
         // captured into a local so this method never touches a source a later call may have disposed.
-        if (_renumberCheckCts is not null)
-        {
-            await _renumberCheckCts.CancelAsync();   // S6966: async cancel (schedules callbacks off-thread)
-            _renumberCheckCts.Dispose();
-            _renumberCheckCts = null;
-        }
-
+        // BUG-387: take the previous source and install this call's (none for a blank or unchanged number) before awaiting
+        // its CancelAsync, so a keystroke during that yield retires this call's source, not one already gone (null).
+        var previous = _renumberCheckCts;
         var v = _editNumber?.Trim();
-        if (string.IsNullOrEmpty(v) || string.Equals(v, Case.CaseNumber, StringComparison.Ordinal))
+        var check = !string.IsNullOrEmpty(v) && !string.Equals(v, Case.CaseNumber, StringComparison.Ordinal);
+        var cts = _renumberCheckCts = check ? new CancellationTokenSource() : null;
+        var token = cts?.Token ?? CancellationToken.None;   // read now: the header may be disposed during the await
+        if (!check) _renumberAvailable = null;
+        if (previous is not null)
         {
-            _renumberAvailable = null;
-            return;
+            await previous.CancelAsync();   // S6966: async cancel (schedules callbacks off-thread)
+            previous.Dispose();
         }
+        if (!check) return;
 
-        var cts = _renumberCheckCts = new CancellationTokenSource();
-        var token = cts.Token;
         try
         {
             await Task.Delay(350, token); // debounce keystrokes
@@ -271,6 +270,7 @@
 
     private async Task SaveRenumber()
     {
+        if (_savingNumber) return;   // a double click renames once
         _savingNumber = true;
         _renumberError = null;
         try
