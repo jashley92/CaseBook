@@ -28,7 +28,7 @@ public sealed class FileReportStore : IReportStore
 
         // BUG-16: never overwrite. A stored report is hashed and its row checked against the file, so replacing one
         // would make an earlier version fail verification; a name that's taken gets a suffix instead.
-        var safeName = Path.GetFileName(fileName);
+        var safeName = DiskName(fileName);
         var stem = Path.GetFileNameWithoutExtension(safeName);
         var ext = Path.GetExtension(safeName);
         for (var n = 2; ; n++)
@@ -57,6 +57,28 @@ public sealed class FileReportStore : IReportStore
 
         var hash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
         return new StoredReport($"{relDir}/{safeName}", hash, content.LongLength);
+    }
+
+    // BUG-362: the name on disk only. A report is named from its case number, which may hold characters Windows doesn't
+    // allow ("|" or "\"" failed every report for the case) or a ":" (written into an NTFS alternate data stream). Each
+    // becomes "_", on any host, so a store moved between hosts reads the same; the stem is capped for the 255-character
+    // limit, and a Windows device name gets a prefix. The Report row keeps the name as generated, for the download.
+    private const int MaxStemLength = 150;
+    private static readonly HashSet<char> NotInFileName = [.. Path.GetInvalidFileNameChars(), '<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    private static readonly HashSet<string> DeviceNames = new(StringComparer.OrdinalIgnoreCase)
+        { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+          "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
+
+    internal static string DiskName(string fileName)
+    {
+        var chars = (fileName ?? "").Select(c => c < 32 || NotInFileName.Contains(c) ? '_' : c).ToArray();
+        var name = new string(chars);
+        var ext = Path.GetExtension(name);
+        var stem = name[..^ext.Length].TrimEnd('.', ' ');   // Windows drops a trailing dot or space
+        if (stem.Length > MaxStemLength) stem = stem[..MaxStemLength].TrimEnd('.', ' ');
+        if (stem.Length == 0) stem = "report";
+        if (DeviceNames.Contains(stem)) stem = "_" + stem;
+        return stem + ext;
     }
 
     public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
