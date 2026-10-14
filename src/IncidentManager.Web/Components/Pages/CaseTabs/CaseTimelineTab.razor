@@ -1253,13 +1253,23 @@ else
     private async Task ReconcileEditor()
     {
         var desired = new Dictionary<string, string>();
-        if (CanEdit && _tlAddKind == TimelineKind.Investigation)
-            // FR-02: in add mode, seed from a stashed draft if one survived a tab switch; while editing an
-            // existing entry, seed from that entry's text (_tlDesc).
-            desired[InvEditorId] = (_tlEditId is null ? ComposerDrafts?.GetValueOrDefault(InvEditorId) : null) ?? _tlDesc ?? "";
+        // BUG-329: a Question has no editor (its markup isn't rendered), so it's torn down and read back like any switch.
+        if (CanEdit && _tlAddKind == TimelineKind.Investigation && _special != ComposerMode.Question)
+        {
+            // FR-02: in add mode, a draft stashed by a tab switch seeds the first editor, unless newer text has been
+            // written here since. BUG-329: from then on _tlDesc is kept in step with the editor (read back below),
+            // so a stale stash can't win. While editing an existing entry, seed from that entry's text (_tlDesc).
+            if (_tlEditId is null && !_stashTaken)
+            {
+                _stashTaken = true;
+                if (string.IsNullOrEmpty(_tlDesc) && ComposerDrafts?.GetValueOrDefault(InvEditorId) is { } stashed) _tlDesc = stashed;
+            }
+            desired[InvEditorId] = _tlDesc ?? "";
+        }
 
         foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
         {
+            if (id == InvEditorId && _tlEditId is null) await ReadBackAddText();   // BUG-329
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch (JSException) { /* ignore */ }
             _mdEditors.Remove(id);
         }
@@ -1288,6 +1298,26 @@ else
             try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, options); _mdEditors.Add(id); _editorMentions = wantMentions; }
             catch (JSException) { /* editor is a progressive enhancement */ }
         }
+    }
+
+    // BUG-329: switching the lens or the mode away from the Investigation composer used to destroy its editor unread,
+    // losing a half-written Finding or Decision. In add mode its text is kept in _tlDesc (it carries to the next mode,
+    // as an event step's text already did) and in the FR-02 stash, so the next editor or a tab switch starts from it.
+    private bool _stashTaken;   // this tab has seeded from the FR-02 stash once
+    private async Task ReadBackAddText()
+    {
+        string? val;
+        try { val = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
+        catch (JSException) { return; }   // nothing readable: keep what we had
+        _tlDesc = val ?? "";
+        KeepStash(val);
+    }
+
+    private void KeepStash(string? text)
+    {
+        if (ComposerDrafts is null) return;
+        if (!string.IsNullOrWhiteSpace(text)) ComposerDrafts[InvEditorId] = text;
+        else ComposerDrafts.Remove(InvEditorId);
     }
 
     // --- RD-09: follow-ups saved with the entry ("Then") ---
@@ -2687,13 +2717,15 @@ else
     private async Task StashDraft()
     {
         if (ComposerDrafts is null || _tlEditId is not null) return;
-        try
+        // BUG-329: with no editor mounted (an event step or a question showing), its getValue is "" and used to drop the
+        // stash. The add text is then _tlDesc, read back when the editor went; untouched if this tab never had one.
+        if (!_mdEditors.Contains(InvEditorId))
         {
-            var val = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId);
-            if (!string.IsNullOrWhiteSpace(val)) ComposerDrafts[InvEditorId] = val;
-            else ComposerDrafts.Remove(InvEditorId);
+            if (_stashTaken) KeepStash(_tlDesc);
+            return;
         }
-        catch { /* editor not mounted or circuit tearing down — nothing to stash */ }
+        try { KeepStash(await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId)); }
+        catch { /* circuit tearing down — nothing to stash */ }
     }
 
     public async ValueTask DisposeAsync()
