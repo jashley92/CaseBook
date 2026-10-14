@@ -11,6 +11,11 @@ namespace IncidentManager.Web.Security;
 /// and the token keeps only the roles the owner's current groups map to (resolved the same way as at sign-in). Each
 /// answer is reused for <see cref="Fresh"/>. If AD can't be reached, the last answer is used for up to
 /// <see cref="LastKnownLimit"/>, then the token is refused rather than trusted.
+/// <para>
+/// BUG-469: a lookup taking longer than <see cref="Timeout"/> counts as AD being unreachable. It runs on its own thread,
+/// one at a time per account (later callers join it), and an account whose lookup timed out and is still blocked isn't
+/// asked about again until it returns.
+/// </para>
 /// </summary>
 public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
 {
@@ -34,12 +39,25 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     private readonly ConcurrentDictionary<string, DateTimeOffset> _failedAt = new(StringComparer.OrdinalIgnoreCase);
     public static readonly TimeSpan RetryAfterFailure = TimeSpan.FromMinutes(1);
 
+    /// <summary>BUG-469: how long a caller waits on the directory before taking it to be unreachable.</summary>
+    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>BUG-469: lookups still blocked after timing out, past which no further account is asked about.</summary>
+    public const int MaxHung = 8;
+
+    private readonly TimeProvider _time;
+    private readonly object _gate = new();
+    // BUG-469: the lookup running for an account, which later callers join rather than starting another.
+    private readonly Dictionary<string, Pending> _pending = new(StringComparer.OrdinalIgnoreCase);
+    private int _hung;
+
     public AdTokenOwnerCheck(IRoleDirectory roles, IClock clock, ILogger<AdTokenOwnerCheck>? log = null,
-        Func<string, AccountGroups?>? lookup = null)
+        Func<string, AccountGroups?>? lookup = null, TimeProvider? time = null)
     {
         _roles = roles;
         _clock = clock;
         _log = log;
+        _time = time ?? TimeProvider.System;
         _lookup = lookup ?? (OperatingSystem.IsWindows() ? QueryDirectory : _ => throw new PlatformNotSupportedException());
     }
 
@@ -54,12 +72,42 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         if (known && now - last.At < Fresh) return Access(last.Account);
         if (_failedAt.TryGetValue(ownerUserId, out var failed) && now - failed < RetryAfterFailure)
             return Unreachable(known, last, now, failOpen);
+        Pending pending;
+        lock (_gate)
+        {
+            if (_pending.TryGetValue(ownerUserId, out var running))
+            {
+                // BUG-469: one for this account timed out and is still blocked: no second one, and no wait on it.
+                if (running.Hung)
+                {
+                    _failedAt[ownerUserId] = now;
+                    return Unreachable(known, last, now, failOpen);
+                }
+                pending = running;
+            }
+            else
+            {
+                // BUG-469: with MaxHung blocked, the directory is taken to be down rather than given another thread.
+                if (_hung >= MaxHung) return Unreachable(known, last, now, failOpen);
+                pending = Start(ownerUserId);
+            }
+        }
         try
         {
-            var account = await Task.Run(() => _lookup(ownerUserId), ct);
+            var account = await pending.Lookup.WaitAsync(Timeout, _time, ct);
             _answers[ownerUserId] = (account, now);
             _failedAt.TryRemove(ownerUserId, out _);
             return Access(account);
+        }
+        catch (TimeoutException)
+        {
+            _log?.LogWarning("Active Directory didn't answer in time when checking an API token's owner.");
+            lock (_gate)
+            {
+                if (!pending.Done && !pending.Hung) { pending.Hung = true; _hung++; }
+            }
+            _failedAt[ownerUserId] = now;
+            return Unreachable(known, last, now, failOpen);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -67,6 +115,35 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
             _failedAt[ownerUserId] = now;
             return Unreachable(known, last, now, failOpen);
         }
+    }
+
+    // BUG-469: on its own thread (a blocked directory call doesn't hold a pool thread); called under _gate. One that
+    // finishes after its callers stopped waiting only frees its place; its answer isn't kept.
+    private Pending Start(string ownerUserId)
+    {
+        var pending = new Pending();
+        pending.Lookup = Task.Factory.StartNew(() =>
+        {
+            try { return _lookup(ownerUserId); }
+            finally
+            {
+                lock (_gate)
+                {
+                    pending.Done = true;
+                    if (pending.Hung) _hung--;
+                    _pending.Remove(ownerUserId);
+                }
+            }
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        _pending[ownerUserId] = pending;
+        return pending;
+    }
+
+    private sealed class Pending
+    {
+        public Task<AccountGroups?> Lookup = null!;
+        public bool Done;
+        public bool Hung;   // timed out, still blocked
     }
 
     private OwnerAccess Access(AccountGroups? account) => account is null

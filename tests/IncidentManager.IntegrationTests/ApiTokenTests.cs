@@ -409,5 +409,63 @@ public sealed class ApiTokenTests : IDisposable
         lookups.Should().Be(2);
     }
 
+    [Fact]
+    public async Task A_directory_that_hangs_counts_as_unreachable_and_isnt_asked_again_while_blocked(/* BUG-469 */)
+    {
+        using var release = new ManualResetEventSlim();
+        var lookups = 0;
+        var ad = new AdTokenOwnerCheck(new GroupRoleDirectory(), _clock, time: new FastTimers(), lookup: _ =>
+        {
+            Interlocked.Increment(ref lookups);
+            release.Wait(TimeSpan.FromSeconds(30));   // the DC hangs
+            return new(true, ["S-1-5-21-COMMANDERS"]);
+        });
+
+        var token = ad.CheckAsync("analyst1");
+        var recipient = ad.CheckRecipientAsync("analyst1");
+        (await token)!.Active.Should().BeFalse("a token fails closed");
+        (await recipient).Should().BeNull("choosing a recipient fails open");
+        lookups.Should().Be(1, "callers for the same account share one lookup");
+
+        _clock.UtcNow += AdTokenOwnerCheck.RetryAfterFailure;
+        (await ad.CheckRecipientAsync("analyst1")).Should().BeNull();
+        lookups.Should().Be(1, "the blocked lookup isn't joined by another");
+
+        // Once it returns, its place is freed and the next check after the minute asks again.
+        release.Set();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        OwnerAccess? again;
+        do { _clock.UtcNow += AdTokenOwnerCheck.RetryAfterFailure; again = await ad.CheckAsync("analyst1"); await Task.Delay(20); }
+        while (again?.Active != true && DateTime.UtcNow < deadline);
+        again!.Active.Should().BeTrue();
+        lookups.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Once_enough_lookups_are_blocked_no_more_are_started(/* BUG-469 */)
+    {
+        using var release = new ManualResetEventSlim();
+        var lookups = 0;
+        var ad = new AdTokenOwnerCheck(new GroupRoleDirectory(), _clock, time: new FastTimers(), lookup: _ =>
+        {
+            Interlocked.Increment(ref lookups);
+            release.Wait(TimeSpan.FromSeconds(30));
+            return new(true, []);
+        });
+        for (var i = 0; i < AdTokenOwnerCheck.MaxHung; i++)
+            (await ad.CheckRecipientAsync($"user{i}")).Should().BeNull();
+
+        (await ad.CheckAsync("another"))!.Active.Should().BeFalse();
+        lookups.Should().Be(AdTokenOwnerCheck.MaxHung, "no thread more is given to a directory that isn't answering");
+        release.Set();
+    }
+
+    // The lookup timeout passes in a moment.
+    private sealed class FastTimers : TimeProvider
+    {
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
+            base.CreateTimer(callback, state, dueTime > TimeSpan.Zero ? TimeSpan.FromMilliseconds(50) : dueTime, period);
+    }
+
     public void Dispose() => _connection.Dispose();
 }
