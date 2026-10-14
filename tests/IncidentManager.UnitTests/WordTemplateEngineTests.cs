@@ -279,6 +279,30 @@ public class WordTemplateEngineTests
     }
 
     [Fact]
+    public void A_card_row_with_a_nested_table_of_the_same_list_fills_it_per_item(/* BUG-382 follow-up */)
+    {
+        static TableRow Row(params string[] cells) => new(cells.Select(c => new TableCell(new Paragraph(R(c)))));
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var main = doc.AddMainDocumentPart();
+            var details = new Table(Row("{{ioc.type}}"));
+            var cards = new Table(new TableRow(new TableCell(new Paragraph(R("{{ioc.value}}"))), new TableCell(details)));
+            main.Document = new Document(new Body(cards));
+            main.Document.Save();
+        }
+
+        var filled = _engine.Render(ms.ToArray(), Model());
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(filled), false);
+        var rows = result.MainDocumentPart!.Document!.Body!.Elements<Table>().Single().Elements<TableRow>().ToList();
+        rows.Should().HaveCount(2, "one card per indicator");
+        rows.Select(r => r.Descendants<Table>().Single().Elements<TableRow>().Count()).Should().Equal([1, 1],
+            "each card's details table holds that indicator only");
+        rows[0].InnerText.Should().Be("203[.]0[.]113[.]66IP Address");
+    }
+
+    [Fact]
     public void A_picture_field_alone_in_a_cell_leaves_a_valid_cell_when_theres_no_picture(/* BUG-320 */)
     {
         using var ms = new MemoryStream();

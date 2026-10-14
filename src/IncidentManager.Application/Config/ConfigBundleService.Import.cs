@@ -119,6 +119,7 @@ public sealed partial class ConfigBundleService
     /// <summary>Previews applying a bundle: classifies every item add / update / unchanged against live config.</summary>
     public async Task<ConfigDiff> PreviewAsync(ConfigBundle incoming, CancellationToken ct = default)
     {
+        incoming = WithCommaJurisdictions(incoming);
         var live = await BuildBundleAsync(ct);
         var (_, warnings) = await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
         CheckSettings(incoming);                         // so does a setting outside its limits
@@ -181,6 +182,18 @@ public sealed partial class ConfigBundleService
     }
 
     private static string Canon<T>(T item) => System.Text.Json.JsonSerializer.Serialize(item, ConfigBundleJson.Canonical);
+
+    // BUG-404: ";" separates a case's kept jurisdictions from its elements, so it's never stored inside a code; a bundle
+    // using it (an export from before that rule, which stored it as given) is read with commas, as the admin page saves it.
+    private static ConfigBundle WithCommaJurisdictions(ConfigBundle bundle) =>
+        bundle.DataElements.Any(d => d.NotificationJurisdictions?.Contains(';') == true)
+            ? bundle with
+            {
+                DataElements = bundle.DataElements.Select(d => d.NotificationJurisdictions?.Contains(';') == true
+                    ? d with { NotificationJurisdictions = string.Join(",", Compliance.NotificationDeadlineService.SplitCodes(d.NotificationJurisdictions)) }
+                    : d).ToList()
+            }
+            : bundle;
 
     private static bool SameElement(ConfigDataElement a, ConfigDataElement b) =>
         a.Label == b.Label && a.SortOrder == b.SortOrder && a.IsActive == b.IsActive
@@ -257,9 +270,6 @@ public sealed partial class ConfigBundleService
         // BUG-353: a key longer than its column was refused only at the save, as a generic length error.
         foreach (var d in incoming.DataElements.Where(d => d.Key is { Length: > DataElementService.MaxKeyLength }))
             problems.Add($"Data element \"{d.Label}\" has a key longer than {DataElementService.MaxKeyLength} characters.");
-        // BUG-404: ";" separates a case's kept jurisdictions from its elements, so a code holding one would split there.
-        foreach (var d in incoming.DataElements.Where(d => d.NotificationJurisdictions?.Contains(';') == true))
-            problems.Add($"Data element \"{d.Label}\" separates its jurisdictions with \";\"; use commas.");
         foreach (var o in (incoming.CaseOutcomes ?? []).Where(o => o.Key is { Length: > CaseOutcomeService.MaxKeyLength }))
             problems.Add($"Case outcome \"{o.Label}\" has a key longer than {CaseOutcomeService.MaxKeyLength} characters.");
         if (incoming.CaseOutcomes is { Count: > 0 } outcomes)
@@ -375,7 +385,7 @@ public sealed partial class ConfigBundleService
                 "This bundle is signed with a key this server doesn't hold, so its signature can't show who made it. " +
                 "Confirm it came from a source you trust to import it. Nothing was imported.");
 
-        var bundle = envelope.Bundle;
+        var bundle = WithCommaJurisdictions(envelope.Bundle);   // after the signature check, which covers the bundle as signed
         var changedSettings = new List<string>();
         var changedRoles = new List<string>();
         var addedMappings = new List<string>();

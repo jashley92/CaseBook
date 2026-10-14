@@ -815,7 +815,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_data_element_whose_jurisdictions_use_a_semicolon_is_refused(/* BUG-404 */)
+    public async Task A_data_element_whose_jurisdictions_use_a_semicolon_imports_with_commas(/* BUG-404 */)
     {
         await using var db = NewContext();
         await SeedConfigAsync(db);
@@ -827,10 +827,11 @@ public sealed class ConfigBundleServiceTests : IDisposable
             DataElements = live.DataElements.Select(d => d == first ? d with { NotificationJurisdictions = "NY;CA" } : d).ToList()
         };
 
-        await svc.Invoking(s => s.PreviewAsync(incoming)).Should().ThrowAsync<ArgumentException>().WithMessage("*use commas*");
-        await svc.Invoking(s => s.ImportAsync(Signed(incoming))).Should().ThrowAsync<ArgumentException>();
+        // An export from before BUG-404 stored ";" as given; refusing it would block restoring that server's own bundle.
+        await svc.Invoking(s => s.PreviewAsync(incoming)).Should().NotThrowAsync();
+        await svc.ImportAsync(Signed(incoming));
         (await db.DataElements.AsNoTracking().SingleAsync(e => e.Key == first.Key)).NotificationJurisdictions
-            .Should().Be(first.NotificationJurisdictions);
+            .Should().Be("NY,CA");
     }
 
     [Fact]

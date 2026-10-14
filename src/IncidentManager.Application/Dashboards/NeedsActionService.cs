@@ -117,7 +117,9 @@ public sealed class NeedsActionService
         if (briefs.Count > 0)
         {
             var ids = briefs.Select(b => b.CaseId).ToList();
-            var entries = (await db.TimelineEntries.AsNoTracking().Where(e => ids.Contains(e.CaseId))
+            // Only decisions and handoffs (every version, to date each by its first): an edit keeps the type.
+            var entries = (await db.TimelineEntries.AsNoTracking()
+                    .Where(e => ids.Contains(e.CaseId) && (e.Type == TimelineEntryType.Decision || e.Type == TimelineEntryType.Handoff))
                     .Select(e => new TimelineEntry { Id = e.Id, CaseId = e.CaseId, Type = e.Type, IsCurrent = e.IsCurrent,
                         SupersedesEntryId = e.SupersedesEntryId, CreatedAtUtc = e.CreatedAtUtc })
                     .ToListAsync(ct))

@@ -198,8 +198,11 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         // Lists: a table row, or a paragraph outside a table, that uses a list's fields repeats per item. BUG-382: a row
         // repeats for its own fields only, not those of a table nested in it (a layout table around list tables), and
         // nested rows go first, so the inner list fills its own table instead of repeating the whole layout row.
+        // A nested row of the same list as a row around it (an indicator "card" whose cell holds a table of that indicator's
+        // details) isn't repeated on its own: the outer row's copies fill it per item, as before BUG-382.
         foreach (var row in root.Descendants<TableRow>().OrderByDescending(r => r.Ancestors<TableRow>().Count()).ToList())
-            if (ListIn(OwnText(row)) is { } prefix) Repeat(row, prefix, m, emptyText: "(none)");
+            if (ListIn(OwnText(row)) is { } prefix && !row.Ancestors<TableRow>().Any(a => ListIn(OwnText(a)) == prefix))
+                Repeat(row, prefix, m, emptyText: "(none)");
         foreach (var p in root.Descendants<Paragraph>().Where(p => !p.Ancestors<Table>().Any()).ToList())
             if (ListIn(p.InnerText) is { } prefix) Repeat(p, prefix, m, emptyText: null);
 
