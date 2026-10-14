@@ -1,0 +1,37 @@
+@* BUG-414: when a verdict was actually reached, for one recorded later. Left alone it means now (and shows now, to the
+   minute); set, it's a wall-clock time in the viewer's display zone. More than an hour back needs a reason, as any
+   change recorded after the fact does (INV-24); the record keeps both times. *@
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+
+@{
+    var now = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
+    now = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMinute));
+}
+<label class="form-label small mb-0" for="@Id">When was it determined? (@TimeDisp.Label)</label>
+<DateTimeInput TValue="DateTime?" id="@Id" class="form-control form-control-sm" Value="@(Value ?? now)" ValueChanged="Changed" />
+<TimeNudges Value="@(Value ?? now)" ValueChanged="Changed" Now="@now" />
+<div class="form-text @(Backdated ? "text-warning-emphasis" : "")">
+    @(Backdated
+        ? "More than an hour ago, so give a reason. Both times are kept: when it was determined and when you recorded it."
+        : "Leave as now, or set when the team actually reached it.")
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "determined-at";
+    /// <summary>The wall-clock time chosen; null means now.</summary>
+    [Parameter] public DateTime? Value { get; set; }
+    [Parameter] public EventCallback<DateTime?> ValueChanged { get; set; }
+
+    private bool Backdated => UtcOf(Value, TimeDisp.Zone, Clock.UtcNow) is { } at && CaseService.IsBackdated(at, Clock.UtcNow);
+
+    private Task Changed(DateTime? v) => ValueChanged.InvokeAsync(v);
+
+    /// <summary>The chosen time as UTC for the service; null for now (or a time within the current minute).</summary>
+    public static DateTimeOffset? UtcOf(DateTime? wall, TimeZoneInfo zone, DateTimeOffset nowUtc)
+    {
+        if (wall is not { } w) return null;
+        var at = WallClock.ToUtc(w, zone, nowUtc);
+        return Math.Abs((nowUtc - at).TotalMinutes) < 1 ? null : at;
+    }
+}

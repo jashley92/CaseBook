@@ -112,7 +112,8 @@ Times are covered by the rules in [decision 0010](../decisions/0010-after-the-fa
 |---|---|---|
 | Investigation entry | **New version.** The old version stays (viewable under "Show N earlier versions"); citations move to the new version; an optional reason goes on the audit entry. | `Case.EditInvestigationEntry` |
 | Event step | **Corrected in place.** The previous values are in the audit trail. | `Case.EditEventStep` |
-| Milestone | Read-only: change the source record. For classification, severity and phase changes, *Correct time* re-dates the change with a required reason, adds a `TransitionTimeCorrection`, and moves the contained/resolved/closed time with it. The recorded time never moves. | `Case.CorrectTransitionTime` |
+| Milestone | Read-only: change the source record. For classification, severity, phase and verdict changes, *Correct time* re-dates the change with a required reason, adds a `TransitionTimeCorrection`, and moves the contained/resolved/closed time with it. The recorded time never moves. | `Case.CorrectTransitionTime` |
+| Retract | **Taken off the record, not deleted** (BUG-413). A required reason; the entry stops being current, so it leaves the counts, the attack chain, ATT&CK coverage, reports and search, and is shown (on request) as a struck-through stub with who retracted it, when and why. An Investigation entry is retracted at its latest version. A retracted entry can't be edited. | `Case.RetractTimelineEntry` |
 | Delete | **Not possible.** No code removes a timeline entry. | |
 
 Correction limits: not in the future, not before detection, and staying between the neighbouring changes of the

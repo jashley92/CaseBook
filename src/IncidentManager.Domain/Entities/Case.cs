@@ -885,7 +885,7 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public CaseEntity EditEntity(Guid entityId, EntityType type, string value, string? label,
         EntityDisposition disposition, string? description, string? source, string actor, DateTimeOffset nowUtc,
-        string? reason = null)
+        string? reason = null, DateTimeOffset? determinedAtUtc = null)
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("An entity value is required.");
@@ -902,7 +902,7 @@ public class Case : AuditableEntity, IHashableEntity
             throw new InvalidOperationException("Another entity with the same type and value already exists on this case.");
 
         if (entity.Disposition != disposition)
-            RecordVerdictChange(entity, disposition, reason, actor, nowUtc);   // HR-05: before the label changes
+            RecordVerdictChange(entity, disposition, reason, actor, nowUtc, determinedAtUtc);   // HR-05: before the label changes
         entity.Type = type;
         entity.Value = v;
         entity.Label = label;
@@ -916,14 +916,19 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     // HR-05: the findings history. Reads the entity as it is before the change.
-    private void RecordVerdictChange(CaseEntity entity, EntityDisposition to, string? reason, string actor, DateTimeOffset nowUtc)
+    // BUG-414: <paramref name="determinedAtUtc"/> is when the verdict was actually reached, if before it's recorded: not in
+    // the future, not before detection, not before this entity's previous verdict.
+    private void RecordVerdictChange(CaseEntity entity, EntityDisposition to, string? reason, string actor, DateTimeOffset nowUtc,
+        DateTimeOffset? determinedAtUtc = null)
     {
+        var effective = CheckEffective(determinedAtUtc, nowUtc, "verdict",
+            VerdictChanges.Where(v => v.EntityId == entity.Id).Select(v => v.EffectiveAt));
         var name = string.IsNullOrWhiteSpace(entity.Label) ? entity.Value : entity.Label!;
         VerdictChanges.Add(new EntityVerdictChange
         {
             CaseId = Id, EntityId = entity.Id, EntityLabel = name.Length > 400 ? name[..400] : name,
             From = entity.Disposition, To = to, Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
-            ChangedBy = actor, ChangedAtUtc = nowUtc
+            ChangedBy = actor, ChangedAtUtc = nowUtc, EffectiveAtUtc = effective
         });
     }
 
@@ -966,6 +971,8 @@ public class Case : AuditableEntity, IHashableEntity
 
         var entry = TimelineEntries.FirstOrDefault(t => t.Id == entryId && t.Kind == TimelineKind.Event)
             ?? throw new InvalidOperationException("Event step not found on this case.");
+        if (entry.IsRetracted)   // BUG-413
+            throw new InvalidOperationException("That step was retracted, so it can't be edited. Add a new step instead.");
         if (timing?.AfterStepId == entryId) throw new ArgumentException("A step can't come after itself.");
 
         var normalisedTechnique = string.IsNullOrWhiteSpace(techniqueId) ? null : CaseTechnique.NormaliseId(techniqueId);
@@ -1041,6 +1048,32 @@ public class Case : AuditableEntity, IHashableEntity
             cite.TimelineEntryId = next.Id;
         Touch(actor, nowUtc);
         return next;
+    }
+
+    /// <summary>
+    /// BUG-413: takes a wrong entry off the record without deleting it (R3). The entry stops being current, so it leaves
+    /// the timeline's counts, the attack chain and every report, and keeps its text with who retracted it, when and why.
+    /// An Investigation entry is retracted at its latest version; its earlier versions stay as they were.
+    /// </summary>
+    public TimelineEntry RetractTimelineEntry(Guid entryId, string reason, string actor, DateTimeOffset nowUtc)
+    {
+        reason = (reason ?? "").Trim();
+        if (reason.Length == 0) throw new ArgumentException("Say why it's being retracted.");
+        if (reason.Length > 2000) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+        var entry = TimelineEntries.FirstOrDefault(t => t.Id == entryId)
+            ?? throw new InvalidOperationException("That entry isn't on this case.");
+        if (entry.IsRetracted) throw new InvalidOperationException("That entry has already been retracted.");
+        if (!entry.IsCurrent)
+            throw new InvalidOperationException("That's an earlier version of an entry; retract the entry as it stands now.");
+
+        entry.IsCurrent = false;
+        entry.RetractedAtUtc = nowUtc;
+        entry.RetractedBy = actor;
+        entry.RetractReason = reason;
+        entry.ModifiedBy = actor;
+        entry.ModifiedAtUtc = nowUtc;
+        Touch(actor, nowUtc);
+        return entry;
     }
 
     /// <summary>
@@ -1688,6 +1721,10 @@ public class Case : AuditableEntity, IHashableEntity
                 .Select(x => (x.Id, x.ChangedAtUtc, x.EffectiveAt, Set: (Action<DateTimeOffset?>)(v => x.EffectiveAtUtc = v), To: (CasePhase?)x.To)),
             TransitionKind.Severity => SeverityChanges.Where(x => x.From is not null)
                 .Select(x => (x.Id, x.ChangedAtUtc, x.EffectiveAt, Set: (Action<DateTimeOffset?>)(v => x.EffectiveAtUtc = v), To: (CasePhase?)null)),
+            // BUG-414: an entity's verdicts are ordered among themselves (another entity's verdicts don't constrain them).
+            TransitionKind.Verdict => VerdictChanges
+                .Where(x => VerdictChanges.FirstOrDefault(v => v.Id == changeId) is { } target && x.EntityId == target.EntityId)
+                .Select(x => (x.Id, x.ChangedAtUtc, x.EffectiveAt, Set: (Action<DateTimeOffset?>)(v => x.EffectiveAtUtc = v), To: (CasePhase?)null)),
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
         var ordered = changes.OrderBy(x => x.ChangedAtUtc).ToList();
@@ -1696,7 +1733,10 @@ public class Case : AuditableEntity, IHashableEntity
             throw new InvalidOperationException("That change isn't on this case, or it's the opening state, which can't be re-dated.");
 
         var target = ordered[i];
-        var what = kind switch { TransitionKind.Phase => "phase", TransitionKind.Severity => "severity", _ => "classification" };
+        var what = kind switch
+        {
+            TransitionKind.Phase => "phase", TransitionKind.Severity => "severity", TransitionKind.Verdict => "verdict", _ => "classification"
+        };
         if (newEffectiveUtc > nowUtc)
             throw new ArgumentException($"The {what} change can't be dated in the future.");
         if (DetectedAtUtc is { } detected && ToMinute(newEffectiveUtc) < ToMinute(detected))

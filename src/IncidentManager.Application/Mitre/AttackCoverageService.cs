@@ -82,7 +82,7 @@ public sealed class AttackCoverageService
             .Select(t => new { t.CaseId, t.TechniqueId, t.Tactic })
             .ToListAsync(ct)).Where(t => inPeriod.ContainsKey(t.CaseId)).ToList();
         var steps = (await db.TimelineEntries.AsNoTracking()
-            .Where(e => ids.Contains(e.CaseId) && e.Kind == TimelineKind.Event)
+            .Where(e => ids.Contains(e.CaseId) && e.Kind == TimelineKind.Event && e.IsCurrent)   // BUG-413: not retracted
             .Select(e => new { e.CaseId, e.TechniqueId, e.Environment, Tactics = e.Tactics.Select(x => x.Tactic).ToList() })
             .ToListAsync(ct)).Where(e => inPeriod.ContainsKey(e.CaseId)).ToList();
 

@@ -115,10 +115,23 @@ public class EntityVerdictChange : Entity, IHashableEntity
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; set; }
 
+    /// <summary>BUG-414: when the verdict was actually reached, if that was before it was recorded; null means it was
+    /// reached when it was recorded (<see cref="ChangedAtUtc"/>, which never changes). Corrected later through a
+    /// <see cref="TransitionTimeCorrection"/>, as a phase change is.</summary>
+    public DateTimeOffset? EffectiveAtUtc { get; set; }
+
+    /// <summary>When the verdict was reached: the effective time if one was given, else the recorded time.</summary>
+    public DateTimeOffset EffectiveAt => EffectiveAtUtc ?? ChangedAtUtc;
+
     public string? RowHash { get; set; }   // BUG-70
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, EntityId, Canonical.Text(EntityLabel), Canonical.Num(From),
-        Canonical.Num(To), Canonical.Text(Reason), ChangedBy, Canonical.Time(ChangedAtUtc));
+    // BUG-414: the effective time is folded in only when there is one, so earlier rows keep their exact canonical.
+    public string BuildCanonicalContent()
+    {
+        var content = string.Join('|', CaseId, EntityId, Canonical.Text(EntityLabel), Canonical.Num(From),
+            Canonical.Num(To), Canonical.Text(Reason), ChangedBy, Canonical.Time(ChangedAtUtc));
+        return EffectiveAtUtc is { } at ? string.Join('|', content, "eff", Canonical.Time(at)) : content;
+    }
 }
 
 /// <summary>Immutable record of a severity change. BUG-70: hashed.</summary>

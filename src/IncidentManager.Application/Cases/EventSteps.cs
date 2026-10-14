@@ -18,11 +18,11 @@ public static class EventSteps
     public static bool IsAttack(Case c, TimelineEntry e) => IsAttack(c.Origin, e);
 
     public static bool IsAttack(CaseOrigin origin, TimelineEntry e) =>
-        e.Kind == TimelineKind.Event && (origin != CaseOrigin.ThirdParty || HasAttackContent(e));
+        e.Kind == TimelineKind.Event && e.IsCurrent && (origin != CaseOrigin.ThirdParty || HasAttackContent(e));
 
     /// <summary>A disclosure milestone: a third-party case's event step that isn't an attack step.</summary>
     public static bool IsDisclosure(Case c, TimelineEntry e) =>
-        e.Kind == TimelineKind.Event && c.Origin == CaseOrigin.ThirdParty && !HasAttackContent(e);
+        e.Kind == TimelineKind.Event && e.IsCurrent && c.Origin == CaseOrigin.ThirdParty && !HasAttackContent(e);
 
     /// <summary>ATT&amp;CK tactics (the Unspecified one included), a technique, an actor or target, or a stated environment.</summary>
     public static bool HasAttackContent(TimelineEntry e) =>

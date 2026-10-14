@@ -62,7 +62,7 @@ public static class CaseNarrative
         }
 
         // Sequence of events: the attack chain (at the vendor, on a third-party case), then the disclosure milestones.
-        var events = c.TimelineEntries.Where(e => e.Kind == TimelineKind.Event).InTimelineOrder().ToList();
+        var events = c.TimelineEntries.Where(e => e.Kind == TimelineKind.Event && e.IsCurrent).InTimelineOrder().ToList();   // BUG-413
         var attack = events.Where(e => Cases.EventSteps.IsAttack(c, e)).ToList();
         // A third-party case whose attacker pivoted into our network: one sequence, each step saying where.
         var pivoted = c.Origin == CaseOrigin.ThirdParty && attack.Any(e => Cases.EventSteps.Where(c, e) == StepEnvironment.Ours);

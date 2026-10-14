@@ -141,7 +141,7 @@ recorded correction.
 | `StatusChanges` (phase) | `From` (null), `To`, `Reason` (optional), `ChangedBy`, `ChangedAtUtc`, `EffectiveAtUtc`, `OutcomeKey` (on a change to Closed) | The first row is `null → New`. A close keeps its outcome here after a reopen. |
 | `SeverityChanges` | `From` (null), `To`, `Reason`, `ChangedBy`, `ChangedAtUtc`, `EffectiveAtUtc` | First row "Initial severity". |
 | `MaterialityChanges` | `From`, `To`, `DecisionMaker`, `DecidedOnUtc`, `Rationale`, `ChangedBy`, `ChangedAtUtc` | Written only when the status changes. No effective time. |
-| `EntityVerdictChanges` | `EntityId` (no foreign key), `EntityLabel` (as it read then), `From`, `To` (dispositions), `Reason`, `ChangedBy`, `ChangedAtUtc` | Written when an existing entity's verdict changes (edit, or an Unknown one filled by a re-add). The findings history; projected as Verdict milestones. |
+| `EntityVerdictChanges` | `EntityId` (no foreign key), `EntityLabel` (as it read then), `From`, `To` (dispositions), `Reason`, `ChangedBy`, `ChangedAtUtc`, `EffectiveAtUtc` (BUG-414: when it was actually reached, if earlier; null = when recorded) | Written when an existing entity's verdict changes (edit, or an Unknown one filled by a re-add). The findings history; projected as Verdict milestones. |
 | `AccountDirectorySnapshots` | `EntityId` (no foreign key), `LookedUp`, `Trigger` (0 added, 1 requested), `Found`, then the directory's `SamAccountName`, `UserPrincipalName`, `DisplayName`, `Title`, `Department`, `Manager`, `Email`, `DistinguishedName`, `Enabled`, `LockedOut`, `AccountExpiresUtc`, `LastLogonUtc`, `PasswordLastSetUtc`, `WhenCreatedUtc` | BUG-416: an account entity as Active Directory had it, when it was added or when someone kept a later lookup. Append-only, hashed. |
 | `AssignmentChanges` | `UserId`, `UserDisplayName`, `From` (role, null = joined), `To` (role, null = left), `ChangedBy`, `ChangedAtUtc` | Written only when a role actually changes. No effective time. |
 | `GatePassages` (H) | `Trigger`, `PassedAtUtc`, `PassedBy`, `WasOverridden`, `OverrideJustification`, `Commentary` (the transition reason), `Detail` (each requirement as `[MET]`, `[UNMET(OVERRIDDEN)]`, `[UNMET(advisory)]`) | Stores only the trigger, not a link to the gate, so later gate edits don't rewrite history. Written only when an active gate exists. |
@@ -175,6 +175,7 @@ Stored timeline content. Milestones are not stored; see [timeline.md](timeline.m
 | `ActionItemId` | uniqueidentifier | yes | The task whose result this entry logs (no foreign key). |
 | `PromotedFrom` | nvarchar(64) | yes | `note:<id>`, `taskcomment:<id>` or `import`. |
 | `Version`, `IsCurrent`, `SupersedesEntryId` | | | Investigation entries are versioned (see below). |
+| `RetractedAtUtc`, `RetractedBy` (200), `RetractReason` (2000) | | yes | BUG-413: set when the entry was retracted (taken off the record with a reason). A retracted entry also has `IsCurrent = false` and no later version. Hashed when set. |
 
 `EventStepTactics` (A): `TimelineEntryId`, `Tactic` (MITRE tactic as int). One row per tactic on an event
 step; part of the parent's hash.

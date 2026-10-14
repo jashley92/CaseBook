@@ -128,10 +128,11 @@ public static class CaseMilestones
 
         // HR-05: findings: an entity re-assessed (e.g. Unknown → Compromised), with the reason given.
         foreach (var x in c.VerdictChanges)
-            list.Add(new CaseMilestone($"verdict:{x.Id}", x.ChangedAtUtc, MilestoneKind.Verdict,
+            list.Add(new CaseMilestone($"verdict:{x.Id}", x.EffectiveAt, MilestoneKind.Verdict,   // BUG-414: when it was reached
                 $"{x.EntityLabel} assessed {labels.DispositionLabel(x.To)}"
                     + (x.From == EntityDisposition.Unknown ? "" : $" (was {labels.DispositionLabel(x.From)})"),
-                Blank(x.Reason), x.ChangedBy, "verdict change"));
+                Blank(x.Reason), x.ChangedBy, "verdict change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
+                Transition: (TransitionKind.Verdict, x.Id)));
 
         // HR-06: changes in understanding. Each brief version whose working assessment differs from the one before.
         // A closing brief's conclusion is left out: the Closed milestone already carries it.

@@ -1559,6 +1559,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<DateTimeOffset?>("EffectiveAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<Guid>("EntityId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2697,6 +2700,17 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<string>("Rationale")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("RetractReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTimeOffset?>("RetractedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RetractedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(70)

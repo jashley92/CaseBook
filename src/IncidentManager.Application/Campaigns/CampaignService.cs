@@ -125,7 +125,7 @@ public sealed class CampaignService
             .ToListAsync(ct);
 
         var timelineRows = await db.TimelineEntries.AsNoTracking()
-            .Where(t => memberIds.Contains(t.CaseId) && t.Kind == TimelineKind.Event)
+            .Where(t => memberIds.Contains(t.CaseId) && t.Kind == TimelineKind.Event && t.IsCurrent)   // BUG-413: not retracted
             .Select(t => new { t.CaseId, t.OccurredAtUtc, t.Type, t.Description, t.Source, t.TechniqueId,
                 t.OccurredPrecision, t.OccurredUntilUtc, t.StepOrder, t.CreatedAtUtc })
             .ToListAsync(ct);

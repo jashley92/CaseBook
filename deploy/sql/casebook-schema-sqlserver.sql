@@ -4102,3 +4102,48 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014161055_RetractEntriesAndVerdictTimes'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [RetractReason] nvarchar(2000) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014161055_RetractEntriesAndVerdictTimes'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [RetractedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014161055_RetractEntriesAndVerdictTimes'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [RetractedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014161055_RetractEntriesAndVerdictTimes'
+)
+BEGIN
+    ALTER TABLE [EntityVerdictChanges] ADD [EffectiveAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014161055_RetractEntriesAndVerdictTimes'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261014161055_RetractEntriesAndVerdictTimes'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

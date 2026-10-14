@@ -33,6 +33,9 @@ public sealed class AccountDirectoryService
         _log = log;
     }
 
+    /// <summary>How many accounts one add looks up.</summary>
+    public const int MaxCapturedPerAdd = 50;
+
     /// <summary>Whether there is a directory to ask here.</summary>
     public bool IsAvailable => _directory.IsAvailable;
 
@@ -84,7 +87,8 @@ public sealed class AccountDirectoryService
                 .Where(e => e.CaseId == caseId && ids.Contains(e.Id))
                 .ToListAsync(ct);
             var taken = 0;
-            foreach (var e in entities.Where(e => IsAccountType(e.Type)))
+            // At most MaxCapturedPerAdd lookups, so a large paste isn't held up by the directory.
+            foreach (var e in entities.Where(e => IsAccountType(e.Type)).Take(MaxCapturedPerAdd))
             {
                 var lookup = await _directory.LookupAsync(e.Value, ct);
                 // An email address is only an account when the directory has it; an account not found is worth keeping

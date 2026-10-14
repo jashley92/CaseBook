@@ -252,7 +252,8 @@ public enum TransitionKind
 {
     Classification = 0,
     Phase = 1,
-    Severity = 2
+    Severity = 2,
+    Verdict = 3   // BUG-414: an entity verdict change (EntityVerdictChange)
 }
 
 /// <summary>BUG-416: why an account's directory details were recorded. Stored and hashed: append only.</summary>

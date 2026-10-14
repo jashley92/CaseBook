@@ -143,6 +143,31 @@ public sealed class AccountDirectoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Adding_an_account_through_the_case_keeps_its_directory_details()
+    {
+        _directory.Accounts["CONTOSO\\asmith"] = Jdoe() with { SamAccountName = "asmith", DisplayName = "Alex Smith" };
+        await using var db = NewContext();
+        var cases = new CaseService(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            accounts: NewService());
+        var c = await cases.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Acct2", Title = "Account case", Classification = Classification.Incident,
+            Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
+        });
+
+        var one = (await cases.AddOrMatchEntityAsync(c.Id, EntityType.Account, "CONTOSO\\asmith", null, EntityDisposition.Unknown, null, null)).Id;
+        var pasted = await cases.AddOrMatchEntitiesAsync(c.Id,
+            [new CaseService.EntityToAdd(EntityType.Account, "CONTOSO\\nobody", null, EntityDisposition.Unknown, null, null),
+             new CaseService.EntityToAdd(EntityType.IpAddress, "203.0.113.9", null, EntityDisposition.Unknown, null, null)]);
+        await cases.AddOrMatchEntityAsync(c.Id, EntityType.Account, "CONTOSO\\asmith", null, EntityDisposition.Unknown, null, null);
+
+        (await NewService().SnapshotsAsync(c.Id, one)).Should().ContainSingle("adding it again takes no second snapshot")
+            .Which.DisplayName.Should().Be("Alex Smith");
+        (await NewService().SnapshotsAsync(c.Id, pasted[0].Id)).Should().ContainSingle().Which.Found.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task A_bare_name_is_an_account_only_when_the_directory_knows_it()
     {
         _directory.Accounts["jdoe"] = Jdoe();

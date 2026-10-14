@@ -1553,6 +1553,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("EffectiveAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid>("EntityId")
                         .HasColumnType("TEXT");
 
@@ -2690,6 +2693,17 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Rationale")
                         .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RetractReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("RetractedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RetractedBy")
+                        .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")

@@ -63,16 +63,19 @@
                     </div>
                     @if (_pendingVerdict is { } pv && pv != en.Disposition)
                     {
-                        var required = pv is EntityDisposition.Malicious or EntityDisposition.Compromised;
+                        // BUG-414: a verdict dated more than an hour back needs a reason too.
+                        var required = pv is EntityDisposition.Malicious or EntityDisposition.Compromised
+                            || DeterminedAt.UtcOf(_verdictWhen, TimeDisp.Zone, Clock.UtcNow) is { } dAt && CaseService.IsBackdated(dAt, Clock.UtcNow);
                         <div class="im-dossier-reason mt-2">
                             <label class="form-label small mb-1" for="dossier-reason">Why @Ui.Label(pv).ToLowerInvariant()? <span class="text-muted">@(required ? "(required)" : "(optional)")</span></label>
                             <textarea id="dossier-reason" class="form-control form-control-sm im-rec" rows="2" maxlength="2000"
                                       @bind="_verdictReason" @bind:event="oninput"
                                       placeholder="@(required ? "What shows it, in a line. The reason is kept with the verdict." : "What you checked, in a line.")"></textarea>
+                            <div class="mt-2"><DeterminedAt Id="dossier-determined" @bind-Value="_verdictWhen" /></div>
                             @if (_verdictError is not null) { <div class="text-danger small mt-1" role="alert">@_verdictError</div> }
                             <div class="d-flex gap-2 justify-content-end align-items-center mt-2">
                                 <span class="small text-muted me-auto">Shown on the timeline.</span>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _pendingVerdict = null; _verdictFrom = null; _verdictError = null; }">Cancel</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _pendingVerdict = null; _verdictFrom = null; _verdictError = null; _verdictWhen = null; }">Cancel</button>
                                 <button type="button" class="btn btn-sm btn-primary text-nowrap" disabled="@(_savingVerdict || (required && string.IsNullOrWhiteSpace(_verdictReason)))"
                                         @onclick="() => SaveVerdict(en)">Save verdict</button>
                             </div>
@@ -109,7 +112,7 @@
 
         <div class="im-entity-panel-body">
             @* HR-05: how the verdict on this case was reached, newest first. *@
-            @if (Case.VerdictChanges.Where(v => v.EntityId == en.Id).OrderByDescending(v => v.ChangedAtUtc).ToList() is { Count: > 0 } verdicts)
+            @if (Case.VerdictChanges.Where(v => v.EntityId == en.Id).OrderByDescending(v => v.EffectiveAt).ThenByDescending(v => v.ChangedAtUtc).ToList() is { Count: > 0 } verdicts)
             {
                 <section>
                     <h3 class="im-entity-panel-h">Verdict history · @verdicts.Count</h3>
@@ -119,7 +122,7 @@
                             <li class="im-entity-ref">
                                 <span class="fw-semibold">@Ui.Label(v.From) → @Ui.Label(v.To)</span>
                                 @if (v.Reason is { } why) { <div>@why</div> }
-                                <div class="text-muted">@Users.DisplayFor(v.ChangedBy) · @TimeDisp.Short(v.ChangedAtUtc)</div>
+                                <div class="text-muted">@Users.DisplayFor(v.ChangedBy) · @TimeDisp.Short(v.EffectiveAt)@(v.EffectiveAtUtc is not null ? $" · recorded {TimeDisp.Short(v.ChangedAtUtc)}" : "")</div>
                             </li>
                         }
                     </ul>
@@ -251,6 +254,7 @@
     private EntityDisposition? _pendingVerdict;
     private EntityDisposition? _verdictFrom;   // BUG-372: the verdict shown when the pick was made
     private string? _verdictReason;
+    private DateTime? _verdictWhen;   // BUG-414: when it was determined (null = now)
     private string? _verdictError;
     private bool _savingVerdict;
     private bool _copied;
@@ -275,8 +279,9 @@
         {
             // BUG-234: the verdict alone; the other fields stay as they are now, not as this panel last showed them.
             await Cases.SetEntityVerdictAsync(Case.Id, en.Id, d,
-                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim(), expectedDisposition: seen);
-            _pendingVerdict = null; _verdictFrom = null;
+                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim(), expectedDisposition: seen,
+                determinedAtUtc: DeterminedAt.UtcOf(_verdictWhen, TimeDisp.Zone, Clock.UtcNow));
+            _pendingVerdict = null; _verdictFrom = null; _verdictWhen = null;
             _verdictReason = null;
             Toasts.Success($"Verdict recorded: {Ui.Label(d)}");
             await OnChanged.InvokeAsync();
@@ -349,6 +354,7 @@
         _addingTask = false;
         _pendingVerdict = null; _verdictFrom = null;
         _verdictReason = null;
+        _verdictWhen = null;
         _verdictError = null;
         _copied = false;
         _otherCases = null;

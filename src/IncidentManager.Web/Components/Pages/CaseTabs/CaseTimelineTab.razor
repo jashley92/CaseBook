@@ -39,7 +39,10 @@
     if (teamHidden > 0) msAll = msAll.Where(m => m.Kind != MilestoneKind.Command).ToList();
     var msView = FiltersActive ? []
         : ChangedSinceUtc is { } msSince ? msAll.Where(m => (m.RecordedAtUtc ?? m.AtUtc) > msSince).ToList() : msAll;
-    var rows = MergeRows(tlView, msView);
+    // BUG-413: retracted entries are out of the record; shown as stubs only when asked for, in the plain views.
+    var retracted = !_decOnly && !KeyOnlyApplies && !FiltersActive && ChangedSinceUtc is null
+        ? Case.TimelineEntries.Where(x => x.IsRetracted && (_tlLens is null || x.Kind == _tlLens)).ToList() : [];
+    var rows = MergeRows(_showRetracted ? tlView.Concat(retracted) : tlView, msView);
     var totalAll = tlAll.Count + msAll.Count;
     // The attack chain is always event-only, regardless of lens (shown under All and Event).
     var tlChain = AttackSteps();
@@ -596,6 +599,14 @@ else
             <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => _showTeamChanges = true">Show</button>
         </div>
     }
+    @if (retracted.Count > 0)
+    {
+        @* BUG-413 *@
+        <div class="tl-fold small text-muted">
+            <span class="bi bi-slash-circle" aria-hidden="true"></span> @retracted.Count retracted @(retracted.Count == 1 ? "entry" : "entries") @(_showRetracted ? "shown" : "hidden")
+            <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => _showRetracted = !_showRetracted">@(_showRetracted ? "Hide" : "Show")</button>
+        </div>
+    }
     @if (Lanes) { @MiniMap() }
     <ol class="tl @(Lanes ? "tl-lanes" : "")">
         @{ DateOnly? lastDay = null; DateTimeOffset? lastAt = null; }
@@ -687,6 +698,24 @@ else
                 continue;
             }
             var e = row.Entry!;
+            if (e.IsRetracted)
+            {
+                @* BUG-413: a retracted entry stays in the record as a stub: who retracted it, when and why, and what it said. *@
+                <li class="tl-item @BandClass(row.At) tl-retracted" id="tl-@e.Id" @key="e.Id">
+                    <span class="tl-dot" aria-hidden="true"><span class="bi bi-slash-circle"></span></span>
+                    <div class="tl-body">
+                        <div class="tl-head">
+                            <span class="tl-kind-label"><span class="bi bi-slash-circle" aria-hidden="true"></span> Retracted @(e.Kind == TimelineKind.Event ? "step" : "entry")</span>
+                            @TimeLabel(e.OccurredAtUtc)
+                        </div>
+                        <div class="tl-desc tl-retracted-text md-body">@((MarkupString)(e.Kind == TimelineKind.Event ? Inline(e.Description) : Html(e.Description)))</div>
+                        <div class="tl-meta small">
+                            Retracted by @Users.DisplayFor(e.RetractedBy ?? "") · @TimeDisp.Short(e.RetractedAtUtc!.Value)@(string.IsNullOrWhiteSpace(e.RetractReason) ? "" : $": {e.RetractReason}")
+                        </div>
+                    </div>
+                </li>
+                continue;
+            }
             if (e.Kind == TimelineKind.Event)
             {
                 // FR-24: a third-party case can carry attack (ATT&CK) steps alongside disclosure milestones —
@@ -768,6 +797,9 @@ else
                             {
                                 <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartEventEdit(e)">
                                     <span class="bi bi-pencil" aria-hidden="true"></span> Edit
+                                </button>
+                                <button type="button" class="btn btn-sm btn-link p-0 tl-edit" title="Take it off the record, with a reason" @onclick="() => StartRetract(e)">
+                                    <span class="bi bi-slash-circle" aria-hidden="true"></span> Retract
                                 </button>
                                 @if (asAttack && CanReorder(e))
                                 {
@@ -868,6 +900,9 @@ else
                             {
                                 <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartInvestigationEdit(e)">
                                     <span class="bi bi-pencil" aria-hidden="true"></span> Edit
+                                </button>
+                                <button type="button" class="btn btn-sm btn-link p-0 tl-edit" title="Take it off the record, with a reason" @onclick="() => StartRetract(e)">
+                                    <span class="bi bi-slash-circle" aria-hidden="true"></span> Retract
                                 </button>
                             }
                             @CiteButton(e)
@@ -1001,6 +1036,43 @@ else
         </div>
     </div>
 }
+@if (_retract is { } rt)
+{
+    @* BUG-413: take a wrong entry off the record. Nothing is deleted (R3): it becomes a stub with the reason. *@
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="tl-retract-title"
+         style="background:var(--im-scrim)" @onclick="CancelRetract" @onkeydown="OnRetractKey">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tl-retract-title">Retract this @(rt.Kind == TimelineKind.Event ? "step" : "entry")</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CancelRetract"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="tl-desc md-body small mb-2">@((MarkupString)(rt.Kind == TimelineKind.Event ? Inline(rt.Description) : Html(rt.Description)))</div>
+                    <p class="small text-muted">
+                        It leaves the record: the timeline, the report@(rt.Kind == TimelineKind.Event ? ", the attack chain and ATT&CK coverage" : "") and the counts.
+                        Nothing is deleted. It stays as a struck-through entry with your reason, and in the audit trail.
+                        If it's only partly wrong, edit it instead.
+                    </p>
+                    <label class="form-label small mb-0" for="tl-retract-reason">Why is it being retracted? <span class="text-muted">(required)</span></label>
+                    <textarea id="tl-retract-reason" class="form-control form-control-sm" rows="2" maxlength="2000"
+                              placeholder="e.g. logged on the wrong case; duplicate of the 14:20 step; the alert was a false positive"
+                              @bind="_retractReason" @bind:event="oninput"></textarea>
+                    @if (_retractError is not null)
+                    {
+                        <p class="text-danger small mt-2 mb-0" role="alert">@_retractError</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" @onclick="CancelRetract">Cancel</button>
+                    <button class="btn btn-danger" disabled="@(string.IsNullOrWhiteSpace(_retractReason) || _retractSaving)" @onclick="SaveRetract">
+                        <span class="bi bi-slash-circle" aria-hidden="true"></span> Retract
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     // BUG-258: each entry's Markdown is rendered once per text, not on every render. The tab re-renders on every
@@ -1074,6 +1146,7 @@ else
     private bool _tlOldestFirst;   // default newest-first (most recent activity at top); oldest-first for a closed case (HR-07)
     private Guid? _orderSetFor;
     private bool _showTeamChanges;
+    private bool _showRetracted;   // BUG-413
     private bool _showKillChain;    // INV-26: folded by default; the user's choice is remembered (display preferences)
     private bool _showFilters;
     // Open while a filter is set, or while milestones are hidden or only key entries show, so none is invisible.
@@ -1260,9 +1333,9 @@ else
             await OnAutofocusHandled.InvokeAsync();
         }
         // UX-01 focus trap for the correction dialog (INV-05b), as the workspace does for its own modals.
-        if ((_corr is not null) != _corrTrapArmed)
+        if ((_corr is not null || _retract is not null) != _corrTrapArmed)
         {
-            _corrTrapArmed = _corr is not null;
+            _corrTrapArmed = _corr is not null || _retract is not null;
             try { await JS.InvokeVoidAsync(_corrTrapArmed ? "imModal.arm" : "imModal.release"); }
             catch (JSException) { /* focus trap is a progressive enhancement */ }
         }
@@ -2417,6 +2490,51 @@ else
 
     private void CancelCorrection() { _corr = null; _corrError = null; }
 
+    // --- BUG-413: retract an entry ---
+    private TimelineEntry? _retract;
+    private string? _retractStamp;   // the entry's row hash when the dialog opened, so a colleague's change is refused
+    private string? _retractReason;
+    private string? _retractError;
+    private bool _retractSaving;
+
+    private void StartRetract(TimelineEntry e)
+    {
+        _retract = e; _retractStamp = e.RowHash ?? ""; _retractReason = null; _retractError = null;
+    }
+
+    private void CancelRetract() { _retract = null; _retractError = null; }
+
+    private void OnRetractKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelRetract();
+    }
+
+    private async Task SaveRetract()
+    {
+        if (_retract is not { } e || _retractSaving || string.IsNullOrWhiteSpace(_retractReason)) return;
+        _retractSaving = true;
+        _retractError = null;
+        try
+        {
+            await Cases.RetractTimelineEntryAsync(CaseId, e.Id, _retractReason.Trim(), _retractStamp);
+            if (_tlEditId == e.Id) await CancelTimelineEdit();   // it can't be edited once retracted
+            _retract = null;
+            await OnChanged.InvokeAsync();
+            Toasts.Success(e.Kind == TimelineKind.Event ? "Step retracted" : "Entry retracted");
+        }
+        catch (StaleEditException ex)
+        {
+            _retract = null;
+            Toasts.Error(ex.Message);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _retractError = ex.Message;
+        }
+        finally { _retractSaving = false; }
+    }
+
     private void OnCorrectionKey(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") CancelCorrection();
@@ -2442,7 +2560,10 @@ else
             if (label is not null && current == m.AtUtc)
                 yield return $"{label} moves with it, so the response-time and SLA figures are recalculated.";
         }
-        yield return "Regulatory notification deadlines don't change. They start from the materiality decision or detection.";
+        if (t.Kind == TransitionKind.Verdict)   // BUG-414
+            yield return "The entity's verdict history shows it as determined then.";
+        else
+            yield return "Regulatory notification deadlines don't change. They start from the materiality decision or detection.";
         yield return $"The recorded time ({TimeDisp.Long(m.RecordedAtUtc ?? m.AtUtc)}) stays as it is.";
     }
 

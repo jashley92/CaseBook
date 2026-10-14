@@ -103,8 +103,10 @@ public sealed class CaseService
         IRoleDirectory? roles = null,
         IExerciseEscalationPolicy? exercise = null,
         Notifications.IDeadlineReminderTracker? deadlineReminders = null,
-        IEvidenceStore? evidenceStore = null)
+        IEvidenceStore? evidenceStore = null,
+        Accounts.AccountDirectoryService? accounts = null)
     {
+        _accounts = accounts;
         _evidenceStore = evidenceStore;
         _deadlineReminders = deadlineReminders;
         _exercise = exercise;
@@ -126,6 +128,7 @@ public sealed class CaseService
     }
 
     private readonly IEvidenceStore? _evidenceStore;   // WF-31
+    private readonly Accounts.AccountDirectoryService? _accounts;   // BUG-416
 
     /// <summary>WF-31: a screenshot pasted into the composer, stored as evidence with the entry it illustrates.</summary>
     public sealed record Screenshot(string FileName, string ContentType, byte[] Bytes, string? Description = "Pasted into the timeline");
@@ -1749,6 +1752,26 @@ public sealed class CaseService
     }
 
     /// <summary>
+    /// BUG-413: takes a wrong timeline entry off the record, with a reason; nothing is deleted (see
+    /// <see cref="Case.RetractTimelineEntry"/>). <paramref name="expectedStamp"/> is the entry's row hash when the person
+    /// opened the dialog; an entry someone changed since is refused with <see cref="StaleEditException"/>. Null skips it.
+    /// </summary>
+    public async Task RetractTimelineEntryAsync(Guid id, Guid entryId, string reason, string? expectedStamp = null,
+        CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        if (expectedStamp is not null && c.TimelineEntries.FirstOrDefault(e => e.Id == entryId) is { } entry
+            && !string.Equals(entry.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(entry.RowHash ?? "", "Someone changed this entry since you opened it, so it wasn't " +
+                "retracted. It has been reloaded with their change; look again before retracting it.");
+        c.RetractTimelineEntry(entryId, reason, _user.UserId, _clock.UtcNow);
+        db.PendingChangeReason = reason?.Trim();
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// Edits an Investigation-timeline entry, superseding it with a new version (prior kept). The optional
     /// <paramref name="reason"/> is recorded on the audit entry.
     /// </summary>
@@ -1976,6 +1999,13 @@ public sealed class CaseService
             .ToList();
     }
 
+    // BUG-416: an account added to the case is looked up in the directory and its details kept (best effort).
+    private async Task CaptureAccountsAsync(Guid id, IEnumerable<CaseEntity> added, CancellationToken ct)
+    {
+        var ids = added.Where(e => Accounts.AccountDirectoryService.IsAccountType(e.Type)).Select(e => e.Id).ToList();
+        if (ids.Count > 0 && _accounts is not null) await _accounts.CaptureOnAddAsync(id, ids, ct);
+    }
+
     public async Task<Guid> AddEntityAsync(Guid id, EntityType type, string value, string? label,
         EntityDisposition disposition, string? description, string? source, CancellationToken ct = default)
         => (await AddOrMatchEntityAsync(id, type, value, label, disposition, description, source, ct)).Id;
@@ -1999,6 +2029,7 @@ public sealed class CaseService
         var before = c.FindEntity(type, value)?.Disposition;
         var entity = c.AddEntity(type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
+        if (before is null) await CaptureAccountsAsync(id, [entity], ct);   // BUG-416
         return new EntityAddResult(entity.Id, before is not null, entity.Disposition, entity.Label,
             before is { } was && was != entity.Disposition);
     }
@@ -2039,6 +2070,9 @@ public sealed class CaseService
             }
             await db.SaveChangesAsync(ct);
         }
+        // BUG-416: the accounts just added, as the directory has them now.
+        var added = results.Where(r => !r.AlreadyOnCase).Select(r => r.Id).ToHashSet();
+        if (added.Count > 0 && _accounts is not null) await _accounts.CaptureOnAddAsync(id, added, ct);
         return results;
     }
 
@@ -2050,7 +2084,7 @@ public sealed class CaseService
     /// </summary>
     public async Task EditEntityAsync(Guid id, Guid entityId, EntityType type, string value, string? label,
         EntityDisposition disposition, string? description, string? source, string? reason = null,
-        string? expectedStamp = null, CancellationToken ct = default)
+        string? expectedStamp = null, DateTimeOffset? determinedAtUtc = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -2064,7 +2098,11 @@ public sealed class CaseService
             && disposition is EntityDisposition.Malicious or EntityDisposition.Compromised && string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException($"Say why it's {(disposition == EntityDisposition.Malicious ? "malicious" : "compromised")}: the reason is kept with the verdict.");
         if (reason is { Length: > 2000 }) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
-        c.EditEntity(entityId, type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow, reason);
+        // BUG-414: a verdict reached earlier than it's recorded; only meaningful when the verdict changes.
+        var verdictChanges = c.Entities.FirstOrDefault(e => e.Id == entityId) is { } was && was.Disposition != disposition;
+        if (verdictChanges) RequireReasonIfBackdated(determinedAtUtc, reason);
+        c.EditEntity(entityId, type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow, reason,
+            verdictChanges ? determinedAtUtc : null);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
     }
@@ -2075,7 +2113,7 @@ public sealed class CaseService
     /// the change is refused rather than recorded as a move from a verdict that's no longer there.
     /// </summary>
     public async Task SetEntityVerdictAsync(Guid id, Guid entityId, EntityDisposition disposition, string? reason,
-        EntityDisposition expectedDisposition, CancellationToken ct = default)
+        EntityDisposition expectedDisposition, DateTimeOffset? determinedAtUtc = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -2089,7 +2127,9 @@ public sealed class CaseService
             && string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException($"Say why it's {(disposition == EntityDisposition.Malicious ? "malicious" : "compromised")}: the reason is kept with the verdict.");
         if (reason is { Length: > 2000 }) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
-        c.EditEntity(entityId, e.Type, e.Value, e.Label, disposition, e.Description, e.Source, _user.UserId, _clock.UtcNow, reason);
+        if (e.Disposition != disposition) RequireReasonIfBackdated(determinedAtUtc, reason);   // BUG-414
+        c.EditEntity(entityId, e.Type, e.Value, e.Label, disposition, e.Description, e.Source, _user.UserId, _clock.UtcNow, reason,
+            e.Disposition != disposition ? determinedAtUtc : null);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
     }

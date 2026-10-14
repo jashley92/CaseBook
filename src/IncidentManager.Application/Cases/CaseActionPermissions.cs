@@ -66,6 +66,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.EditInvestigationEntryAsync)] = Permission.EditCases,
 
             // Entities & graph
+            [nameof(CaseService.RetractTimelineEntryAsync)] = Permission.EditCases,   // BUG-413
             [nameof(CaseService.AddEntityAsync)] = Permission.EditCases,
             [nameof(CaseService.AddOrMatchEntityAsync)] = Permission.EditCases,
             [nameof(CaseService.AddOrMatchEntitiesAsync)] = Permission.EditCases,   // BUG-202

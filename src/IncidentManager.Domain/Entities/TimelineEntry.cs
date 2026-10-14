@@ -113,6 +113,21 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// </summary>
     public bool IsImported => PromotedFrom == Imported;
 
+    // ---- BUG-413: a retracted entry (never deleted, R3). It stops being current, so it leaves the record (reports,
+    // the attack chain, counts), and the timeline shows it as a struck-through stub with who retracted it and why. ----
+
+    /// <summary>When the entry was retracted; null while it stands.</summary>
+    public DateTimeOffset? RetractedAtUtc { get; set; }
+
+    /// <summary>Who retracted it.</summary>
+    public string? RetractedBy { get; set; }
+
+    /// <summary>Why it was retracted (required).</summary>
+    public string? RetractReason { get; set; }
+
+    /// <summary>True once the entry has been retracted.</summary>
+    public bool IsRetracted => RetractedAtUtc is not null;
+
     /// <summary>INV-06: a Decision entry must say why.</summary>
     public static void EnsureDecisionHasRationale(TimelineEntryType type, string? rationale)
     {
@@ -161,6 +176,10 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
         if (OccurredPrecision is { } prec) content = string.Join('|', content, "prec", (int)prec);
         if (OccurredUntilUtc is { } until) content = string.Join('|', content, "until", until.ToString("o"));
         if (StepOrder is { } order) content = string.Join('|', content, "ord", order);
+
+        // BUG-413: a retraction, folded in only when there is one (no re-baseline).
+        if (RetractedAtUtc is { } retracted)
+            content = string.Join('|', content, "retracted", Canonical.Time(retracted), RetractedBy, Canonical.Text(RetractReason));
         return content;
     }
 }

@@ -2701,6 +2701,10 @@ button.im-phase-seg { cursor: pointer; }
 /* HR-08: a result entry names the decision it carried out. */
 .tl-carries { margin-top: 0.3rem; color: var(--im-text); }
 .tl-fold { padding: 0.25rem 0.75rem 0.5rem; }
+/* BUG-413: a retracted entry, kept as a stub. */
+.tl-retracted { opacity: .75; }
+.tl-retracted .tl-dot { --tl-color: var(--bs-secondary-color); }
+.tl-retracted-text { text-decoration: line-through; color: var(--bs-secondary-color); }
 .tl-task-result { flex-basis: 100%; margin-top: -0.15rem; padding-left: 1.2rem; color: var(--im-text); }
 /* HR-02: a done task's result on the Tasks tab. */
 .im-task-result { display: block; margin-top: 0.2rem; padding-left: 0.5rem; border-left: 2px solid var(--im-ok); font-size: var(--im-text-sm); color: var(--im-text); white-space: pre-line; }
