@@ -208,8 +208,9 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### v1.6.3
 
-A fix release with one small migration (`NoticeDueAt`: a nullable `JurisdictionNotices.DueAtUtc`; the DBA script is
-regenerated). Things to check:
+A fix release with two small migrations (`NoticeDueAt`: a nullable `JurisdictionNotices.DueAtUtc`;
+`TaskCompletionRecordedAt`: a nullable `ActionItems.CompletionRecordedAtUtc`; the DBA script is regenerated). Things to
+check:
 
 - **Slow start-ups don't roll back.** The shipped `web.config` gives the app 600 seconds to start (IIS's default is 120),
   so a long migration isn't cut off, and the upgrade's warm-up now waits up to 660 seconds and reads IIS's "still
@@ -287,6 +288,50 @@ From a whole-codebase review (BUG-262 to BUG-326 in the tracker):
 - Smaller fixes: the activity feed keeps a renamed case's history; case-list pages don't repeat or drop cases; the indicator
   CSV keeps the feed's TLP column; reports and report layouts after closure aren't "changes after closure"; a Word template's
   picture field alone in a table cell no longer makes an unreadable file; filing a case in the repeated autumn DST hour works.
+
+From a second whole-codebase review (BUG-327 to BUG-368):
+
+- **Upgrades name the site as the app knows it.** The warm-up probe connects to the binding's address but sends the
+  site's name (its binding's host name, else the first `AllowedHosts` entry) as the Host header, so a site bound to an IP
+  or `*` is no longer answered 400 and rolled back after its migrations. A 400, or any answer the warm-up would read as
+  "not started", now stops the upgrade in its preflight, before anything changes. **Check:** if the preflight stops, add
+  the site's name to `AllowedHosts` or pass `-HealthUrl` with the name you open the site with.
+- **The upgrade asks before it changes anything** ("Proceed with backup + deploy?") unless you pass `-Force`, and
+  `-WhatIf` runs the checks and stops before any backup.
+- **New installs' HTTPS binding requires SNI**, so its certificate is bound to the site's name and doesn't take the
+  server-wide 443 slot. Existing sites keep their binding (tick "Require Server Name Indication" in IIS Manager and pick
+  the certificate again if another site shares the server).
+- **Restricted cases:** a queued import naming a case its submitter couldn't see previews and applies as a new case for
+  every reviewer.
+- **Config bundles exported by v1.0.x and v1.1.x** verify and import again (they were reported as altered).
+- **Audit trail:** re-recording materiality or editing a legal referral records the real previous values, and only the
+  fields that changed.
+- **Lock now** locks even with an unsent draft, instead of stopping at the browser's "Leave site?" prompt.
+- **The integrity alarm banners** appear when a break is found and clear when it's fixed, without reloading the page.
+- **Keyboard:** Ctrl+Enter inside a dialog, sheet or side panel no longer records the composer behind it (in an action
+  dialog it applies the dialog, except Archive); Enter while editing an entity saves the edit instead of adding a second
+  entity; the entity form keeps what was just typed; Enter in the command palette opens what was typed.
+- **Drafts:** switching the timeline to Attack chain or the composer to an event, disclosure or question mode keeps a
+  half-written Finding or Decision.
+- **After a case switch** an action that was still saving only says it's done; it no longer reloads, or opens the close-out
+  of, the case you moved to. The screenshot preview and the archive message stay with their case.
+- **Post-incident review:** reopening a not-pursued improvement action clears "No improvement actions identified", so the
+  review saves again; the program report counts a review from when "What happened" was first filled in.
+- **Milestones:** backdated regulator notices and task completions count as new in the brief's "changed since" and the
+  handoff pre-fill, "Task done" credits who completed the task, and editing the last handoff no longer drops earlier work
+  from the next pre-fill.
+- **Admin:** a double-click on Save, Add or a confirm button acts once; saving a report profile someone changed since you
+  opened it is refused instead of undoing their change; renaming a Word template no longer restores an archived one; a
+  Word template with malformed XML is refused as unreadable; a long data element label gets a key that fits; a custom role
+  with a numeric name no longer reads as a built-in role; keyboard settings accept only chords that can fire; the scan
+  intervals and access-log window say that 0 means their default.
+- **Chat posts** show case text as typed: Slack no longer turns `<!channel>` or `<url|label>` in a title or note into a ping
+  or a disguised link, and Teams cards no longer turn `[label](url)` into a link.
+- Smaller fixes: reports for a case number with `| " : < > ? *` are stored under a safe file name (the download keeps the
+  name); report jobs log unexpected failures and show a plain message; dropping more than 50 files on Evidence says so;
+  the entity graph keeps your layout when an entity is added; side panels, the reassign dialog, the Indicators and Due
+  pages, the program report and overview, improvement actions and ATT&CK coverage always show the latest choice; a new
+  user's first two tabs no longer crash the second; New case waits for a running overlap check before filing.
 
 ### v1.6.2
 
