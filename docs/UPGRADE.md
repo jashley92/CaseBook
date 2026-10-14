@@ -206,6 +206,32 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.5
+
+A fix release with no migration. Things to check:
+
+- **Ctrl/Cmd+Enter saves what you just typed.** The field you're typing in is committed before the form saves. This
+  applies everywhere, including the Impact editor, a link's note, the paste review's source and a relationship's
+  description. The brief's "Add a task" box adds the task.
+- **`[[` tags** always link to the entity you picked, even when the text already cites evidence, or has an older link,
+  with the same name.
+- **Program figures:**
+  - A campaign's ATT&CK coverage includes its cases' attack-chain techniques.
+  - "Open cases" on the Program overview opens all open cases, not your default view.
+  - A notice recorded under a combined code ("NY;CA") keeps its deadline, so its past outcome no longer moves.
+- **Directory lookups** recover a minute after a domain controller stops answering, instead of staying unavailable
+  until the app restarts.
+- **Administration:**
+  - Two admins setting the same new setting at once, or a save that loses to a reset, get a plain message instead
+    of the error page.
+  - Switching sections while saving keeps your other edits.
+  - Email template bodies are limited to 8,000 characters, which is what can be stored.
+  - The template list is locked while a template saves.
+- **Smaller fixes:**
+  - Saving a view twice and closing a tab twice no longer error.
+  - Clearing Find while it searches clears the results.
+  - A "To" date of 31 Dec 9999 in the access log, audit tab or timeline no longer breaks the page.
+
 ### v1.6.4
 
 A release with two small migrations:
