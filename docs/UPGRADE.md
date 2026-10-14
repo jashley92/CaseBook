@@ -206,6 +206,59 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.4
+
+A release with two small migrations:
+- `AccountDirectorySnapshots`, a new append-only, hashed table.
+- `RetractEntriesAndVerdictTimes`, which adds three nullable `TimelineEntries` columns (`RetractReason`,
+  `RetractedAtUtc`, `RetractedBy`) and a nullable `EntityVerdictChanges.EffectiveAtUtc`.
+
+The DBA script is regenerated; sites where a DBA applies the schema run it first. Things to check:
+
+- **Account indicators are looked up in Active Directory.**
+  - When an Account indicator is added, CaseBook looks it up in AD as the app pool's identity and keeps what AD
+    returns with the case. On the indicator's panel you can also choose "Look up now" and "Keep with the case".
+  - Lookups go only to the server's own forest and to domains it trusts. Accounts in other domains, local `.\name`
+    accounts and accounts on the server itself are shown as "Not looked up", and no lookup is sent for them.
+  - Each add spends at most 50 lookups and 15 seconds waiting on the directory. A domain that fails isn't asked
+    again for a minute.
+  - **Check:** the web server can reach its domain controllers over LDAP. Where it can't, account indicators are
+    still added, just without directory details.
+- **New in the case record:**
+  - A timeline entry can be retracted, with a reason. It stays visible as retracted and leaves the counts, the
+    attack chain and the reports.
+  - A verdict can record when it was reached.
+  - A Command line entity type holds full command lines.
+  - Date and time fields keep what you type, whichever field you type it in.
+  - `[[` tags an entity in plain text boxes too, always linking the one you picked.
+  - Long IOCs wrap instead of overflowing.
+- **Keyboard:** Ctrl/Cmd+Enter saves the form it's pressed in (an inline task, notice, impact, relationship,
+  improvement action or comment), never another form's composer or a hidden tab's.
+- **Locking:** the idle lock and *Lock now* no longer stop at "Leave site?" on Administration with unsaved settings.
+- **Who's emailed:** task, deadline and stale-case reminders, the digest and the calendar feed go only to people
+  who still hold a role with View cases, and who can see a restricted case. A task whose owner no longer can
+  falls back to the incident commander; the escalation email still names the real owner. An email subject that
+  picked up a line break from a token is sent on one line, so it is no longer lost.
+- **Figures for past quarters stay as reported:**
+  - "Reported to regulators" and "Detection to regulatory report" keep their values if the case is later made
+    unreported or reported again.
+  - Notice outcomes keep their values when the trigger is withdrawn.
+  - A legacy notice coded "NY;CA" counts for both regulators.
+- **Integrity:** the record check also flags a retracted entry that was put back as current, and an account
+  snapshot with no hash.
+- **Admin:**
+  - Changing a taxonomy label that already has an override saves.
+  - Deadline rules, email templates, taxonomy order and the report layout refuse a save from a stale page.
+  - Double-clicks and simultaneous saves no longer show the error page.
+  - A config bundle whose Entity types order was saved before Command line existed imports.
+  - Keyboard settings refuse `;`, `,` and Ctrl chords on K.
+- **Upgrade script:** `-Confirm` asks once, the upgrade question.
+- **Smaller fixes:**
+  - The idle lock and draft handling, overlapping loads on list pages, the Cases month drill-in, the Program
+    overview links with exercises, the Find retry and the vendor-case figures.
+  - Account names from trusted domains, IOC CSV headers named by type, tab-separated pastes, nested Word template
+    tables, and pins and tabs closed in two windows at once.
+
 ### v1.6.3
 
 A fix release with two small migrations (`NoticeDueAt`: a nullable `JurisdictionNotices.DueAtUtc`;
