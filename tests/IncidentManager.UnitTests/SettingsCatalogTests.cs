@@ -67,15 +67,6 @@ public class SettingsCatalogTests
     [Theory]
     [InlineData("Compliance:NotificationDeadlines:DefaultWindowHours", "1", "8760", "0", "8761")]   // REV-48
     [InlineData("Security:IdleTimeoutMinutes", "0", "1440", "-1", "1441")]                         // REV-46
-    // BUG-354: 0 read as the default (30 minutes; the scan's own default), so it isn't offered.
-    [InlineData("Access:CoalesceWindowMinutes", "1", "1440", "0", "1441")]
-    [InlineData("Notifications:OverdueScan:IntervalHours", "1", "744", "0", "745")]
-    [InlineData("Notifications:DueSoonScan:IntervalHours", "1", "744", "0", "745")]
-    [InlineData("Notifications:DeadlineScan:IntervalHours", "1", "744", "0", "745")]
-    [InlineData("Notifications:StaleScan:IntervalHours", "1", "744", "0", "745")]
-    [InlineData("Notifications:DigestScan:IntervalHours", "1", "744", "0", "745")]
-    [InlineData("Integrity:AutoSeal:IntervalHours", "1", "744", "0", "745")]
-    [InlineData("Integrity:EvidenceVerify:IntervalHours", "1", "744", "0", "745")]
     public void Bounded_settings_refuse_values_outside_their_range(string key, string low, string high, string under, string over)
     {
         var def = SettingsCatalog.ByKey[key];
@@ -132,14 +123,6 @@ public class SettingsCatalogTests
         invalid.Select(i => i.Definition.Key).Should().BeEquivalentTo(
             ["Sla:Containment:High", "Sla:AtRiskThresholdPercent", "Organization:TimeZone"]);
         invalid.Single(i => i.Definition.Key == "Sla:Containment:High").Problem.Should().Contain("8,760");
-    }
-
-    [Fact]
-    public void A_stored_zero_interval_is_reported_not_thrown(/* BUG-354 */)
-    {
-        // A 0 saved before the limit is listed (the health check and the section's save say so), never thrown at start.
-        var invalid = SettingsCatalog.FindInvalid(k => k == "Access:CoalesceWindowMinutes" ? "0" : null);
-        invalid.Should().ContainSingle().Which.Problem.Should().Contain("from 1 to 1,440");
     }
 
     [Fact]

@@ -152,9 +152,9 @@ process's working directory, which under IIS is the site folder.
 | Key | Purpose | Default | Edit |
 |---|---|---|---|
 | `Integrity:AutoSeal:Enabled` | Sign a seal on a schedule. Chain verification runs every 10 minutes either way. | code `false`; json, template and catalog `true` | App |
-| `Integrity:AutoSeal:IntervalHours` | Hours between seals (`≤0` in the file means 6; Administration takes 1 or more) | `6`; prod template `24` | App |
+| `Integrity:AutoSeal:IntervalHours` | Hours between seals (`≤0` means 6) | `6`; prod template `24` | App |
 | `Integrity:EvidenceVerify:Enabled` | Periodically re-hash every stored evidence file (and once at startup); alarm 5003 on drift | `false` | App |
-| `Integrity:EvidenceVerify:IntervalHours` | Hours between passes (`≤0` in the file means 24; Administration takes 1 or more) | `24` | App |
+| `Integrity:EvidenceVerify:IntervalHours` | Hours between passes (`≤0` means 24) | `24` | App |
 
 ### 3.5 Reporting
 
@@ -226,7 +226,7 @@ Classification, phase and other labels are under Administration → Taxonomy (`T
 | Key | Purpose | Default | Edit |
 |---|---|---|---|
 | `Access:LogScope` | Which case opens are logged: `Off`, `RestrictedOnly` or `All`. Artifact downloads and exports are logged whenever logging is on. | `All` | App |
-| `Access:CoalesceWindowMinutes` | Repeated access by the same person within this window is folded into one row with a count (`≤0` in the file means 30; Administration takes 1 to 1440). Exports are never folded: each is its own row. | `30` | App |
+| `Access:CoalesceWindowMinutes` | Repeated access by the same person within this window is folded into one row with a count (`≤0` means 30). Exports are never folded: each is its own row. | `30` | App |
 
 ### 3.12 Email
 
