@@ -130,6 +130,7 @@ else
     private string _code = "";
     private string _label = "";
     private int _window = 72;
+    private string? _editStamp;   // BUG-396: the rule as the editor opened it, so a stale page can't write it back
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -141,6 +142,7 @@ else
         _code = r.Code;
         _label = r.Label;
         _window = r.WindowHours;
+        _editStamp = r.Stamp;
     }
 
     private void ResetForm()
@@ -149,6 +151,7 @@ else
         _code = "";
         _label = "";
         _window = 72;
+        _editStamp = null;
     }
 
     // BUG-339: a double click on Add rule inserted the rule twice; the second hit the unique index.
@@ -166,7 +169,7 @@ else
     {
         try
         {
-            await Rules.SaveAsync(_editId, _code, _label, _window);
+            await Rules.SaveAsync(_editId, _code, _label, _window, _editId is null ? null : _editStamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

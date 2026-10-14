@@ -11,7 +11,7 @@ public sealed record EmailTemplateView(
     IReadOnlyList<EmailToken> Tokens,
     string DefaultSubject, string DefaultBody,
     string EffectiveSubject, string EffectiveBody,
-    bool IsOverridden, string? CtaLabel);
+    bool IsOverridden, string? CtaLabel, string Stamp = "");
 
 /// <summary>
 /// Reads and writes the admin-editable email templates (E-03b). Overrides are stored as
@@ -69,11 +69,19 @@ public sealed class EmailTemplateAdminService
             t.DefaultSubject, t.DefaultBodyHtml,
             subj ?? t.DefaultSubject, body ?? t.DefaultBodyHtml,
             IsOverridden: subj is not null || body is not null,
-            t.CtaLabel);
+            t.CtaLabel, StampOf(subjOv, bodyOv));
     }
 
-    /// <summary>Saves a template's subject + body. A value equal to the default is stored as no override. Audited.</summary>
-    public async Task SaveAsync(string id, string subject, string body, CancellationToken ct = default)
+    // BUG-396: the stored overrides the editor opened with (a hash: a body can be 20,000 characters).
+    private static string StampOf(string? subject, string? body) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes((subject ?? "") + "" + (body ?? ""))));
+
+    /// <summary>Saves a template's subject + body. A value equal to the default is stored as no override. Audited.
+    /// REV-27 / BUG-396: <paramref name="expectedStamp"/> is the template's <see cref="EmailTemplateView.Stamp"/> when the
+    /// editor opened; the save writes the whole template, so one someone changed since is refused. Null skips the check
+    /// (a config import).</summary>
+    public async Task SaveAsync(string id, string subject, string body, string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<EmailTemplateAdminService>(_user);
         var def = EmailTemplateCatalog.ById(id) ?? throw new InvalidOperationException($"'{id}' is not a known email template.");
@@ -84,9 +92,27 @@ public sealed class EmailTemplateAdminService
         if (body.Length > MaxBodyLength) throw new ArgumentException($"Body must be {MaxBodyLength} characters or fewer.");
 
         using var db = _factory.CreateDbContext();
-        await UpsertOrClearAsync(db, EmailTemplateCatalog.SubjectKey(def.Id), subject, def.DefaultSubject, ct);
-        await UpsertOrClearAsync(db, EmailTemplateCatalog.BodyKey(def.Id), body, def.DefaultBodyHtml, ct);
-        await db.SaveChangesAsync(ct);
+        var subjectKey = EmailTemplateCatalog.SubjectKey(def.Id);
+        var bodyKey = EmailTemplateCatalog.BodyKey(def.Id);
+        var rows = await db.AppSettings.Where(s => s.Key == subjectKey || s.Key == bodyKey).ToListAsync(ct);
+        AppSetting? Row(string key) => rows.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (expectedStamp is not null && !string.Equals(StampOf(Row(subjectKey)?.Value, Row(bodyKey)?.Value), expectedStamp, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Someone changed the email template \"{def.Title}\" since you opened it, so nothing was saved: " +
+                "it would have undone that. Reload the page, then make your change again.");
+
+        var added = UpsertOrClear(db, Row(subjectKey), subjectKey, subject, def.DefaultSubject)
+                    | UpsertOrClear(db, Row(bodyKey), bodyKey, body, def.DefaultBodyHtml);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (added)
+        {
+            // BUG-393: another administrator's first override of this template was saved between the read above and this
+            // insert (the unique index refused it).
+            using var recheck = _factory.CreateDbContext();
+            if (await recheck.AppSettings.AnyAsync(s => s.Key == subjectKey || s.Key == bodyKey, ct))
+                throw new InvalidOperationException($"Another administrator saved the email template \"{def.Title}\" at the same moment, " +
+                    "so nothing was saved. Reload the page to see their change, then make yours again.", ex);
+            throw;
+        }
         _reloader.ReloadOrThrow();   // BUG-270
     }
 
@@ -105,24 +131,23 @@ public sealed class EmailTemplateAdminService
         _reloader.ReloadOrThrow();   // BUG-270
     }
 
-    // Stores the value, unless it equals the built-in default (then any existing override row is removed).
-    private async Task UpsertOrClearAsync(IAppDbContext db, string key, string value, string defaultValue, CancellationToken ct)
+    // Stores the value, unless it equals the built-in default (then any existing override row is removed). True when a
+    // row was added.
+    private bool UpsertOrClear(IAppDbContext db, AppSetting? existing, string key, string value, string defaultValue)
     {
-        var existing = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
         if (string.Equals(value, defaultValue, StringComparison.Ordinal))
         {
             if (existing is not null) db.AppSettings.Remove(existing);
-            return;
+            return false;
         }
         if (existing is null)
         {
             db.AppSettings.Add(new AppSetting { Key = key, Value = value, UpdatedAtUtc = _clock.UtcNow, UpdatedBy = _user.UserId });
+            return true;
         }
-        else
-        {
-            existing.Value = value;
-            existing.UpdatedAtUtc = _clock.UtcNow;
-            existing.UpdatedBy = _user.UserId;
-        }
+        existing.Value = value;
+        existing.UpdatedAtUtc = _clock.UtcNow;
+        existing.UpdatedBy = _user.UserId;
+        return false;
     }
 }

@@ -123,6 +123,7 @@ else
     private string _selectedId = "";
     private string _subject = "";
     private string _body = "";
+    private string _stamp = "";   // BUG-396: the template as the editor opened it, so a stale page can't write it back
     private string? _previewHtml;
     private string? _testRecipient;
     private string? _error;
@@ -137,20 +138,21 @@ else
         if (_views.Count > 0) await Select(_views[0].Id);
     }
 
-    // REV-28: what was typed into a template not yet saved, by template, so moving to another one doesn't lose it.
-    private readonly Dictionary<string, (string Subject, string Body)> _drafts = new();
+    // REV-28: what was typed into a template not yet saved, by template, so moving to another one doesn't lose it. BUG-396:
+    // with the stamp of the template it was typed over.
+    private readonly Dictionary<string, (string Subject, string Body, string Stamp)> _drafts = new();
 
     private bool Unsaved => Selected is { } v && (_subject != v.EffectiveSubject || _body != v.EffectiveBody);
 
     private async Task Select(string id)
     {
-        if (Unsaved) _drafts[_selectedId] = (_subject, _body);
+        if (Unsaved) _drafts[_selectedId] = (_subject, _body, _stamp);
         else _drafts.Remove(_selectedId);
         _selectedId = id;
         _error = null;
         var v = Selected;
         if (v is null) return;
-        (_subject, _body) = _drafts.Remove(id, out var draft) ? draft : (v.EffectiveSubject, v.EffectiveBody);
+        (_subject, _body, _stamp) = _drafts.Remove(id, out var draft) ? draft : (v.EffectiveSubject, v.EffectiveBody, v.Stamp);
         await UpdatePreview();
     }
 
@@ -173,14 +175,18 @@ else
         }
     }
 
+    // BUG-393: Save, Reset and Send test return early while one is running. The buttons are disabled, but a double click
+    // lands before the re-render, and a second first-override insert hit the unique index.
     private async Task Save()
     {
+        if (_busy) return;
         _busy = true;
         _error = null;
         try
         {
-            await Templates.SaveAsync(_selectedId, _subject, _body);
+            await Templates.SaveAsync(_selectedId, _subject, _body, _stamp);
             _views = await Templates.GetAllAsync();
+            if (Selected is { } saved) _stamp = saved.Stamp;
             await UpdatePreview();
             Toasts.Success("Template saved");
         }
@@ -190,6 +196,7 @@ else
 
     private async Task Reset()
     {
+        if (_busy) return;
         _busy = true;
         _error = null;
         try
@@ -197,7 +204,7 @@ else
             await Templates.ResetAsync(_selectedId);
             _views = await Templates.GetAllAsync();
             var v = Selected;
-            if (v is not null) { _subject = v.EffectiveSubject; _body = v.EffectiveBody; }
+            if (v is not null) { _subject = v.EffectiveSubject; _body = v.EffectiveBody; _stamp = v.Stamp; }
             await UpdatePreview();
             Toasts.Success("Reverted to the default");
         }
@@ -207,7 +214,7 @@ else
 
     private async Task SendTest()
     {
-        if (string.IsNullOrWhiteSpace(_testRecipient)) return;
+        if (string.IsNullOrWhiteSpace(_testRecipient) || _busy) return;
         _busy = true;
         _error = null;
         try

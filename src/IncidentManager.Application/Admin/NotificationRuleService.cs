@@ -8,7 +8,7 @@ namespace IncidentManager.Application.Admin;
 
 /// <summary>A notification-rule reference row for the admin editor (PROD-07).</summary>
 public sealed record NotificationRuleView(
-    Guid Id, string Code, string Label, int WindowHours, bool IsActive, bool IsSystem)
+    Guid Id, string Code, string Label, int WindowHours, bool IsActive, bool IsSystem, string Stamp = "")
 {
     /// <summary>Built-in rules are archived, never deleted, so a stable baseline always exists.</summary>
     public bool IsDeletable => !IsSystem;
@@ -63,8 +63,11 @@ public sealed class NotificationRuleService
     }
 
     /// <summary>Creates a rule (Id null) or updates an existing one's label/window (Code is immutable). The code
-    /// is uppercased and must be unique. Audited.</summary>
-    public async Task SaveAsync(Guid? id, string code, string label, int windowHours, CancellationToken ct = default)
+    /// is uppercased and must be unique. Audited. REV-27 / BUG-396: <paramref name="expectedStamp"/> is the rule's
+    /// <see cref="NotificationRuleView.Stamp"/> when the editor opened; the edit writes the label and window back, so a
+    /// rule someone changed since is refused. Null skips the check.</summary>
+    public async Task SaveAsync(Guid? id, string code, string label, int windowHours, string? expectedStamp = null,
+        CancellationToken ct = default)
     {
         AdminActionPermissions.Require<NotificationRuleService>(_user);
         code = (code ?? "").Trim().ToUpperInvariant();
@@ -83,6 +86,9 @@ public sealed class NotificationRuleService
         {
             var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == ruleId, ct)
                 ?? throw new InvalidOperationException("That rule no longer exists. Reload the page and try again.");
+            if (expectedStamp is not null && !string.Equals(StampOf(rule), expectedStamp, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Someone changed the deadline rule \"{rule.Code}\" since you opened it, so nothing was saved: " +
+                    "it would have undone that. Reload the page, then make your change again.");
             rule.Label = label;
             rule.WindowHours = windowHours;
             rule.ModifiedBy = _user.UserId;
@@ -139,5 +145,9 @@ public sealed class NotificationRuleService
     }
 
     private static NotificationRuleView Project(NotificationRule r) =>
-        new(r.Id, r.Code, r.Label, r.WindowHours, r.IsActive, r.IsSystem);
+        new(r.Id, r.Code, r.Label, r.WindowHours, r.IsActive, r.IsSystem, StampOf(r));
+
+    // BUG-396: what the editor holds and writes back (the label and the window).
+    private static string StampOf(NotificationRule r) =>
+        string.Join('|', r.Label, r.WindowHours.ToString(System.Globalization.CultureInfo.InvariantCulture));
 }

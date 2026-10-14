@@ -98,5 +98,23 @@ public sealed class EmailTemplateAdminServiceTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task A_save_from_a_stale_editor_is_refused(/* BUG-396 */)
+    {
+        var svc = NewService();
+        var opened = (await svc.GetAsync("assignment")).Stamp;
+        await svc.SaveAsync("assignment", "Another admin's subject", "<p>theirs</p>", opened);   // saved since
+
+        var act = () => svc.SaveAsync("assignment", "Mine", "<p>mine</p>", opened);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*since you opened it*");
+        (await svc.GetAsync("assignment")).EffectiveSubject.Should().Be("Another admin's subject");
+
+        var current = (await svc.GetAsync("assignment")).Stamp;
+        await svc.SaveAsync("assignment", "Mine", "<p>mine</p>", current);
+        (await svc.GetAsync("assignment")).EffectiveSubject.Should().Be("Mine");
+        await svc.SaveAsync("assignment", "Import", "<p>import</p>");   // no stamp: not checked (a config import)
+    }
+
     public void Dispose() => _connection.Dispose();
 }

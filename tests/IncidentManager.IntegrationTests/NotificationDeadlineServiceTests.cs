@@ -195,5 +195,18 @@ public sealed class NotificationDeadlineServiceTests : IDisposable
         public NotificationDeadlineSettings Current { get; set; } = NotificationDeadlineSettings.Off;
     }
 
+    [Fact]
+    public async Task A_rule_edit_from_a_stale_editor_is_refused(/* BUG-396 */)
+    {
+        await NewRules().SaveAsync(null, "NY", "New York", 72);
+        var opened = (await NewRules().ListAllAsync()).Single(r => r.Code == "NY");
+        await NewRules().SaveAsync(opened.Id, "NY", "New York", 48, opened.Stamp);   // another admin shortened it
+
+        var act = () => NewRules().SaveAsync(opened.Id, "NY", "New York (NYDFS)", 72, opened.Stamp);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*since you opened it*");
+        (await NewRules().ListAllAsync()).Single(r => r.Code == "NY").WindowHours.Should().Be(48);
+    }
+
     public void Dispose() => _connection.Dispose();
 }
