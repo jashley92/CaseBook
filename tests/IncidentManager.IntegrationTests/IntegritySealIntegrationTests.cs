@@ -171,6 +171,27 @@ public sealed class IntegritySealIntegrationTests : IDisposable
         result.Detail.Should().Contain($"keyed from entry #{head + 1}");
     }
 
+    [Fact]
+    public async Task A_keyed_seal_over_the_same_head_as_an_older_plain_one_is_the_one_read(/* BUG-401 */)
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var head = await db.AuditLog.MaxAsync(a => a.Sequence);
+        await NewService(db).SealAsync();   // plain: keyed from nowhere
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
+        var keyed = new IntegrityService(NewFactory(), _hasher, _signer, _store, _user, _clock, _monitor, _alerts,
+            chainKeys: new OneKey());
+        (await keyed.SealAsync())!.KeyedFromSequence.Should().Be(head + 1);   // same head, nothing written since
+
+        db.Notes.Add(new IncidentManager.Domain.Entities.AnalystNote
+        {
+            CaseId = await db.Cases.Select(c => c.Id).FirstAsync(), Body = "plain", CreatedBy = "x", CreatedAtUtc = _clock.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        (await keyed.VerifyAsync()).IsValid.Should().BeFalse("the newest seal says keying starts here, so a plain entry is a break");
+    }
+
     private sealed class OneKey : IChainKeyring
     {
         private static readonly byte[] Secret = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);

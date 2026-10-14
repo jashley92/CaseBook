@@ -90,9 +90,12 @@ public sealed class IntegrityService
         }
     }
 
-    /// <summary>BUG-142: where the latest seal says the chain is keyed from (its signature is checked with the seal).</summary>
+    /// <summary>BUG-142: where the latest seal says the chain is keyed from (its signature is checked with the seal).
+    /// BUG-401: two seals over the same head (the chain key turned on with nothing written since) are told apart by when
+    /// they were made, so the older plain seal isn't read in place of the newer keyed one.</summary>
     internal static Task<long?> KeyedFromAsync(IAppDbContext db, CancellationToken ct) =>
-        db.IntegritySeals.AsNoTracking().OrderByDescending(s => s.UpToSequence).Select(s => s.KeyedFromSequence).FirstOrDefaultAsync(ct);
+        db.IntegritySeals.AsNoTracking().OrderByDescending(s => s.UpToSequence).ThenByDescending(s => s.SealedAtUtc)
+            .Select(s => s.KeyedFromSequence).FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// BUG-06: the chain check, then the records themselves (<see cref="RowIntegrityVerifier"/>): each record's
@@ -201,7 +204,7 @@ public sealed class IntegrityService
         using (var db = _factory.CreateDbContext())
         {
             var latest = await db.IntegritySeals.AsNoTracking()
-                .OrderByDescending(s => s.UpToSequence).FirstOrDefaultAsync(ct);
+                .OrderByDescending(s => s.UpToSequence).ThenByDescending(s => s.SealedAtUtc).FirstOrDefaultAsync(ct);   // BUG-401
             if (latest is null) return null;
             sealId = latest.Id;
             upTo = latest.UpToSequence;
