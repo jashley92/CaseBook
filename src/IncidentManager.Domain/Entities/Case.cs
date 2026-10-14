@@ -1794,9 +1794,11 @@ public class Case : AuditableEntity, IHashableEntity
         // INV-25: the next steps are recorded, not written, so they don't count as saying something.
         if (requireContent && new[] { next.Summary, next.WorkingAssessment, next.Known, next.OpenQuestions }.All(p => p is null))
             throw new ArgumentException("Write at least one part of the brief.");
-        if (new[] { next.Summary, next.WorkingAssessment, next.Known, next.OpenQuestions, next.NextSteps }
+        if (new[] { next.Summary, next.WorkingAssessment, next.Known, next.OpenQuestions }
                 .Any(p => p is { Length: > CaseBrief.MaxPartLength }))
             throw new ArgumentException($"Keep each part of the brief to {CaseBrief.MaxPartLength:N0} characters or fewer.");
+        // BUG-263: the next steps are a snapshot of the tasks, which nobody can shorten, so they're cut rather than refused.
+        if (next.NextSteps is { Length: > CaseBrief.MaxPartLength } steps) next.NextSteps = steps[..CaseBrief.MaxPartLength];
 
         if (Briefs.FirstOrDefault(b => b.IsCurrent) is { } current)
         {

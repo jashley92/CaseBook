@@ -44,7 +44,27 @@ public static class CaseNext
         var lines = Open(c, nowUtc)
             .Select(t => $"- {t.Title}" + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({ownerName(t.Owner)})"))
             .ToList();
-        return lines.Count == 0 ? null : string.Join("\n", lines);
+        return lines.Count == 0 ? null : Fit(lines);
+    }
+
+    // BUG-263: the snapshot is held to the brief's part limit: the first tasks in order, then a count of the rest. Listing
+    // every open task made a case with many (an import allows 500) unable to save any brief version, and so unable to
+    // close: the limit refused a part nobody wrote and nobody could shorten.
+    private static string Fit(List<string> lines)
+    {
+        var all = string.Join("\n", lines);
+        if (all.Length <= CaseBrief.MaxPartLength) return all;
+        const int room = CaseBrief.MaxPartLength - 40;   // leaves room for the "…and N more" line
+        var kept = new List<string>();
+        var length = 0;
+        foreach (var line in lines)
+        {
+            if (length + line.Length + 1 > room) break;
+            kept.Add(line);
+            length += line.Length + 1;
+        }
+        kept.Add($"- …and {lines.Count - kept.Count:N0} more open tasks");
+        return string.Join("\n", kept);
     }
 
     /// <summary>
