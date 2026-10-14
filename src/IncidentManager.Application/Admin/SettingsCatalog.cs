@@ -363,8 +363,8 @@ public static class SettingsCatalog
         for (var i = 0; i < v.Length; i++)
         {
             var c = v[i];
-            // (char)92 is a backslash: an escaped quote doesn't end the quoted name.
-            if (c == '"' && (i == 0 || v[i - 1] != (char)92)) quoted = !quoted;
+            // A backslash-escaped quote doesn't end the quoted name.
+            if (c == '"' && (i == 0 || v[i - 1] != '\\')) quoted = !quoted;
             else if (!quoted && (c == ',' || c == ';')) return true;
             else if (!quoted && c == '@' && angle > i) return true;   // an "@" in an unquoted name before <address>
         }

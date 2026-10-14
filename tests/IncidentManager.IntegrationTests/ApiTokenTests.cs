@@ -460,6 +460,26 @@ public sealed class ApiTokenTests : IDisposable
         release.Set();
     }
 
+    [Fact]
+    public async Task A_hung_domain_doesnt_stop_lookups_in_another(/* BUG-469 follow-up */)
+    {
+        using var release = new ManualResetEventSlim();
+        var lookups = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var ad = new AdTokenOwnerCheck(new GroupRoleDirectory(), _clock, time: new FastTimers(), lookup: id =>
+        {
+            lookups.Add(id);
+            if (id.StartsWith("PARTNER", StringComparison.Ordinal)) release.Wait(TimeSpan.FromSeconds(30));
+            return new(true, []);
+        });
+        for (var i = 0; i < AdTokenOwnerCheck.MaxHung; i++)
+            (await ad.CheckRecipientAsync($"PARTNER\\user{i}")).Should().BeNull();
+
+        (await ad.CheckAsync("PARTNER\\another"))!.Active.Should().BeFalse("that domain isn't answering");
+        (await ad.CheckAsync("CORP\\alice"))!.Active.Should().BeTrue("a healthy domain is still asked");
+        lookups.Should().Contain("CORP\\alice").And.NotContain("PARTNER\\another");
+        release.Set();
+    }
+
     // The lookup timeout passes in a moment.
     private sealed class FastTimers : TimeProvider
     {

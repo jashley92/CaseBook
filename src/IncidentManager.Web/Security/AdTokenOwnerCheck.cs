@@ -42,14 +42,15 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     /// <summary>BUG-469: how long a caller waits on the directory before taking it to be unreachable.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>BUG-469: lookups still blocked after timing out, past which no further account is asked about.</summary>
+    /// <summary>BUG-469: lookups still blocked after timing out in one domain, past which no further account in that domain
+    /// is asked about (a hung trusted domain doesn't stop lookups in the others, as in AdAccountDirectory, BUG-471).</summary>
     public const int MaxHung = 8;
 
     private readonly TimeProvider _time;
     private readonly object _gate = new();
     // BUG-469: the lookup running for an account, which later callers join rather than starting another.
     private readonly Dictionary<string, Pending> _pending = new(StringComparer.OrdinalIgnoreCase);
-    private int _hung;
+    private readonly Dictionary<string, int> _hung = new(StringComparer.OrdinalIgnoreCase);   // per domain
 
     public AdTokenOwnerCheck(IRoleDirectory roles, IClock clock, ILogger<AdTokenOwnerCheck>? log = null,
         Func<string, AccountGroups?>? lookup = null, TimeProvider? time = null)
@@ -87,8 +88,8 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
             }
             else
             {
-                // BUG-469: with MaxHung blocked, the directory is taken to be down rather than given another thread.
-                if (_hung >= MaxHung) return Unreachable(known, last, now, failOpen);
+                // BUG-469: with MaxHung blocked in its domain, that domain is taken to be down rather than given another thread.
+                if (_hung.GetValueOrDefault(DomainOf(ownerUserId)) >= MaxHung) return Unreachable(known, last, now, failOpen);
                 pending = Start(ownerUserId);
             }
         }
@@ -104,7 +105,11 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
             _log?.LogWarning("Active Directory didn't answer in time when checking an API token's owner.");
             lock (_gate)
             {
-                if (!pending.Done && !pending.Hung) { pending.Hung = true; _hung++; }
+                if (!pending.Done && !pending.Hung)
+                {
+                    pending.Hung = true;
+                    _hung[pending.Domain] = _hung.GetValueOrDefault(pending.Domain) + 1;
+                }
             }
             _failedAt[ownerUserId] = now;
             return Unreachable(known, last, now, failOpen);
@@ -121,7 +126,7 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     // finishes after its callers stopped waiting only frees its place; its answer isn't kept.
     private Pending Start(string ownerUserId)
     {
-        var pending = new Pending();
+        var pending = new Pending { Domain = DomainOf(ownerUserId) };
         pending.Lookup = Task.Factory.StartNew(() =>
         {
             try { return _lookup(ownerUserId); }
@@ -130,7 +135,11 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
                 lock (_gate)
                 {
                     pending.Done = true;
-                    if (pending.Hung) _hung--;
+                    if (pending.Hung && _hung.TryGetValue(pending.Domain, out var n))
+                    {
+                        if (n <= 1) _hung.Remove(pending.Domain);
+                        else _hung[pending.Domain] = n - 1;
+                    }
                     _pending.Remove(ownerUserId);
                 }
             }
@@ -144,6 +153,14 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         public Task<AccountGroups?> Lookup = null!;
         public bool Done;
         public bool Hung;   // timed out, still blocked
+        public string Domain = "";
+    }
+
+    // The domain QueryDirectory asks: DOMAIN of DOMAIN\sam, else "" (a UPN or SID goes to the server's own domain).
+    private static string DomainOf(string ownerUserId)
+    {
+        var slash = ownerUserId.IndexOf('\\');
+        return slash > 0 ? ownerUserId[..slash] : "";
     }
 
     private OwnerAccess Access(AccountGroups? account) => account is null
