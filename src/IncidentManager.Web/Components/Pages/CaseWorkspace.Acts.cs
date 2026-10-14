@@ -72,15 +72,18 @@ public partial class CaseWorkspace
     private async Task SetArchived(bool archived)
     {
         _retentionMsg = null;
+        var id = Id;
         try
         {
-            await Cases.SetArchivedAsync(Id, archived);
+            await Cases.SetArchivedAsync(id, archived);
             await Reload();
             Toasts.Success(archived ? "Case archived" : "Case restored");
         }
         catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException)
         {
-            _retentionMsg = ex.Message;
+            // BUG-357: a refusal that lands after a switch to another case isn't shown on that case.
+            if (Id == id) _retentionMsg = ex.Message;
+            else Toasts.Error(ex.Message);
         }
     }
 

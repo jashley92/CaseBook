@@ -461,6 +461,8 @@ else
                 _auditFilter = new();
                 _timelineEntity = null;   // REV-38: a "show on timeline" filter belongs to the last case
                 _confirm = null;
+                _previewShotId = null;   // BUG-357: the screenshot and the retention message were the last case's
+                _retentionMsg = null;
                 _accessLost = false;
                 _permissionLost = false;
                 _reportState.ShowPreview = false;
