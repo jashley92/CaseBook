@@ -1309,6 +1309,13 @@ h1:focus {
 .im-entity-panel-h { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--im-text-muted); margin-bottom: 0.4rem; }
 .im-entity-ref { padding: 0.3rem 0; border-bottom: 1px solid var(--im-border); }
 .im-entity-ref:last-child { border-bottom: 0; }
+/* BUG-416: an account's directory details in the entity panel. */
+.im-acct-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .1rem .75rem; }
+.im-acct-dl dt { font-weight: 400; color: var(--bs-secondary-color); }
+.im-acct-dl dd { margin: 0; overflow-wrap: anywhere; }
+.im-acct-changed { font-weight: 600; }
+.im-acct-live { border: 1px solid var(--im-border); border-radius: .375rem; padding: .5rem .6rem; margin-bottom: .6rem;
+                background: var(--bs-tertiary-bg); }
 .im-entity-ref .btn-link { font-size: 0.875rem; color: var(--im-text); text-decoration: none; }
 .im-entity-ref .btn-link:hover { color: var(--im-accent-text); }
 /* Timeline actor/target chips open the panel. */

@@ -1,0 +1,185 @@
+@* BUG-416: an account entity's details from the directory, in the entity panel. The details as kept with the case (taken
+   when the account was added, or a later lookup someone kept), a fresh lookup on request that's shown beside them with
+   what changed, and the choice to keep that lookup as a new snapshot. *@
+@using IncidentManager.Application.Accounts
+@inject AccountDirectoryService Directory
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+
+@if (AccountDirectoryService.IsAccountType(Entity.Type) && (Directory.IsAvailable || _snapshots.Count > 0))
+{
+    <section class="im-acct">
+        <div class="d-flex align-items-baseline justify-content-between gap-2">
+            <h3 class="im-entity-panel-h">Directory</h3>
+            @if (Directory.IsAvailable)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" disabled="@_looking" @onclick="LookUp">
+                    <span class="bi bi-arrow-repeat" aria-hidden="true"></span> @(_looking ? "Looking up…" : "Look up now")
+                </button>
+            }
+        </div>
+
+        @if (_live is { } live)
+        {
+            <div class="im-acct-live" role="status">
+                @if (live.Outcome == DirectoryLookupOutcome.Unavailable)
+                {
+                    <p class="small text-warning-emphasis mb-1">@live.Problem</p>
+                }
+                else
+                {
+                    <div class="small fw-semibold mb-1">Now, from the directory@(Latest is null ? "" : Differs(live, Latest) ? " · changed since the kept details" : " · same as the kept details")</div>
+                    @Details(live.Account, Latest)
+                    <div class="d-flex gap-2 mt-2">
+                        @if (CanEdit)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_saving" @onclick="Keep">
+                                <span class="bi bi-bookmark-plus" aria-hidden="true"></span> Keep with the case
+                            </button>
+                        }
+                        <button type="button" class="btn btn-sm btn-link" @onclick="() => _live = null">Close</button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (Latest is { } kept)
+        {
+            <div class="small text-muted mb-1">
+                As kept @TimeDisp.Short(kept.CreatedAtUtc) · @(kept.Trigger == DirectorySnapshotTrigger.Added ? "when the account was added" : $"looked up by {Users.DisplayFor(kept.CreatedBy)}")
+            </div>
+            @Details(kept.Found ? FromSnapshot(kept) : null, null)
+            @if (_snapshots.Count > 1)
+            {
+                <details class="small mt-1">
+                    <summary>Earlier snapshots · @(_snapshots.Count - 1)</summary>
+                    @foreach (var s in _snapshots.Skip(1))
+                    {
+                        <div class="im-entity-ref">
+                            <div class="text-muted">@TimeDisp.Short(s.CreatedAtUtc) · @(s.Trigger == DirectorySnapshotTrigger.Added ? "when added" : Users.DisplayFor(s.CreatedBy))</div>
+                            @Details(s.Found ? FromSnapshot(s) : null, null)
+                        </div>
+                    }
+                </details>
+            }
+        }
+        else if (_loaded && _live is null)
+        {
+            <p class="small text-muted mb-0">No directory details are kept for it yet.@(Directory.IsAvailable ? " Look it up to see them." : "")</p>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter, EditorRequired] public CaseEntity Entity { get; set; } = null!;
+    [Parameter] public bool CanEdit { get; set; }
+
+    [Inject] private IClock Clock { get; set; } = null!;
+
+    private IReadOnlyList<AccountDirectorySnapshot> _snapshots = [];
+    private DirectoryLookup? _live;
+    private bool _looking, _saving, _loaded;
+    private (Guid Entity, string Value)? _loadedFor;
+
+    private AccountDirectorySnapshot? Latest => _snapshots.Count > 0 ? _snapshots[0] : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = (Entity.Id, Entity.Value);
+        if (_loadedFor == key) return;
+        _loadedFor = key;
+        _live = null; _loaded = false; _snapshots = [];
+        if (!AccountDirectoryService.IsAccountType(Entity.Type)) return;
+        var list = await Directory.SnapshotsAsync(CaseId, Entity.Id);
+        if (_loadedFor != key) return;   // switched to another entity meanwhile
+        _snapshots = list;
+        _loaded = true;
+    }
+
+    private async Task LookUp()
+    {
+        if (_looking) return;
+        _looking = true;
+        var id = Entity.Id;
+        try
+        {
+            var result = await Directory.LookupAsync(CaseId, id);
+            if (Entity.Id == id) _live = result;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+        finally { _looking = false; }
+    }
+
+    private async Task Keep()
+    {
+        if (_live is not { } live || _saving) return;
+        _saving = true;
+        try
+        {
+            await Directory.SaveAsync(CaseId, Entity.Id, live);
+            _snapshots = await Directory.SnapshotsAsync(CaseId, Entity.Id);
+            _live = null;
+            Toasts.Success("Directory details kept with the case");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+        finally { _saving = false; }
+    }
+
+    // The domain isn't kept on its own; it's the one the account was looked up in, when the value names it.
+    private static DirectoryAccount FromSnapshot(AccountDirectorySnapshot s) => new(
+        s.SamAccountName ?? s.LookedUp, s.LookedUp.IndexOf('\\') is > 0 and var i ? s.LookedUp[..i] : null, s.UserPrincipalName, s.DisplayName, s.Title, s.Department, s.Manager, s.Email,
+        s.DistinguishedName, s.Enabled, s.LockedOut, s.AccountExpiresUtc, s.LastLogonUtc, s.PasswordLastSetUtc, s.WhenCreatedUtc);
+
+    private static bool Differs(DirectoryLookup live, AccountDirectorySnapshot kept) =>
+        live.Account is not { } a ? kept.Found
+            : !kept.Found || a with { Domain = null } != FromSnapshot(kept) with { SamAccountName = a.SamAccountName, Domain = null };
+
+    // The account's details; with "before", a value that differs is marked as changed.
+    private RenderFragment Details(DirectoryAccount? a, AccountDirectorySnapshot? before) => __builder =>
+    {
+        if (a is null)
+        {
+            <p class="small mb-0"><span class="im-badge im-b-neutral">Not found</span> The directory has no such account.</p>
+            return;
+        }
+        var b = before is { Found: true } ? FromSnapshot(before) : null;
+        var expired = a.AccountExpiresUtc is { } exp && exp <= Clock.UtcNow;
+        <div class="d-flex flex-wrap gap-1 mb-1">
+            @if (a.Enabled is { } en)
+            {
+                <span class="im-badge @(en ? "im-b-neutral" : "im-b-compromised")">@(en ? "Enabled" : "Disabled")</span>
+            }
+            @if (a.LockedOut == true) { <span class="im-badge im-b-compromised">Locked out</span> }
+            @if (expired) { <span class="im-badge im-b-compromised">Expired</span> }
+        </div>
+        <dl class="im-acct-dl small mb-0">
+            @Row("Name", a.DisplayName, b?.DisplayName, b is not null)
+            @Row("Logon", string.IsNullOrWhiteSpace(a.Domain) ? a.SamAccountName : $"{a.Domain}\\{a.SamAccountName}", null, false)
+            @Row("UPN", a.UserPrincipalName, b?.UserPrincipalName, b is not null)
+            @Row("Title", a.Title, b?.Title, b is not null)
+            @Row("Department", a.Department, b?.Department, b is not null)
+            @Row("Manager", a.Manager, b?.Manager, b is not null)
+            @Row("Email", a.Email, b?.Email, b is not null)
+            @Row("Last logon", When(a.LastLogonUtc), When(b?.LastLogonUtc), b is not null)
+            @Row("Password set", When(a.PasswordLastSetUtc), When(b?.PasswordLastSetUtc), b is not null)
+            @Row("Expires", When(a.AccountExpiresUtc), When(b?.AccountExpiresUtc), b is not null)
+            @Row("Created", When(a.WhenCreatedUtc), When(b?.WhenCreatedUtc), b is not null)
+            @Row("OU", a.DistinguishedName, b?.DistinguishedName, b is not null)
+        </dl>
+    };
+
+    private static RenderFragment Row(string label, string? value, string? before, bool compare) => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(value) && !(compare && !string.IsNullOrWhiteSpace(before))) return;
+        var changed = compare && !string.Equals(value ?? "", before ?? "", StringComparison.Ordinal);
+        <dt>@label</dt>
+        <dd class="@(changed ? "im-acct-changed" : "")">
+            @(string.IsNullOrWhiteSpace(value) ? "—" : value)
+            @if (changed) { <span class="text-muted"> (was @(string.IsNullOrWhiteSpace(before) ? "—" : before))</span> }
+        </dd>
+    };
+
+    private string? When(DateTimeOffset? t) => t is { } v ? TimeDisp.Short(v) : null;
+}

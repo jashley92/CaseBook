@@ -8,6 +8,7 @@
    adds an entity via SubmitAsync (@ref). *@
 @implements IAsyncDisposable
 @inject CaseService Cases
+@inject IncidentManager.Application.Accounts.AccountDirectoryService AccountDirectory
 @inject IConfiguration Config
 @inject ToastService Toasts
 @inject IJSRuntime JS
@@ -74,7 +75,7 @@
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="ent-type">Type</label>
-                <select id="ent-type" class="form-select form-select-sm" @bind="_enType">
+                <select id="ent-type" class="form-select form-select-sm" @bind="_enType" @bind:after="() => _enTypePicked = true">
                     @foreach (var t in Ui.Options<EntityType>("EntityType"))
                     {
                         <option value="@t">@Ui.Label(t)</option>
@@ -83,7 +84,7 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label small mb-0" for="ent-value">Value</label>
-                <input id="ent-value" class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" @onkeydown="OnValueKey" placeholder="e.g. 203.0.113.66" />
+                <input id="ent-value" class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" @bind:after="ValueTyped" @onkeydown="OnValueKey" placeholder="e.g. 203.0.113.66, CONTOSO\jdoe or a command line" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="ent-label">Label</label>
@@ -528,6 +529,10 @@ else
 
     // Entity add/edit form
     private EntityType _enType = EntityType.IpAddress;
+    // BUG-416: until the type is picked by hand, it follows what's typed (an IP, DOMAIN\user, a command line…), and a
+    // bare name the directory knows is an account.
+    private bool _enTypePicked;
+    private CancellationTokenSource? _accountCheck;
     private string _enValue = "";
     private string? _enLabel;
     private EntityDisposition _enDisposition = EntityDisposition.Suspicious;
@@ -702,6 +707,27 @@ else
         finally { _adding = false; }
     }
 
+    // BUG-416: the type follows the value until it's picked by hand (never while editing an existing one).
+    private async Task ValueTyped()
+    {
+        if (_enEditId is not null || _enTypePicked || string.IsNullOrWhiteSpace(_enValue)) return;
+        _accountCheck?.Cancel();
+        var detected = IocObservable.DetectType(_enValue);
+        _enType = detected;
+        if (detected != EntityType.Other || !AccountDirectory.IsAvailable) return;
+        // A bare name could be an account or a host: ask the directory once typing pauses.
+        var cts = _accountCheck = new CancellationTokenSource();
+        var value = _enValue;
+        try
+        {
+            await Task.Delay(400, cts.Token);
+            if (await AccountDirectory.IsKnownAccountAsync(value, cts.Token)
+                && !cts.IsCancellationRequested && _enValue == value && !_enTypePicked && _enEditId is null)
+                _enType = EntityType.Account;
+        }
+        catch (OperationCanceledException) { /* typed on */ }
+    }
+
     private async Task AddEntity()
     {
         if (_enEditId is not null || string.IsNullOrWhiteSpace(_enValue)) return;   // BUG-330: the form is editing one
@@ -713,6 +739,7 @@ else
             var r = await Cases.AddOrMatchEntityAsync(CaseId, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
             if (_enTlp is not null && !r.AlreadyOnCase) await Cases.SetEntityTlpAsync(CaseId, r.Id, _enTlp);   // PROD-45
             _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
+            _enTypePicked = false;   // BUG-416: the next value sets the type again
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // the new IOC may correlate with another case — surface "also in" now
             _relatedDismissed = false; // a new IOC may reveal a related case — re-surface the suggestion (PROD-40)
@@ -731,7 +758,16 @@ else
     // --- PROD-22: bulk indicator paste ---
     private void ToggleBulk() => _bulkOpen = !_bulkOpen;
 
-    private void ParseBulk()
+    private async Task ParseBulk()
+    {
+        ParseBulkRows();
+        // BUG-416: a bare name the directory knows is an account (at most 50 asked, so a big paste isn't held up).
+        if (!AccountDirectory.IsAvailable) return;
+        foreach (var row in _bulkRows.Where(r => r.Type == EntityType.Other).Take(50).ToList())
+            if (await AccountDirectory.IsKnownAccountAsync(row.Value)) row.Type = EntityType.Account;
+    }
+
+    private void ParseBulkRows()
     {
         _bulkError = null;
         _bulkRows.Clear();
@@ -823,7 +859,7 @@ else
     private void CancelEntityEdit()
     {
         if (_enEditId is { } was) _bringIntoView = ("imMotion.scrollToId", RowId(was));   // BUG-410: back to the row
-        _enEditId = null; _enReason = null; _entityError = null;
+        _enEditId = null; _enReason = null; _entityError = null; _enTypePicked = false;
         _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
     }
 

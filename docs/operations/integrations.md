@@ -55,6 +55,13 @@ flowchart LR
 - **Failure:** a SID that can't be resolved is cached as unknown for the process lifetime; if the role directory
   can't load at startup it's empty, and **nobody gets permissions** until it loads.
 - **Local testing:** not possible on the development handler; use a domain-joined test server.
+- **Account entities (BUG-416):** an Account entity (or an email address the directory knows) is looked up when it's
+  added to a case, and its details (display name, title, department, manager, email, enabled, locked, expiry, last
+  logon, password last set, created, DN) are kept with the case as a hashed snapshot. The entity panel's *Look up now*
+  shows the account as it is now, with what changed, and *Keep with the case* adds that as a new snapshot. Lookups are
+  read-only, as the app pool's identity, `DOMAIN\sam` in that domain, 10-second timeout. An unreachable directory
+  keeps nothing and never blocks the add. A bare name the directory knows is typed as an Account when it's added.
+  In development (not Windows sign-in) a made-up CONTOSO directory answers for `jdoe`, `asmith` and `svc_backup`.
 
 ## Case-import API (and XSIAM elevation)
 

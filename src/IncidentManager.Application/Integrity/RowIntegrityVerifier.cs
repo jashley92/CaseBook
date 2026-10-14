@@ -58,6 +58,7 @@ public static class RowIntegrityVerifier
         db.SeverityChanges.AsNoTracking(),
         db.AssignmentChanges.AsNoTracking(),
         db.EntityVerdictChanges.AsNoTracking(),
+        db.AccountDirectorySnapshots.AsNoTracking(),   // BUG-416
         db.Assignments.AsNoTracking(),
         db.EvidenceCitations.AsNoTracking(),
         // REV-05: who the API lets in. A token row inserted in the database would otherwise be an admin identity no

@@ -4046,3 +4046,59 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014160350_AccountDirectorySnapshots'
+)
+BEGIN
+    CREATE TABLE [AccountDirectorySnapshots] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [EntityId] uniqueidentifier NOT NULL,
+        [LookedUp] nvarchar(400) NOT NULL,
+        [Trigger] int NOT NULL,
+        [Found] bit NOT NULL,
+        [SamAccountName] nvarchar(256) NULL,
+        [UserPrincipalName] nvarchar(400) NULL,
+        [DisplayName] nvarchar(400) NULL,
+        [Title] nvarchar(400) NULL,
+        [Department] nvarchar(400) NULL,
+        [Manager] nvarchar(400) NULL,
+        [Email] nvarchar(400) NULL,
+        [DistinguishedName] nvarchar(1000) NULL,
+        [Enabled] bit NULL,
+        [LockedOut] bit NULL,
+        [AccountExpiresUtc] datetimeoffset NULL,
+        [LastLogonUtc] datetimeoffset NULL,
+        [PasswordLastSetUtc] datetimeoffset NULL,
+        [WhenCreatedUtc] datetimeoffset NULL,
+        [RowHash] nvarchar(70) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_AccountDirectorySnapshots] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014160350_AccountDirectorySnapshots'
+)
+BEGIN
+    CREATE INDEX [IX_AccountDirectorySnapshots_CaseId_EntityId] ON [AccountDirectorySnapshots] ([CaseId], [EntityId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014160350_AccountDirectorySnapshots'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261014160350_AccountDirectorySnapshots'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

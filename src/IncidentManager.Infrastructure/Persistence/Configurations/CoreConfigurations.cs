@@ -180,6 +180,28 @@ public sealed class EntityVerdictChangeConfiguration : IEntityTypeConfiguration<
     }
 }
 
+/// <summary>BUG-416: an account's directory details as kept with the case. No foreign key to the entity: the row outlives it.</summary>
+public sealed class AccountDirectorySnapshotConfiguration : IEntityTypeConfiguration<AccountDirectorySnapshot>
+{
+    public void Configure(EntityTypeBuilder<AccountDirectorySnapshot> b)
+    {
+        b.ToTable("AccountDirectorySnapshots");
+        b.Property(x => x.RowHash).HasMaxLength(70);
+        b.Property(x => x.LookedUp).HasMaxLength(400).IsRequired();
+        b.Property(x => x.SamAccountName).HasMaxLength(256);
+        b.Property(x => x.UserPrincipalName).HasMaxLength(400);
+        b.Property(x => x.DisplayName).HasMaxLength(400);
+        b.Property(x => x.Title).HasMaxLength(400);
+        b.Property(x => x.Department).HasMaxLength(400);
+        b.Property(x => x.Manager).HasMaxLength(400);
+        b.Property(x => x.Email).HasMaxLength(400);
+        b.Property(x => x.DistinguishedName).HasMaxLength(1000);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ModifiedBy).HasMaxLength(200);
+        b.HasIndex(x => new { x.CaseId, x.EntityId });
+    }
+}
+
 public sealed class CaseAssignmentConfiguration : IEntityTypeConfiguration<CaseAssignment>
 {
     public void Configure(EntityTypeBuilder<CaseAssignment> b)

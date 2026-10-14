@@ -254,3 +254,12 @@ public enum TransitionKind
     Phase = 1,
     Severity = 2
 }
+
+/// <summary>BUG-416: why an account's directory details were recorded. Stored and hashed: append only.</summary>
+public enum DirectorySnapshotTrigger
+{
+    /// <summary>Taken when the account was added to the case.</summary>
+    Added = 0,
+    /// <summary>An analyst looked the account up again and kept the result.</summary>
+    Requested = 1
+}
