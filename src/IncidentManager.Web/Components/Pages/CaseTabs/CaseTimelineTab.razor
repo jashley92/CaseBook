@@ -2290,9 +2290,10 @@ else
     private RenderFragment TimeNudges() => @<text>
         <div class="tl-nudges" role="group" aria-label="Adjust the time">
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = UtcToWall(DateTimeOffset.UtcNow)">Now</button>
-            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddHours(-1)" aria-label="One hour earlier">&minus;1 h</button>
-            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddMinutes(-15)" aria-label="15 minutes earlier">&minus;15 min</button>
-            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
+            @* BUG-480: Shifted stops at year 1 and 9999; AddHours threw there and the tab showed its error fallback. *@
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromMinutes(-15))" aria-label="15 minutes earlier">&minus;15 min</button>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromMinutes(15))" aria-label="15 minutes later">+15 min</button>
         </div>
     </text>;
 

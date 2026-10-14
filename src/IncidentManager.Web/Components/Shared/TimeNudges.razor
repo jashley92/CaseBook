@@ -16,5 +16,12 @@
     [Parameter, EditorRequired] public DateTime Now { get; set; }
 
     private Task Set(DateTime value) => ValueChanged.InvokeAsync(value);
-    private Task Shift(TimeSpan by) => Set((Value ?? Now) + by);
+    private Task Shift(TimeSpan by) => Set(Shifted(Value ?? Now, by));
+
+    /// <summary>BUG-480: <paramref name="value"/> moved by <paramref name="by"/>, stopping at the first and last times a
+    /// DateTime holds (a typed year 1 or 9999 threw, and the tab showed its error fallback).</summary>
+    public static DateTime Shifted(DateTime value, TimeSpan by) =>
+        by < TimeSpan.Zero && value - DateTime.MinValue < by.Duration() ? DateTime.SpecifyKind(DateTime.MinValue, value.Kind)
+        : by > TimeSpan.Zero && DateTime.MaxValue - value < by ? DateTime.SpecifyKind(DateTime.MaxValue, value.Kind)
+        : value + by;
 }

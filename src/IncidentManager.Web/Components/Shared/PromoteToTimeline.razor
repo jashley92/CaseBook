@@ -28,9 +28,10 @@
             <DateTimeInput id="@($"promote-when-{_id}")" class="form-control form-control-sm" @bind-Value="_when" />
             <div class="tl-nudges" role="group" aria-label="Adjust the time">
                 <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = ToWall(Clock.UtcNow)">Now</button>
-                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = _when.AddHours(-1)" aria-label="One hour earlier">&minus;1 h</button>
-                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = _when.AddMinutes(-15)" aria-label="15 minutes earlier">&minus;15 min</button>
-                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = _when.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
+                @* BUG-480: TimeNudges.Shifted stops at year 1 and 9999 instead of throwing. *@
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = TimeNudges.Shifted(_when, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = TimeNudges.Shifted(_when, TimeSpan.FromMinutes(-15))" aria-label="15 minutes earlier">&minus;15 min</button>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = TimeNudges.Shifted(_when, TimeSpan.FromMinutes(15))" aria-label="15 minutes later">+15 min</button>
             </div>
         </div>
         <div class="col-md-3 d-flex align-items-end justify-content-end gap-2">
