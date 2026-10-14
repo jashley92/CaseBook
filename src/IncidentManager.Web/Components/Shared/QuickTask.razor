@@ -43,7 +43,7 @@
 
     private async Task Add()
     {
-        if (string.IsNullOrWhiteSpace(_title)) return;
+        if (_saving || string.IsNullOrWhiteSpace(_title)) return;   // WF-101
         _saving = true;
         _error = null;
         try

@@ -26,8 +26,10 @@ public sealed class CloseOutDraft
     public List<CaseOutcomeView> Outcomes { get; set; } = [];
     public TransitionDraft Transition { get; } = new();
 
-    // Entity tags and evidence citations show as [[name]] in the plain boxes, and turn back into links on save.
-    private readonly Dictionary<string, string> _refs = new(StringComparer.Ordinal);
+    // Entity tags and evidence citations show as [[name]] in the plain boxes, and turn back into links on save. WF-102:
+    // one table per box, as the brief card keeps (tags are counted per text, so a shared table re-points them).
+    private readonly Dictionary<string, string> _summaryRefs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _conclusionRefs = new(StringComparer.Ordinal);
     private Guid? _prefilledFor;
 
     /// <summary>Starts a draft at "now" (an existing one keeps its time, ticks and text).</summary>
@@ -43,9 +45,10 @@ public sealed class CloseOutDraft
     {
         if (_prefilledFor == c.Id) return;
         var brief = c.Briefs.FirstOrDefault(b => b.IsCurrent);
-        _refs.Clear();
-        Summary = TagText.ToEditable(brief?.Summary ?? c.Summary, _refs);
-        Conclusion = TagText.ToEditable(brief?.WorkingAssessment, _refs);
+        _summaryRefs.Clear();
+        _conclusionRefs.Clear();
+        Summary = TagText.ToEditable(brief?.Summary ?? c.Summary, _summaryRefs);
+        Conclusion = TagText.ToEditable(brief?.WorkingAssessment, _conclusionRefs);
         Outcome = null;
         _prefilledFor = c.Id;
     }
@@ -59,9 +62,19 @@ public sealed class CloseOutDraft
         Error = null;
     }
 
-    /// <summary>The text with its [[name]] tags turned back into entity links and citations.</summary>
-    public string? Linked(Case c, string? text) =>
-        TagText.FromEditable(text, _refs, c.Entities.Select(e => (e.Id, e.Label, e.Value)));
+    /// <summary>The summary with its [[name]] tags turned back into entity links and citations.</summary>
+    public string? LinkedSummary(Case c) => Linked(c, Summary, _summaryRefs, _conclusionRefs);
+
+    /// <summary>The conclusion with its [[name]] tags turned back into entity links and citations.</summary>
+    public string? LinkedConclusion(Case c) => Linked(c, Conclusion, _conclusionRefs, _summaryRefs);
+
+    // A box's own targets first; a tag moved in from the other box keeps that box's first target for its label.
+    private static string? Linked(Case c, string? text, Dictionary<string, string> own, Dictionary<string, string> other)
+    {
+        var refs = new Dictionary<string, string>(own, StringComparer.Ordinal);
+        foreach (var (label, targets) in other) refs.TryAdd(label, targets.Split('|')[0]);
+        return TagText.FromEditable(text, refs, c.Entities.Select(e => (e.Id, e.Label, e.Value)));
+    }
 
     /// <summary>Close is refused until the outcome, the text and the gate are in order.</summary>
     public bool CloseDisabled =>

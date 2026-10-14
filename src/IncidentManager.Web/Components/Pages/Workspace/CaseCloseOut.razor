@@ -123,7 +123,7 @@
         if (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
         { Draft.Error = "Enter an override justification for the unmet requirements."; return; }
         if (t.RationaleError(Draft.Conclusion) is { } m) { Draft.Error = m; return; }
-        var closing = new CaseService.CaseClosing(Draft.Outcome ?? "", Draft.Linked(Case, Draft.Summary) ?? "", Draft.Linked(Case, Draft.Conclusion) ?? "");
+        var closing = new CaseService.CaseClosing(Draft.Outcome ?? "", Draft.LinkedSummary(Case) ?? "", Draft.LinkedConclusion(Case) ?? "");
         try
         {
             await Cases.ChangePhaseAsync(Case.Id, CasePhase.Closed, null,

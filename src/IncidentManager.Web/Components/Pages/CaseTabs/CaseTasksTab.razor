@@ -265,7 +265,7 @@ else
                         else { @Users.DisplayFor(t.Owner) }
                     </td>
                     <td>
-                        @(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")
+                        @(t.DueAtUtc is { } due ? TimeDisp.Due(due, OrgZone.Current) : "—")
                         @* RD-19: a notification task due after the running notification deadline (or undated) says so. *@
                         @if (LateForNotice(t) is { } notice)
                         {
@@ -946,7 +946,10 @@ else
             await Cases.CompleteActionItemAsync(CaseId, id,
                 _doneWhen == _doneWhenDefault ? null : WallToUtc(_doneWhen),
                 result, _doneLog && result is not null ? _doneType : null, doneBy: doneBy,
-                knownLine: _doneKnown ? _doneKnownLine : null);
+                knownLine: _doneKnown   // WF-104: [[tags]] as in the brief
+                    ? IncidentManager.Application.Content.TagText.FromEditable(_doneKnownLine, new Dictionary<string, string>(),
+                        Case.Entities.Select(x => (x.Id, x.Label, x.Value)))
+                    : null);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         finally { _completing = false; }

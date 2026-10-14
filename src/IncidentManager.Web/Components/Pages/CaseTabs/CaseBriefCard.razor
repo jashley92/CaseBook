@@ -467,9 +467,12 @@
         }
     }
 
+    private bool _addingTask;
+
     private async Task AddTask()
     {
-        if (string.IsNullOrWhiteSpace(_newTask)) return;
+        if (_addingTask || string.IsNullOrWhiteSpace(_newTask)) return;   // WF-101: Enter held, or a double click
+        _addingTask = true;
         _taskError = null;
         try
         {
@@ -483,6 +486,7 @@
         {
             _taskError = ex.Message;
         }
+        finally { _addingTask = false; }
     }
 
     private static RenderFragment ReportNote() => @<span class="im-brief-report" title="Printed as the summary in the case report. The other parts are the team's working understanding and stay out of the report unless its layout includes the brief.">

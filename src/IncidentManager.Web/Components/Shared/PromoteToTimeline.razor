@@ -71,6 +71,7 @@
 
     private async Task Save()
     {
+        if (_saving) return;   // WF-101: a second click before the first render would add a second, permanent entry
         _saving = true;
         try
         {

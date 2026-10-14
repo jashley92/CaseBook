@@ -147,6 +147,11 @@ public sealed class TimeDisplay
 
     /// <summary>WF-64: a due date or target as the day it stands for: a bare date on the organization's calendar
     /// (<see cref="Components.Pages.Workspace.DayValues"/>), else its date in the active zone.</summary>
+    /// <summary>WF-103: a due time as its form shows it: a bare day when it's 23:59 on the organization's calendar (picked
+    /// without a time), else <see cref="Short"/>.</summary>
+    public string Due(DateTimeOffset ts, TimeZoneInfo organization) =>
+        Components.Pages.Workspace.DayValues.FromUtc(ts, Zone, organization) is (var d, null) ? $"{d:yyyy-MM-dd}" : Short(ts);
+
     public string Day(DateTimeOffset? ts, TimeZoneInfo organization, string dash = "—") =>
         ts is { } t ? $"{Components.Pages.Workspace.DayValues.DayOf(t, Zone, organization):yyyy-MM-dd}" : dash;
 }
