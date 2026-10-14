@@ -1605,6 +1605,7 @@ else
     public async Task SubmitAsync()
     {
         if (!CanEdit) return;
+        if (_newIocFor is not null || _corr is not null) return;   // BUG-328: this tab's own dialog is open
         if (_notesOnly && _notesList is { IsEditing: true } list) { await list.SubmitAsync(); return; }
         if (_tlEditId is not null)
         {

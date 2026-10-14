@@ -89,7 +89,12 @@ window.imKeymap = (function () {
 
         // Fixed keys.
         if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); clearLeader(); sendGlobal('palette'); return; }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { if (caseRef) { e.preventDefault(); sendCase('submit'); } return; }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            // BUG-328: inside a dialog, sheet or side panel it's that one's, never the tab composer's behind it.
+            const inDialog = !!(e.target && e.target.closest && e.target.closest('.im-trap, .im-sheet'));
+            if (caseRef) { e.preventDefault(); sendCase(inDialog ? 'submit:dialog' : 'submit'); }
+            return;
+        }
         if (e.key === 'Escape') { clearLeader(); sendGlobal('escape'); return; }
 
         // Chords (Ctrl or Alt): work while typing, like the fixed ones.

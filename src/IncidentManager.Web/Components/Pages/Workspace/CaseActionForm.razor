@@ -503,6 +503,15 @@
     // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
     private bool _inFlight;
 
+    /// <summary>BUG-328: Ctrl/⌘+Enter in the open dialog applies it, as its primary button would: not while that's
+    /// disabled, and never an archive, which takes a click.</summary>
+    public async Task SubmitAsync()
+    {
+        if (D.Name is null or "archive" || PrimaryDisabled()) return;
+        await Apply();
+        StateHasChanged();   // a refusal's message (D.Error) shows without another event
+    }
+
     private async Task Apply()
     {
         if (_inFlight) return;

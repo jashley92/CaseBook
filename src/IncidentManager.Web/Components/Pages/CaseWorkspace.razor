@@ -670,11 +670,12 @@ else
     }
 
     private bool _sheetShown;
+    private CaseActionForm? _actionForm;   // BUG-328: Ctrl+Enter applies the open dialog
 
     // The action dialog (CaseActionForm), shown in the modal or, for RD-15's transitions, the sheet.
     private RenderFragment ActionDialog() => __builder =>
     {
-        <CaseActionForm Case="_case!" D="_action" Access="Access" Notify="_notifyDeadlines" OnClose="CloseModal"
+        <CaseActionForm @ref="_actionForm" Case="_case!" D="_action" Access="Access" Notify="_notifyDeadlines" OnClose="CloseModal"
                         OnTargetChanged="TargetChanged" OnApplied="ActionApplied" OnForbidden="ActionForbidden" OnStale="Reload" OnFix="FixGateItem" />
     };
 
