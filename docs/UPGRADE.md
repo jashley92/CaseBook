@@ -253,6 +253,8 @@ The DBA script is regenerated; sites where a DBA applies the schema run it first
   - A config bundle whose Entity types order was saved before Command line existed imports.
   - Keyboard settings refuse `;`, `,` and Ctrl chords on K.
 - **Upgrade script:** `-Confirm` asks once, the upgrade question.
+- **Refreshing an open case** no longer shows an error (it happened when times are shown in local time).
+- **Scrolling:** nothing on the page (timeline items, table headers) draws over the top bar any more.
 - **Smaller fixes:**
   - The idle lock and draft handling, overlapping loads on list pages, the Cases month drill-in, the Program
     overview links with exercises, the Find retry and the vendor-case figures.
