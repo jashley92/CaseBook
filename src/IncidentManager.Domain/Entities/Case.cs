@@ -1403,6 +1403,24 @@ public class Case : AuditableEntity, IHashableEntity
         return notice;
     }
 
+    /// <summary>
+    /// BUG-104: a case reported as a whole (no notice per jurisdiction) covered <paramref name="codes"/>, which become
+    /// notices at the reported time. BUG-406: each is credited to <paramref name="recordedBy"/> and dated
+    /// <paramref name="recordedAtUtc"/> (who recorded the report, and when), not to the edit that converted it, so it
+    /// isn't new work by the editor on the timeline, in the handoff or the brief's "since".
+    /// </summary>
+    public void NoticesFromWholeReport(IEnumerable<string> codes, string recordedBy, DateTimeOffset recordedAtUtc,
+        string actor, DateTimeOffset nowUtc)
+    {
+        if (ReportedAtUtc is not { } reported || JurisdictionNotices.Count > 0) return;
+        foreach (var code in codes)
+        {
+            var n = RecordNotice(code, reported, actor, nowUtc);
+            n.CreatedBy = recordedBy;
+            n.CreatedAtUtc = recordedAtUtc;
+        }
+    }
+
     /// <summary>BUG-09: removes one regulator's notice (a mis-entry).</summary>
     public void RemoveNotice(string jurisdiction, string actor, DateTimeOffset nowUtc)
     {

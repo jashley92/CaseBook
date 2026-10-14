@@ -102,6 +102,22 @@ public class CaseMilestonesTests
     }
 
     [Fact]
+    public void Notices_converted_from_a_whole_case_report_are_not_the_editors_new_work(/* BUG-406 */)
+    {
+        var c = Case.Open(2026, 9, "Br", "Breach", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
+        c.MarkReported(T0.AddDays(1), "lp1", T0.AddDays(1));   // reported as a whole by Legal
+        var brief = c.ReviseBrief("Contained; NY notified.", null, null, null, null, "ic1", T0.AddDays(2))!;
+
+        // Days later an analyst adds a data element; the whole-case report becomes notices (BUG-104).
+        c.NoticesFromWholeReport(["NY", "NJ"], "lp1", T0.AddDays(1), "an1", T0.AddDays(5));
+
+        c.JurisdictionNotices.Should().OnlyContain(n => n.CreatedBy == "lp1" && n.CreatedAtUtc == T0.AddDays(1));
+        var notices = CaseMilestones.Project(c, Labels).Where(m => m.Key.StartsWith("notice:", StringComparison.Ordinal)).ToList();
+        notices.Should().HaveCount(2).And.OnlyContain(m => m.Actor == "lp1" && m.RecordedAtUtc == null);
+        BriefFreshness.Since(c, brief, Labels).Count.Should().Be(0, "nothing new was recorded");
+    }
+
+    [Fact]
     public void Backdated_notices_and_completions_carry_when_they_were_recorded(/* BUG-364, BUG-365 */)
     {
         var c = Case.Open(2026, 9, "Br", "Breach", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);

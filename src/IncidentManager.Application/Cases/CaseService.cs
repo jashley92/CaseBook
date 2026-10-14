@@ -1450,7 +1450,14 @@ public sealed class CaseService
         // time, so one that comes into play now is outstanding until its regulator is notified.
         if (c.JurisdictionNotices.Count == 0 && c.ReportedAtUtc is { } reported && after.Except(before, StringComparer.OrdinalIgnoreCase).Any())
         {
-            foreach (var code in before) c.RecordNotice(code, reported, _user.UserId, now);
+            // BUG-406: credited to whoever recorded the report, and dated when they did (the report's audit entry; the
+            // reported time when there's none), not to this edit: it isn't new work in the handoff, brief or "since" views.
+            var key = id.ToString();
+            var field = "\"" + nameof(Case.ReportedAtUtc) + "\"";
+            var recorded = await db.AuditLog.AsNoTracking()
+                .Where(a => a.EntityType == nameof(Case) && a.EntityId == key && a.AfterJson != null && a.AfterJson.Contains(field))
+                .OrderByDescending(a => a.Sequence).Select(a => new { a.Actor, a.AtUtc }).FirstOrDefaultAsync(ct);
+            c.NoticesFromWholeReport(before, recorded?.Actor ?? "system", recorded?.AtUtc ?? reported, _user.UserId, now);
             if (c.JurisdictionNotices.Count == 0) c.ClearReported(_user.UserId, now);
         }
         // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
