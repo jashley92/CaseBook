@@ -87,8 +87,12 @@ public sealed class ActivityFeedService
         // BUG-277: what was recorded under a number a case no longer holds (a Complex Event before its promotion, a case
         // before it was renumbered) is that case's too (WF-99). Those rows are matched to the case through its own
         // audit rows, which carry each number it held, and shown under its current number.
+        // Only rows newer than the oldest the window above holds can come into it, so with a full window the scan stops
+        // there (without one, the query above has already read as far back).
+        long? floor = rows.Count >= take * 2 ? rows.Min(r => r.Sequence) : null;
         var former = await db.AuditLog.AsNoTracking()
-            .Where(a => a.CaseNumber != null && !db.Cases.Any(c => c.CaseNumber == a.CaseNumber) && (!othersOnly || a.Actor != me))
+            .Where(a => (floor == null || a.Sequence > floor) && a.CaseNumber != null
+                        && !db.Cases.Any(c => c.CaseNumber == a.CaseNumber) && (!othersOnly || a.Actor != me))
             .OrderByDescending(a => a.Sequence)
             .Select(a => new FeedRow(a.Sequence, a.AtUtc, a.Actor, a.Action, a.EntityType, a.Summary, a.CaseNumber, Guid.Empty))
             .Take(take * 2)

@@ -43,7 +43,7 @@ public partial class CaseWorkspace
         if (_accessLost) return; // REL-07: already holding the workspace for a copy-out — don't churn it
         if (change.CaseId != Id) return; // BUG-05: a late change for the case this view just left
         // BUG-233: and after every await below, since the view can move to another case while one is in flight
-        // (navigation doesn't wait on the live gate): a read of the old case landing then would put it back on screen
+        // (navigation's own reload waits on the live gate, BUG-302, but the route has already changed): a read of the old case landing then would put it back on screen
         // under the new one's route, its tabs writing to it.
         bool Left() => change.CaseId != Id || _case?.Id != change.CaseId;
 

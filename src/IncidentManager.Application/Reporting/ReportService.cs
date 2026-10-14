@@ -752,8 +752,13 @@ public sealed class ReportService
         // Group the involved elements by each jurisdiction they trigger notification in — the regulatory
         // "who must we notify, and because of what data" view, in element display order within each group.
         // WF-67: a reported case lists the jurisdictions in play when it was reported, not ones an admin added since.
-        var frozen = c.ReportedAtUtc is not null && c.FrozenJurisdictions is { } f
-            ? f.ToHashSet(StringComparer.OrdinalIgnoreCase) : null;
+        // BUG-284: by the same rule as the deadlines, also while the case waits on a regulator an element added since brought in.
+        var liveMap = elements.Where(e => !string.IsNullOrWhiteSpace(e.NotificationJurisdictions))
+            .GroupBy(e => e.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().NotificationJurisdictions!, StringComparer.OrdinalIgnoreCase);
+        var frozen = c.ReportedJurisdictions is null ? null
+            : Case.KeptInPlay(c.ReportedJurisdictions, keys.ToList(), Compliance.NotificationDeadlineService.Live(liveMap))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var byJurisdiction = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var e in elements.Where(e => !string.IsNullOrWhiteSpace(e.NotificationJurisdictions)))
             foreach (var j in e.NotificationJurisdictions!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

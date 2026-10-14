@@ -114,24 +114,62 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>
     /// WF-11: the jurisdictions in play when the case became reported (comma-separated codes; empty when none were),
     /// so a later change to a data element's jurisdictions in Administration doesn't reopen, re-judge or invent notices
-    /// for a case already reported. BUG-284: once set it stays when the case goes back to unreported (an element added that
-    /// brings a new jurisdiction, a notice removed), holding what's in play then, so today's settings don't come back in
-    /// full; only clearing every notice (the report was a mis-entry) empties it. Null for a case never reported, and for
-    /// one reported before it was recorded (back-filled at start-up). Derived from the notices and the reported time,
-    /// which are hashed; kept out of the canonical.
+    /// for a case already reported. BUG-284: followed by ";" and the data elements the case had then
+    /// ("NY,NJ;SSN,DL"), so what's in play is the jurisdictions kept plus those of elements added since, under today's
+    /// settings (<see cref="KeptInPlay"/>). It stays as it was when the case goes back to unreported (an element added
+    /// brings in a new regulator, a notice is removed), so today's settings don't come back in full, and removing the
+    /// element added by mistake puts the case back to reported. Only clearing every notice (a mis-entry) empties it. Null
+    /// for a case never reported, and for one reported before it was recorded (back-filled at start-up, without the
+    /// elements). Derived from the notices and the reported time, which are hashed; kept out of the canonical.
     /// </summary>
     public string? ReportedJurisdictions { get; set; }
 
-    /// <summary>WF-11: <see cref="ReportedJurisdictions"/> as codes; null when it isn't recorded.</summary>
-    public IReadOnlyList<string>? FrozenJurisdictions => ReportedJurisdictions is null ? null
-        : ReportedJurisdictions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    /// <summary>WF-11: the kept jurisdictions as codes; null when none are kept.</summary>
+    public IReadOnlyList<string>? FrozenJurisdictions => KeptJurisdictions(ReportedJurisdictions);
+
+    /// <summary>BUG-284: the data elements the case had when it was reported; null when that wasn't recorded.</summary>
+    public IReadOnlyList<string>? FrozenElementKeys => KeptElementKeys(ReportedJurisdictions);
 
     public const int MaxReportedJurisdictionsLength = 1000;
 
-    private void FreezeJurisdictions(IEnumerable<string>? inPlay) =>
-        ReportedJurisdictions = ReportedAtUtc is null && ReportedJurisdictions is null ? null
-            : string.Join(',', (inPlay ?? []).Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
+    private static string[] Codes(string part) =>
+        part.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>The jurisdictions part of a <see cref="ReportedJurisdictions"/> value.</summary>
+    public static IReadOnlyList<string>? KeptJurisdictions(string? kept) =>
+        kept is null ? null : Codes(kept.Split(';')[0]);
+
+    /// <summary>The data-elements part of a <see cref="ReportedJurisdictions"/> value, or null when it has none.</summary>
+    public static IReadOnlyList<string>? KeptElementKeys(string? kept) =>
+        kept?.IndexOf(';') is >= 0 and var i ? Codes(kept[(i + 1)..]) : null;
+
+    /// <summary>
+    /// WF-11 / BUG-284: the jurisdictions in play on a case holding <paramref name="kept"/>: those kept when it was reported,
+    /// plus those today's settings give the elements added since (<paramref name="live"/>). Without a kept value, today's
+    /// settings for every element. A kept value without its elements (from before they were recorded) counts the elements
+    /// in <paramref name="elementsIfUnknown"/> as the ones it had (the elements before an edit), or else just what was kept.
+    /// </summary>
+    public static IReadOnlyList<string> KeptInPlay(string? kept, IReadOnlyCollection<string> currentKeys,
+        Func<IEnumerable<string>, IReadOnlyList<string>> live, IEnumerable<string>? elementsIfUnknown = null)
+    {
+        if (KeptJurisdictions(kept) is not { } jurisdictions) return live(currentKeys);
+        if ((KeptElementKeys(kept) ?? elementsIfUnknown?.ToList()) is not { } had) return jurisdictions;
+        var added = currentKeys.Where(k => !had.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList();
+        return added.Count == 0 ? jurisdictions
+            : jurisdictions.Union(live(added), StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    // WF-11: set when the case becomes reported, with the elements it has then (BUG-284); left as it was otherwise.
+    private void FreezeJurisdictions(IEnumerable<string>? inPlay)
+    {
+        if (ReportedAtUtc is null) return;
+        var codes = string.Join(',', (inPlay ?? []).Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
+        var elements = string.Join(',', DataElements.Select(d => d.ElementKey).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(k => k, StringComparer.Ordinal));
+        var withElements = codes + ";" + elements;
+        ReportedJurisdictions = withElements.Length <= MaxReportedJurisdictionsLength ? withElements : codes;
+    }
     public DateTimeOffset? ContainedAtUtc { get; set; }
     /// <summary>
     /// BUG-165: why containment wasn't needed, when the case went past Containment without it (a deliberate, recorded

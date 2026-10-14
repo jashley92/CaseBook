@@ -849,8 +849,11 @@ public sealed class CaseService
                                                   || (r.ContributingFactors != null && r.ContributingFactors.ToLower().Contains(s))
                                                   || (r.WhatWorkedWell != null && r.WhatWorkedWell.ToLower().Contains(s))
                                                   || (r.OpportunitiesToImprove != null && r.OpportunitiesToImprove.ToLower().Contains(s)))
-                                             && (!unlinkedOnly || !((r.WhatHappened ?? "") + (r.ContributingFactors ?? "")
-                                                                    + (r.WhatWorkedWell ?? "") + (r.OpportunitiesToImprove ?? "")).Contains(link)));
+                                             // Each field on its own: SQL Server cuts a concatenation of nvarchar(4000)s at 4,000.
+                                             && (!unlinkedOnly || !((r.WhatHappened != null && r.WhatHappened.Contains(link))
+                                                                    || (r.ContributingFactors != null && r.ContributingFactors.Contains(link))
+                                                                    || (r.WhatWorkedWell != null && r.WhatWorkedWell.Contains(link))
+                                                                    || (r.OpportunitiesToImprove != null && r.OpportunitiesToImprove.Contains(link)))));
     }
 
     // BUG-273: of these cases (each matched only in text holding a link), the ones where the word shows in that text.
@@ -1320,7 +1323,8 @@ public sealed class CaseService
     // WF-11 / BUG-284: what's in play on a case: the jurisdictions kept since it was first reported when there are any,
     // else what its data elements bring in under today's settings.
     private static async Task<IReadOnlyList<string>> InPlayAsync(IAppDbContext db, Case c, CancellationToken ct) =>
-        c.FrozenJurisdictions ?? await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        Case.KeptInPlay(c.ReportedJurisdictions, c.DataElements.Select(d => d.ElementKey).ToList(),
+            Compliance.NotificationDeadlineService.Live(await Compliance.NotificationDeadlineService.ElementJurisdictionsAsync(db, ct)));
 
     private async Task<Case> LoadWithNoticesAsync(IAppDbContext db, Guid id, CancellationToken ct)
     {
@@ -1432,17 +1436,15 @@ public sealed class CaseService
         var now = _clock.UtcNow;
         // WF-11: what a reported case covered is what was in play when it was reported, not today's admin settings (an
         // element given another jurisdiction since would otherwise become a notice, under this user's name, that never happened).
-        var frozen = c.FrozenJurisdictions;   // BUG-284: kept once reported, also while a later element is outstanding
-        var keysBefore = c.DataElements.Select(d => d.ElementKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var before = frozen
-            ?? await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, keysBefore, ct);
+        var kept = c.ReportedJurisdictions;   // BUG-284: kept once reported, also while a later element is outstanding
+        var keysBefore = c.DataElements.Select(d => d.ElementKey).ToList();
+        var live = Compliance.NotificationDeadlineService.Live(await Compliance.NotificationDeadlineService.ElementJurisdictionsAsync(db, ct));
+        var before = Case.KeptInPlay(kept, keysBefore, live, elementsIfUnknown: keysBefore);
         c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, now);
-        // WF-65: and for a reported case only an element added in this edit brings in a jurisdiction; the elements it
-        // already had keep the ones frozen at notice time (editing the count must not reopen it after an admin change).
-        var after = frozen is null
-            ? await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct)
-            : frozen.Union(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db,
-                c.DataElements.Select(d => d.ElementKey).Where(k => !keysBefore.Contains(k)), ct), StringComparer.OrdinalIgnoreCase).ToList();
+        // WF-65: and for a reported case only an element added since it was reported brings in a jurisdiction; the elements
+        // it had keep the ones kept at notice time (editing the count must not reopen it after an admin change), and
+        // removing one added since takes its jurisdictions out again (BUG-284).
+        var after = Case.KeptInPlay(kept, c.DataElements.Select(d => d.ElementKey).ToList(), live, elementsIfUnknown: keysBefore);
         // BUG-104: a case reported as a whole (no notice per jurisdiction: reported before notices were per jurisdiction,
         // or when none was in play) covered the jurisdictions in play then, and no others. Those become notices at that
         // time, so one that comes into play now is outstanding until its regulator is notified.
@@ -1516,7 +1518,7 @@ public sealed class CaseService
         if (joined || namesCommander)   // someone already on it changes role only to take the seat being left
             c.Assign(toUserId, toDisplayName, seat, _user.UserId, now);
         if (leaving is not null && fromUserId != toUserId) c.Unassign(leaving.UserId, _user.UserId, now);
-        if (!joined && leaving is null) return false;
+        if (!joined && !namesCommander && leaving is null) return false;   // nothing changed
         await db.SaveChangesAsync(ct);
         if (joined) await _notifications.OnAssignedAsync(c, toUserId, toDisplayName, seat, _user.UserId, ct);
         return true;

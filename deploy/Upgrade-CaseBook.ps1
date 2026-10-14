@@ -208,7 +208,7 @@ function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
         if ($ex -and $ex.Response) { $resp = $ex.Response }
         else {
             $msg = if ($ex) { "$($ex.Status): $($ex.Message)" } else { $_.Exception.Message }
-            return @{ Status = $null; Detail = $msg; Location = $null; Body = '' }
+            return @{ Status = $null; Detail = $msg; Location = $null; Body = ''; Error = $(if ($ex) { [string]$ex.Status } else { '' }) }
         }
     }
     try {
@@ -511,7 +511,8 @@ if ($template) {
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 $reach = Invoke-SiteProbe $ProbeUrl
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
-if ($null -eq $reach.Status) {
+# A timeout is an answer too slow, not none: the current build may be starting cold (an idle pool) on a large database.
+if ($null -eq $reach.Status -and $reach.Error -ne 'Timeout') {
     throw ("This host can't reach the site at $ProbeUrl ($($reach.Detail)), so the upgrade couldn't tell whether the new " +
            "build started. Nothing has been changed. Pass -HealthUrl with an address this host can reach (the one you " +
            "open the site with, or http://localhost:<port>/ when the site has a localhost binding), then run it again.")

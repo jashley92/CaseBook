@@ -4,7 +4,7 @@ namespace IncidentManager.Application.Content;
 /// BUG-264: an administered deep-link template ("https://siem.example/case/{0}") filled with a value. Rendered with
 /// <c>string.Format</c>, a template holding any other brace (a Kibana or Sentinel URL often does) threw during render, and
 /// the error boundary replaced every case page; and nothing kept the link to http(s). A template is usable when it's an
-/// absolute http(s) address with one <c>{0}</c>; the value is escaped and put in place of it, and other braces stay as typed.
+/// absolute http(s) address with <c>{0}</c> in it; the value is escaped and put in its place (each one), and other braces stay as typed.
 /// </summary>
 public static class LinkTemplate
 {
@@ -17,7 +17,6 @@ public static class LinkTemplate
         var t = template.Trim();
         var at = t.IndexOf(Placeholder, StringComparison.Ordinal);
         if (at < 0) return "Put {0} where the value should go.";
-        if (t.IndexOf(Placeholder, at + Placeholder.Length, StringComparison.Ordinal) >= 0) return "Use {0} only once.";
         return Uri.TryCreate(t.Replace(Placeholder, "x", StringComparison.Ordinal), UriKind.Absolute, out var uri)
                && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
             ? null

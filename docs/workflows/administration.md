@@ -46,7 +46,7 @@ Two things to know: where no override exists, the form shows the value from your
 default when they set none), so what you see is what's in effect; and **clearing a number restores the file
 value**, so enter `0` to turn something off (an SLA target is the exception: blank turns it off). Numbers have
 limits (for example, scan intervals at most 744 hours), and a link template must be a full `https://` address
-with one `{0}`.
+with `{0}` where the value goes.
 
 ## Roles and AD groups
 

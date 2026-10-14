@@ -256,8 +256,8 @@ From a whole-codebase review (BUG-262 to BUG-326 in the tracker):
 - **Settings have limits.** Numbers that become times (scan intervals at most 744 hours, escalation and lead times a
   year, stale days 366, retention 100 years, the access-log coalesce window a day) are refused above that on the settings
   page and in a configuration bundle, and a value above it in `appsettings.Production.json` is read as the limit. A huge
-  interval meant as "never" used to stop the app. Link templates must be a full `https://` address with one `{0}`, and
-  the public base URL a full address. **Check:** a bundle exported from an older version with a larger value is refused
+  interval meant as "never" used to stop the app. Link templates must be a full `http://` or `https://` address with
+  `{0}` in it, and the public base URL a full address. **Check:** a bundle exported from an older version with a larger value is refused
   with the setting named; lower it in the bundle or on the source server.
 - **A case with many open tasks** can save its brief and close again (the next-steps snapshot was over the brief's limit).
 - **Upgrades check the probe first.** Before anything is stopped, the script asks the site at its probe address; with no
@@ -266,7 +266,8 @@ From a whole-codebase review (BUG-262 to BUG-326 in the tracker):
   they publish.
 - **Verify** flags an earlier version of a note, entry or brief set back as current in the database.
 - **Notices** are judged against the deadline kept when they were given everywhere (the case page and the Legal register
-  too), a case that goes back to unreported keeps the jurisdictions it was reported against, and the program report
+  too), a case that goes back to unreported keeps the jurisdictions it was reported against (removing an element added
+  by mistake reports it again), and the program report
   counts each notice in the quarter it was given.
 - **The SIEM stream** sends to each destination on its own, so a webhook that doesn't answer no longer delays or drops the
   Event Log's events, and critical events go first.

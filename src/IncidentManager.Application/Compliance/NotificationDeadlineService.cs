@@ -111,10 +111,8 @@ public sealed class NotificationDeadlineService
             Array.Empty<NotificationDeadlineStatus>(), null) { EarlierMaterialUtc = earlier };
         if (start is null) return empty;
 
-        // WF-11: a reported case is judged on what was in play when it was reported.
-        // BUG-284: and one that went back to unreported keeps it, with what came into play since.
-        var jurisdictions = Frozen(c.ReportedJurisdictions) is { } frozen ? frozen
-            : await JurisdictionsInPlayAsync(db, c.Keys, ct);
+        // WF-11 / BUG-284: what was in play when it was reported, and what elements added since bring in.
+        var jurisdictions = Case.KeptInPlay(c.ReportedJurisdictions, c.Keys, Live(await ElementJurisdictionsAsync(db, ct)));
         if (jurisdictions.Count == 0) return empty;
 
         var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
@@ -190,8 +188,20 @@ public sealed class NotificationDeadlineService
         return filled;
     }
 
-    private static IReadOnlyList<string>? Frozen(string? csv) =>
-        csv?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    /// <summary>Each data element's notification jurisdictions as administered now (key → "NY,NJ").</summary>
+    public static async Task<IReadOnlyDictionary<string, string>> ElementJurisdictionsAsync(IAppDbContext db, CancellationToken ct = default) =>
+        (await db.DataElements.AsNoTracking()
+            .Where(e => e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
+            .Select(e => new { e.Key, e.NotificationJurisdictions })
+            .ToListAsync(ct))
+        .GroupBy(e => e.Key, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(g => g.Key, g => g.First().NotificationJurisdictions!, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The jurisdictions <paramref name="elementJur"/> gives a set of data elements.</summary>
+    public static Func<IEnumerable<string>, IReadOnlyList<string>> Live(IReadOnlyDictionary<string, string> elementJur) =>
+        keys => keys.Where(elementJur.ContainsKey)
+            .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Select(j => j.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>
     /// WF-11: after a data element's jurisdictions change, the cases not yet reported that carry it are judged again: one
@@ -203,12 +213,13 @@ public sealed class NotificationDeadlineService
         if (elementKeys.Count == 0) return;
         var cases = await db.Cases.AsSplitQuery()   // S8733: two collections, one query each
             .Include(c => c.DataElements).Include(c => c.JurisdictionNotices)
-            // BUG-284: a case once reported keeps what was in play then; an admin change doesn't touch it.
-            .Where(c => c.ReportedAtUtc == null && c.ReportedJurisdictions == null && !c.IsArchived && c.JurisdictionNotices.Any()
+            .Where(c => c.ReportedAtUtc == null && !c.IsArchived && c.JurisdictionNotices.Any()
                         && c.DataElements.Any(d => elementKeys.Contains(d.ElementKey)))
             .ToListAsync(ct);
+        // BUG-284: a case once reported keeps what was in play then; only the elements added since follow the change.
+        var live = Live(await ElementJurisdictionsAsync(db, ct));
         foreach (var c in cases)
-            c.ReportedFromNotices(await JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct), actor, now);
+            c.ReportedFromNotices(Case.KeptInPlay(c.ReportedJurisdictions, c.DataElements.Select(d => d.ElementKey).ToList(), live), actor, now);
         if (cases.Count > 0) await db.SaveChangesAsync(ct);
     }
 
@@ -290,10 +301,7 @@ public sealed class NotificationDeadlineService
         IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,
         NotificationRuleSet ruleSet, DateTimeOffset now, bool reported, CancellationToken ct)
     {
-        var elementJur = await db.DataElements.AsNoTracking()
-            .Where(e => e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
-            .Select(e => new { e.Key, e.NotificationJurisdictions })
-            .ToDictionaryAsync(e => e.Key, e => e.NotificationJurisdictions!, ct);
+        var live = Live(await ElementJurisdictionsAsync(db, ct));
 
         var rows = await cases
             .Where(c => reported ? c.ReportedAtUtc != null : c.ReportedAtUtc == null) // a recorded report stops the clock
@@ -312,10 +320,7 @@ public sealed class NotificationDeadlineService
             var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
             if (start is null) continue; // obligation not triggered yet
 
-            var jurisdictions = Frozen(c.ReportedJurisdictions) is { } frozen ? frozen.ToList()   // WF-11, BUG-284
-                : c.Keys.Where(elementJur.ContainsKey)
-                    .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    .Select(j => j.ToUpperInvariant()).Distinct().ToList();
+            var jurisdictions = Case.KeptInPlay(c.ReportedJurisdictions, c.Keys, live);   // WF-11, BUG-284
             if (jurisdictions.Count == 0) continue;
 
             result[c.Id] = NotificationDeadlinePolicy.EvaluateByJurisdiction(start,

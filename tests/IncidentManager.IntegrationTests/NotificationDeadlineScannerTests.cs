@@ -268,6 +268,28 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Removing_an_element_added_by_mistake_puts_the_case_back_to_reported(/* BUG-284 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        var cases = NewCases(db);
+        await cases.MarkReportedAsync(id, _clock.UtcNow);   // NY notified
+        await SetJurisdictionsAsync("SSN", "NY,CA");        // an admin adds CA to SSN afterwards
+        db.DataElements.Add(new DataElement { Key = "DL", Label = "Driver's licence", NotificationJurisdictions = "NJ",
+            IsActive = true, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+
+        await cases.UpdateImpactAssessmentAsync(id, 500, ["SSN", "DL"], "NY");   // added by mistake: NJ comes into play
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().BeNull();
+
+        await NewCases(NewContext()).UpdateImpactAssessmentAsync(id, 500, ["SSN"], "NY");   // taken out again
+        var back = await NewDeadlines().EvaluateAsync(id);
+        back.ReportedAtUtc.Should().NotBeNull("NY, the only regulator in play when it was reported, was notified");
+        back.Statuses.Select(s => s.JurisdictionCode).Should().Equal("NY");
+    }
+
+    [Fact]
     public async Task A_notice_keeps_the_deadline_it_was_made_against(/* WF-77 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);   // material 10 h ago: due in 62 h under 72 h

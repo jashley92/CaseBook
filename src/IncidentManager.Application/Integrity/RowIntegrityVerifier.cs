@@ -151,24 +151,23 @@ public static class RowIntegrityVerifier
     /// it. (The other way round, a latest version not current, isn't flagged: it hides the text rather than changing it,
     /// and older releases could leave a lineage like that, so it would raise alarms nobody caused.)
     /// </summary>
+    // Read as a join from each later version to the one it replaced (later versions are few), not a load of every row:
+    // this runs with every check, about every ten minutes.
     private static async Task<RowMismatch?> LineageAsync(IAppDbContext db, CancellationToken ct) =>
-        Lineage(nameof(AnalystNote), await db.Notes.AsNoTracking()
-                .Select(n => new Link(n.Id, n.SupersedesNoteId, n.IsCurrent)).ToListAsync(ct))
-        ?? Lineage(nameof(TimelineEntry), await db.TimelineEntries.AsNoTracking()
-                .Select(e => new Link(e.Id, e.SupersedesEntryId, e.IsCurrent)).ToListAsync(ct))
-        ?? Lineage(nameof(CaseBrief), await db.CaseBriefs.AsNoTracking()
-                .Select(b => new Link(b.Id, b.SupersedesBriefId, b.IsCurrent)).ToListAsync(ct));
+        Lineage(nameof(AnalystNote), await (from later in db.Notes.AsNoTracking() where later.SupersedesNoteId != null
+                                            join earlier in db.Notes.AsNoTracking() on later.SupersedesNoteId equals (Guid?)earlier.Id
+                                            where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
+        ?? Lineage(nameof(TimelineEntry), await (from later in db.TimelineEntries.AsNoTracking() where later.SupersedesEntryId != null
+                                                 join earlier in db.TimelineEntries.AsNoTracking() on later.SupersedesEntryId equals (Guid?)earlier.Id
+                                                 where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
+        ?? Lineage(nameof(CaseBrief), await (from later in db.CaseBriefs.AsNoTracking() where later.SupersedesBriefId != null
+                                             join earlier in db.CaseBriefs.AsNoTracking() on later.SupersedesBriefId equals (Guid?)earlier.Id
+                                             where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct));
 
-    private sealed record Link(Guid Id, Guid? Supersedes, bool IsCurrent);
-
-    private static RowMismatch? Lineage(string type, List<Link> rows)
-    {
-        var replaced = rows.Where(r => r.Supersedes is not null).Select(r => r.Supersedes!.Value).ToHashSet();
-        return rows.FirstOrDefault(r => r.IsCurrent && replaced.Contains(r.Id)) is { } bad
-            ? new RowMismatch(type, bad.Id, null,
-                $"{type} {bad.Id} is marked current though a later version replaced it: changed outside CaseBook.")
-            : null;
-    }
+    private static RowMismatch? Lineage(string type, Guid replacedButCurrent) =>
+        replacedButCurrent == Guid.Empty ? null
+            : new RowMismatch(type, replacedButCurrent, null,
+                $"{type} {replacedButCurrent} is marked current though a later version replaced it: changed outside CaseBook.");
 
     private static RowMismatch Missing((string Type, string Id) key, ChainRecords recorded)
     {
