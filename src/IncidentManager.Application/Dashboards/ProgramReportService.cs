@@ -168,7 +168,31 @@ public sealed class ProgramReportService
 
     private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
         List<ActionRow> Actions, SlaTargets Targets, List<(Guid CaseId, DateTimeOffset At, SlaState State)> Notices, History History,
-        DateTimeOffset NowUtc, Func<DateTimeOffset, SlaTargets> TargetsAt);
+        DateTimeOffset NowUtc, Func<DateTimeOffset, SlaTargets> TargetsAt,
+        Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset? Before)>>? ReportedEdits = null)
+    {
+        /// <summary>
+        /// BUG-374: the reported time as the record stood at <paramref name="end"/> (every later change undone, from the
+        /// value its audit entry records as before), so a case made unreported again later (a new jurisdiction) or
+        /// reported again doesn't move a quarter already reported. Unreported then, a report recorded afterwards but
+        /// dated before the end (Legal often reports before it is entered) is that quarter's: the time it settled on.
+        /// </summary>
+        public DateTimeOffset? ReportedAt(CaseRow r, DateTimeOffset end)
+        {
+            if (ReportedEdits?.GetValueOrDefault(r.Id) is not { Count: > 0 } edits) return r.ReportedAtUtc;
+            var i = edits.FindIndex(e => e.At >= end);
+            if (i < 0) return r.ReportedAtUtc;
+            if (edits[i].Before is { } stood) return stood;
+            DateTimeOffset? settled = null;
+            for (var j = i; j < edits.Count; j++)
+            {
+                var after = j + 1 < edits.Count ? edits[j + 1].Before : r.ReportedAtUtc;
+                if (after is null) break;
+                settled = after;
+            }
+            return settled < end ? settled : null;
+        }
+    }
 
     /// <summary>
     /// WF-38: each case's phase, classification and severity changes, in order, so a quarter is figured as the record stood
@@ -276,7 +300,38 @@ public sealed class ProgramReportService
             targetsAt = history.At;
         }
         return new Loaded(rows, breachFirstAt, reviews, actions, current, notices, new History(phases, classes, severities), _clock.UtcNow,
-            targetsAt);
+            targetsAt, await ReportedEditsAsync(db, rows, ct));
+    }
+
+    /// <summary>BUG-374: each case's changes to its reported time (what it held before each), oldest first.</summary>
+    private static async Task<Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset? Before)>>> ReportedEditsAsync(IAppDbContext db,
+        List<CaseRow> rows, CancellationToken ct)
+    {
+        var keys = rows.Select(r => r.Id.ToString()).ToList();
+        var field = "\"" + nameof(Case.ReportedAtUtc) + "\"";
+        var edits = await db.AuditLog.AsNoTracking()
+            .Where(x => x.EntityType == nameof(Case) && x.Action == AuditAction.Update && x.BeforeJson != null
+                        && x.BeforeJson.Contains(field) && x.EntityId != null && keys.Contains(x.EntityId))
+            .Select(x => new { x.EntityId, x.AtUtc, x.Sequence, x.BeforeJson })
+            .ToListAsync(ct);
+        var map = new Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset? Before)>>();
+        foreach (var g in edits.GroupBy(x => x.EntityId!, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!Guid.TryParse(g.Key, out var id)) continue;
+            var list = new List<(DateTimeOffset At, DateTimeOffset? Before)>();
+            foreach (var x in g.OrderBy(x => x.Sequence))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(x.BeforeJson!);
+                    if (!doc.RootElement.TryGetProperty(nameof(Case.ReportedAtUtc), out var v)) continue;
+                    list.Add((x.AtUtc, v.ValueKind == JsonValueKind.String && v.TryGetDateTimeOffset(out var t) ? t : null));
+                }
+                catch (JsonException) { /* an entry it can't read is skipped */ }
+            }
+            if (list.Count > 0) map[id] = list;
+        }
+        return map;
     }
 
     /// <summary>
@@ -375,6 +430,8 @@ public sealed class ProgramReportService
         var (rows, breachAt, reviews, actions, targets) = (data.Rows, data.BreachAt, data.Reviews, data.Actions, data.Targets);
         var history = data.History;
         bool In(DateTimeOffset? t) => t is { } v && v >= start && v < end;
+        // BUG-374: reported as the record stood at the window's end.
+        var reportedAt = rows.Select(r => (r.DetectedAtUtc, Reported: data.ReportedAt(r, end))).ToList();
         // WF-38: as the record stood at the quarter's end.
         bool ClosedInQuarter(CaseRow r) => history.ClosedIn(r.Id, start, end, r.ClosedAtUtc);
         Classification? ClassAtEnd(CaseRow r) => history.ClassAt(r.Id, end, r.Classification);
@@ -450,8 +507,8 @@ public sealed class ProgramReportService
             TimeToResolve: Span(rows.Select(r => (r.DetectedAtUtc, r.ResolvedAtUtc))),
             Sla: [new(SlaClock.Detection, dMet, dMiss), new(SlaClock.Containment, cMet, cMiss), new(SlaClock.Resolution, rMet, rMiss)],
             BreachesOpened: breachAt.Values.Count(t => In(t)),
-            ReportedToRegulators: rows.Count(r => In(r.ReportedAtUtc)),
-            DetectToReport: Span(rows.Select(r => (r.DetectedAtUtc, r.ReportedAtUtc))),
+            ReportedToRegulators: reportedAt.Count(r => In(r.Reported)),
+            DetectToReport: Span(reportedAt),
             ReviewsRecorded: reviews.Count(r => In(r.At)),
             ActionsOpened: actions.Count(a => In(a.CreatedAtUtc)),
             ActionsCompleted: actions.Count(a => a.Status == ImprovementActionStatus.Completed && In(a.ClosedAtUtc)),

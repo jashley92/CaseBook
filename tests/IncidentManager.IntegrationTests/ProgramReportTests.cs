@@ -214,6 +214,74 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_case_made_unreported_or_reported_again_later_keeps_its_past_quarter(/* BUG-374 */)
+    {
+        Guid id;
+        _clock.UtcNow = Apr(14);
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var e = Case.Open(2026, 7, "R", "Reported", Classification.Breach, Severity.High, CaseOrigin.InternalDetection, "ic", Apr(2));
+            e.DetectedAtUtc = Apr(2);
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+            id = e.Id;
+            e.RecordNotice("NY", Apr(4), "legal", Apr(14));
+            e.ReportedFromNotices(["NY"], "legal", Apr(14));   // reported in Q2, two days after detection
+            await db.SaveChangesAsync();
+        }
+        var before = (await Service().BuildAsync(Q2)).Current;
+        before.ReportedToRegulators.Should().Be(1);
+        before.DetectToReport.Should().Be(new Interval(48, 48, 1));
+
+        // In Q3 a new jurisdiction comes into play (unreported again), and is notified later still.
+        _clock.UtcNow = Apr(20).AddMonths(3);
+        await using (var db = new AppDbContext(Options()))
+        {
+            var e = await db.Cases.Include(c => c.JurisdictionNotices).SingleAsync(c => c.Id == id);
+            e.ReportedFromNotices(["NY", "CA"], "legal", _clock.UtcNow);
+            await db.SaveChangesAsync();
+            (await Service().BuildAsync(Q2)).Current.ReportedToRegulators.Should().Be(1, "it was reported in Q2");
+            _clock.UtcNow = Apr(25).AddMonths(3);
+            e.RecordNotice("CA", Apr(22).AddMonths(3), "legal", _clock.UtcNow);
+            e.ReportedFromNotices(["NY", "CA"], "legal", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+
+        var after = await Service().BuildAsync(new ProgramPeriod(2026, 3));
+        after.Previous.ReportedToRegulators.Should().Be(1);
+        after.Previous.DetectToReport.Should().Be(before.DetectToReport);
+        after.Current.ReportedToRegulators.Should().Be(1, "reported again in Q3");
+    }
+
+    [Fact]
+    public async Task A_report_entered_after_the_quarter_but_dated_in_it_counts_there(/* BUG-374 */)
+    {
+        _clock.UtcNow = Apr(2);
+        Guid id;
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var e = Case.Open(2026, 8, "L", "Late entry", Classification.Breach, Severity.High, CaseOrigin.InternalDetection, "ic", Apr(2));
+            e.DetectedAtUtc = Apr(2);
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+            id = e.Id;
+        }
+        _clock.UtcNow = Apr(10).AddMonths(3);   // entered in Q3, dated 30 June
+        await using (var db = new AppDbContext(Options()))
+        {
+            var e = await db.Cases.SingleAsync(c => c.Id == id);
+            e.MarkReported(Apr(30).AddMonths(2), "legal", _clock.UtcNow, ["NY"]);
+            await db.SaveChangesAsync();
+        }
+
+        var r = await Service().BuildAsync(new ProgramPeriod(2026, 3));
+        r.Previous.ReportedToRegulators.Should().Be(1);
+        r.Current.ReportedToRegulators.Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_review_recorded_after_the_quarter_does_not_change_it(/* REV-59 */)
     {
         await SeedAsync();
