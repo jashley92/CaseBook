@@ -360,6 +360,7 @@ else
     private bool _editingReview;
     private string? _reviewStamp;
     private readonly Dictionary<string, string> _reviewSeed = new();
+    private bool _reviewSeedNoActions;
     private bool _noActions;
 
     private sealed class ActionForm
@@ -403,6 +404,23 @@ else
         _view = await Lessons.GetForCaseAsync(CaseId);
         _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
         _templates ??= await ReportTemplates.ListActiveAsync();
+        RebaseReviewStamp();
+    }
+
+    // BUG-376: logging or reopening an action (this user's or a collaborator's) clears "no improvement actions identified"
+    // server-side, which changes the review's stamp. With the open editor's seed text unchanged and an active action now
+    // logged, that's the action's own side effect, not someone's review edit: take the new stamp (and the cleared flag)
+    // so Save isn't refused as "someone else saved". Any other change still conflicts.
+    private void RebaseReviewStamp()
+    {
+        if (!_editingReview || _view?.Review is not { } r || r.Stamp == _reviewStamp) return;
+        var sideEffect = _reviewSeedNoActions && !r.NoActionsIdentified
+            && _view.Actions.Any(a => a.Status != ImprovementActionStatus.NotPursued)
+            && Fields.All(f => (f.Get(r) ?? "") == _reviewSeed.GetValueOrDefault(f.Key, ""));
+        if (!sideEffect) return;
+        _reviewStamp = r.Stamp;
+        _reviewSeedNoActions = false;
+        _noActions = false;
     }
 
     // Reconcile this tab's EasyMDE editors against what's on screen: the add-action Details composer, the
@@ -499,7 +517,7 @@ else
         _reviewStamp = r?.Stamp;
         _reviewSeed.Clear();
         foreach (var f in Fields) _reviewSeed[f.Key] = r is null ? "" : f.Get(r) ?? "";
-        _noActions = r?.NoActionsIdentified ?? false;
+        _noActions = _reviewSeedNoActions = r?.NoActionsIdentified ?? false;
         _editingReview = true;
     }
 
