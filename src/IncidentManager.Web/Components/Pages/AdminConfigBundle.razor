@@ -210,6 +210,7 @@
             var result = await Config.ImportAsync(_incoming, _sourceTrusted);
             Toasts.Success($"Import applied: {result.Added} added, {result.Updated} updated.");
             if (!result.RolesInEffect) Toasts.Error(IncidentManager.Application.Admin.RoleService.NotInEffectMessage);
+            if (result.SettingsReloadError is { } reload) Toasts.Error(SettingsReloads.NotInEffectMessage(reload));   // BUG-270
             if (result.TemplatesNotPlacedMessage is { } notPlaced) Toasts.Error(notPlaced);   // BUG-238
             ClearUpload();
             await LoadAsync();

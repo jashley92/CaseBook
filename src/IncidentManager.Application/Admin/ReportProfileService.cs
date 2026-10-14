@@ -59,7 +59,9 @@ public sealed class ReportProfileService
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A profile name is required.");
-        if (await db.ReportProfiles.AnyAsync(p => p.Name == name, ct))
+#pragma warning disable CA1304, CA1311, CA1862 // BUG-269: LOWER() on both sides, so SQLite matches as SQL Server does
+        if (await db.ReportProfiles.AnyAsync(p => p.Name.ToLower() == name.ToLower(), ct))
+#pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
         var profile = new ReportProfile { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
@@ -79,7 +81,9 @@ public sealed class ReportProfileService
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A profile name is required.");
-        if (await db.ReportProfiles.AnyAsync(p => p.Name == name && p.Id != id, ct))
+#pragma warning disable CA1304, CA1311, CA1862 // BUG-269: LOWER() on both sides, so SQLite matches as SQL Server does
+        if (await db.ReportProfiles.AnyAsync(p => p.Name.ToLower() == name.ToLower() && p.Id != id, ct))
+#pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
         await EnsureTemplateAsync(db, input.TemplateId, ct);

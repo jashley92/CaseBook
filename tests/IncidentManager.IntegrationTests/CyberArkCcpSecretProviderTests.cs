@@ -155,4 +155,17 @@ public sealed class CyberArkCcpSecretProviderTests
         // CCP now errors; FailClosed=false → serve the stale-but-real cached value, not null.
         (await provider.ResolveAsync("@cyberark:Safe=A;Object=B")).Should().Be("good");
     }
+
+    [Fact]
+    public async Task A_failure_isnt_fetched_again_straight_away()
+    {
+        // BUG-292: every caller during an outage made its own fetch, one at a time under the lock, each waiting its timeout.
+        var handler = new StubHandler(_ => Json(HttpStatusCode.InternalServerError, "{\"ErrorMsg\":\"down\"}"));
+        var provider = Provider(handler);
+
+        (await provider.ResolveAsync("@cyberark:Safe=A;Object=B")).Should().BeNull();
+        (await provider.ResolveAsync("@cyberark:Safe=A;Object=B")).Should().BeNull();
+
+        handler.Calls.Should().Be(1);
+    }
 }

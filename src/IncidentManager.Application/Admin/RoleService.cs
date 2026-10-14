@@ -79,6 +79,7 @@ public sealed class RoleService
         string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<RoleService>(_user, _siem);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-268: the check and the save together
         using var db = _factory.CreateDbContext();
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id, ct)
                    ?? throw new InvalidOperationException("That role no longer exists. Reload the page and try again.");
@@ -104,6 +105,7 @@ public sealed class RoleService
     public async Task DeleteRoleAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<RoleService>(_user, _siem);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-268: the check and the save together
         using var db = _factory.CreateDbContext();
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id, ct)
                    ?? throw new InvalidOperationException("That role no longer exists. Reload the page and try again.");
@@ -148,7 +150,9 @@ public sealed class RoleService
                    ?? throw new InvalidOperationException($"No role named '{roleName}'. Reload the page and choose another.");
 #pragma warning restore CA1304, CA1311, CA1862
         roleName = role.Name;   // BUG-18: store the role's own spelling
-        if (await db.RoleMappings.AnyAsync(m => m.AdGroup == adGroup && m.RoleName == roleName, ct))
+#pragma warning disable CA1304, CA1311, CA1862 // BUG-269: LOWER() on both sides, so SQLite matches as SQL Server does
+        if (await db.RoleMappings.AnyAsync(m => m.AdGroup.ToLower() == adGroup.ToLower() && m.RoleName == roleName, ct))
+#pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException("That mapping already exists.");
 
         db.RoleMappings.Add(new AdGroupRoleMapping
@@ -166,6 +170,7 @@ public sealed class RoleService
     public async Task RemoveMappingAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<RoleService>(_user, _siem);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-268: the check and the save together
         using var db = _factory.CreateDbContext();
         var mapping = await db.RoleMappings.FirstOrDefaultAsync(m => m.Id == id, ct);
         if (mapping is null) return;

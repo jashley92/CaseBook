@@ -63,6 +63,9 @@ public class CaseTemplateStep : Entity, IHashableEntity
     /// <summary>Hours after the template is applied by which the seeded action item is due; null = no due date.</summary>
     public int? DueOffsetHours { get; set; }
 
+    /// <summary>BUG-267: a year. Beyond about 70 million hours the due date couldn't be computed and applying the playbook threw.</summary>
+    public const int MaxDueOffsetHours = 24 * 366;
+
     /// <summary>INV-28: the kind of response work the seeded task is (General when the step isn't tied to a phase).</summary>
     public TaskKind Kind { get; set; } = TaskKind.General;
 

@@ -236,6 +236,16 @@ public sealed partial class ConfigBundleService
             if (r.WindowHours is <= 0 or > NotificationRuleService.MaxWindowHours)
                 problems.Add($"Notification rule {code}'s window must be 1 to {NotificationRuleService.MaxWindowHours} hours (it's {r.WindowHours}).");
         }
+        // BUG-267: playbook steps and gates get the pages' rules too.
+        foreach (var t in incoming.CaseTemplates)
+            foreach (var s in t.Steps)
+            {
+                if (string.IsNullOrWhiteSpace(s.Title)) problems.Add($"Playbook \"{t.Name}\" has a step with no title.");
+                if (s.DueOffsetHours is < 0 or > CaseTemplateStep.MaxDueOffsetHours)
+                    problems.Add($"Playbook \"{t.Name}\" step \"{s.Title}\": the due time must be 0 to {CaseTemplateStep.MaxDueOffsetHours:N0} hours.");
+            }
+        foreach (var g in incoming.StageGates.Where(g => g.CommentaryMinLength > StageGate.MaxCommentaryMinLength))
+            problems.Add($"Stage gate \"{g.Name}\" asks for {g.CommentaryMinLength:N0} characters of commentary; the most is {StageGate.MaxCommentaryMinLength:N0}.");
         if ((incoming.CaseOutcomes ?? []).Any(o => string.IsNullOrWhiteSpace(o.Label)))
             problems.Add("Every case outcome needs a label.");
         if (incoming.DataElements.Any(d => string.IsNullOrWhiteSpace(d.Label)))
@@ -304,9 +314,12 @@ public sealed partial class ConfigBundleService
     {
         static IEnumerable<string> Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key) =>
             (items ?? []).Select(key).OfType<string>().GroupBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
                 .Select(g => g.Distinct(StringComparer.Ordinal).ToList())
-                .Where(names => names.Count > 1)
-                .Select(names => $"{section} \"{string.Join("\" and \"", names)}\" differ only in case.");
+                // BUG-265: the same name twice is as ambiguous as two differing in case; both land on one row.
+                .Select(names => names.Count > 1
+                    ? $"{section} \"{string.Join("\" and \"", names)}\" differ only in case."
+                    : $"{section}: \"{names[0]}\" appears more than once.");
         var problems = Check("Case templates", bundle.CaseTemplates, t => t.Name)
             .Concat(Check("Stage gates", bundle.StageGates, g => g.Name))
             .Concat(Check("Report profiles", bundle.ReportProfiles, p => p.Name))
@@ -334,6 +347,7 @@ public sealed partial class ConfigBundleService
     {
         // S-18: an import can grant roles and AD mappings, so it's asserted here, not just by the Administer page.
         AdminActionPermissions.Require<ConfigBundleService>(_user, _siem);
+        using var guard = await Admin.GuardGate.EnterAsync(ct);   // BUG-268: its last-admin and outcome checks, with the save
         if (envelope is not { Format: ConfigBundleJson.FormatTag, Bundle: not null }
             || envelope.SchemaVersion > ConfigBundleJson.CurrentSchemaVersion)
             throw new InvalidOperationException("This file is not a CaseBook configuration bundle this version can import.");
@@ -489,7 +503,7 @@ public sealed partial class ConfigBundleService
             if (existing is null)
             {
                 var created = new StageGate { Trigger = trigger, IsActive = g.IsActive, Name = g.Name,
-                    Description = g.Description, CommentaryMinLength = Math.Max(0, g.CommentaryMinLength),
+                    Description = g.Description, CommentaryMinLength = StageGate.ClampCommentary(g.CommentaryMinLength),
                     CreatedBy = actor, CreatedAtUtc = now };
                 created.Requirements = g.Requirements.Select(r => NewRequirement(created.Id, r)).ToList();
                 db.StageGates.Add(created);
@@ -500,7 +514,7 @@ public sealed partial class ConfigBundleService
             {
                 existing.Name = g.Name;   // BUG-240: as for case templates
                 existing.Trigger = trigger; existing.IsActive = g.IsActive; existing.Description = g.Description;
-                existing.CommentaryMinLength = Math.Max(0, g.CommentaryMinLength);
+                existing.CommentaryMinLength = StageGate.ClampCommentary(g.CommentaryMinLength);
                 existing.ModifiedBy = actor; existing.ModifiedAtUtc = now;
                 db.StageGateRequirements.RemoveRange(existing.Requirements);
                 existing.Requirements.Clear();
@@ -699,7 +713,8 @@ public sealed partial class ConfigBundleService
         foreach (var mapping in addedMappings)
             _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
 
-        return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true, notPlaced);
+        return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true, notPlaced,
+            changedSettings.Count > 0 ? _reloader?.LastError : null);   // BUG-270
     }
 
     /// <summary>

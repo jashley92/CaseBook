@@ -113,7 +113,7 @@
                                         }
                                     </select>
                                 </td>
-                                <td><input type="number" min="0" class="form-control form-control-sm" aria-label="Step @(idx + 1) due (hrs)" @bind="step.DueOffsetHours" /></td>
+                                <td><input type="number" min="0" max="@CaseTemplateStep.MaxDueOffsetHours" class="form-control form-control-sm" aria-label="Step @(idx + 1) due (hrs)" @bind="step.DueOffsetHours" /></td>
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveStep(idx)">Remove</button></td>
                             </tr>
                         }

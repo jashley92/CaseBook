@@ -115,8 +115,7 @@ public sealed class AdminSettingsService
     private void ThrowIfNotInEffect()
     {
         if (_reloader.LastError is { } error)
-            throw new InvalidOperationException("Saved, but not in effect yet: CaseBook couldn't reload settings from the database " +
-                $"({error}), so the earlier values still apply. Save again once the database is reachable, or restart the app.");
+            throw new InvalidOperationException(SettingsReloads.NotInEffectMessage(error));
     }
 
     /// <summary>

@@ -87,7 +87,7 @@ public sealed class EmailTemplateAdminService
         await UpsertOrClearAsync(db, EmailTemplateCatalog.SubjectKey(def.Id), subject, def.DefaultSubject, ct);
         await UpsertOrClearAsync(db, EmailTemplateCatalog.BodyKey(def.Id), body, def.DefaultBodyHtml, ct);
         await db.SaveChangesAsync(ct);
-        _reloader.Reload();
+        _reloader.ReloadOrThrow();   // BUG-270
     }
 
     /// <summary>Removes both overrides so the template reverts to its built-in default. Audited; no-op if unset.</summary>
@@ -102,7 +102,7 @@ public sealed class EmailTemplateAdminService
         if (rows.Count == 0) return;
         db.AppSettings.RemoveRange(rows);
         await db.SaveChangesAsync(ct);
-        _reloader.Reload();
+        _reloader.ReloadOrThrow();   // BUG-270
     }
 
     // Stores the value, unless it equals the built-in default (then any existing override row is removed).

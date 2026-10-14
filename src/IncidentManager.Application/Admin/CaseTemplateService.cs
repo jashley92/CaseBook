@@ -74,7 +74,9 @@ public sealed class CaseTemplateService
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
-        if (await db.CaseTemplates.AnyAsync(t => t.Name == name, ct))
+#pragma warning disable CA1304, CA1311, CA1862 // BUG-269: LOWER() on both sides, so SQLite matches as SQL Server does
+        if (await db.CaseTemplates.AnyAsync(t => t.Name.ToLower() == name.ToLower(), ct))
+#pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.");
 
         var template = new CaseTemplate { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
@@ -98,7 +100,9 @@ public sealed class CaseTemplateService
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
-        if (await db.CaseTemplates.AnyAsync(t => t.Name == name && t.Id != id, ct))
+#pragma warning disable CA1304, CA1311, CA1862 // BUG-269: LOWER() on both sides, so SQLite matches as SQL Server does
+        if (await db.CaseTemplates.AnyAsync(t => t.Name.ToLower() == name.ToLower() && t.Id != id, ct))
+#pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.");
 
         template.Name = name;
@@ -139,6 +143,8 @@ public sealed class CaseTemplateService
         {
             var title = (s.Title ?? "").Trim();
             if (string.IsNullOrWhiteSpace(title)) continue; // drop blank rows the editor may leave behind
+            if (s.DueOffsetHours > CaseTemplateStep.MaxDueOffsetHours)   // BUG-267
+                throw new ArgumentException($"Step \"{title}\": the due time can be at most {CaseTemplateStep.MaxDueOffsetHours:N0} hours (a year) after the playbook is applied.");
             t.Steps.Add(new CaseTemplateStep
             {
                 TemplateId = t.Id,

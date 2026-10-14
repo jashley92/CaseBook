@@ -132,7 +132,7 @@
                 <label class="form-label mb-1" for="gate-min-length">Required rationale length</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text">Minimum characters</span>
-                    <input id="gate-min-length" class="form-control" type="number" min="0" step="1" @bind="_edit.CommentaryMinLength" />
+                    <input id="gate-min-length" class="form-control" type="number" min="0" max="@StageGate.MaxCommentaryMinLength" step="1" @bind="_edit.CommentaryMinLength" />
                 </div>
                 <div class="form-text">0 means no minimum. Otherwise the analyst's <strong>reason</strong> for the transition, and any <strong>override justification</strong>, must be at least this long. The reason is kept on the tamper-evident gate record.</div>
             </div>

@@ -311,13 +311,14 @@ public sealed class ApiTokenTests : IDisposable
     /// <summary>Maps the group "SOC-Commanders" to Analyst + IncidentCommander and "SOC-Analysts" to Analyst.</summary>
     private sealed class GroupRoleDirectory : IRoleDirectory
     {
+        public bool CommandersMapped { get; set; } = true;
         public IReadOnlySet<Permission> PermissionsForRoles(IEnumerable<string> roleNames) => RoleDefinitions.PermissionsForRoleNames(roleNames);
         public IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups)
         {
             var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var g in adGroups)
             {
-                if (g == "S-1-5-21-COMMANDERS") { set.Add("Analyst"); set.Add("IncidentCommander"); }
+                if (g == "S-1-5-21-COMMANDERS" && CommandersMapped) { set.Add("Analyst"); set.Add("IncidentCommander"); }
                 if (g == "S-1-5-21-ANALYSTS") set.Add("Analyst");
             }
             return set;
@@ -368,6 +369,44 @@ public sealed class ApiTokenTests : IDisposable
         adDown = false;
         account = new(false, ["S-1-5-21-ANALYSTS"]);
         (await svc.AuthenticateAsync(token)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_removed_AD_mapping_applies_to_a_personal_token_at_once()
+    {
+        // BUG-266: the owner's resolved roles were cached for 15 minutes (a day while AD was down), so a group→role mapping
+        // an administrator removed kept granting through the token after signed-in sessions had lost it.
+        await using var db = NewContext();
+        var groups = new GroupRoleDirectory();
+        var lookups = 0;
+        var ad = new AdTokenOwnerCheck(groups, _clock, lookup: _ => { lookups++; return new(true, ["S-1-5-21-COMMANDERS", "S-1-5-21-ANALYSTS"]); });
+        var owner = Analyst();
+        owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
+        var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(), users: new MirrorDirectory(), owners: ad);
+        var token = (await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30))).Plaintext;
+        (await svc.AuthenticateAsync(token))!.Permissions.Should().Contain(Permission.ApproveReports);
+
+        groups.CommandersMapped = false;
+        (await svc.AuthenticateAsync(token))!.Permissions.Should().NotContain(Permission.ApproveReports);
+        lookups.Should().Be(1, "the directory's answer (the groups) is still reused");
+    }
+
+    [Fact]
+    public async Task An_unreachable_directory_isnt_asked_again_for_a_minute()
+    {
+        // BUG-292: a failure wasn't remembered, so every call during an outage waited out its own lookup.
+        var lookups = 0;
+        var ad = new AdTokenOwnerCheck(new GroupRoleDirectory(), _clock, lookup: _ =>
+        {
+            lookups++;
+            throw new InvalidOperationException("The server is not operational.");
+        });
+        (await ad.CheckRecipientAsync("analyst1")).Should().BeNull();
+        (await ad.CheckRecipientAsync("analyst1")).Should().BeNull();
+        lookups.Should().Be(1);
+        _clock.UtcNow += AdTokenOwnerCheck.RetryAfterFailure;
+        (await ad.CheckRecipientAsync("analyst1")).Should().BeNull();
+        lookups.Should().Be(2);
     }
 
     public void Dispose() => _connection.Dispose();

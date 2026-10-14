@@ -853,8 +853,7 @@ else
     {
         if (!Ui.IsIocLike(e.Type) || string.IsNullOrWhiteSpace(e.Value)) return null;
         var template = Config["ExternalLinks:VirusTotalUrlTemplate"];
-        if (string.IsNullOrWhiteSpace(template)) return null;
-        return string.Format(template, Uri.EscapeDataString(e.Value));
+        return IncidentManager.Application.Content.LinkTemplate.Fill(template, e.Value);   // BUG-264
     }
 
     private async Task AddRelationship()

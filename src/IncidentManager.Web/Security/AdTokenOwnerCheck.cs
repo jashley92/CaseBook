@@ -26,7 +26,13 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     private readonly IClock _clock;
     private readonly ILogger<AdTokenOwnerCheck>? _log;
     private readonly Func<string, AccountGroups?> _lookup;
-    private readonly ConcurrentDictionary<string, (OwnerAccess Access, DateTimeOffset At)> _answers = new(StringComparer.OrdinalIgnoreCase);
+    // BUG-266: what the directory said (enabled, groups), not the roles: the roles are resolved from the groups on each call,
+    // so a mapping removed in Administration applies at once, as it does to signed-in sessions. Null: no such account.
+    private readonly ConcurrentDictionary<string, (AccountGroups? Account, DateTimeOffset At)> _answers = new(StringComparer.OrdinalIgnoreCase);
+    // BUG-292: when the directory last failed for an account; it isn't asked again for a minute, so every call during an
+    // outage doesn't wait out its own timeout.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _failedAt = new(StringComparer.OrdinalIgnoreCase);
+    public static readonly TimeSpan RetryAfterFailure = TimeSpan.FromMinutes(1);
 
     public AdTokenOwnerCheck(IRoleDirectory roles, IClock clock, ILogger<AdTokenOwnerCheck>? log = null,
         Func<string, AccountGroups?>? lookup = null)
@@ -45,22 +51,31 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     {
         var now = _clock.UtcNow;
         var known = _answers.TryGetValue(ownerUserId, out var last);
-        if (known && now - last.At < Fresh) return last.Access;
+        if (known && now - last.At < Fresh) return Access(last.Account);
+        if (_failedAt.TryGetValue(ownerUserId, out var failed) && now - failed < RetryAfterFailure)
+            return Unreachable(known, last, now, failOpen);
         try
         {
             var account = await Task.Run(() => _lookup(ownerUserId), ct);
-            var access = account is null
-                ? new OwnerAccess(false, NoRoles)
-                : new OwnerAccess(account.Enabled, _roles.RolesForGroups(Candidates(account.GroupSids)));
-            _answers[ownerUserId] = (access, now);
-            return access;
+            _answers[ownerUserId] = (account, now);
+            _failedAt.TryRemove(ownerUserId, out _);
+            return Access(account);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _log?.LogWarning(ex, "Couldn't check an API token's owner in Active Directory.");
-            return known && now - last.At < LastKnownLimit ? last.Access : failOpen ? null : new OwnerAccess(false, NoRoles);
+            _failedAt[ownerUserId] = now;
+            return Unreachable(known, last, now, failOpen);
         }
     }
+
+    private OwnerAccess Access(AccountGroups? account) => account is null
+        ? new OwnerAccess(false, NoRoles)
+        : new OwnerAccess(account.Enabled, _roles.RolesForGroups(Candidates(account.GroupSids)));
+
+    // The directory can't be asked: the last answer for up to a day, then refused (or, for a feed recipient, not known).
+    private OwnerAccess? Unreachable(bool known, (AccountGroups? Account, DateTimeOffset At) last, DateTimeOffset now, bool failOpen) =>
+        known && now - last.At < LastKnownLimit ? Access(last.Account) : failOpen ? null : new OwnerAccess(false, NoRoles);
 
     // The same names a sign-in matches mappings against: the SID, and "DOMAIN\Group" and "Group".
     private static IEnumerable<string> Candidates(IEnumerable<string> groupSids) =>

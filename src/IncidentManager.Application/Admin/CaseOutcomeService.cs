@@ -76,6 +76,7 @@ public sealed class CaseOutcomeService
     public async Task SaveAsync(IReadOnlyList<CaseOutcomeRow> rows, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<CaseOutcomeService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-268: the check and the save together
         if (rows.Count == 0) throw new ArgumentException("Keep at least one outcome active, or a case can't be closed.");
         var labels = new List<string>(rows.Count);
         foreach (var r in rows)
@@ -132,6 +133,7 @@ public sealed class CaseOutcomeService
     public async Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<CaseOutcomeService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-268: the check and the save together
         using var db = _factory.CreateDbContext();
         var o = await db.CaseOutcomes.FirstOrDefaultAsync(x => x.Id == id, ct)
             ?? throw new InvalidOperationException("That outcome no longer exists. Reload the page and try again.");
@@ -148,6 +150,7 @@ public sealed class CaseOutcomeService
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<CaseOutcomeService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-268: the check and the save together
         using var db = _factory.CreateDbContext();
         var o = await db.CaseOutcomes.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (o is null) return;

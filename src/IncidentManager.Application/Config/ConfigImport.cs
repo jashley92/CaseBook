@@ -30,8 +30,10 @@ public sealed record ConfigVerification(
 /// <summary>Counts applied by an import, per outcome.</summary>
 /// <param name="RolesInEffect">BUG-193: false when the import changed roles or mappings that the role directory couldn't
 /// reload yet (it keeps retrying).</param>
+/// <param name="SettingsReloadError">BUG-270: why the imported settings aren't in effect yet (the reload couldn't read
+/// them), or null.</param>
 public sealed record ConfigImportResult(int Added, int Updated, int Unchanged, bool RolesInEffect = true,
-    IReadOnlyList<string>? TemplatesNotPlaced = null)
+    IReadOnlyList<string>? TemplatesNotPlaced = null, string? SettingsReloadError = null)
 {
     public int Changed => Added + Updated;
 

@@ -64,6 +64,7 @@ public sealed class StageGateService
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A gate name is required.");
+        await GuardUniqueNameAsync(db, name, excludeId: null, ct);
         await GuardSingleActiveAsync(db, input.Trigger, input.IsActive, excludeId: null, ct);
 
         var gate = new StageGate { Trigger = input.Trigger, Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
@@ -87,6 +88,7 @@ public sealed class StageGateService
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A gate name is required.");
+        await GuardUniqueNameAsync(db, name, excludeId: id, ct);
         await GuardSingleActiveAsync(db, input.Trigger, input.IsActive, excludeId: id, ct);
 
         gate.Trigger = input.Trigger;
@@ -125,11 +127,23 @@ public sealed class StageGateService
                 $"Another active gate already governs '{StageGateTriggers.Label(trigger)}'. Deactivate it first.");
     }
 
+    // BUG-265: the config bundle matches gates by name, so two gates sharing one (in any case) were imported onto one row.
+    private static async Task GuardUniqueNameAsync(IAppDbContext db, string name, Guid? excludeId, CancellationToken ct)
+    {
+#pragma warning disable CA1304, CA1311, CA1862 // EF translates ToLower() to SQL LOWER(); the culture overloads don't translate.
+        var lower = name.ToLower();
+        if (await db.StageGates.AnyAsync(g => g.Name.ToLower() == lower && (excludeId == null || g.Id != excludeId), ct))
+#pragma warning restore CA1304, CA1311, CA1862
+            throw new InvalidOperationException($"Another gate is already called \"{name}\". Give this one a different name.");
+    }
+
     private static void ApplyContent(StageGate g, StageGateInput input)
     {
         g.Description = Trim(input.Description);
         g.IsActive = input.IsActive;
-        g.CommentaryMinLength = Math.Max(0, input.CommentaryMinLength);
+        if (input.CommentaryMinLength > StageGate.MaxCommentaryMinLength)   // BUG-267
+            throw new ArgumentException($"The commentary minimum can be at most {StageGate.MaxCommentaryMinLength:N0} characters: an override justification holds no more.");
+        g.CommentaryMinLength = StageGate.ClampCommentary(input.CommentaryMinLength);
 
         var order = 0;
         foreach (var r in input.Requirements ?? [])

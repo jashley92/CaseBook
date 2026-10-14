@@ -105,7 +105,7 @@ public sealed class TaxonomyAdminService
             if (existing is null) return;
             db.AppSettings.Remove(existing);
             await db.SaveChangesAsync(ct);
-            _reloader.Reload();
+            _reloader.ReloadOrThrow();   // BUG-270
             return;
         }
 
@@ -114,7 +114,7 @@ public sealed class TaxonomyAdminService
 
         Upsert(db, key, trimmed);
         await db.SaveChangesAsync(ct);
-        _reloader.Reload();
+        _reloader.ReloadOrThrow();   // BUG-270
     }
 
     /// <summary>
@@ -183,7 +183,7 @@ public sealed class TaxonomyAdminService
         if (changed)
         {
             await db.SaveChangesAsync(ct);
-            _reloader.Reload();
+            _reloader.ReloadOrThrow();   // BUG-270
         }
     }
 

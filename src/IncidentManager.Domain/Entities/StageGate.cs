@@ -28,6 +28,13 @@ public class StageGate : AuditableEntity, IHashableEntity
     /// the <see cref="GatePassage"/> — a deliberate, defensible record of the analyst's reasoning.</summary>
     public int CommentaryMinLength { get; set; }
 
+    /// <summary>BUG-267: the most a gate can ask for: an override justification is kept in 2,000 characters, so a longer
+    /// minimum made an overridden move impossible.</summary>
+    public const int MaxCommentaryMinLength = 2000;
+
+    /// <summary>The minimum as stored: 0 to <see cref="MaxCommentaryMinLength"/>.</summary>
+    public static int ClampCommentary(int length) => Math.Clamp(length, 0, MaxCommentaryMinLength);
+
     /// <summary>The ordered requirements evaluated for this transition.</summary>
     public List<StageGateRequirement> Requirements { get; set; } = [];
 
