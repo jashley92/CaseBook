@@ -103,6 +103,32 @@ public sealed class AuditChangeVerbosityTests : IDisposable
     }
 
     [Fact]
+    public async Task Rebalancing_onto_an_observer_puts_them_to_work_on_the_case(/* BUG-405 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = (await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Watched", Title = "Watched", Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        })).Id;
+        await svc.AssignAsync(id, "dana", "Dana", CaseAssignmentRole.IncidentCommander);
+        await svc.AssignAsync(id, "alice", "Alice", CaseAssignmentRole.Analyst);
+        await svc.AssignAsync(id, "bob", "Bob", CaseAssignmentRole.Observer);
+
+        (await svc.ReassignAsync(id, "alice", "bob", "Bob", CaseAssignmentRole.Analyst)).Should().BeTrue();
+
+        var d = (await svc.GetDetailAsync(id))!;
+        d.Assignments.Should().ContainSingle(a => a.UserId == "bob").Which.Role.Should().Be(CaseAssignmentRole.Analyst);
+        d.Assignments.Should().NotContain(a => a.UserId == "alice");
+        d.IncidentCommander.Should().Be("dana", "the incident commander keeps the seat");
+
+        // Someone already working it keeps their role (BUG-306): moving Bob's queue to Dana leaves her commanding.
+        (await svc.ReassignAsync(id, "bob", "dana", "Dana", CaseAssignmentRole.Analyst)).Should().BeTrue();
+        (await svc.GetDetailAsync(id))!.IncidentCommander.Should().Be("dana");
+    }
+
+    [Fact]
     public async Task Placing_a_legal_hold_records_what_changed()
     {
         await using var db = NewContext();

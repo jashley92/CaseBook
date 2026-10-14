@@ -1504,8 +1504,8 @@ public sealed class CaseService
     /// <summary>
     /// BUG-306: Team workload's rebalancing, in one save: <paramref name="toUserId"/> joins the case (someone already on
     /// it keeps their role, so an incident commander isn't demoted) and <paramref name="fromUserId"/> leaves it. When the
-    /// one leaving was the incident commander, the one joining takes that seat, so the case isn't left without one.
-    /// False when nothing changed.
+    /// one leaving was the incident commander, the one joining takes that seat, so the case isn't left without one. An
+    /// observer joining in a working seat takes it (BUG-405). False when nothing changed.
     /// </summary>
     public async Task<bool> ReassignAsync(Guid id, string? fromUserId, string toUserId, string toDisplayName,
         CaseAssignmentRole role, CancellationToken ct = default)
@@ -1522,12 +1522,16 @@ public sealed class CaseService
             throw new InvalidOperationException(
                 "On a restricted case, only the incident commander or someone cleared for restricted cases can name a new incident commander.");
         var joined = c.Assignments.All(a => a.UserId != toUserId);
-        if (joined || namesCommander)   // someone already on it changes role only to take the seat being left
+        // BUG-405: an observer doesn't work the case, so one taking over joins the working seat (and is told), or the
+        // case is left with nobody on it once the other leaves.
+        var promoted = !joined && seat != CaseAssignmentRole.Observer
+                       && c.Assignments.First(a => a.UserId == toUserId).Role == CaseAssignmentRole.Observer;
+        if (joined || namesCommander || promoted)   // someone already working it changes role only to take the seat being left
             c.Assign(toUserId, toDisplayName, seat, _user.UserId, now);
         if (leaving is not null && fromUserId != toUserId) c.Unassign(leaving.UserId, _user.UserId, now);
-        if (!joined && !namesCommander && leaving is null) return false;   // nothing changed
+        if (!joined && !namesCommander && !promoted && leaving is null) return false;   // nothing changed
         await db.SaveChangesAsync(ct);
-        if (joined) await _notifications.OnAssignedAsync(c, toUserId, toDisplayName, seat, _user.UserId, ct);
+        if (joined || promoted) await _notifications.OnAssignedAsync(c, toUserId, toDisplayName, seat, _user.UserId, ct);
         return true;
     }
 
