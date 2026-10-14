@@ -324,7 +324,11 @@ public sealed class IntegrityService
     /// </summary>
     private async Task<IQueryable<AuditLogEntry>> ForCaseAsync(IAppDbContext db, string caseNumber, CancellationToken ct)
     {
-        var caseId = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.CaseNumber == caseNumber)
+        // BUG-465: whoever sees the whole trail (ScopedAuditLog) finds the case without ForUser, which now shows nothing to
+        // an Administer-only role, so its former numbers still join in.
+        var cases = _user.Has(Permission.ViewAllCases) || _user.Has(Permission.Administer)
+            ? db.Cases.AsNoTracking() : db.Cases.AsNoTracking().ForUser(_user);
+        var caseId = await cases.Where(c => c.CaseNumber == caseNumber)
             .Select(c => (Guid?)c.Id).FirstOrDefaultAsync(ct);
         if (caseId is null) return ScopedAuditLog(db).Where(a => a.CaseNumber == caseNumber);
 

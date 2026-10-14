@@ -285,7 +285,9 @@
 
         // PROD-20: with nothing typed, lead with the user's pinned cases and recently-opened cases, so the
         // handful they're working are one keystroke away. Scoping/need-to-know is enforced in the service.
-        if (q.Length == 0)
+        // BUG-465: no case results without View cases (the services return none; this skips asking).
+        var seesCases = CurrentUser.Has(Permission.ViewCases);
+        if (q.Length == 0 && seesCases)
         {
             try
             {
@@ -308,7 +310,7 @@
             }
         }
 
-        if (q.Length >= FindMinChars)
+        if (q.Length >= FindMinChars && seesCases)
         {
             _findCts?.Dispose();
             var cts = _findCts = new CancellationTokenSource();

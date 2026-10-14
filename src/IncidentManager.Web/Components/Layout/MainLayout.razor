@@ -81,12 +81,11 @@
 
 <ToastHost />
 
-@* BUG-465: the palette searches cases (Find), and lists pins and recents. *@
-<AuthorizeView Policy="@Policies.ViewCases">
-    <CommandPalette />
-</AuthorizeView>
 <AuthorizeView>
     <Authorized>
+        @* BUG-465: for everyone signed in, since it also holds the global keys (Escape, ?, g-chords); its case
+           results (Find, pins, recents) come only with View cases. *@
+        <CommandPalette />
         <IdleGuard />
         <ReportJobToaster />
         <PhoneNav />
