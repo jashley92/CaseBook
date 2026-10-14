@@ -99,7 +99,9 @@ set it to `Dev` on a server. The same check stops any other non-Development envi
 ### Requests by IP or a different name get HTTP 400
 
 `AllowedHosts` is set to the site hostname. Use that name, or add the others to `AllowedHosts` (semicolon
-separated). This also makes an upgrade's warm-up time out and roll back if its health URL uses another name.
+separated). The upgrade's probe sends the site's name as the `Host` header (its binding's host name, else the first
+plain `AllowedHosts` entry), so its `-HealthUrl` can be a binding's IP or `localhost`. If the probe still gets a 400,
+the upgrade stops in its preflight, before anything is changed.
 
 ### `dotnet publish` fails with NU1100 during install
 
@@ -144,12 +146,14 @@ the installer set a blank password. Set the identity's password in IIS Manager (
 - **Look:** the script output (it prints the last Application-log errors); the event log; whether
   `__EFMigrationsHistory` gained rows.
 - **Steps and fix:**
-  1. If no new migrations were recorded, fix the cause (often configuration, a host-header mismatch with
-     `AllowedHosts`, or a missing runtime) and rerun the upgrade.
+  1. If no new migrations were recorded, fix the cause (often configuration or a missing runtime) and rerun the
+     upgrade.
   2. If some new migrations were recorded, the schema is ahead of the restored binaries. Restore the
      pre-upgrade backup, then fix and rerun.
-  3. Warm-up treats any 2xx, 401 or 403 from the site root as started; a 400 (host rejected) or 5xx loops until
-     the timeout and then rolls back.
+  3. Warm-up counts only CaseBook's import schema (`/api/import/cases/schema`) as started. When IIS answers `/api`
+     itself it asks the site root signed in as you, where a page, a redirect, 401 or 403 counts. A 5xx, or no
+     answer by the timeout, rolls back. The preflight asks the same way before anything changes, and stops on no
+     answer, a 400 (host rejected), or an answer that isn't CaseBook's.
 - The upgrade replaces `web.config` and removes other files in the site folder that aren't in the release
   (they're in the rollback snapshot).
 

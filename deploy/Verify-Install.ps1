@@ -243,6 +243,10 @@ if ($Url) {
     } catch { Bad "Could not read app pool '$pool': $($_.Exception.Message)" }
 
     # 2. HTTP reachability over Windows auth
+    # BUG-336: the app answers 400 to a host name AllowedHosts doesn't list (and IIS to one no binding has): an IP or
+    # localhost URL reads as broken although the site works by its name.
+    $hostHint = ("400 Bad Request for host '$(([Uri]$Url).Host)': it isn't in AllowedHosts (appsettings.Production.json) " +
+                 "or on a binding of the site. Use the site's host name in -Url, or add this one to AllowedHosts (';' separated).")
     try {
         Info "GET $Url (Windows integrated auth)"
         $resp = Invoke-WebRequest -Uri $Url -UseDefaultCredentials -UseBasicParsing -TimeoutSec 30
@@ -251,6 +255,7 @@ if ($Url) {
     } catch {
         $code = $_.Exception.Response.StatusCode.value__ 2>$null
         if ($code -eq 401) { Bad "401 Unauthorized - Windows auth not negotiating (check SPNs / that you're a mapped role member)" }
+        elseif ($code -eq 400) { Bad $hostHint }
         else { Bad "Request failed: $($_.Exception.Message)" }
     }
 
@@ -278,6 +283,7 @@ if ($Url) {
             Bad ("/api answered 404 from IIS, not CaseBook: API imports can't reach the app. The site's web.config probably " +
                  "wraps its handler in <location inheritInChildApplications=""false"">; upgrade to v1.6.2 or later, or set it to ""true"".")
         }
+        elseif ($code -eq 400) { Bad "/api answered $hostHint" }
         elseif ($code -in 401,403) { Bad "/api answered ${code}: it isn't open to anonymous requests, so API tokens can't sign in (re-run Install-CaseBook.ps1)." }
         else { Bad "/api answered $code, not the import schema." }
     } catch { Bad "/api request failed: $($_.Exception.Message)" }

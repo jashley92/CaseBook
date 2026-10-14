@@ -191,6 +191,38 @@ $siteBase = ([Uri]$HealthUrl).GetLeftPart([UriPartial]::Authority)
 $ProbeUrl = "$siteBase/api/import/cases/schema"
 Write-Info "Probe URL : $ProbeUrl"
 
+# BUG-336: the app's host filtering answers 400 to a Host header AllowedHosts doesn't list, and the probe URL is often a
+# binding's IP or localhost. The probe still connects there but names the site as the app knows it: a binding's host
+# name, else the first plain AllowedHosts entry. No list, or '*', takes any host, so the URL's own is kept.
+function Get-AllowedHosts {
+    foreach ($f in @($prodSettings, (Join-Path $SitePath 'appsettings.json'))) {
+        try {
+            $cfgHosts = (Get-Content $f -Raw -ErrorAction Stop | ConvertFrom-Json).AllowedHosts
+            if ($null -ne $cfgHosts) { return @(([string]$cfgHosts).Split(';') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+        } catch { }
+    }
+    return @()
+}
+function Test-HostAllowed([string] $name, [string[]] $allowed) {
+    if ($allowed.Count -eq 0 -or $allowed -contains '*') { return $true }
+    foreach ($a in $allowed) {
+        if ($a -ieq $name) { return $true }
+        if ($a.StartsWith('*.') -and $name.EndsWith($a.Substring(1), [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+$allowedHosts = @(Get-AllowedHosts)
+$probeUri = [Uri]$ProbeUrl
+$ProbeHost = $null
+if (-not (Test-HostAllowed $probeUri.Host $allowedHosts)) {
+    $bindingHosts = @(Get-WebBinding -Name $SiteName -ErrorAction SilentlyContinue | Where-Object { $_.protocol -in 'https','http' } |
+        Sort-Object { $_.protocol -ne 'https' } | ForEach-Object { if ([string]$_.bindingInformation -match ':\d*:(?<h>[^:]+)$') { $Matches['h'] } })
+    $ProbeHost = @($bindingHosts) + @($allowedHosts | Where-Object { $_ -notmatch '\*' }) |
+        Where-Object { Test-HostAllowed $_ $allowedHosts } | Select-Object -First 1
+    if ($ProbeHost -and -not $probeUri.IsDefaultPort) { $ProbeHost = "${ProbeHost}:$($probeUri.Port)" }
+    if ($ProbeHost) { Write-Info "Probe Host: $ProbeHost ('$($probeUri.Host)' isn't in AllowedHosts)" }
+}
+
 # BUG-249: only the app's own answer proves it started; a 5xx or a connection failure means it didn't. Tolerate a
 # self-signed cert during this local probe.
 # BUG-260: the probe goes straight to the site, never through the administrator's proxy, and doesn't follow redirects;
@@ -204,6 +236,7 @@ function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
     $req.Timeout = 30000
     $req.ReadWriteTimeout = 30000
     $req.UserAgent = 'CaseBook-Upgrade'
+    if ($ProbeHost) { $req.Host = $ProbeHost }   # BUG-336
     if ($WithCredentials) { $req.UseDefaultCredentials = $true }
     $resp = $null
     try { $resp = $req.GetResponse() }
@@ -513,16 +546,47 @@ if ($template) {
 # BUG-314: the warm-up decides whether the new build started, by asking the site at $ProbeUrl. Asked now, before anything
 # is stopped: any HTTP answer (even an error page) shows this host can reach it. No answer at all would make the warm-up
 # roll back a build that started, after its migrations, leaving the pool stopped until the database is restored.
+# BUG-336: and an answer the warm-up would read as "not started" (a 400 for the Host, or a page that isn't CaseBook's
+# even when asked signed in) stops the run here too, as the current build answers just as the new one will.
+$hostSent = if ($ProbeHost) { $ProbeHost } else { $probeUri.Authority }
+$unreachable = "Nothing has been changed. Pass -HealthUrl with an address this host can reach (the name you open the " +
+               "site with, or the address of one of its bindings: http://localhost:<port>/, https://10.0.0.5/), then " +
+               "run it again. The probe still sends the site's name as the Host header (its binding's host name, else " +
+               "the first AllowedHosts entry)."
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-$reach = Invoke-SiteProbe $ProbeUrl
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
+try {
+    $reach = Invoke-SiteProbe $ProbeUrl
+    $reachVerdict = Get-ProbeVerdict $reach -Schema
+    $rootReach = $null
+    if ($reach.Status -ne 400 -and $reachVerdict -in 'auth','other') { $rootReach = Invoke-SiteProbe $HealthUrl -WithCredentials }
+} finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null }
 # A timeout is an answer too slow, not none: the current build may be starting cold (an idle pool) on a large database.
 if ($null -eq $reach.Status -and $reach.Error -ne 'Timeout') {
     throw ("This host can't reach the site at $ProbeUrl ($($reach.Detail)), so the upgrade couldn't tell whether the new " +
-           "build started. Nothing has been changed. Pass -HealthUrl with an address this host can reach (the one you " +
-           "open the site with, or http://localhost:<port>/ when the site has a localhost binding), then run it again.")
+           "build started. $unreachable")
+}
+if ($reach.Status -eq 400) {
+    throw ("The site at $ProbeUrl answered '$($reach.Detail)' to Host '$hostSent'. CaseBook answers 400 to a host name " +
+           "AllowedHosts (in $prodSettings) doesn't list, and IIS to one no binding of the site has, so the upgrade " +
+           "would read the new build as not started and roll it back after its migrations. Nothing has been changed. " +
+           "Add the name to AllowedHosts (semicolon separated) or a host name to the site's binding, or pass -HealthUrl " +
+           "with the name you open the site with, then run it again.")
 }
 Write-Info "Probe reaches the site ($($reach.Detail))."
+if ($rootReach) {
+    Write-Info "Signed-in probe of ${HealthUrl}: $($rootReach.Detail)"
+    $rootVerdict = Get-ProbeVerdict $rootReach
+    if ($null -eq $rootReach.Status -and $rootReach.Error -ne 'Timeout') {
+        throw ("$ProbeUrl answered '$($reach.Detail)', not the import schema, and $HealthUrl couldn't be reached " +
+               "($($rootReach.Detail)), so the upgrade couldn't tell whether the new build started. $unreachable")
+    }
+    if ($rootVerdict -eq 'other') {
+        throw ("$ProbeUrl answered '$($reach.Detail)' and $HealthUrl, signed in, '$($rootReach.Detail)' (Host " +
+               "'$hostSent'): neither is CaseBook, so the upgrade would read the new build as not started and roll it " +
+               "back after its migrations. Nothing has been changed. Check that the address reaches this site, and that " +
+               "AllowedHosts lists its name, then run it again.")
+    }
+}
 
 # --- 4. Confirm ---------------------------------------------------------------
 $currentVerFile = Join-Path $SitePath 'VERSION.txt'
