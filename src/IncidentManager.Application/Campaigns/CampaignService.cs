@@ -131,12 +131,13 @@ public sealed class CampaignService
                 t.OccurredPrecision, t.OccurredUntilUtc, t.StepOrder, t.CreatedAtUtc })
             .ToListAsync(ct);
         // BUG-455: the earliest named tactic of each step that records a technique, for its row on the coverage table.
+        // BUG-479: earliest by matrix position; the enum values are frozen for storage (DefenseImpairment = 15).
         var stepTactics = (await db.TimelineEntries.AsNoTracking()
             .Where(t => memberIds.Contains(t.CaseId) && t.Kind == TimelineKind.Event && t.IsCurrent && t.TechniqueId != null)
             .Select(t => new { t.Id, Tactics = t.Tactics.Select(x => x.Tactic).ToList() })
             .ToListAsync(ct))
             .Where(t => t.Tactics.Any(x => x != MitreTactic.Unspecified))
-            .ToDictionary(t => t.Id, t => t.Tactics.Where(x => x != MitreTactic.Unspecified).Min());
+            .ToDictionary(t => t.Id, t => t.Tactics.Where(x => x != MitreTactic.Unspecified).MinBy(Reporting.DiagramPalette.TacticRank));
 
         var caseNumbers = members.ToDictionary(m => m.CaseId, m => m.CaseNumber);
 

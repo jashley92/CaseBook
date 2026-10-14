@@ -189,6 +189,8 @@ public sealed class CampaignServiceTests : IDisposable
             c.Techniques.Add(new CaseTechnique { Id = Guid.NewGuid(), CaseId = c.Id, TechniqueId = "T1566", Name = "Phishing", Tactic = MitreTactic.InitialAccess });
             c.TimelineEntries.Add(Step(c, "T1059", tactics: MitreTactic.Execution));   // chain only
             c.TimelineEntries.Add(Step(c, "T1566", tactics: MitreTactic.InitialAccess)); // tagged too: counts the case once
+            // BUG-479: earliest by matrix position, Defense Impairment (8th) before Discovery (10th), not by enum value
+            c.TimelineEntries.Add(Step(c, "T1562", tactics: [MitreTactic.Discovery, MitreTactic.DefenseImpairment]));
         });
         var b = SeedCase("Bravo", 2, extra: c =>
         {
@@ -201,7 +203,7 @@ public sealed class CampaignServiceTests : IDisposable
 
         var rollup = (await NewService().GetRollupAsync(a))!;
 
-        rollup.Techniques.Select(t => t.TechniqueId).Should().BeEquivalentTo("T1566", "T1059");
+        rollup.Techniques.Select(t => t.TechniqueId).Should().BeEquivalentTo("T1566", "T1059", "T1562");
         var phishing = rollup.Techniques.Single(t => t.TechniqueId == "T1566");
         phishing.CaseCount.Should().Be(2);
         phishing.Name.Should().Be("Phishing");
@@ -210,6 +212,7 @@ public sealed class CampaignServiceTests : IDisposable
         chainOnly.CaseCount.Should().Be(1);
         chainOnly.Tactic.Should().Be(MitreTactic.Execution);
         chainOnly.Name.Should().Be(IncidentManager.Application.Mitre.AttackCatalog.Find("T1059")!.Name);
+        rollup.Techniques.Single(t => t.TechniqueId == "T1562").Tactic.Should().Be(MitreTactic.DefenseImpairment);
     }
 
     [Fact]
