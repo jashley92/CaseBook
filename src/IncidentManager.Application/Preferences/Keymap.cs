@@ -65,8 +65,12 @@ public static partial class Keymap
                 .Select(x => char.ToUpperInvariant(x[0]) + x[1..].ToLowerInvariant()).Distinct().ToList();
             if (!mods.Contains("Ctrl") && !mods.Contains("Alt")) return null;   // Shift alone isn't a chord
             var order = new[] { "Ctrl", "Alt", "Shift" };
-            var key = m.Groups[2].Value;
-            return string.Join('+', order.Where(mods.Contains)) + "+" + (key.Length == 1 ? key.ToUpperInvariant() : key);
+            // BUG-355: written as keymap.js chordName names the press: an F-key upper-cased ("f5" never matched "F5"), and
+            // Shift only with a letter or an F-key. With a digit or punctuation the browser reports the shifted character
+            // ("!" for Shift+1), so Ctrl+Shift+1 could never fire (Ctrl+? is how Ctrl+Shift+/ is written).
+            var key = m.Groups[2].Value.ToUpperInvariant();
+            if (mods.Contains("Shift") && key.Length == 1 && !char.IsLetter(key[0])) return null;
+            return string.Join('+', order.Where(mods.Contains)) + "+" + key;
         }
         return null;
     }

@@ -14,6 +14,11 @@ public sealed class KeymapTests
     [InlineData("ctrl + shift + f", "Ctrl+Shift+F")]
     [InlineData("alt+n", "Alt+N")]
     [InlineData("shift+n", null)]
+    [InlineData("ctrl+f5", "Ctrl+F5")]               // BUG-355: as the dispatcher names it
+    [InlineData("ctrl+shift+f12", "Ctrl+Shift+F12")]
+    [InlineData("Ctrl+Shift+1", null)]               // the browser reports "!", never Shift+1
+    [InlineData("alt+shift+/", null)]
+    [InlineData("Ctrl+1", "Ctrl+1")]
     [InlineData("nn", null)]
     [InlineData("", null)]
     public void Bindings_are_normalized_or_refused(string raw, string? expected) =>
