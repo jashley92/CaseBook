@@ -48,6 +48,34 @@ public sealed class KeymapTests
         Keymap.Validate(false, new Dictionary<string, string> { ["nope"] = "x" }).Problems.Should().NotBeEmpty();
     }
 
+    [Theory]
+    [InlineData(";")]
+    [InlineData(",")]
+    [InlineData("Ctrl+;")]
+    [InlineData("Alt+,")]
+    [InlineData("/, ,")]
+    [InlineData(", n")]
+    public void The_stored_forms_separators_are_refused_as_keys(string raw /* BUG-402 */)
+    {
+        var (settings, problems) = Keymap.Validate(false, new Dictionary<string, string> { ["log"] = raw });
+        settings.Should().BeNull("the binding would be lost or clear the shortcut once stored");
+        problems.Should().ContainSingle(p => p.Contains("can't be shortcut keys"));
+    }
+
+    [Fact]
+    public void A_trailing_comma_is_still_just_a_separator() =>
+        Keymap.Validate(false, new Dictionary<string, string> { ["log"] = "Alt+L," }).Settings!.Keys["log"].Should().Be("Alt+L");
+
+    [Theory]
+    [InlineData("Ctrl+Shift+K")]
+    [InlineData("Ctrl+Alt+K")]
+    public void Ctrl_chords_on_K_are_refused_because_the_command_bar_takes_them(string raw /* BUG-402 */) =>
+        Keymap.Validate(false, new Dictionary<string, string> { ["log"] = raw }).Problems.Should().ContainSingle(p => p.Contains("command bar"));
+
+    [Fact]
+    public void Alt_K_is_still_allowed() =>
+        Keymap.Validate(false, new Dictionary<string, string> { ["log"] = "Alt+K" }).Problems.Should().BeEmpty();
+
     [Fact]
     public void The_defaults_have_no_conflicts() =>
         Keymap.Validate(false, new Dictionary<string, string>()).Problems.Should().BeEmpty();

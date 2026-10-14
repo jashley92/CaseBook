@@ -89,12 +89,24 @@ public static partial class Keymap
         foreach (var (id, raw) in keys)
         {
             if (Find(id) is not { } action) { problems.Add($"There's no shortcut called \"{id}\"."); continue; }
-            var parts = (raw ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            // BUG-402: ";" and "," separate what's stored ("id=keys;id=keys", bindings by commas), so as keys they were lost
+            // or silently cleared the shortcut. A comma key shows up here as an empty binding before another one (a
+            // trailing comma is fine), or as a chord with no key.
+            var all = (raw ?? "").Split(',', StringSplitOptions.TrimEntries);
+            if ((raw ?? "").Contains(';', StringComparison.Ordinal) || all.SkipLast(1).Any(p => p.Length == 0) || all.Any(p => p.EndsWith('+')))
+            {
+                problems.Add($"{action.Label}: ; and , can't be shortcut keys (they separate the keys in the list).");
+                continue;
+            }
             var norm = new List<string>();
-            foreach (var p in parts)
+            foreach (var p in all.Where(p => p.Length > 0))
             {
                 if (Normalize(p) is not { } n) { problems.Add($"{action.Label}: \"{p}\" isn't a key CaseBook can use. Use one key, g and a key, or Ctrl or Alt with a key."); continue; }
                 if (n is "Ctrl+K" or "Ctrl+Enter" || n == "g") { problems.Add($"{action.Label}: {n} is kept for the command bar, saving or go-to keys."); continue; }
+                // BUG-402: the dispatcher opens the command bar on Ctrl+K whatever else is held, so Ctrl+Shift+K or Ctrl+Alt+K
+                // could never fire.
+                if (n.StartsWith("Ctrl+", StringComparison.Ordinal) && n.EndsWith("+K", StringComparison.Ordinal))
+                { problems.Add($"{action.Label}: {n} can't be used: Ctrl with K always opens the command bar."); continue; }
                 norm.Add(n);
             }
             var value = string.Join(", ", norm.Distinct());
@@ -134,9 +146,10 @@ public static partial class Keymap
     [GeneratedRegex(@"^g\s+([A-Za-z0-9])$", RegexOptions.IgnoreCase)]
     private static partial Regex SequenceRx();
 
-    [GeneratedRegex(@"^[A-Za-z0-9/?.,;'\[\]\\\-=`]$")]
+    // BUG-402: not "," or ";", the stored form's separators.
+    [GeneratedRegex(@"^[A-Za-z0-9/?.'\[\]\\\-=`]$")]
     private static partial Regex SingleRx();
 
-    [GeneratedRegex(@"^((?:(?:ctrl|alt|shift)\s*\+\s*)+)([A-Za-z0-9/?.,;'\[\]\\\-=`]|F\d{1,2})$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^((?:(?:ctrl|alt|shift)\s*\+\s*)+)([A-Za-z0-9/?.'\[\]\\\-=`]|F\d{1,2})$", RegexOptions.IgnoreCase)]
     private static partial Regex ChordRx();
 }
