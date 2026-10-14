@@ -365,7 +365,8 @@
                     {
                         @if (_adding)
                         {
-                            <form class="im-brief-add" @onsubmit="AddTask" @onsubmit:preventDefault>
+                            @* BUG-451: its own Ctrl/Cmd+Enter adds the task (keymap.js leaves .im-own-keys to it), not the tab's details save. *@
+                            <form class="im-brief-add im-own-keys" @onsubmit="AddTask" @onsubmit:preventDefault @onkeydown="AddTaskKey">
                                 <label class="visually-hidden" for="brief-new-task">New task</label>
                                 <input id="brief-new-task" class="form-control form-control-sm" maxlength="@ActionItem.MaxTitleLength"
                                        placeholder="What needs doing?" @bind="_newTask" @bind:event="oninput" />
@@ -490,6 +491,11 @@
     }
 
     private bool _addingTask;
+
+    // BUG-451: Ctrl/Cmd+Enter in the inline form; a held key doesn't repeat, and AddTask's own guard covers a click or
+    // an Enter submit alongside it. The title binds on input, so it reads what was just typed.
+    private Task AddTaskKey(KeyboardEventArgs e) =>
+        e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && !e.Repeat ? AddTask() : Task.CompletedTask;
 
     private async Task AddTask()
     {
