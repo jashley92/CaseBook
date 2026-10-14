@@ -134,6 +134,81 @@ public sealed class AdAccountDirectoryTests
         release.Set();
     }
 
+    [Fact]
+    public async Task A_listing_that_ran_into_the_search_time_limit_isnt_kept(/* BUG-470 */)
+    {
+        var directory = Directory(trusted: () =>
+        {
+            // The search stops at its limit with what it had so far, and no error.
+            if (++_listings == 1) _time.Now += AdAccountDirectory.Timeout;
+            return ["CORP"];
+        });
+
+        (await directory.LookupAsync("CORP\\a")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable,
+            "a list that may be missing domains would answer 'not looked up' for them for an hour");
+        (await directory.LookupAsync("CORP\\b")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable, "backing off");
+        _asked.Should().BeEmpty();
+
+        _time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
+        (await directory.LookupAsync("CORP\\c")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound);
+        _listings.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task A_hung_domain_controller_isnt_probed_without_end_and_other_domains_are_still_asked(/* BUG-471 */)
+    {
+        using var release = new ManualResetEventSlim();
+        var time = new ManualTime { FastTimers = true };
+        var corp = 0;
+        var directory = new AdAccountDirectory(time: time, trustedDomains: () => ["CORP", "PARTNER"], query: n =>
+        {
+            if (!n.StartsWith("CORP", StringComparison.Ordinal)) return DirectoryLookup.NotFound;
+            Interlocked.Increment(ref corp);
+            release.Wait(TimeSpan.FromSeconds(30));   // CORP's DC hangs
+            return DirectoryLookup.NotFound;
+        });
+
+        // One probe a minute, past the old shared limit.
+        for (var i = 0; i <= AdAccountDirectory.MaxInFlight; i++)
+        {
+            (await directory.LookupAsync($"CORP\\u{i}")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable);
+            time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
+        }
+        corp.Should().Be(AdAccountDirectory.MaxHungPerDomain, "a domain whose lookups are still blocked isn't given more threads");
+        (await directory.LookupAsync("PARTNER\\jdoe")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound);
+        (await directory.LookupAsync("jdoe")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound, "nor is the server's own");
+
+        // The blocked lookups return and free their places; CORP is asked again.
+        release.Set();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        DirectoryLookup again;
+        do { again = await directory.LookupAsync("CORP\\later"); await Task.Delay(20); }
+        while (again.Outcome != DirectoryLookupOutcome.NotFound && DateTime.UtcNow < deadline);
+        again.Outcome.Should().Be(DirectoryLookupOutcome.NotFound);
+    }
+
+    [Fact]
+    public async Task Listings_still_blocked_arent_started_again_and_again(/* BUG-471 sibling */)
+    {
+        using var release = new ManualResetEventSlim();
+        var time = new ManualTime { FastTimers = true };
+        var listings = 0;
+        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: () =>
+        {
+            Interlocked.Increment(ref listings);
+            release.Wait(TimeSpan.FromSeconds(30));
+            return ["CORP"];
+        });
+
+        for (var i = 0; i < 5; i++)
+        {
+            (await directory.LookupAsync($"CORP\\u{i}")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable);
+            time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
+        }
+        listings.Should().Be(AdAccountDirectory.MaxHungPerDomain);
+        release.Set();
+    }
+
     private sealed class ManualTime : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = new(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);

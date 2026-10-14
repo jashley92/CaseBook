@@ -16,6 +16,8 @@ namespace IncidentManager.Web.Security;
 /// asked; any other <c>DOMAIN\</c>, and a local account (<c>.\sam</c>, <c>COMPUTER\sam</c>), answers NotLookedUp with no
 /// network call. BUG-420: a domain that just failed answers Unavailable straight away for <see cref="BackOff"/>, and at
 /// most <see cref="MaxInFlight"/> lookups (counting ones abandoned at the timeout) run at once, on their own threads.
+/// BUG-471: that limit is per domain, and a domain with <see cref="MaxHungPerDomain"/> lookups that timed out and are
+/// still blocked isn't asked again until one returns, so a hung domain controller holds a few threads, not every place.
 /// </para>
 /// </summary>
 public sealed class AdAccountDirectory : IAccountDirectory
@@ -25,8 +27,12 @@ public sealed class AdAccountDirectory : IAccountDirectory
     /// <summary>BUG-420: how long a domain that failed or timed out isn't asked again.</summary>
     public static readonly TimeSpan BackOff = TimeSpan.FromMinutes(1);
 
-    /// <summary>BUG-420: lookups running at once, including ones still blocked after their caller stopped waiting.</summary>
+    /// <summary>BUG-420: lookups running at once in one domain (BUG-471), including ones still blocked after their caller
+    /// stopped waiting.</summary>
     public const int MaxInFlight = 8;
+
+    /// <summary>BUG-471: lookups in one domain that timed out and are still blocked, past which it isn't asked again.</summary>
+    public const int MaxHungPerDomain = 2;
 
     // BUG-419: how long the list of trusted domains is kept (trusts change rarely); after a failure, retried sooner.
     private static readonly TimeSpan TrustedFor = TimeSpan.FromHours(1);
@@ -40,7 +46,10 @@ public sealed class AdAccountDirectory : IAccountDirectory
     private (HashSet<string>? Names, DateTimeOffset Until)? _trusted;
     private Task<HashSet<string>?>? _listing;
     private int _listingGeneration;   // BUG-457: which listing is the current one
-    private int _inFlight;
+    private int _listingsRunning;     // BUG-471: including ones given up on that are still blocked
+    // BUG-471: per domain, the lookups running, and those of them that timed out and are still blocked.
+    private readonly Dictionary<string, int> _inFlight = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _hung = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="query">The directory query for a name that may be asked (tests stand in for AD here).</param>
     /// <param name="trustedDomains">The NetBIOS and DNS names of the domains that may be asked.</param>
@@ -77,24 +86,34 @@ public sealed class AdAccountDirectory : IAccountDirectory
         return await QueryAsync(name, slash > 0 ? name[..slash].TrimEnd('.') : "", ct);
     }
 
-    // BUG-420: one query on its own thread (a blocked LDAP call doesn't hold a pool thread), at most MaxInFlight at once,
-    // and a domain that just failed isn't asked again until BackOff has passed.
+    // BUG-420: one query on its own thread (a blocked LDAP call doesn't hold a pool thread), at most MaxInFlight at once
+    // in a domain, and a domain that just failed isn't asked again until BackOff has passed.
     private async Task<DirectoryLookup> QueryAsync(string name, string domainKey, CancellationToken ct)
     {
+        var slot = new Slot();
         lock (_gate)
         {
             if (_failedUntil.TryGetValue(domainKey, out var until) && until > _time.GetUtcNow())
                 return DirectoryLookup.Unavailable("Active Directory didn't answer a moment ago; try again in a minute.");
-        }
-        if (Interlocked.Increment(ref _inFlight) > MaxInFlight)
-        {
-            Interlocked.Decrement(ref _inFlight);
-            return DirectoryLookup.Unavailable("Active Directory is still answering earlier lookups; try again shortly.");
+            // BUG-471: a domain whose earlier lookups timed out and are still blocked isn't given another thread.
+            if (_hung.GetValueOrDefault(domainKey) >= MaxHungPerDomain)
+                return DirectoryLookup.Unavailable("Active Directory hasn't answered earlier lookups in this domain yet; try again later.");
+            if (_inFlight.GetValueOrDefault(domainKey) >= MaxInFlight)
+                return DirectoryLookup.Unavailable("Active Directory is still answering earlier lookups; try again shortly.");
+            Count(_inFlight, domainKey, +1);
         }
         var query = Task.Factory.StartNew(() =>
         {
             try { return _query(name); }
-            finally { Interlocked.Decrement(ref _inFlight); }
+            finally
+            {
+                lock (_gate)
+                {
+                    slot.Done = true;
+                    Count(_inFlight, domainKey, -1);
+                    if (slot.Hung) Count(_hung, domainKey, -1);
+                }
+            }
         }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         DirectoryLookup result;
         var domainFailed = false;   // only the directory not answering backs the domain off, not one name's own trouble
@@ -106,6 +125,10 @@ public sealed class AdAccountDirectory : IAccountDirectory
         {
             result = DirectoryLookup.Unavailable("Active Directory didn't answer in time.");
             domainFailed = true;
+            lock (_gate)
+            {
+                if (!slot.Done) { slot.Hung = true; Count(_hung, domainKey, +1); }
+            }
         }
         catch (MultipleMatchesException)
         {
@@ -127,6 +150,20 @@ public sealed class AdAccountDirectory : IAccountDirectory
         return result;
     }
 
+    private sealed class Slot
+    {
+        public bool Done;
+        public bool Hung;   // timed out, still blocked
+    }
+
+    // Called under _gate; a domain with nothing left isn't kept.
+    private static void Count(Dictionary<string, int> counts, string key, int by)
+    {
+        var n = counts.GetValueOrDefault(key) + by;
+        if (n > 0) counts[key] = n;
+        else counts.Remove(key);
+    }
+
     // BUG-419: the domains that may be asked, listed once and kept; null when they couldn't be listed (then retried
     // after BackOff). One listing runs at a time, on its own thread, bounded by Timeout.
     private async Task<HashSet<string>?> TrustedAsync(CancellationToken ct)
@@ -137,6 +174,14 @@ public sealed class AdAccountDirectory : IAccountDirectory
             if (_trusted is { } t && t.Until > _time.GetUtcNow()) return t.Names;
             if (_listing is null)
             {
+                // BUG-471: while listings given up on are still blocked (as many as a domain's lookups may be), another
+                // isn't started on top of them.
+                if (_listingsRunning >= MaxHungPerDomain)
+                {
+                    _trusted = (null, _time.GetUtcNow() + BackOff);
+                    return null;
+                }
+                _listingsRunning++;
                 var generation = ++_listingGeneration;
                 _listing = Task.Factory.StartNew(() => ListTrusted(generation), CancellationToken.None,
                     TaskCreationOptions.LongRunning, TaskScheduler.Default);
@@ -163,10 +208,18 @@ public sealed class AdAccountDirectory : IAccountDirectory
     private HashSet<string>? ListTrusted(int generation)
     {
         HashSet<string>? names = null;
+        var started = _time.GetUtcNow();
         try
         {
             names = new HashSet<string>(_trustedDomains().Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim().TrimEnd('.')),
                 StringComparer.OrdinalIgnoreCase);
+            // BUG-470: a search that reaches its time limit ends with what it had so far and no error, so a listing that
+            // took that long may be missing domains: a failure (retried after BackOff), not a list kept for an hour.
+            if (_time.GetUtcNow() - started >= SearchLimit - TimeSpan.FromSeconds(1))
+            {
+                names = null;
+                _log?.LogWarning("Listing the domains this server trusts took too long to be complete; accounts in a named domain aren't looked up.");
+            }
         }
         catch (Exception ex)
         {
@@ -174,6 +227,7 @@ public sealed class AdAccountDirectory : IAccountDirectory
         }
         lock (_gate)
         {
+            _listingsRunning--;
             // BUG-457: one given up on (a newer one has started since) only records a list it did get.
             var current = generation == _listingGeneration;
             if (current || names is not null) _trusted = (names, _time.GetUtcNow() + (names is null ? BackOff : TrustedFor));
@@ -192,28 +246,42 @@ public sealed class AdAccountDirectory : IAccountDirectory
         var config = rootDse.Properties["configurationNamingContext"].Value as string;
         var domainNc = rootDse.Properties["defaultNamingContext"].Value as string;
         // systemFlags bit 2 (FLAG_CR_NTDS_DOMAIN): the crossRef of an AD domain.
-        Read($"LDAP://CN=Partitions,{config}", "(&(objectClass=crossRef)(systemFlags:1.2.840.113556.1.4.803:=2))",
-            ["nETBIOSName", "dnsRoot"], names);
+        var domainNcs = Read($"LDAP://CN=Partitions,{config}", "(&(objectClass=crossRef)(systemFlags:1.2.840.113556.1.4.803:=2))",
+            ["nETBIOSName", "dnsRoot"], names, check: "nCName");
+        // BUG-470: the forest's list always has our own domain; one without it was cut short.
+        if (domainNc is null || !domainNcs.Contains(domainNc))
+            throw new InvalidOperationException("The forest's list of domains came back without this server's own domain.");
         Read($"LDAP://CN=System,{domainNc}", "(objectClass=trustedDomain)", ["flatName", "trustPartner"], names);
         return names;
     }
 
+    // BUG-457/470: how long one search may take. Only the client's limit is set (a server time limit ends a search the
+    // same silent way), and ListTrusted takes a listing that ran this long to be incomplete.
+    private static readonly TimeSpan SearchLimit = Timeout;
+
+    // Adds the attributes' values to into, and returns the values of check, which tell whether the search was complete.
     [SupportedOSPlatform("windows")]
-    private static void Read(string path, string filter, string[] attributes, List<string> into)
+    private static HashSet<string> Read(string path, string filter, string[] attributes, List<string> into, string? check = null)
     {
         using var root = new DirectoryEntry(path);
         // BUG-457: bounded, so a domain controller that hangs ends the listing instead of holding its thread for good.
-        using var searcher = new DirectorySearcher(root, filter, attributes, SearchScope.OneLevel)
+        using var searcher = new DirectorySearcher(root, filter, check is null ? attributes : [.. attributes, check], SearchScope.OneLevel)
         {
-            ClientTimeout = Timeout,
-            ServerTimeLimit = Timeout,
+            ClientTimeout = SearchLimit,
         };
+        var checks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using var results = searcher.FindAll();
         foreach (SearchResult r in results)
+        {
             foreach (var a in attributes)
                 if (r.Properties.Contains(a))
                     foreach (var v in r.Properties[a])
                         if (v?.ToString() is { Length: > 0 } s) into.Add(s);
+            if (check is not null && r.Properties.Contains(check))
+                foreach (var v in r.Properties[check])
+                    if (v?.ToString() is { Length: > 0 } s) checks.Add(s);
+        }
+        return checks;
     }
 
     // Only called for a name LookupAsync allows: a bare name or a UPN (the server's own domain), or DOMAIN\sam in a
