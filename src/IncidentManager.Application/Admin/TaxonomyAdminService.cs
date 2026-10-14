@@ -88,32 +88,59 @@ public sealed class TaxonomyAdminService
     public async Task SetLabelAsync(string kind, string member, string? label, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<TaxonomyAdminService>(_user);
+        await SaveLabelsAsync(kind, new Dictionary<string, string?>(StringComparer.Ordinal) { [member] = label }, ct);
+    }
+
+    /// <summary>
+    /// BUG-378: several members' labels (member to label; blank or default clears it) in one save, so a card saves all
+    /// its labels or none. Everything is checked before anything is written.
+    /// </summary>
+    public async Task SetLabelAsync(string kind, IReadOnlyDictionary<string, string?> labels, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<TaxonomyAdminService>(_user);
+        await SaveLabelsAsync(kind, labels, ct);
+    }
+
+    private async Task SaveLabelsAsync(string kind, IReadOnlyDictionary<string, string?> labels, CancellationToken ct)
+    {
         var k = TaxonomyCatalog.Kinds.FirstOrDefault(x => x.Id == kind)
             ?? throw new InvalidOperationException($"'{kind}' is not a known taxonomy.");
-        var def = k.Members.FirstOrDefault(m => m.Value == member)
-            ?? throw new InvalidOperationException($"'{member}' is not a member of '{kind}'.");
-
-        var trimmed = label?.Trim();
-        var key = TaxonomyCatalog.LabelKey(kind, member);
+        var edits = new List<(string Key, string? Value)>();
+        foreach (var (member, label) in labels)
+        {
+            var def = k.Members.FirstOrDefault(m => m.Value == member)
+                ?? throw new InvalidOperationException($"'{member}' is not a member of '{kind}'.");
+            var trimmed = label?.Trim();
+            // Blank, or the same as the built-in default: don't persist a redundant override.
+            var redundant = string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, def.DefaultLabel, StringComparison.Ordinal);
+            if (!redundant && trimmed!.Length > MaxLabelLength)
+                throw new ArgumentException($"A label must be {MaxLabelLength} characters or fewer.");
+            edits.Add((TaxonomyCatalog.LabelKey(kind, member), redundant ? null : trimmed));
+        }
+        if (edits.Count == 0) return;
 
         using var db = _factory.CreateDbContext();
-        var existing = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
-
-        // Blank, or the same as the built-in default → don't persist a redundant override.
-        if (string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, def.DefaultLabel, StringComparison.Ordinal))
+        var keys = edits.Select(e => e.Key).ToList();
+        var rows = await db.AppSettings.Where(s => keys.Contains(s.Key)).ToListAsync(ct);
+        var added = new List<string>();
+        var changed = false;
+        foreach (var (key, value) in edits)
         {
-            if (existing is null) return;
-            db.AppSettings.Remove(existing);
-            await db.SaveChangesAsync(ct);
-            _reloader.ReloadOrThrow();   // BUG-270
-            return;
+            var existing = rows.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (value is null)
+            {
+                if (existing is null) continue;
+                db.AppSettings.Remove(existing);
+            }
+            // BUG-378: a label that already has an override is changed in place. It was always added, so the unique index
+            // refused every change to one.
+            else if (existing is null) Add(db, added, key, value);
+            else if (!string.Equals(existing.Value, value, StringComparison.Ordinal)) Touch(existing, value);
+            else continue;
+            changed = true;
         }
-
-        if (trimmed.Length > MaxLabelLength)
-            throw new ArgumentException($"A label must be {MaxLabelLength} characters or fewer.");
-
-        Upsert(db, key, trimmed);
-        await db.SaveChangesAsync(ct);
+        if (!changed) return;
+        await SaveAsync(db, added, ct);
         _reloader.ReloadOrThrow();   // BUG-270
     }
 
@@ -146,6 +173,7 @@ public sealed class TaxonomyAdminService
         AppSetting? Find(string key) => rows.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase));
 
         var changed = false;
+        var added = new List<string>();
 
         // Order: store only when it differs from the built-in (catalog) order.
         var orderKey = TaxonomyCatalog.OrderKey(kind);
@@ -158,8 +186,8 @@ public sealed class TaxonomyAdminService
         else
         {
             var csv = string.Join(",", orderedMembers);
-            if (existingOrder is null) { Upsert(db, orderKey, csv); changed = true; }
-            else if (!string.Equals(existingOrder.Value, csv, StringComparison.Ordinal)) { existingOrder.Value = csv; existingOrder.UpdatedAtUtc = _clock.UtcNow; existingOrder.UpdatedBy = _user.UserId; changed = true; }
+            if (existingOrder is null) { Add(db, added, orderKey, csv); changed = true; }
+            else if (!string.Equals(existingOrder.Value, csv, StringComparison.Ordinal)) { Touch(existingOrder, csv); changed = true; }
         }
 
         // Hidden: a row per hidden member; remove rows for members that are (now) visible.
@@ -170,8 +198,8 @@ public sealed class TaxonomyAdminService
             var existing = Find(hkey);
             if (hidden.Contains(m.Value))
             {
-                if (existing is null) { Upsert(db, hkey, "true"); changed = true; }
-                else if (!string.Equals(existing.Value, "true", StringComparison.OrdinalIgnoreCase)) { existing.Value = "true"; existing.UpdatedAtUtc = _clock.UtcNow; existing.UpdatedBy = _user.UserId; changed = true; }
+                if (existing is null) { Add(db, added, hkey, "true"); changed = true; }
+                else if (!string.Equals(existing.Value, "true", StringComparison.OrdinalIgnoreCase)) { Touch(existing, "true"); changed = true; }
             }
             else if (existing is not null)
             {
@@ -182,12 +210,13 @@ public sealed class TaxonomyAdminService
 
         if (changed)
         {
-            await db.SaveChangesAsync(ct);
+            await SaveAsync(db, added, ct);
             _reloader.ReloadOrThrow();   // BUG-270
         }
     }
 
-    private void Upsert(IAppDbContext db, string key, string value) =>
+    private void Add(IAppDbContext db, List<string> added, string key, string value)
+    {
         db.AppSettings.Add(new AppSetting
         {
             Key = key,
@@ -195,6 +224,30 @@ public sealed class TaxonomyAdminService
             UpdatedAtUtc = _clock.UtcNow,
             UpdatedBy = _user.UserId
         });
+        added.Add(key);
+    }
+
+    private void Touch(AppSetting row, string value)
+    {
+        row.Value = value;
+        row.UpdatedAtUtc = _clock.UtcNow;
+        row.UpdatedBy = _user.UserId;
+    }
+
+    // BUG-393: another administrator's save added the same override between the read above and this insert (the unique
+    // index refused it). Said plainly, not an error page; nothing from this save is kept.
+    private async Task SaveAsync(IAppDbContext db, List<string> added, CancellationToken ct)
+    {
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (added.Count > 0)
+        {
+            using var recheck = _factory.CreateDbContext();
+            if (await recheck.AppSettings.AnyAsync(s => added.Contains(s.Key), ct))
+                throw new InvalidOperationException(
+                    "Another administrator saved this taxonomy at the same moment. Reload the page to see their change, then save again.", ex);
+            throw;
+        }
+    }
 
     /// <summary>Removes a member's override so it reverts to the built-in default. Audited. No-op if unset.</summary>
     public Task ResetAsync(string kind, string member, CancellationToken ct = default)

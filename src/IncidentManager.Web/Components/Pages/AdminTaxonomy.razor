@@ -31,7 +31,7 @@ else
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><span class="bi bi-tag me-1"></span>@kind.Title</span>
-                <button class="btn btn-sm btn-primary" @onclick="() => SaveKind(kind.Id)">Save @kind.Title</button>
+                <button class="btn btn-sm btn-primary" @onclick="() => SaveKind(kind.Id)" disabled="@_saving">Save @kind.Title</button>
             </div>
             <div class="card-body">
                 <p class="small text-muted">@kind.Description</p>
@@ -159,7 +159,18 @@ else
         (kind.Members[index], kind.Members[target]) = (kind.Members[target], kind.Members[index]);
     }
 
+    // BUG-393: a double click on Save ran the save twice; the second insert of a first override hit the unique index.
+    private bool _saving;
+
     private async Task SaveKind(string kindId)
+    {
+        if (_kinds is null || _saving) return;
+        _saving = true;
+        try { await SaveKindCore(kindId); }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveKindCore(string kindId)
     {
         if (_kinds is null) return;
         var kind = _kinds.FirstOrDefault(k => k.Id == kindId);
@@ -176,13 +187,15 @@ else
                 await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden);
             }
 
+            // BUG-378: the card's changed labels in one save, so a refused one doesn't leave the others committed.
+            var labels = new Dictionary<string, string?>(StringComparer.Ordinal);
             foreach (var m in kind.Members)
             {
                 var next = m.Label?.Trim() ?? "";
                 var current = m.OriginalOverride ?? "";
-                if (!string.Equals(next, current, StringComparison.Ordinal))
-                    await Taxonomy.SetLabelAsync(kindId, m.Value, next);
+                if (!string.Equals(next, current, StringComparison.Ordinal)) labels[m.Value] = next;
             }
+            if (labels.Count > 0) await Taxonomy.SetLabelAsync(kindId, labels);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

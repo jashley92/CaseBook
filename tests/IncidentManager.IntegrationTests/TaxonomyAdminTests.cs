@@ -185,5 +185,40 @@ public sealed class TaxonomyAdminTests : IDisposable
         _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_label_that_already_has_an_override_can_be_changed(/* BUG-378 */)
+    {
+        var svc = NewService();
+        await svc.SetLabelAsync("Classification", "Breach", "Major Incident");
+
+        await svc.SetLabelAsync("Classification", "Breach", "Notifiable Breach");
+
+        var breach = (await svc.GetEffectiveAsync()).Single(k => k.Id == "Classification").Members.Single(m => m.Value == "Breach");
+        breach.Override.Should().Be("Notifiable Breach");
+        using var db = NewContext();
+        (await db.AppSettings.CountAsync(s => s.Key == TaxonomyCatalog.LabelKey("Classification", "Breach"))).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_cards_labels_are_saved_together_or_not_at_all(/* BUG-378 */)
+    {
+        var svc = NewService();
+        var act = async () => await svc.SetLabelAsync("Classification", new Dictionary<string, string?>
+        {
+            ["Breach"] = "Major Incident",
+            ["AdverseEvent"] = new string('x', 61),
+        });
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        (await svc.GetEffectiveAsync()).Single(k => k.Id == "Classification").Members
+            .Should().OnlyContain(m => !m.IsOverridden, "the refused label kept the other one from being saved too");
+
+        await svc.SetLabelAsync("Classification", new Dictionary<string, string?> { ["Breach"] = "Major Incident", ["AdverseEvent"] = "Security Event" });
+        await svc.SetLabelAsync("Classification", new Dictionary<string, string?> { ["Breach"] = "Notifiable", ["AdverseEvent"] = "" });
+        var members = (await svc.GetEffectiveAsync()).Single(k => k.Id == "Classification").Members;
+        members.Single(m => m.Value == "Breach").Override.Should().Be("Notifiable");
+        members.Single(m => m.Value == "AdverseEvent").IsOverridden.Should().BeFalse();
+    }
+
     public void Dispose() => _connection.Dispose();
 }
