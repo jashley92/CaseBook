@@ -646,8 +646,8 @@ else
         // Reflect the active tab in the URL (?tab=) so a refresh / bookmark reopens the same tab instead of
         // snapping back to Overview. We use history.replaceState rather than NavigationManager so this doesn't
         // fire a Blazor navigation (which would reload the whole case on every tab click). The one-shot
-        // ?entity= deep-link is cleared once consumed. No-ops during prerender (JS not yet available).
-        await SyncTabUrl(tab);
+        // ?entity=, ?entry= and ?note= deep-links are cleared once consumed. No-ops during prerender (JS not yet available).
+        await SyncTabUrl();
         // Overview, Audit, Report, Entities, and Tasks self-load in their extracted tab components (UX-13).
     }
 
@@ -655,17 +655,15 @@ else
     private Task SetView(string view) =>
         SetTab(_lastPart.TryGetValue(view, out var last) && Facts.PartsShown(view).Contains(last) ? last : Facts.PartsShown(view)[0]);
 
-    private async Task SyncTabUrl(string tab)
+    // BUG-489: built from where the viewer is now (the part, an open evidence panel), not from Nav.Uri, which replaceState
+    // never updates: that brought a closed panel and a consumed ?entry= or ?note= back on a refresh and through the tab strip.
+    private async Task SyncTabUrl()
     {
         try
         {
-            var url = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
-            {
-                ["tab"] = tab,
-                ["entity"] = null,
-            });
-            await JS.InvokeVoidAsync("history.replaceState", null, "", url);
-            OpenTabs.Remember(Id, Nav.ToBaseRelativePath(url));   // RD-21: the tab comes back to this view
+            var url = CaseViews.Url(Id, _activeTab, _panelEvidence);
+            await JS.InvokeVoidAsync("history.replaceState", null, "", Nav.ToAbsoluteUri(url).ToString());
+            OpenTabs.Remember(Id, url);   // RD-21: the tab comes back to this view
         }
         catch (JSException) { /* circuit/JS not ready */ }
         catch (InvalidOperationException) { /* prerendering — JS interop unavailable */ }

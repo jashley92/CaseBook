@@ -99,18 +99,29 @@ public partial class CaseWorkspace
     private Guid? _panelEntity;
     private Guid? _timelineEntity;
 
-    private void OpenEntity(Guid id) { _panelEvidence = null; _panelEntity = id; }
+    private async Task OpenEntity(Guid id)
+    {
+        var hadEvidence = _panelEvidence is not null;
+        _panelEvidence = null;
+        _panelEntity = id;
+        if (hadEvidence) await SyncTabUrl();   // BUG-489: the evidence panel it replaces leaves the address
+    }
 
     // --- RD-06: the evidence panel ---
     private Guid? _panelEvidence;
 
-    private void OpenEvidence(Guid id) { _panelEntity = null; _panelEvidence = id; }
+    private async Task OpenEvidence(Guid id)
+    {
+        _panelEntity = null;
+        _panelEvidence = id;
+        await SyncTabUrl();   // BUG-489: the address carries the open panel as a cited-file link's does
+    }
 
+    // BUG-489: the address bar and the tab strip's return both drop the closed panel.
     private async Task CloseEvidencePanel()
     {
         _panelEvidence = null;
-        try { await JS.InvokeVoidAsync("history.replaceState", null, "", Nav.GetUriWithQueryParameter("evidence", (string?)null)); }
-        catch (JSException) { /* cosmetic */ }
+        await SyncTabUrl();
     }
 
     // A citing entry opens on the timeline, flashed; the brief is in the Now pane (or on the Briefing).
@@ -124,9 +135,8 @@ public partial class CaseWorkspace
     private async Task CloseEntityPanel()
     {
         _panelEntity = null;
-        // Drop ?entity= so a reload doesn't reopen it.
-        try { await JS.InvokeVoidAsync("history.replaceState", null, "", Nav.GetUriWithQueryParameter("entity", (string?)null)); }
-        catch (JSException) { /* cosmetic */ }
+        // Drop ?entity= so a reload doesn't reopen it (BUG-489: from the current part, and the tab strip's return too).
+        await SyncTabUrl();
     }
 
     private async Task ShowEntityOnTimeline(Guid id)

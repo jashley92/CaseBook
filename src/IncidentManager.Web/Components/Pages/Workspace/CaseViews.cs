@@ -35,6 +35,11 @@ public static class CaseViews
         _ => part,
     };
 
+    /// <summary>BUG-489: the workspace's address for where the viewer is: the part and an open evidence panel. A one-shot
+    /// deep link (<c>?entity=</c>, <c>?entry=</c>, <c>?note=</c>) is spent once followed, so it isn't carried.</summary>
+    public static string Url(Guid caseId, string part, Guid? evidence = null) =>
+        $"cases/{caseId}?tab={Uri.EscapeDataString(part)}" + (evidence is { } e ? $"&evidence={e}" : "");
+
     /// <summary>A closed case opens on its Briefing (the outcome leads); an open one on its Record.</summary>
     public static string DefaultPart(Case? c) => c?.Phase == CasePhase.Closed ? "Briefing" : "Timeline";
 
