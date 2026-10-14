@@ -74,7 +74,8 @@
 
     private async Task Run()
     {
-        if (!_onConfirm.HasDelegate) return;
+        // BUG-338: a second click can be dispatched before the disabled button renders; run the action once.
+        if (_busy || !_onConfirm.HasDelegate) return;
         _busy = true;
         try { await _onConfirm.InvokeAsync(); }
         finally
