@@ -54,6 +54,8 @@
     private readonly string _id = Guid.NewGuid().ToString("N")[..8];
     private string _text = "";
     private DateTime _when;
+    private DateTime _whenShown;           // BUG-477: as seeded, to keep the written instant when it's left as shown
+    private DateTimeOffset _whenRecorded;
     private TimelineEntryType _type = TimelineEntryType.Analysis;
     private bool _saving;
 
@@ -68,7 +70,8 @@
     protected override void OnInitialized()
     {
         _text = Text;
-        _when = ToWall(WrittenAtUtc);
+        _when = _whenShown = ToWall(WrittenAtUtc);
+        _whenRecorded = WrittenAtUtc;
     }
 
     private async Task KeyDown(KeyboardEventArgs e)
@@ -83,7 +86,10 @@
         _saving = true;
         try
         {
-            await Cases.PromoteToTimelineAsync(CaseId, SourceRef, _type, WallToUtc(_when), _text);
+            // BUG-477 (WF-68): a time left as shown keeps the instant it was written; converting it back would read a
+            // time in the repeated autumn hour as standard time, an hour later.
+            var when = _when == _whenShown ? _whenRecorded : WallToUtc(_when);
+            await Cases.PromoteToTimelineAsync(CaseId, SourceRef, _type, when, _text);
             Toasts.Success("Added to the timeline");
             await OnDone.InvokeAsync();
         }

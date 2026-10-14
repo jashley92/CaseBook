@@ -1120,6 +1120,9 @@ else
     private TimelineKind _tlAddKind = TimelineKind.Event;  // which timeline the composer adds/edits
     private TimelineEntryType _tlType = TimelineEntryType.Analysis;
     private DateTime _tlWhen = DateTime.UtcNow;
+    // BUG-477: the edited entry's time as shown when its edit opened, and its recorded instant (WF-68's Kept rule).
+    private DateTime? _tlWhenShown;
+    private DateTimeOffset? _tlWhenRecorded;
     // ST-01: an attack step's time as stated: the precision, the date (or a window's first date) and last date, and
     // for a step with no stated time, the step it comes after ("" = first).
     private TimePrecision _tlPrecision = TimePrecision.Exact;
@@ -1902,6 +1905,7 @@ else
         _tlEditStamp = e.RowHash ?? "";   // BUG-196
         _tlReason = null;
         _tlWhen = UtcToWall(e.OccurredAtUtc);
+        (_tlWhenShown, _tlWhenRecorded) = (_tlWhen, e.OccurredAtUtc);   // BUG-477
         _evtActorId = e.ActorEntityId?.ToString() ?? "";
         _evtTargetId = e.TargetEntityId?.ToString() ?? "";
         _actorPrev = _evtActorId; _targetPrev = _evtTargetId;
@@ -1982,6 +1986,7 @@ else
         _tlReason = null;
         _tlType = e.Type;
         _tlWhen = UtcToWall(e.OccurredAtUtc);
+        (_tlWhenShown, _tlWhenRecorded) = (_tlWhen, e.OccurredAtUtc);   // BUG-477
         _tlSource = e.Source;
         _tlDesc = e.Description;
         _decWhy = e.Rationale; _decOptions = e.OptionsConsidered; _decBy = e.DecidedBy;
@@ -2003,7 +2008,7 @@ else
         try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
         catch (JSException) { /* fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
-        var whenUtc = WallToUtc(_tlWhen);
+        var whenUtc = KeptWhenUtc();
         if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
         try { await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason, Decision()); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't save the entry. {ex.Message}"); return; }
@@ -2028,6 +2033,7 @@ else
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         _tlPrecision = TimePrecision.Exact; _tlAfter = ""; _tlEditPrecision = null;
+        (_tlWhenShown, _tlWhenRecorded) = (null, null);   // BUG-477
         if (_preEditTimes is { } times && _draft is null) (_tlWhen, _tlDay, _tlUntilDay) = times;
         _preEditTimes = null;
         if (_draft is { } d)
@@ -2432,7 +2438,12 @@ else
     // step whose time wasn't stated, only used when there's no other step to place it by).
     private DateTimeOffset StepWhenUtc() => _tlPrecision is TimePrecision.Day or TimePrecision.Window or TimePrecision.OnOrBefore
         ? StepTiming.DateAnchor(DateOnly.FromDateTime(_tlDay))
-        : WallToUtc(_tlWhen);
+        : KeptWhenUtc();
+
+    // BUG-477 (WF-68): an edited entry's time left as shown keeps its recorded instant. Converting it back read a time in
+    // the repeated autumn hour as standard time, so editing only the description moved the entry an hour later.
+    private DateTimeOffset KeptWhenUtc() =>
+        _tlEditId is not null && _tlWhen == _tlWhenShown && _tlWhenRecorded is { } recorded ? recorded : WallToUtc(_tlWhen);
 
     // The arrows show where they can do something: on a step that shares its time with a neighbour, or where either
     // neighbour has no stated time.
@@ -2552,6 +2563,9 @@ else
 
     private void CancelCorrection() { _corr = null; _corrError = null; }
 
+    // BUG-477 sibling (WF-68): a time left as shown is the transition's own instant, not its standard-time reading.
+    private DateTimeOffset CorrectedUtc(CaseMilestone m, DateTime w) => w == UtcToWall(m.AtUtc) ? m.AtUtc : WallToUtc(w);
+
     // --- BUG-413: retract an entry ---
     private TimelineEntry? _retract;
     private string? _retractStamp;   // the entry's row hash when the dialog opened, so a colleague's change is refused
@@ -2606,7 +2620,7 @@ else
     // materiality decision or detection, not from a transition.
     private IEnumerable<string> CorrectionImpact(CaseMilestone m, (TransitionKind Kind, Guid ChangeId) t)
     {
-        var newAt = _corrWhen is { } w ? WallToUtc(w) : (DateTimeOffset?)null;
+        var newAt = _corrWhen is { } w ? CorrectedUtc(m, w) : (DateTimeOffset?)null;
         var moves = newAt is { } at && at != m.AtUtc;
         if (moves)
             yield return $"The timeline shows this at {TimeDisp.Long(newAt!.Value)} instead of {TimeDisp.Long(m.AtUtc)}.";
@@ -2644,7 +2658,7 @@ else
         _corrError = null;
         try
         {
-            await Cases.CorrectTransitionTimeAsync(CaseId, t.Kind, t.ChangeId, WallToUtc(w), _corrReason);
+            await Cases.CorrectTransitionTimeAsync(CaseId, t.Kind, t.ChangeId, CorrectedUtc(_corr, w), _corrReason);
             _corr = null;
             await OnChanged.InvokeAsync();
             Toasts.Success("Time corrected");
