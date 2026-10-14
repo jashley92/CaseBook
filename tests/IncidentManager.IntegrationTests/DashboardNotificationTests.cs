@@ -159,6 +159,37 @@ public sealed class DashboardNotificationTests : IDisposable
     }
 
     [Fact]
+    public async Task Needs_action_dates_an_entry_edited_into_a_decision_by_its_first_version(/* BUG-444 */)
+    {
+        var now = _clock.UtcNow;
+        var retyped = Case.Open(2026, 72, "Retyped", "Analysis edited into a decision", Classification.Incident, Severity.Low,
+            CaseOrigin.InternalDetection, "a", now.AddDays(-3));
+        await SeedAsync(retyped);
+        await using (var db = NewContext())
+        {
+            // An analysis written before the brief, corrected, then made a decision after it: two edits, three versions.
+            var v1 = new TimelineEntry { CaseId = retyped.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Analysis,
+                OccurredAtUtc = now.AddDays(-2), Description = "Isolte the host", CreatedBy = "a", CreatedAtUtc = now.AddDays(-2),
+                IsCurrent = false };
+            var v2 = new TimelineEntry { CaseId = retyped.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Analysis,
+                OccurredAtUtc = now.AddDays(-2), Description = "Isolate the host", CreatedBy = "a", CreatedAtUtc = now.AddHours(-3),
+                Version = 2, SupersedesEntryId = v1.Id, IsCurrent = false };
+            db.TimelineEntries.AddRange(v1, v2);
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = retyped.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Decision,
+                OccurredAtUtc = now.AddDays(-2), Description = "Isolate the host", CreatedBy = "a", CreatedAtUtc = now.AddHours(-1),
+                Version = 3, SupersedesEntryId = v2.Id });
+            db.CaseBriefs.Add(new CaseBrief { CaseId = retyped.Id, Summary = "s", CreatedBy = "a", CreatedAtUtc = now.AddDays(-1) });
+            await db.SaveChangesAsync();
+        }
+        var f = NewFactory();
+
+        var na = await new NeedsActionService(f, _user, _clock, new TestSlaTargets(), _settings,
+            new NotificationRuleService(f, _user, _clock)).GetAsync();
+
+        na.Items.Should().NotContain(i => i.Kind == NeedsActionKind.Brief, "the entry was first recorded before the brief");
+    }
+
+    [Fact]
     public async Task Needs_action_leaves_out_overdue_tasks_on_closed_cases(/* BUG-163 */)
     {
         var now = _clock.UtcNow;

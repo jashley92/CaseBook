@@ -41,6 +41,10 @@ public sealed record NeedsAction(IReadOnlyList<NeedsActionItem> Items, IReadOnly
 /// </summary>
 public sealed class NeedsActionService
 {
+    // An entry version's type and links, without its text.
+    private static readonly System.Linq.Expressions.Expression<Func<TimelineEntry, TimelineEntry>> LinkOnly = e => new TimelineEntry
+        { Id = e.Id, CaseId = e.CaseId, Type = e.Type, IsCurrent = e.IsCurrent, SupersedesEntryId = e.SupersedesEntryId, CreatedAtUtc = e.CreatedAtUtc };
+
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
@@ -117,13 +121,22 @@ public sealed class NeedsActionService
         if (briefs.Count > 0)
         {
             var ids = briefs.Select(b => b.CaseId).ToList();
-            // Only decisions and handoffs (every version, to date each by its first): an edit keeps the type.
+            // The current decisions and handoffs, then each one's earlier versions (to date it by its first). BUG-444: fetched
+            // by their links, whatever their type, since an edit can change it (an analysis edited into a decision).
             var entries = (await db.TimelineEntries.AsNoTracking()
-                    .Where(e => ids.Contains(e.CaseId) && (e.Type == TimelineEntryType.Decision || e.Type == TimelineEntryType.Handoff))
-                    .Select(e => new TimelineEntry { Id = e.Id, CaseId = e.CaseId, Type = e.Type, IsCurrent = e.IsCurrent,
-                        SupersedesEntryId = e.SupersedesEntryId, CreatedAtUtc = e.CreatedAtUtc })
+                    .Where(e => ids.Contains(e.CaseId) && e.IsCurrent
+                                && (e.Type == TimelineEntryType.Decision || e.Type == TimelineEntryType.Handoff))
+                    .Select(LinkOnly)
                     .ToListAsync(ct))
                 .ToDictionary(e => e.Id);
+            var earlier = entries.Values.Select(e => e.SupersedesEntryId).OfType<Guid>().ToList();
+            for (var guard = 0; earlier.Count > 0 && guard < 1000; guard++)   // as BriefFreshness.FirstRecorded's guard
+            {
+                var found = await db.TimelineEntries.AsNoTracking().Where(e => earlier.Contains(e.Id)).Select(LinkOnly)
+                    .ToListAsync(ct);
+                foreach (var e in found) entries.TryAdd(e.Id, e);
+                earlier = found.Select(e => e.SupersedesEntryId).OfType<Guid>().Where(id => !entries.ContainsKey(id)).ToList();
+            }
             var changes = entries.Values
                 .Where(e => e.IsCurrent && e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff)
                 .Select(e => (e.CaseId, At: BriefFreshness.FirstRecorded(e, entries),
