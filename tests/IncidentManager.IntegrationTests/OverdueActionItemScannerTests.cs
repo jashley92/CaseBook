@@ -191,6 +191,7 @@ public sealed class OverdueActionItemScannerTests : IDisposable
 
         var item = notifications.Received.Should().ContainSingle().Subject;
         item.OwnerUserId.Should().BeNull("moved to a role without ViewCases, so the reminder falls to the IC");
+        item.WrittenOwner.Should().Be("analyst1", "BUG-427: the escalation email still names the task's real owner");
         item.IncidentCommanderUserId.Should().Be("ic1");
 
         var leaverIc = new CapturingNotifications();

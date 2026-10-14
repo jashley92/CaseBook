@@ -388,6 +388,25 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task An_escalation_names_the_real_owner_when_the_reminder_fell_to_the_IC(/* BUG-427 */)
+    {
+        var sender = new CapturingEmailSender();
+        var notifications = Build(sender, new EmailOptions(), Team());
+        // The owner is no longer entitled, so the scanner routed the reminder to the IC (OwnerUserId null).
+        var item = Item(owner: null) with { WrittenOwner = "owner1" };
+
+        await notifications.OnActionItemsEscalatedAsync([new EscalatedActionItem(item, OverdueEscalationTier.Managers, 130)]);
+
+        sender.Sent.Should().NotBeEmpty();
+        sender.Sent.Should().OnlyContain(m => m.HtmlBody.Contains("owner Olive Owner") && !m.HtmlBody.Contains("Ivan IC"));
+
+        // Routing is unchanged: the IC got the first reminder, so the IC step is still skipped.
+        sender.Sent.Clear();
+        await notifications.OnActionItemsEscalatedAsync([new EscalatedActionItem(item, OverdueEscalationTier.IncidentCommander, 50)]);
+        sender.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task The_ic_step_is_skipped_when_the_ic_already_got_the_first_reminder()
     {
         var sender = new CapturingEmailSender();

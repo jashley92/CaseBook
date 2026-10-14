@@ -7,7 +7,9 @@ namespace IncidentManager.Application.Abstractions;
 /// <summary>
 /// A follow-up item that has passed its due date, flattened for notification (E-03b). Carries the owner id
 /// and the case's incident commander so the notifier can resolve a recipient (owner, else IC) without
-/// re-loading entities, plus the display fields for the email body.
+/// re-loading entities, plus the display fields for the email body. BUG-427: <see cref="OwnerUserId"/> is who the
+/// reminder may go to (null when the owner can't be told); <see cref="WrittenOwner"/> is the task's owner as written,
+/// for the "owner" the escalation email names.
 /// </summary>
 public sealed record OverdueActionItem(
     Guid CaseId,
@@ -17,7 +19,8 @@ public sealed record OverdueActionItem(
     Guid ActionItemId,
     string Title,
     DateTimeOffset DueAtUtc,
-    string? OwnerUserId);
+    string? OwnerUserId,
+    string? WrittenOwner = null);
 
 /// <summary>Who an overdue follow-up item has escalated to (PROD-03). Values are the escalation order.</summary>
 public enum OverdueEscalationTier

@@ -465,11 +465,12 @@ public sealed class CaseNotifications : ICaseNotifications
                 ["Audience"] = audience,
                 ["OverdueUrl"] = overdueUrl ?? "",
             };
+            // BUG-427: the owner shown is the task's owner as written, not the filtered recipient (which falls to the IC).
             var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["ItemsList"] = "<ul>" + string.Join("", ordered.Select(i =>
                     $"<li>{WebUtility.HtmlEncode(i.Item.CaseNumber)} — {WebUtility.HtmlEncode(i.Item.Title)} " +
-                    $"(owner {WebUtility.HtmlEncode(_users.DisplayFor(i.Item.OwnerUserId ?? i.Item.IncidentCommanderUserId))}; " +
+                    $"(owner {WebUtility.HtmlEncode(_users.DisplayFor(i.Item.WrittenOwner ?? i.Item.OwnerUserId ?? i.Item.IncidentCommanderUserId))}; " +
                     $"due {WebUtility.HtmlEncode(Due(i.Item.DueAtUtc))}, {OverdueSpan(i.HoursOverdue)} overdue)</li>")) + "</ul>",
             };
             var message = await _composer.ComposeAsync("overdue-escalated", [to], tokens, overdueUrl, htmlTokens, ct);

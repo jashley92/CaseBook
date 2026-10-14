@@ -58,6 +58,8 @@ public sealed class OverdueActionItemScanner(
         foreach (var r in rows)
             overdue.Add(r.Item with
             {
+                // BUG-427: the escalation email still names the real owner, though the reminder no longer goes to them.
+                WrittenOwner = TaskReminderAudience.OwnerId(r.Item.OwnerUserId, users),
                 OwnerUserId = await audience.OwnerAsync(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, r.Item.OwnerUserId, ct),
                 IncidentCommanderUserId = await audience.IncidentCommanderAsync(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, ct),
             });
