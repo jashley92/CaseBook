@@ -22,6 +22,8 @@ public class SettingsCatalogTests
     [InlineData("  casebook@corp.com ")]
     [InlineData("CaseBook <casebook@corp.com>")]
     [InlineData("incident-manager@localhost")]
+    [InlineData("\"casebook@corp.com\" <casebook@corp.com>")]
+    [InlineData("\"IR @ Corp; Security\" <ir@corp.com>")]
     public void The_sender_address_takes_one_address_with_or_without_a_name(string value /* BUG-468 */)
     {
         var from = SettingsCatalog.ByKey["Email:From"];
@@ -36,6 +38,8 @@ public class SettingsCatalogTests
     [InlineData("casebook@")]
     [InlineData("a@corp.com; b@corp.com")]
     [InlineData("a@corp.com, b@corp.com")]
+    [InlineData("a@corp.com b@corp.com")]
+    [InlineData("CaseBook <a@corp.com>; b@corp.com")]
     public void The_sender_address_refuses_a_value_every_send_would_fail_on(string value /* BUG-468 */)
     {
         var from = SettingsCatalog.ByKey["Email:From"];

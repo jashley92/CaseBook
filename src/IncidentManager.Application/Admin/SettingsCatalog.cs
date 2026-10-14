@@ -347,10 +347,28 @@ public static class SettingsCatalog
     {
         if (string.IsNullOrEmpty(v))
             return "enter an address, like casebook@contoso.com. Use Reset to go back to the default.";
-        // "a@x; b@x" parses as one address (b@x) named "a@x;", so a pasted list is refused rather than half-used.
-        if (!System.Net.Mail.MailAddress.TryCreate(v, out var parsed) || parsed.DisplayName.Contains('@'))
+        // "a@x; b@x" parses as one address (b@x) named "a@x;", so a pasted list is refused rather than half-used: a "," or
+        // ";" outside quotes, or an unquoted name holding an "@" ("a@x b@x"). A quoted name may hold either
+        // ("IR @ Contoso" <ir@contoso.com>), as MailAddress, and so the sender, accepts it.
+        if (!System.Net.Mail.MailAddress.TryCreate(v, out var parsed) || LooksLikeAList(v)
+            || (parsed.DisplayName.Contains('@') && !v.StartsWith('"')))
             return $"\"{v}\" isn't one email address. Use one address, like casebook@contoso.com or CaseBook <casebook@contoso.com>.";
         return null;
+    }
+
+    private static bool LooksLikeAList(string v)
+    {
+        var quoted = false;
+        var angle = v.IndexOf('<');
+        for (var i = 0; i < v.Length; i++)
+        {
+            var c = v[i];
+            // (char)92 is a backslash: an escaped quote doesn't end the quoted name.
+            if (c == '"' && (i == 0 || v[i - 1] != (char)92)) quoted = !quoted;
+            else if (!quoted && (c == ',' || c == ';')) return true;
+            else if (!quoted && c == '@' && angle > i) return true;   // an "@" in an unquoted name before <address>
+        }
+        return false;
     }
 
     public static string? Normalize(SettingDefinition def, string? value)
