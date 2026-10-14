@@ -163,7 +163,7 @@ public sealed class ProgramReportService
     }
 
     private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
-        List<ActionRow> Actions, SlaTargets Targets, Dictionary<Guid, SlaState> Notices, History History);
+        List<ActionRow> Actions, SlaTargets Targets, List<(Guid CaseId, DateTimeOffset At, SlaState State)> Notices, History History);
 
     /// <summary>
     /// WF-38: each case's phase, classification and severity changes, in order, so a quarter is figured as the record stood
@@ -237,22 +237,13 @@ public sealed class ProgramReportService
         var actions = actionRows.Select(a => new ActionRow(a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea,
             edits.GetValueOrDefault(a.Id.ToString()) ?? [])).ToList();
 
-        // Each reported case's notice outcome against its jurisdictions' windows, when deadlines are tracked.
-        var notices = new Dictionary<Guid, SlaState>();
+        // BUG-287: each notice given, when it was given and whether inside its window (its kept deadline, WF-77, so a later
+        // change to a rule's window or to the materiality decision doesn't move a past quarter), when deadlines are tracked.
+        var notices = new List<(Guid CaseId, DateTimeOffset At, SlaState State)>();
         if (_notify?.Current is { Enabled: true } nd && _rules is not null)
         {
             var ruleSet = await _rules.LoadRuleSetAsync(nd.DefaultWindowHours, ct);
-            foreach (var (id, head) in await NotificationDeadlineService.HeadlinesAsync(db,
-                         cases.Where(c => c.ReportedAtUtc != null), nd, ruleSet, _clock.UtcNow, reported: true, ct))
-                notices[id] = head.State;
-            // WF-77: a case whose notices all carry the deadline in force when they were made is judged on those, so a
-            // later change to a rule's window or to the materiality decision doesn't move a past quarter.
-            var kept = (await db.JurisdictionNotices.AsNoTracking()
-                    .Where(n => cases.Where(c => c.ReportedAtUtc != null).Select(c => c.Id).Contains(n.CaseId))
-                    .Select(n => new { n.CaseId, n.NotifiedAtUtc, n.DueAtUtc }).ToListAsync(ct))
-                .GroupBy(n => n.CaseId).Where(g => g.All(n => n.DueAtUtc is not null));
-            foreach (var g in kept)
-                notices[g.Key] = g.All(n => n.NotifiedAtUtc <= n.DueAtUtc) ? SlaState.Met : SlaState.Missed;
+            notices = await NotificationDeadlineService.NoticeOutcomesAsync(db, cases, nd, ruleSet, _clock.UtcNow, ct);
         }
 
         // WF-38: the history each quarter is figured from (effective times, as the record dates them). WF-97: in the order
@@ -344,10 +335,6 @@ public sealed class ProgramReportService
                 var (sm, sx) = bySeverity.GetValueOrDefault(sev);
                 bySeverity[sev] = met ? (sm + 1, sx) : (sm, sx + 1);
             }
-            if (In(r.ReportedAtUtc) && data.Notices.TryGetValue(r.Id, out var notice))
-            {
-                if (notice == SlaState.Met) nMet++; else if (notice == SlaState.Missed) nMiss++;
-            }
             if (In(r.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
             if (In(r.DetectedAtUtc))
             {
@@ -355,6 +342,10 @@ public sealed class ProgramReportService
                 if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMiss++;
             }
         }
+
+        // BUG-287: the notices given in the quarter, each judged on its own.
+        foreach (var n in data.Notices.Where(n => In(n.At)))
+            if (n.State == SlaState.Met) nMet++; else nMiss++;
 
         actions = actions.Where(a => a.CreatedAtUtc < end).Select(a => a.At(end)).ToList();   // WF-80: as they stood at the end
         var openAtEnd = actions.Where(a => a.CreatedAtUtc < end && (a.ClosedAtUtc is null || a.ClosedAtUtc >= end)).ToList();

@@ -83,6 +83,21 @@ public sealed class AccessLogPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_case_restricted_since_the_last_open_starts_a_new_row(/* BUG-289 */)
+    {
+        NewContext();
+        var caseId = SeedCase();
+        var svc = NewService();
+
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: false);
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(10);
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: true);
+
+        using var db = NewContext();
+        (await db.CaseAccessEvents.AsNoTracking().ToListAsync()).Select(r => r.WasRestricted).Should().BeEquivalentTo([false, true]);
+    }
+
+    [Fact]
     public async Task Each_export_is_its_own_row_with_its_own_file_name(/* BUG-154 */)
     {
         NewContext();

@@ -39,6 +39,10 @@ public static class ChainKeyStartup
         }
         catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 208) { return []; }   // invalid object name
         catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase)) { return []; }
+        // BUG-317: this runs before the migrations, so a database from before the key column (AddAuditHashKeyId) has no
+        // such column yet, and so no keyed entries. Turning the chain key on in the same upgrade refused to start.
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 207) { return []; }   // invalid column name
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("no such column", StringComparison.OrdinalIgnoreCase)) { return []; }
         catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
         {
             throw new InvalidOperationException(

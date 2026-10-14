@@ -337,14 +337,23 @@ using (var scope = app.Services.CreateScope())
     await IncidentManager.Infrastructure.Persistence.RowHashBackfill.RunAsync(db,
         scope.ServiceProvider.GetRequiredService<IHashChainService>());
     // WF-11: reported cases record the jurisdictions in play when they were reported (a no-op once all do).
-    await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db);
+    // BUG-288: a failure here (a timeout on a large database) is retried at the next start; until then a case without
+    // its frozen set is judged against today's jurisdictions, as before the back-fill existed.
+    try { await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db); }
+    catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or System.Data.Common.DbException or TimeoutException)
+    {
+        app.Logger.LogWarning(ex, "Couldn't record the jurisdictions in play on earlier reported cases; it's tried again at the next start.");
+    }
     // WF-77: notices recorded before their deadline was kept get it now (today's rules are the best record there is).
     try
     {
         await scope.ServiceProvider.GetRequiredService<IncidentManager.Application.Compliance.NotificationDeadlineService>()
             .FreezeNoticeDuesAsync();
     }
-    catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException)
+    // BUG-288: ExecuteUpdate throws the provider's own DbException (a timeout, a lock), not DbUpdateException; the
+    // back-fill is worth a warning, not a start-up that fails and an upgrade that rolls back after its migrations.
+    catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException
+                                   or System.Data.Common.DbException or TimeoutException)
     {
         app.Logger.LogWarning(ex, "Couldn't record the deadlines of earlier regulator notices; past quarters' notice figures use today's rules.");
     }

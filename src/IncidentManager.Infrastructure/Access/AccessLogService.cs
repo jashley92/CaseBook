@@ -127,7 +127,11 @@ public sealed class AccessLogService : IAccessLogService
                 .Where(e => e.ActorUserId == actor
                             && e.CaseId == caseId
                             && e.AccessType == type
-                            && e.TargetId == targetId)
+                            && e.TargetId == targetId
+                            // BUG-289: a case restricted (or renumbered) since the row began starts a new one, so the
+                            // "restricted only" filter and the case-number filter see the access as it was.
+                            && e.WasRestricted == wasRestricted
+                            && e.CaseNumber == caseNumber)
                 .OrderByDescending(e => e.LastSeenUtc)
                 .FirstOrDefaultAsync(ct);
 

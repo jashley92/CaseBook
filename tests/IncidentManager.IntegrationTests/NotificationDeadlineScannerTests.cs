@@ -250,6 +250,21 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         await using var check = NewContext();
         (await check.JurisdictionNotices.AsNoTracking().Where(n => n.CaseId == id).Select(n => n.Jurisdiction).ToListAsync())
             .Should().Equal("NY");
+
+        // BUG-284: NJ is outstanding, so the case isn't reported; what was kept still stands, so CA (added to SSN by the
+        // admin later) doesn't come into play, and notifying NJ reports it again.
+        var open = await NewDeadlines().EvaluateAsync(id);
+        open.ReportedAtUtc.Should().BeNull();
+        open.Statuses.Select(s => s.JurisdictionCode).Should().Equal("NJ", "NY");
+        // BUG-287: and the NY notice still counts in the quarter it was given, though the case waits on NJ.
+        await using (var q = NewContext())
+        {
+            var ruleSet = await new NotificationRuleService(NewFactory(), _user, _clock).LoadRuleSetAsync(_settings.Current.DefaultWindowHours);
+            (await NotificationDeadlineService.NoticeOutcomesAsync(q, q.Cases.Where(c => c.Id == id), _settings.Current, ruleSet, _clock.UtcNow))
+                .Should().ContainSingle().Which.State.Should().Be(SlaState.Met);
+        }
+        await NewCases(NewContext()).RecordNoticeAsync(id, "NJ", _clock.UtcNow);
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().NotBeNull();
     }
 
     [Fact]
@@ -269,6 +284,12 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(0);
         await using var after = NewContext();
         (await after.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).DueAtUtc.Should().Be(due);
+
+        // BUG-286: and the case page and the Legal register judge it the same way, against the deadline it was made under.
+        var page = await NewDeadlines().EvaluateAsync(id);
+        page.Statuses.Should().ContainSingle(s => s.JurisdictionCode == "NY").Which.State.Should().Be(SlaState.Met);
+        var heads = await NewDeadlines().HeadlinesNowAsync(after, after.Cases.Where(c => c.Id == id), includeReported: true);
+        heads[id].State.Should().Be(SlaState.Met);
     }
 
     [Fact]

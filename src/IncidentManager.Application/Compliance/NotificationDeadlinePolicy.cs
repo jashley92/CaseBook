@@ -82,7 +82,8 @@ public static class NotificationDeadlinePolicy
     /// </summary>
     public static IReadOnlyList<NotificationDeadlineStatus> EvaluateByJurisdiction(
         DateTimeOffset? startInstant, Func<string, DateTimeOffset?> notifiedAt, IEnumerable<string> jurisdictionCodes,
-        NotificationRuleSet rules, int atRiskThresholdPercent, DateTimeOffset nowUtc)
+        NotificationRuleSet rules, int atRiskThresholdPercent, DateTimeOffset nowUtc,
+        Func<string, DateTimeOffset?>? frozenDue = null)
     {
         if (startInstant is not { } start)
             return Array.Empty<NotificationDeadlineStatus>();
@@ -98,8 +99,16 @@ public static class NotificationDeadlinePolicy
         foreach (var code in codes)
         {
             var (label, window) = rules.Resolve(code);
+            var notified = notifiedAt(code);
+            // BUG-286 (WF-77): a notice is judged against the deadline it was made under, kept when it was recorded, so a
+            // window or a materiality date changed later doesn't turn a timely notice late, or a late one timely.
+            if (notified is not null && frozenDue?.Invoke(code) is { } kept)
+            {
+                list.Add(EvaluateOne(code, label, window, start, notified, pct, nowUtc, kept));
+                continue;
+            }
             if (window <= 0) continue; // a zero/blank window means "no deadline tracked" for this jurisdiction
-            list.Add(EvaluateOne(code, label, window, start, notifiedAt(code), pct, nowUtc));
+            list.Add(EvaluateOne(code, label, window, start, notified, pct, nowUtc));
         }
         return list;
     }
@@ -116,9 +125,9 @@ public static class NotificationDeadlinePolicy
     }
 
     private static NotificationDeadlineStatus EvaluateOne(string code, string label, int windowHours,
-        DateTimeOffset start, DateTimeOffset? reportedAtUtc, int atRiskPercent, DateTimeOffset now)
+        DateTimeOffset start, DateTimeOffset? reportedAtUtc, int atRiskPercent, DateTimeOffset now, DateTimeOffset? keptDue = null)
     {
-        var due = start.AddHours(windowHours);
+        var due = keptDue ?? start.AddHours(windowHours);
 
         if (reportedAtUtc is { } reported)
         {

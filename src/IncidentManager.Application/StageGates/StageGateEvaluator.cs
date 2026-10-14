@@ -87,7 +87,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
             .Select(r => new GateRequirementResult(
                 r.Id, r.Order, r.Kind, r.CheckKey, r.Label, r.IsBlocking,
                 MachineSatisfied: r.Kind == GateRequirementKind.MachineCheck
-                    && GateCheckRegistry.IsSatisfied(r.CheckKey, facts, r.CheckParam)))
+                    && GateCheckRegistry.IsSatisfied(r.CheckKey, facts, r.CheckParam), r.CheckParam))
             .ToList();
 
         return new GateEvaluation(true, trigger, gate.Name, results, gate.CommentaryMinLength, facts);

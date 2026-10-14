@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -80,7 +81,7 @@ public sealed class NotificationDeadlineService
                 MatDecidedOn = x.Materiality.DecidedOnUtc,
                 MatRecordedAt = x.Materiality.RecordedAtUtc,
                 Keys = x.DataElements.Select(d => d.ElementKey).ToList(),
-                Notices = x.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList(),
+                Notices = x.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc }).ToList(),
                 MaterialCalls = x.MaterialityChanges.Where(m => m.To == MaterialityStatus.Material)
                     .Select(m => new { m.From, m.DecidedOnUtc, m.ChangedAtUtc }).ToList()
             })
@@ -111,14 +112,17 @@ public sealed class NotificationDeadlineService
         if (start is null) return empty;
 
         // WF-11: a reported case is judged on what was in play when it was reported.
-        var jurisdictions = c.ReportedAtUtc is not null && Frozen(c.ReportedJurisdictions) is { } frozen ? frozen
+        // BUG-284: and one that went back to unreported keeps it, with what came into play since.
+        var jurisdictions = Frozen(c.ReportedJurisdictions) is { } frozen ? frozen
             : await JurisdictionsInPlayAsync(db, c.Keys, ct);
         if (jurisdictions.Count == 0) return empty;
 
         var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
         var notices = c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase);
+        var kept = c.Notices.Where(n => n.DueAtUtc is not null)
+            .ToDictionary(n => n.Jurisdiction, n => n.DueAtUtc!.Value, StringComparer.OrdinalIgnoreCase);
         var statuses = NotificationDeadlinePolicy.EvaluateByJurisdiction(start, NotifiedAt(notices, c.ReportedAtUtc), jurisdictions, ruleSet,
-            settings.AtRiskThresholdPercent, _clock.UtcNow);
+            settings.AtRiskThresholdPercent, _clock.UtcNow, KeptDue(kept));
 
         return new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
             statuses, NotificationDeadlinePolicy.Headline(statuses))
@@ -199,7 +203,8 @@ public sealed class NotificationDeadlineService
         if (elementKeys.Count == 0) return;
         var cases = await db.Cases.AsSplitQuery()   // S8733: two collections, one query each
             .Include(c => c.DataElements).Include(c => c.JurisdictionNotices)
-            .Where(c => c.ReportedAtUtc == null && !c.IsArchived && c.JurisdictionNotices.Any()
+            // BUG-284: a case once reported keeps what was in play then; an admin change doesn't touch it.
+            .Where(c => c.ReportedAtUtc == null && c.ReportedJurisdictions == null && !c.IsArchived && c.JurisdictionNotices.Any()
                         && c.DataElements.Any(d => elementKeys.Contains(d.ElementKey)))
             .ToListAsync(ct);
         foreach (var c in cases)
@@ -231,6 +236,10 @@ public sealed class NotificationDeadlineService
     private static Func<string, DateTimeOffset?> NotifiedAt(IReadOnlyDictionary<string, DateTimeOffset> notices, DateTimeOffset? reportedAtUtc) =>
         code => notices.TryGetValue(code, out var at) ? at : notices.Count == 0 ? reportedAtUtc : null;
 
+    // BUG-286: each notice's kept deadline (WF-77), so every reader judges a notice as the program report does.
+    private static Func<string, DateTimeOffset?> KeptDue(IReadOnlyDictionary<string, DateTimeOffset> kept) =>
+        code => kept.TryGetValue(code, out var due) ? due : null;
+
     /// <summary>
     /// The headline deadline for each unreported case in <paramref name="cases"/> whose obligation is triggered
     /// and whose data elements put at least one jurisdiction in play. Shared by the dashboard counts and the case
@@ -257,6 +266,25 @@ public sealed class NotificationDeadlineService
         return result;
     }
 
+    /// <summary>
+    /// BUG-287: every notice given on the cases in <paramref name="cases"/>, reported or not yet (a case still waiting on
+    /// another regulator has given this one's notice), each with when it was given and whether that was inside its
+    /// window (its kept deadline, WF-77). So a quarter counts the notices given in it, and a jurisdiction that comes into
+    /// play later doesn't move them.
+    /// </summary>
+    public static async Task<List<(Guid CaseId, DateTimeOffset NotifiedAtUtc, SlaState State)>> NoticeOutcomesAsync(
+        IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings, NotificationRuleSet ruleSet,
+        DateTimeOffset now, CancellationToken ct = default)
+    {
+        var result = new List<(Guid, DateTimeOffset, SlaState)>();
+        foreach (var reported in new[] { true, false })
+            foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
+                foreach (var s in statuses)
+                    if (s.State is SlaState.Met or SlaState.Missed && s.NotifiedAtUtc is { } at)
+                        result.Add((id, at, s.State));
+        return result;
+    }
+
     // Each case's per-jurisdiction statuses, for cases with a triggered obligation and a jurisdiction in play.
     private static async Task<Dictionary<Guid, IReadOnlyList<NotificationDeadlineStatus>>> StatusesAsync(
         IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,
@@ -274,7 +302,7 @@ public sealed class NotificationDeadlineService
                 c.Id, c.Classification, c.DetectedAtUtc, c.ReportedAtUtc, c.ReportedJurisdictions,
                 MatStatus = c.Materiality.Status, MatDecided = c.Materiality.DecidedOnUtc, MatRecorded = c.Materiality.RecordedAtUtc,
                 Keys = c.DataElements.Select(d => d.ElementKey).ToList(),
-                Notices = c.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList()
+                Notices = c.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc }).ToList()
             })
             .ToListAsync(ct);
 
@@ -284,7 +312,7 @@ public sealed class NotificationDeadlineService
             var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
             if (start is null) continue; // obligation not triggered yet
 
-            var jurisdictions = c.ReportedAtUtc is not null && Frozen(c.ReportedJurisdictions) is { } frozen ? frozen.ToList()   // WF-11
+            var jurisdictions = Frozen(c.ReportedJurisdictions) is { } frozen ? frozen.ToList()   // WF-11, BUG-284
                 : c.Keys.Where(elementJur.ContainsKey)
                     .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     .Select(j => j.ToUpperInvariant()).Distinct().ToList();
@@ -292,7 +320,9 @@ public sealed class NotificationDeadlineService
 
             result[c.Id] = NotificationDeadlinePolicy.EvaluateByJurisdiction(start,
                 NotifiedAt(c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase), c.ReportedAtUtc),
-                jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now);
+                jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now,
+                KeptDue(c.Notices.Where(n => n.DueAtUtc is not null)
+                    .ToDictionary(n => n.Jurisdiction, n => n.DueAtUtc!.Value, StringComparer.OrdinalIgnoreCase)));
         }
         return result;
     }

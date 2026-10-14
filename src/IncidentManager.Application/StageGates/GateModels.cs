@@ -39,7 +39,8 @@ public sealed record GateRequirementResult(
     string? CheckKey,
     string Label,
     bool IsBlocking,
-    bool MachineSatisfied)
+    bool MachineSatisfied,
+    int? CheckParam = null)   // BUG-285: a check's threshold, so a climb merges a check only with the same threshold
 {
     /// <summary>
     /// Whether the requirement is satisfied. A machine check uses its computed result; an attestation is
@@ -80,11 +81,20 @@ public sealed record GateEvaluation(
         var byCheck = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var r in live.SelectMany(g => g.Requirements))
         {
-            if (r.Kind == GateRequirementKind.MachineCheck && r.CheckKey is { } key)
+            // BUG-285: the same check with a different threshold on another rung (one entity for Incident, three for Breach)
+            // is a different requirement; merged by key alone, the higher rung's unmet threshold was hidden, the dialog
+            // showed everything met, and that gate then refused the move with no override offered. A check is merged only
+            // with the same check and threshold, and is met only where every rung met it.
+            if (r.Kind == GateRequirementKind.MachineCheck && r.CheckKey is { } checkKey)
             {
+                var key = $"{checkKey}|{r.CheckParam}";
                 if (byCheck.TryGetValue(key, out var i))
                 {
-                    if (r.IsBlocking && !reqs[i].IsBlocking) reqs[i] = reqs[i] with { IsBlocking = true };
+                    reqs[i] = reqs[i] with
+                    {
+                        IsBlocking = reqs[i].IsBlocking || r.IsBlocking,
+                        MachineSatisfied = reqs[i].MachineSatisfied && r.MachineSatisfied
+                    };
                     continue;
                 }
                 byCheck[key] = reqs.Count;

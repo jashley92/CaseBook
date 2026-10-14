@@ -114,8 +114,11 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>
     /// WF-11: the jurisdictions in play when the case became reported (comma-separated codes; empty when none were),
     /// so a later change to a data element's jurisdictions in Administration doesn't reopen, re-judge or invent notices
-    /// for a case already reported. Null while unreported, and for a case reported before it was recorded (back-filled at
-    /// start-up). Derived from the notices and the reported time, which are hashed; kept out of the canonical.
+    /// for a case already reported. BUG-284: once set it stays when the case goes back to unreported (an element added that
+    /// brings a new jurisdiction, a notice removed), holding what's in play then, so today's settings don't come back in
+    /// full; only clearing every notice (the report was a mis-entry) empties it. Null for a case never reported, and for
+    /// one reported before it was recorded (back-filled at start-up). Derived from the notices and the reported time,
+    /// which are hashed; kept out of the canonical.
     /// </summary>
     public string? ReportedJurisdictions { get; set; }
 
@@ -126,7 +129,7 @@ public class Case : AuditableEntity, IHashableEntity
     public const int MaxReportedJurisdictionsLength = 1000;
 
     private void FreezeJurisdictions(IEnumerable<string>? inPlay) =>
-        ReportedJurisdictions = ReportedAtUtc is null ? null
+        ReportedJurisdictions = ReportedAtUtc is null && ReportedJurisdictions is null ? null
             : string.Join(',', (inPlay ?? []).Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
     public DateTimeOffset? ContainedAtUtc { get; set; }

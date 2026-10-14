@@ -167,4 +167,22 @@ public class StageGateTests
 
         eval.IsSatisfiedBy(new HashSet<Guid>()).Should().BeTrue();
     }
+
+    [Fact]
+    public void A_climb_keeps_a_stricter_threshold_on_a_higher_rung(/* BUG-285 */)
+    {
+        GateRequirementResult Entities(int n, bool met) => new(Guid.NewGuid(), 0, GateRequirementKind.MachineCheck,
+            GateCheckKeys.AtLeastOneEntity, $"At least {n} entities", true, met, n);
+        var incident = new GateEvaluation(true, StageGateTrigger.EscalateToIncident, "Incident", [Entities(1, true)]);
+        var breach = new GateEvaluation(true, StageGateTrigger.EscalateToBreach, "Breach", [Entities(3, false)]);
+
+        var climb = GateEvaluation.Combine([incident, breach], StageGateTrigger.EscalateToBreach);
+
+        climb.Requirements.Should().HaveCount(2);
+        climb.IsSatisfiedBy(new HashSet<Guid>()).Should().BeFalse("the Breach gate's three entities aren't there");
+
+        // The same check and threshold on both rungs is listed once.
+        var twice = GateEvaluation.Combine([incident, incident with { GateName = "Again" }], StageGateTrigger.EscalateToBreach);
+        twice.Requirements.Should().ContainSingle();
+    }
 }

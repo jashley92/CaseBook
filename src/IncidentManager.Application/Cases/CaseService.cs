@@ -1259,7 +1259,7 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadWithNoticesAsync(db, id, ct);
         var now = _clock.UtcNow;
-        var inPlay = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        var inPlay = await InPlayAsync(db, c, ct);
         if (inPlay.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
         else
         {
@@ -1279,8 +1279,7 @@ public sealed class CaseService
         var c = await LoadWithNoticesAsync(db, id, ct);
         var now = _clock.UtcNow;
         c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now);
-        c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
-            db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, now);
+        c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
@@ -1289,7 +1288,10 @@ public sealed class CaseService
     private async Task FreezeNoticeDuesAsync(Guid id, CancellationToken ct)
     {
         if (_notifySettings is null || _notifyRules is null) return;
-        await new Compliance.NotificationDeadlineService(_factory, _notifySettings, _notifyRules, _clock).FreezeNoticeDuesAsync(id, ct);
+        // BUG-288: the notice is already saved; a failure here would report the save as failed. A due left unrecorded is
+        // judged against the rules as they stand, and the start-up back-fill records it.
+        try { await new Compliance.NotificationDeadlineService(_factory, _notifySettings, _notifyRules, _clock).FreezeNoticeDuesAsync(id, ct); }
+        catch (Exception ex) when (ex is DbUpdateException or System.Data.Common.DbException or InvalidOperationException) { }
     }
 
     /// <summary>BUG-09: removes one regulator's notice (a mis-entry); its clock runs again.</summary>
@@ -1302,11 +1304,15 @@ public sealed class CaseService
         var hadNotices = c.JurisdictionNotices.Count > 0;
         c.RemoveNotice(jurisdiction, _user.UserId, now);
         if (hadNotices && c.JurisdictionNotices.Count == 0) c.ClearReported(_user.UserId, now);
-        else c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
-            db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, now);
+        else c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
         _deadlineReminders?.ForgetCase(id);   // BUG-156: its clock runs again, so it's reminded again
     }
+
+    // WF-11 / BUG-284: what's in play on a case: the jurisdictions kept since it was first reported when there are any,
+    // else what its data elements bring in under today's settings.
+    private static async Task<IReadOnlyList<string>> InPlayAsync(IAppDbContext db, Case c, CancellationToken ct) =>
+        c.FrozenJurisdictions ?? await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
 
     private async Task<Case> LoadWithNoticesAsync(IAppDbContext db, Guid id, CancellationToken ct)
     {
@@ -1418,7 +1424,7 @@ public sealed class CaseService
         var now = _clock.UtcNow;
         // WF-11: what a reported case covered is what was in play when it was reported, not today's admin settings (an
         // element given another jurisdiction since would otherwise become a notice, under this user's name, that never happened).
-        var frozen = c.ReportedAtUtc is not null ? c.FrozenJurisdictions : null;
+        var frozen = c.FrozenJurisdictions;   // BUG-284: kept once reported, also while a later element is outstanding
         var keysBefore = c.DataElements.Select(d => d.ElementKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var before = frozen
             ?? await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, keysBefore, ct);
