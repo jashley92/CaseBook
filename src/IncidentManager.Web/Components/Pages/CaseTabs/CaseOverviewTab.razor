@@ -686,6 +686,7 @@
     private string? _edImpacted;
     private DateTime? _edDetected;
     private DateTime? _edOccurred;
+    private DateTime? _edDetectedShown, _edOccurredShown;   // WF-68: as seeded, to keep an untouched instant
     private string? _detailsError;
     private string? _detailsBaseline; // FR-06: field signature captured when the editor opened
 
@@ -1031,10 +1032,16 @@
         _edImpacted = Case.ImpactedAssets;
         _edDetected = Case.DetectedAtUtc is { } d ? UtcToWall(d) : null;
         _edOccurred = Case.OccurredAtUtc is { } o ? UtcToWall(o) : null;
+        (_edDetectedShown, _edOccurredShown) = (_edDetected, _edOccurred);
         _detailsError = null;
         _detailsBaseline = Case.DetailsConcurrencyStamp(); // FR-06: baseline for the optimistic-concurrency check
         _editingDetails = true;
     }
+
+    // WF-68: a time left as shown keeps its recorded instant; converting it back would read a time in the repeated autumn
+    // hour as standard time and move it an hour (and every deadline that runs from it).
+    private DateTimeOffset? Kept(DateTime? edited, DateTime? shown, DateTimeOffset? recorded) =>
+        edited is null ? null : edited == shown && recorded is not null ? recorded : WallToUtc(edited.Value);
 
     private async Task SaveDetails()
     {
@@ -1045,7 +1052,8 @@
         try
         {
             await Cases.UpdateDetailsAsync(CaseId, _edTitle, _edSummary, _edDetection, _edDataTypes, _edImpacted,
-                WallToUtc(_edDetected.Value), _edOccurred is { } occ ? WallToUtc(occ) : null, _detailsBaseline);
+                Kept(_edDetected, _edDetectedShown, Case.DetectedAtUtc)!.Value, Kept(_edOccurred, _edOccurredShown, Case.OccurredAtUtc),
+                _detailsBaseline);
         }
         catch (StaleEditException ex) // FR-06: another author changed these fields while we were editing
         {

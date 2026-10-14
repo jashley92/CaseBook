@@ -45,8 +45,10 @@ public sealed class ActivityFeedService
             .Select(c => c.CaseNumber).FirstOrDefaultAsync(ct);
         if (number is null) return (0, []);
         var me = _user.UserId;
+        // WF-99: under every number the case has held, so a promotion since doesn't hide what was done before it.
+        var numbers = await Cases.AfterClosure.NumbersHeldAsync(db, caseId, number, ct);
         var rows = await db.AuditLog.AsNoTracking()
-            .Where(a => a.CaseNumber == number && a.Actor != me && a.AtUtc > sinceUtc)
+            .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.Actor != me && a.AtUtc > sinceUtc)
             .Select(a => a.Actor)
             .ToListAsync(ct);
         return (rows.Count, rows.Distinct().Select(a => _users.DisplayFor(a)).ToList());

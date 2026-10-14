@@ -253,6 +253,23 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Editing_a_reported_cases_count_after_an_admin_change_keeps_it_reported(/* WF-65 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        var cases = NewCases(db);
+        await cases.MarkReportedAsync(id, _clock.UtcNow);   // NY notified
+        await SetJurisdictionsAsync("SSN", "NY,CA");        // an admin adds CA afterwards
+
+        await cases.UpdateImpactAssessmentAsync(id, 1250, ["SSN"], "NY");   // only the count changes
+
+        var d = await NewDeadlines().EvaluateAsync(id);
+        d.ReportedAtUtc.Should().NotBeNull("the elements it had keep the jurisdictions frozen at notice time");
+        d.Statuses.Select(s => s.JurisdictionCode).Should().Equal("NY");
+    }
+
+    [Fact]
     public async Task A_case_reported_before_the_upgrade_gets_its_jurisdictions_at_start_up(/* WF-11 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);
@@ -264,11 +281,17 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
             (await db.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().BeNull();
         }
 
+        long auditBefore;
         await using (var db = NewContext())
+        {
+            auditBefore = await db.AuditLog.LongCountAsync();
             (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db)).Should().Be(1);
+        }
 
         await using var check = NewContext();
         (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("NY");
+        // WF-93: not an audited change, which counted as a change after closure on every closed reported case.
+        (await check.AuditLog.LongCountAsync()).Should().Be(auditBefore);
         (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(check)).Should().Be(0);
     }
 

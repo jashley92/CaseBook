@@ -82,7 +82,7 @@ public sealed class NotificationDeadlineService
                 Keys = x.DataElements.Select(d => d.ElementKey).ToList(),
                 Notices = x.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList(),
                 MaterialCalls = x.MaterialityChanges.Where(m => m.To == MaterialityStatus.Material)
-                    .Select(m => new { m.DecidedOnUtc, m.ChangedAtUtc }).ToList()
+                    .Select(m => new { m.From, m.DecidedOnUtc, m.ChangedAtUtc }).ToList()
             })
             .FirstOrDefaultAsync(ct);
 
@@ -92,11 +92,19 @@ public sealed class NotificationDeadlineService
             c.MatStatus, c.MatDecidedOn, c.MatRecordedAt);
 
         // WF-12: the first Material call, when the clock now runs from a later one (or not at all, back under review).
+        // WF-66: a Material call revised while still Material (a corrected decision date) is the same call, so each call's
+        // date is its latest revision before it was taken back; only a call taken back and made again is a restart.
         DateTimeOffset? earlier = null;
-        if (settings.StartBasis == NotificationStartBasis.Determination
-            && c.MaterialCalls.Select(m => m.DecidedOnUtc ?? m.ChangedAtUtc).DefaultIfEmpty().Min() is var first && first != default
-            && (start is null ? c.MatStatus != MaterialityStatus.NotMaterial : first < start))
-            earlier = first;
+        var calls = new List<DateTimeOffset>();
+        foreach (var m in c.MaterialCalls.OrderBy(m => m.ChangedAtUtc))
+        {
+            var on = m.DecidedOnUtc ?? m.ChangedAtUtc;
+            if (m.From == MaterialityStatus.Material && calls.Count > 0) calls[^1] = on;
+            else calls.Add(on);
+        }
+        if (settings.StartBasis == NotificationStartBasis.Determination && calls.Count > 0
+            && (start is null ? c.MatStatus != MaterialityStatus.NotMaterial : calls.Count > 1 && calls[0] < start))
+            earlier = calls[0];
 
         var empty = new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
             Array.Empty<NotificationDeadlineStatus>(), null) { EarlierMaterialUtc = earlier };

@@ -94,7 +94,9 @@ public sealed class DeskService
                 RecentEscalations = work.RecentEscalations.Where(e => !drills.Contains(e.CaseId)).ToList(),
             };
         var ids = work.OpenCases.Select(c => c.Id).ToList();
-        var numbers = work.OpenCases.Select(c => c.CaseNumber).ToList();
+        // WF-99: every number each case has held, so a promotion since the last look doesn't hide what came before it.
+        var heldBy = await Cases.AfterClosure.NumbersHeldAsync(db, work.OpenCases.Select(c => (c.Id, c.CaseNumber)).ToList(), ct);
+        var numbers = heldBy.Keys.ToList();
 
         var roles = await db.Assignments.AsNoTracking()
             .Where(a => ids.Contains(a.CaseId) && a.UserId == me)
@@ -150,7 +152,7 @@ public sealed class DeskService
         var cases = work.OpenCases.Select(c =>
         {
             var since = SinceFor(c.Id);
-            var changes = audit.Where(a => a.CaseNumber == c.CaseNumber && a.AtUtc > since).ToList();
+            var changes = audit.Where(a => heldBy.GetValueOrDefault(a.CaseNumber!) == c.Id && a.AtUtc > since).ToList();
             var role = roles.FirstOrDefault(r => r.CaseId == c.Id)?.Role
                 ?? (c.IncidentCommander == me ? CaseAssignmentRole.IncidentCommander : null);
             var phaseSince = phaseChanges.Where(s => s.CaseId == c.Id && s.To == c.Phase)

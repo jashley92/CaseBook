@@ -782,7 +782,8 @@ public sealed class CaseService
             if (request.Classification is { } cls)
                 foreach (var trigger in StageGateTriggers.Climb(null, cls))
                     await ApplyGateAsync(db, c, trigger, request.AttestedRequirementIds, request.OverrideJustification,
-                        request.OverrideJustification ?? request.Summary, ct,
+                        // WF-98: the summary may be twice as long as a passage's commentary holds (8,000 vs 4,000).
+                        request.OverrideJustification ?? (request.Summary is { } sum ? Clip(sum, 2000) : null), ct,
                         eval: await _gates.EvaluateNewAsync(db, c, trigger, request.PlannedEntityCount, request.PlannedDispositions, ct));
 
             db.Cases.Add(c);
@@ -1145,11 +1146,12 @@ public sealed class CaseService
     private string? RecentDowngrade(Case c)
     {
         var now = _clock.UtcNow;
-        var lowered = c.ClassificationChanges
-            .Where(x => x.ChangedAtUtc >= now - DowngradeNoteWindow && Rank(x.To) < Rank(x.From))
-            .OrderByDescending(x => x.ChangedAtUtc).FirstOrDefault();
-        if (lowered is null) return null;
-        var on = OrgLocal(lowered.EffectiveAt).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        // WF-69: judged by when the lowering was recorded (a backdated one still happened just now), and only while the
+        // case stands below what it held in the window (lowered and raised back again, nothing was skipped).
+        var recent = c.ClassificationChanges.Where(x => x.ChangedAtUtc >= now - DowngradeNoteWindow).ToList();
+        var lowered = recent.Where(x => Rank(x.To) < Rank(x.From)).OrderByDescending(x => x.ChangedAtUtc).FirstOrDefault();
+        if (lowered is null || Rank(c.Classification) >= recent.Max(x => Rank(x.From))) return null;
+        var on = OrgLocal(lowered.ChangedAtUtc).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         return $" · Note: the classification was lowered from {Words(lowered.From)} to {Words(lowered.To)} on {on}, within " +
                $"{DowngradeNoteWindow.TotalDays:0} days of closing; the checks were judged on the current classification.";
 
@@ -1337,10 +1339,17 @@ public sealed class CaseService
         var now = _clock.UtcNow;
         // WF-11: what a reported case covered is what was in play when it was reported, not today's admin settings (an
         // element given another jurisdiction since would otherwise become a notice, under this user's name, that never happened).
-        var before = c.ReportedAtUtc is not null && c.FrozenJurisdictions is { } frozen ? frozen
-            : await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        var frozen = c.ReportedAtUtc is not null ? c.FrozenJurisdictions : null;
+        var keysBefore = c.DataElements.Select(d => d.ElementKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var before = frozen
+            ?? await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, keysBefore, ct);
         c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, now);
-        var after = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        // WF-65: and for a reported case only an element added in this edit brings in a jurisdiction; the elements it
+        // already had keep the ones frozen at notice time (editing the count must not reopen it after an admin change).
+        var after = frozen is null
+            ? await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct)
+            : frozen.Union(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db,
+                c.DataElements.Select(d => d.ElementKey).Where(k => !keysBefore.Contains(k)), ct), StringComparer.OrdinalIgnoreCase).ToList();
         // BUG-104: a case reported as a whole (no notice per jurisdiction: reported before notices were per jurisdiction,
         // or when none was in play) covered the jurisdictions in play then, and no others. Those become notices at that
         // time, so one that comes into play now is outstanding until its regulator is notified.

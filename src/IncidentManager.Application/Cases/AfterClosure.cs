@@ -23,6 +23,30 @@ public static class AfterClosure
 {
     private static readonly string[] NotTheCaseRecord = ["ImprovementAction", "PostIncidentReview"];
 
+    /// <summary>
+    /// REV-01/WF-49: every number a case has held, its current one included. An audit entry carries the number at save
+    /// time, so entries from before a promotion or renumber are under an older one. (A number once held is never given
+    /// to another case, BUG-53/145.)
+    /// </summary>
+    public static async Task<List<string>> NumbersHeldAsync(IAppDbContext db, Guid caseId, string current, CancellationToken ct = default) =>
+        (await NumbersHeldAsync(db, [(caseId, current)], ct)).Keys.ToList();
+
+    /// <summary>As <see cref="NumbersHeldAsync(IAppDbContext, Guid, string, CancellationToken)"/> for several cases: each
+    /// number, with the case that held it.</summary>
+    public static async Task<Dictionary<string, Guid>> NumbersHeldAsync(IAppDbContext db,
+        IReadOnlyCollection<(Guid Id, string Current)> cases, CancellationToken ct = default)
+    {
+        var result = cases.ToDictionary(c => c.Current, c => c.Id, StringComparer.Ordinal);
+        if (cases.Count == 0) return result;
+        var ids = cases.Select(c => c.Id.ToString()).ToList();
+        var held = await db.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == nameof(Case) && a.EntityId != null && ids.Contains(a.EntityId) && a.CaseNumber != null)
+            .Select(a => new { a.EntityId, a.CaseNumber }).Distinct().ToListAsync(ct);
+        foreach (var h in held)
+            if (Guid.TryParse(h.EntityId, out var id)) result.TryAdd(h.CaseNumber!, id);
+        return result;
+    }
+
     /// <summary>Null while the case is open. The caller has already checked the user can see the case.</summary>
     public static async Task<AfterClosureChanges?> QueryAsync(IAppDbContext db, Guid caseId, CancellationToken ct = default)
     {
@@ -42,13 +66,12 @@ public static class AfterClosure
             .Select(a => (DateTimeOffset?)a.AtUtc).FirstOrDefaultAsync(ct) ?? close.ChangedAtUtc;
         // WF-49: under every number the case has held (REV-01): an entry carries the number at save time, so renumbering a
         // closed case hid the changes made before it under the old number.
-        var id = caseId.ToString();
-        var numbers = await db.AuditLog.AsNoTracking()
-            .Where(a => a.EntityType == nameof(Case) && a.EntityId == id && a.CaseNumber != null)
-            .Select(a => a.CaseNumber!).Distinct().ToListAsync(ct);
-        if (!numbers.Contains(c.CaseNumber)) numbers.Add(c.CaseNumber);
+        var numbers = await NumbersHeldAsync(db, caseId, c.CaseNumber, ct);
         var rows = await db.AuditLog.AsNoTracking()
-            .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.AtUtc > closedAt && !NotTheCaseRecord.Contains(a.EntityType))
+            .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.AtUtc > closedAt && !NotTheCaseRecord.Contains(a.EntityType)
+                        // WF-93: the v1.5.8-v1.6.2 start-up back-fill of the reported jurisdictions wasn't a change to the record.
+                        && !(a.Actor == "system" && a.EntityType == nameof(Case) && a.Action == AuditAction.Update
+                             && a.AfterJson != null && a.AfterJson.Contains("\"ReportedJurisdictions\"")))
             .Select(a => new { a.AtUtc, a.Actor })
             .ToListAsync(ct);
         return new AfterClosureChanges(rows.Select(r => r.AtUtc).Distinct().Count(),

@@ -275,7 +275,10 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, c.ReportProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
-        var model = await WithReviewAsync(db, c, BuildModel(c, now, logo, sections, elemSummary, triggers, null), ct);
+        // WF-81: built as a real template report is (task results, outcome labels, the image fields), so the preview shows
+        // what a generated report will.
+        var model = ForTemplate(c, await WithReviewAsync(db, c,
+            BuildModel(c, now, logo, sections, elemSummary, triggers, null, await ExtrasAsync(db, c.Id, ct)), ct));
         var banner = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"PREVIEW of template “{tpl.Name}” with case {c.CaseNumber}, {now.UtcDateTime:yyyy-MM-dd HH:mm} UTC. ") +
                      "Not a stored or approved report.";
         var rendered = _templates.Render(bytes, model, banner);
@@ -748,9 +751,13 @@ public sealed class ReportService
 
         // Group the involved elements by each jurisdiction they trigger notification in — the regulatory
         // "who must we notify, and because of what data" view, in element display order within each group.
+        // WF-67: a reported case lists the jurisdictions in play when it was reported, not ones an admin added since.
+        var frozen = c.ReportedAtUtc is not null && c.FrozenJurisdictions is { } f
+            ? f.ToHashSet(StringComparer.OrdinalIgnoreCase) : null;
         var byJurisdiction = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var e in elements.Where(e => !string.IsNullOrWhiteSpace(e.NotificationJurisdictions)))
-            foreach (var j in e.NotificationJurisdictions!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var j in e.NotificationJurisdictions!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                         .Where(j => frozen is null || frozen.Contains(j)))
                 (byJurisdiction.TryGetValue(j, out var list) ? list : byJurisdiction[j] = new()).Add(e.Label);
 
         var triggers = byJurisdiction.Count == 0

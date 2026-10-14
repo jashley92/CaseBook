@@ -240,7 +240,7 @@
                 @if (Notify is { EarlierMaterialUtc: { } firstCall } restarted)
                 {
                     @* WF-12: the clock follows the latest Material call; say when the first one was. *@
-                    <div class="im-bf-sub mb-1">@(restarted.HasClock
+                    <div class="im-bf-sub mb-1">@(restarted.StartInstant is not null
                         ? $"Restarted: the case was first called material {TimeDisp.Brief(firstCall, now)}."
                         : $"Stopped: back under review after a Material call {TimeDisp.Brief(firstCall, now)}.")</div>
                 }
