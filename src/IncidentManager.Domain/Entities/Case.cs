@@ -1775,8 +1775,7 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public ActionItem RaiseTaskFromQuestion(string question, string actor, DateTimeOffset nowUtc)
     {
-        var title = Clean(question) ?? throw new ArgumentException("Say what the question is.");
-        if (title.Length > ActionItem.MaxTitleLength) title = title[..(ActionItem.MaxTitleLength - 1)] + "…";
+        var title = QuestionTaskTitle(question) ?? throw new ArgumentException("Say what the question is.");
         var brief = Briefs.FirstOrDefault(b => b.IsCurrent)
                     ?? throw new InvalidOperationException("The case has no brief to raise a question from.");
         if (ActionItems.Any(t => t.IsOpen && t.RaisedFromBriefId is not null
@@ -1792,6 +1791,20 @@ public class Case : AuditableEntity, IHashableEntity
         Touch(actor, nowUtc);
         return task;
     }
+
+    /// <summary>
+    /// BUG-298: the title of the task that follows up a brief question (its plain text), cut to a task title's length: what
+    /// a raised task is called, and so what pairs a question with it. A question longer than a title was matched on its
+    /// full text, so it never paired, and following it up again was refused as a duplicate.
+    /// </summary>
+    public static string? QuestionTaskTitle(string? question) =>
+        Clean(question) is not { } t ? null
+        : t.Length > ActionItem.MaxTitleLength ? t[..(ActionItem.MaxTitleLength - 1)] + "…" : t;
+
+    /// <summary>BUG-298: the tasks raised from the brief that follow up <paramref name="question"/> (its plain text).</summary>
+    public IEnumerable<ActionItem> TasksFollowingUp(string question) =>
+        QuestionTaskTitle(question) is not { } title ? []
+        : ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase));
 
     // A new brief version (superseding the current one) that also sets the case summary. A summary edit made
     // outside the brief can clear the summary, so it may record a version with nothing in it.

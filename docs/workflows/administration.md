@@ -42,9 +42,11 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 3. The service checks each value against the catalog (type, range, options), writes an audited `AppSetting`
    row, reloads configuration and emits SIEM 5403.
 
-Two things to know: the form shows the **catalog default** where no override exists, not the value from your
-server files (check *Setting sources*); and **clearing a number restores the file value**, so enter `0` to turn
-something off.
+Two things to know: where no override exists, the form shows the value from your server files (or the catalog
+default when they set none), so what you see is what's in effect; and **clearing a number restores the file
+value**, so enter `0` to turn something off (an SLA target is the exception: blank turns it off). Numbers have
+limits (for example, scan intervals at most 744 hours), and a link template must be a full `https://` address
+with one `{0}`.
 
 ## Roles and AD groups
 

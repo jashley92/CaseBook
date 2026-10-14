@@ -421,7 +421,7 @@
         @foreach (var q in questions)
         {
             var title = QuestionTitle(q);
-            var task = Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
+            var task = Case.TasksFollowingUp(title)   // BUG-298
                 .OrderByDescending(t => t.IsOpen).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
             <li>
                 <span class="md-body im-brief-q-text">@((MarkupString)Md.ToInlineHtml(q, Case.Id))</span>

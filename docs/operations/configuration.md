@@ -57,9 +57,6 @@ startup** it is logged as Critical and sent as SIEM event 5002. The check runs o
 inserted while the app is running is ignored silently until the next restart.
 
 > **Known quirks** (see [known issues](../reference/known-issues.md)):
-> - The settings form shows the **catalog default** when no database override exists, not the value from your
->   files. For example, the production template's 24-hour auto-seal interval displays as 6. The source map
->   shows the real value.
 > - **Clearing a number field doesn't mean "off".** A blank number is stored as null and skipped on load, so
 >   the file value comes back. To disable an SLA target, enter `0`.
 

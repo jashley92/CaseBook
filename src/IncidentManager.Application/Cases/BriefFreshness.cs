@@ -37,7 +37,16 @@ public static class BriefFreshness
     {
         var since = Baseline(c, brief);   // written, or last confirmed as still accurate (WF-30: not an appended version)
 
-        var entries = c.TimelineEntries.Where(e => e.IsCurrent && e.CreatedAtUtc > since).ToList();
+        // BUG-301: an entry recorded since, not an old one edited since (an edit is a new version, dated now): correcting a
+        // typo in last week's decision said "A decision was recorded after this version."
+        var byId = c.TimelineEntries.ToDictionary(e => e.Id);
+        DateTimeOffset FirstRecorded(TimelineEntry e)
+        {
+            for (var guard = 0; e.SupersedesEntryId is { } prev && byId.TryGetValue(prev, out var earlier) && guard < 1000; guard++)
+                e = earlier;
+            return e.CreatedAtUtc;
+        }
+        var entries = c.TimelineEntries.Where(e => e.IsCurrent && FirstRecorded(e) > since).ToList();
         var milestones = CaseMilestones.Project(c, labels)
             .Where(m => m.Kind != MilestoneKind.Opened && (m.RecordedAtUtc ?? m.AtUtc) > since)
             .ToList();
@@ -50,7 +59,7 @@ public static class BriefFreshness
         // The latest change that usually moves where the case stands, by when it was recorded.
         var candidates = entries
             .Where(e => e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff)
-            .Select(e => (At: e.CreatedAtUtc, Text: e.Type == TimelineEntryType.Decision
+            .Select(e => (At: FirstRecorded(e), Text: e.Type == TimelineEntryType.Decision
                 ? "A decision was recorded after this version."
                 : "The case was handed off after this version."))
             .Concat(milestones

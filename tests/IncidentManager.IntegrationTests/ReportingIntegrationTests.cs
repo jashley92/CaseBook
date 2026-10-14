@@ -402,6 +402,18 @@ public sealed class ReportingIntegrationTests : IDisposable
             var entryId = (await cases.GetDetailAsync(caseId))!.TimelineEntries.Single().Id;
             await cases.CiteEvidenceAsync(caseId, entryId, [evidenceId]);
             (await cases.GetDetailAsync(caseId))!.Citations.Should().ContainSingle();
+
+            // BUG-297: a picker opened before that citation, saved with another file ticked, keeps it.
+            var second = Guid.NewGuid();
+            db.Evidence.Add(new IncidentManager.Domain.Entities.Evidence
+            {
+                Id = second, CaseId = caseId, OriginalFileName = "mailbox-audit.csv", Sha256 = new string('b', 64),
+                StoragePath = "y", CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+            });
+            await db.SaveChangesAsync();
+            await cases.CiteEvidenceAsync(caseId, entryId, [second], openedWith: []);
+            (await cases.GetDetailAsync(caseId))!.Citations.Select(x => x.EvidenceId).Should().BeEquivalentTo([evidenceId, second]);
+            await cases.CiteEvidenceAsync(caseId, entryId, [evidenceId], openedWith: [evidenceId, second]);   // back to one
         }
 
         await using (var db = NewContext())

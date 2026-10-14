@@ -93,4 +93,33 @@ public class CaseNextTests
         t.RaisedFromBriefId = Guid.NewGuid();
         t.BuildCanonicalContent().Should().StartWith(before).And.EndWith($"|brief|{t.RaisedFromBriefId}");
     }
+
+    [Fact]
+    public void The_next_steps_snapshot_fits_a_brief_part_and_the_brief_still_saves(/* BUG-263 */)
+    {
+        var c = NewCase();
+        for (var i = 0; i < 300; i++) Task(c, $"Task {i} " + new string('x', 380));
+
+        var steps = CaseNext.Snapshot(c, T0, u => u)!;
+
+        steps.Length.Should().BeLessThanOrEqualTo(CaseBrief.MaxPartLength);
+        steps.Should().StartWith("- Task 0 ").And.EndWith("more open tasks");
+        c.ReviseBrief("Summary", "Assessment", null, null, steps + new string('y', 50), "ic1", T0).Should().NotBeNull(
+            "a recorded snapshot is cut, not refused");
+    }
+
+    [Fact]
+    public void A_long_question_pairs_with_the_task_raised_from_it(/* BUG-298 */)
+    {
+        var c = NewCase();
+        c.ReviseBrief("Summary", null, null, "- Q", null, "ic1", T0);
+        var question = "Did " + new string('a', 600) + "?";
+
+        var task = c.RaiseTaskFromQuestion(question, "ic1", T0);
+
+        task.Title.Length.Should().Be(ActionItem.MaxTitleLength);
+        c.TasksFollowingUp(question).Should().ContainSingle().Which.Should().BeSameAs(task);
+        var again = () => c.RaiseTaskFromQuestion(question, "ic1", T0);
+        again.Should().Throw<InvalidOperationException>();
+    }
 }

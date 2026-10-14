@@ -504,9 +504,16 @@ else
 
     private async Task<bool> Reload()
     {
-        var seq = ++_loadSeq;
-        var detail = await Cases.GetDetailAsync(Id);
-        return seq == _loadSeq && await ReloadWith(detail, seq);
+        // BUG-302: one at a time with the live changes (BUG-220's gate). A colleague's change applied in place while this
+        // read was in flight was overwritten when the older read landed, and didn't show until the next change.
+        await _liveGate.WaitAsync();
+        try
+        {
+            var seq = ++_loadSeq;
+            var detail = await Cases.GetDetailAsync(Id);
+            return seq == _loadSeq && await ReloadWith(detail, seq);
+        }
+        finally { _liveGate.Release(); }
     }
     private Guid _tabOpenedFor;
     private Guid _openRecordedFor;   // BUG-243: one open per visit; reloads after saves and live changes aren't new opens

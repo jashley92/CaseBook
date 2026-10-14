@@ -1849,6 +1849,8 @@ else
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         _tlPrecision = TimePrecision.Exact; _tlAfter = ""; _tlEditPrecision = null;
+        if (_preEditTimes is { } times && _draft is null) (_tlWhen, _tlDay, _tlUntilDay) = times;
+        _preEditTimes = null;
         if (_draft is { } d)
         {
             RestoreDraft(d);
@@ -1868,10 +1870,14 @@ else
         string TargetId, MitreTactic Tactic, bool AttackMode, TimelineEntryType Stage, bool Ours, TimePrecision Precision,
         DateTime Day, DateTime UntilDay, string After, Dictionary<string, string> TagRefs);
     private ComposerDraft? _draft;
+    // BUG-300: the composer's times before an edit loaded an old entry's: with nothing written there was no draft to put
+    // back, and the next new entry defaulted to the edited entry's time (last week's, say).
+    private (DateTime When, DateTime Day, DateTime UntilDay)? _preEditTimes;
 
     private async Task StashDraftAsync()
     {
         if (_tlEditId is not null) return;   // switching from one edit to another keeps the draft from before the first
+        _preEditTimes = (_tlWhen, _tlDay, _tlUntilDay);   // BUG-300: kept even when there's no text to stash
         var desc = _tlDesc;
         if (_tlAddKind == TimelineKind.Investigation || _special == ComposerMode.Note)
         {
@@ -1918,6 +1924,7 @@ else
     // --- INV-10: evidence an entry cites ---
     private Guid? _citing;
     private readonly HashSet<Guid> _citeSel = new();
+    private List<Guid> _citeOpened = [];
     private bool _citeSaving;
 
     private List<Evidence> CitedBy(TimelineEntry e) => Case.Citations.Where(x => x.TimelineEntryId == e.Id)
@@ -2078,6 +2085,7 @@ else
         _citing = e.Id;
         _citeSel.Clear();
         foreach (var ev in CitedBy(e)) _citeSel.Add(ev.Id);
+        _citeOpened = [.. _citeSel];   // BUG-297
     }
 
     private void ToggleCite(Guid id, bool on) { if (on) _citeSel.Add(id); else _citeSel.Remove(id); }
@@ -2087,7 +2095,7 @@ else
         _citeSaving = true;
         try
         {
-            await Cases.CiteEvidenceAsync(CaseId, entryId, _citeSel.ToList());
+            await Cases.CiteEvidenceAsync(CaseId, entryId, _citeSel.ToList(), openedWith: _citeOpened);
             _citing = null;
             await OnChanged.InvokeAsync();
             Toasts.Success("Evidence cited");

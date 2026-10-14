@@ -41,6 +41,24 @@ public class BriefFreshnessTests
     }
 
     [Fact]
+    public void Editing_an_old_entry_isnt_new_since_the_brief(/* BUG-301 */)
+    {
+        var c = NewCase();
+        Entry(c, TimelineEntryType.Decision, T0.AddHours(1));
+        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(2))!;
+        var old = c.TimelineEntries.Single();
+        old.IsCurrent = false;
+        c.TimelineEntries.Add(new TimelineEntry
+        {
+            CaseId = c.Id, Kind = old.Kind, Type = old.Type, OccurredAtUtc = old.OccurredAtUtc, Description = "Decision (typo fixed)",
+            CreatedBy = "an1", CreatedAtUtc = T0.AddHours(3), Version = 2, SupersedesEntryId = old.Id
+        });
+
+        var since = BriefFreshness.Since(c, brief, Labels);
+        since.Prompt.Should().BeNull("the decision was recorded before this version; it was only corrected since");
+    }
+
+    [Fact]
     public void A_fresh_brief_has_nothing_to_report()
     {
         var c = NewCase();

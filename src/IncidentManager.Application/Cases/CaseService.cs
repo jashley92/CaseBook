@@ -2889,14 +2889,23 @@ public sealed class CaseService
     }
 
     /// <summary>INV-10: sets which evidence a timeline entry cites (replacing its current set).</summary>
+    /// <param name="openedWith">BUG-297: the entry's citations when the picker opened. Given, only what changed since then
+    /// is applied (files ticked are added, files unticked removed), so a citation a colleague added meanwhile stays.</param>
     public async Task CiteEvidenceAsync(Guid caseId, Guid entryId, IReadOnlyCollection<Guid> evidenceIds,
-        CancellationToken ct = default)
+        CancellationToken ct = default, IReadOnlyCollection<Guid>? openedWith = null)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
         // Evidence isn't in the tracked load; bring in just the ids the domain checks against.
         await db.Evidence.Where(e => e.CaseId == caseId).ToListAsync(ct);
+        if (openedWith is not null)
+        {
+            var now = c.Citations.Where(x => x.TimelineEntryId == entryId).Select(x => x.EvidenceId).ToHashSet();
+            now.ExceptWith(openedWith.Except(evidenceIds));
+            now.UnionWith(evidenceIds.Except(openedWith));
+            evidenceIds = now;
+        }
         c.SetCitations(entryId, evidenceIds, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }

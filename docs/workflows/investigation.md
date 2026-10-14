@@ -127,7 +127,7 @@ the note is marked "On the record".
 | TLP | Per indicator | Controls sharing in exports. |
 | Relationships | *Add relationship*: source, type (14 kinds), target, description | Directed; no self-links; no duplicates; editable in place (type, description, swap direction). |
 | Graph | Drag to arrange; *Re-layout*; *Fit*; *Freeze* | Positions are shared by everyone and not audited. Event steps are drawn as tactic-colored edges. |
-| Remove | *Remove* | Also removes its relationships and graph position. **Fails if an event step uses it as actor or target** ([known issue](../reference/known-issues.md)). Tasks "about" it keep a dangling reference. |
+| Remove | *Remove* | Also removes its relationships and graph position. Refused while an attack step names it as actor or target ("Change the step first, so the attack record keeps saying who did what to what."). A task about it stays, no longer pointing at it. |
 | Cross-case | *also in* on a row (hover for the other case's title, phase, outcome and verdict there); the entity panel's **Seen before** (closed cases: outcome, closed date, the verdict there and the closing line) and open cases; *Possibly related open cases*; the Indicators page | Value matches ignoring case on cases you can see (excluding exercises). An **account and an email address** with the same value are one identity; other types match only their own type. Suggestions never link by themselves. |
 | Tag in text | `[[` in any Markdown editor | Stored as a link to the entity id; renders as a chip that opens the entity panel; counts as a reference for the timeline's entity filter. |
 

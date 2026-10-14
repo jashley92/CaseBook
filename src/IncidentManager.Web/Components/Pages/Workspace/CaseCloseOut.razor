@@ -185,7 +185,7 @@
                 @foreach (var q in questions)
                 {
                     var title = IncidentManager.Application.Content.MarkdownService.PlainLine(q);
-                    var task = Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
+                    var task = Case.TasksFollowingUp(title)   // BUG-298
                         .OrderByDescending(t => t.Status == ActionItemStatus.Done).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
                     var answered = task is { Status: ActionItemStatus.Done } && TaskResults.ContainsKey(task.Id);
                     <li class="@(answered ? "im-close-q-ok" : "im-close-q-open")">

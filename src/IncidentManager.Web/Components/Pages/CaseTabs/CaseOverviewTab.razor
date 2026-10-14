@@ -630,7 +630,7 @@
 @* MITRE ATT&CK matrix picker (self-contained overlay) — tag techniques from the tactic grid. *@
 @if (_techMatrixOpen)
 {
-    <AttackMatrixPicker Current="CurrentTechniqueMap()" OnApply="ApplyTechMatrix" OnCancel="CancelTechMatrix" />
+    <AttackMatrixPicker Current="_techOpenedWith" OnApply="ApplyTechMatrix" OnCancel="CancelTechMatrix" />
 }
 
 @code {
@@ -1144,7 +1144,10 @@
         Toasts.Success("Technique removed");
     }
 
-    private void OpenTechMatrix() => _techMatrixOpen = true;
+    // BUG-296: the techniques as the picker opened, so applying changes only what this person changed: a tag a colleague
+    // added since isn't removed, nor a tactic they changed put back.
+    private IReadOnlyDictionary<string, MitreTactic> _techOpenedWith = new Dictionary<string, MitreTactic>();
+    private void OpenTechMatrix() { _techOpenedWith = CurrentTechniqueMap(); _techMatrixOpen = true; }
     private void CancelTechMatrix() => _techMatrixOpen = false;
 
     // The case's current technique tags as id → tactic, seeding the matrix's selection state.
@@ -1156,20 +1159,27 @@
     private async Task ApplyTechMatrix(IReadOnlyDictionary<string, MitreTactic> desired)
     {
         _techMatrixOpen = false;
-        var current = Case.Techniques.ToList();
+        var current = Case.Techniques.ToList();   // as the live refresh has it now
+        var opened = _techOpenedWith;
+        CaseTechnique? Live(string id) => current.FirstOrDefault(t => string.Equals(t.TechniqueId, id, StringComparison.OrdinalIgnoreCase));
 
         try
         {
-            foreach (var t in current.Where(t => !desired.ContainsKey(t.TechniqueId)))
-                await Cases.RemoveTechniqueAsync(CaseId, t.Id);
+            // Taken off in the picker (and still on the case as it was).
+            foreach (var (id, tactic) in opened.Where(o => !desired.ContainsKey(o.Key)))
+                if (Live(id) is { } t && t.Tactic == tactic)
+                    await Cases.RemoveTechniqueAsync(CaseId, t.Id);
 
             foreach (var kv in desired)
             {
-                var existing = current.FirstOrDefault(t => string.Equals(t.TechniqueId, kv.Key, StringComparison.OrdinalIgnoreCase));
-                if (existing is null)
-                    await Cases.AddTechniqueAsync(CaseId, kv.Key, AttackCatalog.Find(kv.Key)?.Name ?? "", kv.Value);
-                else if (existing.Tactic != kv.Value)
-                    await Cases.AddTechniqueAsync(CaseId, kv.Key, existing.Name, kv.Value);
+                var existing = Live(kv.Key);
+                if (!opened.TryGetValue(kv.Key, out var was))
+                {
+                    if (existing is null)
+                        await Cases.AddTechniqueAsync(CaseId, kv.Key, AttackCatalog.Find(kv.Key)?.Name ?? "", kv.Value);
+                }
+                else if (was != kv.Value && existing is not null && existing.Tactic == was)
+                    await Cases.AddTechniqueAsync(CaseId, kv.Key, existing.Name, kv.Value);   // re-tactic only what wasn't changed since
             }
             Toasts.Success("Techniques updated");
         }

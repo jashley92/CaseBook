@@ -19,10 +19,8 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
-| Medium | **Removing an entity used as an event step's actor or target fails at the database** (Restrict foreign key) with a generic error; `Case.RemoveEntity` doesn't check first. Tasks "about" a removed entity keep a dangling reference. | Confusing failure. | Pre-check and explain, or clear the references. |
 | Medium | **One reported time stops every jurisdiction's notification clock.** | Multi-jurisdiction cases can't record staggered notifications. | Per-jurisdiction reported times. |
 | Medium | **Blank number settings restore the file value instead of meaning "off"**, contrary to the SLA settings' descriptions. | An admin who clears an SLA target still has one. | Store blank as an explicit "none"; fix the text meanwhile. |
-| Medium | **The settings form shows catalog defaults, not effective values** (e.g. the production template's 24 h auto-seal shows as 6). | Misleading; the *Setting sources* page is correct. | Show the effective value. |
 | Low | `Retention:CaseYears` is editable but nothing reads it; nothing flags cases past retention. | Implies a control that doesn't exist. | Remove the setting, or build the review queue. |
 | Low | The composer doesn't reject a **future** occurred time on the server (only the browser does). | Possible bad data via a crafted request. | Validate in `AddTimelineEntryAsync`/`AddEventStepAsync`. |
 | Low | Import: an **unknown classification** warns "Using Adverse Event instead." but opens a Complex Event. | Misleading message. | Fix the message or the fallback. |

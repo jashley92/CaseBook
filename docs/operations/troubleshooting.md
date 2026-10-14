@@ -194,7 +194,8 @@ recently lost a role, their open tab updates within two minutes; reloading picks
 1. Is it a server-side setting? Those are read-only in the app and need a file change and recycle
    ([configuration.md](configuration.md)).
 2. Did you clear a number expecting "off"? A blank number restores the file value; enter `0`.
-3. Check *Setting sources* for the effective value. The settings form shows catalog defaults, not file values.
+3. Check *Setting sources* for where the effective value comes from (the form shows it, from your files when the
+   app holds no override).
 4. Background jobs pick changes up within about five minutes; the idle timeout applies to new sessions.
 
 ## Integrity

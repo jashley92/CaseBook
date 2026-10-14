@@ -400,7 +400,7 @@
     private ActionItem? QuestionTask(string q)
     {
         var title = IncidentManager.Application.Content.MarkdownService.PlainLine(q);
-        return Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
+        return Case.TasksFollowingUp(title)   // BUG-298
             .OrderByDescending(t => t.IsOpen).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
     }
 
