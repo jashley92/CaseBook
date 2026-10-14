@@ -78,6 +78,7 @@ Run it from Git Bash on Windows (`MSYS_NO_PATHCONV=1` may be needed for the dock
 | Job | Step | Guards against |
 |---|---|---|
 | `build-test` | `dotnet build -c Release`, `dotnet test` | Regressions (SQLite) |
+| | SonarQube Cloud analysis (main and PRs, when `SONAR_TOKEN` is set), waiting for the quality gate | A red quality gate (fails the build) |
 | | `tools/ci/check-migrations-immutable.sh` | Editing, deleting, renaming or squashing a migration that shipped in a `v*` tag |
 | | `dotnet ef migrations has-pending-model-changes` (SQL Server and SQLite) | A model change without a migration, which would stop the upgraded app from starting |
 | | `dotnet list package --vulnerable --include-transitive` | Known-vulnerable packages (fails the build) |
@@ -85,13 +86,22 @@ Run it from Git Bash on Windows (`MSYS_NO_PATHCONV=1` may be needed for the dock
 | `upgrade-path` (SQL Server 2022 service container) | SQL Server tests | Provider-specific behavior |
 | | `upgrade-path.sh` from the three newest release tags **and** the first release (v1.0.0) | Upgrades breaking existing databases |
 
+The immutability, model and vulnerable-package checks run even when the Sonar step or a test failed, so a SonarQube
+Cloud outage doesn't hide them.
+
 CodeQL runs through GitHub's default setup, not a workflow file. Dependabot proposes weekly NuGet and GitHub
 Actions updates (EF Core and `Microsoft.Extensions.*` majors are held back).
 
-`.github/workflows/release.yml` runs on a `v*` tag: it re-checks migration immutability, publishes the app and
-builds `casebook-<tag>.zip` (`app/`, `deploy/`, `migrations-sqlserver.txt`, `VERSION.txt`) with a `.sha256`, then
-creates the GitHub release. **It doesn't run the tests**; it relies on CI having passed for that commit, so only
-tag commits that went through CI on `main`.
+`.github/workflows/release.yml` runs on a `v*` tag. It first runs every CI job above on the tagged commit, except
+Sonar, which only analyses `main` and PRs. Instead, `tools/ci/check-sonar-quality-gate.sh` finds SonarQube Cloud's
+analysis of the tagged commit on `main` and refuses the release unless its quality gate passed. It waits up to 15
+minutes for that analysis, so a tag pushed with the commit is fine. A commit with no analysis on `main` is refused:
+one that isn't on `main`, a docs-only commit (CI skips those), or one whose CI was cancelled by a newer push. So tag
+the code commit whose CI on `main` passed. Without `SONAR_TOKEN` (a fork) the check warns and is skipped. The job then
+re-checks migration immutability, publishes the app and builds `casebook-<tag>.zip` (`app/`, `deploy/`,
+`migrations-sqlserver.txt`, `VERSION.txt`) with a `.sha256`, then creates the GitHub release.
+
+To check a commit by hand: `SONAR_TOKEN=... SONAR_WAIT_SECONDS=0 bash tools/ci/check-sonar-quality-gate.sh <sha>`.
 
 ## What is covered
 

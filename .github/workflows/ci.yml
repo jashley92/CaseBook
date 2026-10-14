@@ -61,6 +61,7 @@ jobs:
           restore-keys: sonar-${{ runner.os }}
 
       - name: Restore
+        id: restore
         run: |
           dotnet restore
           dotnet tool restore
@@ -75,17 +76,21 @@ jobs:
       # applies to the C# services and domain, where the logic lives and the tests are. Likewise the deploy
       # PowerShell, browser JS and the XSIAM Python integration: no coverage tooling runs for them, so Sonar
       # would count every line as uncovered. All of them are still analysed for issues.
+      # BUG-466: sonar.qualitygate.wait makes the end step wait for the server's verdict and fail on a red gate, so a
+      # failing gate fails CI on main and PRs (it used to pass, and the release then shipped it).
       - name: SonarQube Cloud analysis (begin)
         if: env.SONAR_TOKEN != '' && !startsWith(github.ref, 'refs/tags/')   # analysis is for main and PRs, not tags
         run: >-
           dotnet sonarscanner begin /k:"jashley92_CaseBook" /o:"jashley92" /d:sonar.token="$SONAR_TOKEN"
           /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.qualitygate.wait=true /d:sonar.qualitygate.timeout=600
           /d:sonar.cs.opencover.reportsPaths="tests/**/TestResults/*/coverage.opencover.xml"
           /d:sonar.exclusions="deploy/sql/casebook-schema-sqlserver.sql"
           /d:sonar.cpd.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**"
           /d:sonar.coverage.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**,**/*.razor,src/IncidentManager.Web/Components/**,**/*.ps1,**/*.psm1,**/*.js,**/*.mjs,**/*.py"
 
       - name: Build
+        id: build
         run: dotnet build --no-restore -c Release
 
       - name: Test
@@ -101,10 +106,14 @@ jobs:
       # removed, or regenerated — databases from that release would stop upgrading. And the model must not
       # drift from the migrations: EF refuses to Migrate() with un-migrated model changes, so the app would
       # fail to start on upgrade.
+      # BUG-466: these gates don't depend on Sonar or the tests, so they still run when the Sonar end step (a red gate,
+      # a SonarQube Cloud outage) or a test fails, rather than hiding behind it. The job fails either way.
       - name: Released migrations are immutable
+        if: ${{ !cancelled() }}
         run: bash tools/ci/check-migrations-immutable.sh
 
       - name: No un-migrated model changes (SQL Server + SQLite)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           IM_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations has-pending-model-changes --no-build --configuration Release             --project src/IncidentManager.Migrations.SqlServer --startup-project src/IncidentManager.Web --context AppDbContext
           dotnet ef migrations has-pending-model-changes --no-build --configuration Release             --project src/IncidentManager.Infrastructure --startup-project src/IncidentManager.Web --context AppDbContext
@@ -114,6 +123,7 @@ jobs:
       # REV-78: shell: bash runs with pipefail, so a scan that fails (the vulnerability data unreachable, say) fails the
       # step instead of piping its error through tee into "No vulnerable packages".
       - name: Vulnerable package scan (H-05)
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
         shell: bash
         run: |
           echo "Scanning for vulnerable packages (including transitive)…"
