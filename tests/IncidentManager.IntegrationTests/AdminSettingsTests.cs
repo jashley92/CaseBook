@@ -187,6 +187,39 @@ public sealed class AdminSettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_first_overrides_at_once_say_so_instead_of_an_error_page(/* BUG-459 */)
+    {
+        await using var db = NewContext();
+        const string key = "ExternalLinks:DetectionCaseUrlTemplate";
+        // Another administrator's first override of the key lands between this save's read and its insert.
+        var race = new RaceCommandInterceptor("INSERT INTO \"AppSettings\"",
+            "INSERT INTO \"AppSettings\" (\"Id\", \"Key\", \"Value\", \"UpdatedAtUtc\", \"UpdatedBy\") VALUES ($id, $k, 'https://other/{0}', 0, 'bob')",
+            ("$id", Guid.NewGuid().ToString().ToUpperInvariant()), ("$k", key));
+
+        var save = async () => await RacingService(race).SetAsync(key, "https://siem/{0}");
+
+        await save.Should().ThrowAsync<InvalidOperationException>().WithMessage("Another administrator saved*at the same moment*");
+        race.Ran.Should().BeTrue();
+        (await db.AppSettings.AsNoTracking().SingleAsync(s => s.Key == key)).Value.Should().Be("https://other/{0}");
+    }
+
+    [Fact]
+    public async Task A_save_that_loses_to_a_reset_says_the_setting_changed(/* BUG-459 */)
+    {
+        await using var db = NewContext();
+        const string key = "ExternalLinks:DetectionCaseUrlTemplate";
+        await NewService(db).SetAsync(key, "https://siem/{0}");
+        // Another administrator resets it between this save's read and its update.
+        var race = new RaceCommandInterceptor("UPDATE \"AppSettings\"", "DELETE FROM \"AppSettings\" WHERE \"Key\" = $k", ("$k", key));
+
+        var save = async () => await RacingService(race).SetAsync(key, "https://siem2/{0}");
+
+        (await save.Should().ThrowAsync<InvalidOperationException>().WithMessage("Someone changed*since you opened it*"))
+            .Which.Should().NotBeOfType<IncidentManager.Application.Cases.ConcurrentEditException>("its message is about cases");
+        race.Ran.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task A_whole_value_saved_from_a_stale_page_is_refused(/* BUG-438 */)
     {
         await using var db = NewContext();

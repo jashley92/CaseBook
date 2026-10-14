@@ -104,8 +104,8 @@ public sealed class AdminSettingsService
 
         var existing = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
         if (checkExpected && !string.Equals(existing?.Value, expectedStored, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Someone changed \"{def.Label}\" since you opened it, so nothing was saved: " +
-                "it would have undone that. Reload the page, then make your change again.");
+            throw new InvalidOperationException(ChangedSinceOpened(def));
+        var adding = existing is null;
         if (existing is null)
         {
             db.AppSettings.Add(new AppSetting
@@ -123,11 +123,28 @@ public sealed class AdminSettingsService
             existing.UpdatedBy = _user.UserId;
         }
 
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        // BUG-459: the override was reset (removed) between the read above and this update; the context reports that as a
+        // ConcurrentEditException, whose message is about cases.
+        catch (ConcurrentEditException ex) { throw new InvalidOperationException(ChangedSinceOpened(def), ex); }
+        catch (DbUpdateException ex) when (adding)
+        {
+            // BUG-459 (as BUG-393): another administrator's first override of this setting was saved between the read
+            // above and this insert (the unique key refused it).
+            using var recheck = _factory.CreateDbContext();
+            if (await recheck.AppSettings.AnyAsync(s => s.Key == key, ct))
+                throw new InvalidOperationException($"Another administrator saved \"{def.Label}\" at the same moment, so nothing " +
+                    "was saved. Reload the page to see their change, then make yours again.", ex);
+            throw;
+        }
         _reloader.Reload(); // make the override take effect at runtime, no restart
         _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
         ThrowIfNotInEffect();
     }
+
+    private static string ChangedSinceOpened(SettingDefinition def) =>
+        $"Someone changed \"{def.Label}\" since you opened it, so nothing was saved: " +
+        "it would have undone that. Reload the page, then make your change again.";
 
     /// <summary>
     /// REV-60: the change is saved (and audited), but a reload that couldn't read the settings keeps the earlier values,
