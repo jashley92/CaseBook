@@ -654,6 +654,7 @@ else
     private bool _referredOnly;
     private bool _onHoldOnly;
     private string? _openedLabel; // "MMM yyyy" when an opened-month drill-in is active
+    private string? _opened;      // BUG-433: that month as "yyyy-MM", carried by CurrentParams
     private string? _assignee;    // assignee drill-in from team workload: a user id, or "none" for unassigned
     private string? _assigneeName;
 
@@ -802,11 +803,13 @@ else
         _filter.OpenedYear = null;
         _filter.OpenedMonth = null;
         _openedLabel = null;
+        _opened = null;
         if (!string.IsNullOrWhiteSpace(QOpened) && DateTime.TryParse($"{QOpened}-01", out var mo))
         {
             _filter.OpenedYear = mo.Year;
             _filter.OpenedMonth = mo.Month;
             _openedLabel = mo.ToString("MMM yyyy");
+            _opened = mo.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         // FR-10: page position + size come from the URL, not just component state. A filter change navigates
@@ -850,6 +853,9 @@ else
         ["hold"] = _onHoldOnly ? "true" : null,
         ["assignee"] = _assignee,
         ["assigneeName"] = _assignee is null or "none" ? null : Blank(_assigneeName ?? ""),
+        // BUG-433: the opened-month drill-in survives paging, sorting, page size and filter changes, and is saved with a
+        // view as the assignee drill-in is (a view of one month's cases is a fair thing to keep).
+        ["opened"] = _opened,
         // FR-10: page size persists across filter changes (omitted at the default to keep URLs clean). `page`
         // is deliberately NOT here — a filter change should restart at page 1; paging adds it in GoToPage.
         ["size"] = _pageSize == DefaultPageSize ? null : _pageSize.ToString(),
