@@ -135,6 +135,20 @@ public class Case : AuditableEntity, IHashableEntity
     // BUG-404: the separators of a ReportedJurisdictions value; a jurisdiction code can't hold either.
     private static readonly char[] CodeSeparators = [',', ';'];
 
+    /// <summary>
+    /// BUG-428: each notice's value under every code it covers. A notice recorded before BUG-404 refused separators can
+    /// name "NY;CA", and counts for both (the row itself is hashed, so it isn't rewritten). A notice for the one code wins
+    /// over such a combined one.
+    /// </summary>
+    public static Dictionary<string, T> ByNoticeCode<T>(IEnumerable<(string Jurisdiction, T Value)> notices)
+    {
+        var result = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (jurisdiction, value) in notices.OrderBy(n => n.Jurisdiction.IndexOfAny(CodeSeparators) >= 0))
+            foreach (var code in jurisdiction.Split(CodeSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                result.TryAdd(code, value);
+        return result;
+    }
+
     private static string[] Codes(string part) =>
         part.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -601,8 +615,7 @@ public class Case : AuditableEntity, IHashableEntity
                 && detectedAtUtc > firstSeverity)
                 throw new ArgumentException($"The detected time can't be after the severity first changed ({firstSeverity:u}).");
             if (ActionItems.Select(a => a.CompletedAtUtc).Min() is { } firstDone && detectedAtUtc > firstDone)
-                throw new ArgumentException($"The detected time can't be after a task was completed ({firstDone:u}).");
-            // BUG-209: nor the materiality decision, which can start the notification clock. BUG-231: to the minute (the
+                throw new ArgumentException($"The detected time can't be after a task was completed ({firstDone:u}).");            // BUG-209: nor the materiality decision, which can start the notification clock. BUG-231: to the minute (the
             // picker's precision), and saying what to do when the decision was recorded as a date only (before v1.5.1,
             // stored at 00:00 UTC that day).
             if (Materiality.DecidedOnUtc is { } decided && ToMinute(detectedAtUtc) > ToMinute(decided))
@@ -1471,7 +1484,7 @@ public class Case : AuditableEntity, IHashableEntity
     public void ReportedFromNotices(IReadOnlyCollection<string> jurisdictionsInPlay, string actor, DateTimeOffset nowUtc)
     {
         if (JurisdictionNotices.Count == 0) return;
-        var byCode = JurisdictionNotices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase);
+        var byCode = ByNoticeCode(JurisdictionNotices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)));   // BUG-428
         // BUG-104: with nothing in play any more (the data elements re-scoped), the notices already made still stand.
         DateTimeOffset? reported = jurisdictionsInPlay.Count == 0 ? byCode.Values.Max()
             : jurisdictionsInPlay.All(byCode.ContainsKey) ? jurisdictionsInPlay.Max(j => byCode[j])

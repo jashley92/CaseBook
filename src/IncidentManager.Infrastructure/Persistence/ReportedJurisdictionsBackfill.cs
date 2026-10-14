@@ -20,7 +20,7 @@ public static class ReportedJurisdictionsBackfill
         foreach (var c in cases)
         {
             IEnumerable<string> codes = c.JurisdictionNotices.Count > 0
-                ? c.JurisdictionNotices.Select(n => n.Jurisdiction)
+                ? c.JurisdictionNotices.SelectMany(n => NotificationDeadlineService.SplitCodes(n.Jurisdiction))   // BUG-428: a legacy "NY;CA" notice
                 : await NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
             var frozen = string.Join(',', codes.Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));

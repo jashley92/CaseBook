@@ -116,15 +116,17 @@ public sealed class NotificationDeadlineService
         if (jurisdictions.Count == 0) return empty;
 
         var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
-        var notices = c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase);
-        var kept = c.Notices.Where(n => n.DueAtUtc is not null)
-            .ToDictionary(n => n.Jurisdiction, n => n.DueAtUtc!.Value, StringComparer.OrdinalIgnoreCase);
+        // BUG-428: a legacy notice coded "NY;CA" counts for each code it names.
+        var notices = Case.ByNoticeCode(c.Notices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)));
+        var kept = Case.ByNoticeCode(c.Notices.Where(n => n.DueAtUtc is not null).Select(n => (n.Jurisdiction, n.DueAtUtc!.Value)));
         var statuses = NotificationDeadlinePolicy.EvaluateByJurisdiction(start, NotifiedAt(notices, c.ReportedAtUtc), jurisdictions, ruleSet,
             settings.AtRiskThresholdPercent, _clock.UtcNow, KeptDue(kept));
 
         return new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
             statuses, NotificationDeadlinePolicy.Headline(statuses))
-        { NoticeCodes = notices.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase), EarlierMaterialUtc = earlier };
+        // BUG-428: only the codes with a notice of their own, which can be removed one by one; a combined legacy notice is
+        // cleared with the rest.
+        { NoticeCodes = c.Notices.Select(n => n.Jurisdiction).ToHashSet(StringComparer.OrdinalIgnoreCase), EarlierMaterialUtc = earlier };
     }
 
     /// <summary>
@@ -308,7 +310,7 @@ public sealed class NotificationDeadlineService
             .Select(n => new { n.CaseId, n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc }).ToListAsync(ct);
         foreach (var n in kept)
             result.Add((n.CaseId, n.NotifiedAtUtc, n.NotifiedAtUtc <= n.DueAtUtc!.Value ? SlaState.Met : SlaState.Missed));
-        var judged = kept.Select(n => (n.CaseId, n.Jurisdiction.ToUpperInvariant())).ToHashSet();
+        var judged = kept.SelectMany(n => SplitCodes(n.Jurisdiction).Select(j => (n.CaseId, j.ToUpperInvariant()))).ToHashSet();   // BUG-428
 
         foreach (var reported in new[] { true, false })
             foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
@@ -347,10 +349,9 @@ public sealed class NotificationDeadlineService
             if (jurisdictions.Count == 0) continue;
 
             result[c.Id] = NotificationDeadlinePolicy.EvaluateByJurisdiction(start,
-                NotifiedAt(c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase), c.ReportedAtUtc),
+                NotifiedAt(Case.ByNoticeCode(c.Notices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc))), c.ReportedAtUtc),   // BUG-428
                 jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now,
-                KeptDue(c.Notices.Where(n => n.DueAtUtc is not null)
-                    .ToDictionary(n => n.Jurisdiction, n => n.DueAtUtc!.Value, StringComparer.OrdinalIgnoreCase)));
+                KeptDue(Case.ByNoticeCode(c.Notices.Where(n => n.DueAtUtc is not null).Select(n => (n.Jurisdiction, n.DueAtUtc!.Value)))));
         }
         return result;
     }

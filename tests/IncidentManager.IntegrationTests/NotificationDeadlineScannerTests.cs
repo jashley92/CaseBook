@@ -399,6 +399,46 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_legacy_notice_coded_with_a_semicolon_covers_each_code(/* BUG-428 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        var notifiedAt = _clock.UtcNow.AddHours(-1);
+        await using (var db = NewContext())
+        {
+            // As recorded before BUG-404 refused separators: one notice row for "NY;CA" (hashed, so it stays as written).
+            db.JurisdictionNotices.Add(new JurisdictionNotice
+            {
+                CaseId = id, Jurisdiction = "NY;CA", NotifiedAtUtc = notifiedAt, CreatedBy = "alice", CreatedAtUtc = notifiedAt
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var d = await NewDeadlines().EvaluateAsync(id);
+        d.Statuses.Select(s => s.JurisdictionCode).Should().BeEquivalentTo("NY", "CA");
+        d.Statuses.Should().OnlyContain(s => s.NotifiedAtUtc == notifiedAt, "the notice covers both regulators");
+
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.Include(x => x.JurisdictionNotices).Include(x => x.DataElements).SingleAsync(x => x.Id == id);
+            c.ReportedFromNotices(["NY", "CA"], "alice", _clock.UtcNow);
+            c.ReportedAtUtc.Should().Be(notifiedAt, "every jurisdiction in play was notified");
+            Case.KeptJurisdictions(c.ReportedJurisdictions).Should().Equal("CA", "NY");
+        }
+
+        // The start-up backfill freezes the split codes, not "NY;CA" (whose ";" would end the codes part).
+        await using (var db = NewContext())
+            await db.Cases.Where(x => x.Id == id).ExecuteUpdateAsync(u => u
+                .SetProperty(x => x.ReportedAtUtc, notifiedAt).SetProperty(x => x.ReportedJurisdictions, (string?)null));
+        await using (var db = NewContext())
+            (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db)).Should().Be(1);
+        await using var check = NewContext();
+        (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("CA,NY");
+        (await check.JurisdictionNotices.AsNoTracking().SingleAsync()).Jurisdiction.Should().Be("NY;CA", "the hashed row isn't rewritten");
+    }
+
+    [Fact]
     public async Task A_material_call_taken_back_and_made_again_says_when_the_clock_first_ran(/* WF-12 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);
