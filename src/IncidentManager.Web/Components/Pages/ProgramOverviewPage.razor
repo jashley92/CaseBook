@@ -12,6 +12,7 @@
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Program</PageTitle>
 
@@ -545,27 +546,56 @@ else
     private sealed record BarPoint(string Key, string Label, string Short, int Start, int Opened, int Closed, int End,
         ClassificationCounts OpenedBy, ClassificationCounts ClosedBy);
 
+    // BUG-346: a period picked while the last is still loading supersedes it: the older load is cancelled, and its
+    // answer dropped if it lands anyway, so it can't overwrite the newer figures (or mix with them, one tile at a time).
+    private CancellationTokenSource? _cts;
+    private int _seq;
+
     protected override async Task OnParametersSetAsync()
     {
         var now = Clock.UtcNow;
+        OverviewPeriod period;
+        OverviewWindows windows;
         if (OverviewWindows.TryRange(From, To, Today, out var rangeError) is { } range)
         {
-            _period = OverviewPeriod.Custom;
-            _windows = OverviewWindows.ForRange(range.From, range.To, now, OrgZone.Current);
+            period = OverviewPeriod.Custom;
+            windows = OverviewWindows.ForRange(range.From, range.To, now, OrgZone.Current);
             (_from, _to, _customOpen, _customError) = (range.From.ToDateTime(TimeOnly.MinValue), range.To.ToDateTime(TimeOnly.MinValue), false, null);
         }
         else
         {
             // A bad range in the URL opens the form and says why; the figures fall back to the chosen period.
-            _period = OverviewWindows.Parse(Period);
-            _windows = OverviewWindows.For(_period, now, OrgZone.Current);
+            period = OverviewWindows.Parse(Period);
+            windows = OverviewWindows.For(period, now, OrgZone.Current);
             if (rangeError is not null) (_customOpen, _customError) = (true, rangeError);
         }
-        _metrics = await Dashboard.GetAsync(Exercises);
-        _needs = await NeedsActionSvc.GetAsync(Exercises);
-        _phases = await Dashboard.PhaseAgingAsync(Exercises);
-        _vendor = await Vendors.GetAsync(_windows.Current, Exercises);
-        var coverage = await Coverage.GetForPeriodAsync(_windows.Current.StartUtc, _windows.Current.EndUtc, Exercises);
+
+        _cts?.Cancel();
+        _cts?.Dispose();
+        var seq = ++_seq;
+        var cts = _cts = new CancellationTokenSource();
+        var ct = cts.Token;
+        var exercises = Exercises;
+        DashboardMetrics metrics;
+        NeedsAction needs;
+        IReadOnlyList<PhaseAging> phases;
+        VendorCases vendor;
+        IncidentManager.Application.Mitre.AttackCoverage coverage;
+        IReadOnlyList<ProgramSnapshot> snaps;
+        try
+        {
+            metrics = await Dashboard.GetAsync(exercises, ct);
+            needs = await NeedsActionSvc.GetAsync(exercises, ct);
+            phases = await Dashboard.PhaseAgingAsync(exercises, ct);
+            vendor = await Vendors.GetAsync(windows.Current, exercises, ct);
+            coverage = await Coverage.GetForPeriodAsync(windows.Current.StartUtc, windows.Current.EndUtc, exercises, ct);
+            snaps = await ProgramFigures.SnapshotsAsync([windows.Current, windows.Previous, .. windows.Months], exercises, ct);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested) { return; }   // superseded
+        if (seq != _seq) return;
+
+        (_period, _windows) = (period, windows);
+        (_metrics, _needs, _phases, _vendor) = (metrics, needs, phases, vendor);
         _techniques = coverage.Tactics.SelectMany(t => t.Techniques).GroupBy(t => t.TechniqueId)
             .Select(g => new TopTechnique(g.Key, g.First().Name,
                 g.SelectMany(t => t.Cases).Select(c => c.CaseId).Distinct().Count(),
@@ -573,7 +603,6 @@ else
             .OrderByDescending(t => t.Cases).ThenBy(t => t.Id, StringComparer.Ordinal).Take(6).ToList();
         _tacticsSeen = coverage.Tactics.Count(t => t.Tactic != MitreTactic.Unspecified && t.CaseCount > 0);
         _tacticsAll = Enum.GetValues<MitreTactic>().Count(t => t != MitreTactic.Unspecified);
-        var snaps = await ProgramFigures.SnapshotsAsync([_windows.Current, _windows.Previous, .. _windows.Months], Exercises);
         (_cur, _prev, _monthly) = (snaps[0], snaps[1], snaps.Skip(2).ToList());
         _asOf = TimeDisp.TimeOnly(now);
 
@@ -594,6 +623,12 @@ else
         _topMax = Math.Max(1, _bars.Count == 0 ? 1 : _bars.Max(b => b.Start + b.Opened));
         _downMax = Math.Max(1, _bars.Count == 0 ? 1 : _bars.Max(b => b.Closed));
         _unit = Math.Min(16, 150.0 / _topMax);
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 
     private string Px(int cases) => (cases * _unit).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);

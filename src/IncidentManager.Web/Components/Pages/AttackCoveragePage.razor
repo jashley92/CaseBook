@@ -6,6 +6,7 @@
    tags and event-timeline steps analysts already record. Sub-techniques roll up to their parent. *@
 @using IncidentManager.Application.Mitre
 @inject AttackCoverageService Coverage
+@implements IDisposable
 
 <PageTitle>ATT&amp;CK coverage</PageTitle>
 
@@ -140,10 +141,31 @@
 
     protected override Task OnInitializedAsync() => Load();
 
+    // BUG-346: a superseded load is cancelled, and its answer dropped if it lands anyway, so a slower earlier period
+    // never overwrites the one picked last.
+    private CancellationTokenSource? _cts;
+    private int _seq;
+
     private async Task Load()
     {
-        _data = await Coverage.GetAsync(_months, _includeExercises);
-        if (SelectedTechnique is null) _selected = null;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        var seq = ++_seq;
+        var cts = _cts = new CancellationTokenSource();
+        try
+        {
+            var data = await Coverage.GetAsync(_months, _includeExercises, cts.Token);
+            if (seq != _seq) return;
+            _data = data;
+            if (SelectedTechnique is null) _selected = null;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 
     // 18–85% of the tactic colour over the page background, so a single case still reads as "seen".

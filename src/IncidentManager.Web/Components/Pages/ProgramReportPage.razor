@@ -11,6 +11,7 @@
 @inject ISeverityLabels SevLabels
 @inject IClock Clock
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Program report</PageTitle>
 
@@ -201,8 +202,10 @@
 
     private static string QuarterKey(ProgramPeriod p) => $"{p.Year}-{p.Quarter}";
 
-    private string CsvHref =>
-        $"export/program-report.csv?year={_period.Year}&quarter={_period.Quarter}&exercises={_includeExercises.ToString().ToLowerInvariant()}";
+    // BUG-346: the CSV of the report shown, not of the dropdowns (which run ahead while a load is in flight).
+    private string CsvHref => _report is { } r
+        ? $"export/program-report.csv?year={r.Period.Year}&quarter={r.Period.Quarter}&exercises={r.IncludesExercises.ToString().ToLowerInvariant()}"
+        : "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -211,7 +214,30 @@
         await Load();
     }
 
-    private async Task Load() => _report = await Program.BuildAsync(_period, _includeExercises);
+    // BUG-346: a superseded load is cancelled, and its answer dropped if it lands anyway, so a slower earlier quarter
+    // never overwrites the one picked last.
+    private CancellationTokenSource? _cts;
+    private int _seq;
+
+    private async Task Load()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        var seq = ++_seq;
+        var cts = _cts = new CancellationTokenSource();
+        try
+        {
+            var report = await Program.BuildAsync(_period, _includeExercises, cts.Token);
+            if (seq == _seq) _report = report;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
 
     private async Task OnQuarterChanged(ChangeEventArgs e)
     {
