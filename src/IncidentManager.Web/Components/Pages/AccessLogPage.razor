@@ -2,6 +2,7 @@
 @* UX-17: a forensic/oversight surface, so it lives at the top level in the "Audit & Exports" group beside
    Integrity & Audit (in the main layout) rather than buried in the admin hub. Still SysAdmin-only. *@
 @attribute [Authorize(Policy = Policies.Administer)]
+@implements IDisposable
 @using IncidentManager.Application.Access
 @inject IAccessLogService AccessLog
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
@@ -117,6 +118,11 @@ else
     private bool _restrictedOnly;
     private DateTime? _from;
     private DateTime? _to;
+    // BUG-395: the filter the shown rows were loaded with (for the CSV link), and the load in flight.
+    private AccessLogFilter? _shownFilter;
+    private DateTime? _shownFrom, _shownTo;
+    private CancellationTokenSource? _cts;
+    private int _seq;
 
     protected override async Task OnInitializedAsync()
     {
@@ -134,18 +140,48 @@ else
         ToUtc = _to is { } dt ? new DateTimeOffset(dt.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null
     };
 
-    private async Task Load() => _rows = await AccessLog.QueryAsync(BuildFilter(), PageSize);
+    // BUG-395 (sibling of BUG-346): a filter change supersedes the load before it, which is cancelled, and its rows are
+    // dropped if they land anyway, so an earlier filter's rows never overwrite a later one's.
+    private async Task Load()
+    {
+        var previous = _cts;   // replaced before the await, so a load started meanwhile never has its own disposed
+        var seq = ++_seq;
+        var cts = _cts = new CancellationTokenSource();
+        var ct = cts.Token;   // read now: the page may be disposed (and cts with it) while the last load is cancelled
+        if (previous is not null)
+        {
+            await previous.CancelAsync();
+            previous.Dispose();
+        }
+        var filter = BuildFilter();
+        var (from, to) = (_from, _to);
+        try
+        {
+            var rows = await AccessLog.QueryAsync(filter, PageSize, ct);
+            if (seq != _seq) return;
+            _rows = rows;
+            (_shownFilter, _shownFrom, _shownTo) = (filter, from, to);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* superseded */ }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
 
     private string ExportHref()
     {
-        var f = BuildFilter();
+        // BUG-395: the filter the table was loaded with (the controls can be ahead of it while a load runs).
+        var (f, fromDay, toDay) = _shownFilter is { } shown ? (shown, _shownFrom, _shownTo) : (BuildFilter(), _from, _to);
         var qs = new List<string>();
         if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
         if (f.CaseNumber is { } cn) qs.Add($"case={Uri.EscapeDataString(cn)}");
         if (f.AccessType is { } t) qs.Add($"type={t}");
         if (f.RestrictedOnly) qs.Add("restricted=true");
-        if (_from is { } from) qs.Add($"from={from:yyyy-MM-dd}");
-        if (_to is { } to) qs.Add($"to={to:yyyy-MM-dd}");
+        if (fromDay is { } from) qs.Add($"from={from:yyyy-MM-dd}");
+        if (toDay is { } to) qs.Add($"to={to:yyyy-MM-dd}");
         return "export/access-log.csv" + (qs.Count > 0 ? "?" + string.Join("&", qs) : "");
     }
 }
