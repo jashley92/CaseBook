@@ -72,7 +72,7 @@
                             @if (_verdictError is not null) { <div class="text-danger small mt-1" role="alert">@_verdictError</div> }
                             <div class="d-flex gap-2 justify-content-end align-items-center mt-2">
                                 <span class="small text-muted me-auto">Shown on the timeline.</span>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _pendingVerdict = null; _verdictError = null; }">Cancel</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _pendingVerdict = null; _verdictFrom = null; _verdictError = null; }">Cancel</button>
                                 <button type="button" class="btn btn-sm btn-primary text-nowrap" disabled="@(_savingVerdict || (required && string.IsNullOrWhiteSpace(_verdictReason)))"
                                         @onclick="() => SaveVerdict(en)">Save verdict</button>
                             </div>
@@ -248,6 +248,7 @@
     private static readonly EntityDisposition[] VerdictOrder =
         [EntityDisposition.Unknown, EntityDisposition.Benign, EntityDisposition.Suspicious, EntityDisposition.Malicious, EntityDisposition.Compromised];
     private EntityDisposition? _pendingVerdict;
+    private EntityDisposition? _verdictFrom;   // BUG-372: the verdict shown when the pick was made
     private string? _verdictReason;
     private string? _verdictError;
     private bool _savingVerdict;
@@ -258,27 +259,30 @@
     private void PickVerdict(CaseEntity en, EntityDisposition d)
     {
         _verdictError = null;
+        // BUG-372: kept from the first pick, so a colleague's verdict that lands before Save is refused, not overwritten.
+        _verdictFrom = d == en.Disposition ? null : _verdictFrom ?? en.Disposition;
         _pendingVerdict = d == en.Disposition ? null : d;
     }
 
     private async Task SaveVerdict(CaseEntity en)
     {
-        if (_pendingVerdict is not { } d) return;
+        if (_pendingVerdict is not { } d || _savingVerdict) return;
+        var seen = _verdictFrom ?? en.Disposition;
         _savingVerdict = true;
         _verdictError = null;
         try
         {
             // BUG-234: the verdict alone; the other fields stay as they are now, not as this panel last showed them.
             await Cases.SetEntityVerdictAsync(Case.Id, en.Id, d,
-                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim(), expectedDisposition: en.Disposition);
-            _pendingVerdict = null;
+                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim(), expectedDisposition: seen);
+            _pendingVerdict = null; _verdictFrom = null;
             _verdictReason = null;
             Toasts.Success($"Verdict recorded: {Ui.Label(d)}");
             await OnChanged.InvokeAsync();
         }
         catch (StaleEditException ex)
         {
-            _pendingVerdict = null;
+            _pendingVerdict = null; _verdictFrom = null;
             _verdictError = ex.Message;
             await OnChanged.InvokeAsync();
         }
@@ -342,7 +346,7 @@
         if (EntityId == _loadedFor) return;
         _loadedFor = EntityId;
         _addingTask = false;
-        _pendingVerdict = null;
+        _pendingVerdict = null; _verdictFrom = null;
         _verdictReason = null;
         _verdictError = null;
         _copied = false;
