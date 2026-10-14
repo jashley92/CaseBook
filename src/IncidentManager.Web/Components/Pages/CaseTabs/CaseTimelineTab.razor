@@ -527,7 +527,7 @@
                             }
                         </div>
                         <div class="killchain-tactics">
-                            @foreach (var tt in step.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
+                            @foreach (var tt in step.Tactics.Select(x => x.Tactic).OrderBy(Ui.TacticRank))
                             {
                                 <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">@Ui.Label(tt)</span>
                             }
@@ -732,7 +732,7 @@ else
                             @if (asAttack)
                             {
                                 <span class="tl-tactics">
-                                    @foreach (var tt in e.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
+                                    @foreach (var tt in e.Tactics.Select(x => x.Tactic).OrderBy(Ui.TacticRank))
                                     {
                                         <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">
                                             <span class="bi @Ui.TacticGlyph(tt)" aria-hidden="true"></span> @Ui.Label(tt)
@@ -2943,7 +2943,7 @@ else
 
     // --- Event-step display helpers ---
     private static MitreTactic PrimaryTactic(TimelineEntry e) =>
-        e.Tactics.Count == 0 ? MitreTactic.Unspecified : e.Tactics.Select(t => t.Tactic).OrderBy(x => (int)x).First();
+        e.Tactics.Count == 0 ? MitreTactic.Unspecified : e.Tactics.Select(t => t.Tactic).OrderBy(Ui.TacticRank).First();
 
     private CaseEntity? EntityById(Guid? id) =>
         id is { } g ? Case.Entities.FirstOrDefault(x => x.Id == g) : null;

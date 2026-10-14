@@ -44,6 +44,16 @@ public class CaseTechniquesTests
     }
 
     [Fact]
+    public void Rows_are_in_ATTACK_matrix_order_not_stored_enum_order(/* BUG-479 sibling */)
+    {
+        var c = NewCase();
+        Step(c, "T1087", MitreTactic.Discovery);            // stored as 9
+        Step(c, "T1562", MitreTactic.DefenseImpairment);    // stored as 15, but before Discovery in the matrix
+
+        CaseTechniques.For(c).Select(r => r.Tactic).Should().Equal(MitreTactic.DefenseImpairment, MitreTactic.Discovery);
+    }
+
+    [Fact]
     public void A_chain_step_without_a_tactic_merges_into_the_tag_of_the_same_technique()
     {
         var c = NewCase();

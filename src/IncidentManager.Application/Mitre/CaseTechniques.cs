@@ -1,4 +1,5 @@
 using IncidentManager.Domain.Entities;
+using IncidentManager.Application.Reporting;
 using IncidentManager.Domain.Enums;
 
 namespace IncidentManager.Application.Mitre;
@@ -44,6 +45,6 @@ public static class CaseTechniques
                 }
             }
 
-        return rows.Values.OrderBy(r => r.Tactic).ThenBy(r => r.TechniqueId, StringComparer.Ordinal).ToList();
+        return rows.Values.OrderBy(r => DiagramPalette.TacticRank(r.Tactic)).ThenBy(r => r.TechniqueId, StringComparer.Ordinal).ToList();
     }
 }

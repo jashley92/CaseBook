@@ -10,7 +10,7 @@
         }
         else
         {
-            @foreach (var t in Selected.OrderBy(x => (int)x))
+            @foreach (var t in Selected.OrderBy(Ui.TacticRank))
             {
                 <span class="tactic-chip" style="--tac:@Ui.TacticColor(t)">
                     <span class="bi @Ui.TacticGlyph(t)" aria-hidden="true"></span> @Ui.Label(t)

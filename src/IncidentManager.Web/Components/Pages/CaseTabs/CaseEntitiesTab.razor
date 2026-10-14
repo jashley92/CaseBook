@@ -1087,7 +1087,7 @@ else
     }
 
     private static MitreTactic PrimaryTactic(TimelineEntry e) =>
-        e.Tactics.Count == 0 ? MitreTactic.Unspecified : e.Tactics.Select(t => t.Tactic).OrderBy(x => (int)x).First();
+        e.Tactics.Count == 0 ? MitreTactic.Unspecified : e.Tactics.Select(t => t.Tactic).OrderBy(Ui.TacticRank).First();
 
     /// <summary>Signature of the graph's data so we only push to JS when something actually changed.</summary>
     private string GraphSignature() => string.Concat(
