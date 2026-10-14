@@ -44,7 +44,8 @@ public sealed class VendorCasesService
             .Where(c => c.Phase != CasePhase.Closed || (c.CreatedAtUtc >= period.StartUtc && c.CreatedAtUtc < period.EndUtc))
             .ToList();
         var ids = rows.Select(r => r.Id).ToList();
-        var steps = (await db.TimelineEntries.AsNoTracking()
+        // BUG-445: with their tactics, so a step that names only a tactic counts as an attack step, not a disclosure.
+        var steps = (await db.TimelineEntries.AsNoTracking().Include(e => e.Tactics)
                 .Where(e => ids.Contains(e.CaseId) && e.Kind == TimelineKind.Event && e.IsCurrent).ToListAsync(ct))
             .GroupBy(e => e.CaseId).ToDictionary(g => g.Key, g => g.ToList());
 

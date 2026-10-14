@@ -82,5 +82,27 @@ public sealed class VendorCasesTests : IDisposable
         v.OpenCases.Should().Contain(r => r.Vendor == "ClaimStream" && !r.Notified && r.StepsAtVendor == 0);
     }
 
+    [Fact]
+    public async Task A_vendor_step_naming_only_a_tactic_is_an_attack_step(/* BUG-445 */)
+    {
+        var now = _clock.UtcNow;
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var c = Case.Open(2026, 1, "V", "Vendor", Classification.Breach, Severity.High, CaseOrigin.ThirdParty, "ic1", now.AddDays(-2));
+            c.ThirdParty = new ThirdPartyDetails { VendorName = "ClaimStream" };
+            // No technique, actor, target or environment: the tactic alone makes it an attack step, at the vendor.
+            c.AddEventStep(now.AddDays(-4), [MitreTactic.InitialAccess], null, null, null, "Phished", "Vendor", "ic1", now,
+                type: TimelineEntryType.Notified);
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+        }
+
+        var v = await new VendorCasesService(new TestDbContextFactory(Options()), _user)
+            .GetAsync(new ProgramWindow(now.AddDays(-30), now, "the last 30 days"));
+
+        v.OpenCases.Should().ContainSingle().Which.Should().Match<VendorCaseRow>(r => r.StepsAtVendor == 1 && !r.Notified);
+    }
+
     public void Dispose() => _connection.Dispose();
 }
