@@ -281,17 +281,27 @@ public sealed class NotificationDeadlineService
     /// BUG-287: every notice given on the cases in <paramref name="cases"/>, reported or not yet (a case still waiting on
     /// another regulator has given this one's notice), each with when it was given and whether that was inside its
     /// window (its kept deadline, WF-77). So a quarter counts the notices given in it, and a jurisdiction that comes into
-    /// play later doesn't move them.
+    /// play later doesn't move them. BUG-375: a notice with a kept deadline is judged on its own, so one given in a past
+    /// quarter stays counted when the trigger is later withdrawn (materiality taken back, the Breach reclassified) or its
+    /// jurisdiction leaves play; only a notice from before deadlines were kept is judged through today's clock.
     /// </summary>
     public static async Task<List<(Guid CaseId, DateTimeOffset NotifiedAtUtc, SlaState State)>> NoticeOutcomesAsync(
         IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings, NotificationRuleSet ruleSet,
         DateTimeOffset now, CancellationToken ct = default)
     {
         var result = new List<(Guid, DateTimeOffset, SlaState)>();
+        // Compared in memory: DateTimeOffset comparison stays off SQLite (F-08).
+        var kept = await cases.SelectMany(c => c.JurisdictionNotices).Where(n => n.DueAtUtc != null)
+            .Select(n => new { n.CaseId, n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc }).ToListAsync(ct);
+        foreach (var n in kept)
+            result.Add((n.CaseId, n.NotifiedAtUtc, n.NotifiedAtUtc <= n.DueAtUtc!.Value ? SlaState.Met : SlaState.Missed));
+        var judged = kept.Select(n => (n.CaseId, n.Jurisdiction.ToUpperInvariant())).ToHashSet();
+
         foreach (var reported in new[] { true, false })
             foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
                 foreach (var s in statuses)
-                    if (s.State is SlaState.Met or SlaState.Missed && s.NotifiedAtUtc is { } at)
+                    if (s.State is SlaState.Met or SlaState.Missed && s.NotifiedAtUtc is { } at
+                        && !judged.Contains((id, s.JurisdictionCode.ToUpperInvariant())))
                         result.Add((id, at, s.State));
         return result;
     }

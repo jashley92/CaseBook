@@ -330,6 +330,32 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_notice_given_stays_counted_when_the_trigger_is_withdrawn_later(/* BUG-375 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using (var db = NewContext()) await NewCases(db).RecordNoticeAsync(id, "NY", _clock.UtcNow);
+        var ruleSet = await new NotificationRuleService(NewFactory(), _user, _clock).LoadRuleSetAsync(_settings.Current.DefaultWindowHours);
+        async Task<List<(Guid CaseId, DateTimeOffset NotifiedAtUtc, SlaState State)>> OutcomesAsync()
+        {
+            await using var q = NewContext();
+            return await NotificationDeadlineService.NoticeOutcomesAsync(q, q.Cases.Where(c => c.Id == id), _settings.Current, ruleSet, _clock.UtcNow);
+        }
+        (await OutcomesAsync()).Should().ContainSingle().Which.State.Should().Be(SlaState.Met);
+
+        // Later the materiality call is taken back and the element no longer names NY.
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.SingleAsync(x => x.Id == id);
+            c.RecordMateriality(MaterialityStatus.UnderReview, "Disclosure Committee", null, "Revisited.", "alice", _clock.UtcNow);
+            (await db.DataElements.SingleAsync(e => e.Key == "SSN")).NotificationJurisdictions = "";
+            await db.SaveChangesAsync();
+        }
+        (await NewDeadlines().EvaluateAsync(id)).AwaitingTrigger.Should().BeTrue("the live clock follows today's trigger");
+        (await OutcomesAsync()).Should().ContainSingle().Which.State.Should().Be(SlaState.Met, "the notice was still given in time");
+    }
+
+    [Fact]
     public async Task Editing_a_reported_cases_count_after_an_admin_change_keeps_it_reported(/* WF-65 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);
