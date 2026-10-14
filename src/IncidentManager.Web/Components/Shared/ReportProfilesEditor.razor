@@ -157,6 +157,7 @@
         public int SortOrder;
         public string TemplateKey = "";   // "" = built-in layout, else the template id
         public List<ReportSectionState> Layout = [];
+        public string? Stamp;   // BUG-349 (REV-27)
     }
 
     private static string SectionLabel(ReportSection s) => Ui.Label(s);
@@ -200,7 +201,8 @@
         IsActive = p.IsActive,
         SortOrder = p.SortOrder,
         TemplateKey = p.TemplateId?.ToString() ?? "",
-        Layout = ReportLayout.Parse(p.SectionLayout).ToList()
+        Layout = ReportLayout.Parse(p.SectionLayout).ToList(),
+        Stamp = p.Stamp
     };
 
     private void MoveSection(int index, int delta)
@@ -240,7 +242,7 @@
         try
         {
             if (_edit.IsNew) await Profiles.CreateAsync(input);
-            else await Profiles.UpdateAsync(_edit.Id!.Value, input);
+            else await Profiles.UpdateAsync(_edit.Id!.Value, input, _edit.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

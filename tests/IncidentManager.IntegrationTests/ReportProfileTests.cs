@@ -263,6 +263,46 @@ public sealed class ReportProfileTests : IDisposable
     }
 
     [Fact]
+    public async Task An_edit_opened_before_another_admins_save_is_refused_rather_than_undoing_it(/* BUG-349 */)
+    {
+        var svc = NewProfileService();
+        var id = await svc.CreateAsync(new ReportProfileInput("Executive summary", null, true, 1, ExecLayout));
+        var opened = (await svc.GetAsync(id))!;
+
+        // Another admin archives the profile; this editor still holds the active copy.
+        await svc.UpdateAsync(id, new ReportProfileInput("Executive summary", null, false, 1, ExecLayout), opened.Stamp);
+        var stale = async () => await svc.UpdateAsync(id,
+            new ReportProfileInput("Executive summary", "notes", true, 1, ExecLayout), opened.Stamp);
+
+        (await stale.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Someone changed the report profile*");
+        (await svc.GetAsync(id))!.IsActive.Should().BeFalse("the other admin's archive stands");
+    }
+
+    [Fact]
+    public async Task A_change_to_only_the_word_template_also_makes_an_open_edit_stale(/* BUG-349 */)
+    {
+        var svc = NewProfileService();
+        var id = await svc.CreateAsync(new ReportProfileInput("Executive summary", null, true, 1, ExecLayout));
+        var opened = (await svc.GetAsync(id))!;
+        var templateId = Guid.NewGuid();
+        using (var db = NewContext())
+        {
+            // The template id is outside the row hash (PROD-47), so the stamp has to cover it separately.
+            db.ReportTemplates.Add(new IncidentManager.Domain.Entities.ReportTemplate
+                { Id = templateId, Name = "House style", FileName = "house.docx", Sha256 = "00",
+                  IsActive = true, CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow });
+            db.SaveChanges();
+        }
+        await svc.UpdateAsync(id, new ReportProfileInput("Executive summary", null, true, 1, ExecLayout, templateId), opened.Stamp);
+
+        var stale = async () => await svc.UpdateAsync(id,
+            new ReportProfileInput("Executive summary", "notes", true, 1, ExecLayout), opened.Stamp);
+
+        await stale.Should().ThrowAsync<InvalidOperationException>();
+        (await svc.GetAsync(id))!.TemplateId.Should().Be(templateId);
+    }
+
+    [Fact]
     public async Task A_profile_saved_between_the_name_check_and_the_insert_is_reported_as_a_duplicate(/* BUG-339 */)
     {
         // The other save lands after CreateAsync's AnyAsync check but before its own insert reaches the unique index.

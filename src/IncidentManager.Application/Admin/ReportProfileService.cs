@@ -8,7 +8,7 @@ namespace IncidentManager.Application.Admin;
 /// <summary>A report profile resolved for the case picker and the admin editor.</summary>
 public sealed record ReportProfileView(
     Guid Id, string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout,
-    Guid? TemplateId = null, string? TemplateName = null);
+    Guid? TemplateId = null, string? TemplateName = null, string Stamp = "");
 
 /// <summary>The fields to create a report profile with, or replace an existing one's content.</summary>
 public sealed record ReportProfileInput(
@@ -80,12 +80,17 @@ public sealed class ReportProfileService
         return profile.Id;
     }
 
-    public async Task UpdateAsync(Guid id, ReportProfileInput input, CancellationToken ct = default)
+    /// <summary>REV-27 / BUG-349: <paramref name="expectedStamp"/> is the profile's <see cref="ReportProfileView.Stamp"/> when
+    /// the editor opened; the edit replaces the whole profile, so one someone changed since is refused. Null skips the check.</summary>
+    public async Task UpdateAsync(Guid id, ReportProfileInput input, string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportProfileService>(_user);
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
                       ?? throw new InvalidOperationException("That report profile no longer exists. Reload the page and try again.");
+        if (expectedStamp is not null && !string.Equals(StampOf(profile), expectedStamp, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Someone changed the report profile \"{profile.Name}\" since you opened it, so nothing was saved: " +
+                "it would have undone that. Reload the page, then make your change again.");
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A profile name is required.");
@@ -144,8 +149,11 @@ public sealed class ReportProfileService
             ? new Dictionary<Guid, string>()
             : await db.ReportTemplates.AsNoTracking().Where(t => ids.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
         return profiles.Select(p => new ReportProfileView(p.Id, p.Name, p.Description, p.IsActive, p.SortOrder, p.SectionLayout,
-            p.TemplateId, p.TemplateId is { } tid && names.TryGetValue(tid, out var n) ? n : null)).ToList();
+            p.TemplateId, p.TemplateId is { } tid && names.TryGetValue(tid, out var n) ? n : null, StampOf(p))).ToList();
     }
+
+    // BUG-349: the row hash, plus the Word template (PROD-47 kept it outside the hash): what the editor holds and writes back.
+    private static string StampOf(ReportProfile p) => $"{p.RowHash}|{p.TemplateId}";
 
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }
