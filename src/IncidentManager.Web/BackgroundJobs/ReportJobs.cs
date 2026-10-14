@@ -107,10 +107,10 @@ public sealed class ReportJobs : BackgroundService
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            if (ex is not (ArgumentException or InvalidOperationException or Application.Security.ForbiddenException))
-                _logger.LogError(ex, "Report generation failed for case {CaseId}", request.CaseId);
-            var message = ex is ArgumentException or InvalidOperationException or Application.Security.ForbiddenException
-                ? ex.Message : "Something went wrong generating the report. Try again; if it keeps failing, tell an administrator.";
+            // BUG-359: REV-66's rule. An ArgumentException or InvalidOperationException from EF or SqlClient carries internals:
+            // it's logged, and the person sees the generic line. CaseBook's own messages are shown as they are.
+            var message = Services.UserFacingError.Describe(ex, _logger, $"generating a report for case {request.CaseId}",
+                "Something went wrong generating the report. Try again; if it keeps failing, tell an administrator.");
             Update(id, j => j with { State = ReportJobState.Failed, Error = message });
         }
     }

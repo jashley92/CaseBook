@@ -83,4 +83,33 @@ public sealed class ReportJobsTests
         failed.Error.Should().Be("Case not found.");
         await jobs.StopAsync(CancellationToken.None);
     }
+
+    [Fact]
+    public async Task A_framework_failure_is_logged_and_not_shown(/* BUG-359 */)
+    {
+        using var sp = Services();
+        var log = new RecordingLogger();
+        var jobs = new ReportJobs(sp.GetRequiredService<IServiceScopeFactory>(), log,
+            (_, _, _, _) => Task.FromResult(new List<Report>().First()));   // System.Linq's InvalidOperationException
+        await jobs.StartAsync(CancellationToken.None);
+        var caseId = Guid.NewGuid();
+        jobs.Enqueue(Request(caseId));
+        var failed = await Until(jobs, caseId, ReportKind.Case, j => j.State == ReportJobState.Failed);
+        failed.Error.Should().StartWith("Something went wrong generating the report.");
+        failed.Error.Should().NotContain("Sequence contains no elements");
+        log.Errors.Should().ContainSingle().Which.Should().BeOfType<InvalidOperationException>();
+        await jobs.StopAsync(CancellationToken.None);
+    }
+
+    private sealed class RecordingLogger : Microsoft.Extensions.Logging.ILogger<ReportJobs>
+    {
+        public readonly System.Collections.Concurrent.ConcurrentQueue<Exception> Errors = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= Microsoft.Extensions.Logging.LogLevel.Error && exception is not null) Errors.Enqueue(exception);
+        }
+    }
 }
