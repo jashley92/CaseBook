@@ -519,7 +519,8 @@ else
     private string CasesHref(string? query = null)
     {
         var q = string.Join("&", new[] { query, Exercises ? "exercises=true" : null }.Where(x => !string.IsNullOrEmpty(x)));
-        return q.Length == 0 ? "cases" : $"cases?{q}";
+        // BUG-453: never a bare "cases", which bounces to the user's default view; scope=all is read as All.
+        return q.Length == 0 ? "cases?scope=all" : $"cases?{q}";
     }
 
     private static string Href(string period, bool exercises) =>
