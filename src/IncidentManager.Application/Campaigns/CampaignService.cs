@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Mitre;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -126,9 +127,16 @@ public sealed class CampaignService
 
         var timelineRows = await db.TimelineEntries.AsNoTracking()
             .Where(t => memberIds.Contains(t.CaseId) && t.Kind == TimelineKind.Event && t.IsCurrent)   // BUG-413: not retracted
-            .Select(t => new { t.CaseId, t.OccurredAtUtc, t.Type, t.Description, t.Source, t.TechniqueId,
+            .Select(t => new { t.Id, t.CaseId, t.OccurredAtUtc, t.Type, t.Description, t.Source, t.TechniqueId,
                 t.OccurredPrecision, t.OccurredUntilUtc, t.StepOrder, t.CreatedAtUtc })
             .ToListAsync(ct);
+        // BUG-455: the earliest named tactic of each step that records a technique, for its row on the coverage table.
+        var stepTactics = (await db.TimelineEntries.AsNoTracking()
+            .Where(t => memberIds.Contains(t.CaseId) && t.Kind == TimelineKind.Event && t.IsCurrent && t.TechniqueId != null)
+            .Select(t => new { t.Id, Tactics = t.Tactics.Select(x => x.Tactic).ToList() })
+            .ToListAsync(ct))
+            .Where(t => t.Tactics.Any(x => x != MitreTactic.Unspecified))
+            .ToDictionary(t => t.Id, t => t.Tactics.Where(x => x != MitreTactic.Unspecified).Min());
 
         var caseNumbers = members.ToDictionary(m => m.CaseId, m => m.CaseNumber);
 
@@ -154,12 +162,29 @@ public sealed class CampaignService
             .ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        // BUG-455 (HR-13): a case's techniques are its tags plus those recorded on its attack-chain steps. A current
+        // event step with a technique has attack content (EventSteps.HasAttackContent), so it's an attack step on an
+        // internal and a third-party case alike; a disclosure milestone carries none and adds nothing. Tags first, so
+        // a tagged technique keeps its tag's name and tactic.
+        var chainTechniques = timelineRows
+            .Where(t => !string.IsNullOrWhiteSpace(t.TechniqueId))
+            .Select(t =>
+            {
+                var id = t.TechniqueId!.Trim().ToUpperInvariant();
+                return new
+                {
+                    t.CaseId, TechniqueId = id, Name = AttackCatalog.Find(id)?.Name,
+                    Tactic = stepTactics.TryGetValue(t.Id, out var tac) ? tac : MitreTactic.Unspecified,
+                };
+            });
         var techniqueRollup = techniques
+            .Select(t => new { t.CaseId, TechniqueId = t.TechniqueId.Trim(), Name = (string?)t.Name, t.Tactic })
+            .Concat(chainTechniques)
             .GroupBy(t => t.TechniqueId, StringComparer.OrdinalIgnoreCase)
             .Select(g => new CampaignTechnique(
-                g.Key,
-                g.Select(x => x.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.Key,
-                g.Select(x => x.Tactic).FirstOrDefault(),
+                g.First().TechniqueId,
+                g.Select(x => x.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.First().TechniqueId,
+                g.Select(x => x.Tactic).FirstOrDefault(x => x != MitreTactic.Unspecified),
                 g.Select(x => x.CaseId).Distinct().Count()))
             .OrderByDescending(t => t.CaseCount)
             .ThenBy(t => t.TechniqueId, StringComparer.Ordinal)

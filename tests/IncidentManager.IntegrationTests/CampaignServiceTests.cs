@@ -171,6 +171,48 @@ public sealed class CampaignServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Coverage_includes_the_members_attack_chain_techniques()
+    {
+        // BUG-455 (HR-13): a case's techniques are its tags plus what its attack chain records.
+        _user.RoleSet = [AppRole.Manager];
+        var at = new DateTimeOffset(2026, 9, 1, 8, 0, 0, TimeSpan.Zero);
+        TimelineEntry Step(Case c, string? technique, bool current = true, params MitreTactic[] tactics)
+        {
+            var e = new TimelineEntry { Id = Guid.NewGuid(), CaseId = c.Id, Kind = TimelineKind.Event, OccurredAtUtc = at,
+                Type = TimelineEntryType.Detection, Description = "step", TechniqueId = technique, IsCurrent = current };
+            foreach (var t in tactics) e.Tactics.Add(new EventStepTactic { TimelineEntryId = e.Id, Tactic = t });
+            return e;
+        }
+
+        var a = SeedCase("Alpha", 1, extra: c =>
+        {
+            c.Techniques.Add(new CaseTechnique { Id = Guid.NewGuid(), CaseId = c.Id, TechniqueId = "T1566", Name = "Phishing", Tactic = MitreTactic.InitialAccess });
+            c.TimelineEntries.Add(Step(c, "T1059", tactics: MitreTactic.Execution));   // chain only
+            c.TimelineEntries.Add(Step(c, "T1566", tactics: MitreTactic.InitialAccess)); // tagged too: counts the case once
+        });
+        var b = SeedCase("Bravo", 2, extra: c =>
+        {
+            c.Origin = CaseOrigin.ThirdParty;
+            c.TimelineEntries.Add(Step(c, "t1566"));                                  // a vendor attack step, any case
+            c.TimelineEntries.Add(Step(c, null));                                     // a disclosure milestone: nothing
+            c.TimelineEntries.Add(Step(c, "T1003", current: false));                  // a retracted version: nothing
+        });
+        LinkCampaign(a, b);
+
+        var rollup = (await NewService().GetRollupAsync(a))!;
+
+        rollup.Techniques.Select(t => t.TechniqueId).Should().BeEquivalentTo("T1566", "T1059");
+        var phishing = rollup.Techniques.Single(t => t.TechniqueId == "T1566");
+        phishing.CaseCount.Should().Be(2);
+        phishing.Name.Should().Be("Phishing");
+        phishing.Tactic.Should().Be(MitreTactic.InitialAccess);
+        var chainOnly = rollup.Techniques.Single(t => t.TechniqueId == "T1059");
+        chainOnly.CaseCount.Should().Be(1);
+        chainOnly.Tactic.Should().Be(MitreTactic.Execution);
+        chainOnly.Name.Should().Be(IncidentManager.Application.Mitre.AttackCatalog.Find("T1059")!.Name);
+    }
+
+    [Fact]
     public async Task A_case_with_no_campaign_links_yields_a_single_member_rollup()
     {
         _user.RoleSet = [AppRole.Manager];
