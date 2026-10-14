@@ -69,7 +69,7 @@
             changes who can access this instance. Review the preview carefully, since AD group names differ between organizations.
         </div>
 
-        <InputFile OnChange="OnFileSelected" accept=".json" class="form-control form-control-sm" style="max-width:28rem" />
+        <InputFile OnChange="OnFileSelected" accept=".json" class="form-control form-control-sm" style="max-width:28rem" disabled="@_applying" />
         <div class="form-text">A bundle file of up to @(MaxBundleBytes / 1024 / 1024) MB, the size of a large Word template library.</div>
 
         @if (_verification is not null)
@@ -168,25 +168,34 @@
 
     private static string Trunc(string s) => s.Length <= 12 ? s : s[..12] + "…";
 
+    // BUG-440: bumped by each file chosen and by Cancel, so only the newest choice's preview is shown (and applied). One
+    // that finishes after another file was chosen, or after Cancel, is dropped.
+    private int _uploadSeq;
+
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
+        if (_applying) return;   // BUG-440: the bundle being applied stays the one shown
         ClearUpload();
+        var seq = _uploadSeq;
         try
         {
             using var ms = new MemoryStream();
             await e.File.OpenReadStream(maxAllowedSize: MaxBundleBytes).CopyToAsync(ms); // NOSONAR S5693: sized for the template library, see MaxBundleBytes
             var (envelope, verification) = Config.ParseAndVerify(ms.ToArray());
-            _incoming = envelope;
-            _verification = verification;
-            _diff = await Config.PreviewAsync(envelope.Bundle);
+            var diff = await Config.PreviewAsync(envelope.Bundle);
+            if (seq != _uploadSeq) return;
+            // BUG-440: set together, once the preview is in, so the diff shown is always the bundle Apply sends.
+            (_incoming, _verification, _diff) = (envelope, verification, diff);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
+            if (seq != _uploadSeq) return;
             ClearUpload();
             Toasts.Error(ex.Message);
         }
         catch (IOException)
         {
+            if (seq != _uploadSeq) return;
             // OpenReadStream throws this when the file is over maxAllowedSize.
             ClearUpload();
             Toasts.Error($"That file is larger than {MaxBundleBytes / 1024 / 1024} MB, too big to be a configuration bundle.");
@@ -195,6 +204,7 @@
 
     private void ClearUpload()
     {
+        _uploadSeq++;
         _incoming = null;
         _verification = null;
         _diff = null;
@@ -203,7 +213,8 @@
 
     private async Task Apply()
     {
-        if (_incoming is null || _verification is not { SignatureValid: true }) return;
+        // BUG-440: a double click mustn't apply the bundle twice.
+        if (_applying || _incoming is null || _verification is not { SignatureValid: true }) return;
         _applying = true;
         try
         {
