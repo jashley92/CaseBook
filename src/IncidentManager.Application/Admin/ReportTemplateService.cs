@@ -143,17 +143,31 @@ public sealed class ReportTemplateService
         }
     }
 
-    /// <summary>Renames a template, or archives/restores it. A profile's default can't be archived.</summary>
-    public async Task UpdateAsync(Guid id, string name, bool isActive, CancellationToken ct = default)
+    // BUG-350: rename and archive/restore are separate writes. One UpdateAsync(name, isActive) took the other field from
+    // the page, so renaming on a stale page restored an archived template, and archiving put back an old name.
+
+    /// <summary>Renames a template. Its active flag is left as it is.</summary>
+    public async Task RenameAsync(Guid id, string name, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportTemplateService>(_user);
         var cleanName = RequireName(name);
         using var db = _factory.CreateDbContext();
         var t = await FindAsync(db, id, ct);
         await EnsureUniqueNameAsync(db, cleanName, id, ct);
+        t.Name = cleanName;
+        t.ModifiedBy = _user.UserId;
+        t.ModifiedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Archives or restores a template. Its name is left as it is. A profile's default can't be archived.</summary>
+    public async Task SetActiveAsync(Guid id, bool isActive, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<ReportTemplateService>(_user);
+        using var db = _factory.CreateDbContext();
+        var t = await FindAsync(db, id, ct);
         if (!isActive && t.IsActive)
             await EnsureNotADefaultAsync(db, id, "archive", ct);
-        t.Name = cleanName;
         t.IsActive = isActive;
         t.ModifiedBy = _user.UserId;
         t.ModifiedAtUtc = _clock.UtcNow;

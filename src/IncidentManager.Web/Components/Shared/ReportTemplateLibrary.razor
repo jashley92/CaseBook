@@ -340,7 +340,7 @@
 
     private async Task SaveRename(ReportTemplateView t)
     {
-        try { await Templates.UpdateAsync(t.Id, _renameValue ?? "", t.IsActive); }
+        try { await Templates.RenameAsync(t.Id, _renameValue ?? ""); }   // BUG-350: the name only
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         _renaming = null;
         await Changed();
@@ -349,7 +349,7 @@
 
     private async Task SetActive(ReportTemplateView t, bool active)
     {
-        try { await Templates.UpdateAsync(t.Id, t.Name, active); }
+        try { await Templates.SetActiveAsync(t.Id, active); }   // BUG-350: the active flag only
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         await Changed();
         Toasts.Success(active ? $"“{t.Name}” restored" : $"“{t.Name}” archived. It can't be picked for new reports.");

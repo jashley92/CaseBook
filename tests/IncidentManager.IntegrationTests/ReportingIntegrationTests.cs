@@ -861,7 +861,7 @@ public sealed class ReportingIntegrationTests : IDisposable
 
             // A profile's default can't be archived or deleted out from under it.
             await templates.Invoking(t => t.DeleteAsync(houseId)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*House*");
-            await templates.Invoking(t => t.UpdateAsync(houseId, "House style", isActive: false)).Should().ThrowAsync<InvalidOperationException>();
+            await templates.Invoking(t => t.SetActiveAsync(houseId, false)).Should().ThrowAsync<InvalidOperationException>();
             (await templates.ListAllAsync()).Single(t => t.Id == houseId).DefaultFor.Should().Equal("House");
 
             var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
@@ -1177,15 +1177,38 @@ public sealed class ReportingIntegrationTests : IDisposable
         // One lessons default at a time, and it can't be archived or deleted while it's the default.
         await templates.SetLessonsDefaultAsync(caseStarterId, true);
         (await templates.ListAllAsync()).Where(t => t.IsLessonsDefault).Select(t => t.Id).Should().Equal(caseStarterId);
-        await templates.Invoking(t => t.UpdateAsync(caseStarterId, "Case starter", isActive: false))
+        await templates.Invoking(t => t.SetActiveAsync(caseStarterId, false))
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("*lessons-learned*");
         await templates.Invoking(t => t.DeleteAsync(caseStarterId)).Should().ThrowAsync<InvalidOperationException>();
         await templates.SetLessonsDefaultAsync(caseStarterId, false);
         (await svc.GenerateLessonsAsync(caseId)).TemplateName.Should().BeNull("with no default, the built-in layout");
 
         // An archived template can't become the default.
-        await templates.UpdateAsync(lessonsId, "Lessons pack", isActive: false);
+        await templates.SetActiveAsync(lessonsId, false);
         await templates.Invoking(t => t.SetLessonsDefaultAsync(lessonsId, true)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task Renaming_a_template_keeps_its_archive_and_archiving_keeps_its_name(/* BUG-350 */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        await using (NewContext()) { } // build the schema
+        var engine = new WordTemplateEngine();
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
+        var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+        var id =(await templates.UploadAsync("House style", "house.docx", engine.Starter())).Id!.Value;
+
+        // Two pages loaded while it was active and named "House style": one archives it, the other renames it.
+        await templates.SetActiveAsync(id, false);
+        await templates.RenameAsync(id, "House style v2");
+        (await templates.ListAllAsync()).Single(t => t.Id == id).Should().Match<IncidentManager.Application.Admin.ReportTemplateView>(
+            t => t.Name == "House style v2" && !t.IsActive, "the rename doesn't restore the archived template");
+
+        // And the other way round: a restore from a page that still shows the old name keeps the new one.
+        await templates.SetActiveAsync(id, true);
+        (await templates.ListAllAsync()).Single(t => t.Id == id).Should().Match<IncidentManager.Application.Admin.ReportTemplateView>(
+            t => t.Name == "House style v2" && t.IsActive);
     }
 
     public void Dispose()
