@@ -207,6 +207,10 @@ Or pass every value directly instead of a config file:
 - **No cert yet**: omit `-CertificateThumbprint` to get an HTTP binding for a first smoke test. Re-running the
   installer later **doesn't change an existing site's bindings**, so add the HTTPS binding in IIS Manager (or
   terminate TLS at a proxy). Do not serve real data over plain HTTP.
+- **HTTPS binding**: with `-CertificateThumbprint` the installer creates `*:443:<Hostname>` with **Require Server
+  Name Indication** on, so the certificate is bound to that host name only and other sites' certificates on port 443
+  are left alone. Clients must use the host name (an IP address gets no certificate). Adding the binding by hand
+  later, tick the same box.
 - **Re-running the installer rewrites `appsettings.Production.json`** from the template, discarding manual
   additions (SIEM, CyberArk, `App:BaseUrl`, `Agenda:FeedKey`). Back it up first, or make later changes by hand.
 - `-SitePath` (web root) and `-DataRoot` are **deliberately separate**; keep the data root off the web root and

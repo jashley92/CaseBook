@@ -461,8 +461,10 @@ if ($AppPoolCredential) {
 
 if (-not (Test-Path "IIS:\Sites\$SiteName")) {
     if ($CertificateThumbprint) {
+        # BUG-367: SslFlags 1 (SNI), so the certificate is bound to $Hostname:443 only. Without it AddSslCertificate takes
+        # the server-wide 0.0.0.0:443 slot, failing when another site holds it or taking that site's certificate over.
         New-Website -Name $SiteName -PhysicalPath $SitePath -ApplicationPool $AppPoolName `
-                    -HostHeader $Hostname -Port 443 -Ssl | Out-Null
+                    -HostHeader $Hostname -Port 443 -Ssl -SslFlags 1 | Out-Null
         $binding = Get-WebBinding -Name $SiteName -Protocol https
         $binding.AddSslCertificate($CertificateThumbprint, 'My')
     } else {
