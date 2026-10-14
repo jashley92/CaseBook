@@ -163,6 +163,7 @@ else
 
     private async Task Save()
     {
+        if (_saving) return;   // a double click lands before the button re-renders disabled
         _saving = true;
         try
         {

@@ -42,25 +42,8 @@ public sealed class UserNotificationPreferenceService
     }
 
     /// <summary>Sets the current user's digest cadence, upserting their single preference row.</summary>
-    public async Task SetMyDigestCadenceAsync(DigestCadence cadence, CancellationToken ct = default)
-    {
-        using var db = _factory.CreateDbContext();
-        var pref = await db.UserNotificationPreferences
-            .FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
-        if (pref is null)
-        {
-            db.UserNotificationPreferences.Add(new UserNotificationPreference
-            {
-                UserId = _user.UserId, DigestCadence = cadence, UpdatedAtUtc = _clock.UtcNow
-            });
-        }
-        else
-        {
-            pref.DigestCadence = cadence;
-            pref.UpdatedAtUtc = _clock.UtcNow;
-        }
-        await db.SaveChangesAsync(ct);
-    }
+    public Task SetMyDigestCadenceAsync(DigestCadence cadence, CancellationToken ct = default) =>
+        UpsertAsync(p => p.DigestCadence = cadence, ct);
 
     /// <summary>The current user's full notification preferences (defaults — digest off, nothing suppressed —
     /// when they've never set any).</summary>
@@ -75,31 +58,40 @@ public sealed class UserNotificationPreferenceService
     }
 
     /// <summary>Sets the current user's full notification preferences, upserting their single row.</summary>
-    public async Task SetMineAsync(NotificationPrefsView prefs, CancellationToken ct = default)
-    {
-        using var db = _factory.CreateDbContext();
-        var p = await db.UserNotificationPreferences.FirstOrDefaultAsync(x => x.UserId == _user.UserId, ct);
-        if (p is null)
-        {
-            db.UserNotificationPreferences.Add(new UserNotificationPreference
-            {
-                UserId = _user.UserId,
-                DigestCadence = prefs.DigestCadence,
-                SuppressAssignment = prefs.SuppressAssignment,
-                SuppressOverdue = prefs.SuppressOverdue,
-                SuppressDueSoon = prefs.SuppressDueSoon,
-                UpdatedAtUtc = _clock.UtcNow
-            });
-        }
-        else
+    public Task SetMineAsync(NotificationPrefsView prefs, CancellationToken ct = default) =>
+        UpsertAsync(p =>
         {
             p.DigestCadence = prefs.DigestCadence;
             p.SuppressAssignment = prefs.SuppressAssignment;
             p.SuppressOverdue = prefs.SuppressOverdue;
             p.SuppressDueSoon = prefs.SuppressDueSoon;
-            p.UpdatedAtUtc = _clock.UtcNow;
+        }, ct);
+
+    /// <summary>
+    /// As BUG-368's display preferences: the user's first save from two tabs (or a double click) both insert, and the
+    /// second hits the unique UserId index. That one re-reads the row the first inserted and applies its change to it.
+    /// </summary>
+    private async Task UpsertAsync(Action<UserNotificationPreference> apply, CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            using var db = _factory.CreateDbContext();
+            var row = await db.UserNotificationPreferences.FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
+            var adding = row is null;
+            if (row is null)
+            {
+                row = new UserNotificationPreference { UserId = _user.UserId };
+                db.UserNotificationPreferences.Add(row);
+            }
+            apply(row);
+            row.UpdatedAtUtc = _clock.UtcNow;
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+            catch (DbUpdateException) when (adding && attempt == 0) { /* lost the insert race: update the row that won */ }
         }
-        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Everyone who has opted in to a digest (cadence not Off) — the scanner's work list.</summary>

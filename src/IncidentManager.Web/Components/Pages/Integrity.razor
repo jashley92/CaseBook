@@ -53,7 +53,7 @@
                 <div>
                     <button class="btn btn-sm btn-primary" @onclick="Verify">Verify now</button>
                     <AuthorizeView Policy="@Policies.Administer">
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="Seal"
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="Seal" disabled="@_sealing"
                                 title="Verifies the whole chain first, and seals only if it's intact">Seal chain head</button>
                     </AuthorizeView>
                 </div>
@@ -228,16 +228,24 @@ else
     private async Task VerifySeal(Guid sealId) =>
         _sealResults[sealId] = await IntegritySvc.VerifySealAsync(sealId);
 
+    private bool _sealing;   // a double click verified the whole chain twice and could seal twice
+
     private async Task Seal()
     {
-        IntegritySeal? seal;
-        try { seal = await IntegritySvc.SealAsync(); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _sealMessage = ex.Message; return; }
-        _sealMessage = seal is null
-            ? "Nothing to seal yet."
-            : $"Sealed through sequence {seal.UpToSequence} at {seal.SealedAtUtc:u} (key {seal.KeyId}).";
-        _count = await IntegritySvc.AuditCountAsync();
-        _recent = await IntegritySvc.RecentAsync(null, 100);
-        _seals = await IntegritySvc.RecentSealsAsync();
+        if (_sealing) return;
+        _sealing = true;
+        try
+        {
+            IntegritySeal? seal;
+            try { seal = await IntegritySvc.SealAsync(); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _sealMessage = ex.Message; return; }
+            _sealMessage = seal is null
+                ? "Nothing to seal yet."
+                : $"Sealed through sequence {seal.UpToSequence} at {seal.SealedAtUtc:u} (key {seal.KeyId}).";
+            _count = await IntegritySvc.AuditCountAsync();
+            _recent = await IntegritySvc.RecentAsync(null, 100);
+            _seals = await IntegritySvc.RecentSealsAsync();
+        }
+        finally { _sealing = false; }
     }
 }

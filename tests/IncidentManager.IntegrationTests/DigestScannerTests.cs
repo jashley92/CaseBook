@@ -252,6 +252,25 @@ public sealed class DigestScannerTests : IDisposable
             new NotificationPrefsView(DigestCadence.Weekly, true, false, true));
     }
 
+    [Fact]
+    public async Task A_first_save_that_loses_the_insert_race_updates_the_row_that_won()
+    {
+        // Another tab's first save inserts the user's row between this one's read and its insert.
+        var race = new RaceCommandInterceptor("INSERT INTO \"UserNotificationPreferences\"",
+            "INSERT INTO \"UserNotificationPreferences\" (\"Id\", \"UserId\", \"DigestCadence\", \"UpdatedAtUtc\", " +
+            "\"SuppressAssignment\", \"SuppressDueSoon\", \"SuppressOverdue\") VALUES ($id, $u, 0, 0, 0, 0, 0)",
+            ("$id", Guid.NewGuid().ToString().ToUpperInvariant()), ("$u", _user.UserId));
+        var racing = new UserNotificationPreferenceService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()), race)
+            .Options), _user, _clock);
+
+        await racing.SetMineAsync(new NotificationPrefsView(DigestCadence.Daily, true, false, false));
+
+        race.Ran.Should().BeTrue();
+        (await NewPrefs().GetMineAsync()).Should().Be(new NotificationPrefsView(DigestCadence.Daily, true, false, false));
+    }
+
     // --- PROD-16: the singleton provider the notifier reads (incl. the digest → per-item overlay) ---
 
     private sealed class ScopeFactory(Func<AppDbContext> make) : IServiceScopeFactory, IServiceScope, IServiceProvider
