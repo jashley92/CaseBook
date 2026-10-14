@@ -43,9 +43,14 @@ public sealed class AgendaService
     private readonly ICurrentUser _user;
     private readonly IUserDirectory _users;
     private readonly IClock _clock;
+    private readonly IRoleDirectory? _roles;
+    private readonly ApiTokens.ITokenOwnerCheck? _owners;
 
-    public AgendaService(IAppDbContextFactory factory, ICurrentUser user, IUserDirectory users, IClock clock)
+    public AgendaService(IAppDbContextFactory factory, ICurrentUser user, IUserDirectory users, IClock clock,
+        IRoleDirectory? roles = null, ApiTokens.ITokenOwnerCheck? owners = null)
     {
+        _roles = roles;
+        _owners = owners;
         _factory = factory;
         _user = user;
         _users = users;
@@ -98,7 +103,8 @@ public sealed class AgendaService
 
     /// <summary>
     /// The open, dated after-action items a specific user should see on their personal calendar feed: items
-    /// they own, or on a case they command / are assigned to, excluding restricted cases they are not on.
+    /// they own, or on a case they command / are assigned to, excluding restricted cases they can't see (BUG-401: a task
+    /// they own on a restricted case they're cleared for, but not on, is included, as its reminder is).
     /// Self-scoping — it only ever returns the user's own work — so it needs no role context.
     /// </summary>
     public async Task<IReadOnlyList<AgendaItem>> GetFeedItemsAsync(string userId, CancellationToken ct = default)
@@ -112,7 +118,7 @@ public sealed class AgendaService
                   && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
             join c in db.Cases.AsNoTracking().ExcludingExercises() on a.CaseId equals c.Id // PROD-43: drills off the digest / calendar feed
             where !c.IsArchived && c.Phase != CasePhase.Closed   // BUG-103: as the reminders (BUG-12)
-                  && (!c.IsRestricted || c.IncidentCommander == userId || c.Assignments.Any(x => x.UserId == userId))
+                  && (!c.IsRestricted || a.Owner != null || c.IncidentCommander == userId || c.Assignments.Any(x => x.UserId == userId))
             select new Row(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IsRestricted, c.IncidentCommander,
                 a.Id, a.Title, a.DueAtUtc, a.Owner,
@@ -121,8 +127,20 @@ public sealed class AgendaService
 
         // "Mine" for an arbitrary user: a task I own (by any identifier), or a case I'm on.
         var ids = Identifiers(userId);
-        return rows
-            .Where(r => r.IsMine || OwnerMatches(r.Owner, ids))
+        // BUG-401: a restricted case the user isn't on shows only the tasks they own, and only when they're cleared for
+        // restricted cases (the rule the task reminders follow). The digest replaces those reminders, so it lists them.
+        bool? cleared = null;
+        var kept = new List<Row>(rows.Count);
+        foreach (var r in rows)
+        {
+            if (r.IsMine) { kept.Add(r); continue; }
+            if (!OwnerMatches(r.Owner, ids)) continue;
+            if (r.IsRestricted && !(cleared ??= await new Notifications.ReminderAudience(_users, _roles, _owners)
+                    .CanSeeAsync(userId, true, null, [], ct)))
+                continue;
+            kept.Add(r);
+        }
+        return kept
             .OrderBy(r => r.DueAtUtc ?? DateTimeOffset.MaxValue)
             .Select(r => new AgendaItem(
                 r.CaseId, r.CaseNumber, r.CaseTitle, r.Severity, r.ActionItemId, r.Title,

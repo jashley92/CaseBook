@@ -169,5 +169,19 @@ public sealed class StaleCaseScannerTests : IDisposable
         (await NewScanner(notifications, new StaleCaseTracker()).ScanAndNotifyAsync(Thresholds)).Should().Be(0);
     }
 
+    [Fact]
+    public async Task A_recipient_who_no_longer_holds_ViewCases_is_left_off(/* BUG-377 */)
+    {
+        SeedCase(Severity.High);
+        Advance(TimeSpan.FromDays(6));
+        var notifications = new CapturingNotifications();
+
+        await new StaleCaseScanner(NewFactory(), notifications, new StaleCaseTracker(), _clock,
+                new EntitlementUsers(("ic1", "Analyst"), ("analyst1", "Reports"), ("alice", "")), new EntitlementRoles())
+            .ScanAndNotifyAsync(Thresholds);
+
+        notifications.Received.Should().ContainSingle().Which.RecipientUserIds.Should().BeEquivalentTo(new[] { "ic1" });
+    }
+
     public void Dispose() => _connection.Dispose();
 }

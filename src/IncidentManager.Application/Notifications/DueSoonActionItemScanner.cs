@@ -19,7 +19,8 @@ public sealed class DueSoonActionItemScanner(
     IDueSoonActionItemTracker tracker,
     IClock clock,
     IUserDirectory? users = null,
-    IRoleDirectory? roles = null)
+    IRoleDirectory? roles = null,
+    ApiTokens.ITokenOwnerCheck? owners = null)
 {
     /// <summary>
     /// Scans for items due within <paramref name="leadHours"/> and notifies the not-yet-reminded ones.
@@ -46,11 +47,16 @@ public sealed class DueSoonActionItemScanner(
                 c.IsRestricted, Team = c.Assignments.Select(x => x.UserId).ToList()
             })
             .ToListAsync(ct);
-        // BUG-96: on a restricted case, an owner who can't see it isn't told about its task; the IC is instead.
-        var dueSoon = rows.Select(r => r.Item with
-        {
-            OwnerUserId = TaskReminderAudience.Owner(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, r.Item.OwnerUserId, users, roles)
-        }).ToList();
+        // BUG-96: on a restricted case, an owner who can't see it isn't told about its task; the IC is instead. BUG-377: nor
+        // is an owner or IC who no longer holds ViewCases (a leaver, someone moved to another role).
+        var audience = new ReminderAudience(users, roles, owners);
+        var dueSoon = new List<DueSoonActionItem>(rows.Count);
+        foreach (var r in rows)
+            dueSoon.Add(r.Item with
+            {
+                OwnerUserId = await audience.OwnerAsync(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, r.Item.OwnerUserId, ct),
+                IncidentCommanderUserId = await audience.IncidentCommanderAsync(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, ct),
+            });
 
         // Only alert on items not already reminded for this due date (once per approaching deadline). BUG-147: the
         // marks are kept only if the sends finish.

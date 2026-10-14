@@ -35,7 +35,10 @@ public sealed class StaleCaseScanner(
     IAppDbContextFactory factory,
     ICaseNotifications notifications,
     IStaleCaseTracker tracker,
-    IClock clock)
+    IClock clock,
+    IUserDirectory? users = null,
+    IRoleDirectory? roles = null,
+    ApiTokens.ITokenOwnerCheck? owners = null)
 {
     /// <summary>
     /// Scans open cases and nudges the newly-stale ones per the supplied per-severity thresholds. Returns how
@@ -59,12 +62,13 @@ public sealed class StaleCaseScanner(
             .Select(c => new Candidate(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander, c.CreatedAtUtc,
                 db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc),
-                c.Assignments.Select(a => a.UserId).ToList()))
+                c.IsRestricted, c.Assignments.Select(a => a.UserId).ToList()))
             .ToListAsync(ct);
 
         // BUG-147: the marks below are kept only if the sends finish.
         using var marks = NotificationMarkBatch.Begin();
         var reminders = new List<StaleCaseReminder>();
+        var audience = new ReminderAudience(users, roles, owners);
         foreach (var cand in candidates)
         {
             var threshold = thresholds.For(cand.Severity);
@@ -83,7 +87,9 @@ public sealed class StaleCaseScanner(
 
             reminders.Add(new StaleCaseReminder(
                 cand.CaseId, cand.CaseNumber, cand.CaseTitle, cand.Severity,
-                recipients.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                // BUG-377: only people still entitled to the case; with nobody left it's tried again next scan (WF-96).
+                await audience.EntitledOnlyAsync(recipients.Distinct(StringComparer.OrdinalIgnoreCase),
+                    cand.IsRestricted, cand.IncidentCommander, cand.AssigneeUserIds, ct),
                 lastActivity, (int)Math.Floor(daysInactive), threshold));
         }
 
@@ -105,5 +111,5 @@ public sealed class StaleCaseScanner(
 
     private sealed record Candidate(
         Guid CaseId, string CaseNumber, string CaseTitle, Severity Severity, string? IncidentCommander,
-        DateTimeOffset CreatedAtUtc, DateTimeOffset? LastAuditAtUtc, List<string> AssigneeUserIds);
+        DateTimeOffset CreatedAtUtc, DateTimeOffset? LastAuditAtUtc, bool IsRestricted, List<string> AssigneeUserIds);
 }

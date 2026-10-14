@@ -23,7 +23,8 @@ public sealed class DigestScanner(
     IClock clock,
     IOrganizationTimeZone? zone = null,
     IUserDirectory? users = null,
-    ApiTokens.ITokenOwnerCheck? owners = null)
+    ApiTokens.ITokenOwnerCheck? owners = null,
+    IRoleDirectory? roles = null)
 {
     /// <summary>Sends a digest to each subscriber who has items and hasn't been sent one this period. Returns
     /// how many digests were sent.</summary>
@@ -35,15 +36,14 @@ public sealed class DigestScanner(
         var now = clock.UtcNow;
         var tz = zone?.Current ?? TimeZoneInfo.Utc;
         var sent = 0;
+        var audience = new ReminderAudience(users, roles, owners);
 
         foreach (var sub in subscribers)
         {
             // REV-51: as the calendar feed refuses them (BUG-20), no digest for someone who holds no CaseBook role, or whose
             // account the directory says is disabled or no longer maps to any role: a leaver kept getting case numbers,
-            // titles and tasks (restricted ones included) every day.
-            if (users?.Resolve(sub.UserId) is { } u && string.IsNullOrWhiteSpace(u.RolesCsv)) continue;
-            if (owners is not null && await owners.CheckRecipientAsync(sub.UserId, ct) is { } access && (!access.Active || access.Roles.Count == 0))
-                continue;
+            // titles and tasks (restricted ones included) every day. BUG-377: a role that grants ViewCases, not just any role.
+            if (!await audience.EntitledAsync(sub.UserId, ct)) continue;
 
             var items = await agenda.GetFeedItemsAsync(sub.UserId, ct);
 

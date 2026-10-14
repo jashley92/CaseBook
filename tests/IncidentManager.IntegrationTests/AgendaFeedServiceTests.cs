@@ -109,6 +109,20 @@ public sealed class AgendaFeedServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_link_stops_working_when_its_owners_role_no_longer_grants_ViewCases(/* BUG-377 */)
+    {
+        var link = await LinkFor("u1");
+        await using (var db = NewContext())
+        {
+            (await db.Users.SingleAsync(u => u.Sid == "u1")).RolesCsv = "Reports";
+            await db.SaveChangesAsync();
+        }
+        var svc = new AgendaFeedService(new TestDbContextFactory(Options()), _tokens, _user, _clock, roles: new EntitlementRoles());
+
+        (await svc.ResolveAsync(link)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task Garbage_is_rejected()
     {
         (await Svc().ResolveAsync(null)).Should().BeNull();

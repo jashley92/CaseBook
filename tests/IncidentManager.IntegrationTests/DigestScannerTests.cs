@@ -146,6 +146,20 @@ public sealed class DigestScannerTests : IDisposable
         n.Digests.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("Reports", 0)]   // moved to a role that doesn't grant ViewCases
+    [InlineData("Analyst", 1)]
+    public async Task No_digest_for_someone_whose_role_no_longer_grants_ViewCases(string role, int expected /* BUG-377 */)
+    {
+        SeedItemsForAnalyst1();
+        await OptInAsync("analyst1", DigestCadence.Daily);
+        var n = new CapturingNotifications();
+        var scanner = new DigestScanner(NewPrefs(), NewAgenda(), n, new DigestTracker(), _clock,
+            owners: new Directory(new(true, new HashSet<string> { role })), roles: new EntitlementRoles());
+
+        (await scanner.ScanAndNotifyAsync()).Should().Be(expected);
+    }
+
     // Days follow the reporting time zone: at 19:30 in New York (23:30 UTC), a task due at 22:00 New York time is due
     // today, though it's already tomorrow in UTC. And the day's digest doesn't go out again at UTC midnight.
     [Fact]

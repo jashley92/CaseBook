@@ -164,5 +164,35 @@ public sealed class AgendaServiceTests : IDisposable
         mine.Should().NotContain(i => i.Title == "Hidden mine");
     }
 
+    private sealed class Roles : IRoleDirectory
+    {
+        public IReadOnlySet<Permission> PermissionsForRoles(IEnumerable<string> roleNames) =>
+            roleNames.Contains("Cleared") ? new HashSet<Permission> { Permission.ViewCases, Permission.ViewRestricted }
+            : roleNames.Contains("Analyst") ? new HashSet<Permission> { Permission.ViewCases } : new HashSet<Permission>();
+        public IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups) => new HashSet<string>();
+        public void Invalidate() { }
+    }
+
+    private sealed class Ad(string role) : IncidentManager.Application.ApiTokens.ITokenOwnerCheck
+    {
+        public Task<IncidentManager.Application.ApiTokens.OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default) =>
+            Task.FromResult<IncidentManager.Application.ApiTokens.OwnerAccess?>(new(true, new HashSet<string> { role }));
+    }
+
+    [Theory]
+    [InlineData("Cleared", true)]
+    [InlineData("Analyst", false)]
+    public async Task Feed_includes_a_restricted_task_the_user_owns_only_when_cleared(string role, bool listed /* BUG-401 */)
+    {
+        Seed();
+        var service = new AgendaService(NewFactory(), _user, new FakeDirectory(), _clock, new Roles(), new Ad(role));
+
+        var mine = await service.GetFeedItemsAsync("analyst1");
+
+        mine.Any(i => i.Title == "Hidden mine").Should().Be(listed,
+            "the task reminder goes to a cleared owner, and the digest replaces it, so the digest must list it");
+        mine.Should().Contain(i => i.Title == "Overdue mine");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

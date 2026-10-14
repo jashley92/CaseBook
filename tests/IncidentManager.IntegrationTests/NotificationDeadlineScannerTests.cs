@@ -129,6 +129,21 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_recipient_who_no_longer_holds_ViewCases_is_left_off(/* BUG-377 */)
+    {
+        await SeedMaterialBreachAsync(hoursAgo: 80);
+        await SaveNyRuleAsync();
+        EnableClock();
+        var notifications = new CapturingNotifications();
+
+        await new NotificationDeadlineScanner(NewFactory(), NewDeadlines(), _settings, notifications, new DeadlineReminderTracker(),
+                new EntitlementUsers(("ic1", "Analyst"), ("analyst1", "")), new EntitlementRoles())
+            .ScanAndNotifyAsync();
+
+        notifications.Received.Should().ContainSingle().Which.RecipientUserIds.Should().BeEquivalentTo(new[] { "ic1" });
+    }
+
+    [Fact]
     public async Task A_breached_jurisdiction_does_not_hide_another_ones_reminders()
     {
         // BUG-191: only the headline (the soonest-due clock) was reminded, and a breached one stays the headline until

@@ -21,7 +21,10 @@ public sealed class NotificationDeadlineScanner(
     NotificationDeadlineService deadlines,
     INotificationDeadlineSettingsProvider settings,
     ICaseNotifications notifications,
-    IDeadlineReminderTracker tracker)
+    IDeadlineReminderTracker tracker,
+    IUserDirectory? users = null,
+    IRoleDirectory? roles = null,
+    ApiTokens.ITokenOwnerCheck? owners = null)
 {
     /// <summary>
     /// Scans open, un-reported ladder cases, evaluates each against the administered deadline rules, and
@@ -52,19 +55,23 @@ public sealed class NotificationDeadlineScanner(
         var ids = due.Keys.ToList();
         var candidates = await scope.Where(c => ids.Contains(c.Id))
             .Select(c => new Candidate(
-                c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander,
+                c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander, c.IsRestricted,
                 c.Assignments.Select(a => a.UserId).ToList()))
             .ToListAsync(ct);
 
         // BUG-147: the marks below are kept only if the sends finish.
         using var marks = NotificationMarkBatch.Begin();
         var reminders = new List<DeadlineReminder>();
+        var audience = new ReminderAudience(users, roles, owners);
         foreach (var cand in candidates.OrderBy(c => c.CaseNumber, StringComparer.Ordinal))
         {
             var recipients = new List<string>();
             if (!string.IsNullOrWhiteSpace(cand.IncidentCommander)) recipients.Add(cand.IncidentCommander!);
             recipients.AddRange(cand.AssigneeUserIds.Where(id => !string.IsNullOrWhiteSpace(id)));
-            var to = recipients.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            // BUG-377: only people still entitled to the case (a leaver, or someone whose role no longer grants ViewCases,
+            // is left off). With nobody left, the reminder is tried again on the next scan, as one with no one reachable is.
+            var to = await audience.EntitledOnlyAsync(recipients.Distinct(StringComparer.OrdinalIgnoreCase),
+                cand.IsRestricted, cand.IncidentCommander, cand.AssigneeUserIds, ct);
 
             // Jurisdictions on the same clock (band and deadline) share one reminder that names them all.
             foreach (var clock in due[cand.CaseId].GroupBy(s => (s.State, s.DueAtUtc)).OrderBy(g => g.Key.DueAtUtc))
@@ -96,5 +103,5 @@ public sealed class NotificationDeadlineScanner(
 
     private sealed record Candidate(
         Guid CaseId, string CaseNumber, string CaseTitle, Severity Severity,
-        string? IncidentCommander, List<string> AssigneeUserIds);
+        string? IncidentCommander, bool IsRestricted, List<string> AssigneeUserIds);
 }

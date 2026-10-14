@@ -177,5 +177,30 @@ public sealed class OverdueActionItemScannerTests : IDisposable
         notifications.Escalated.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task An_owner_or_IC_who_no_longer_holds_ViewCases_is_not_reminded(/* BUG-377 */)
+    {
+        var id = SeedCaseWithItems();   // owner analyst1
+        using (var db = NewContext())
+            await db.Cases.Where(c => c.Id == id).ExecuteUpdateAsync(u => u.SetProperty(c => c.IncidentCommander, "ic1"));
+        var notifications = new CapturingNotifications();
+        var users = new EntitlementUsers(("analyst1", "Reports"), ("ic1", "Analyst"));
+
+        await new OverdueActionItemScanner(NewFactory(), notifications, new OverdueActionItemTracker(), _clock, users, new EntitlementRoles())
+            .ScanAndNotifyAsync();
+
+        var item = notifications.Received.Should().ContainSingle().Subject;
+        item.OwnerUserId.Should().BeNull("moved to a role without ViewCases, so the reminder falls to the IC");
+        item.IncidentCommanderUserId.Should().Be("ic1");
+
+        var leaverIc = new CapturingNotifications();
+        await new OverdueActionItemScanner(NewFactory(), leaverIc, new OverdueActionItemTracker(), _clock,
+                new EntitlementUsers(("analyst1", "Analyst"), ("ic1", "")), new EntitlementRoles())
+            .ScanAndNotifyAsync();
+        var kept = leaverIc.Received.Should().ContainSingle().Subject;
+        kept.OwnerUserId.Should().Be("analyst1");
+        kept.IncidentCommanderUserId.Should().BeNull("an IC who holds no role isn't a fallback any more");
+    }
+
     public void Dispose() => _connection.Dispose();
 }
