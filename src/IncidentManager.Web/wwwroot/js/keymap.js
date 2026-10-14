@@ -91,7 +91,40 @@ window.imKeymap = (function () {
         return box.classList.contains('im-action-host') ? 'submit:action' : 'submit:dialog';
     }
 
+    // BUG-449: a plain @bind field only tells the server its value on "change" (blur), so a Ctrl/Cmd+Enter save read the
+    // value from before the user's typing. Before anything handles that key, the focused field commits what's pending.
+    // Why this is enough: this listener is a capture-phase one on document, and Blazor's delegated keydown listener is a
+    // bubble-phase one on document (blazor.web.js registers capture only for non-bubbling events), so it runs first; the
+    // "change" we dispatch is handled by Blazor synchronously, which sends it over the circuit's one connection before
+    // the keydown (or our invokeMethodAsync) is sent, and the server runs them in that order on the renderer's dispatcher.
+    // Only a field with an edit not yet reported as "change" is flushed, and the browser's own change on blur that would
+    // follow with the same value is swallowed, so nothing runs twice (a page-jump box, date-field.js). Choice fields
+    // (select, checkbox, radio, file, range, colour) report on change already; CodeMirror's hidden textarea isn't bound.
+    const pending = new WeakSet();   // fields with an input since their last change
+    const flushed = new WeakMap();   // field -> the value our change reported
+    const NO_FLUSH = /^(checkbox|radio|file|button|submit|reset|image|color|range|hidden)$/i;
+    function flushable(el) {
+        if (!el || !el.tagName || (el.closest && el.closest('.CodeMirror'))) return false;
+        return el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !NO_FLUSH.test(el.type || ''));
+    }
+    function flushField(el) {
+        if (!flushable(el) || !pending.has(el)) return;
+        pending.delete(el);
+        flushed.set(el, el.value);
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    document.addEventListener('input', function (e) { const t = e.target; if (flushable(t)) { pending.add(t); flushed.delete(t); } }, true);
+    window.addEventListener('change', function (e) {
+        const t = e.target;
+        if (!t || !flushed.has(t)) { if (t) pending.delete(t); return; }
+        const same = flushed.get(t) === t.value;
+        if (e.isTrusted) flushed.delete(t);   // our own dispatch passes; the browser's blur change after it is checked
+        pending.delete(t);
+        if (e.isTrusted && same) e.stopImmediatePropagation();
+    }, true);
+
     function onKeydown(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.repeat) flushField(document.activeElement);
         if (!globalRef && !caseRef) return;
 
         if (buffering && !(e.target && e.target.classList && e.target.classList.contains('cmdk-input'))) {

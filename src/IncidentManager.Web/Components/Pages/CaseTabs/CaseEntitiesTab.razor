@@ -172,7 +172,8 @@
                         Review the list, then add them in one step. For a STIX 2.1 bundle or IOC CSV file,
                         <a href="@($"cases/import?into={CaseId}")">import it into this case</a> instead.
                     </p>
-                    @* BUG-425: Ctrl/Cmd+Enter in the pasted text parses it; in the review below it adds the selected ones. *@
+                    @* BUG-425: Ctrl/Cmd+Enter in the pasted text parses it; in the review below it adds the selected ones.
+                       BUG-449: the text fields here bind on input, so the key reads what was just typed. *@
                     <div class="im-own-keys" @onkeydown='e => SaveOnKey(e, "paste", ParseBulkOnKey)'>
                     <textarea class="form-control form-control-sm mb-2" rows="4" aria-label="Paste indicators" @bind="_bulkText" @bind:event="oninput"
                               placeholder="1.2.3.4, evil.example[.]com&#10;hxxp://bad[.]site/x&#10;44d88612fea8a8f36de82e1278abb02f&#10;user@phish.example"></textarea>
@@ -206,7 +207,7 @@
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label small mb-0" for="ent-bulk-source">Source (all)</label>
-                                <input id="ent-bulk-source" class="form-control form-control-sm" @bind="_bulkSource" placeholder="@($"{DetectionLabel}…")" />
+                                <input id="ent-bulk-source" class="form-control form-control-sm" @bind="_bulkSource" @bind:event="oninput" placeholder="@($"{DetectionLabel}…")" />
                             </div>
                             <div class="col-md-6 text-md-end">
                                 <span class="small text-muted me-2">@_bulkRows.Count(r => r.Include) of @_bulkRows.Count selected</span>
@@ -452,7 +453,7 @@ else
                             @if (_relEditId == r.Id)
                             {
                                 @* INV-49: correct the type, description or direction in place — one audited change. BUG-425: its own
-                                   Ctrl/Cmd+Enter saves it. *@
+                                   Ctrl/Cmd+Enter saves it (BUG-449: the description binds on input, so what was just typed). *@
                                 <tr class="im-own-keys" @onkeydown='e => SaveOnKey(e, "relationship-edit", SaveRelationship)'>
                                     <td colspan="2">
                                         <div class="row g-2 align-items-end">
@@ -491,7 +492,7 @@ else
                                             </div>
                                             <div class="col-md-9">
                                                 <label class="visually-hidden" for="rel-edit-desc">Description</label>
-                                                <input id="rel-edit-desc" class="form-control form-control-sm" maxlength="1000" @bind="_relEditDescription"
+                                                <input id="rel-edit-desc" class="form-control form-control-sm" maxlength="1000" @bind="_relEditDescription" @bind:event="oninput"
                                                        placeholder="Description / context (optional)" />
                                             </div>
                                             <div class="col-md-3 d-flex gap-2 justify-content-end">
