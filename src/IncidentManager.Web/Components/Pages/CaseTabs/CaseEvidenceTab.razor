@@ -268,7 +268,14 @@
     private readonly Dictionary<Guid, List<ChainOfCustodyEvent>> _custody = new();
 
     // Manual picker or a pasted screenshot (via the shim) stages one file to describe + Upload.
-    private void OnFileSelected(InputFileChangeEventArgs e) => _file = e.File;
+    // BUG-483: a paste while an upload streams is refused, and says so, as the picker is disabled then. It replaced the file
+    // being uploaded, which the upload then cleared, so the paste was dropped without a word (and a failed upload's error
+    // sat beside the pasted file's name, with the description typed for the other one).
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        if (_busy) { Toasts.Warning("An upload is still running. Paste the screenshot again once it's finished."); return; }
+        _file = e.File;
+    }
 
     private async Task Upload()
     {
@@ -305,7 +312,8 @@
 
     private async Task OnDropped(InputFileChangeEventArgs e)
     {
-        if (_busy) return; // REL-03: ignore a drop while an upload batch is already streaming
+        // REL-03: ignore a drop while an upload batch is already streaming. BUG-483: say so; it was dropped without a word.
+        if (_busy) { Toasts.Warning("An upload is still running. Drop the files again once it's finished."); return; }
         _uploadError = null;
         // BUG-341: GetMultipleFiles throws past its limit, outside the per-file catch, so check the count first.
         if (e.FileCount > MaxDropFiles) { _uploadError = $"Drop up to {MaxDropFiles} files at a time."; return; }

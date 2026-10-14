@@ -1772,6 +1772,10 @@ else
 
     private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
 
+    // BUG-483 sibling: after a save, clears the screenshot it took, not one pasted while it was saving (that one was
+    // cleared too, and lost without a word).
+    private void ClearTimelineShot(byte[]? saved) { if (ReferenceEquals(_tlShotBytes, saved)) ClearTimelineShot(); }
+
     private string TlShotDataUri() =>
         _tlShotBytes is null ? "" : $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}";
 
@@ -1800,6 +1804,7 @@ else
         if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
         var whenUtc = WallToUtc(_tlWhen);
         var withShot = _tlShotBytes is not null;
+        var shot = _tlShotBytes;   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
         try
         {
             await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource,
@@ -1811,7 +1816,7 @@ else
             return;
         }
         var saved = SaveSummary();
-        _tlDesc = ""; _tlSource = null; ClearTimelineShot(); ClearDecision(); ResetFollowUps();
+        _tlDesc = ""; _tlSource = null; ClearTimelineShot(shot); ClearDecision(); ResetFollowUps();
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
         Toasts.Success(saved ?? (!withShot ? "Timeline entry added" : "Timeline entry added with screenshot"));
@@ -1833,6 +1838,7 @@ else
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var disclosure = IsThirdParty && !_evtAttackMode;
         var withShot = _tlShotBytes is not null;
+        var shot = _tlShotBytes;   // BUG-483 sibling
         try
         {
             if (disclosure)
@@ -1859,7 +1865,7 @@ else
         }
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified;
-        ClearTimelineShot();
+        ClearTimelineShot(shot);
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
         ResetFollowUps();
