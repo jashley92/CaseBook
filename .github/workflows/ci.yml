@@ -78,6 +78,8 @@ jobs:
       # would count every line as uncovered. All of them are still analysed for issues.
       # BUG-466: sonar.qualitygate.wait makes the end step wait for the server's verdict and fail on a red gate, so a
       # failing gate fails CI on main and PRs (it used to pass, and the release then shipped it).
+      # BUG-495: xml:S5734 wants X-Content-Type-Options set in web.config; SecurityHeadersMiddleware sends it on every
+      # response (Kestrel and IIS alike), and setting it in IIS too would send the header twice.
       - name: SonarQube Cloud analysis (begin)
         if: env.SONAR_TOKEN != '' && !startsWith(github.ref, 'refs/tags/')   # analysis is for main and PRs, not tags
         run: >-
@@ -88,6 +90,9 @@ jobs:
           /d:sonar.exclusions="deploy/sql/casebook-schema-sqlserver.sql"
           /d:sonar.cpd.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**"
           /d:sonar.coverage.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**,**/*.razor,src/IncidentManager.Web/Components/**,**/*.ps1,**/*.psm1,**/*.js,**/*.mjs,**/*.py"
+          /d:sonar.issue.ignore.multicriteria=hdr
+          /d:sonar.issue.ignore.multicriteria.hdr.ruleKey="xml:S5734"
+          /d:sonar.issue.ignore.multicriteria.hdr.resourceKey="**/web.config"
 
       - name: Build
         id: build
