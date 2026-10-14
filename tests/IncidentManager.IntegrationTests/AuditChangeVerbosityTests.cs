@@ -75,6 +75,34 @@ public sealed class AuditChangeVerbosityTests : IDisposable
     }
 
     [Fact]
+    public async Task Rebalancing_passes_an_incident_commanders_seat_and_never_demotes_one(/* BUG-306 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        async Task<Guid> Open(string name) => (await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = name, Title = name, Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        })).Id;
+        var led = await Open("Led");
+        await svc.AssignAsync(led, "alice", "Alice", CaseAssignmentRole.IncidentCommander);
+        var worked = await Open("Worked");
+        await svc.AssignAsync(worked, "alice", "Alice", CaseAssignmentRole.Analyst);
+        await svc.AssignAsync(worked, "bob", "Bob", CaseAssignmentRole.IncidentCommander);
+
+        // Alice's queue to Bob, as analysts: Bob takes the seat Alice leaves, and keeps the one he has.
+        (await svc.ReassignAsync(led, "alice", "bob", "Bob", CaseAssignmentRole.Analyst)).Should().BeTrue();
+        (await svc.ReassignAsync(worked, "alice", "bob", "Bob", CaseAssignmentRole.Analyst)).Should().BeTrue();
+
+        foreach (var id in new[] { led, worked })
+        {
+            var d = (await svc.GetDetailAsync(id))!;
+            d.IncidentCommander.Should().Be("bob");
+            d.Assignments.Should().NotContain(a => a.UserId == "alice");
+        }
+    }
+
+    [Fact]
     public async Task Placing_a_legal_hold_records_what_changed()
     {
         await using var db = NewContext();

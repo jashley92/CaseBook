@@ -656,17 +656,19 @@ public sealed class FindService
     {
         var lines = new Dictionary<Guid, string>();
         if (ids.Count == 0) return lines;
+        // BUG-310: the brief as it stood at the latest close (Case.ClosingBrief), not a revision since.
         var briefs = await db.CaseBriefs.AsNoTracking()
-            .Where(b => ids.Contains(b.CaseId) && b.IsCurrent && b.WorkingAssessment != null
-                        && db.Cases.Any(c => c.Id == b.CaseId && c.OutcomeKey != null))
-            .Select(b => new { b.CaseId, b.WorkingAssessment }).ToListAsync(ct);
+            .Where(b => ids.Contains(b.CaseId) && db.Cases.Any(c => c.Id == b.CaseId && c.OutcomeKey != null))
+            .Select(b => new { b.CaseId, b.Version, b.CreatedAtUtc, b.WorkingAssessment }).ToListAsync(ct);
         var closes = await db.StatusChanges.AsNoTracking()
-            .Where(s => ids.Contains(s.CaseId) && s.To == CasePhase.Closed && s.Reason != null)
+            .Where(s => ids.Contains(s.CaseId) && s.To == CasePhase.Closed)
             .Select(s => new { s.CaseId, s.Reason, s.ChangedAtUtc }).ToListAsync(ct);
         foreach (var id in ids)
         {
-            var line = briefs.FirstOrDefault(b => b.CaseId == id)?.WorkingAssessment
-                       ?? closes.Where(s => s.CaseId == id).OrderByDescending(s => s.ChangedAtUtc).FirstOrDefault()?.Reason;
+            var close = closes.Where(s => s.CaseId == id).MaxBy(s => s.ChangedAtUtc);
+            var line = (close is null ? null
+                           : briefs.Where(b => b.CaseId == id && b.CreatedAtUtc <= close.ChangedAtUtc).MaxBy(b => b.Version)?.WorkingAssessment)
+                       ?? close?.Reason;
             if (!string.IsNullOrWhiteSpace(line)) lines[id] = TaskResults.Excerpt(line, 220);
         }
         return lines;

@@ -335,11 +335,9 @@ else
             {
                 try
                 {
-                    await Cases.AssignAsync(id, _reassignToId, toName, _reassignRole);
-                    // Rebalancing: take the case off the source analyst (nobody to remove for the unassigned queue).
-                    if (_reassignFromId is not null)
-                        await Cases.UnassignAsync(id, _reassignFromId);
-                    done++;
+                    // Rebalancing: on to the chosen person, off the source analyst (nobody to remove for the unassigned queue),
+                    // in one save. BUG-306: someone already on the case keeps their role, and an IC's seat passes over.
+                    if (await Cases.ReassignAsync(id, _reassignFromId, _reassignToId, toName, _reassignRole)) done++;
                 }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
                 {

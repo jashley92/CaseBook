@@ -21,7 +21,26 @@ public sealed record AfterClosureChanges(int Count, IReadOnlyList<string> People
 /// </summary>
 public static class AfterClosure
 {
-    private static readonly string[] NotTheCaseRecord = ["ImprovementAction", "PostIncidentReview"];
+    // BUG-321: and a report generated or approved after closure is a document about the record, not a change to it (the
+    // final report and the lessons report are expected then).
+    private static readonly string[] NotTheCaseRecord = ["ImprovementAction", "PostIncidentReview", "Report"];
+
+    // BUG-321: a case-row update that only picked the report's section layout (saved when a report is generated).
+    private static readonly HashSet<string> LayoutOnly = new(StringComparer.Ordinal)
+        { nameof(Case.ReportProfileId), nameof(Case.ModifiedAtUtc), nameof(Case.ModifiedBy), nameof(Case.RowHash) };
+
+    private static bool OnlyLayout(string? afterJson)
+    {
+        if (afterJson is null) return false;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(afterJson);
+            return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && doc.RootElement.EnumerateObject().Any()
+                && doc.RootElement.EnumerateObject().All(p => LayoutOnly.Contains(p.Name));
+        }
+        catch (System.Text.Json.JsonException) { return false; }
+    }
 
     /// <summary>
     /// REV-01/WF-49: every number a case has held, its current one included. An audit entry carries the number at save
@@ -62,7 +81,9 @@ public static class AfterClosure
         // Everything the close itself wrote (the case row, the closing brief, the gate passage) shares its save's time.
         var closeId = close.Id.ToString();
         var closedAt = await db.AuditLog.AsNoTracking()
-            .Where(a => a.EntityType == "StatusChange" && a.EntityId == closeId)
+            // BUG-308: the row that wrote it, not a later correction of when it happened (an update of the same row).
+            .Where(a => a.EntityType == "StatusChange" && a.EntityId == closeId && a.Action == AuditAction.Create)
+            .OrderBy(a => a.Sequence)
             .Select(a => (DateTimeOffset?)a.AtUtc).FirstOrDefaultAsync(ct) ?? close.ChangedAtUtc;
         // WF-49: under every number the case has held (REV-01): an entry carries the number at save time, so renumbering a
         // closed case hid the changes made before it under the old number.
@@ -72,8 +93,9 @@ public static class AfterClosure
                         // WF-93: the v1.5.8-v1.6.2 start-up back-fill of the reported jurisdictions wasn't a change to the record.
                         && !(a.Actor == "system" && a.EntityType == nameof(Case) && a.Action == AuditAction.Update
                              && a.AfterJson != null && a.AfterJson.Contains("\"ReportedJurisdictions\"")))
-            .Select(a => new { a.AtUtc, a.Actor })
+            .Select(a => new { a.AtUtc, a.Actor, Layout = a.EntityType == nameof(Case) && a.Action == AuditAction.Update ? a.AfterJson : null })
             .ToListAsync(ct);
+        rows = rows.Where(r => !OnlyLayout(r.Layout)).ToList();
         return new AfterClosureChanges(rows.Select(r => r.AtUtc).Distinct().Count(),
             rows.Select(r => r.Actor).Distinct().ToList(), close.ChangedAtUtc,
             rows.Count == 0 ? null : rows.Max(r => r.AtUtc));

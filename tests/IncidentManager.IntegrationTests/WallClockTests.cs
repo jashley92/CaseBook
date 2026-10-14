@@ -69,4 +69,15 @@ public class WallClockTests
         var utc = WallClock.ToUtc(new DateTime(2026, 11, 1, 1, 30, 0), NewYork);
         utc.Should().BeOneOf(new DateTimeOffset(2026, 11, 1, 5, 30, 0, TimeSpan.Zero), new DateTimeOffset(2026, 11, 1, 6, 30, 0, TimeSpan.Zero));
     }
+
+    [Fact]
+    public void Now_in_the_first_pass_of_the_repeated_hour_isnt_read_as_the_future(/* BUG-305 */)
+    {
+        // 01:40 EDT on 2026-11-01 (05:40Z): the wall reads 01:40, which happens again at 06:40Z, after now.
+        var now = new DateTimeOffset(2026, 11, 1, 5, 40, 0, TimeSpan.Zero);
+        var wall = new DateTime(2026, 11, 1, 1, 40, 0);
+        WallClock.ToUtc(wall, NewYork, now).Should().Be(now);
+        // Once both have happened, the usual (later, standard time) reading.
+        WallClock.ToUtc(wall, NewYork, now.AddHours(2)).Should().Be(now.AddHours(1));
+    }
 }

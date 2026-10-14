@@ -520,6 +520,13 @@ else
         if (Stale()) return false;
         _case = detail;
         _notFound = _case is null;
+        // BUG-309: a close-out draft is spent once the case is closed, by anyone: a colleague's close left it open here,
+        // so pressing Close gave a wrong error, and the old outcome, text and ticks came back after a reopen.
+        if (_case?.Phase == CasePhase.Closed && _closeOut.Open)
+        {
+            _closeOut.Discard();
+            if (_activeTab == "Closeout") await SetTab("Briefing");
+        }
         var taskResults = _case is null ? new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>()
             : await Cases.GetTaskResultsAsync(_case.Id);
         if (Stale()) return false;

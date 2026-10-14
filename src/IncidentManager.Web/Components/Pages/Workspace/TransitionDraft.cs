@@ -73,13 +73,25 @@ public sealed class TransitionDraft
 /// <summary>RD-27: wall times in the display zone (what a datetime-local input holds) to and from UTC.</summary>
 public static class WallClock
 {
-    public static DateTimeOffset ToUtc(DateTime wall, TimeZoneInfo zone)
+    /// <param name="nowUtc">BUG-305: for a wall time in the repeated autumn hour, which happens twice; the current time when
+    /// omitted.</param>
+    public static DateTimeOffset ToUtc(DateTime wall, TimeZoneInfo zone, DateTimeOffset? nowUtc = null)
     {
         var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
         // BUG-40: a wall time in the spring-forward gap (02:30 when clocks jump 02:00 to 03:00) doesn't exist. Read it
         // with the offset in force just before the gap, so it lands just after the jump (03:30), not hours off as UTC.
         if (zone.IsInvalidTime(unspecified))
             return new DateTimeOffset(unspecified, zone.GetUtcOffset(unspecified.AddHours(-3))).ToUniversalTime();
+        // BUG-305: 01:30 in the repeated hour is two instants. The later (standard time) is the usual reading, but during
+        // the first pass it hasn't happened yet, and "now" (the form's default) was refused as in the future: then it's
+        // the earlier one.
+        if (zone.IsAmbiguousTime(unspecified))
+        {
+            var instants = zone.GetAmbiguousTimeOffsets(unspecified)
+                .Select(o => new DateTimeOffset(unspecified, o).ToUniversalTime()).OrderBy(t => t).ToList();
+            var now = nowUtc ?? DateTimeOffset.UtcNow;
+            return instants.LastOrDefault(t => t <= now) is { } past && past != default ? past : instants[^1];
+        }
         return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, zone), TimeSpan.Zero);
     }
 

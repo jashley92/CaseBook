@@ -153,6 +153,16 @@ public class Case : AuditableEntity, IHashableEntity
         : null;
 
     /// <summary>
+    /// BUG-310: the brief version that was current when the case last closed (the closing brief, or the version it left
+    /// unchanged), not a revision made after closure. Null while open, for a case closed without an outcome, or with no
+    /// brief. Needs <see cref="StatusChanges"/> and <see cref="Briefs"/> loaded.
+    /// </summary>
+    public CaseBrief? ClosingBrief => Phase == CasePhase.Closed && OutcomeKey is not null
+        && StatusChanges.Where(s => s.To == CasePhase.Closed).MaxBy(s => s.ChangedAtUtc) is { } close
+            ? Briefs.Where(b => b.CreatedAtUtc <= close.ChangedAtUtc).MaxBy(b => b.Version)
+            : null;
+
+    /// <summary>
     /// HR-01: what the case concluded, as the stable key of a <see cref="CaseOutcome"/>. Recorded when it's closed
     /// (and on that close's <see cref="StatusChange"/>), cleared when it's reopened. Null on cases closed before
     /// outcomes were recorded.

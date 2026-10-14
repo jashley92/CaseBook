@@ -750,6 +750,11 @@ public sealed class CaseService
                 isExercise: request.IsExercise, numberDate: local);   // PROD-43: fixed at creation
             if (custom is not null) c.AssignCustomNumber(custom, _user.UserId, now);
             else if (isComplexEvent && attempt > 0) c.SetComplexEventNumber(local, attempt + 1);
+            // BUG-307: nor a classified number the audit trail holds for another case (one a custom-numbered case had,
+            // then gave up), as a promotion already checks (BUG-145): the trail is read by number, so the two would share it.
+            else if (!isComplexEvent)
+                while (await NumberTakenAsync(db, c.CaseNumber, c.Id, ct))
+                    c.RenumberToIrp(c.Sequence + 1, _user.UserId, now);
             // BUG-53: a Complex Event's number is freed when it's promoted (renumbered), but its audit entries keep it,
             // and the activity feed, stale-case and closure checks read the audit trail by case number. A new Complex
             // Event never takes a number the trail already holds, so those entries can't attach to the wrong case.
@@ -1045,6 +1050,9 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         var now = _clock.UtcNow;
         var closingNow = to == CasePhase.Closed && c.Phase != CasePhase.Closed;
+        // BUG-309: a close that someone else made first says so, rather than that an outcome needs a close.
+        if (closing is not null && to == CasePhase.Closed && c.Phase == CasePhase.Closed)
+            throw new InvalidOperationException("This case is already closed: someone closed it while you were writing. Reload to see how it was closed.");
         if (closing is not null && !closingNow)
             throw new ArgumentException("An outcome is recorded only when a case is closed.");
 
@@ -1481,6 +1489,36 @@ public sealed class CaseService
 
         // E-03b: tell the assignee (out of band; never fails the assignment).
         await _notifications.OnAssignedAsync(c, userId, displayName, role, _user.UserId, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// BUG-306: Team workload's rebalancing, in one save: <paramref name="toUserId"/> joins the case (someone already on
+    /// it keeps their role, so an incident commander isn't demoted) and <paramref name="fromUserId"/> leaves it. When the
+    /// one leaving was the incident commander, the one joining takes that seat, so the case isn't left without one.
+    /// False when nothing changed.
+    /// </summary>
+    public async Task<bool> ReassignAsync(Guid id, string? fromUserId, string toUserId, string toDisplayName,
+        CaseAssignmentRole role, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        var now = _clock.UtcNow;
+        var leaving = fromUserId is null ? null : c.Assignments.FirstOrDefault(a => a.UserId == fromUserId);
+        var seat = leaving?.Role == CaseAssignmentRole.IncidentCommander ? CaseAssignmentRole.IncidentCommander : role;
+        var namesCommander = seat == CaseAssignmentRole.IncidentCommander && c.IncidentCommander != toUserId;
+        // BUG-128, as for any assignment: naming an IC on a restricted case is held to those who could lift it.
+        if (c.IsRestricted && namesCommander && !CaseRestrictionPolicy.CanLift(_user, c.IncidentCommander))
+            throw new InvalidOperationException(
+                "On a restricted case, only the incident commander or someone cleared for restricted cases can name a new incident commander.");
+        var joined = c.Assignments.All(a => a.UserId != toUserId);
+        if (joined || namesCommander)   // someone already on it changes role only to take the seat being left
+            c.Assign(toUserId, toDisplayName, seat, _user.UserId, now);
+        if (leaving is not null && fromUserId != toUserId) c.Unassign(leaving.UserId, _user.UserId, now);
+        if (!joined && leaving is null) return false;
+        await db.SaveChangesAsync(ct);
+        if (joined) await _notifications.OnAssignedAsync(c, toUserId, toDisplayName, seat, _user.UserId, ct);
         return true;
     }
 
@@ -2249,6 +2287,18 @@ public sealed class CaseService
                   (copyIndicators ? " and indicators" : "") + " may be seen by everyone who can see that case."
                 : $"{primary.CaseNumber} is restricted, and not everyone who can see this case can see it. Confirm that its number " +
                   "may be seen, in this case's note, by everyone who can see this case.");
+        // BUG-313: a duplicate is a duplicate of one case. Superseding it again into another left it a duplicate of both,
+        // with a note on each; the existing "Duplicate of" link is removed first (from the case's Links) to change it.
+        var otherPrimaries = db.CaseLinks.AsNoTracking()
+            .Where(l => l.CaseId == duplicateId && l.Type == CaseLinkType.DuplicateOf && l.RelatedCaseId != primaryId)
+            .Select(l => l.RelatedCaseId);
+        if (await otherPrimaries.AnyAsync(ct))
+        {
+            // Named only when the caller can see it (need-to-know).
+            var shown = await Scoped(db.Cases.AsNoTracking()).Where(c => otherPrimaries.Contains(c.Id)).Select(c => c.CaseNumber).FirstOrDefaultAsync(ct);
+            throw new InvalidOperationException($"This case is already superseded as a duplicate of {shown ?? "another case"}. " +
+                "Remove that link first to supersede it into another case.");
+        }
         var now = _clock.UtcNow;
 
         // A "Related to" link between the two becomes "Duplicate of". BUG-161: a "Part of campaign" link stays: the campaign
@@ -2513,6 +2563,8 @@ public sealed class CaseService
         if (reason is { Length: > 1000 }) throw new ArgumentException("Keep the reason to 1000 characters or fewer.");
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // BUG-312: already in that state (a double click, a stale menu): nothing changes, so nothing is said to the SIEM.
+        if (c.LegalHold == held) return;
         if (held) c.PlaceLegalHold(_user.UserId, _clock.UtcNow);
         else
         {

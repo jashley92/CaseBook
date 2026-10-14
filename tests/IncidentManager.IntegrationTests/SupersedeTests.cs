@@ -55,6 +55,22 @@ public sealed class SupersedeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_duplicate_is_a_duplicate_of_one_case(/* BUG-313 */)
+    {
+        var (db, svc, dup, primary) = await SeedAsync();
+        await using var _ = db;
+        var other = Case.Open(2026, 3, "Other", "Another wave", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "analyst1", _clock.UtcNow);
+        db.Cases.Add(other);
+        await db.SaveChangesAsync();
+
+        await svc.SupersedeAsync(dup, primary, copyIndicators: false, "Same wave");
+        (await svc.Invoking(s => s.SupersedeAsync(dup, other.Id, copyIndicators: false, "Same wave again"))
+            .Should().ThrowAsync<InvalidOperationException>()).WithMessage("*already superseded as a duplicate of 2026-01*");
+        await svc.SupersedeAsync(dup, primary, copyIndicators: false, "Same wave");   // the same primary again is fine
+    }
+
+    [Fact]
     public async Task An_exercise_and_a_live_case_are_never_linked_or_superseded(/* WF-48 */)
     {
         var (db, svc, dup, primary) = await SeedAsync();

@@ -916,7 +916,7 @@ public sealed class ReportService
             ActivityBeganAtUtc = c.OccurredAtUtc,
             ActivityBeganApproximate = c.OccurredAtUtc is null ? null : StepTime.ActivityBeganCaveat(c),
             ClosedAtUtc = c.ClosedAtUtc,
-            // HR-01: the outcome and the closing brief's conclusion (the current brief, written when it closed).
+            // HR-01: the outcome and the closing brief's conclusion (BUG-310: the version written when it closed, not a revision since).
             Outcome = c.OutcomeKey is { } ok ? extras?.OutcomeLabels.GetValueOrDefault(ok) ?? Admin.CaseOutcomeCatalog.Label(ok) : null,
             ChangedAfterClosure = extras?.AfterClosure is { Count: > 0 } after
                 ? $"{after.Count} {(after.Count == 1 ? "change was" : "changes were")} recorded after the case closed on "
@@ -924,7 +924,7 @@ public sealed class ReportService
                   + string.Join(", ", after.People.Select(_users.DisplayFor)) + ". Each is in the case's audit trail."
                 : null,
             Conclusion = c.OutcomeKey is null ? null
-                : c.Briefs.FirstOrDefault(b => b.IsCurrent)?.WorkingAssessment is { Length: > 0 } wa ? d.Text(_markdown.ToPlainText(wa)) : null,
+                : c.ClosingBrief?.WorkingAssessment is { Length: > 0 } wa ? d.Text(_markdown.ToPlainText(wa)) : null,
             // INV-05: history reads in the order things happened, dated when they happened.
             ClassificationHistory = c.ClassificationChanges
                 .OrderBy(x => x.EffectiveAt)

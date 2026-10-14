@@ -307,6 +307,22 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_new_case_skips_a_number_the_audit_trail_holds(/* BUG-307 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        // Filed with a custom number that's also what the next auto number would be, then renamed: the trail keeps it.
+        var custom = Req("Phish", Classification.Incident);
+        custom.CaseNumber = "2026-01_Phish";
+        var a = await svc.CreateAsync(custom);
+        await svc.RenumberAsync(a.Id, "IR-PHISH-ACME");
+
+        var next = await svc.CreateAsync(Req("Phish", Classification.Incident));
+
+        next.CaseNumber.Should().Be("2026-02_Phish");
+    }
+
+    [Fact]
     public async Task Renaming_the_latest_case_does_not_free_its_sequence(/* BUG-145 */)
     {
         await using var db = NewContext();

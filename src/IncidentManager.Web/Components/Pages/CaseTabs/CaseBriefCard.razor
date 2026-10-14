@@ -31,9 +31,17 @@
         {
             <span class="im-badge im-b-neutral" title="Brief version">v@(cur.Version)</span>
             @* HR-01: on a case closed with an outcome, the current version is the closing brief, its assessment the conclusion. *@
-            @if (Case.Phase == CasePhase.Closed && Case.OutcomeKey is not null)
+            @if (Case.ClosingBrief is { } closing)
             {
-                <span class="im-badge im-b-info" title="Written when the case closed; the working assessment is the conclusion">Closing brief</span>
+                @* BUG-310: a version revised after the case closed isn't the closing brief; the report keeps the closing one. *@
+                if (closing.Id == cur.Id)
+                {
+                    <span class="im-badge im-b-info" title="Written when the case closed; the working assessment is the conclusion">Closing brief</span>
+                }
+                else
+                {
+                    <span class="im-badge im-b-warn" title="@($"Revised after the case closed. The conclusion of record is in v{closing.Version}, the closing brief, which the report prints.")">Revised after closure</span>
+                }
             }
             <span class="small text-muted" title="@TimeDisp.Long(cur.CreatedAtUtc)">
                 Revised @Ui.RelativeTime(cur.CreatedAtUtc, Clock.UtcNow) by @Users.DisplayFor(cur.CreatedBy)

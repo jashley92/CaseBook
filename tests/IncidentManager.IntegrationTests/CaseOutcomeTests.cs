@@ -133,6 +133,14 @@ public sealed class CaseOutcomeTests : IDisposable
 
         (await AfterClosure.QueryAsync(db, id))!.Count.Should().Be(0, "the close's own writes (brief, case row) don't count");
 
+        // BUG-321: choosing the report's layout (saved when the final report is generated) isn't a change to the record.
+        var profile = new IncidentManager.Domain.Entities.ReportProfile { Name = "Examiner pack", CreatedBy = "system", CreatedAtUtc = _clock.UtcNow };
+        db.ReportProfiles.Add(profile);
+        await db.SaveChangesAsync();
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
+        await svc.SetReportProfileAsync(id, profile.Id);
+        (await AfterClosure.QueryAsync(db, id))!.Count.Should().Be(0);
+
         _clock.UtcNow = _clock.UtcNow.AddDays(2);
         await svc.AddTimelineEntryAsync(id, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow.AddDays(-3),
             "Vendor confirmed no payment change was requested.", "AP");
@@ -152,6 +160,14 @@ public sealed class CaseOutcomeTests : IDisposable
         var c = (await svc.GetDetailAsync(id))!;
         var entry = c.TimelineEntries.Single(e => e.Source == "AP");
         (entry.CreatedAtUtc > c.ClosureRecordedAtUtc).Should().BeTrue("the timeline marks it added after closure");
+
+        // BUG-310: a brief revised after closure isn't the conclusion of record; the closing version stays it.
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
+        var current = (await svc.GetDetailAsync(id))!.Briefs.Single(b => b.IsCurrent).Id;
+        await svc.ReviseBriefAsync(id, current, "What happened on the case.", "Rewritten later.", null, null);
+        var revised = (await svc.GetDetailAsync(id))!;
+        revised.ClosingBrief!.WorkingAssessment.Should().Be("What the team concluded.");
+        revised.ClosingBrief.IsCurrent.Should().BeFalse();
 
         await svc.ReopenAsync(id, "More to check");
         (await AfterClosure.QueryAsync(db, id)).Should().BeNull("an open case has no closure to be after");

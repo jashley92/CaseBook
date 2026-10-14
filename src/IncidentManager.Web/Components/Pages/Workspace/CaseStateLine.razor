@@ -100,8 +100,9 @@
     {
         var name = Ui.Label(ph);
         if (index > current) return CanEdit ? $"{name}: not reached. Click to move the case here." : $"{name}: not reached";
-        DateTimeOffset? at = index == 0 ? Case.CreatedAtUtc
-            : Case.StatusChanges.Where(x => x.To == ph).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
+        // BUG-311: New too, from its latest change (the opening row, or a move back to New); creation when there's none.
+        DateTimeOffset? at = Case.StatusChanges.Where(x => x.To == ph).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault()
+            ?? (index == 0 ? Case.CreatedAtUtc : null);
         var when = at is { } t ? $", reached {TimeDisp.Short(t)}" : "";
         return index == current ? $"{name}: current phase{when}"
             : CanEdit ? $"{name}{when}. Click to move the case back here." : $"{name}{when}";
@@ -110,8 +111,8 @@
     // RD-03: how long the case has been in its phase ("since Tue 29 Sep"), from the effective time it entered it.
     private string PhaseSince(Case c)
     {
-        DateTimeOffset? at = c.Phase == CasePhase.New ? c.CreatedAtUtc
-            : c.StatusChanges.Where(x => x.To == c.Phase).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
+        DateTimeOffset? at = c.StatusChanges.Where(x => x.To == c.Phase).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault()
+            ?? (c.Phase == CasePhase.New ? c.CreatedAtUtc : null);   // BUG-311
         return at is { } t ? $"since {TimeDisp.Brief(t, Clock.UtcNow)}" : "";
     }
 

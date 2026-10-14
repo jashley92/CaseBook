@@ -54,6 +54,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.UpdateImpactAssessmentAsync)] = Permission.EditCases,
             [nameof(CaseService.AssignAsync)] = Permission.EditCases,
             [nameof(CaseService.AddAssigneeAsync)] = Permission.EditCases,   // REV-26: the bulk, add-only assign
+            [nameof(CaseService.ReassignAsync)] = Permission.EditCases,      // BUG-306: Team workload rebalancing
             [nameof(CaseService.UnassignAsync)] = Permission.EditCases,
 
             // Timeline
