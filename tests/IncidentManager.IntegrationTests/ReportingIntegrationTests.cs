@@ -1211,6 +1211,45 @@ public sealed class ReportingIntegrationTests : IDisposable
             t => t.Name == "House style v2" && t.IsActive);
     }
 
+    [Fact]
+    public async Task Two_lessons_defaults_set_at_once_leave_one(/* BUG-487 */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        await using (NewContext()) { } // build the schema
+        var engine = new WordTemplateEngine();
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
+        var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+        var first = (await templates.UploadAsync("First", "first.docx", engine.Starter())).Id!.Value;
+        var second = (await templates.UploadAsync("Second", "second.docx", engine.Starter())).Id!.Value;
+
+        // Two clicks in quick succession, on two templates: each check-and-save waits for the other (here, for a writer
+        // already holding the library gate), so the second clears the first instead of both reading "no other default".
+        Task a, b;
+        using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
+        {
+            a = Task.Run(() => templates.SetLessonsDefaultAsync(first, true));
+            b = Task.Run(() => templates.SetLessonsDefaultAsync(second, true));
+            await Task.Delay(200);
+            a.IsCompleted.Should().BeFalse("the check and the save wait for the library gate");
+            b.IsCompleted.Should().BeFalse();
+        }
+        await Task.WhenAll(a, b);
+
+        var defaults = (await templates.ListAllAsync()).Where(t => t.IsLessonsDefault).ToList();
+        defaults.Should().ContainSingle();
+
+        // Archiving waits too, so it can't pass its "not the default" check while that template is being made the default.
+        Task archive;
+        using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
+        {
+            archive = Task.Run(() => templates.SetActiveAsync(defaults[0].Id, false));
+            await Task.Delay(200);
+            archive.IsCompleted.Should().BeFalse();
+        }
+        await archive.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*lessons-learned*");
+    }
+
     public void Dispose()
     {
         _connection.Dispose();

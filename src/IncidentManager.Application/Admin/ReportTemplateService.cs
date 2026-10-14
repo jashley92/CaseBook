@@ -119,6 +119,8 @@ public sealed class ReportTemplateService
         return check;
     }
 
+    // BUG-487: also held while the lessons-learned default or the active flag is checked and saved, so those (and an
+    // import, which holds it) run one at a time (CaseBook runs as one instance; see known issues).
     private static readonly SemaphoreSlim FileGate = new(1, 1);
 
     /// <summary>
@@ -184,6 +186,7 @@ public sealed class ReportTemplateService
     public async Task SetActiveAsync(Guid id, bool isActive, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportTemplateService>(_user);
+        using var gate = await EnterFileGateAsync(ct);   // BUG-487: not between a lessons-default check and its save
         using var db = _factory.CreateDbContext();
         var t = await FindAsync(db, id, ct);
         if (!isActive && t.IsActive)
@@ -201,6 +204,10 @@ public sealed class ReportTemplateService
     public async Task SetLessonsDefaultAsync(Guid id, bool isDefault, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportTemplateService>(_user);
+        // BUG-487: two quick clicks on two templates each read "no other default" and both saved, leaving two. The read of
+        // the others and the one save that clears them and sets this one run under the library gate, one call at a time.
+        // (Not ExecuteUpdate: the flag is in the row hash, and a bulk update would skip the audit and the re-hash.)
+        using var gate = await EnterFileGateAsync(ct);
         using var db = _factory.CreateDbContext();
         var t = await FindAsync(db, id, ct);
         if (isDefault && !t.IsActive)

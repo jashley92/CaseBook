@@ -184,11 +184,11 @@
                                     {
                                         <button class="btn btn-sm btn-link py-0" aria-pressed="@(t.IsLessonsDefault ? "true" : "false")"
                                                 title="@(t.IsLessonsDefault ? "Lessons-learned reports use this template by default. Click to go back to the built-in layout." : "Make this the default for lessons-learned reports")"
-                                                @onclick="() => SetLessonsDefault(t, !t.IsLessonsDefault)">
+                                                @onclick="() => SetLessonsDefault(t, !t.IsLessonsDefault)" disabled="@_flagging">
                                             @if (t.IsLessonsDefault) { <span class="bi bi-check2 me-1" aria-hidden="true"></span> }Lessons default
                                         </button>
                                     }
-                                    <button class="btn btn-sm btn-link py-0" @onclick="() => SetActive(t, !t.IsActive)">@(t.IsActive ? "Archive" : "Restore")</button>
+                                    <button class="btn btn-sm btn-link py-0" @onclick="() => SetActive(t, !t.IsActive)" disabled="@_flagging">@(t.IsActive ? "Archive" : "Restore")</button>
                                     <button class="btn btn-sm btn-link py-0 text-danger" @onclick="() => ConfirmDelete(t)" aria-label="Delete @t.Name">Delete…</button>
                                 </td>
                             </tr>
@@ -362,21 +362,37 @@
         Toasts.Success("Template renamed");
     }
 
+    // BUG-487: one Archive/Restore or Lessons default at a time, until the list has reloaded. The buttons are disabled, but
+    // a second click lands before the re-render and acted on the row as it was before the first.
+    private bool _flagging;
+
     private async Task SetActive(ReportTemplateView t, bool active)
     {
-        try { await Templates.SetActiveAsync(t.Id, active); }   // BUG-350: the active flag only
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
-        await Changed();
-        Toasts.Success(active ? $"“{t.Name}” restored" : $"“{t.Name}” archived. It can't be picked for new reports.");
+        if (_flagging) return;
+        _flagging = true;
+        try
+        {
+            try { await Templates.SetActiveAsync(t.Id, active); }   // BUG-350: the active flag only
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+            await Changed();
+            Toasts.Success(active ? $"“{t.Name}” restored" : $"“{t.Name}” archived. It can't be picked for new reports.");
+        }
+        finally { _flagging = false; }
     }
 
     private async Task SetLessonsDefault(ReportTemplateView t, bool isDefault)
     {
-        try { await Templates.SetLessonsDefaultAsync(t.Id, isDefault); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
-        await Changed();
-        Toasts.Success(isDefault ? $"Lessons-learned reports now use “{t.Name}” by default"
-                                 : "Lessons-learned reports now use the built-in layout by default");
+        if (_flagging) return;
+        _flagging = true;
+        try
+        {
+            try { await Templates.SetLessonsDefaultAsync(t.Id, isDefault); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+            await Changed();
+            Toasts.Success(isDefault ? $"Lessons-learned reports now use “{t.Name}” by default"
+                                     : "Lessons-learned reports now use the built-in layout by default");
+        }
+        finally { _flagging = false; }
     }
 
     private void ConfirmDelete(ReportTemplateView t) => _confirm.Ask(this, "Delete template",
