@@ -251,6 +251,32 @@ regenerated). Things to check:
 - **Find** finds entries, notes, briefs and tasks that tag an entity by its label, marks archived and exercise cases in an
   entity's case list and the palette, and says back filters it can't use.
 
+From a whole-codebase review (BUG-262 to BUG-326 in the tracker):
+
+- **Settings have limits.** Numbers that become times (scan intervals at most 744 hours, escalation and lead times a
+  year, stale days 366, retention 100 years, the access-log coalesce window a day) are refused above that on the settings
+  page and in a configuration bundle, and a value above it in `appsettings.Production.json` is read as the limit. A huge
+  interval meant as "never" used to stop the app. Link templates must be a full `https://` address with one `{0}`, and
+  the public base URL a full address. **Check:** a bundle exported from an older version with a larger value is refused
+  with the setting named; lower it in the bundle or on the source server.
+- **A case with many open tasks** can save its brief and close again (the next-steps snapshot was over the brief's limit).
+- **Upgrades check the probe first.** Before anything is stopped, the script asks the site at its probe address; with no
+  answer it stops, changes nothing, and asks for `-HealthUrl`. A binding with an IP and no host name is probed at that IP.
+- **Releases run every CI check on the tagged commit** (the SQL Server tests, the DBA script, the upgrade path) before
+  they publish.
+- **Verify** flags an earlier version of a note, entry or brief set back as current in the database.
+- **Notices** are judged against the deadline kept when they were given everywhere (the case page and the Legal register
+  too), a case that goes back to unreported keeps the jurisdictions it was reported against, and the program report
+  counts each notice in the quarter it was given.
+- **The SIEM stream** sends to each destination on its own, so a webhook that doesn't answer no longer delays or drops the
+  Event Log's events, and critical events go first.
+- **Shared editing**: applying the ATT&CK matrix and saving cited evidence change only what you changed, so a colleague's
+  tag or citation added meanwhile stays; Team workload's rebalance keeps an incident commander's seat filled.
+- **Stage gates** need unique names, and a climb's checklist shows a stricter threshold on a higher rung.
+- Smaller fixes: the activity feed keeps a renamed case's history; case-list pages don't repeat or drop cases; the indicator
+  CSV keeps the feed's TLP column; reports and report layouts after closure aren't "changes after closure"; a Word template's
+  picture field alone in a table cell no longer makes an unreadable file; filing a case in the repeated autumn DST hour works.
+
 ### v1.6.2
 
 A fix with no migration. Things to check:
