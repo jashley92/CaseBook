@@ -3208,6 +3208,10 @@ public sealed class CaseService
                 "wasn't saved. It has been reloaded with their change; make yours again.");
 
         var wasStatus = item.Status;
+        // BUG-304 (owner's decision): Edit follows the same rule as Complete and the status buttons (REV-23): a cancelled
+        // task is reopened before it's marked done, so its result and who completed it are recorded as for any other.
+        if (status == ActionItemStatus.Done && wasStatus == ActionItemStatus.Cancelled)
+            throw new InvalidOperationException($"\"{item.Title}\" was cancelled. Reopen it to mark it done.");
         item.Title = cleanTitle;
         item.Owner = cleanOwner;
         item.DueAtUtc = dueAtUtc;

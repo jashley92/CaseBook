@@ -420,7 +420,7 @@ be edited**; nothing locks them.
 | Legal hold | none → held → (release requested → approved by a second person, or cancelled) → none. A direct release is refused when two-person release is on. Archiving is refused while held. |
 | Archive | toggles; refused under legal hold; independent of phase. |
 | Restriction | toggles; anyone with `EditCases` can restrict; only the IC or a cleared role can lift, and on a restricted case only they can name a new IC (so taking over as IC is not a way round it). |
-| Task | any status to any status. |
+| Task | any status to any status, except Cancelled to Done: a cancelled task is reopened first (REV-23, BUG-304). |
 | Report | draft → final (once, irreversible). |
 | Improvement action | any status to any status; closing needs an outcome note. |
 | Pending import | pending → applied or rejected (both final). |
