@@ -630,6 +630,7 @@ public sealed class CaseImportService
         var droppedTimeline = 0;
         foreach (var t in doc.Timeline ?? [])
         {
+            if (t is null) { droppedTimeline++; continue; }   // BUG-473: a null element ([null]) is an empty row
             var desc = Clamp(t.Description, MaxDescription, "Timeline description", p.Warnings);
             if (string.IsNullOrWhiteSpace(desc)) { droppedTimeline++; continue; }
 
@@ -699,8 +700,8 @@ public sealed class CaseImportService
         var droppedEntities = 0;
         foreach (var e in doc.Entities ?? [])
         {
-            var rawValue = e.Value?.Trim();
-            if (string.IsNullOrWhiteSpace(rawValue)) { droppedEntities++; continue; }
+            var rawValue = e?.Value?.Trim();   // BUG-473: a null element is a row with no value
+            if (e is null || string.IsNullOrWhiteSpace(rawValue)) { droppedEntities++; continue; }
 
             EntityType type;
             if (string.IsNullOrWhiteSpace(e.Type))
@@ -753,6 +754,7 @@ public sealed class CaseImportService
         var droppedTasks = 0;
         foreach (var a in doc.ActionItems ?? [])
         {
+            if (a is null) { droppedTasks++; continue; }   // BUG-473
             var title = Clamp(a.Title, MaxTitle, "Task title", p.Warnings);
             if (string.IsNullOrWhiteSpace(title)) { droppedTasks++; continue; }
             p.ActionItems.Add(new ImportActionItemRow

@@ -370,6 +370,28 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public void A_null_row_in_any_list_is_skipped_and_counted_not_a_crash(/* BUG-473 */)
+    {
+        const string json = """
+            { "format": "casebook-case-import", "schemaVersion": 1,
+              "timeline": [ null, { "description": "Seen", "occurredAtUtc": "2026-09-19T13:05:00Z" } ],
+              "entities": [ null, null, { "value": "203.0.113.66" } ],
+              "actionItems": [ null ] }
+            """;
+
+        var parsed = CaseImportService.Parse(json);
+        parsed.Ok.Should().BeTrue(parsed.Error);
+        var p = CaseImportService.BuildPreviewCore(parsed.Document!, _clock.UtcNow);
+
+        p.Timeline.Should().ContainSingle(t => t.Description == "Seen");
+        p.Entities.Should().ContainSingle(e => e.Value == "203.0.113.66");
+        p.ActionItems.Should().BeEmpty();
+        p.Warnings.Should().Contain("1 timeline entry had no description and was skipped.")
+            .And.Contain("2 entities had no value and were skipped.")
+            .And.Contain("1 task had no title and was skipped.");
+    }
+
+    [Fact]
     public void Preview_excludes_future_timeline_and_defaults_a_missing_timestamp()
     {
         var doc = new CaseImportDocument
