@@ -457,6 +457,7 @@ else
             if (_subscribedTo != Guid.Empty)
             {
                 CloseModal();
+                ++_gateSeq;   // BUG-488: a gate still loading for the last case's dialog or close-out is dropped
                 // BUG-86/87: what was typed in a dialog, and the audit filter, belong to the last case.
                 _action = new();
                 _auditFilter = new();

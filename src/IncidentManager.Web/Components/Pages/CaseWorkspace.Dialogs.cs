@@ -24,6 +24,7 @@ public partial class CaseWorkspace
     private async Task OpenModal(string name)
     {
         if (_case is null) return;
+        var seq = ++_gateSeq;
         var a = _action;
         a.Open(name);
         a.Error = null;
@@ -97,13 +98,20 @@ public partial class CaseWorkspace
             a.MaterialityBaseline = _case.MaterialityConcurrencyStamp(); // REL-02: optimistic-concurrency baseline
         }
 
-        a.Transition.UseGate(name switch
+        var gate = name switch
         {
             "reclass" => await LoadClimbGatesAsync(a.NewClass),
             "status" => await LoadGateAsync(CaseFlowGates.Phase(_case, a.NewPhase)),
             _ => null
-        });
+        };
+        if (seq != _gateSeq) return;   // BUG-488: another dialog, target or case took over while this loaded
+        a.Transition.UseGate(gate);
     }
+
+    // BUG-488: a dialog's opening, a change of its target, the close-out and a case switch each load a gate, and a
+    // slower load overtaken by a later one would show the wrong rung's checklist and clear the ticks; only the newest
+    // is kept (as CreateCase, BUG-447).
+    private int _gateSeq;
 
     // BUG-60: a reclassification passes the gate of every rung it climbs, shown as one checklist.
     private async Task<GateEvaluation?> LoadClimbGatesAsync(Classification to)
@@ -129,9 +137,12 @@ public partial class CaseWorkspace
             await OpenCloseOut();
             return;
         }
-        _action.Transition.UseGate(which == "reclass"
+        var seq = ++_gateSeq;
+        var gate = which == "reclass"
             ? await LoadClimbGatesAsync(_action.NewClass)
-            : await LoadGateAsync(CaseFlowGates.Phase(_case, _action.NewPhase)));
+            : await LoadGateAsync(CaseFlowGates.Phase(_case, _action.NewPhase));
+        if (seq != _gateSeq) return;   // BUG-488
+        _action.Transition.UseGate(gate);
     }
 
     // --- RD-14: the close-out view (CaseCloseOut); its draft lives here so it survives looking elsewhere ---
@@ -140,9 +151,14 @@ public partial class CaseWorkspace
         if (_case is null || _case.Phase == CasePhase.Closed || !_canEdit) return;
         _action.Name = null;
         _action.Error = null;
+        // BUG-488: loaded first, so a close-out overtaken by a dialog or a case switch while it loaded changes nothing.
+        var seq = ++_gateSeq;
+        var gate = await LoadGateAsync(StageGateTrigger.CloseCase);
+        var outcomes = await Outcomes.ListActiveAsync();
+        if (seq != _gateSeq || _case is null) return;
         _closeOut.Begin(WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone));
-        _closeOut.Transition.Gate = await LoadGateAsync(StageGateTrigger.CloseCase);   // ticks and override stay
-        _closeOut.Outcomes = await Outcomes.ListActiveAsync();
+        _closeOut.Transition.Gate = gate;   // ticks and override stay
+        _closeOut.Outcomes = outcomes;
         _closeOut.Prefill(_case);
         await SetTab("Closeout");
     }
