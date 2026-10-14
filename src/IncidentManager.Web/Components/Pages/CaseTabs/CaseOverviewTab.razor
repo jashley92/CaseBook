@@ -1239,17 +1239,24 @@
         _linkTargetLabel = null;
         _linkQuery = "";
         _linkResults = Array.Empty<LinkableCase>();
+        _linkSeq++;   // BUG-482: a search still running doesn't land in the cleared picker
     }
+
+    // BUG-482 (as BUG-454): each search takes a number and only the latest one's results land, so an older (slower)
+    // query's, or one for a box since cleared, doesn't replace them.
+    private int _linkSeq;
 
     private async Task SearchLinkTargets()
     {
-        _linkResults = string.IsNullOrWhiteSpace(_linkQuery)
-            ? Array.Empty<LinkableCase>()
-            : await Cases.SearchLinkableCasesAsync(CaseId, _linkQuery);
+        var seq = ++_linkSeq;
+        if (string.IsNullOrWhiteSpace(_linkQuery)) { _linkResults = Array.Empty<LinkableCase>(); return; }
+        var found = await Cases.SearchLinkableCasesAsync(CaseId, _linkQuery);
+        if (seq == _linkSeq) _linkResults = found;
     }
 
     private void SelectLinkTarget(LinkableCase c)
     {
+        _linkSeq++;
         _linkTargetId = c.Id;
         _linkTargetLabel = $"{c.CaseNumber} — {c.Title}";
         _linkResults = Array.Empty<LinkableCase>();

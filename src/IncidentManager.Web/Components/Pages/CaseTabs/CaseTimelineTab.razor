@@ -1453,6 +1453,7 @@ else
     private void ResetFollowUps()
     {
         _fuTasks.Clear();
+        _fuLinkSeq++;   // BUG-482: a search still running doesn't land in the next entry's Then
         _fuQuestionOpen = _fuKnownOpen = _fuLinkOpen = false;
         _fuQuestion = _fuKnown = _fuLinkQuery = null;
         _fuQuestionTask = true;
@@ -1500,8 +1501,21 @@ else
         Case.Assignments.OrderBy(a => a.Role).Select(a => (a.UserId, Users.DisplayFor(a.UserId)))
             .DistinctBy(x => x.UserId).ToList();
 
-    private async Task SearchFuLink() =>
-        _fuLinkResults = string.IsNullOrWhiteSpace(_fuLinkQuery) ? [] : await Cases.SearchLinkableCasesAsync(CaseId, _fuLinkQuery, take: 6);
+    // BUG-482 (as BUG-454): each search, and each pick or clear, takes a number; only the latest one's results land, so
+    // an older (slower) query's, or one for a box since cleared, doesn't replace them.
+    private int _fuLinkSeq;
+
+    private async Task SearchFuLink()
+    {
+        var seq = ++_fuLinkSeq;
+        if (string.IsNullOrWhiteSpace(_fuLinkQuery)) { _fuLinkResults = []; return; }
+        var found = await Cases.SearchLinkableCasesAsync(CaseId, _fuLinkQuery, take: 6);
+        if (seq == _fuLinkSeq) _fuLinkResults = found;
+    }
+
+    private void PickFuLink(LinkableCase r) { _fuLinkSeq++; _fuLink = r; _fuLinkResults = []; }
+
+    private void RemoveFuLink() { _fuLinkSeq++; _fuLinkOpen = false; _fuLink = null; _fuLinkQuery = null; _fuLinkResults = []; }
 
     private RenderFragment ThenSection() => @<div class="im-then mt-2">
         <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -1573,14 +1587,14 @@ else
                     <input class="form-control form-control-sm im-then-wide" placeholder="Case number or title" aria-label="Case to link"
                            @bind="_fuLinkQuery" @bind:event="oninput" @bind:after="SearchFuLink" />
                 }
-                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the link" @onclick="() => { _fuLinkOpen = false; _fuLink = null; _fuLinkQuery = null; _fuLinkResults = []; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the link" @onclick="RemoveFuLink"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
             </div>
             @if (_fuLink is null && _fuLinkResults.Count > 0)
             {
                 <div class="im-then-results">
                     @foreach (var r in _fuLinkResults)
                     {
-                        <button type="button" class="btn btn-sm btn-link p-0 d-block text-start" @onclick="() => { _fuLink = r; _fuLinkResults = []; }">
+                        <button type="button" class="btn btn-sm btn-link p-0 d-block text-start" @onclick="() => PickFuLink(r)">
                             <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
                         </button>
                     }
