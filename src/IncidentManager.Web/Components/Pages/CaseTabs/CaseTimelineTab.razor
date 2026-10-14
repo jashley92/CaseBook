@@ -1184,6 +1184,7 @@ else
     private EntityDisposition _newIocDisposition = EntityDisposition.Unknown;
     private string? _newIocError;
     private bool _newIocSaving;
+    private int _newIocOpening;   // BUG-441: counts openings, so a save can tell its dialog was cancelled or reopened
 
     private void AfterPartyPicked()
     {
@@ -1191,31 +1192,38 @@ else
         if (_evtTargetId == NewIoc) { _newIocFor = "target"; ResetNewIoc(); } else _targetPrev = _evtTargetId;
     }
 
-    private void ResetNewIoc() { _newIocValue = ""; _newIocLabel = null; _newIocError = null; _newIocSaving = false; }
+    private void ResetNewIoc() { _newIocValue = ""; _newIocLabel = null; _newIocError = null; _newIocSaving = false; _newIocOpening++; }
 
     private void CancelNewIoc()
     {
         if (_newIocFor == "actor") _evtActorId = _actorPrev; else _evtTargetId = _targetPrev;
         _newIocFor = null;
+        _newIocOpening++;
     }
 
     private async Task SaveNewIoc()
     {
         if (_newIocFor is null || string.IsNullOrWhiteSpace(_newIocValue) || _newIocSaving) return;
         _newIocSaving = true; _newIocError = null;
+        // BUG-441: the side and text it was added for, read before waiting. Cancelled (or reopened) meanwhile, the entity
+        // is still added but isn't selected: Cancel already put back the earlier choice.
+        var (side, opening, value) = (_newIocFor, _newIocOpening, _newIocValue.Trim());
+        bool Open() => opening == _newIocOpening;
         try
         {
-            var r = await Cases.AddOrMatchEntityAsync(CaseId, _newIocType, _newIocValue.Trim(), _newIocLabel, _newIocDisposition, null, null);
+            var r = await Cases.AddOrMatchEntityAsync(CaseId, _newIocType, value, _newIocLabel, _newIocDisposition, null, null);
             var id = r.Id.ToString();
             await OnChanged.InvokeAsync();   // reload so the new entity is in the lists before it's selected
-            if (_newIocFor == "actor") _evtActorId = _actorPrev = id; else _evtTargetId = _targetPrev = id;
+            if (!Open()) { Toasts.Success(r.AlreadyOnCase ? $"{value} is already on this case." : $"Added {value}. It wasn't selected."); return; }
+            if (side == "actor") _evtActorId = _actorPrev = id; else _evtTargetId = _targetPrev = id;
             // HR-04: an existing one is selected as it is; its recorded verdict isn't overwritten.
-            if (r.AlreadyOnCase) Toasts.Info($"{_newIocValue.Trim()} is already on this case ({Ui.Label(r.Disposition)}). Selected it.");
-            else Toasts.Success($"Added {_newIocValue.Trim()}");
+            if (r.AlreadyOnCase) Toasts.Info($"{value} is already on this case ({Ui.Label(r.Disposition)}). Selected it.");
+            else Toasts.Success($"Added {value}");
             _newIocFor = null;
         }
+        catch (Exception ex) when (!Open()) { Toasts.Error($"Couldn't add {value}. {ex.Message}"); }
         catch (Exception ex) { _newIocError = ex.Message; }
-        finally { _newIocSaving = false; }
+        finally { if (Open()) _newIocSaving = false; }
     }
     private string _evtTechnique = "";
     private MitreTactic _evtTactic = MitreTactic.Unspecified;
@@ -2045,7 +2053,7 @@ else
         _decWhy = d.Why; _decOptions = d.Options; _decBy = d.By;
         _evtTechnique = d.Technique; _evtActorId = d.ActorId; _evtTargetId = d.TargetId; _actorPrev = d.ActorId; _targetPrev = d.TargetId;
         _evtTactic = d.Tactic; _evtAttackMode = d.AttackMode; _evtStage = d.Stage; _evtOurs = d.Ours;
-        _tlPrecision = d.Precision; _tlDay = d.Day; _tlUntilDay = d.UntilDay; _tlAfter = d.After;
+        _tlPrecision = d.Precision; _tlDay = d.Day; _tlUntilDay = d.UntilDay; _tlAfter = CurrentAfter(d.After, _tlEditId);   // BUG-442
         _tagRefs.Clear();
         foreach (var (k, v) in d.TagRefs) _tagRefs[k] = v;
     }
@@ -2346,6 +2354,27 @@ else
         }
     </text>;
 
+    // BUG-442: a step "Comes after" names that has left the attack chain (retracted, or replaced by an edit) was kept, so
+    // the next save was refused with "isn't on this case". It moves to that step's version now, else to the step before it.
+    private string CurrentAfter(string after, Guid? editing)
+    {
+        if (!Guid.TryParse(after, out var id)) return after;
+        var steps = AttackSteps().Where(s => s.Id != editing).ToList();
+        if (steps.Any(s => s.Id == id)) return after;
+        var gone = Case.TimelineEntries.FirstOrDefault(x => x.Id == id);
+        for (var hops = 0; gone is not null && hops < 1000; hops++)
+        {
+            var next = Case.TimelineEntries.FirstOrDefault(x => x.SupersedesEntryId == gone.Id);
+            if (next is null) break;
+            if (steps.Any(s => s.Id == next.Id)) return next.Id.ToString();
+            gone = next;
+        }
+        if (gone is null) return "";
+        var order = steps.Append(gone).InTimelineOrder().ToList();
+        var at = order.IndexOf(gone);
+        return at > 0 ? order[at - 1].Id.ToString() : "";
+    }
+
     private void PrecisionChanged()
     {
         // Carry what's in the composer across: the date from the time, or the time from the date.
@@ -2416,6 +2445,9 @@ else
             _tlOldestFirst = Case.Phase == CasePhase.Closed;
             _keyOnly = Case.Phase == CasePhase.Closed;   // RD-13: a closed case's Record opens on its Story
         }
+        // BUG-442: every reload (a retract here or by someone else, an edit) re-checks the step "Comes after" names.
+        _tlAfter = CurrentAfter(_tlAfter, _tlEditId);
+        if (_draft is { } d && CurrentAfter(d.After, null) is var after && after != d.After) _draft = d with { After = after };
         if (AutofocusComposer && !_autofocusPending && CanEdit && _tlEditId is null)
         {
             _autofocusPending = true;
