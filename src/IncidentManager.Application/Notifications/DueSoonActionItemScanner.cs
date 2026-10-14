@@ -27,6 +27,8 @@ public sealed class DueSoonActionItemScanner(
     /// </summary>
     public async Task<int> ScanAndNotifyAsync(double leadHours, CancellationToken ct = default)
     {
+        // BUG-262: a lead window from the server's settings file isn't checked; past the setting's limit it's the limit.
+        leadHours = Math.Min(leadHours, Admin.SettingsCatalog.MaxWaitHours);
         var now = clock.UtcNow;
         var horizon = now.AddHours(leadHours > 0 ? leadHours : 24);
         using var db = factory.CreateDbContext();

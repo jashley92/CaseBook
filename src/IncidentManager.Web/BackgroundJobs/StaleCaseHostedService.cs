@@ -36,9 +36,17 @@ public sealed class StaleCaseHostedService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var options = _options.CurrentValue;
-            if (options.Enabled && IsDue(options))
-                await RunCycleAsync(options, stoppingToken);
+            // BUG-262: a setting that can't be read (a typo in the settings file) skips this pass; it doesn't stop the app.
+            try
+            {
+                var options = _options.CurrentValue;
+                if (options.Enabled && IsDue(options))
+                    await RunCycleAsync(options, stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Stale-case scan skipped: its settings couldn't be read.");
+            }
 
             await DelayAsync(PollInterval, stoppingToken);
         }
@@ -47,7 +55,7 @@ public sealed class StaleCaseHostedService : BackgroundService
     private bool IsDue(StaleCaseScanOptions options)
     {
         if (_lastRunUtc == DateTimeOffset.MinValue) return true; // first pass after startup
-        var interval = TimeSpan.FromHours(options.IntervalHours > 0 ? options.IntervalHours : 12);
+        var interval = JobSchedule.Hours(options.IntervalHours, 12);
         return DateTimeOffset.UtcNow - _lastRunUtc >= interval;
     }
 

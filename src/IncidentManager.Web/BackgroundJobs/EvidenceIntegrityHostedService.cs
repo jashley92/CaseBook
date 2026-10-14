@@ -37,9 +37,17 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var options = _options.CurrentValue;
-            if (options.Enabled && IsDue(options))
-                await RunCycleAsync(stoppingToken);
+            // BUG-262: a setting that can't be read (a typo in the settings file) skips this pass; it doesn't stop the app.
+            try
+            {
+                var options = _options.CurrentValue;
+                if (options.Enabled && IsDue(options))
+                    await RunCycleAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Evidence re-verification skipped: its settings couldn't be read.");
+            }
 
             // Poll on a short fixed cadence and decide per-tick whether a full pass is due, so runtime
             // Enabled/IntervalHours changes are picked up without restarting the app.
@@ -50,7 +58,7 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
     private bool IsDue(EvidenceVerifyOptions options)
     {
         if (_lastRunUtc == DateTimeOffset.MinValue) return true; // first pass after startup
-        var interval = TimeSpan.FromHours(options.IntervalHours > 0 ? options.IntervalHours : 24);
+        var interval = JobSchedule.Hours(options.IntervalHours, 24);
         return DateTimeOffset.UtcNow - _lastRunUtc >= interval;
     }
 

@@ -36,9 +36,17 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var options = _options.CurrentValue;
-            if (options.Enabled && IsDue(options))
-                await RunCycleAsync(options, stoppingToken);
+            // BUG-262: a setting that can't be read (a typo in the settings file) skips this pass; it doesn't stop the app.
+            try
+            {
+                var options = _options.CurrentValue;
+                if (options.Enabled && IsDue(options))
+                    await RunCycleAsync(options, stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Due-soon scan skipped: its settings couldn't be read.");
+            }
 
             await DelayAsync(PollInterval, stoppingToken);
         }
@@ -47,7 +55,7 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
     private bool IsDue(DueSoonScanOptions options)
     {
         if (_lastRunUtc == DateTimeOffset.MinValue) return true; // first pass after startup
-        var interval = TimeSpan.FromHours(options.IntervalHours > 0 ? options.IntervalHours : 6);
+        var interval = JobSchedule.Hours(options.IntervalHours, 6);
         return DateTimeOffset.UtcNow - _lastRunUtc >= interval;
     }
 

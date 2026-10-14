@@ -28,7 +28,9 @@ public sealed record SettingDefinition(
     int Min = 0,
     int? Max = null,
     bool BlankIsOff = false,
-    bool EmailList = false);
+    bool EmailList = false,
+    bool LinkTemplate = false,
+    bool AbsoluteUrl = false);
 
 /// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
 public sealed record SettingOption(string Value, string Label);
@@ -41,6 +43,12 @@ public sealed record SettingOption(string Value, string Label);
 /// </summary>
 public static class SettingsCatalog
 {
+    // BUG-262: an interval, a wait or a window becomes a TimeSpan; "999999999" meant as "never" overflowed it and stopped
+    // the app. A month is the longest interval any scan needs, a year the longest wait.
+    public const int MaxIntervalHours = 24 * 31;
+    public const int MaxWaitHours = 24 * 366;
+    public const int MaxStaleDays = 366;
+
     public static readonly IReadOnlyList<SettingDefinition> Editable = new[]
     {
         // --- Organization profile (X-01): who this white-label instance is for. One place to set the
@@ -87,40 +95,40 @@ public static class SettingsCatalog
         new SettingDefinition("Notifications:OverdueScan:Enabled", "Overdue task reminders", "Notifications", SettingKind.Bool,
             "Emails a task's owner once when it passes its due date, or the incident commander if the owner can't be reached. Records nothing on the case.", "false"),
         new SettingDefinition("Notifications:OverdueScan:IntervalHours", "Overdue scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between overdue scans. Default 24.", "24"),
+            "Hours between overdue scans. Default 24.", "24", Min: 1, Max: MaxIntervalHours),
         // PROD-03: escalation chain for items that stay overdue. Notifications only; nothing is reassigned.
         new SettingDefinition("Notifications:OverdueScan:Escalation:Enabled", "Escalate items that stay overdue", "Notifications", SettingKind.Bool,
             "Emails the incident commander, then managers, when an overdue task stays open past the hours below. Nothing is reassigned. Needs overdue reminders on.", "false"),
         new SettingDefinition("Notifications:OverdueScan:Escalation:IncidentCommanderAfterHours", "Escalate to incident commander after (hours overdue)", "Notifications", SettingKind.Int,
-            "Hours past the due date before the case's incident commander is emailed. 0 skips this step.", "48"),
+            "Hours past the due date before the case's incident commander is emailed. 0 skips this step.", "48", Max: MaxWaitHours),
         new SettingDefinition("Notifications:OverdueScan:Escalation:ManagersAfterHours", "Escalate to managers after (hours overdue)", "Notifications", SettingKind.Int,
-            "Hours past the due date before everyone with the Manager role is emailed. 0 skips this step.", "120"),
+            "Hours past the due date before everyone with the Manager role is emailed. 0 skips this step.", "120", Max: MaxWaitHours),
         new SettingDefinition("Notifications:DueSoonScan:Enabled", "Due-soon task reminders", "Notifications", SettingKind.Bool,
             "Emails a task's owner once when it comes due within the lead window, or the incident commander if the owner can't be reached.", "false"),
         new SettingDefinition("Notifications:DueSoonScan:LeadHours", "Due-soon lead window (hours)", "Notifications", SettingKind.Int,
-            "How far ahead of the due date to send the reminder. Default 24 (due within a day).", "24"),
+            "How far ahead of the due date to send the reminder. Default 24 (due within a day).", "24", Max: MaxWaitHours),
         new SettingDefinition("Notifications:DueSoonScan:IntervalHours", "Due-soon scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between due-soon scans. Keep this at or below the lead window so no item skips its reminder. Default 6.", "6"),
+            "Hours between due-soon scans. Keep this at or below the lead window so no item skips its reminder. Default 6.", "6", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Notifications:DeadlineScan:Enabled", "Regulatory deadline reminders", "Notifications", SettingKind.Bool,
             "Reminds the incident commander and assignees as a case's regulatory deadline nears, and again if it passes. Needs the deadline clock on under Regulatory deadlines. Reminders only; someone still records when notice was given.", "false"),
         new SettingDefinition("Notifications:DeadlineScan:IntervalHours", "Deadline scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between deadline scans. Keep this small, since a 72-hour clock can pass through its bands in a day. Default 1.", "1"),
+            "Hours between deadline scans. Keep this small, since a 72-hour clock can pass through its bands in a day. Default 1.", "1", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Notifications:StaleScan:Enabled", "Stale-case nudges", "Notifications", SettingKind.Bool,
             "Nudges the incident commander and assignees once when an open case has no activity for longer than its severity's threshold below. New activity resets the nudge.", "false"),
         new SettingDefinition("Notifications:StaleScan:IntervalHours", "Stale-case scan interval (hours)", "Notifications", SettingKind.Int,
-            "Hours between stale-case scans. Default 12.", "12"),
+            "Hours between stale-case scans. Default 12.", "12", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Notifications:StaleScan:Days:Critical", "Stale after: Critical (days)", "Notifications", SettingKind.Int,
-            "Days of no activity before a Critical case is nudged as stale. 0 disables the nudge for Critical cases.", "2"),
+            "Days of no activity before a Critical case is nudged as stale. 0 disables the nudge for Critical cases.", "2", Max: MaxStaleDays),
         new SettingDefinition("Notifications:StaleScan:Days:High", "Stale after: High (days)", "Notifications", SettingKind.Int,
-            "Days of no activity before a High case is nudged as stale. 0 disables the nudge for High cases.", "5"),
+            "Days of no activity before a High case is nudged as stale. 0 disables the nudge for High cases.", "5", Max: MaxStaleDays),
         new SettingDefinition("Notifications:StaleScan:Days:Medium", "Stale after: Medium (days)", "Notifications", SettingKind.Int,
-            "Days of no activity before a Medium case is nudged as stale. 0 disables the nudge for Medium cases.", "10"),
+            "Days of no activity before a Medium case is nudged as stale. 0 disables the nudge for Medium cases.", "10", Max: MaxStaleDays),
         new SettingDefinition("Notifications:StaleScan:Days:Low", "Stale after: Low (days)", "Notifications", SettingKind.Int,
-            "Days of no activity before a Low case is nudged as stale. 0 disables the nudge for Low cases.", "21"),
+            "Days of no activity before a Low case is nudged as stale. 0 disables the nudge for Low cases.", "21", Max: MaxStaleDays),
         new SettingDefinition("Notifications:DigestScan:Enabled", "Personal work digests", "Notifications", SettingKind.Bool,
             "Master switch for opt-in digests of each user's open follow-up items (overdue, due today, due this week). Users choose daily or weekly under account menu → Notifications.", "false"),
         new SettingDefinition("Notifications:DigestScan:IntervalHours", "Digest scan interval (hours)", "Notifications", SettingKind.Int,
-            "How often to check whether a digest is due. Each digest still sends once per day or week. Default 1.", "1"),
+            "How often to check whether a digest is due. Each digest still sends once per day or week. Default 1.", "1", Min: 1, Max: MaxIntervalHours),
         // PROD-15: quarterly executive report email to managers (the E-31 program report's headline figures).
         new SettingDefinition("Notifications:ExecutiveReport:Enabled", "Quarterly executive report email", "Notifications", SettingKind.Bool,
             "In the first week of each quarter, emails everyone with the Manager role last quarter's headline figures and a link to the full program report.", "false"),
@@ -131,7 +139,7 @@ public static class SettingsCatalog
         new SettingDefinition("Notifications:Mandatory:DueSoon", "Mandatory: due-soon reminders", "Notifications", SettingKind.Bool,
             "When on, users can't turn off per-item due-soon reminders.", "false"),
         new SettingDefinition("App:BaseUrl", "Public base URL", "Notifications", SettingKind.Text,
-            "This deployment's absolute URL, for example https://casebook.corp.example. Used for links and the logo in emails. Blank sends emails without links or the hosted logo.", ""),
+            "This deployment's absolute URL, for example https://casebook.corp.example. Used for links and the logo in emails. Blank sends emails without links or the hosted logo.", "", AbsoluteUrl: true),
         // PROD-02: which notification types are also broadcast to the team chat channel. These only deliver
         // when a chat webhook is configured on the host (Chat:Webhook, server-side); they post to that shared
         // channel and are independent of email. All off by default.
@@ -155,11 +163,11 @@ public static class SettingsCatalog
         new SettingDefinition("Notifications:Chat:StaleReminders", "Chat: stale-case nudges", "Notifications", SettingKind.Bool,
             "Posts a count of quiet cases to the team channel after each stale-case scan. Needs a chat webhook on the host.", "false"),
         new SettingDefinition("ExternalLinks:DetectionCaseUrlTemplate", "Detection case link template", "Integrations", SettingKind.Text,
-            "Deep-link template for the referenced detection-source case. Use {0} where the case id should appear.", ""),
+            "Deep-link template for the referenced detection-source case: a full https:// address with {0} where the case id should appear.", "", LinkTemplate: true),
         new SettingDefinition("ExternalLinks:VirusTotalUrlTemplate", "VirusTotal lookup template", "Integrations", SettingKind.Text,
-            "Indicator lookup template. Use {0} where the indicator value should appear.", "https://www.virustotal.com/gui/search/{0}"),
+            "Indicator lookup template: a full https:// address with {0} where the indicator value should appear.", "https://www.virustotal.com/gui/search/{0}", LinkTemplate: true),
         new SettingDefinition("Retention:CaseYears", "Case retention (years)", "Retention", SettingKind.Int,
-            "How long closed cases are kept before they can be archived. A legal hold always overrides this.", "7"),
+            "How long closed cases are kept before they can be archived. A legal hold always overrides this.", "7", Max: 100),
         // F-12: two-person control for lifting a legal hold. Off by default.
         new SettingDefinition("Governance:LegalHoldRelease:RequireSecondApprover", "Second approver to release a legal hold", "Retention", SettingKind.Bool,
             "When on, releasing a legal hold is a request with a reason that a different person with Manage Legal must approve. Placing a hold stays a single action.", "false"),
@@ -167,13 +175,13 @@ public static class SettingsCatalog
             "Periodically verifies the audit chain and records a signed seal.", "true"),
         new SettingDefinition("Integrity:AutoSeal:IntervalHours", "Auto-seal interval (hours)", "Integrity", SettingKind.Int,
             "Hours between signed seals. Tamper checks still run about every 10 minutes (the whole audit chain re-hashed every 6 hours). This only limits " +
-            "how much recent history waits for a seal. Applies within a few minutes.", "6"),
+            "how much recent history waits for a seal. Applies within a few minutes.", "6", Min: 1, Max: MaxIntervalHours),
         new SettingDefinition("Integrity:EvidenceVerify:Enabled", "Evidence re-verification enabled", "Integrity", SettingKind.Bool,
             "Periodically re-hashes stored evidence and alerts if a file no longer matches its recorded SHA-256. " +
             "Off by default because a full pass is I/O-heavy. Alerts go to the integrity-alert distribution.", "false"),
         new SettingDefinition("Integrity:EvidenceVerify:IntervalHours", "Evidence re-verification interval (hours)", "Integrity", SettingKind.Int,
             "Hours between full passes. Each pass re-hashes every stored file, so keep it slow. " +
-            "A pass also runs at startup. Default 24.", "24"),
+            "A pass also runs at startup. Default 24.", "24", Min: 1, Max: MaxIntervalHours),
         // PROD-49: the update check. Off by default; the repository and any proxy stay server-side (Updates:Repository, Updates:Proxy).
         new SettingDefinition("Updates:CheckEnabled", "Check for new releases", "Updates", SettingKind.Bool,
             "Asks GitHub (api.github.com) which CaseBook releases are newer than this one and shows them here with their notes. " +
@@ -259,7 +267,7 @@ public static class SettingsCatalog
             Options: [new("All", "Every case open"), new("RestrictedOnly", "Restricted-case opens only"), new("Off", "Off")]),
         new SettingDefinition("Access:CoalesceWindowMinutes", "Access-log coalesce window (minutes)", "Access logging", SettingKind.Int,
             "Repeat views of the same case or artifact by the same user within this window fold into one row " +
-            "with a count. Default 30.", "30"),
+            "with a count. Default 30.", "30", Max: 1440),
         new SettingDefinition("Security:IdleTimeoutMinutes", "Idle session timeout (minutes)", "Security", SettingKind.Int,
             "Locks the app after this many minutes without keyboard or mouse activity. Works alongside the workstation screen lock, not instead of it. 0 turns it off; at most 1,440 (a day). Applies to new sessions.", "15",
             Min: 0, Max: Security.IdleTimeoutPolicy.MaxMinutes),   // REV-46
@@ -357,6 +365,12 @@ public static class SettingsCatalog
                 return string.Join("\n", lines);
 
             default:
+                // BUG-264: a link template is a full http(s) address with one {0}; the base URL a full http(s) address.
+                if (def.LinkTemplate && Content.LinkTemplate.Problem(v) is { } problem)
+                    throw new ArgumentException($"{def.Label}: {problem}");
+                if (def.AbsoluteUrl && !string.IsNullOrEmpty(v)
+                    && !(Uri.TryCreate(v, UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp)))
+                    throw new ArgumentException($"{def.Label}: use a full http:// or https:// address, like https://casebook.contoso.com.");
                 // A fixed-choice setting only takes one of its listed values (canonical casing); blank uses the default.
                 if (def.Options is { } options && !string.IsNullOrEmpty(v))
                     return options.FirstOrDefault(o => string.Equals(o.Value, v, StringComparison.OrdinalIgnoreCase))?.Value

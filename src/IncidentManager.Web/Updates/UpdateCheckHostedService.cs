@@ -12,6 +12,7 @@ public sealed class UpdateCheckHostedService : BackgroundService
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan FirstDelay = TimeSpan.FromMinutes(2);   // never during start-up
     private const int MinimumIntervalHours = 6;
+    private const int MaximumIntervalHours = 168;   // the setting's own limit
 
     private readonly UpdateCheckService _updates;
     private readonly IOptionsMonitor<UpdateCheckOptions> _options;
@@ -31,20 +32,21 @@ public sealed class UpdateCheckHostedService : BackgroundService
         await DelayAsync(FirstDelay, stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
-            var o = _options.CurrentValue;
-            if (o.CheckEnabled && IsDue(o))
+            try
             {
-                try
+                // BUG-262: read inside the guard, so a setting that can't be read skips this pass instead of stopping the app.
+                var o = _options.CurrentValue;
+                if (o.CheckEnabled && IsDue(o))
                 {
                     await _updates.CheckAsync(manual: false, stoppingToken);
                     _lastRunUtc = DateTimeOffset.UtcNow;
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { /* shutting down */ }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Update check cycle failed.");
-                    _lastRunUtc = DateTimeOffset.UtcNow;
-                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { /* shutting down */ }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Update check cycle failed.");
+                _lastRunUtc = DateTimeOffset.UtcNow;
             }
             await DelayAsync(PollInterval, stoppingToken);
         }
@@ -53,7 +55,7 @@ public sealed class UpdateCheckHostedService : BackgroundService
     private bool IsDue(UpdateCheckOptions o)
     {
         if (_lastRunUtc == DateTimeOffset.MinValue) return true;
-        var hours = Math.Max(MinimumIntervalHours, o.CheckIntervalHours > 0 ? o.CheckIntervalHours : 24);
+        var hours = Math.Clamp(o.CheckIntervalHours > 0 ? o.CheckIntervalHours : 24, MinimumIntervalHours, MaximumIntervalHours);
         return DateTimeOffset.UtcNow - _lastRunUtc >= TimeSpan.FromHours(hours);
     }
 

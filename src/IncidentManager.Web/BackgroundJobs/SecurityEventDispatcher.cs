@@ -30,9 +30,9 @@ public sealed class SecurityEventDispatcher : BackgroundService
             {
                 foreach (var t in _transports)
                 {
-                    if (!t.Enabled) continue;
                     try
                     {
+                        if (!t.Enabled) continue;   // BUG-262: reads options, which can throw
                         await t.SendAsync(e, stoppingToken).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

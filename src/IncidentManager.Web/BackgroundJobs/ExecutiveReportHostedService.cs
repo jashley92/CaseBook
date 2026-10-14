@@ -34,8 +34,16 @@ public sealed class ExecutiveReportHostedService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (_options.CurrentValue.Enabled)
-                await RunCycleAsync(stoppingToken);
+            // BUG-262: a setting that can't be read skips this pass; it doesn't stop the app.
+            try
+            {
+                if (_options.CurrentValue.Enabled)
+                    await RunCycleAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Executive report skipped: its settings couldn't be read.");
+            }
             try { await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false); }
             catch (OperationCanceledException) { /* shutting down */ }
         }

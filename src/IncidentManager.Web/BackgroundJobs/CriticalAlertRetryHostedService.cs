@@ -23,6 +23,11 @@ public sealed class CriticalAlertRetryHostedService(ICriticalAlertOutbox outbox,
                 if (sent > 0) logger.LogInformation("Delivered {Count} alert email(s) on retry.", sent);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+            // BUG-262: the email settings are read before the retry's own guard; a failure there is tried again next minute.
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Retrying undelivered alert emails failed.");
+            }
         }
     }
 }

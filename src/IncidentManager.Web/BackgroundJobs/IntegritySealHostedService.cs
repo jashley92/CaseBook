@@ -40,7 +40,12 @@ public sealed class IntegritySealHostedService : BackgroundService
         {
             // Read options each loop so administered Enabled/IntervalHours changes take effect at runtime
             // (they flow in via the DB settings provider + IOptionsMonitor).
-            await RunCycleAsync(_options.CurrentValue, stoppingToken);
+            // BUG-262: a setting that can't be read skips this pass; it doesn't stop the app.
+            try { await RunCycleAsync(_options.CurrentValue, stoppingToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Auto-seal skipped: its settings couldn't be read.");
+            }
             await DelayAsync(VerifyPoll, stoppingToken);
         }
     }
@@ -65,7 +70,7 @@ public sealed class IntegritySealHostedService : BackgroundService
 
             // Seal only when the interval has elapsed since the last seal; the verify cadence above is
             // independent, so a longer interval just widens the (DB-write-only forgeable) unsealed tail.
-            var interval = TimeSpan.FromHours(options.IntervalHours > 0 ? options.IntervalHours : 6);
+            var interval = JobSchedule.Hours(options.IntervalHours, 6);
             var seal = await integrity.SealIfDueAsync(interval, ct);
             if (seal is not null)
                 _logger.LogInformation("Recorded integrity seal up to sequence {UpToSequence}.", seal.UpToSequence);
