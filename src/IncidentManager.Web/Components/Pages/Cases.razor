@@ -900,8 +900,17 @@ else
 
     // A select/search change rewrites the query string; OnParametersSetAsync then reloads. We always
     // target the /cases base so scope lives in one place (?scope=mine), normalising the /cases/mine alias.
-    private void ApplyFilters() =>
-        Nav.NavigateTo(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), CurrentParams()));
+    private void ApplyFilters() => NavigateToList(CurrentParams());
+
+    // BUG-474: the list never sits at a bare "cases" (All, no filters). On a remount (Back from a case, refresh, the
+    // workspace's back link) the PROD-24 redirect reads that as a fresh landing and swaps in the default view.
+    private const string AllCasesHref = "cases?scope=all";
+
+    private void NavigateToList(IReadOnlyDictionary<string, object?> parameters)
+    {
+        var url = Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), parameters);
+        Nav.NavigateTo(new Uri(url).Query.Length > 1 ? url : AllCasesHref);
+    }
 
     // The Mine/All toggle. Keeps the active filters, just flips scope.
     private void SetScope(bool mine)
@@ -911,7 +920,7 @@ else
         ApplyFilters();
     }
 
-    private void ClearFilters() => Nav.NavigateTo(_onlyMine ? "cases?scope=mine" : "cases");
+    private void ClearFilters() => Nav.NavigateTo(_onlyMine ? "cases?scope=mine" : AllCasesHref);
 
     // FR-16: the active filters as removable chips (label + a one-field clear). Excludes the assignee /
     // opened-month drill-ins, which already have their own context badges below.
@@ -964,7 +973,7 @@ else
     private async Task ReloadViews() => _views = await Views.ListAsync();
 
     private void ApplyView(SavedViewItem v) =>
-        Nav.NavigateTo(string.IsNullOrEmpty(v.Query) ? "cases" : $"cases?{v.Query}");
+        Nav.NavigateTo(string.IsNullOrEmpty(v.Query) ? AllCasesHref : $"cases?{v.Query}");
 
     private void ToggleSaveForm()
     {
@@ -1054,7 +1063,7 @@ else
     {
         var p = new Dictionary<string, object?>(CurrentParams());
         p["page"] = page > 1 ? page.ToString() : null; // omit page=1 for clean URLs
-        Nav.NavigateTo(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), p));
+        NavigateToList(p);
     }
 
     private void PrevPage() { if (_filter.Page > 1) GoToPage(_filter.Page - 1); }
@@ -1073,7 +1082,7 @@ else
         var p = new Dictionary<string, object?>(CurrentParams());
         p["size"] = size == DefaultPageSize ? null : size.ToString(); // CurrentParams reflects the old size
         p["page"] = null;
-        Nav.NavigateTo(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), p));
+        NavigateToList(p);
     }
 
     private int _reloadSeq;
