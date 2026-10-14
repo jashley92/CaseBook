@@ -200,15 +200,18 @@
         _loadedFor = EvidenceId;
         _custody = null;
         _preview = null;
-        _previewMissing = _addingTask = _transferOpen = false;
+        _previewLoading = _previewMissing = _addingTask = _transferOpen = false;
         _xferTo = _xferHow = _xferWhy = _xferError = null;
         if (EvidenceId is { } id) await LoadCustody(id);
     }
 
+    // BUG-342: after each await, a result for an item the panel has since moved off is dropped.
     private async Task LoadCustody(Guid id)
     {
-        try { _custody = await Evidence.GetCustodyAsync(id); }
-        catch (Exception ex) when (ex is InvalidOperationException) { _custody = []; }
+        List<ChainOfCustodyEvent> custody;
+        try { custody = await Evidence.GetCustodyAsync(id); }
+        catch (Exception ex) when (ex is InvalidOperationException) { custody = []; }
+        if (_loadedFor == id) _custody = custody;
     }
 
     private async Task LoadPreview(Evidence ev)
@@ -216,15 +219,17 @@
         _previewLoading = true;
         try
         {
-            _preview = await Evidence.PreviewTextAsync(ev.Id);
-            _previewMissing = _preview is null;
+            var preview = await Evidence.PreviewTextAsync(ev.Id);
+            if (_loadedFor != ev.Id) return;   // BUG-342
+            _preview = preview;
+            _previewMissing = preview is null;
             await LoadCustody(ev.Id);   // the view was just recorded
         }
         catch (Exception ex)
         {
             Toasts.Error(UserFacingError.Describe(ex, Logger, "previewing evidence", "Couldn't show the preview. Try again."));
         }
-        finally { _previewLoading = false; }
+        finally { if (_loadedFor == ev.Id) _previewLoading = false; }
     }
 
     private async Task SaveTransfer(Evidence ev)

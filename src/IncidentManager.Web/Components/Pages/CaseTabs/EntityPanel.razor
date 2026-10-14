@@ -349,10 +349,21 @@
         _otherCases = null;
         if (EntityId is { } id)
         {
-            _otherCases = (await Cases.FindEntityOverlapsAsync(Case.Id, entityId: id))   // BUG-254: this entity's only
+            // BUG-342: a quick switch to another entity starts its own load; drop this one's results once it has.
+            var caseId = Case.Id;
+            var overlaps = (await Cases.FindEntityOverlapsAsync(caseId, entityId: id))   // BUG-254: this entity's only
                 .DistinctBy(o => o.OtherCaseId).ToList();
-            if (_otherCases.Any(o => o.IsClosed) && _outcomeLabels.Count == 0) _outcomeLabels = await Outcomes.LabelsAsync();
-            _taskComments = await TaskComments.ListForCaseAsync(Case.Id);   // INV-34
+            if (_loadedFor != id) return;
+            _otherCases = overlaps;
+            if (overlaps.Any(o => o.IsClosed) && _outcomeLabels.Count == 0)
+            {
+                var labels = await Outcomes.LabelsAsync();
+                if (_loadedFor != id) return;
+                _outcomeLabels = labels;
+            }
+            var comments = await TaskComments.ListForCaseAsync(caseId);   // INV-34
+            if (_loadedFor != id) return;
+            _taskComments = comments;
         }
     }
 
