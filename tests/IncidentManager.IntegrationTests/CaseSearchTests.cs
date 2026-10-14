@@ -474,5 +474,31 @@ public sealed class CaseSearchTests : IDisposable
         (await Find("Alpha")).Matches.Should().BeEmpty("a title match needs no explanation");
     }
 
+    [Fact]
+    public async Task A_search_snippet_is_dated_on_the_organisation_calendar(/* BUG-494 */)
+    {
+        _user.RoleSet = [AppRole.IncidentCommander];
+        await using var db = NewContext();
+        var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            zone: new EasternZone());
+        var a = (await svc.CreateAsync(Req("Alpha"))).Id;
+        _clock.UtcNow = new DateTimeOffset(2026, 8, 8, 2, 0, 0, TimeSpan.Zero);   // 22:00 on 7 August in New York
+        await svc.AddNoteAsync(a, "Beacon to the staging host again.");
+        var b = (await svc.CreateAsync(Req("Bravo"))).Id;
+        // A stated date is a calendar date (12:00 UTC on 5 August) and reads as it was stated.
+        await svc.AddEventStepAsync(b, new DateTimeOffset(2026, 8, 5, 12, 0, 0, TimeSpan.Zero), [MitreTactic.Exfiltration], null, null, null,
+            "Archive uploaded to the dropbox", null, timing: new IncidentManager.Domain.Entities.StepTiming(TimePrecision.Day));
+        var c = (await svc.CreateAsync(Req("Charlie"))).Id;
+        await svc.AddEventStepAsync(c, _clock.UtcNow, [MitreTactic.Discovery], null, null, null,
+            "Share enumeration seen", null, timing: new IncidentManager.Domain.Entities.StepTiming(TimePrecision.NotStated));
+
+        async Task<string> Snippet(Guid id, string q) => (await svc.ListAsync(new CaseFilter { Search = q, IncludeClosed = true })).Matches![id];
+
+        (await Snippet(a, "staging host")).Should().StartWith("note, 7 Aug 2026: ");
+        (await Snippet(b, "dropbox")).Should().StartWith("timeline entry, 5 Aug 2026: ");
+        (await Snippet(c, "enumeration")).Should().StartWith("timeline entry: ", "a step whose time isn't stated has no day");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

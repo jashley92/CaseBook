@@ -415,7 +415,7 @@ public sealed class CaseService
     /// the first of an entity, a note, a timeline entry or decision, the brief, a task, a task comment or result, a phase
     /// reason, or the review, with a snippet around the match.
     /// </summary>
-    private static async Task<Dictionary<Guid, string>> SearchMatchesAsync(IAppDbContext db, IReadOnlyList<CaseListItem> items,
+    private async Task<Dictionary<Guid, string>> SearchMatchesAsync(IAppDbContext db, IReadOnlyList<CaseListItem> items,
         string term, CancellationToken ct)
     {
         var ids = items.Where(i => !i.CaseNumber.Contains(term, StringComparison.OrdinalIgnoreCase)
@@ -427,39 +427,48 @@ public sealed class CaseService
         if (ids.Count == 0) return result;
 
         // Candidates in display priority; the first that contains the term wins. Loaded per page (at most a page of cases).
-        var candidates = new List<(Guid CaseId, int Rank, string Where, DateTimeOffset? At, string Text)>();
+        var candidates = new List<(Guid CaseId, int Rank, string Where, DateTimeOffset? At, string Text, TimePrecision? Stated)>();
         foreach (var e in await db.CaseEntities.AsNoTracking().Where(e => ids.Contains(e.CaseId)).Select(e => new { e.CaseId, e.Value, e.Label }).ToListAsync(ct))
-            candidates.Add((e.CaseId, 0, "entity", null, e.Label is null ? e.Value : $"{e.Label} ({e.Value})"));
+            candidates.Add((e.CaseId, 0, "entity", null, e.Label is null ? e.Value : $"{e.Label} ({e.Value})", null));
         foreach (var e in await db.TimelineEntries.AsNoTracking().Where(e => ids.Contains(e.CaseId) && e.IsCurrent)
-                     .Select(e => new { e.CaseId, e.Type, e.OccurredAtUtc, e.Description, e.Rationale }).ToListAsync(ct))
+                     .Select(e => new { e.CaseId, e.Type, e.OccurredAtUtc, e.OccurredPrecision, e.Description, e.Rationale }).ToListAsync(ct))
             candidates.Add((e.CaseId, 1, e.Type == TimelineEntryType.Decision ? "decision" : "timeline entry", e.OccurredAtUtc,
-                Content.RichText.ToText(e.Description) + (e.Rationale is { } why ? " Why: " + why : "")));
+                Content.RichText.ToText(e.Description) + (e.Rationale is { } why ? " Why: " + why : ""), e.OccurredPrecision));
         foreach (var b in await db.CaseBriefs.AsNoTracking().Where(b => ids.Contains(b.CaseId) && b.IsCurrent)
                      .Select(b => new { b.CaseId, b.WorkingAssessment, b.Known, b.OpenQuestions }).ToListAsync(ct))
-            candidates.Add((b.CaseId, 2, "brief", null, string.Join(" ", new[] { b.WorkingAssessment, b.Known, b.OpenQuestions }.Where(x => x is not null))));
+            candidates.Add((b.CaseId, 2, "brief", null, string.Join(" ", new[] { b.WorkingAssessment, b.Known, b.OpenQuestions }.Where(x => x is not null)), null));
         foreach (var n in await db.Notes.AsNoTracking().Where(n => ids.Contains(n.CaseId) && n.IsCurrent)
                      .Select(n => new { n.CaseId, n.CreatedAtUtc, n.Body }).ToListAsync(ct))
-            candidates.Add((n.CaseId, 3, "note", n.CreatedAtUtc, Content.RichText.ToText(n.Body)));
+            candidates.Add((n.CaseId, 3, "note", n.CreatedAtUtc, Content.RichText.ToText(n.Body), null));
         foreach (var t in await db.ActionItems.AsNoTracking().Where(t => ids.Contains(t.CaseId)).Select(t => new { t.CaseId, t.Title }).ToListAsync(ct))
-            candidates.Add((t.CaseId, 4, "task", null, t.Title));
+            candidates.Add((t.CaseId, 4, "task", null, t.Title, null));
         foreach (var x in await db.ActionItemComments.AsNoTracking().Where(x => ids.Contains(x.CaseId))
                      .Select(x => new { x.CaseId, x.CreatedAtUtc, x.Body }).ToListAsync(ct))
             candidates.Add((x.CaseId, 5, TaskResults.Parse(x.Body) is null ? "task comment" : "task result", x.CreatedAtUtc,
-                TaskResults.Parse(x.Body) ?? x.Body));
+                TaskResults.Parse(x.Body) ?? x.Body, null));
         foreach (var x in await db.StatusChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId) && x.Reason != null)
                      .Select(x => new { x.CaseId, x.ChangedAtUtc, x.EffectiveAtUtc, x.Reason }).ToListAsync(ct))
-            candidates.Add((x.CaseId, 6, "phase change", x.EffectiveAtUtc ?? x.ChangedAtUtc, x.Reason!));   // when it happened
+            candidates.Add((x.CaseId, 6, "phase change", x.EffectiveAtUtc ?? x.ChangedAtUtc, x.Reason!, null));   // when it happened
         foreach (var r in await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
                      .Select(r => new { r.CaseId, r.WhatHappened, r.ContributingFactors, r.WhatWorkedWell, r.OpportunitiesToImprove }).ToListAsync(ct))
             candidates.Add((r.CaseId, 7, "post-incident review", null,
-                string.Join(" ", new[] { r.WhatHappened, r.ContributingFactors, r.WhatWorkedWell, r.OpportunitiesToImprove }.Where(x => x is not null))));
+                string.Join(" ", new[] { r.WhatHappened, r.ContributingFactors, r.WhatWorkedWell, r.OpportunitiesToImprove }.Where(x => x is not null)), null));
 
         foreach (var g in candidates.Where(x => x.Text.Contains(term, StringComparison.OrdinalIgnoreCase)).GroupBy(x => x.CaseId))
         {
             var hit = g.OrderBy(x => x.Rank).ThenByDescending(x => x.At).First();
-            result[g.Key] = $"{hit.Where}{(hit.At is { } at ? $", {at.UtcDateTime:d MMM yyyy}" : "")}: {Snippet(hit.Text, term)}";
+            result[g.Key] = $"{hit.Where}{SnippetDay(hit.At, hit.Stated)}: {Snippet(hit.Text, term)}";
         }
         return result;
+    }
+
+    // BUG-494: a match's day on the organisation's calendar (BUG-112/WF-15), not the UTC one. A step's stated date is a
+    // calendar date (12:00 UTC) and prints as stored, as StepTime does; one whose time isn't stated has no day to give.
+    private string SnippetDay(DateTimeOffset? at, TimePrecision? stated)
+    {
+        if (at is not { } t || stated == TimePrecision.NotStated) return "";
+        var day = stated is TimePrecision.Day or TimePrecision.Window or TimePrecision.OnOrBefore ? t.UtcDateTime : OrgLocal(t).DateTime;
+        return ", " + day.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // A short window of text around the first occurrence of the term, on one line.
