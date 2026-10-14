@@ -37,6 +37,7 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         lock (_gate)
         {
             added = Loaded().Add(key);
+            if (added) _renewed[key] = clock.UtcNow;   // BUG-295: so the in-memory prune knows its age
             if (!added)
             {
                 var now = clock.UtcNow;
@@ -191,5 +192,15 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         _prunedAt = now;
         var cutoff = now - NotificationMark.Keep;
         db.NotificationMarks.Where(m => m.SentAtUtc < cutoff).ExecuteDelete();
+        // BUG-295: and the same marks from memory. The process can run for months (BUG-137 turned off the periodic
+        // recycle), and the sets kept every key ever recorded.
+        lock (_gate)
+        {
+            foreach (var key in _renewed.Where(r => r.Value < cutoff).Select(r => r.Key).ToList())
+            {
+                _renewed.Remove(key);
+                _keys?.Remove(key);
+            }
+        }
     }
 }

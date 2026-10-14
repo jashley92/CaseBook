@@ -234,6 +234,32 @@ public class SecurityEventDispatcherTests
 
         good.Sent.Should().ContainSingle();
     }
+
+    [Fact]
+    public async Task A_stuck_transport_doesnt_hold_up_the_others_or_their_alarms(/* BUG-290 */)
+    {
+        var never = new TaskCompletionSource();
+        var stuck = new FakeTransport { Name = "webhook", Enabled = true, OnSend = _ => never.Task };
+        var log = new FakeTransport { Name = "eventlog", Enabled = true };
+        var queue = Queue(stuck, log);
+        var dispatcher = new SecurityEventDispatcher(queue, new ISecurityEventTransport[] { stuck, log },
+            NullLogger<SecurityEventDispatcher>.Instance);
+        await dispatcher.StartAsync(CancellationToken.None);
+
+        for (var i = 0; i < 50; i++)
+            queue.Emit(new SecurityEvent { EventId = SecurityEventIds.CaseOpened, Category = "DataAccess", Action = "CaseOpen", Actor = "x" });
+        queue.Emit(new SecurityEvent { EventId = SecurityEventIds.CaseOpened, Category = "Integrity", Action = "AuditChainBroken",
+            Actor = "system", Severity = SecuritySeverity.Critical });
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (log.Sent.Count < 51 && DateTime.UtcNow < deadline) await Task.Delay(20);
+        log.Sent.Should().HaveCount(51, "the Event Log isn't waiting on the webhook");
+        log.Sent.Should().Contain(e => e.Severity == SecuritySeverity.Critical);
+        stuck.Sent.Should().ContainSingle("the webhook is still on its first send");
+
+        never.SetResult();
+        await dispatcher.StopAsync(CancellationToken.None);
+    }
 }
 
 public sealed class SecurityEventEmitSiteTests : IDisposable

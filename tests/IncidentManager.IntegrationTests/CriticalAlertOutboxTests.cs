@@ -104,6 +104,22 @@ public sealed class CriticalAlertOutboxTests : IDisposable
         (await service.ListAsync()).Should().BeEmpty();
     }
 
+    [Fact]
+    public void Retries_after_a_hold_keep_their_spacing(/* BUG-291 */)
+    {
+        var t0 = _clock.UtcNow;
+        var a = new AlertDelivery { FirstFailedAtUtc = t0 };
+        a.Failed(t0);
+        a.NextAttemptAtUtc.Should().Be(t0 + AlertDelivery.RetryAfter[0]);
+
+        // Email was off for three hours (WF-92 holds the alert); the first retry fails, and the next isn't due a minute later.
+        var back = t0.AddHours(3);
+        a.Retries = 1;
+        a.Failed(back);
+        a.NextAttemptAtUtc.Should().Be(back + (AlertDelivery.RetryAfter[1] - AlertDelivery.RetryAfter[0]));
+        a.GaveUpAtUtc.Should().BeNull();
+    }
+
     private async Task<Guid> SeedCaseAsync()
     {
         await using var db = Factory().CreateAppDbContext();

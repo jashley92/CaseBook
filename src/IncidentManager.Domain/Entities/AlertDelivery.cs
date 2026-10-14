@@ -45,8 +45,11 @@ public class AlertDelivery
     {
         if (Retries < RetryAfter.Length)
         {
-            NextAttemptAtUtc = FirstFailedAtUtc + RetryAfter[Retries];
-            if (NextAttemptAtUtc < nowUtc) NextAttemptAtUtc = nowUtc + TimeSpan.FromMinutes(1);
+            // BUG-291: and never sooner than the usual gap after this try. Timed from the first failure alone, an alert held
+            // while email was off (WF-92) had every retry overdue when it came back: one a minute, and given up in minutes.
+            var gap = RetryAfter[Retries] - (Retries == 0 ? TimeSpan.Zero : RetryAfter[Retries - 1]);
+            var scheduled = FirstFailedAtUtc + RetryAfter[Retries];
+            NextAttemptAtUtc = scheduled > nowUtc + gap ? scheduled : nowUtc + gap;
         }
         else
         {

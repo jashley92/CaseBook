@@ -5,6 +5,7 @@ using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using IncidentManager.Application.Common;
 
@@ -36,12 +37,16 @@ public sealed class CaseNotifications : ICaseNotifications
     private string Sev(Severity s) => _severityLabels?.For(s) ?? s.ToString();
     private string PhaseName(CasePhase p) => _taxonomy?.Label("CasePhase", p.ToString(), p.ToString()) ?? p.ToString();
 
+    private readonly ILogger<CaseNotifications>? _log;
+
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
         IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
         INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null,
         IOrganizationTimeZone? zone = null, IExerciseEscalationPolicy? exercise = null, ICriticalAlertOutbox? alerts = null,
-        INotificationMarks? sent = null, IncidentManager.Application.ApiTokens.ITokenOwnerCheck? owners = null)
+        INotificationMarks? sent = null, IncidentManager.Application.ApiTokens.ITokenOwnerCheck? owners = null,
+        ILogger<CaseNotifications>? log = null)
     {
+        _log = log;
         _owners = owners;
         _sent = sent;
         _alerts = alerts;
@@ -132,7 +137,17 @@ public sealed class CaseNotifications : ICaseNotifications
                 + (c.LegalReferral.IsReferred ? "<p>A Legal/Privacy referral is already recorded.</p>" : ""),
         };
 
-        var message = await _composer.ComposeAsync("breach", options.LegalDistribution, tokens, CaseUrl(c.Id), htmlTokens, ct);
+        EmailMessage message;
+        try { message = await _composer.ComposeAsync("breach", options.LegalDistribution, tokens, CaseUrl(c.Id), htmlTokens, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // BUG-293: Legal must still hear of it (BUG-101), so a plain message goes to the outbox instead.
+            _log?.LogError(ex, "Couldn't compose the breach email for {CaseNumber}; sending a plain one.", c.CaseNumber);
+            var text = $"Case {c.CaseNumber} ({c.Title}) was escalated to Breach. Severity {Sev(c.Severity)}, phase {PhaseName(c.Phase)}."
+                       + (CaseUrl(c.Id) is { } url ? $"\n\nOpen it in CaseBook: {url}" : "");
+            message = new EmailMessage(options.LegalDistribution, $"Breach escalation: {c.CaseNumber}",
+                "<p>" + System.Net.WebUtility.HtmlEncode(text).Replace("\n", "<br>") + "</p>", text);
+        }
         if (c.IsExercise)
             message = message with
             {
@@ -169,9 +184,12 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var who = string.Join(", ", recipients.Select(_users.DisplayFor));
             // S-13: the shared channel isn't a restricted case's audience — say who, not what or where.
+            // BUG-294: a tabletop's post is marked EXERCISE, as its escalation is (BUG-100), so the SOC channel doesn't read
+            // it as a real case.
+            var tag = c.IsExercise ? ExerciseMarking.Prefix : "";
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification("Mention (restricted case)", $"{byName} mentioned {who} on a restricted case.", url)
-                : new ChatNotification($"Mention: {c.CaseNumber}", $"{byName} mentioned {who} in a note: {excerpt}", url), ct);
+                ? new ChatNotification($"{tag}Mention (restricted case)", $"{byName} mentioned {who} on a restricted case.", url)
+                : new ChatNotification($"{tag}Mention: {c.CaseNumber}", $"{byName} mentioned {who} in a note: {excerpt}", url), ct);
         }
 
         foreach (var id in recipients)
@@ -222,11 +240,11 @@ public sealed class CaseNotifications : ICaseNotifications
         // toggle and of whether the assignee has an address on file.
         if (ChatOn("Assignments"))
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification("Case assigned (restricted case)",
+                ? new ChatNotification($"{(c.IsExercise ? ExerciseMarking.Prefix : "")}Case assigned (restricted case)",   // BUG-294
                     $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} to a restricted case.",
                     CaseUrl(c.Id))
                 : new ChatNotification(
-                    $"Case assigned: {c.CaseNumber}",
+                    $"{(c.IsExercise ? ExerciseMarking.Prefix : "")}Case assigned: {c.CaseNumber}",
                     $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} · {c.Title}.",
                     CaseUrl(c.Id)), ct);
 

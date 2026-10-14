@@ -172,8 +172,14 @@ public sealed partial class EmailComposer : IEmailComposer
     private async Task<string?> LogoUrlAsync(string baseUrl, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(baseUrl)) return null;          // no absolute base → can't host the image
-        var logo = await _branding.GetLogoAsync(ct);
-        return logo is null ? null : $"{baseUrl}/branding/logo";
+        // BUG-293: the logo is decoration. A read that fails (a file locked by antivirus, a logo being replaced) sends the
+        // email with the name instead: it threw out of composing, and a breach alert to Legal was never queued.
+        try
+        {
+            var logo = await _branding.GetLogoAsync(ct);
+            return logo is null ? null : $"{baseUrl}/branding/logo";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
     // Lightweight style inliner for the constrained tag set the templates use, so content renders
