@@ -112,6 +112,11 @@ $ErrorActionPreference = 'Stop'
 # still passed on by the handover to the bundle's script below.
 $dryRun = [bool]$WhatIfPreference
 $WhatIfPreference = $false
+# BUG-381: -Confirm also sets $ConfirmPreference to Low for this script, so every cmdlet below asked (New-Item,
+# Copy-Item, Start-WebAppPool), and an N at one of them failed the run part-way. -Confirm asks one question, the upgrade
+# one below ($PSCmdlet.ShouldProcess reads the switch itself), and the handover still passes -Confirm on.
+$confirmAsked = $PSBoundParameters.ContainsKey('Confirm') -and [bool]$PSBoundParameters['Confirm']
+if ($confirmAsked) { $ConfirmPreference = 'High' }
 # REV-73: Windows PowerShell 5.1 offers only SSL3/TLS 1.0 by default unless the host sets SchUseStrongCrypto, and a host
 # with those turned off then refuses every HTTPS probe below (a healthy site reads as down).
 # (Left to the OS when it already decides: SystemDefault includes TLS 1.2 and 1.3.)
@@ -787,7 +792,10 @@ if (-not $started -or ($lastStatus -ge 500)) {
                "Review the event-log error above and docs/UPGRADE.md.")
     }
     Start-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
-    throw ("Upgrade failed -- the previous build has been restored and the app pool restarted. " +
+    # BUG-381: say whether the pool came back, rather than assume it.
+    $poolState = (Get-WebAppPoolState -Name $AppPoolName -ErrorAction SilentlyContinue).Value
+    $poolNote = if ($poolState -eq 'Started') { "the app pool restarted" } else { "the app pool did NOT start (start '$AppPoolName' in IIS Manager)" }
+    throw ("Upgrade failed -- the previous build has been restored and $poolNote. " +
            "If the new build had begun applying migrations, restore the DB backup in the SQL default backup " +
            "directory before retrying. Review the event-log error above and docs/UPGRADE.md.")
 }
