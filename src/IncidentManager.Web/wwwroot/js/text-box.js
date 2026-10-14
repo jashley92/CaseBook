@@ -71,6 +71,17 @@ window.imTagBox = (function () {
 
     function highlight() { if (menu) [...menu.children].forEach((el, i) => el.classList.toggle('active', i === active)); }
 
+    // BUG-450: a box's save resolves a [[tag]] from what the box's text pointed at when it was opened (its refs) before
+    // the case's entities, so a tag whose text is one of those labels (a citation of the same name, a renamed entity's
+    // old label) would link there. The box lists those labels in data-tag-refs; such a pick goes in as its link instead.
+    function insertFor(el, item) {
+        const m = /^\[\[(.*)\]\]$/.exec(item.insert || '');
+        if (!m || !item.link) return item.insert;
+        const tag = m[1].toLowerCase();
+        const refs = (el.getAttribute('data-tag-refs') || '').split('\n');
+        return refs.some(r => r.toLowerCase() === tag) ? item.link : item.insert;
+    }
+
     function choose(i) {
         if (!field || !items[i]) return close();
         // BUG-430: the caret may have moved since the list was drawn (arrow keys, a click, Home/End); insert only at the
@@ -80,7 +91,7 @@ window.imTagBox = (function () {
         const start = t.from, end = t.caret;
         let after = el.value.slice(end);
         if (after.startsWith(']]')) after = after.slice(2);   // a closer already typed is taken with the tag
-        const text = items[i].insert + ' ';   // [[tag]], or the link itself for a shared name (BUG-423)
+        const text = insertFor(el, items[i]) + ' ';   // [[tag]], or the link itself for a shared name (BUG-423)
         el.value = el.value.slice(0, start) + text + after;
         const caret = start + text.length;
         try { el.setSelectionRange(caret, caret); } catch (e) { /* not a text field */ }

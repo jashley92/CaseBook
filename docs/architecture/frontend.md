@@ -140,7 +140,7 @@ Use these rather than writing new ones. All are in `Components/Shared/`.
 | `GateChecklist` | Stage-gate readiness |
 | `TimeNudges` | "Now / −1 h / −15 min / +15 min" buttons beside a time input |
 | `DateTimeInput`, `DateInput`, `TimeInput` | Every date, time and date-time field. `DateTimeInput` binds a `DateTime` or `DateTime?` to the minute; `DateInput` a `DateTime` or `DateOnly` (or a nullable one); `TimeInput` a `TimeOnly` or `TimeOnly?` to the minute. All use `@bind-Value` (with `:after`) and pass id, min, max and other attributes through. Don't `@bind` a `date`, `time` or `datetime-local` input directly: Blazor's write-back resets the segment being typed (BUG-408, BUG-426) |
-| `TagBoxSource` | Feeds the case's entities to `[[` autocomplete in plain boxes; mark a box with `data-tag-box` (and `data-list-box` for Markdown lists) |
+| `TagBoxSource` | Feeds the case's entities to `[[` autocomplete in plain boxes; mark a box with `data-tag-box` (and `data-list-box` for Markdown lists); a box that reopens saved links also gets `data-tag-refs` (`TagText.RefLabels` of its refs), so a pick with one of those names goes in as its link (BUG-450) |
 | `ComposerHint`, `WhyThisMatters` | One-line purpose hint under a composer; collapsed explainer on compliance screens |
 | `AttackMatrixPicker`, `AttackStepPicker`, `AttackTacticPicker` | MITRE ATT&CK selection |
 | `ReportPreview`, `RichBlocksView`, `StoredReportTable`, `ReportTemplateLibrary`, `ReportProfilesEditor` | Report preview, stored reports, admin report setup |

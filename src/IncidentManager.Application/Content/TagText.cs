@@ -78,8 +78,11 @@ public static partial class TagText
     /// <summary>What the <c>[[</c> picker inserts for each entity: <c>[[label]]</c>, else <c>[[value]]</c>, when that
     /// text names no other entity (by label or value), so <see cref="FromEditable"/> links it back to this one.
     /// BUG-423: when both are shared with another entity the picker inserts the link itself,
-    /// <c>[label](entity:&lt;id&gt;)</c>, which a save keeps as it is. An entity with nothing writable is left out.</summary>
-    public static IReadOnlyList<(Guid Id, string Display, string Insert)> PickerTags(
+    /// <c>[label](entity:&lt;id&gt;)</c>, which a save keeps as it is. An entity with nothing writable is left out.
+    /// BUG-450: <c>Link</c> is that link form for every entity; the picker uses it instead of a <c>[[tag]]</c> whose
+    /// text is a label in the box's own refs (see <see cref="RefLabels"/>), which <see cref="FromEditable"/> would
+    /// otherwise point at that earlier target (a citation of the same name, a link whose entity was renamed).</summary>
+    public static IReadOnlyList<(Guid Id, string Display, string Insert, string Link)> PickerTags(
         IEnumerable<(Guid Id, string? Label, string Value)> entities)
     {
         var list = entities.ToList();
@@ -88,7 +91,7 @@ public static partial class TagText
             foreach (var key in new[] { e.Label?.Trim(), e.Value.Trim() }
                          .Where(k => !string.IsNullOrEmpty(k)).Distinct(StringComparer.OrdinalIgnoreCase))
                 named[key!] = named.GetValueOrDefault(key!) + 1;
-        var tags = new List<(Guid, string, string)>();
+        var tags = new List<(Guid, string, string, string)>();
         foreach (var e in list)
         {
             var label = e.Label?.Trim();
@@ -97,9 +100,15 @@ public static partial class TagText
             if (display is null) continue;
             var tag = Writable(label) && named[label!] == 1 ? label
                 : Writable(value) && named[value] == 1 ? value : null;
-            tags.Add((e.Id, string.IsNullOrWhiteSpace(label) ? e.Value : label,
-                tag is not null ? $"[[{tag}]]" : $"[{display}](entity:{e.Id})"));
+            var link = $"[{display}](entity:{e.Id})";
+            tags.Add((e.Id, string.IsNullOrWhiteSpace(label) ? e.Value : label, tag is not null ? $"[[{tag}]]" : link, link));
         }
         return tags;
     }
+
+    /// <summary>BUG-450: the labels a box's <see cref="FromEditable"/> resolves from its refs ahead of the case's
+    /// entities, one per line, for the box's <c>data-tag-refs</c>: text-box.js inserts a picked entity as its link
+    /// rather than a <c>[[tag]]</c> those refs would claim (compared ignoring case, as <see cref="FromEditable"/> does).</summary>
+    public static string RefLabels(IEnumerable<string> labels) =>
+        string.Join('\n', labels.Distinct(StringComparer.OrdinalIgnoreCase));
 }

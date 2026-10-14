@@ -79,7 +79,32 @@ public class TagTextTests
         tags[c].Insert.Should().Be($"[Payroll](entity:{c})");
         tags[d].Insert.Should().Be($"[payroll](entity:{d})");
         // Whatever the picker inserts saves as a link to that entity.
-        foreach (var (id, _, insert) in tags.Values)
+        foreach (var (id, _, insert, _) in tags.Values)
             TagText.FromEditable(insert, new Dictionary<string, string>(), entities).Should().Contain($"(entity:{id})");
+    }
+
+    [Fact]
+    public void A_picked_entity_whose_tag_the_box_refs_would_claim_goes_in_as_its_link(/* BUG-450 */)
+    {
+        // The Known part was opened with a citation named like the entity, and a link whose entity was since renamed.
+        var other = Guid.Parse("55555555-5555-4555-8555-555555555555");
+        var refs = new Dictionary<string, string>();
+        var editable = TagText.ToEditable($"See [Jane Doe (Finance)](evidence:{File}) and [185.220.101.4](entity:{other}).", refs);
+        var labels = TagText.RefLabels(refs.Keys).Split('\n');
+        labels.Should().BeEquivalentTo("Jane Doe (Finance)", "185.220.101.4");
+
+        var tags = TagText.PickerTags(Entities).ToDictionary(t => t.Id);
+        foreach (var (id, _, insert, link) in tags.Values)
+        {
+            link.Should().Be($"[{(id == Jane ? "Jane Doe (Finance)" : "185.220.101.4")}](entity:{id})");
+            // The [[tag]] alone would be claimed by the refs (the citation, the old link) ...
+            var tag = insert[2..^2];
+            labels.Should().Contain(l => l.Equals(tag, StringComparison.OrdinalIgnoreCase));
+            TagText.FromEditable(editable + " " + insert, refs, Entities).Should().NotEndWith($"(entity:{id})");
+            // ... so text-box.js inserts the link, which saves pointing at the picked entity, the refs' own tags unchanged.
+            TagText.FromEditable(editable + " " + link, refs, Entities).Should()
+                .Be($"See [Jane Doe (Finance)](evidence:{File}) and [185.220.101.4](entity:{other}). {link}");
+        }
+        TagText.RefLabels(["a", "A", "b"]).Should().Be("a\nb");
     }
 }

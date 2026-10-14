@@ -1,7 +1,8 @@
 @* BUG-409: gives text-box.js the case's entities, so "[[" in a plain box (marked data-tag-box) lists them. Pushed again
    only when the entities change. Each entry's insert is what TagText.FromEditable resolves back to that entity: its
    [[label]], or [[value]] when the label names another entity too or can't be written inside [[ ]], or (BUG-423) the
-   link itself when both name another entity. *@
+   link itself when both name another entity. BUG-450: each also carries its link, which text-box.js inserts instead
+   when the [[tag]]'s text is a label in the box's own refs (data-tag-refs), which would point it elsewhere. *@
 @inject IJSRuntime JS
 
 @code {
@@ -12,21 +13,21 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         var list = Candidates(Entities);
-        var sig = string.Join('\n', list.Select(c => c.Insert + '\t' + c.Label + '\t' + c.Hint));
+        var sig = string.Join('\n', list.Select(c => c.Insert + '\t' + c.Link + '\t' + c.Label + '\t' + c.Hint));
         if (sig == _sent) return;
         try { await JS.InvokeVoidAsync("imTagBox.setEntities", list); _sent = sig; }
         catch (JSDisconnectedException) { }
         catch (JSException) { /* tagging help is an enhancement */ }
     }
 
-    /// <summary>Serialised camel-case for text-box.js: { insert, label, hint }.</summary>
-    internal sealed record Candidate(string Insert, string Label, string Hint);
+    /// <summary>Serialised camel-case for text-box.js: { insert, link, label, hint }.</summary>
+    internal sealed record Candidate(string Insert, string Link, string Label, string Hint);
 
     internal static IReadOnlyList<Candidate> Candidates(IReadOnlyCollection<CaseEntity> entities)
     {
         var types = entities.DistinctBy(e => e.Id).ToDictionary(e => e.Id, e => e.Type);
         return IncidentManager.Application.Content.TagText.PickerTags(entities.Select(e => (e.Id, e.Label, e.Value)))
-            .Select(t => new Candidate(t.Insert, t.Display, Ui.Label(types[t.Id])))
+            .Select(t => new Candidate(t.Insert, t.Link, t.Display,Ui.Label(types[t.Id])))
             .ToList();
     }
 }

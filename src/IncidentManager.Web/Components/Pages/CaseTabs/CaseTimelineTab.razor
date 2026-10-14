@@ -230,7 +230,7 @@
             {
                 @* RD-07: a question goes on the brief's open questions (a new brief version), optionally followed up as a task. *@
                 <label class="form-label small mb-1" for="tl-question">What does the team still need to find out?</label>
-                <textarea id="tl-question" data-tag-box class="form-control form-control-sm im-rec" rows="2" maxlength="400" @bind="_question" @bind:event="oninput"
+                <textarea id="tl-question" data-tag-box data-tag-refs="@TagRefLabels" class="form-control form-control-sm im-rec" rows="2" maxlength="400" @bind="_question" @bind:event="oninput"
                           aria-describedby="tl-oneline-hint" placeholder="e.g. Did the other two users' credentials get used?"></textarea>
                 @OneLineHint("the brief and as its task's title")
                 <div class="form-check small mt-2">
@@ -305,7 +305,7 @@
                     </div>
                     <div class="mt-2">
                         <label class="form-label small mb-1" for="tl-atk-desc">What the @(!IsThirdParty ? "adversary did" : _evtOurs ? "attacker did in our environment" : "attacker did at the vendor")</label>
-                        <textarea id="tl-atk-desc" data-tag-box class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                        <textarea id="tl-atk-desc" data-tag-box data-tag-refs="@TagRefLabels" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   aria-describedby="tl-oneline-hint" placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
                         @OneLineHint("the report's tables and the attack-chain diagram")
                     </div>
@@ -333,7 +333,7 @@
                     </div>
                     <div class="mt-2">
                         <label class="form-label small mb-1" for="tl-disc-desc">What the vendor reported / what we confirmed</label>
-                        <textarea id="tl-disc-desc" data-tag-box class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                        <textarea id="tl-disc-desc" data-tag-box data-tag-refs="@TagRefLabels" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   aria-describedby="tl-oneline-hint" placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
                         @OneLineHint("the report's disclosure milestones table")
                     </div>
@@ -1538,7 +1538,7 @@ else
             <div class="im-then-row">
                 <span class="bi bi-question-circle" aria-hidden="true"></span>
                 <input class="form-control form-control-sm im-then-wide" placeholder="A question for the brief" maxlength="@ActionItem.MaxTitleLength" aria-label="Question"
-                       data-tag-box @bind="_fuQuestion" @bind:event="oninput" />
+                       data-tag-box data-tag-refs="@TagRefLabels" @bind="_fuQuestion" @bind:event="oninput" />
                 <div class="form-check small mb-0">
                     <input class="form-check-input" type="checkbox" id="fu-q-task" @bind="_fuQuestionTask" />
                     <label class="form-check-label" for="fu-q-task">and a task to answer it</label>
@@ -1551,7 +1551,7 @@ else
             <div class="im-then-row">
                 <span class="bi bi-book" aria-hidden="true"></span>
                 <input class="form-control form-control-sm im-then-wide im-rec" placeholder="What this establishes, in a line, for the brief's Known" maxlength="2000" aria-label="Line for Known"
-                       data-tag-box @bind="_fuKnown" @bind:event="oninput" />
+                       data-tag-box data-tag-refs="@TagRefLabels" @bind="_fuKnown" @bind:event="oninput" />
                 <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the line" @onclick="() => { _fuKnownOpen = false; _fuKnown = null; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
             </div>
         }
@@ -1609,6 +1609,10 @@ else
 
     // Event steps and questions are one-line fields: inline Markdown, and [[tags]] typed as in the brief.
     private readonly Dictionary<string, string> _tagRefs = new(StringComparer.Ordinal);
+
+    // BUG-450: the labels Tagged resolves from _tagRefs first, for the boxes' data-tag-refs (text-box.js inserts a pick
+    // with one of those names as its link, so it isn't saved as a link to that other target).
+    private string TagRefLabels => IncidentManager.Application.Content.TagText.RefLabels(_tagRefs.Keys);
 
     private string? Tagged(string? text) =>
         IncidentManager.Application.Content.TagText.FromEditable(text, _tagRefs, Case.Entities.Select(x => (x.Id, x.Label, x.Value)));

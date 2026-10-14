@@ -71,6 +71,11 @@ public sealed class CloseOutDraft
     /// <summary>The conclusion with its [[name]] tags turned back into entity links and citations.</summary>
     public string? LinkedConclusion(Case c) => Linked(c, Conclusion, _conclusionRefs, _summaryRefs);
 
+    /// <summary>BUG-450: every label the boxes resolve from their refs (either box's, as <see cref="Linked"/> does), for
+    /// their data-tag-refs: text-box.js inserts a pick with one of those names as its link, not a [[tag]] these
+    /// refs would point at another target.</summary>
+    public string TagRefLabels => TagText.RefLabels(_summaryRefs.Keys.Concat(_conclusionRefs.Keys));
+
     // A box's own targets first; a tag moved in from the other box keeps that box's first target for its label.
     private static string? Linked(Case c, string? text, Dictionary<string, string> own, Dictionary<string, string> other)
     {

@@ -104,7 +104,7 @@
                         }
                     </select>
                 }
-                <textarea id="@($"brief-{part.Key}")" data-tag-box data-list-box class="form-control form-control-sm" rows="@part.Rows" maxlength="@CaseBrief.MaxPartLength"
+                <textarea id="@($"brief-{part.Key}")" data-tag-box data-tag-refs="@TagRefLabels" data-list-box class="form-control form-control-sm" rows="@part.Rows" maxlength="@CaseBrief.MaxPartLength"
                           value="@_draft[part.Key]" @oninput="e => _draft[part.Key] = e.Value?.ToString()"></textarea>
             </div>
         }
@@ -238,6 +238,10 @@
 
     private Dictionary<string, string> RefsOf(string key) =>
         _refs.TryGetValue(key, out var r) ? r : _refs[key] = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    // BUG-450: every label Linked can resolve from refs (any part's, as below), for the boxes' data-tag-refs: text-box.js
+    // inserts a pick with one of those names as its link, so it isn't saved as a link to that other target.
+    private string TagRefLabels => IncidentManager.Application.Content.TagText.RefLabels(_refs.Values.SelectMany(r => r.Keys));
 
     // A part's own targets first; a tag moved in from another part keeps that part's first target for its label.
     private string? Linked(string key)
