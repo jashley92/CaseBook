@@ -30,11 +30,17 @@ public sealed record EntryFollowUps(
             if (t.Title.Trim().Length > ActionItem.MaxTitleLength)
                 throw new ArgumentException($"Keep each task to {ActionItem.MaxTitleLength} characters or fewer.");
         }
-        if (Clean(Question) is { Length: > ActionItem.MaxTitleLength })
+        if (Clean(Question) is { } q && TypedLength(q) > ActionItem.MaxTitleLength)
             throw new ArgumentException($"Keep the question to {ActionItem.MaxTitleLength} characters or fewer.");
-        if (Clean(KnownLine) is { Length: > 2000 })
+        if (Clean(KnownLine) is { } k && TypedLength(k) > 2000)
             throw new ArgumentException("Keep the line for Known to 2,000 characters or fewer.");
     }
+
+    /// <summary>
+    /// BUG-481: a line's length as the box counts it: its plain text (the task title a question gets), not the Markdown
+    /// its [[tags]] expand to, about 43 characters more each. The stored part is still held to its 8,000 by the brief.
+    /// </summary>
+    public static int TypedLength(string line) => Content.MarkdownService.PlainLine(line).Length;
 
     /// <summary>One line, without a leading list marker; null when empty.</summary>
     public static string? Clean(string? text)

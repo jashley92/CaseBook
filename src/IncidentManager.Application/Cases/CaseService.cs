@@ -3030,7 +3030,8 @@ public sealed class CaseService
         var q = Content.MarkdownService.OneLine(question);
         if (q.StartsWith("- ", StringComparison.Ordinal)) q = q[2..].Trim();
         if (q.Length == 0) throw new ArgumentException("Write the question.");
-        if (q.Length > ActionItem.MaxTitleLength) throw new ArgumentException($"Keep the question to {ActionItem.MaxTitleLength} characters or fewer.");
+        if (EntryFollowUps.TypedLength(q) > ActionItem.MaxTitleLength)   // BUG-481: as typed, not with its [[tags]] expanded
+            throw new ArgumentException($"Keep the question to {ActionItem.MaxTitleLength} characters or fewer.");
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
         await db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).ToListAsync(ct);
@@ -3107,7 +3108,8 @@ public sealed class CaseService
     {
         Require();
         var known = EntryFollowUps.Clean(knownLine);
-        if (known is { Length: > 2000 }) throw new ArgumentException("Keep the line for Known to 2,000 characters or fewer.");
+        if (known is not null && EntryFollowUps.TypedLength(known) > 2000)   // BUG-481
+            throw new ArgumentException("Keep the line for Known to 2,000 characters or fewer.");
         var text = string.IsNullOrWhiteSpace(result) ? null : result.Trim();
         var by = string.IsNullOrWhiteSpace(doneBy) ? _user.UserId : doneBy.Trim();
         if (by.Length > 200) throw new ArgumentException("Keep \"done by\" to 200 characters or fewer.");

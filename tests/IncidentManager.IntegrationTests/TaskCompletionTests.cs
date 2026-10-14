@@ -447,6 +447,38 @@ public sealed class TaskCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_tagged_question_or_Known_line_is_measured_as_typed_not_expanded(/* BUG-481 */)
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", null, null, null);
+        // Five [[FIN-WKS-07]] tags: 10 characters each as typed, about 55 each once expanded to a Markdown link.
+        var tags = string.Join(' ', Enumerable.Range(0, 5).Select(_ => $"[FIN-WKS-07](entity:{Guid.NewGuid()})"));
+        string Line(int plainLength) => $"{tags} {new string('x', plainLength - 56)}?";
+        Line(400).Length.Should().BeGreaterThan(IncidentManager.Domain.Entities.ActionItem.MaxTitleLength, "the stored Markdown is longer than the box");
+
+        await svc.AddOpenQuestionAsync(caseId, Line(400), followUp: true);
+        await svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow,
+            "Reviewed the host.", null, followUps: new EntryFollowUps(Question: Line(399), QuestionTask: true));
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        c.Briefs.Single(b => b.IsCurrent).OpenQuestions.Should().Contain(Line(400)).And.Contain(Line(399));
+        c.ActionItems.Where(t => t.RaisedFromBriefId is not null).Select(t => t.Title.Length).Should().BeEquivalentTo([400, 399]);
+
+        var over = () => svc.AddOpenQuestionAsync(caseId, Line(401), followUp: false);
+        await over.Should().ThrowAsync<ArgumentException>().WithMessage("Keep the question to 400*");
+        var overThen = () => svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow,
+            "Second entry", null, followUps: new EntryFollowUps(Question: Line(401)));
+        await overThen.Should().ThrowAsync<ArgumentException>().WithMessage("Keep the question to 400*");
+
+        // The same for a line for Known: 2,000 as typed.
+        await svc.CompleteActionItemAsync(caseId, taskId, null, null, null, knownLine: Line(2000));
+        (await svc.GetDetailAsync(caseId))!.Briefs.Single(b => b.IsCurrent).Known.Should().Contain(Line(2000));
+        var overKnown = () => svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow,
+            "Third entry", null, followUps: new EntryFollowUps(KnownLine: Line(2001)));
+        await overKnown.Should().ThrowAsync<ArgumentException>().WithMessage("Keep the line for Known*");
+    }
+
+    [Fact]
     public async Task A_decision_saves_with_its_follow_ups_in_one_go(/* RD-09 */)
     {
         var (svc, caseId, _) = await CaseWithTask();
