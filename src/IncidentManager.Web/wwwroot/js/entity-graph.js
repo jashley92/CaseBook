@@ -133,10 +133,19 @@ window.entityGraph = (function () {
         syncEdges(inst.edges, edgesArr);
 
         if (hasNew) {
-            // Let physics settle the newcomers around the existing (kept) nodes, then re-freeze.
+            // Let physics settle the newcomers around the existing (kept) nodes, then re-freeze. BUG-358: pin the kept
+            // nodes where they are first, as build() does, so the user's arranged layout doesn't move (and isn't then
+            // saved over); release the pins once the newcomers have settled.
+            const kept = nodesArr.filter(function (n) { return existingIds.has(n.id); }).map(function (n) { return n.id; });
+            const pos = inst.network.getPositions(kept);
+            inst.nodes.update(kept.filter(function (id) { return pos[id]; }).map(function (id) {
+                return { id: id, x: pos[id].x, y: pos[id].y, fixed: { x: true, y: true } };
+            }));
             inst.network.setOptions({ physics: { enabled: true } });
             inst.network.stabilize(150);
             inst.network.once('stabilizationIterationsDone', function () {
+                inst.nodes.update(kept.filter(function (id) { return inst.nodes.get(id); })
+                    .map(function (id) { return { id: id, fixed: false }; }));
                 inst.network.setOptions({ physics: { enabled: false } });
             });
         }
