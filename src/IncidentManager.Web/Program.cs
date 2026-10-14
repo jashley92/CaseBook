@@ -125,7 +125,8 @@ builder.Services.AddHttpClient("updates").ConfigurePrimaryHttpMessageHandler(() 
     var proxy = builder.Configuration["Updates:Proxy"];
     return string.IsNullOrWhiteSpace(proxy)
         ? new SocketsHttpHandler()
-        : new SocketsHttpHandler { Proxy = new System.Net.WebProxy(proxy), UseProxy = true };
+        // WF-75: as the app pool's own account (a SOC proxy usually wants Negotiate/NTLM), as the upgrade script does.
+        : new SocketsHttpHandler { Proxy = new System.Net.WebProxy(proxy) { UseDefaultCredentials = true }, UseProxy = true };
 });
 builder.Services.AddSingleton<IncidentManager.Web.Updates.UpdateCheckService>();
 builder.Services.AddHostedService<IncidentManager.Web.Updates.UpdateCheckHostedService>();

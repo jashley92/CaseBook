@@ -22,12 +22,15 @@ function Stop-CaseBookAppPool([string] $Name, [int] $TimeoutSeconds = 120) {
            "files. Stop the pool in IIS Manager (or end its w3wp.exe), then re-run.")
 }
 
-function Publish-CaseBookDeployScripts([string] $SourceDeployDir, [string] $SitePath) {
-    # PROD-50: keep a copy of the deploy scripts beside the site (<site parent>\CaseBook-deploy), so the next upgrade is
+function Publish-CaseBookDeployScripts([string] $SourceDeployDir, [string] $SitePath, [string] $SiteName) {
+    # PROD-50: keep a copy of the deploy scripts beside the site (<site parent>\<site folder>-deploy), so the next upgrade is
     # one command (Upgrade-CaseBook.ps1 -Version vX.Y.Z) and Administration > Updates can show it. Administrators and
     # SYSTEM may change the folder; everyone else, the app-pool identity included, may only read it. Never the data
     # root: the app pool can write there, and these scripts are run elevated. Returns the folder, or $null.
-    $target = Join-Path (Split-Path -Parent $SitePath) 'CaseBook-deploy'
+    # WF-71: one folder per site (C:\inetpub\CaseBook -> CaseBook-deploy), so two sites under one parent don't share it, and
+    # site.txt names the IIS site, so the command Administration > Updates shows upgrades this site and no other.
+    $site = $SitePath.TrimEnd([char]92)
+    $target = Join-Path (Split-Path -Parent $site) "$(Split-Path -Leaf $site)-deploy"
     if (-not (Test-Path (Join-Path $SourceDeployDir 'Upgrade-CaseBook.ps1'))) { return $null }
     if ((Resolve-Path $SourceDeployDir).Path.TrimEnd('\') -ieq $target.TrimEnd('\')) { return $target }   # running from it
     New-Item -ItemType Directory -Force -Path $target | Out-Null
@@ -36,6 +39,7 @@ function Publish-CaseBookDeployScripts([string] $SourceDeployDir, [string] $Site
     if ($LASTEXITCODE -ge 8 -or -not (Test-Path (Join-Path $target 'Upgrade-CaseBook.ps1'))) {
         throw "Copying the deploy scripts to $target failed (robocopy exit $LASTEXITCODE)."
     }
+    if ($SiteName) { Set-Content -Path (Join-Path $target 'site.txt') -Value "Site: $SiteName" -Encoding ascii }
 
     # Then lock it down; Set-Acl passes the inheritable rules on to what was just copied.
     $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'

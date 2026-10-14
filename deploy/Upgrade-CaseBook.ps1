@@ -254,6 +254,23 @@ if ($BundleZip) {
     $verFile  = Get-ChildItem -Path $staging -Recurse -Filter 'VERSION.txt' | Select-Object -First 1 -ExpandProperty FullName
     if ($verFile) { $targetVersion = ((Get-Content $verFile | Where-Object { $_ -match 'Version:' }) -replace 'Version:\s*','').Trim() }
     if (-not $appSrc) { throw "The bundle does not contain an 'app' folder: $BundleZip" }
+
+    # WF-70: the upgrade is run by the release's own script, not by this one. -Version runs from the kept copy, which is
+    # the previous release's: a fix to the upgrade itself (the warm-up, BUG-260/261) would otherwise reach only the
+    # upgrade after the one that ships it. The bundle's script, run on the same zip, finds itself and carries on.
+    $bundleScript = Get-ChildItem -Path $staging -Recurse -Filter 'Upgrade-CaseBook.ps1' |
+        Where-Object { $_.Directory.Name -eq 'deploy' } | Select-Object -First 1 -ExpandProperty FullName
+    if ($bundleScript -and (Get-FileHash $bundleScript).Hash -ne (Get-FileHash $MyInvocation.MyCommand.Path).Hash) {
+        $accepted = (Get-Command $bundleScript).Parameters.Keys
+        $pass = @{}
+        foreach ($k in $PSBoundParameters.Keys) {
+            if ($k -notin 'BundleZip', 'Version', 'Repository', 'Proxy' -and $k -in $accepted) { $pass[$k] = $PSBoundParameters[$k] }
+        }
+        $pass.BundleZip = $BundleZip
+        Write-Step "Handing over to the upgrade script in the $(if ($targetVersion) { $targetVersion } else { 'new' }) bundle"
+        & $bundleScript @pass
+        return
+    }
 }
 elseif ($AppSource) {
     if (-not (Test-Path (Join-Path $AppSource 'IncidentManager.Web.dll'))) {
@@ -279,6 +296,12 @@ if (-not $manifest) {
     }
 }
 if (-not (Test-Path (Join-Path $appSrc 'IncidentManager.Web.dll'))) { throw "Staged build is missing IncidentManager.Web.dll ($appSrc)." }
+# WF-72: an app folder or a build has no VERSION.txt; read the version stamped into the app (a release build's), so the
+# site's VERSION.txt (kept across deploys) doesn't go on naming the build this one replaced.
+if (-not $targetVersion) {
+    $stamped = ([string](Get-Item (Join-Path $appSrc 'IncidentManager.Web.dll')).VersionInfo.ProductVersion) -replace '[+-].*$', ''
+    $targetVersion = if ($stamped -match '^\d+\.\d+\.\d+$' -and $stamped -ne '1.0.0') { "v$stamped" } else { 'development build' }
+}
 
 # --- 3. Preflight -------------------------------------------------------------
 Write-Step "Preflight checks"
@@ -682,7 +705,7 @@ if ($targetVersion) {
 try {
     $newDeploy = if ($BundleZip) { Get-ChildItem -Path $staging -Recurse -Directory -Filter 'deploy' | Select-Object -First 1 -ExpandProperty FullName } else { $deployDir }
     if (-not $newDeploy) { $newDeploy = $deployDir }
-    $kept = Publish-CaseBookDeployScripts -SourceDeployDir $newDeploy -SitePath $SitePath
+    $kept = Publish-CaseBookDeployScripts -SourceDeployDir $newDeploy -SitePath $SitePath -SiteName $SiteName
     if ($kept) { Write-Info "Deploy scripts kept in $kept (next time: & '$kept\Upgrade-CaseBook.ps1' -Version <vX.Y.Z>)" }
 } catch { Write-Warn2 "Couldn't keep a copy of the deploy scripts beside the site: $($_.Exception.Message)" }
 

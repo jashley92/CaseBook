@@ -521,7 +521,7 @@ Start-Website -Name $SiteName -ErrorAction SilentlyContinue
 
 # PROD-50: keep the deploy scripts beside the site (admin-only), so an upgrade is one command: -Version vX.Y.Z.
 try {
-    $kept = Publish-CaseBookDeployScripts -SourceDeployDir $deployDir -SitePath $SitePath
+    $kept = Publish-CaseBookDeployScripts -SourceDeployDir $deployDir -SitePath $SitePath -SiteName $SiteName
     if ($kept) { Write-Host "    Deploy scripts kept in $kept (upgrades: & '$kept\Upgrade-CaseBook.ps1' -Version <vX.Y.Z>)" -ForegroundColor Gray }
 } catch { Write-Host "    Couldn't keep a copy of the deploy scripts beside the site: $($_.Exception.Message)" -ForegroundColor Yellow }
 

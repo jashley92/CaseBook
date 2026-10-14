@@ -146,19 +146,35 @@
         catch (JSException) { /* clipboard blocked; the command stays selectable */ }
     }
 
-    // The admin-only copy of the deploy scripts the upgrade keeps beside the site (<site parent>\CaseBook-deploy).
-    private string? DeployScript
+    // The admin-only copy of the deploy scripts the upgrade keeps beside the site (<site parent>\<site folder>-deploy,
+    // WF-71), and the IIS site it was kept for (site.txt), so the command upgrades this site and no other.
+    private (string Script, string? Site)? DeployScript
     {
         get
         {
-            var parent = Directory.GetParent(Env.ContentRootPath)?.FullName;
-            if (parent is null) return null;
-            var script = Path.Combine(parent, "CaseBook-deploy", "Upgrade-CaseBook.ps1");
-            return File.Exists(script) ? script : null;
+            try
+            {
+                var root = Env.ContentRootPath.TrimEnd(Path.DirectorySeparatorChar);
+                var parent = Directory.GetParent(root)?.FullName;
+                if (parent is null) return null;
+                var folder = Path.Combine(parent, Path.GetFileName(root) + "-deploy");
+                var script = Path.Combine(folder, "Upgrade-CaseBook.ps1");
+                if (!File.Exists(script)) return null;
+                var siteFile = Path.Combine(folder, "site.txt");
+                var site = File.Exists(siteFile)
+                    ? File.ReadLines(siteFile).Take(5).Select(l => l.Split(':', 2)).Where(p => p.Length == 2 && p[0].Trim() == "Site")
+                        .Select(p => p[1].Trim()).FirstOrDefault()
+                    : null;
+                return (script, string.IsNullOrWhiteSpace(site) ? null : site);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
         }
     }
 
-    private static string Command(string script, string tag) => $"& '{script.Replace("'", "''")}' -Version {tag}";
+    private static string Command((string Script, string? Site) kept, string tag) =>
+        $"& '{Quote(kept.Script)}'{(kept.Site is { } s ? $" -SiteName '{Quote(s)}'" : "")} -Version {tag}";
+
+    private static string Quote(string s) => s.Replace("'", "''");
 
     // VERSION.txt, written into the site by Upgrade-CaseBook.ps1: "Version:", and from v1.6.0 "Previous:", "Upgraded:", "By:".
     private string? ReadInstalled()

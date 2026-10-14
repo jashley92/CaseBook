@@ -140,9 +140,12 @@ public sealed class UpdateCheckService : IDisposable
 
             using var response = await client.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
-                return Failed((int)response.StatusCode is 403 or 429
-                    ? $"GitHub refused the request ({(int)response.StatusCode}); it may be rate-limiting this address"
-                    : $"GitHub answered {(int)response.StatusCode}");
+                return Failed((int)response.StatusCode switch
+                {
+                    403 or 429 => $"GitHub refused the request ({(int)response.StatusCode}); it may be rate-limiting this address",
+                    407 => "the proxy refused the request (407): it needs credentials the app pool's account doesn't have",
+                    var code => $"GitHub answered {code}"
+                });
 
             var json = await response.Content.ReadAsStringAsync(ct);
             var newer = ReleaseFeed.Newer(json, o.Repository, running);
