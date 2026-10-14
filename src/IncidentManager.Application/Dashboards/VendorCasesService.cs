@@ -53,9 +53,15 @@ public sealed class VendorCasesService
             var es = steps.GetValueOrDefault(r.Id) ?? [];
             var attack = es.Where(e => EventSteps.IsAttack(CaseOrigin.ThirdParty, e)).ToList();
             var atVendor = attack.Where(e => EventSteps.Where(CaseOrigin.ThirdParty, e) == StepEnvironment.Vendor).ToList();
-            var told = es.Where(e => !EventSteps.HasAttackContent(e) && e.Type == TimelineEntryType.Notified)
-                .Select(e => (DateTimeOffset?)e.OccurredAtUtc).Min();
-            double? days = atVendor.Count > 0 && told is { } t ? (t - atVendor.Min(e => e.OccurredAtUtc)).TotalDays : null;
+            var toldStep = es.Where(e => !EventSteps.HasAttackContent(e) && e.Type == TimelineEntryType.Notified)
+                .MinBy(e => e.OccurredAtUtc);
+            var told = toldStep?.OccurredAtUtc;
+            // BUG-325: measured only between times that were stated. A "time not stated" step sorts by the step before it, so
+            // the gap read as the time between two other steps (ST-02: no gap is measured from a step whose time isn't known).
+            var first = atVendor.MinBy(e => e.OccurredAtUtc);
+            static bool Stated(Domain.Entities.TimelineEntry e) => e.OccurredPrecision is not TimePrecision.NotStated;
+            double? days = first is not null && toldStep is not null && Stated(first) && Stated(toldStep)
+                ? (toldStep.OccurredAtUtc - first.OccurredAtUtc).TotalDays : null;
             return (Row: r, AtVendor: atVendor.Count, InOurs: attack.Count - atVendor.Count, Told: told is not null, Days: days,
                 InPeriod: r.CreatedAtUtc >= period.StartUtc && r.CreatedAtUtc < period.EndUtc);
         }).ToList();

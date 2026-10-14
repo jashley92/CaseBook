@@ -163,7 +163,8 @@ public sealed class ProgramReportService
     }
 
     private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
-        List<ActionRow> Actions, SlaTargets Targets, List<(Guid CaseId, DateTimeOffset At, SlaState State)> Notices, History History);
+        List<ActionRow> Actions, SlaTargets Targets, List<(Guid CaseId, DateTimeOffset At, SlaState State)> Notices, History History,
+        DateTimeOffset NowUtc);
 
     /// <summary>
     /// WF-38: each case's phase, classification and severity changes, in order, so a quarter is figured as the record stood
@@ -219,8 +220,11 @@ public sealed class ProgramReportService
                 .Where(x => ids.Contains(x.CaseId) && x.To == Classification.Breach)
                 .Select(x => new { x.CaseId, x.ChangedAtUtc, x.EffectiveAtUtc }).ToListAsync(ct))
             .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.Min(x => x.EffectiveAtUtc ?? x.ChangedAtUtc));
-        var reviews = (await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
-            .Select(r => new { r.CaseId, r.CreatedAtUtc }).ToListAsync(ct)).Select(r => (r.CaseId, r.CreatedAtUtc)).ToList();
+        // BUG-324: a review counts once it says what happened (PostIncidentReview.IsRecorded, as the close gate reads it);
+        // a stub saved with nothing in it, or only what worked well, isn't a review recorded.
+        var reviews = (await db.PostIncidentReviews.AsNoTracking()
+                .Where(r => ids.Contains(r.CaseId) && r.WhatHappened != null && r.WhatHappened.Trim() != "")
+                .Select(r => new { r.CaseId, r.CreatedAtUtc }).ToListAsync(ct)).Select(r => (r.CaseId, r.CreatedAtUtc)).ToList();
         var actionRows = await db.ImprovementActions.AsNoTracking().Where(a => ids.Contains(a.CaseId))
             .Select(a => new { a.Id, a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea })
             .ToListAsync(ct);
@@ -259,7 +263,7 @@ public sealed class ProgramReportService
                 .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
             .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => ((Severity?)x.From, x.To, x.At)).ToList());
 
-        return new Loaded(rows, breachFirstAt, reviews, actions, _sla.Current, notices, new History(phases, classes, severities));
+        return new Loaded(rows, breachFirstAt, reviews, actions, _sla.Current, notices, new History(phases, classes, severities), _clock.UtcNow);
     }
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
@@ -380,7 +384,8 @@ public sealed class ProgramReportService
             ActionsCompleted: actions.Count(a => a.Status == ImprovementActionStatus.Completed && In(a.ClosedAtUtc)),
             ActionsNotPursued: actions.Count(a => a.Status == ImprovementActionStatus.NotPursued && In(a.ClosedAtUtc)),
             ActionsOpenAtEnd: openAtEnd.Count,
-            ActionsPastTargetAtEnd: openAtEnd.Count(a => a.TargetDateUtc is { } t && t < end),
+            // BUG-323: past target by the quarter's end, or by now for the quarter still running (its end hasn't come).
+            ActionsPastTargetAtEnd: openAtEnd.Count(a => a.TargetDateUtc is { } t && t < (end < data.NowUtc ? end : data.NowUtc)),
             ActionAreas: Areas(actions.Where(a => In(a.CreatedAtUtc))),
             ContainmentBySeverity: Enum.GetValues<Severity>().OrderByDescending(v => v)
                 .Select(v => new SeverityAttainment(v, targets.HoursFor(SlaClock.Containment, v),

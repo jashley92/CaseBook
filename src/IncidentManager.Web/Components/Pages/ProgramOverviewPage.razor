@@ -42,7 +42,7 @@
            title="Your cases, tasks and what needs you">
             <span class="bi bi-person-workspace" aria-hidden="true"></span> Desk
         </a>
-        <a class="btn btn-sm btn-outline-secondary" href="export/metrics.csv" download
+        <a class="btn btn-sm btn-outline-secondary" href="@(Exercises ? "export/metrics.csv?exercises=true" : "export/metrics.csv")" download
            title="Current metrics and 12-month trend, for a board or regulatory pack">
             <span class="bi bi-download" aria-hidden="true"></span> Export metrics (CSV)
         </a>

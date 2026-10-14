@@ -190,7 +190,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             var alt = Is(text, ReportTemplateFields.AttackChainImage) ? CaseReportModel.AttackChainAlt : CaseReportModel.EntityGraphAlt;
             if (pictures is not null)
                 foreach (var png in images) p.InsertBeforeSelf(ReportGenerator.BodyPicture(pictures, png, "Report picture", alt));
-            p.Remove();
+            RemoveBlock(p);
         }
 
         // Lists: a table row, or a paragraph outside a table, that uses a list's fields repeats per item.
@@ -237,6 +237,20 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             if (copy.Descendants<Text>().FirstOrDefault() is { } first) first.Text = XmlSafe.Clean(emptyText + first.Text);
             block.InsertBeforeSelf(copy);
         }
+        RemoveBlock(block);
+    }
+
+    /// <summary>
+    /// BUG-320: removes a template block that's been replaced (or that has nothing to show), leaving an empty paragraph
+    /// where Word requires one: a table cell or a text box must end in a paragraph. A picture field alone in a cell, for a
+    /// case with no relationships (so no graph), left the cell empty, and Word called the file unreadable.
+    /// </summary>
+    private static void RemoveBlock(OpenXmlElement block)
+    {
+        var parent = block.Parent;
+        var mustHoldOne = parent is TableCell || parent?.LocalName == "txbxContent";
+        if (mustHoldOne && !parent!.ChildElements.Any(c => !ReferenceEquals(c, block) && c is Paragraph or Table))
+            block.InsertAfterSelf(new Paragraph());
         block.Remove();
     }
 

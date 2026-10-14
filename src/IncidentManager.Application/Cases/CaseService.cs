@@ -2892,7 +2892,7 @@ public sealed class CaseService
     /// <param name="openedWith">BUG-297: the entry's citations when the picker opened. Given, only what changed since then
     /// is applied (files ticked are added, files unticked removed), so a citation a colleague added meanwhile stays.</param>
     public async Task CiteEvidenceAsync(Guid caseId, Guid entryId, IReadOnlyCollection<Guid> evidenceIds,
-        CancellationToken ct = default, IReadOnlyCollection<Guid>? openedWith = null)
+        IReadOnlyCollection<Guid>? openedWith = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();

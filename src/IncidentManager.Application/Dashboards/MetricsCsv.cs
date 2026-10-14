@@ -13,7 +13,7 @@ namespace IncidentManager.Application.Dashboards;
 public static class MetricsCsv
 {
     /// <param name="generatedAtUtc">Stamped into the export so the pack is self-dating.</param>
-    public static string Build(DashboardMetrics m, DateTimeOffset generatedAtUtc)
+    public static string Build(DashboardMetrics m, DateTimeOffset generatedAtUtc, bool includesExercises = false)
     {
         var sb = new StringBuilder();
         sb.Append("Metric,Value\r\n");
@@ -22,6 +22,7 @@ public static class MetricsCsv
             sb.Append(Escape(metric)).Append(',').Append(Escape(value)).Append("\r\n");
 
         Row("Generated (UTC)", generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+        if (includesExercises) Row("Includes exercise cases", "Yes");   // BUG-326
         // Which calendar the monthly and quarterly trend below follows (the organization's reporting time zone).
         if (m.TrendZone is { } zone) Row("Trend months in", zone);
         Row("Open items", m.OpenCount.ToString(CultureInfo.InvariantCulture));

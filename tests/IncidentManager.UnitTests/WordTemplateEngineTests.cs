@@ -231,4 +231,23 @@ public class WordTemplateEngineTests
         _engine.Check("not a docx"u8.ToArray()).Problems.Should().ContainSingle(p => p.Contains("readable Word document"));
         _engine.Check(Doc(["Just a letterhead"])).Problems.Should().Contain(p => p.Contains("no {{"));
     }
+
+    [Fact]
+    public void A_picture_field_alone_in_a_cell_leaves_a_valid_cell_when_theres_no_picture(/* BUG-320 */)
+    {
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var main = doc.AddMainDocumentPart();
+            var cell = new TableCell(new Paragraph(R("{{image.entity_graph}}")));
+            main.Document = new Document(new Body(new Table(new TableRow(cell)), new Paragraph(R("{{report.tlp}}"))));
+            main.Document.Save();
+        }
+
+        var filled = _engine.Render(ms.ToArray(), Model());   // the model has no entity graph
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(filled), false);
+        result.MainDocumentPart!.Document!.Body!.Descendants<TableCell>().Single().Elements<Paragraph>().Should().ContainSingle(
+            "a cell must end in a paragraph");
+    }
 }

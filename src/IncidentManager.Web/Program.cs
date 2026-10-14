@@ -648,12 +648,15 @@ app.MapGet("/campaigns/{id:guid}/rollup.json", async (Guid id,
 // --- Metrics export for board / regulatory reporting packs (E-11) ---
 // Scoped to the caller's visible cases via DashboardService; plain CSV attachment (no JS).
 app.MapGet("/export/metrics.csv", async (
+    string? exercises,
     IncidentManager.Application.Dashboards.DashboardService dashboard,
     IncidentManager.Application.Access.IAccessLogService access,
     IClock clock, CancellationToken ct) =>
 {
-    var metrics = await dashboard.GetAsync(ct);
-    var csv = IncidentManager.Application.Dashboards.MetricsCsv.Build(metrics, clock.UtcNow);
+    // BUG-326: with exercises when the overview that links here includes them, so the CSV says what the page said.
+    var withExercises = string.Equals(exercises, "true", StringComparison.OrdinalIgnoreCase);
+    var metrics = await dashboard.GetAsync(withExercises, ct);
+    var csv = IncidentManager.Application.Dashboards.MetricsCsv.Build(metrics, clock.UtcNow, withExercises);
     var fileName = $"incident-metrics-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
