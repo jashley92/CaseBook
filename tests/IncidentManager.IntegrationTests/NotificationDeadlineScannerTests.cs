@@ -439,6 +439,33 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Mark_reported_adds_no_second_notice_for_codes_a_legacy_notice_covers(/* BUG-428 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await SetJurisdictionsAsync("SSN", "NY,CA,TX");
+        var notifiedAt = _clock.UtcNow.AddHours(-1);
+        await using (var db = NewContext())
+        {
+            db.JurisdictionNotices.Add(new JurisdictionNotice
+            {
+                CaseId = id, Jurisdiction = "NY;CA", NotifiedAtUtc = notifiedAt, CreatedBy = "alice", CreatedAtUtc = notifiedAt
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext()) await NewCases(db).MarkReportedAsync(id, _clock.UtcNow);
+
+        await using var check = NewContext();
+        var notices = await check.JurisdictionNotices.AsNoTracking().Where(n => n.CaseId == id).ToListAsync();
+        notices.Select(n => n.Jurisdiction).Should().BeEquivalentTo(["NY;CA", "TX"], "only Texas was outstanding");
+        notices.Single(n => n.Jurisdiction == "NY;CA").NotifiedAtUtc.Should().Be(notifiedAt);
+        var d = await NewDeadlines().EvaluateAsync(id);
+        d.ReportedAtUtc.Should().Be(_clock.UtcNow);
+        d.Statuses.Single(s => s.JurisdictionCode == "NY").NotifiedAtUtc.Should().Be(notifiedAt, "New York was told an hour ago");
+    }
+
+    [Fact]
     public async Task A_material_call_taken_back_and_made_again_says_when_the_clock_first_ran(/* WF-12 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);

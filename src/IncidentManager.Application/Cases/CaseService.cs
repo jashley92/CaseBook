@@ -1277,7 +1277,9 @@ public sealed class CaseService
         if (inPlay.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
         else
         {
-            foreach (var code in inPlay.Where(j => c.JurisdictionNotices.All(n => n.Jurisdiction != j)))
+            // BUG-428: a legacy notice coded "NY;CA" already covers NY and CA, so neither gets a second notice.
+            var noticed = Case.ByNoticeCode(c.JurisdictionNotices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)));
+            foreach (var code in inPlay.Where(j => !noticed.ContainsKey(j)))
                 c.RecordNotice(code, reportedAtUtc, _user.UserId, now);
             c.ReportedFromNotices(inPlay, _user.UserId, now);
         }
