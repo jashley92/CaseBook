@@ -74,10 +74,12 @@ main {
         width: 64px;
     }
 
+    /* BUG-464: above everything in the page (timeline dots and day headers, sticky table headers, the case's sticky
+       header at 20) so nothing paints over the bar while scrolling; below dropdowns, panels and dialogs (1040+). */
     .top-row {
         position: sticky;
         top: 0;
-        z-index: 1;
+        z-index: 1020;
     }
 
     .top-row.auth ::deep a:first-child {

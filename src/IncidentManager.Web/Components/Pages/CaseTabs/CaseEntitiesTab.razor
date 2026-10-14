@@ -1107,8 +1107,8 @@ else
             try { await JS.InvokeVoidAsync(fn, id); } catch (JSException) { /* motion is optional */ }
         }
 
-        // The graph container only exists when there are entities to draw.
-        if (Case.Entities.Count == 0) return;
+        // The graph container only exists when there are entities to draw. BUG-418: nor for a tab disposed meanwhile.
+        if (Disposed || Case.Entities.Count == 0) return;
 
         var sig = _crossView ? "x:" + CrossSignature() : GraphSignature();
         if (!_graphNeedsPush && sig == _lastGraphSig) return;
@@ -1128,6 +1128,7 @@ else
             }
         }
         catch (JSException) { /* graph is a progressive enhancement; ignore transient interop errors */ }
+        catch (ObjectDisposedException) { /* BUG-418: the tab was disposed during the call */ }
     }
 
     /// <summary>Called from JS when the user finishes dragging node(s). Persists the arranged layout (editors only).</summary>

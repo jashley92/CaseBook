@@ -8,6 +8,7 @@
 window.imKeymap = (function () {
     let globalRef = null;       // CommandPalette
     let caseRef = null;         // CaseWorkspace, while a case is open
+    let caseOwner = null;       // BUG-418: which instance registered it
     let attached = false;
     let singleOff = false;
     // binding -> { scope: 'any' | 'case', command }
@@ -142,8 +143,10 @@ window.imKeymap = (function () {
         register: function (ref) { globalRef = ref; attach(); },
         unregister: function () { globalRef = null; clearLeader(); },
         /** The open case registers while it's open. */
-        registerCase: function (ref) { caseRef = ref; attach(); },
-        unregisterCase: function () { caseRef = null; },
+        // BUG-418: keyed by the page instance, so a replaced page unregistering (or a late registration it had in flight)
+        // can't take the keyboard from the page that replaced it.
+        registerCase: function (ref, owner) { caseRef = ref; caseOwner = owner || null; attach(); },
+        unregisterCase: function (owner) { if (!owner || owner === caseOwner) { caseRef = null; caseOwner = null; } },
         /** cfg: { singleOff: bool, bindings: [{ keys: "g d", scope: "any"|"case", command: "go:d" }] } */
         configure: function (cfg) {
             singleOff = !!(cfg && cfg.singleOff);
