@@ -88,6 +88,47 @@ public sealed class CaseShortcutServiceTests : IDisposable
         await svc.UnpinAsync(Guid.NewGuid());   // never pinned, or not visible: nothing to do
     }
 
+    private CaseShortcutService RacingService(RaceCommandInterceptor race) =>
+        new(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()), race)
+            .Options), _user, _clock);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_pin_another_context_removed_first_is_unpinned_without_an_error(bool viaToggle /* BUG-431 */)
+    {
+        var id = await SeedCaseAsync(1, "Pin me");
+        (await NewService().TogglePinAsync(id)).Should().BeTrue();
+
+        // The other tab's unpin deletes the row between this one's read and its delete.
+        var race = new RaceCommandInterceptor("DELETE FROM \"PinnedCases\"", "DELETE FROM \"PinnedCases\"");
+        var svc = RacingService(race);
+        if (viaToggle) (await svc.TogglePinAsync(id)).Should().BeFalse();
+        else await svc.UnpinAsync(id);
+
+        race.Ran.Should().BeTrue();
+        (await NewService().IsPinnedAsync(id)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Two_tabs_pinning_at_once_both_end_pinned(/* BUG-431 */)
+    {
+        var id = await SeedCaseAsync(1, "Pin me");
+
+        // The other tab's pin is saved between this one's read and its insert, so the unique index refuses this one.
+        var race = new RaceCommandInterceptor("INSERT INTO \"PinnedCases\"",
+            "INSERT INTO \"PinnedCases\" (\"Id\", \"UserId\", \"CaseId\", \"PinnedAtUtc\") VALUES ($id, $user, $case, $at)",
+            ("$id", Guid.NewGuid().ToString().ToUpperInvariant()), ("$user", _user.UserId),
+            ("$case", id.ToString().ToUpperInvariant()), ("$at", "2026-08-08 00:00:00+00:00"));
+
+        (await RacingService(race).TogglePinAsync(id)).Should().BeTrue();
+
+        race.Ran.Should().BeTrue();
+        (await NewService().PinnedAsync()).Should().ContainSingle().Which.Id.Should().Be(id);
+    }
+
     [Fact]
     public async Task Recent_lists_opened_cases_newest_first()
     {

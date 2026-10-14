@@ -75,12 +75,9 @@ public sealed class CaseShortcutService
         using var db = _factory.CreateDbContext();
         var me = _user.UserId;
 
-        var existing = await db.PinnedCases.FirstOrDefaultAsync(p => p.UserId == me && p.CaseId == caseId, ct);
-        if (existing is not null)
+        if (await db.PinnedCases.AnyAsync(p => p.UserId == me && p.CaseId == caseId, ct))
         {
-            db.PinnedCases.Remove(existing);
-            try { await db.SaveChangesAsync(ct); }
-            catch (DbUpdateConcurrencyException) { /* BUG-391: a concurrent unpin removed it first; it's unpinned either way */ }
+            await DeletePinAsync(db, me, caseId, ct);
             return false;
         }
 
@@ -89,7 +86,14 @@ public sealed class CaseShortcutService
         if (!canSee) throw new InvalidOperationException("Case not found.");
 
         db.PinnedCases.Add(new PinnedCase { UserId = me, CaseId = caseId, PinnedAtUtc = _clock.UtcNow });
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            // BUG-431: a concurrent pin of the same case (another tab) was saved first and the unique index refused this
+            // one. It's pinned either way.
+            using var recheck = _factory.CreateDbContext();
+            if (!await recheck.PinnedCases.AnyAsync(p => p.UserId == me && p.CaseId == caseId, ct)) throw;
+        }
         return true;
     }
 
@@ -102,12 +106,14 @@ public sealed class CaseShortcutService
         using var db = _factory.CreateDbContext();
         var me = _user.UserId;
 
-        var existing = await db.PinnedCases.FirstOrDefaultAsync(p => p.UserId == me && p.CaseId == caseId, ct);
-        if (existing is null) return;
-        db.PinnedCases.Remove(existing);
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateConcurrencyException) { /* removed by a concurrent unpin meanwhile: the outcome wanted */ }
+        await DeletePinAsync(db, me, caseId, ct);
     }
+
+    // BUG-431: a set-based delete, so a pin a concurrent unpin removed first just deletes nothing. A tracked remove was
+    // refused instead, and the context reports that as a ConcurrentEditException ("Someone else just changed this case"),
+    // not the DbUpdateConcurrencyException BUG-391 caught. Pins are out of the audit chain, so nothing is skipped.
+    private static Task<int> DeletePinAsync(IAppDbContext db, string me, Guid caseId, CancellationToken ct) =>
+        db.PinnedCases.Where(p => p.UserId == me && p.CaseId == caseId).ExecuteDeleteAsync(ct);
 
     // Fetch the given ids as list items, need-to-know scoped (order restored by the caller).
     private Task<List<CaseListItem>> ScopedItemsAsync(IAppDbContext db, List<Guid> ids, CancellationToken ct) =>
