@@ -66,6 +66,13 @@ public partial class CaseWorkspace
                 var gate = NextGateTrigger() is { } gt ? await LoadGateAsync(gt) : null;   // the gate reads them all
                 if (Left()) return;
                 _readinessEval = gate;
+                // BUG-490: a closed case's "N changes after closure" counts this change too (HR-15), as a whole reload does.
+                if (_case.Phase == CasePhase.Closed)
+                {
+                    var afterClosure = await Feed.ChangesAfterClosureAsync(change.CaseId);
+                    if (Left()) return;
+                    _afterClosure = afterClosure;
+                }
                 SeedKnownIds();
                 if (LiveRefreshFor(_activeTab, regions)) _liveRefresh++;
                 await SetTab(_activeTab);
