@@ -200,13 +200,17 @@ public static class CaseMilestones
 
         // HR-07: a gate passage belongs to the transition it guarded (recorded in the same save). A passed gate folds
         // into that milestone as a note; an override stays its own flagged row, at the transition's time.
-        foreach (var g in c.GatePassages)
+        // BUG-492: a climb (Complex Event to Incident) passes a gate per rung in one save; each folds in, in climb order.
+        var folded = new Dictionary<int, List<StageGateTrigger>>();
+        foreach (var g in c.GatePassages.OrderBy(g => g.PassedAtUtc).ThenBy(g => g.Trigger))
         {
             var guarded = GuardedTransitionKey(c, g);
             var at = guarded is { } gk && list.FirstOrDefault(m => m.Key == gk) is { } tm ? tm.AtUtc : g.PassedAtUtc;
             if (!g.WasOverridden && guarded is { } key && list.FindIndex(m => m.Key == key) is var i and >= 0)
             {
-                list[i] = list[i] with { Note = $"{GateName(g.Trigger)} gate passed" };
+                if (!folded.TryGetValue(i, out var gates)) folded[i] = gates = [];
+                if (!gates.Contains(g.Trigger)) gates.Add(g.Trigger);
+                list[i] = list[i] with { Note = PassedNote(gates) };
                 continue;
             }
             list.Add(new CaseMilestone($"gate:{g.Id}", at, MilestoneKind.Gate,
@@ -283,7 +287,7 @@ public static class CaseMilestones
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     // HR-07: the transition milestone a gate passage guarded: the change to Closed for the close gate, the change to
-    // the gate's classification for the others, recorded within a minute of the passage (the same save).
+    // the gate's classification (or past it, on a climb) for the others, recorded within a minute of the passage (the same save).
     private static string? GuardedTransitionKey(Case c, GatePassage g)
     {
         static bool Near(DateTimeOffset a, DateTimeOffset b) => (a - b).Duration() <= TimeSpan.FromMinutes(1);
@@ -298,7 +302,8 @@ public static class CaseMilestones
             _ => null
         };
         return c.ClassificationChanges.Where(x => !IsInitial(c)(x) && Near(x.ChangedAtUtc, g.PassedAtUtc)
-                                                  && (to is null || x.To == to || g.Trigger == StageGateTrigger.PromoteToAdverseEvent))
+                                                  // BUG-492: a rung passed on the way up guards the climb past it
+                                                  && (to is null || x.To >= to || g.Trigger == StageGateTrigger.PromoteToAdverseEvent))
             .OrderBy(x => (x.ChangedAtUtc - g.PassedAtUtc).Duration()).Select(x => $"cls:{x.Id}").FirstOrDefault();
     }
 
@@ -306,6 +311,14 @@ public static class CaseMilestones
         t.TotalMinutes < 90 ? $"{Math.Max(1, (int)Math.Round(t.TotalMinutes))} min"
         : t.TotalHours < 48 ? $"{(int)Math.Round(t.TotalHours)} h"
         : $"{(int)t.TotalDays} d {(int)(t.TotalHours % 24)} h";
+
+    // BUG-492: "Promotion gate passed"; for a climb, "Promotion and Incident escalation gates passed".
+    private static string PassedNote(List<StageGateTrigger> gates)
+    {
+        var names = gates.Select(GateName).ToList();
+        return names.Count == 1 ? $"{names[0]} gate passed"
+            : $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]} gates passed";
+    }
 
     private static string GateName(StageGateTrigger t) => t switch
     {

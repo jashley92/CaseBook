@@ -974,6 +974,46 @@ public class CaseTests
     }
 
     [Fact]
+    public void Every_gate_a_climb_passes_folds_into_its_transition_in_climb_order(/* BUG-492 */)
+    {
+        // A Complex Event raised straight to Breach passes a gate per rung, in one save (recorded in any order).
+        var c = Case.Open(2026, 0, "Beaconing", "Odd beaconing", classification: null, Severity.Medium,
+            CaseOrigin.InternalDetection, "a1", Now);
+        var at = Now.AddHours(1);
+        c.RecordGatePassage(StageGateTrigger.EscalateToBreach, false, null, "Data left", "[MET] z", "ic1", at);
+        c.RecordGatePassage(StageGateTrigger.PromoteToAdverseEvent, false, null, "Data left", "[MET] x", "ic1", at);
+        c.RecordGatePassage(StageGateTrigger.EscalateToIncident, false, null, "Data left", "[MET] y", "ic1", at);
+        c.Reclassify(Classification.Breach, "Data left", "ic1", at);
+        var labels = new IncidentManager.Application.Cases.MilestoneLabels(x => x?.ToString() ?? "Complex Event", s => s.ToString(), p => p.ToString(), m => "");
+
+        var ms = IncidentManager.Application.Cases.CaseMilestones.Project(c, labels);
+
+        ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Classification).Note
+            .Should().Be("Promotion, Incident escalation and Breach escalation gates passed");
+        ms.Should().NotContain(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Gate);
+
+        // Two rungs: "and"; an overridden rung stays its own flagged row and leaves the passed one's note alone.
+        var d = Case.Open(2026, 0, "Beaconing", "Odd beaconing", classification: null, Severity.Medium,
+            CaseOrigin.InternalDetection, "a1", Now);
+        d.RecordGatePassage(StageGateTrigger.PromoteToAdverseEvent, false, null, "Takeover", "[MET] x", "ic1", at);
+        d.RecordGatePassage(StageGateTrigger.EscalateToIncident, false, null, "Takeover", "[MET] y", "ic1", at);
+        d.Reclassify(Classification.Incident, "Takeover", "ic1", at);
+        CaseMilestonesNote(d).Should().Be("Promotion and Incident escalation gates passed");
+
+        var e = Case.Open(2026, 0, "Beaconing", "Odd beaconing", classification: null, Severity.Medium,
+            CaseOrigin.InternalDetection, "a1", Now);
+        e.RecordGatePassage(StageGateTrigger.PromoteToAdverseEvent, false, null, "Takeover", "[MET] x", "ic1", at);
+        e.RecordGatePassage(StageGateTrigger.EscalateToIncident, true, "Lead on leave", "Takeover", "[UNMET(OVERRIDDEN)] y", "ic1", at);
+        e.Reclassify(Classification.Incident, "Takeover", "ic1", at);
+        CaseMilestonesNote(e).Should().Be("Promotion gate passed");
+        IncidentManager.Application.Cases.CaseMilestones.Project(e, labels)
+            .Should().ContainSingle(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Gate && m.Flagged);
+
+        string? CaseMilestonesNote(Case x) => IncidentManager.Application.Cases.CaseMilestones.Project(x, labels)
+            .Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Classification).Note;
+    }
+
+    [Fact]
     public void AddEntity_again_does_not_downgrade_benign_either()
     {
         var c = NewCase();
