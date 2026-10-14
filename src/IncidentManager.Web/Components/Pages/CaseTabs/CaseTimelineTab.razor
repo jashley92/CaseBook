@@ -1262,7 +1262,17 @@ else
             if (_tlEditId is null && !_stashTaken)
             {
                 _stashTaken = true;
-                if (string.IsNullOrEmpty(_tlDesc) && ComposerDrafts?.GetValueOrDefault(InvEditorId) is { } stashed) _tlDesc = stashed;
+                if (string.IsNullOrEmpty(_tlDesc) && ComposerDrafts?.GetValueOrDefault(InvEditorId) is { } stashed)
+                {
+                    _tlDesc = stashed;
+                    // BUG-398: an editor left mounted by an entry edit isn't initialised again below, so it's given the
+                    // stash here; otherwise it stayed blank and the next teardown read "" over the stash.
+                    if (_mdEditors.Contains(InvEditorId))
+                    {
+                        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, stashed); }
+                        catch (JSException) { /* best effort; _tlDesc still holds it */ }
+                    }
+                }
             }
             desired[InvEditorId] = _tlDesc ?? "";
         }
@@ -1309,8 +1319,10 @@ else
         string? val;
         try { val = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
         catch (JSException) { return; }   // nothing readable: keep what we had
+        if (_tlEditId is not null) return;   // an edit opened while this was read; its draft (BUG-35) holds the text
         _tlDesc = val ?? "";
-        KeepStash(val);
+        // BUG-398: before this tab has shown the stash, the editor held an edit's text (cleared), not the stash's.
+        if (_stashTaken) KeepStash(val);
     }
 
     private void KeepStash(string? text)
@@ -1910,7 +1922,9 @@ else
         if (_tlEditId is not null) return;   // switching from one edit to another keeps the draft from before the first
         _preEditTimes = (_tlWhen, _tlDay, _tlUntilDay);   // BUG-300: kept even when there's no text to stash
         var desc = _tlDesc;
-        if (_tlAddKind == TimelineKind.Investigation || _special == ComposerMode.Note)
+        // BUG-371: only a mounted editor holds the text. In Question mode it's gone (read back into _tlDesc), and its
+        // getValue is "", which dropped the Finding being written.
+        if (_mdEditors.Contains(InvEditorId))
         {
             try { desc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId) ?? desc; }
             catch (JSException) { /* use the bound value */ }
@@ -2717,12 +2731,19 @@ else
     // stashed — it would otherwise resurface as a new add entry after the tab remounts in add mode.
     private async Task StashDraft()
     {
-        if (ComposerDrafts is null || _tlEditId is not null) return;
+        // BUG-329: a tab that never had the add editor hasn't shown the stash, so it leaves it alone.
+        if (ComposerDrafts is null || !_stashTaken) return;
+        // BUG-397: while an edit is open, the add text is the draft BUG-35 kept aside; that, not the edit, is stashed.
+        if (_tlEditId is not null)
+        {
+            KeepStash(_draft?.Desc);
+            return;
+        }
         // BUG-329: with no editor mounted (an event step or a question showing), its getValue is "" and used to drop the
-        // stash. The add text is then _tlDesc, read back when the editor went; untouched if this tab never had one.
+        // stash. The add text is then _tlDesc, read back when the editor went.
         if (!_mdEditors.Contains(InvEditorId))
         {
-            if (_stashTaken) KeepStash(_tlDesc);
+            KeepStash(_tlDesc);
             return;
         }
         try { KeepStash(await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId)); }
