@@ -1330,8 +1330,16 @@
     {
         // BUG-394: a double-click mustn't run a second save, which could insert the same new AppSettings key twice.
         if (_effective is null || _savingSection) return;
+        // BUG-461: the section is fixed at the click. Switching sections during the awaits mustn't change what is
+        // saved, which edits the reload drops, or the section the toast names.
+        var groups = SectionGroups.ToHashSet();
+        var keys = SectionKeys();
+        var hasBrand = SectionHasBrand;
+        var hasLayout = SectionHasLayout;
+        var title = ActiveTitle;
         _brandError = null;
-        var saveBrand = SectionHasBrand && BrandDirty;
+        var saveBrand = hasBrand && BrandDirty;
+        var saveLayout = hasLayout && LayoutDirty;
         var accent = NullIfBlank(_accentColor);
         var ink = NullIfBlank(_inkColor);
         if (saveBrand && accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent color must be a hex value like #2563eb."; return; }
@@ -1343,19 +1351,21 @@
         {
             var changed = 0;
             var saved = new List<string>();   // REV-40: the keys already in effect if a later one fails
+            var layoutSaved = false;
             try
             {
-                foreach (var s in _effective.Where(e => SectionGroups.Contains(e.Definition.Group)).ToList())
+                foreach (var s in _effective.Where(e => groups.Contains(e.Definition.Group)).ToList())
                 {
                     if (!Differs(s.Definition.Key)) continue;
                     await Settings.SetAsync(s.Definition.Key, _form.GetValueOrDefault(s.Definition.Key));
                     saved.Add(s.Definition.Key);
                     changed++;
                 }
-                if (SectionHasLayout && LayoutDirty)
+                if (saveLayout)
                 {
                     // BUG-438: the layout is saved whole, so one another administrator saved since this page loaded is refused.
                     await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout), _layoutLoadedFrom);
+                    layoutSaved = true;
                     changed++;
                 }
                 if (saveBrand)
@@ -1367,18 +1377,20 @@
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
             {
-                if (saved.Count == 0) { Toasts.Error(ex.Message); return; }
+                if (saved.Count == 0 && !layoutSaved) { Toasts.Error(ex.Message); return; }
                 // REV-40: each key saves on its own, so the ones before the failure are in effect. Show them as saved, keep the
                 // rest as unsaved edits, and say which is which, rather than leave everything looking unsaved.
-                var names = string.Join(", ", saved.Select(k => _effective.FirstOrDefault(e => e.Definition.Key == k)?.Definition.Label ?? k));
-                await ReloadKeepingEdits(saved);
-                Toasts.Error($"Saved {names}, but not the rest: {ex.Message}");
+                // BUG-461: a layout already saved is dropped too, or it would stay "unsaved" on its old stamp and be refused as stale.
+                var names = saved.Select(k => _effective.FirstOrDefault(e => e.Definition.Key == k)?.Definition.Label ?? k).ToList();
+                if (layoutSaved) names.Add("the report layout");
+                await ReloadKeepingEdits(saved, dropLayout: layoutSaved);
+                Toasts.Error($"Saved {string.Join(", ", names)}, but not the rest: {ex.Message}");
                 return;
             }
 
-            await ReloadKeepingEdits(SectionKeys(), dropBrand: SectionHasBrand, dropLayout: SectionHasLayout);
+            await ReloadKeepingEdits(keys, dropBrand: hasBrand, dropLayout: hasLayout);
             if (saveBrand) await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
-            Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {ActiveTitle}.");
+            Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {title}.");
         }
         finally
         {
