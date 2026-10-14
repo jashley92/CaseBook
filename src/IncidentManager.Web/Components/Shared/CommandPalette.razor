@@ -244,7 +244,13 @@
                 _selected = (_selected - 1 + _results.Count) % _results.Count;
                 break;
             case "Enter":
-                await Activate(_selected);
+                // BUG-344: Enter straight after typing would act on the previous query's list while this one's refresh
+                // (Find's settle delay and search) is still running; wait for the list that matches what was typed.
+                while (_refreshing is { IsCompleted: false } pending)
+                {
+                    try { await pending; } catch { /* Refresh handles its own failures */ }
+                }
+                if (_open) await Activate(_selected);
                 break;
             case "Escape":
                 ClosePalette();
@@ -258,9 +264,14 @@
         await _results[index].Run();
     }
 
+    // BUG-344: the newest refresh, so Enter can wait for the list that matches the query typed.
+    private Task? _refreshing;
+
+    private Task Refresh() => _refreshing = RefreshCore();
+
     // Rebuilds the result list: static/contextual commands filtered by the query, plus Find's typed results once the
     // analyst starts typing (RD-20; need-to-know is enforced by FindService).
-    private async Task Refresh()
+    private async Task RefreshCore()
     {
         var q = _query.Trim();
         var items = new List<Cmd>();
