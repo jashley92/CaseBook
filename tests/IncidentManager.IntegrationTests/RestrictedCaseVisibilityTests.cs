@@ -104,5 +104,44 @@ public sealed class RestrictedCaseVisibilityTests : IDisposable
         (await svc.GetDetailAsync(id)).Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task Without_ViewCases_no_case_is_visible_not_even_one_the_user_commands(/* BUG-465 */)
+    {
+        var restricted = await SeedRestrictedCaseOwnedByAnotherAsync();
+        Guid open;
+        await using (var db = NewContext())
+        {
+            var c = Case.Open(2026, 98, "Open", "Open matter", Classification.Incident, Severity.Low,
+                CaseOrigin.InternalDetection, "nobody", _clock.UtcNow);
+            c.IncidentCommander = "nobody";
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+            open = c.Id;
+        }
+
+        // A domain user signed in with no CaseBook role, then custom roles granting everything but ViewCases.
+        _user.UserId = "nobody";
+        _user.RoleSet = [];
+        foreach (var perms in new HashSet<Permission>[]
+                 {
+                     [],
+                     [Permission.Administer],
+                     [Permission.ViewAllCases, Permission.ViewRestricted, Permission.EditCases],
+                 })
+        {
+            _user.PermissionSet = perms;
+            await using (var db = NewContext())
+                (await db.Cases.AsNoTracking().ForUser(_user).CountAsync()).Should().Be(0);
+            var svc = NewService();
+            (await svc.GetDetailAsync(open)).Should().BeNull();
+            (await svc.GetDetailAsync(restricted)).Should().BeNull();
+            (await svc.GetTaskResultsAsync(open)).Should().BeEmpty();
+        }
+
+        _user.PermissionSet = [Permission.ViewCases];   // the gate alone: the open case, which they also command
+        await using (var db = NewContext())
+            (await db.Cases.AsNoTracking().ForUser(_user).Select(c => c.Id).ToListAsync()).Should().Equal(open);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

@@ -6,7 +6,7 @@ namespace IncidentManager.Application.Cases;
 
 public static class CaseQueryExtensions
 {
-    /// <summary>Applies need-to-know scoping so a user only sees cases they are entitled to.</summary>
+    /// <summary>Applies need-to-know scoping so a user only sees cases they are entitled to (none without ViewCases).</summary>
     public static IQueryable<Case> ForUser(this IQueryable<Case> query, ICurrentUser user)
     {
         // Need-to-know is keyed on capabilities, not specific roles, so a custom role granting either
@@ -17,6 +17,9 @@ public static class CaseQueryExtensions
         //     LegalPrivacy). Under this single scoping gate both converge on "see everything", but they are
         //     distinct grants; wiring ViewRestricted here makes the permission enforce what its name and the
         //     access-review report already claim (it was previously declared and displayed but never consulted).
+        // BUG-465: no case at all without ViewCases (as CaseAudience.CanSee). Windows auth signs in every domain user,
+        // and a signed-in user with no CaseBook role reached every non-restricted case through the palette and tabs.
+        if (!user.Has(Permission.ViewCases)) return query.Where(_ => false);
         if (user.Has(Permission.ViewAllCases) || user.Has(Permission.ViewRestricted)) return query;
 
         // Otherwise: every non-restricted case, plus any restricted case the user commands or is assigned to.

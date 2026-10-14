@@ -5,12 +5,13 @@
 @inject IncidentManager.Application.Preferences.UserDisplayPreferenceService DisplayPrefs
 @inject IncidentManager.Web.Services.CaseTabsState Tabs
 @inject ILogger<MainLayout> Logger
+@inject ICurrentUser CurrentUser
 @implements IDisposable
 
 @* UX-02: first focusable element on the page, so a keyboard/AT user can skip the sidebar. *@
 <a class="im-skip-link" href="#main-content">Skip to content</a>
 
-<div class="page @(Tabs.Beside is not null ? "has-beside" : "")">
+<div class="page @(Tabs.Beside is not null && CurrentUser.Has(Permission.ViewCases) ? "has-beside" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
@@ -22,7 +23,9 @@
             <UndeliveredAlertBanner />
         </AuthorizeView>
         <div class="top-row px-4 d-flex justify-content-between align-items-center gap-3">
-            <AuthorizeView>
+            @* BUG-465: case search and the case tabs need ViewCases, not just a sign-in (Windows auth signs in every
+               domain user, and one with no CaseBook role still saw them). *@
+            <AuthorizeView Policy="@Policies.ViewCases">
                 <Authorized>
                     <PaletteSearchButton />
                     @* RD-21: the cases you're on, as tabs. *@
@@ -35,7 +38,10 @@
             <div class="d-flex align-items-center gap-2">
                 <AuthorizeView>
                     <Authorized>
-                        <NotificationBell />
+                        @* BUG-465: the bell is case activity. *@
+                        <AuthorizeView Policy="@Policies.ViewCases" Context="viewCases">
+                            <NotificationBell />
+                        </AuthorizeView>
                         <ProfileMenu />
                     </Authorized>
                     <NotAuthorized>
@@ -61,8 +67,8 @@
                 </ErrorContent>
             </ErrorBoundary>
         </article>
-        @* RD-21: a second case's Briefing beside the page. *@
-        <AuthorizeView>
+        @* RD-21: a second case's Briefing beside the page. BUG-465: ViewCases. *@
+        <AuthorizeView Policy="@Policies.ViewCases">
             <Authorized>
                 @if (Tabs.Beside is { } beside)
                 {
@@ -75,9 +81,12 @@
 
 <ToastHost />
 
+@* BUG-465: the palette searches cases (Find), and lists pins and recents. *@
+<AuthorizeView Policy="@Policies.ViewCases">
+    <CommandPalette />
+</AuthorizeView>
 <AuthorizeView>
     <Authorized>
-        <CommandPalette />
         <IdleGuard />
         <ReportJobToaster />
         <PhoneNav />

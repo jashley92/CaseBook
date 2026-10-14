@@ -90,6 +90,30 @@ public sealed class CaseTabsServiceTests : IDisposable
         (await tabs.ListAsync()).Select(t => t.CaseId).Should().Equal(ids[0]);
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Without_ViewCases_stored_tabs_and_pins_list_nothing(string provider /* BUG-465 */)
+    {
+        _db = TestDatabase.Open(provider);
+        var ids = Seed(2, out _);
+        await NewTabs().OpenAsync(ids[0]);
+        await using (var db = NewContext())
+        {
+            db.PinnedCases.Add(new PinnedCase { UserId = "analyst1", CaseId = ids[1], PinnedAtUtc = _clock.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        (await NewTabs().ListAsync()).Should().HaveCount(2);
+
+        // A former analyst: still signed in by Windows, no CaseBook role.
+        _me.RoleSet = [];
+        (await NewTabs().ListAsync()).Should().BeEmpty();
+        var shortcuts = new CaseShortcutService(_db.Factory(), _me, _clock);
+        (await shortcuts.PinnedAsync()).Should().BeEmpty();
+
+        await NewTabs().OpenAsync(ids[1]);   // ignored, like a case they can't see
+        await using (var db = NewContext())
+            (await db.OpenCaseTabs.CountAsync(t => t.CaseId == ids[1])).Should().Be(0);
+    }
+
     // Another window removes the tab (closes it, or lets go of it) between this one's read and its delete.
     private CaseTabsService RacingTabs(Guid closedElsewhere, out RaceCommandInterceptor race)
     {

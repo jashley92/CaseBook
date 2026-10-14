@@ -468,6 +468,24 @@ public sealed class FindServiceTests : IDisposable
         (await NewFind().FindAsync("mailbox audit")).Cases.Should().Contain(c => c.Id == _alpha);
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Without_ViewCases_nothing_is_found(string provider /* BUG-465 */)
+    {
+        Use(provider);
+        _me.RoleSet = [];   // signed in by Windows, no CaseBook role
+        foreach (var query in new[] { "203.0.113.66", "password reset", "Phishing_Wave", "2026-01_Phishing_Wave" })
+        {
+            var r = await NewFind().FindAsync(query);
+            r.Entities.Should().BeEmpty(query);
+            r.Cases.Should().BeEmpty(query);
+            r.Entries.Should().BeEmpty(query);
+            r.Tasks.Should().BeEmpty(query);
+            r.Evidence.Should().BeEmpty(query);
+            r.Notes.Should().BeEmpty(query);
+            r.Counts.Values.Should().AllSatisfy(n => n.Should().Be(0), query);
+        }
+    }
+
     [Fact]
     public void A_filter_it_cant_use_is_said_back(/* WF-88 */)
     {

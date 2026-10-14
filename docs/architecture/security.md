@@ -153,6 +153,7 @@ Consequences worth knowing:
 
 ```csharp
 // Application/Cases/CaseQueryExtensions.cs (simplified)
+if (!user.Has(ViewCases)) return query.Where(_ => false);                // no case at all (BUG-465)
 if (user.Has(ViewAllCases) || user.Has(ViewRestricted)) return query;   // cleared roles see everything
 return query.Where(c => !c.IsRestricted
                      || c.IncidentCommander == user.UserId
@@ -170,6 +171,9 @@ return query.Where(c => !c.IsRestricted
 - The pending-import queue (`CaseImportService`) leaves out a submission into an existing case the reviewer
   can't see, for listing, counting, previewing, applying and rejecting. One with no target, or a target that no
   longer exists, is visible to every reviewer.
+- Without `ViewCases` it returns nothing, whatever else the user holds (as `CaseAudience.CanSee`). Windows auth
+  signs in every domain user, so this is what keeps one with no CaseBook role out of the palette, Find and the
+  case tabs; the layout also hides those (and the activity bell) behind the `ViewCases` policy (BUG-465).
 - **No existence leak:** a hidden case and a missing case give the same "not found".
 - Restricting is open to anyone with `EditCases` (they're kept on the case). Lifting needs the IC, or
   `ViewAllCases` or `ViewRestricted`.
