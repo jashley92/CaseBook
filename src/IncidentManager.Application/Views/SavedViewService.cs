@@ -95,30 +95,34 @@ public sealed class SavedViewService
         if (cleanName.Length > 120) throw new ArgumentException("A view name must be 120 characters or fewer.");
         var cleanQuery = NormalizeQuery(query);
 
-        using var db = _factory.CreateDbContext();
         var me = _user.UserId;
-        var existing = await db.SavedViews.FirstOrDefaultAsync(
-            v => v.OwnerUserId == me && v.Name == cleanName, ct);
-
-        if (existing is null)
+        // BUG-452: two first saves of the same name (a double click, two tabs) both insert, and the second hits the
+        // (OwnerUserId, Name) unique index. That one re-reads the row the first inserted and updates it instead.
+        for (var attempt = 0; ; attempt++)
         {
-            var view = new SavedView
+            using var db = _factory.CreateDbContext();
+            var existing = await db.SavedViews.FirstOrDefaultAsync(
+                v => v.OwnerUserId == me && v.Name == cleanName, ct);
+            var adding = existing is null;
+            if (existing is null)
             {
-                OwnerUserId = me,
-                Name = cleanName,
-                Query = cleanQuery,
-                IsShared = isShared,
-                CreatedAtUtc = _clock.UtcNow,
-            };
-            db.SavedViews.Add(view);
-            await db.SaveChangesAsync(ct);
-            return view.Id;
+                existing = new SavedView
+                {
+                    OwnerUserId = me,
+                    Name = cleanName,
+                    CreatedAtUtc = _clock.UtcNow,
+                };
+                db.SavedViews.Add(existing);
+            }
+            existing.Query = cleanQuery;
+            existing.IsShared = isShared;
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return existing.Id;
+            }
+            catch (DbUpdateException) when (adding && attempt == 0) { /* lost the insert race: update the row that won */ }
         }
-
-        existing.Query = cleanQuery;
-        existing.IsShared = isShared;
-        await db.SaveChangesAsync(ct);
-        return existing.Id;
     }
 
     /// <summary>Deletes one of the current user's own views. Shared views from others cannot be deleted here.</summary>

@@ -91,6 +91,30 @@ public sealed class SavedViewTests : IDisposable
     }
 
     [Fact]
+    public async Task A_first_save_that_loses_the_insert_race_updates_the_view_that_won()
+    {
+        // BUG-452: another tab's save of the same name inserts between this one's read and its insert.
+        _user.UserId = "alice";
+        var wonId = Guid.NewGuid();
+        var race = new RaceCommandInterceptor("INSERT INTO \"SavedViews\"",
+            "INSERT INTO \"SavedViews\" (\"Id\", \"OwnerUserId\", \"Name\", \"Query\", \"IsShared\", \"IsDefault\", \"CreatedAtUtc\") " +
+            "VALUES ($id, 'alice', 'Queue', 'sla=true', 0, 0, 0)",
+            ("$id", wonId.ToString().ToUpperInvariant()));
+        var racing = new SavedViewService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()), race)
+            .Options), _user, _dir, _clock);
+
+        var id = await racing.SaveAsync("Queue", "overdue=true", isShared: true);
+
+        race.Ran.Should().BeTrue();
+        id.Should().Be(wonId);
+        var v = (await NewService().ListAsync()).Should().ContainSingle().Subject;
+        v.Query.Should().Be("overdue=true");
+        v.IsShared.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task A_leading_question_mark_is_stripped_when_saving()
     {
         _user.UserId = "alice";
