@@ -18,8 +18,8 @@ public static class ChatPayload
     private static string Slack(ChatNotification n)
     {
         var sb = new StringBuilder();
-        sb.Append('*').Append(n.Title).Append('*');
-        if (!string.IsNullOrWhiteSpace(n.Text)) sb.Append('\n').Append(n.Text);
+        sb.Append('*').Append(SlackEscape(n.Title)).Append('*');
+        if (!string.IsNullOrWhiteSpace(n.Text)) sb.Append('\n').Append(SlackEscape(n.Text));
         if (!string.IsNullOrWhiteSpace(n.Url)) sb.Append('\n').Append('<').Append(n.Url).Append("|Open in CaseBook>");
         return JsonSerializer.Serialize(new { text = sb.ToString() });
     }
@@ -35,8 +35,8 @@ public static class ChatPayload
             ["@context"] = "https://schema.org/extensions",
             ["themeColor"] = color,
             ["summary"] = n.Title,
-            ["title"] = n.Title,
-            ["text"] = n.Text,
+            ["title"] = TeamsEscape(n.Title),
+            ["text"] = TeamsEscape(n.Text),
         };
         if (!string.IsNullOrWhiteSpace(n.Url))
         {
@@ -51,5 +51,26 @@ public static class ChatPayload
             };
         }
         return JsonSerializer.Serialize(card);
+    }
+
+    // BUG-361: case text is text. Slack reads &, < and > as its control sequences, so a title or note holding
+    // "<!channel>" pinged the channel and "<https://evil|Open in CaseBook>" was a disguised link. The link built above
+    // is left as it is.
+    private static string SlackEscape(string s) =>
+        s.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal)
+         .Replace(">", "&gt;", StringComparison.Ordinal);
+
+    // BUG-361: a MessageCard's title and text are Markdown, so "[Open in CaseBook](https://evil)" was a disguised link
+    // and * or _ restyled the rest. Those characters are escaped; the summary is plain text and stays as it is.
+    private static string? TeamsEscape(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        var sb = new StringBuilder(s.Length + 8);
+        foreach (var ch in s)
+        {
+            if (ch is '\\' or '[' or ']' or '*' or '_' or '`' or '~' or '<' or '>') sb.Append('\\');
+            sb.Append(ch);
+        }
+        return sb.ToString();
     }
 }

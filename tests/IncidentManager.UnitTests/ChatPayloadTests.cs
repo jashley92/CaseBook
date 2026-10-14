@@ -53,6 +53,31 @@ public class ChatPayloadTests
         var json = ChatPayload.Serialize(ChatWebhookFormat.Slack, new ChatNotification("A \"quote\"", "b & c"));
 
         using var doc = JsonDocument.Parse(json);   // must parse cleanly despite the quote/ampersand
-        doc.RootElement.GetProperty("text").GetString().Should().Contain("\"quote\"").And.Contain("b & c");
+        // BUG-361: and & is Slack-escaped, so it shows as typed.
+        doc.RootElement.GetProperty("text").GetString().Should().Contain("\"quote\"").And.Contain("b &amp; c");
+    }
+
+    [Fact]
+    public void Slack_case_text_cannot_ping_the_channel_or_disguise_a_link(/* BUG-361 */)
+    {
+        var json = ChatPayload.Serialize(ChatWebhookFormat.Slack,
+            new ChatNotification("<!channel> urgent", "see <https://evil.example|Open in CaseBook> & more", "https://cb.example/cases/1"));
+
+        var text = JsonDocument.Parse(json).RootElement.GetProperty("text").GetString();
+        text.Should().StartWith("*&lt;!channel&gt; urgent*")
+            .And.Contain("see &lt;https://evil.example|Open in CaseBook&gt; &amp; more")
+            .And.EndWith("<https://cb.example/cases/1|Open in CaseBook>", "the link CaseBook builds is left as it is");
+    }
+
+    [Fact]
+    public void Teams_case_text_cannot_add_a_link_or_restyle_the_card(/* BUG-361 */)
+    {
+        var json = ChatPayload.Serialize(ChatWebhookFormat.Teams,
+            new ChatNotification("2026-01_Wave *now*", "[Open in CaseBook](https://evil.example) `x` <b>"));
+
+        var root = JsonDocument.Parse(json).RootElement;
+        root.GetProperty("title").GetString().Should().Be(@"2026-01\_Wave \*now\*");
+        root.GetProperty("text").GetString().Should().Be(@"\[Open in CaseBook\](https://evil.example) \`x\` \<b\>");
+        root.GetProperty("summary").GetString().Should().Be("2026-01_Wave *now*", "the summary is plain text");
     }
 }
