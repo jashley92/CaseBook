@@ -24,6 +24,9 @@ window.imIdle = (function () {
 
     function onActivity() {
         if (warned) return;            // during the warning, ignore activity — require an explicit choice
+        // BUG-550: after a sleep the first event (the wake's visibilitychange, a key) can come before the overdue tick.
+        // A boundary that has already passed is acted on, not reset: the warning, or the lock past the deadline.
+        if (Date.now() - last >= idleMs - warnMs) { tick(); return; }
         last = Date.now();
     }
 
