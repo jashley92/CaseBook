@@ -1358,11 +1358,17 @@ else
             }
             catch (JSException) { /* cosmetic */ }
         }
-        if (_autofocusPending && _mdEditors.Contains(InvEditorId))
+        // BUG-535: ReconcileEditor has just mounted the editor for this render, so the request ends here whether or not
+        // there is one to focus (a Question composer has none, a failed init leaves none); left pending, it ignored every
+        // later 'l'.
+        if (_autofocusPending)
         {
             _autofocusPending = false;
-            try { await JS.InvokeVoidAsync("markdownEditor.focus", InvEditorId); }
-            catch (JSException) { /* editor not ready; harmless */ }
+            if (_mdEditors.Contains(InvEditorId))
+            {
+                try { await JS.InvokeVoidAsync("markdownEditor.focus", InvEditorId); }
+                catch (JSException) { /* editor not ready; harmless */ }
+            }
             await OnAutofocusHandled.InvokeAsync();
         }
         // UX-01 focus trap for the correction dialog (INV-05b), as the workspace does for its own modals.
@@ -1752,7 +1758,12 @@ else
 
     private async Task OpenNotesNow()
     {
-        await SwitchToNotes();
+        // BUG-534: switching lens cancels an open entry edit, so the 'n' shortcut or a link to a note asks first, as JumpTo
+        // does. Already on the notes lens, 'n' just puts the composer in Working note mode. Either way the request is let
+        // go: left set, it switched to the notes lens on a later render.
+        if (_tlEditId is not null) Toasts.Info("Save or cancel the entry you're editing, then try again.");
+        else if (!_notesOnly) await SwitchToNotes();
+        else if (AutofocusComposer) SetMode(ComposerMode.Note);
         await OnOpenNotesHandled.InvokeAsync();
         StateHasChanged();
     }
@@ -2527,13 +2538,26 @@ else
         // BUG-442: every reload (a retract here or by someone else, an edit) re-checks the step "Comes after" names.
         _tlAfter = CurrentAfter(_tlAfter, _tlEditId);
         if (_draft is { } d && CurrentAfter(d.After, null) is var after && after != d.After) _draft = d with { After = after };
-        if (AutofocusComposer && !_autofocusPending && CanEdit && _tlEditId is null)
+        if (AutofocusComposer && !_autofocusPending)
         {
-            _autofocusPending = true;
-            _decOnly = false;
-            if (_tlLens == TimelineKind.Event) _tlLens = null;
-            _tlAddKind = TimelineKind.Investigation;
-            _composerOpen = true;
+            // BUG-534: an open entry edit is the composer, so 'l' or 'n' leaves it be. BUG-535: and 'l' beside a working
+            // note being edited (Ctrl+Enter there saves the note). Either way the shortcut is let go, so it can't fire
+            // later, once the edit ends.
+            if (!CanEdit || _tlEditId is not null || (!OpenNotes && NoteEditKeepsNotes())) _ = OnAutofocusHandled.InvokeAsync();
+            else
+            {
+                _autofocusPending = true;
+                _composerOpen = true;
+                if (!OpenNotes)
+                {
+                    // BUG-535: 'l' logs an investigation finding whatever lens or composer mode was on ('n' opens the
+                    // notes lens below, in Working note mode).
+                    _decOnly = false;
+                    _notesOnly = false;
+                    if (_tlLens == TimelineKind.Event) _tlLens = null;
+                    SetMode(ComposerMode.Finding);
+                }
+            }
         }
         // BUG-510: "changes since" asked for while on the Working notes lens (which has no such filter) shows the timeline.
         // Before OpenNotes, so a link to a note that arrives with it still opens the note.
@@ -2542,7 +2566,7 @@ else
             _appliedSince = ChangedSinceUtc;
             if (ChangedSinceUtc is not null && _notesOnly && !NoteEditKeepsNotes()) _notesOnly = false;
         }
-        if (OpenNotes && !_notesOnly)
+        if (OpenNotes)
         {
             _ = OpenNotesNow();
         }
