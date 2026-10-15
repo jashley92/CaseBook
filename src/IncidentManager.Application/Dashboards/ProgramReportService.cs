@@ -169,28 +169,71 @@ public sealed class ProgramReportService
     private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
         List<ActionRow> Actions, SlaTargets Targets, List<(Guid CaseId, DateTimeOffset At, SlaState State)> Notices, History History,
         DateTimeOffset NowUtc, Func<DateTimeOffset, SlaTargets> TargetsAt,
-        Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset? Before)>>? ReportedEdits = null)
+        Dictionary<Guid, List<(DateTimeOffset At, Stamps Before)>>? StampEdits = null)
     {
         /// <summary>
         /// BUG-374: the reported time as the record stood at <paramref name="end"/> (every later change undone, from the
         /// value its audit entry records as before), so a case made unreported again later (a new jurisdiction) or
         /// reported again doesn't move a quarter already reported. Unreported then, a report recorded afterwards but
         /// dated before the end (Legal often reports before it is entered) is that quarter's: the time it settled on.
+        /// BUG-499: likewise every milestone stamp the window reads, so moving a case back into Containment later (which
+        /// clears its resolved time and its "not needed", BUG-229) doesn't move a quarter already reported. Whether
+        /// containment was needed goes with the contained time it was recorded with.
         /// </summary>
-        public DateTimeOffset? ReportedAt(CaseRow r, DateTimeOffset end)
+        public Stamps StampsAt(CaseRow r, DateTimeOffset end)
         {
-            if (ReportedEdits?.GetValueOrDefault(r.Id) is not { Count: > 0 } edits) return r.ReportedAtUtc;
+            var now = r.Stamps;
+            if (StampEdits?.GetValueOrDefault(r.Id) is not { Count: > 0 } edits) return now;
             var i = edits.FindIndex(e => e.At >= end);
-            if (i < 0) return r.ReportedAtUtc;
-            if (edits[i].Before is { } stood) return stood;
-            DateTimeOffset? settled = null;
-            for (var j = i; j < edits.Count; j++)
+            if (i < 0) return now;
+            var s = edits[i].Before;
+            if (s.ReportedAtUtc is null && Settled(x => x.ReportedAtUtc) is { } rep) s = s with { ReportedAtUtc = rep.ReportedAtUtc };
+            if (s.ContainedAtUtc is null && Settled(x => x.ContainedAtUtc) is { } con)
+                s = s with { ContainedAtUtc = con.ContainedAtUtc, ContainmentNotNeeded = con.ContainmentNotNeeded };
+            if (s.ResolvedAtUtc is null && Settled(x => x.ResolvedAtUtc) is { } res) s = s with { ResolvedAtUtc = res.ResolvedAtUtc };
+            if (s.DetectedAtUtc is null && Settled(x => x.DetectedAtUtc) is { } det) s = s with { DetectedAtUtc = det.DetectedAtUtc };
+            if (s.OccurredAtUtc is null && Settled(x => x.OccurredAtUtc) is { } occ) s = s with { OccurredAtUtc = occ.OccurredAtUtc };
+            return s;
+
+            // Empty at the end: the record as it stood once the stamp was set afterwards (until it was next cleared), when
+            // the time it settled on is before the end.
+            Stamps? Settled(Func<Stamps, DateTimeOffset?> field)
             {
-                var after = j + 1 < edits.Count ? edits[j + 1].Before : r.ReportedAtUtc;
-                if (after is null) break;
-                settled = after;
+                Stamps? settled = null;
+                for (var j = i; j < edits.Count; j++)
+                {
+                    var after = j + 1 < edits.Count ? edits[j + 1].Before : now;
+                    if (field(after) == field(edits[j].Before)) continue;   // an edit to another stamp
+                    if (field(after) is null) break;
+                    settled = after;
+                }
+                return settled is { } st && field(st) < end ? st : null;
             }
-            return settled < end ? settled : null;
+        }
+    }
+
+    /// <summary>BUG-499: the milestone stamps a window reads, rebuilt together as the record stood at its end.</summary>
+    private sealed record Stamps(DateTimeOffset? OccurredAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc,
+        bool ContainmentNotNeeded, DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc)
+    {
+        /// <summary>BUG-165: a case that didn't need containment has no time to contain and no containment target outcome.</summary>
+        public DateTimeOffset? ContainedIfNeeded => ContainmentNotNeeded ? null : ContainedAtUtc;
+
+        /// <summary>The stamps just before an edit: the fields its audit entry records as before take those values.</summary>
+        public Stamps Before(JsonElement before)
+        {
+            var s = this;
+            if (before.TryGetProperty(nameof(Case.OccurredAtUtc), out var v)) s = s with { OccurredAtUtc = Instant(v) };
+            if (before.TryGetProperty(nameof(Case.DetectedAtUtc), out v)) s = s with { DetectedAtUtc = Instant(v) };
+            if (before.TryGetProperty(nameof(Case.ContainedAtUtc), out v)) s = s with { ContainedAtUtc = Instant(v) };
+            if (before.TryGetProperty(nameof(Case.ContainmentNotNeededReason), out v))
+                s = s with { ContainmentNotNeeded = v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString()) };
+            if (before.TryGetProperty(nameof(Case.ResolvedAtUtc), out v)) s = s with { ResolvedAtUtc = Instant(v) };
+            if (before.TryGetProperty(nameof(Case.ReportedAtUtc), out v)) s = s with { ReportedAtUtc = Instant(v) };
+            return s;
+
+            static DateTimeOffset? Instant(JsonElement e) =>
+                e.ValueKind == JsonValueKind.String && e.TryGetDateTimeOffset(out var t) ? t : null;
         }
     }
 
@@ -237,9 +280,8 @@ public sealed class ProgramReportService
         var cases = db.Cases.AsNoTracking().ForUser(_user);
         if (!includeExercises) cases = cases.ExcludingExercises();
 
-        // BUG-165: a case that didn't need containment has no time to contain and no containment target outcome.
         var rows = await cases.Select(c => new CaseRow(c.Id, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
-            c.OccurredAtUtc, c.DetectedAtUtc, c.ContainmentNotNeededReason == null ? c.ContainedAtUtc : null, c.ResolvedAtUtc,
+            c.OccurredAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ContainmentNotNeededReason != null, c.ResolvedAtUtc,
             c.ReportedAtUtc, c.ClosedAtUtc, c.IsArchived)).ToListAsync(ct);
         // The child tables filter by a subquery over the same visible cases rather than a list of every id.
         var ids = cases.Select(c => c.Id);
@@ -300,35 +342,45 @@ public sealed class ProgramReportService
             targetsAt = history.At;
         }
         return new Loaded(rows, breachFirstAt, reviews, actions, current, notices, new History(phases, classes, severities), _clock.UtcNow,
-            targetsAt, await ReportedEditsAsync(db, rows, ct));
+            targetsAt, await StampEditsAsync(db, rows, ct));
     }
 
-    /// <summary>BUG-374: each case's changes to its reported time (what it held before each), oldest first.</summary>
-    private static async Task<Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset? Before)>>> ReportedEditsAsync(IAppDbContext db,
+    /// <summary>BUG-374, BUG-499: each case's changes to its milestone stamps, oldest first, each with the stamps as they
+    /// stood just before it (rebuilt from today's, undoing the edits newest first). One read for every case.</summary>
+    private static async Task<Dictionary<Guid, List<(DateTimeOffset At, Stamps Before)>>> StampEditsAsync(IAppDbContext db,
         List<CaseRow> rows, CancellationToken ct)
     {
         var keys = rows.Select(r => r.Id.ToString()).ToList();
-        var field = "\"" + nameof(Case.ReportedAtUtc) + "\"";
+        static string F(string name) => "\"" + name + "\"";
+        var (occurred, detected, contained) = (F(nameof(Case.OccurredAtUtc)), F(nameof(Case.DetectedAtUtc)), F(nameof(Case.ContainedAtUtc)));
+        var (notNeeded, resolved, reported) = (F(nameof(Case.ContainmentNotNeededReason)), F(nameof(Case.ResolvedAtUtc)), F(nameof(Case.ReportedAtUtc)));
         var edits = await db.AuditLog.AsNoTracking()
             .Where(x => x.EntityType == nameof(Case) && x.Action == AuditAction.Update && x.BeforeJson != null
-                        && x.BeforeJson.Contains(field) && x.EntityId != null && keys.Contains(x.EntityId))
+                        && (x.BeforeJson.Contains(occurred) || x.BeforeJson.Contains(detected) || x.BeforeJson.Contains(contained)
+                            || x.BeforeJson.Contains(notNeeded) || x.BeforeJson.Contains(resolved) || x.BeforeJson.Contains(reported))
+                        && x.EntityId != null && keys.Contains(x.EntityId))
             .Select(x => new { x.EntityId, x.AtUtc, x.Sequence, x.BeforeJson })
             .ToListAsync(ct);
-        var map = new Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset? Before)>>();
+        var byId = rows.ToDictionary(r => r.Id);
+        var map = new Dictionary<Guid, List<(DateTimeOffset At, Stamps Before)>>();
         foreach (var g in edits.GroupBy(x => x.EntityId!, StringComparer.OrdinalIgnoreCase))
         {
-            if (!Guid.TryParse(g.Key, out var id)) continue;
-            var list = new List<(DateTimeOffset At, DateTimeOffset? Before)>();
-            foreach (var x in g.OrderBy(x => x.Sequence))
+            if (!Guid.TryParse(g.Key, out var id) || !byId.TryGetValue(id, out var row)) continue;
+            var list = new List<(DateTimeOffset At, Stamps Before)>();
+            var stamps = row.Stamps;
+            foreach (var x in g.OrderByDescending(x => x.Sequence))
             {
                 try
                 {
                     using var doc = JsonDocument.Parse(x.BeforeJson!);
-                    if (!doc.RootElement.TryGetProperty(nameof(Case.ReportedAtUtc), out var v)) continue;
-                    list.Add((x.AtUtc, v.ValueKind == JsonValueKind.String && v.TryGetDateTimeOffset(out var t) ? t : null));
+                    if (doc.RootElement.ValueKind != JsonValueKind.Object) continue;
+                    var before = stamps.Before(doc.RootElement);
+                    if (before == stamps) continue;   // none of the stamps moved (another field, or a new "not needed" reason)
+                    list.Add((x.AtUtc, stamps = before));
                 }
                 catch (JsonException) { /* an entry it can't read is skipped */ }
             }
+            list.Reverse();
             if (list.Count > 0) map[id] = list;
         }
         return map;
@@ -393,7 +445,11 @@ public sealed class ProgramReportService
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
         DateTimeOffset CreatedAtUtc, DateTimeOffset? OccurredAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc,
-        DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc, DateTimeOffset? ClosedAtUtc, bool IsArchived);
+        bool ContainmentNotNeeded, DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc, DateTimeOffset? ClosedAtUtc, bool IsArchived)
+    {
+        /// <summary>The milestone stamps as they are today.</summary>
+        public Stamps Stamps => new(OccurredAtUtc, DetectedAtUtc, ContainedAtUtc, ContainmentNotNeeded, ResolvedAtUtc, ReportedAtUtc);
+    }
 
     private sealed record ActionRow(DateTimeOffset CreatedAtUtc, DateTimeOffset? ClosedAtUtc, ImprovementActionStatus Status,
         DateTimeOffset? TargetDateUtc, string? RelatedArea, IReadOnlyList<(DateTimeOffset At, string Before)> Edits)
@@ -430,8 +486,9 @@ public sealed class ProgramReportService
         var (rows, breachAt, reviews, actions, targets) = (data.Rows, data.BreachAt, data.Reviews, data.Actions, data.Targets);
         var history = data.History;
         bool In(DateTimeOffset? t) => t is { } v && v >= start && v < end;
-        // BUG-374: reported as the record stood at the window's end.
-        var reportedAt = rows.Select(r => (r.DetectedAtUtc, Reported: data.ReportedAt(r, end))).ToList();
+        // BUG-374, BUG-499: the milestone stamps as the record stood at the window's end.
+        var stamps = rows.ToDictionary(r => r.Id, r => data.StampsAt(r, end));
+        var reportedAt = stamps.Values.Select(s => (s.DetectedAtUtc, Reported: s.ReportedAtUtc)).ToList();
         // WF-38: as the record stood at the quarter's end.
         bool ClosedInQuarter(CaseRow r) => history.ClosedIn(r.Id, start, end, r.ClosedAtUtc);
         Classification? ClassAtEnd(CaseRow r) => history.ClassAt(r.Id, end, r.Classification);
@@ -454,14 +511,16 @@ public sealed class ProgramReportService
         var bySeverity = new Dictionary<Severity, (int Met, int Missed)>();
         foreach (var r in rows)
         {
+            var s = stamps[r.Id];
+            var contained = s.ContainedIfNeeded;
             // WF-76: judged on the severity and classification the case had at the quarter's end, as it's bucketed, so a
             // later raise doesn't turn a past quarter's Met into Missed.
             // BUG-322: and against the target in force when it was contained, resolved or detected.
-            var cont = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
-                data.TargetsAt(r.ContainedAtUtc ?? end), end, ClassAtEnd(r)).Containment;
-            var res = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
-                data.TargetsAt(r.ResolvedAtUtc ?? end), end, ClassAtEnd(r)).Resolution;
-            if (In(r.ContainedAtUtc) && cont.State is SlaState.Met or SlaState.Missed)
+            var cont = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, s.DetectedAtUtc, contained, s.ResolvedAtUtc,
+                data.TargetsAt(contained ?? end), end, ClassAtEnd(r)).Containment;
+            var res = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, s.DetectedAtUtc, contained, s.ResolvedAtUtc,
+                data.TargetsAt(s.ResolvedAtUtc ?? end), end, ClassAtEnd(r)).Resolution;
+            if (In(contained) && cont.State is SlaState.Met or SlaState.Missed)
             {
                 var met = cont.State == SlaState.Met;
                 if (met) cMet++; else cMiss++;
@@ -469,10 +528,10 @@ public sealed class ProgramReportService
                 var (sm, sx) = bySeverity.GetValueOrDefault(sev);
                 bySeverity[sev] = met ? (sm + 1, sx) : (sm, sx + 1);
             }
-            if (In(r.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
-            if (In(r.DetectedAtUtc))
+            if (In(s.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
+            if (In(s.DetectedAtUtc))
             {
-                var det = SlaPolicy.EvaluateDetection(SevAtEnd(r), r.OccurredAtUtc, r.DetectedAtUtc, data.TargetsAt(r.DetectedAtUtc ?? end));
+                var det = SlaPolicy.EvaluateDetection(SevAtEnd(r), s.OccurredAtUtc, s.DetectedAtUtc, data.TargetsAt(s.DetectedAtUtc ?? end));
                 if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMiss++;
             }
         }
@@ -502,9 +561,9 @@ public sealed class ProgramReportService
                 .Select(g => new CountBy<Classification?>(g.Key, g.Count())).OrderBy(x => x.Key is null ? -1 : (int)x.Key).ToList(),
             OpenedBySeverity: opened.GroupBy(SevAtEnd)
                 .Select(g => new CountBy<Severity>(g.Key, g.Count())).OrderByDescending(x => x.Key).ToList(),
-            TimeToDetect: Span(rows.Select(r => (r.OccurredAtUtc, r.DetectedAtUtc))),
-            TimeToContain: Span(rows.Select(r => (r.DetectedAtUtc, r.ContainedAtUtc))),
-            TimeToResolve: Span(rows.Select(r => (r.DetectedAtUtc, r.ResolvedAtUtc))),
+            TimeToDetect: Span(stamps.Values.Select(s => (s.OccurredAtUtc, s.DetectedAtUtc))),
+            TimeToContain: Span(stamps.Values.Select(s => (s.DetectedAtUtc, s.ContainedIfNeeded))),
+            TimeToResolve: Span(stamps.Values.Select(s => (s.DetectedAtUtc, s.ResolvedAtUtc))),
             Sla: [new(SlaClock.Detection, dMet, dMiss), new(SlaClock.Containment, cMet, cMiss), new(SlaClock.Resolution, rMet, rMiss)],
             BreachesOpened: breachAt.Values.Count(t => In(t)),
             ReportedToRegulators: reportedAt.Count(r => In(r.Reported)),

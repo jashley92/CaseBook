@@ -282,6 +282,53 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task Moving_a_case_back_into_containment_later_keeps_its_past_quarter(/* BUG-499 */)
+    {
+        Guid id;
+        _clock.UtcNow = Apr(3);
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var e = Case.Open(2026, 9, "N", "Not needed", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", Apr(2));
+            e.DetectedAtUtc = Apr(2);
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+            id = e.Id;
+            // Q2: containment wasn't needed, and it was resolved a day after detection.
+            e.ChangePhase(CasePhase.Recovery, "Fixed", "ic", Apr(3), containmentNotNeededReason: "Nothing to contain");
+            await db.SaveChangesAsync();
+        }
+        var targets = new SlaTargets(new Dictionary<(SlaClock, Severity), int>
+        {
+            [(SlaClock.Containment, Severity.Medium)] = 24,
+            [(SlaClock.Resolution, Severity.Medium)] = 72,
+        }, 80);
+        var before = (await Service(targets).BuildAsync(Q2)).Current;
+        before.Sla.Single(x => x.Clock == SlaClock.Resolution).Should().Be(new SlaAttainment(SlaClock.Resolution, 1, 0));
+        before.TimeToResolve.Should().Be(new Interval(24, 24, 1));
+        before.Sla.Single(x => x.Clock == SlaClock.Containment).Should().Be(new SlaAttainment(SlaClock.Containment, 0, 0));
+
+        // Q3: it needed containing after all (BUG-229 clears the resolved time and the "not needed").
+        _clock.UtcNow = Apr(10).AddMonths(3);
+        await using (var db = new AppDbContext(Options()))
+        {
+            var e = await db.Cases.Include(c => c.StatusChanges).SingleAsync(c => c.Id == id);
+            e.ChangePhase(CasePhase.Containment, "More found", "ic", _clock.UtcNow);
+            await db.SaveChangesAsync();
+            e.ResolvedAtUtc.Should().BeNull();
+        }
+
+        var r = await Service(targets).BuildAsync(new ProgramPeriod(2026, 3));
+        r.Previous.Sla.Should().BeEquivalentTo(before.Sla, "Q2's figures stay as reported");
+        r.Previous.TimeToResolve.Should().Be(before.TimeToResolve);
+        r.Previous.TimeToContain.Should().Be(before.TimeToContain);
+        r.Current.Sla.Single(x => x.Clock == SlaClock.Containment).Missed.Should().Be(1, "contained in Q3, long after its target");
+        r.Current.TimeToResolve.Count.Should().Be(0);
+        var snaps = await Service(targets).SnapshotsAsync([new ProgramWindow(Q2.StartUtc(TimeZoneInfo.Utc), Q2.EndUtc(TimeZoneInfo.Utc), "Q2")]);
+        snaps[0].Sla.Should().BeEquivalentTo(before.Sla, "the Program overview reads the same as-of stamps");
+    }
+
+    [Fact]
     public async Task A_review_recorded_after_the_quarter_does_not_change_it(/* REV-59 */)
     {
         await SeedAsync();
