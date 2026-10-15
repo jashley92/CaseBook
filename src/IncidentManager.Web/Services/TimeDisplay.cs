@@ -141,7 +141,8 @@ public sealed class TimeDisplay
     }
 
     /// <summary>Calendar date in the active zone (no time), for due dates and month labels.</summary>
-    public string DateOnly(DateTimeOffset ts) => $"{ToZone(ts):yyyy-MM-dd}";
+    // BUG-530: invariant like the other helpers, so a non-Gregorian server calendar can't print a different year here.
+    public string DateOnly(DateTimeOffset ts) => ToZone(ts).ToString("yyyy-MM-dd", Inv);
 
     public string DateOnly(DateTimeOffset? ts, string dash = "—") => ts is { } t ? DateOnly(t) : dash;
 
@@ -150,8 +151,8 @@ public sealed class TimeDisplay
     /// <summary>WF-103: a due time as its form shows it: a bare day when it's 23:59 on the organization's calendar (picked
     /// without a time), else <see cref="Short"/>.</summary>
     public string Due(DateTimeOffset ts, TimeZoneInfo organization) =>
-        Components.Pages.Workspace.DayValues.FromUtc(ts, Zone, organization) is (var d, null) ? $"{d:yyyy-MM-dd}" : Short(ts);
+        Components.Pages.Workspace.DayValues.FromUtc(ts, Zone, organization) is (var d, null) ? d.ToString("yyyy-MM-dd", Inv) : Short(ts);
 
     public string Day(DateTimeOffset? ts, TimeZoneInfo organization, string dash = "—") =>
-        ts is { } t ? $"{Components.Pages.Workspace.DayValues.DayOf(t, Zone, organization):yyyy-MM-dd}" : dash;
+        ts is { } t ? Components.Pages.Workspace.DayValues.DayOf(t, Zone, organization).ToString("yyyy-MM-dd", Inv) : dash;
 }

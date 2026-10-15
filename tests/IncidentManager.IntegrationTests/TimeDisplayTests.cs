@@ -136,4 +136,23 @@ public class TimeDisplayTests
         t.Initialized.Should().BeTrue();
         t.BrowserZoneId.Should().Be("Etc/GMT+5");
     }
+
+    [Fact]
+    public void Dates_use_the_gregorian_calendar_on_any_server_culture(/* BUG-530 */)
+    {
+        var was = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            // th-TH counts years in the Buddhist era (2026 is 2569); the stamps must not.
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("th-TH");
+            var t = new TimeDisplay();
+            var endOfDay = new DateTimeOffset(2026, 8, 16, 23, 59, 0, TimeSpan.Zero);   // a bare day on a UTC calendar
+
+            t.DateOnly(Instant).Should().Be("2026-08-17");
+            t.Due(endOfDay, TimeZoneInfo.Utc).Should().Be("2026-08-16");
+            t.Day(endOfDay, TimeZoneInfo.Utc).Should().Be("2026-08-16");
+            t.Short(Instant).Should().Be("2026-08-17 00:33 UTC", "the helpers agree on one screen");
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = was; }
+    }
 }
