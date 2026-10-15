@@ -45,6 +45,22 @@ public class ExportCsvTests
             .Should().Be("# CaseBook audit trail: all visible cases, generated 2026-10-09 14:30:05 UTC");
     }
 
+    [Theory(DisplayName = "BUG-516: a case number can't open a cell or a row in the scope line")]
+    [InlineData("2026-0042,=HYPERLINK(\"http://x\")", "# CaseBook audit trail: case 2026-0042 =HYPERLINK( http://x ), generated 2026-10-09 14:30:05 UTC")]
+    [InlineData("=1+1", "# CaseBook audit trail: case =1+1, generated 2026-10-09 14:30:05 UTC")]
+    [InlineData("2026-0042\r\n=cmd,x", "# CaseBook audit trail: case 2026-0042  =cmd x, generated 2026-10-09 14:30:05 UTC")]
+    [InlineData("2026-0042;=cmd\t@x\u2028+y", "# CaseBook audit trail: case 2026-0042 =cmd @x +y, generated 2026-10-09 14:30:05 UTC")]
+    public void Audit_csv_scope_line_keeps_a_hostile_case_number_inside_the_comment(string caseNumber, string expected)
+    {
+        var lines = Lines(AuditCsv.Build([], Generated, caseNumber));
+
+        lines.Should().HaveCount(2, "the scope line and the header, with no forged row between them");
+        lines[0].Should().Be(expected);
+        // The only separator left is the fixed one before "generated", so no cell starts with the case number.
+        lines[0].Split(',').Skip(1).Should().ContainSingle().Which.Should().StartWith(" generated");
+        lines[1].Should().StartWith("sequence,");
+    }
+
     [Fact]
     public void Audit_csv_has_a_fixed_header_and_one_row_per_entry_in_utc()
     {

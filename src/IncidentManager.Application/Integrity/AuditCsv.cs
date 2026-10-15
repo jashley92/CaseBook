@@ -18,7 +18,7 @@ public static class AuditCsv
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
 
-        var scope = string.IsNullOrWhiteSpace(caseNumber) ? "all visible cases" : $"case {caseNumber}";
+        var scope = string.IsNullOrWhiteSpace(caseNumber) ? "all visible cases" : "case " + CommentText(caseNumber);
         sb.Append("# CaseBook audit trail: ").Append(scope).Append(", generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
         // REV-65: an export cut at its row limit says so, so the missing oldest rows aren't mistaken for no activity.
@@ -47,5 +47,18 @@ public static class AuditCsv
         }
 
         return sb.ToString();
+    }
+
+    // BUG-516: the comment line is one spreadsheet cell that starts with "#". A case number is printed after "case ", so it
+    // can't lead a cell unless it opens one itself: with a separator (comma, or the semicolon Excel uses in many locales),
+    // a quote, a tab or a line break. Those become spaces, so the value stays inside the line and can't start a formula
+    // cell or forge rows below it.
+    private static string CommentText(string value)
+    {
+        var chars = value.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+            if (chars[i] is ',' or ';' or '"' || char.IsControl(chars[i]) || (char.IsSeparator(chars[i]) && chars[i] != ' '))
+                chars[i] = ' ';
+        return new string(chars).Trim();
     }
 }
