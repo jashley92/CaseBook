@@ -278,6 +278,69 @@ public class CaseNotificationsTests
         chat.Sent.Should().ContainSingle().Which.Title.Should().StartWith("EXERCISE: ");
     }
 
+    /// <summary>Fails every compose, as a broken admin template or branding read can (BUG-293).</summary>
+    private sealed class ThrowingComposer : IEmailComposer
+    {
+        public Task<EmailMessage> ComposeAsync(string templateId, IReadOnlyCollection<string> to, IReadOnlyDictionary<string, string> tokens,
+            string? ctaUrl = null, IReadOnlyDictionary<string, string>? htmlTokens = null, CancellationToken ct = default) =>
+            throw new InvalidOperationException("template broken");
+        public Task<(string Subject, string Html)> PreviewAsync(string templateId, string subject, string bodyHtml, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+        public Task<EmailMessage> ComposeSampleAsync(string templateId, IReadOnlyCollection<string> to, string? draftSubject = null,
+            string? draftBody = null, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private static int Count(string s, string part)
+    {
+        var n = 0;
+        for (var i = s.IndexOf(part, StringComparison.Ordinal); i >= 0; i = s.IndexOf(part, i + part.Length, StringComparison.Ordinal)) n++;
+        return n;
+    }
+
+    public static TheoryData<string> ExerciseBreachPaths => new() { "default", "template-without-token", "fallback" };
+
+    [Theory]
+    [MemberData(nameof(ExerciseBreachPaths))]
+    public async Task An_exercise_breach_email_carries_the_EXERCISE_note_once_in_both_bodies(string path /* BUG-515 */)
+    {
+        var sender = new CapturingEmailSender();
+        var composer = path switch
+        {
+            "fallback" => (IEmailComposer)new ThrowingComposer(),
+            "template-without-token" => TestEmail.Composer((IncidentManager.Application.Admin.EmailTemplateCatalog.BodyKey("breach"),
+                "<h1>Breach</h1><p>{{CaseNumber}} needs a look.</p>")),
+            _ => TestEmail.Composer(),
+        };
+        var n = new CaseNotifications(sender, composer, new FakeUserDirectory(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions { LegalDistribution = ["legal@insurer.example"] }),
+            new NullChatNotifier(), new FakePrefs());
+        var c = Case.Open(2026, 1, "Tabletop", "Ransomware tabletop", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "ic1", Now, isExercise: true);
+
+        await n.OnReclassifiedAsync(c, Classification.Incident, Classification.Breach);
+
+        var m = sender.Sent.Should().ContainSingle().Subject;
+        m.Subject.Should().StartWith("EXERCISE: ");
+        Count(m.HtmlBody, "not a real breach").Should().Be(1, "the HTML body is marked once on the {0} path", path);
+        Count(m.TextBody, "not a real breach").Should().Be(1, "the text body is marked once on the {0} path", path);
+        m.TextBody.Should().StartWith("EXERCISE.");
+    }
+
+    [Fact]
+    public async Task A_real_breach_email_carries_no_EXERCISE_note(/* BUG-515 */)
+    {
+        var sender = new CapturingEmailSender();
+        var n = new CaseNotifications(sender, new ThrowingComposer(), new FakeUserDirectory(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions { LegalDistribution = ["legal@insurer.example"] }),
+            new NullChatNotifier(), new FakePrefs());
+
+        await n.OnReclassifiedAsync(NewCase(), Classification.Incident, Classification.Breach);
+
+        var m = sender.Sent.Should().ContainSingle().Subject;
+        m.HtmlBody.Should().NotContain("EXERCISE");
+        m.TextBody.Should().NotContain("EXERCISE");
+    }
+
     [Fact]
     public async Task An_exercise_escalation_sends_nothing_when_the_organization_skips_them(/* BUG-100 */)
     {

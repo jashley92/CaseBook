@@ -133,7 +133,7 @@ public sealed class CaseNotifications : ICaseNotifications
         };
         var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["ReferralNote"] = (c.IsExercise ? "<p><strong>EXERCISE.</strong> This is a tabletop case, not a real breach. No action is needed.</p>" : "")
+            ["ReferralNote"] = (c.IsExercise ? ExerciseNoteHtml : "")
                 + (c.LegalReferral.IsReferred ? "<p>A Legal/Privacy referral is already recorded.</p>" : ""),
         };
 
@@ -152,11 +152,37 @@ public sealed class CaseNotifications : ICaseNotifications
             message = message with
             {
                 Subject = ExerciseMarking.Prefix + message.Subject,
-                TextBody = "EXERCISE. This is a tabletop case, not a real breach. No action is needed.\n\n" + message.TextBody,
+                HtmlBody = WithExerciseNote(message.HtmlBody),
+                TextBody = ExerciseNoteText + "\n\n" + WithoutLine(message.TextBody, ExerciseNoteText),
             };
         // BUG-101: Legal must hear of a breach. A failed send is retried, and shown if it never goes.
         if (_alerts is not null) await _alerts.SendAsync(Domain.Entities.AlertDelivery.BreachEscalation, c.Id, c.CaseNumber, message, ct);
         else await _email.SendAsync(message, ct);
+    }
+
+    private const string ExerciseNoteText = "EXERCISE. This is a tabletop case, not a real breach. No action is needed.";
+    private const string ExerciseNoteHtml = "<p><strong>EXERCISE.</strong> This is a tabletop case, not a real breach. No action is needed.</p>";
+    private const string ExerciseNoteMark = "<strong>EXERCISE.</strong> This is a tabletop case, not a real breach.";
+
+    /// <summary>
+    /// BUG-515: the HTML body carries the EXERCISE note once. It sits where the template places {{ReferralNote}}; a template
+    /// without that token, or the plain BUG-293 fallback, gets it at the top of the body instead (it was missing there).
+    /// </summary>
+    private static string WithExerciseNote(string html)
+    {
+        if (html.Contains(ExerciseNoteMark, StringComparison.Ordinal)) return html;
+        var body = System.Text.RegularExpressions.Regex.Match(html, "<body[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!body.Success) return ExerciseNoteHtml + html;
+        const string banner = "<div style=\"margin:0;padding:12px 16px;background:#fff4ce;color:#3b2f00;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;\">"
+                              + "<strong>EXERCISE.</strong> This is a tabletop case, not a real breach. No action is needed.</div>";
+        return html.Insert(body.Index + body.Length, banner);
+    }
+
+    // BUG-515: the text body leads with the note, so the copy {{ReferralNote}} put in the content is taken out (it showed twice).
+    private static string WithoutLine(string text, string line)
+    {
+        var kept = string.Join('\n', text.Split('\n').Where(l => !string.Equals(l.Trim(), line, StringComparison.Ordinal)));
+        return System.Text.RegularExpressions.Regex.Replace(kept, "\n{3,}", "\n\n").Trim();
     }
 
     // INV-37: a link straight to one note (the workspace opens the Notes tab and brings it into view).
