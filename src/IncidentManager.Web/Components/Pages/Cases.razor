@@ -713,7 +713,9 @@ else
         if (string.Equals(rel, "cases", StringComparison.OrdinalIgnoreCase)
             && _views?.FirstOrDefault(v => v.IsDefault) is { Query.Length: > 0 } def)
         {
-            Nav.NavigateTo($"cases?{def.Query}");
+            // BUG-520: the redirect takes the bare entry's place, so Back leaves the list instead of landing on an
+            // unfiltered All (which the list memory would then keep).
+            Nav.NavigateTo($"cases?{def.Query}", replace: true);
         }
     }
 
