@@ -724,6 +724,8 @@ else
     private string? _editCancelReason;   // HR-17
     private DateTime? _editDueDate;
     private TimeOnly? _editDueTime;
+    private (DateTime Date, TimeOnly? Time)? _editDueShown;   // BUG-571: as seeded, with the instant it came from
+    private DateTimeOffset? _editDueStored;
     private string? _editDescription;
 
     // --- INV-14: the 't' shortcut opens the add form and puts the caret in the title ---
@@ -782,6 +784,7 @@ else
         if (t.DueAtUtc is { } due)
             (_editDueDate, _editDueTime) = IncidentManager.Web.Components.Pages.Workspace.DayValues.FromUtc(due, TimeDisp.Zone, OrgZone.Current);   // WF-64
         else { _editDueDate = null; _editDueTime = null; }
+        (_editDueShown, _editDueStored) = (t.DueAtUtc is null ? null : (_editDueDate!.Value, _editDueTime), t.DueAtUtc);   // BUG-571
     }
 
     private void CancelEdit() => _editingTaskId = null;
@@ -807,7 +810,7 @@ else
         try
         {
             await Cases.UpdateActionItemAsync(CaseId, id, _editTitle, owner,
-                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription, _editKind, cancelReason: _editCancelReason,
+                KeptOrTypedDueUtc(_editDueDate, _editDueTime, _editDueShown, _editDueStored, TimeDisp.Zone, OrgZone.Current), _editStatus, _editDescription, _editKind, cancelReason: _editCancelReason,
                 expectedStamp: _editStamp);
             _editingTaskId = null;
             await OnChanged.InvokeAsync();
@@ -908,6 +911,21 @@ else
         // WF-64: a bare date is the end of that day on the organization's calendar; a time is the viewer's.
         return IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, time, TimeDisp.Zone, OrgZone.Current);
     }
+
+    /// <summary>
+    /// BUG-571 (WF-68/WF-82 sibling): the due to save from the edit form. A date and time left as shown keep the stored
+    /// instant; converting them back read a due in the repeated autumn hour as standard time, so editing only the title
+    /// moved the due an hour. Compared at the minute the field shows (BUG-503), since a time typed back has no seconds.
+    /// </summary>
+    public static DateTimeOffset? KeptOrTypedDueUtc(DateTime? date, TimeOnly? time, (DateTime Date, TimeOnly? Time)? shown,
+        DateTimeOffset? stored, TimeZoneInfo viewer, TimeZoneInfo organization)
+    {
+        if (date is not { } d) return null;
+        if (stored is { } kept && shown is { } s && d.Date == s.Date.Date && ToMinute(time) == ToMinute(s.Time)) return kept;
+        return IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, time, viewer, organization);
+    }
+
+    private static TimeOnly? ToMinute(TimeOnly? t) => t is { } v ? new TimeOnly(v.Hour, v.Minute) : null;
 
     // PROD-21: multi-select complete.
     private readonly HashSet<Guid> _selected = new();
