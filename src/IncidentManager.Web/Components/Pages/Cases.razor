@@ -1000,7 +1000,7 @@ else
 
     private async Task OnSaveKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newViewName)) await SaveView();
+        if (e.Key == "Enter" && !e.Repeat && !string.IsNullOrWhiteSpace(_newViewName)) await SaveView();   // BUG-545 sibling
     }
 
     // FR-15: a save whose name matches one of the user's own views overwrites it, so pause for a one-click

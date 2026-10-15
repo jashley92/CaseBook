@@ -382,7 +382,7 @@
 
     private async Task OnQuickAddKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") await AddQuickTask();
+        if (e.Key == "Enter" && !e.Repeat) await AddQuickTask();   // BUG-545 sibling: a held Enter adds once
     }
 
     private bool _adding;   // REV-31: Enter twice (or Enter and a click) added the task twice
