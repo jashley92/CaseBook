@@ -139,7 +139,7 @@ public sealed partial class ConfigBundleService
         // WF-45: a mapping with no group or to a role neither here nor in the bundle isn't imported (a dormant grant a later
         // role of that name would pick up), so the preview doesn't count it and says so.
         var unusable = UnusableMappings(incoming, live.Roles.Select(r => r.Name));
-        Diff("AD mapping", incoming.RoleMappings.Except(unusable), live.RoleMappings, m => $"{m.AdGroup} → {m.RoleName}", items);
+        DiffMappings(incoming.RoleMappings.Except(unusable), live.RoleMappings, items);
         if (unusable.Count > 0)
             warnings.Add($"{Common.Plural.Of(unusable.Count, "AD mapping")} won't be imported: " +
                          string.Join(", ", unusable.Select(m => $"\"{m.AdGroup} → {m.RoleName}\"")) +
@@ -194,6 +194,19 @@ public sealed partial class ConfigBundleService
             var change = !byKey.TryGetValue(key(i), out var match) ? ConfigChange.Add
                 : same(i, match) ? ConfigChange.Unchanged : ConfigChange.Update;
             acc.Add(new ConfigDiffItem(section, key(i), change));
+        }
+    }
+
+    // BUG-568: as the import applies a mapping: the group trimmed, the role name trimmed, both matched ignoring case. A mapping
+    // only exists or doesn't (nothing in it is updated), and one the bundle lists twice is added once.
+    private static void DiffMappings(IEnumerable<ConfigRoleMapping> incoming, IEnumerable<ConfigRoleMapping> live, List<ConfigDiffItem> acc)
+    {
+        var known = live.Select(m => $"{m.AdGroup}\n{m.RoleName}").ToHashSet(StringComparer.OrdinalIgnoreCase);   // as stored
+        foreach (var m in incoming)
+        {
+            var (group, role) = ((m.AdGroup ?? "").Trim(), (m.RoleName ?? "").Trim());
+            acc.Add(new ConfigDiffItem("AD mapping", $"{group} → {role}",
+                known.Add($"{group}\n{role}") ? ConfigChange.Add : ConfigChange.Unchanged));
         }
     }
 

@@ -273,6 +273,33 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_preview_counts_mappings_as_the_import_applies_them(/* BUG-568 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var existing = live.RoleMappings[0];
+        // The same mapping in another case and with spaces round it, and one new mapping listed twice.
+        var incoming = live with
+        {
+            RoleMappings = live.RoleMappings
+                .Append(new ConfigRoleMapping(existing.AdGroup.ToLowerInvariant(), existing.RoleName.ToUpperInvariant()))
+                .Append(new ConfigRoleMapping($"  {existing.AdGroup} ", $" {existing.RoleName}  "))
+                .Append(new ConfigRoleMapping("corp\\new-group", "IR Lead"))
+                .Append(new ConfigRoleMapping(" CORP\\NEW-GROUP", "ir lead "))
+                .ToList()
+        };
+
+        var diff = await svc.PreviewAsync(incoming);
+        var mappings = diff.Items.Where(i => i.Section == "AD mapping").ToList();
+        mappings.Should().ContainSingle(i => i.Change == ConfigChange.Add);
+        mappings.Should().NotContain(i => i.Change == ConfigChange.Update);
+        var result = await svc.ImportAsync(Signed(incoming));
+        (result.Added, result.Updated).Should().Be((diff.Added, diff.Updated)).And.Be((1, 0));
+    }
+
+    [Fact]
     public async Task A_bundle_signed_with_another_key_needs_its_source_confirmed()
     {
         // BUG-19: the signature is checked against the key in the bundle, so anyone can re-sign an edited bundle with
