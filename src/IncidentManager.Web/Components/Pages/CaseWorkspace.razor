@@ -439,6 +439,10 @@ else
         _dotNetRef = DotNetObjectReference.Create(this);
         _myId = CurrentUser.UserId;
         await RefreshPermissionsAsync();
+        // BUG-566 (BUG-418's class): rebuilt by the layout's time-zone key or left while the permissions loaded,
+        // DisposeAsync has already run, so nothing below may register: the auth handler, a palette provider over a dead
+        // page (taking the palette from the instance that replaced it) and the ticker would never be undone.
+        if (_disposed) return;
         // S-10: an open session's permissions can be refreshed in place; re-check the edit affordances when they are.
         AuthState.AuthenticationStateChanged += OnAuthStateChanged;
 
@@ -457,6 +461,7 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        if (_disposed) return;   // BUG-566: ComponentBase still runs this after a disposed OnInitializedAsync; no case subscription then
         if (_resumeHeld) _resume = null;   // BUG-509: only a rebuilt page's first parameters are stale; later ones are a navigation
         _resumeHeld = true;
         // BUG-05: the route component is reused when the Id changes, so the live subscription and anything held for

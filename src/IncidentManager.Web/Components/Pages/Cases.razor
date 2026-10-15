@@ -701,6 +701,9 @@ else
         _dash = await Dashboard.GetAsync();
         _outcomes = (await Outcomes.ListAllAsync()).Where(o => o.IsActive || o.UseCount > 0).ToList();
         await ReloadViews();
+        // BUG-566: left (or rebuilt by the layout's time-zone key) while these loads ran, Dispose has already run, so
+        // subscribing now would leave the singleton notifier reloading this dead list on every case change.
+        if (_disposed) return;
 
         _liveDebounce = new System.Threading.Timer(_ => _ = InvokeAsync(LiveReload), null,
             Timeout.Infinite, Timeout.Infinite);
@@ -783,6 +786,7 @@ else
     // Runs on initial load and on every query-string change (e.g. a dashboard drill-in).
     protected override async Task OnParametersSetAsync()
     {
+        if (_disposed) return;   // BUG-566: ComponentBase still runs this after a disposed OnInitializedAsync
         ListMemory.Remember(Nav.Uri);
         // Scope is driven by ?scope=mine; the legacy /cases/mine route is honoured as an alias so old
         // links and bookmarks still land on the user's own caseload.
@@ -1138,6 +1142,7 @@ else
     // them and their selection isn't silently cleared; it applies the moment they finish.
     private async Task LiveReload()
     {
+        if (_disposed) return;   // BUG-566: a debounce tick already queued when the page went
         if (_bulkVerb != BulkVerb.None || _selected.Count > 0 || _savingView)
         {
             _liveRefreshPending = true;
@@ -1146,6 +1151,7 @@ else
         _liveRefreshPending = false;
         var prevKnown = _knownCaseIds;
         await Reload(); // re-baselines _knownCaseIds and clears any prior flash
+        if (_disposed) return;
         // Flash the rows that appeared since the last view (a new case, or one that moved onto this page).
         if (prevKnown.Count > 0 && _page is { Items.Count: > 0 } p)
         {
@@ -1174,8 +1180,11 @@ else
         await LiveReload();
     }
 
+    private bool _disposed;   // BUG-566
+
     public void Dispose()
     {
+        _disposed = true;
         _liveSub?.Dispose();
         _liveDebounce?.Dispose();
     }

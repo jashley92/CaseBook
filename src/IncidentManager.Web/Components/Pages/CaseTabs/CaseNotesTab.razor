@@ -209,7 +209,14 @@ else
         foreach (var (id, seed) in desired)
         {
             if (_mdEditors.Contains(id)) continue;
-            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { mentions = MentionCandidates, entities = EntityCandidates }); _mdEditors.Add(id); }
+            try
+            {
+                await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { mentions = MentionCandidates, entities = EntityCandidates });
+                // BUG-566: torn down while this ran, so DisposeAsync missed it; left in the shared registry, it would
+                // keep a later mount of this editor id from attaching.
+                if (Disposed) { try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch { /* circuit may be gone */ } return; }
+                _mdEditors.Add(id);
+            }
             catch (JSException) { /* editor is a progressive enhancement */ }
         }
     }
@@ -279,8 +286,11 @@ else
         Toasts.Success("Note updated");
     }
 
+    private bool Disposed { get; set; }   // BUG-566
+
     public async ValueTask DisposeAsync()
     {
+        Disposed = true;
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }

@@ -79,6 +79,9 @@
     protected override async Task OnInitializedAsync()
     {
         await Load();
+        // BUG-566: removed while the feed loaded (an auth refresh re-renders the AuthorizeView around the bell), Dispose
+        // has already run; subscribing now would keep the singleton notifier re-reading this feed for good.
+        if (_disposed) return;
         _debounce = new Timer(_ => _ = InvokeAsync(Refresh), null, Timeout.Infinite, Timeout.Infinite);
         _sub = Notifier.SubscribeAll(OnAnyChange);
         Palette.DismissRequested += OnDismiss;
@@ -118,6 +121,7 @@
 
     private async Task Refresh()
     {
+        if (_disposed) return;   // BUG-566: a settle tick already queued when the bell went
         await Load();
         Recount();
         StateHasChanged();
@@ -172,8 +176,11 @@
         return TimeDisp.DateOnly(at);
     }
 
+    private bool _disposed;   // BUG-566
+
     public void Dispose()
     {
+        _disposed = true;
         _sub?.Dispose();
         _debounce?.Dispose();
         Palette.DismissRequested -= OnDismiss;

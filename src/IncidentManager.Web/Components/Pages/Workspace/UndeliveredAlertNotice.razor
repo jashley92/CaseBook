@@ -33,6 +33,7 @@
         if (CaseId == _loadedFor) return;
         _loadedFor = CaseId;
         await LoadAsync();
+        if (_disposed) return;   // BUG-566: gone while the list loaded; a timer now would never be stopped
         _refresh ??= new Timer(_ => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); }), null, RefreshEvery, RefreshEvery);
     }
 
@@ -47,5 +48,11 @@
         catch (Exception ex) when (ex is not OperationCanceledException) { _alerts = []; }
     }
 
-    public void Dispose() => _refresh?.Dispose();
+    private bool _disposed;   // BUG-566
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _refresh?.Dispose();
+    }
 }

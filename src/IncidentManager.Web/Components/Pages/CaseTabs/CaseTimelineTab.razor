@@ -1437,7 +1437,14 @@ else
             object options = wantMentions
                 ? new { entities = EntityCandidates, mentions = _mentionable.Select(u => (object)new { id = u.UserId, name = u.DisplayName }).ToArray() }
                 : new { entities = EntityCandidates };
-            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, options); _mdEditors.Add(id); _editorMentions = wantMentions; }
+            try
+            {
+                await JS.InvokeVoidAsync("markdownEditor.init", id, seed, options);
+                // BUG-566: torn down while this ran, so DisposeAsync missed it; left in the shared registry, it would
+                // keep a later mount of this editor id from attaching.
+                if (Disposed) { try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch { /* circuit may be gone */ } return; }
+                _mdEditors.Add(id); _editorMentions = wantMentions;
+            }
             catch (JSException) { /* editor is a progressive enhancement */ }
         }
     }
