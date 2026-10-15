@@ -69,6 +69,9 @@
         if (_loadedFor == CaseId) return;
         _loadedFor = CaseId;
         _loading = true;
+        // BUG-572: the last case goes while the next one loads, so the header never names it while Open and Swap act on
+        // this one.
+        (_case, _taskResults, _notify) = (null, new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>(), null);
         var id = CaseId;
         var c = await Cases.GetDetailAsync(id);
         if (id != CaseId) return;

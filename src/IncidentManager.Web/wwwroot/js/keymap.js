@@ -82,10 +82,11 @@ window.imKeymap = (function () {
     // BUG-370: what a Ctrl/Cmd+Enter pressed here is for. The palette, the ATT&CK pickers, the Now/Next pane and the
     // header's renumber field (.im-own-keys) handle their own keys, so the case isn't told at all (null). In the case's
     // action dialog or sheet it applies that ("submit:action"); in any other dialog or panel nothing ("submit:dialog");
-    // elsewhere it submits the tab's composer ("submit").
+    // elsewhere it submits the tab's composer ("submit"). BUG-572: the case beside (.im-beside) is read only and another
+    // case, so a Ctrl/Cmd+Enter there submits nothing rather than the front case's composer.
     function submitCommand(el) {
         if (!el || !el.closest) return 'submit';
-        if (el.closest('.cmdk, .cmdk-help, .atkm-panel, .tactic-modal, .im-own-keys')) return null;
+        if (el.closest('.cmdk, .cmdk-help, .atkm-panel, .tactic-modal, .im-own-keys, .im-beside')) return null;
         const box = el.closest('.im-action-host, .im-trap, .im-sheet, [aria-modal="true"]');
         if (!box) return 'submit';
         return box.classList.contains('im-action-host') ? 'submit:action' : 'submit:dialog';
