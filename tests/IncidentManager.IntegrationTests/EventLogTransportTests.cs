@@ -47,6 +47,44 @@ public class EventLogTransportTests
         System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("detail").GetString().Should().EndWith("(shortened)");
     }
 
+    private static EventLogTransport Seamed(Action<SiemEventLogOptions, SecurityEvent> write, bool sourceRegistered) =>
+        new(new TestOptionsMonitor<SiemEventLogOptions>(new() { Enabled = true }), NullLogger<EventLogTransport>.Instance,
+            write, _ => sourceRegistered);
+
+    [Fact]
+    public async Task The_test_send_reports_a_missing_source_instead_of_delivered(/* BUG-548 */)
+    {
+        var t = Seamed((_, _) => throw new System.Security.SecurityException("The source was not found."), sourceRegistered: false);
+
+        var reason = await t.SendTestAsync(Event(SecuritySeverity.Info, SecurityOutcome.Success), default);
+
+        reason.Should().Contain("CaseBook").And.Contain("New-EventLog");
+        t.Enabled.Should().BeFalse("a missing source turns delivery off, as a real send does");
+    }
+
+    [Fact]
+    public async Task The_test_send_reports_a_refused_entry_and_stays_on(/* BUG-548 */)
+    {
+        var t = Seamed((_, _) => throw new InvalidOperationException("Log full."), sourceRegistered: true);
+
+        var reason = await t.SendTestAsync(Event(SecuritySeverity.Info, SecurityOutcome.Success), default);
+
+        reason.Should().Contain("Log full.");
+        t.Enabled.Should().BeTrue("REV-69: one refused entry doesn't stop later events");
+    }
+
+    [Fact]
+    public async Task The_test_send_is_delivered_when_the_entry_is_written(/* BUG-548 */)
+    {
+        var written = new List<SecurityEvent>();
+        var t = Seamed((_, e) => written.Add(e), sourceRegistered: true);
+
+        (await t.SendTestAsync(Event(SecuritySeverity.Info, SecurityOutcome.Success), default)).Should().BeNull();
+        await t.SendAsync(Event(SecuritySeverity.Info, SecurityOutcome.Success), default);
+
+        written.Should().HaveCount(2, "the test and a real send share one write");
+    }
+
     [Fact]
     public void It_is_off_unless_enabled()
     {

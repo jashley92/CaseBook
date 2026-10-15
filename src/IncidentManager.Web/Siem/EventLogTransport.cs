@@ -33,6 +33,8 @@ public sealed class EventLogTransport : ISecurityEventTransport
 {
     private readonly IOptionsMonitor<SiemEventLogOptions> _options;
     private readonly ILogger<EventLogTransport> _logger;
+    private readonly Action<SiemEventLogOptions, SecurityEvent>? _write;
+    private readonly Func<string, bool>? _sourceRegistered;
     private volatile bool _sourceMissing;
 
     public EventLogTransport(IOptionsMonitor<SiemEventLogOptions> options, ILogger<EventLogTransport> logger)
@@ -41,18 +43,39 @@ public sealed class EventLogTransport : ISecurityEventTransport
         _logger = logger;
     }
 
+    /// <summary>For tests: stands in for the Event Log write and the source lookup, so no real entry is written.</summary>
+    public EventLogTransport(IOptionsMonitor<SiemEventLogOptions> options, ILogger<EventLogTransport> logger,
+        Action<SiemEventLogOptions, SecurityEvent> write, Func<string, bool> sourceRegistered) : this(options, logger)
+    {
+        _write = write;
+        _sourceRegistered = sourceRegistered;
+    }
+
     public string Name => "eventlog";
 
-    public bool Enabled => OperatingSystem.IsWindows() && _options.CurrentValue.Enabled && !_sourceMissing
+    public bool Enabled => (_write is not null || OperatingSystem.IsWindows()) && _options.CurrentValue.Enabled && !_sourceMissing
                            && !string.IsNullOrWhiteSpace(_options.CurrentValue.Source);
 
     public Task SendAsync(SecurityEvent e, CancellationToken ct)
     {
-        if (!Enabled) return Task.CompletedTask;
+        Deliver(e);
+        return Task.CompletedTask;
+    }
+
+    // BUG-548: the Diagnostics test takes the same write, so a missing source or a refused entry is reported, not shown
+    // as Delivered.
+    public Task<string?> SendTestAsync(SecurityEvent e, CancellationToken ct) => Task.FromResult(Deliver(e));
+
+    // Returns null when the entry was written (or the transport is off), else a short reason for the test button.
+    private string? Deliver(SecurityEvent e)
+    {
+        if (!Enabled) return null;
         var o = _options.CurrentValue;
         try
         {
-            if (OperatingSystem.IsWindows()) Write(o, e);
+            if (_write is not null) _write(o, e);
+            else if (OperatingSystem.IsWindows()) Write(o, e);
+            return null;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Security.SecurityException
                                        or System.ComponentModel.Win32Exception)
@@ -60,19 +83,21 @@ public sealed class EventLogTransport : ISecurityEventTransport
             // REV-69: one event the log refused (one that's somehow still too long, say) is that event, not the transport.
             // Only a missing source turns delivery off; otherwise a single bad event left every later one, integrity
             // alarms included, unforwarded until restart.
-            if (OperatingSystem.IsWindows() && SourceRegistered(o.Source))
+            if (_sourceRegistered?.Invoke(o.Source) ?? (OperatingSystem.IsWindows() && SourceRegistered(o.Source)))
             {
                 _logger.LogWarning(ex, "Windows Event Log refused event {EventId}; later events are still sent.", e.EventId);
-                return Task.CompletedTask;
+                return $"The Windows Event Log refused the entry: {ex.Message}";
             }
             // Most often: the source isn't registered and the app (rightly) lacks rights to create it.
             _sourceMissing = true;
+            var register = $"New-EventLog -LogName {o.LogName} -Source {o.Source}";
             _logger.LogWarning(ex,
                 "Windows Event Log delivery disabled: couldn't write event {EventId} as source '{Source}' in '{Log}'. " +
                 "Register the source once as an administrator ({RegisterCommand}) and restart.",
-                e.EventId, o.Source, o.LogName, $"New-EventLog -LogName {o.LogName} -Source {o.Source}");
+                e.EventId, o.Source, o.LogName, register);
+            return $"Couldn't write as source '{o.Source}' in the {o.LogName} log, so Event Log delivery is off until restart. " +
+                   $"Register the source once as an administrator ({register}), then restart.";
         }
-        return Task.CompletedTask;
     }
 
     [SupportedOSPlatform("windows")]
