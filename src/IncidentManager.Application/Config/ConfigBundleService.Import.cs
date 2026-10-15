@@ -147,11 +147,15 @@ public sealed partial class ConfigBundleService
             warnings.Add($"{Common.Plural.Of(unknownGates.Count, "stage gate")} won't be imported: \"{string.Join("\", \"", unknownGates)}\" " +
                          "guard a transition this version of CaseBook doesn't have.");
         Diff("Word template", incoming.ReportTemplates ?? [], live.ReportTemplates ?? [], t => t.Name, items);
-        Diff("Report profile", incoming.ReportProfiles, live.ReportProfiles, p => p.Name, items);
+        // BUG-559: profiles, rules and outcomes are compared on what the import writes, so the preview's counts are its.
+        var carriesTemplates = incoming.ReportTemplates is not null;
+        Diff("Report profile", incoming.ReportProfiles, live.ReportProfiles, p => p.Name, items, (i, l) => SameProfile(i, l, carriesTemplates));
         // Notification rules match on their portable jurisdiction Code (null when importing a pre-v2 bundle).
-        Diff("Notification rule", incoming.NotificationRules ?? [], live.NotificationRules, r => r.Code, items);
+        Diff("Notification rule", incoming.NotificationRules ?? [], live.NotificationRules, r => r.Code, items,
+            (i, l) => i.Label == l.Label && i.WindowHours == l.WindowHours && i.IsActive == l.IsActive);
         // HR-01: outcomes match on their stable Key (null when importing a pre-v4 bundle).
-        Diff("Case outcome", incoming.CaseOutcomes ?? [], live.CaseOutcomes ?? [], o => o.Key, items);
+        Diff("Case outcome", incoming.CaseOutcomes ?? [], live.CaseOutcomes ?? [], o => o.Key, items,
+            (i, l) => i.Label == l.Label && i.Description == l.Description && i.SortOrder == l.SortOrder && i.IsActive == l.IsActive);
 
         // Data elements match on Key (codes are per-instance), so compare a code-agnostic shape.
         var liveByKey = live.DataElements.ToDictionary(e => e.Key, StringComparer.OrdinalIgnoreCase);
@@ -174,18 +178,26 @@ public sealed partial class ConfigBundleService
     // Generic diff by natural key. Compares on the canonical JSON of each item so nested collections
     // (template steps, gate requirements) are compared structurally, not by list reference.
     private static void Diff<T>(string section, IEnumerable<T> incoming, IEnumerable<T> live,
-        Func<T, string> key, List<ConfigDiffItem> acc) where T : notnull
+        Func<T, string> key, List<ConfigDiffItem> acc, Func<T, T, bool>? same = null) where T : notnull
     {
         // BUG-200: natural keys match regardless of case, as the database's unique indexes do on SQL Server.
-        var byKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var l in live) byKey[key(l)] = Canon(l);
+        var byKey = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+        foreach (var l in live) byKey[key(l)] = l;
+        same ??= (i, l) => Canon(i) == Canon(l);
         foreach (var i in incoming)
         {
-            var change = !byKey.TryGetValue(key(i), out var canonLive) ? ConfigChange.Add
-                : Canon(i) == canonLive ? ConfigChange.Unchanged : ConfigChange.Update;
+            var change = !byKey.TryGetValue(key(i), out var match) ? ConfigChange.Add
+                : same(i, match) ? ConfigChange.Unchanged : ConfigChange.Update;
             acc.Add(new ConfigDiffItem(section, key(i), change));
         }
     }
+
+    // BUG-559: as the import applies a profile: it takes the bundle's name (BUG-240), and its default template only from a
+    // bundle carrying the library, matched by name ignoring case as the library is.
+    private static bool SameProfile(ConfigReportProfile i, ConfigReportProfile l, bool carriesTemplates) =>
+        i.Name == l.Name && i.Description == l.Description && i.IsActive == l.IsActive && i.SortOrder == l.SortOrder
+        && i.SectionLayout == l.SectionLayout
+        && (!carriesTemplates || string.Equals(i.Template, l.Template, StringComparison.OrdinalIgnoreCase));
 
     private static string Canon<T>(T item) => System.Text.Json.JsonSerializer.Serialize(item, ConfigBundleJson.Canonical);
 
@@ -640,10 +652,11 @@ public sealed partial class ConfigBundleService
             else
             {
                 var templateId = carriesTemplates ? TemplateIdFor(p) : existing.TemplateId;
-                var changed = existing.Description != p.Description || existing.IsActive != p.IsActive
+                var changed = existing.Name != p.Name || existing.Description != p.Description || existing.IsActive != p.IsActive
                     || existing.SortOrder != p.SortOrder || existing.SectionLayout != p.SectionLayout
                     || existing.TemplateId != templateId;
-                if (changed) { existing.Description = p.Description; existing.IsActive = p.IsActive;
+                // BUG-559: matched ignoring case; take the bundle's name, as case templates and gates do (BUG-240).
+                if (changed) { existing.Name = p.Name; existing.Description = p.Description; existing.IsActive = p.IsActive;
                     existing.SortOrder = p.SortOrder; existing.SectionLayout = p.SectionLayout; existing.TemplateId = templateId;
                     existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
                 Tally(false, changed);

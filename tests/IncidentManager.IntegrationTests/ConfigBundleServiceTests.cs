@@ -1052,6 +1052,45 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_preview_counts_profiles_and_rules_as_the_import_applies_them(/* BUG-559 */)
+    {
+        var inst = NewInstance("bug559");
+        var (templateId, profileName) = await SeedTemplateDefaultAsync(inst.Factory, inst.Store);
+        using (var db = inst.Factory.CreateDbContext())
+        {
+            db.NotificationRules.Add(new NotificationRule
+                { Code = "NY", Label = "New York", WindowHours = 72, IsActive = true, CreatedBy = "admin1", CreatedAtUtc = _clock.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        var live = (await inst.Config.ExportAsync()).Envelope.Bundle;
+
+        // An older bundle (no template library) leaves defaults alone, and a rule code differing only in case is the same rule.
+        var older = live with
+        {
+            ReportTemplates = null,
+            ReportProfiles = live.ReportProfiles.Select(p => p with { Template = null }).ToList(),
+            NotificationRules = live.NotificationRules.Select(r => r with { Code = r.Code.ToLowerInvariant() }).ToList(),
+        };
+        var diff = await inst.Config.PreviewAsync(older);
+        diff.Items.Where(i => i.Section is "Report profile" or "Notification rule").Should().OnlyContain(i => i.Change == ConfigChange.Unchanged);
+        var result = await inst.Config.ImportAsync(Signed(older));
+        result.Updated.Should().Be(diff.Updated).And.Be(0);
+        using (var db = inst.Factory.CreateDbContext())
+            (await db.ReportProfiles.SingleAsync(p => p.Name == profileName)).TemplateId.Should().Be(templateId);
+
+        // A profile named differently only in case is updated once, to the bundle's name, and then unchanged.
+        var upper = profileName.ToUpperInvariant();
+        var recased = live with { ReportProfiles = live.ReportProfiles.Select(p => p.Name == profileName ? p with { Name = upper } : p).ToList() };
+        diff = await inst.Config.PreviewAsync(recased);
+        diff.Items.Should().ContainSingle(i => i.Change == ConfigChange.Update).Which.Section.Should().Be("Report profile");
+        (await inst.Config.ImportAsync(Signed(recased))).Updated.Should().Be(diff.Updated);
+        using (var db = inst.Factory.CreateDbContext())
+            (await db.ReportProfiles.CountAsync(p => p.Name == upper)).Should().Be(1);
+        (await inst.Config.PreviewAsync(recased)).Updated.Should().Be(0);
+        (await inst.Config.ImportAsync(Signed(recased))).Updated.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Word_templates_and_profile_defaults_are_promoted_to_another_instance()
     {
         var source = NewInstance("source");
