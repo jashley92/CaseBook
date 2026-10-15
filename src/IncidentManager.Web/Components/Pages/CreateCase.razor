@@ -384,8 +384,18 @@
     // WF-51: what the seeding will add: one entity per distinct value as stored (refanged, normalised), since a value
     // already on the case is kept, not added again. Counting raw lines let "1.2.3.4", "1.2.3[.]4" meet "at least 2 entities".
     private int PlannedIndicatorCount() => IndicatorLines(_indicators)
-        .Select(l => IocObservable.DetectType(l) is var t ? (t, IocObservable.Normalize(t, l).ToLowerInvariant()) : default)
+        .Select(l => DetectedOr(l) is var t ? (t, IocObservable.Normalize(t, l).ToLowerInvariant()) : default)
         .Distinct().Count();
+
+    // BUG-506 sibling: an indicator is filed as a type the admin offers: the detected one, else Other, else the first
+    // offered (as the Things tab). With every type hidden the detected one stands.
+    private static EntityType DetectedOr(string raw)
+    {
+        var detected = IocObservable.DetectType(raw);
+        var offered = Ui.Options<EntityType>("EntityType");
+        if (offered.Count == 0 || offered.Contains(detected)) return detected;
+        return offered.Contains(EntityType.Other) ? EntityType.Other : offered[0];
+    }
 
     private static IEnumerable<string> IndicatorLines(string? raw) =>
         (raw ?? "").Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0);
@@ -663,7 +673,7 @@
             // Skip any already added so a resumed run never duplicates them. BUG-420: added together, so the accounts among
             // them share one directory-lookup allowance rather than each getting its own (and a retry matches, not repeats).
             var seed = IndicatorLines(_indicators).Skip(_entitiesSeeded)
-                .Select(raw => new CaseService.EntityToAdd(IocObservable.DetectType(raw), raw, null,
+                .Select(raw => new CaseService.EntityToAdd(DetectedOr(raw), raw, null,
                     EntityDisposition.Unknown, null, "Filed at case creation"))
                 .ToList();
             if (seed.Count > 0) await Cases.AddOrMatchEntitiesAsync(_created.Id, seed);
