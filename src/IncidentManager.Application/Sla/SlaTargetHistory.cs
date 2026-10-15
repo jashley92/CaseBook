@@ -72,6 +72,11 @@ public sealed class SlaTargetHistory
         var entries = await db.AuditLog.AsNoTracking().Where(a => a.EntityType == nameof(AppSetting) && a.EntityId != null)
             .OrderBy(a => a.Sequence)
             .Select(a => new { a.EntityId, a.Action, a.AtUtc, a.BeforeJson, a.AfterJson }).ToListAsync(ct);
+        // BUG-560: an update names only the fields it changed, so a row from before the trail that is gone now (reset) is
+        // known by its key only from a later entry (the delete's before-image). Collect every entry's key first.
+        foreach (var e in entries)
+            if ((Field(e.BeforeJson, nameof(AppSetting.Key)) ?? Field(e.AfterJson, nameof(AppSetting.Key))) is { } k)
+                keyOf.TryAdd(e.EntityId!, k);
 
         var changes = new Dictionary<string, List<(DateTimeOffset, bool, string?)>>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in entries)

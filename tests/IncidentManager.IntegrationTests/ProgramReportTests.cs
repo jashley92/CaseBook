@@ -187,6 +187,42 @@ public sealed class ProgramReportTests : IDisposable
             .Should().Be(1, "judged against today's target it would read as missed");
     }
 
+    [Fact]
+    public async Task A_setting_from_before_the_trail_updated_then_reset_keeps_its_old_value_for_the_past(/* BUG-560 */)
+    {
+        var now = _clock.UtcNow;
+        Guid settingId;
+        // Saved before the audit trail recorded settings: no Create entry.
+        await using (var raw = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options))
+        {
+            await raw.Database.EnsureCreatedAsync();
+            var s = new AppSetting { Key = "Sla:Containment:Medium", Value = "24", UpdatedAtUtc = Feb(1), UpdatedBy = "admin" };
+            raw.AppSettings.Add(s);
+            await raw.SaveChangesAsync();
+            settingId = s.Id;
+        }
+        await using (var db = new AppDbContext(Options()))
+        {
+            _clock.UtcNow = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+            var s = await db.AppSettings.SingleAsync(x => x.Id == settingId);
+            s.Value = "8";   // tightened after the quarter ...
+            s.UpdatedAtUtc = _clock.UtcNow;
+            await db.SaveChangesAsync();
+            _clock.UtcNow = new DateTimeOffset(2026, 9, 2, 0, 0, 0, TimeSpan.Zero);
+            db.AppSettings.Remove(s);   // ... then reset to the server's value
+            await db.SaveChangesAsync();
+        }
+        _clock.UtcNow = now;
+
+        await using var read = new AppDbContext(Options());
+        var history = await SlaTargetHistory.LoadAsync(read, _ => null);
+
+        history.At(Apr(2)).HoursFor(SlaClock.Containment, Severity.Medium).Should().Be(24, "it held 24 h until the update");
+        history.At(new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero)).HoursFor(SlaClock.Containment, Severity.Medium)
+            .Should().Be(8);
+        history.At(now).HoursFor(SlaClock.Containment, Severity.Medium).Should().BeNull("reset: the server has none");
+    }
+
     private sealed class NoServerValues : IncidentManager.Application.Abstractions.IServerSettingValues
     {
         public string? ValueOf(string key) => null;
