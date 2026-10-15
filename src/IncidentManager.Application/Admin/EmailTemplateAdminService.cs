@@ -104,8 +104,9 @@ public sealed class EmailTemplateAdminService
             throw new InvalidOperationException($"Someone changed the email template \"{def.Title}\" since you opened it, so nothing was saved: " +
                 "it would have undone that. Reload the page, then make your change again.");
 
-        var added = UpsertOrClear(db, Row(subjectKey), subjectKey, subject, def.DefaultSubject)
-                    | UpsertOrClear(db, Row(bodyKey), bodyKey, body, def.DefaultBodyHtml);
+        var subjectAdded = UpsertOrClear(db, Row(subjectKey), subjectKey, subject, def.DefaultSubject);
+        var bodyAdded = UpsertOrClear(db, Row(bodyKey), bodyKey, body, def.DefaultBodyHtml);   // both always run
+        var added = subjectAdded || bodyAdded;
         try { await db.SaveChangesAsync(ct); }
         // BUG-437: an override this changes or removes went between the read above and this save (the context reports
         // it as a ConcurrentEditException, whose message is about cases).

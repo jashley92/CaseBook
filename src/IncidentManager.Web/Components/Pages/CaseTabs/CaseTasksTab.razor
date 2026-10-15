@@ -782,9 +782,13 @@ else
         else { _editOwner = ExternalOwnerSentinel; _editOwnerExternal = t.Owner; }
         // Seed the due date/time in the viewer's active display zone (what they see is what they picked).
         if (t.DueAtUtc is { } due)
-            (_editDueDate, _editDueTime) = IncidentManager.Web.Components.Pages.Workspace.DayValues.FromUtc(due, TimeDisp.Zone, OrgZone.Current);   // WF-64
-        else { _editDueDate = null; _editDueTime = null; }
-        (_editDueShown, _editDueStored) = (t.DueAtUtc is null ? null : (_editDueDate!.Value, _editDueTime), t.DueAtUtc);   // BUG-571
+        {
+            var shown = IncidentManager.Web.Components.Pages.Workspace.DayValues.FromUtc(due, TimeDisp.Zone, OrgZone.Current);   // WF-64
+            (_editDueDate, _editDueTime) = shown;
+            _editDueShown = shown;   // BUG-571
+        }
+        else { _editDueDate = null; _editDueTime = null; _editDueShown = null; }
+        _editDueStored = t.DueAtUtc;
     }
 
     private void CancelEdit() => _editingTaskId = null;
