@@ -1196,7 +1196,13 @@ else
         if (_evtTargetId == NewIoc) { _newIocFor = "target"; ResetNewIoc(); } else _targetPrev = _evtTargetId;
     }
 
-    private void ResetNewIoc() { _newIocValue = ""; _newIocLabel = null; _newIocError = null; _newIocSaving = false; _newIocOpening++; }
+    private void ResetNewIoc()
+    {
+        _newIocValue = ""; _newIocLabel = null; _newIocError = null; _newIocSaving = false; _newIocOpening++;
+        // BUG-506: a type or verdict an admin has hidden showed nothing in its select while the save used it.
+        _newIocType = CaseEntitiesTab.OfferedOr(_newIocType, Ui.Options<EntityType>("EntityType"));
+        _newIocDisposition = CaseEntitiesTab.OfferedOr(_newIocDisposition, Ui.Options<EntityDisposition>("EntityDisposition"));
+    }
 
     private void CancelNewIoc()
     {

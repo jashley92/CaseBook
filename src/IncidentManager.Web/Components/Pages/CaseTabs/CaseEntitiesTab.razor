@@ -588,6 +588,7 @@ else
     {
         public bool Include { get; set; } = true;
         public EntityType Type { get; set; }
+        public EntityType Detected { get; init; }   // BUG-506: what the parser found, before a hidden type was swapped
         public string Value { get; set; } = "";
     }
 
@@ -639,7 +640,31 @@ else
         }
     }
 
-    protected override void OnInitialized() => _graphRef = DotNetObjectReference.Create(this);
+    protected override void OnInitialized()
+    {
+        _graphRef = DotNetObjectReference.Create(this);
+        // BUG-506 (BUG-478 sibling): a default an admin has hidden showed nothing in its select while the save used it.
+        _enType = OfferedOr(_enType, EntityTypes);
+        _enDisposition = _enAddDisposition = OfferedOr(_enDisposition, Verdicts);
+        _bulkDisposition = OfferedOr(_bulkDisposition, Verdicts);
+        _relType = OfferedOr(_relType, Ui.Options<EntityRelationshipType>("EntityRelationshipType"));
+    }
+
+    private static IReadOnlyList<EntityType> EntityTypes => Ui.Options<EntityType>("EntityType");
+    private static IReadOnlyList<EntityDisposition> Verdicts => Ui.Options<EntityDisposition>("EntityDisposition");
+
+    /// <summary>BUG-506: the value wanted if the select offers it, else the first one it offers.</summary>
+    public static T OfferedOr<T>(T wanted, IReadOnlyList<T> offered) where T : struct, Enum =>
+        offered.Count == 0 || offered.Contains(wanted) ? wanted : offered[0];
+
+    /// <summary>
+    /// BUG-506: a detected entity type the select offers; else Other (the "not detected" type) if it's offered, else the
+    /// current type, itself kept to one offered.
+    /// </summary>
+    public static EntityType DetectedOr(EntityType detected, EntityType current, IReadOnlyList<EntityType> offered) =>
+        offered.Contains(detected) ? detected
+        : offered.Contains(EntityType.Other) ? EntityType.Other
+        : OfferedOr(current, offered);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -758,8 +783,8 @@ else
         // (finally, below), so its Task.Delay or directory call never runs on a disposed token.
         if (_accountCheck is { } earlier) { _accountCheck = null; await earlier.CancelAsync(); }
         var detected = IocObservable.DetectType(_enValue);
-        _enType = detected;
-        if (detected != EntityType.Other || !AccountDirectory.IsAvailable) return;
+        _enType = DetectedOr(detected, _enType, EntityTypes);   // BUG-506
+        if (detected != EntityType.Other || !AccountDirectory.IsAvailable || !EntityTypes.Contains(EntityType.Account)) return;
         // A bare name could be an account or a host: ask the directory once typing pauses.
         var cts = _accountCheck = new CancellationTokenSource();
         var value = _enValue;
@@ -767,7 +792,8 @@ else
         {
             await Task.Delay(400, cts.Token);
             if (await AccountDirectory.IsKnownAccountAsync(value, cts.Token)
-                && !cts.IsCancellationRequested && _enValue == value && !_enTypePicked && _enEditId is null)
+                && !cts.IsCancellationRequested && _enValue == value && !_enTypePicked && _enEditId is null
+                && EntityTypes.Contains(EntityType.Account))   // BUG-506: hidden meanwhile
                 _enType = EntityType.Account;
         }
         catch (OperationCanceledException) { /* typed on */ }
@@ -812,8 +838,8 @@ else
     {
         ParseBulkRows();
         // BUG-416: a bare name the directory knows is an account (at most 50 asked, so a big paste isn't held up).
-        if (!AccountDirectory.IsAvailable) return;
-        foreach (var row in _bulkRows.Where(r => r.Type == EntityType.Other).Take(50).ToList())
+        if (!AccountDirectory.IsAvailable || !EntityTypes.Contains(EntityType.Account)) return;   // BUG-506
+        foreach (var row in _bulkRows.Where(r => r.Detected == EntityType.Other).Take(50).ToList())
             if (await AccountDirectory.IsKnownAccountAsync(row.Value)) row.Type = EntityType.Account;
     }
 
@@ -821,8 +847,10 @@ else
     {
         _bulkError = null;
         _bulkRows.Clear();
-        foreach (var p in IocObservable.ParseIndicators(_bulkText))
-            _bulkRows.Add(new BulkRow { Type = p.Type, Value = p.Value });
+        var types = EntityTypes;
+        foreach (var p in IocObservable.ParseIndicators(_bulkText))   // BUG-506: a hidden type is shown as Other (Check type)
+            _bulkRows.Add(new BulkRow { Type = DetectedOr(p.Type, EntityType.Other, types), Detected = p.Type, Value = p.Value });
+        _bulkDisposition = OfferedOr(_bulkDisposition, Verdicts);   // BUG-506
         _bulkParsedEmpty = _bulkRows.Count == 0;
         // BUG-202: as many as an IOC file takes, so the list stays one a person can review.
         if (_bulkRows.Count > IncidentManager.Application.Import.CaseImportService.MaxEntities)
@@ -913,7 +941,8 @@ else
         if (_enEditId is { } was) _bringIntoView = ("imMotion.scrollToId", RowId(was));   // BUG-410: back to the row
         _enEditId = null; _enReason = null; _entityError = null; _enTypePicked = false; _enDeterminedWall = null;
         _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
-        _enDisposition = _enAddDisposition;   // BUG-484
+        _enDisposition = OfferedOr(_enAddDisposition, Verdicts);   // BUG-484; BUG-506: to one the select offers
+        _enType = OfferedOr(_enType, EntityTypes);   // BUG-506: an edited one's hidden type isn't the next add's
     }
 
     private async Task SaveEntityEdit()
