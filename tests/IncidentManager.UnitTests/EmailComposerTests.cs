@@ -107,6 +107,30 @@ public class EmailComposerTests
                 html.Should().NotContain("[]", $"{def.Id} offers {{{{{token.Name}}}}}, so the preview should show a sample of it");
             }
     }
+
+    [Fact]
+    public async Task The_executive_reports_text_body_keeps_one_line_per_figure(/* BUG-554 */)
+    {
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Quarter"] = "Q3 2026", ["PreviousQuarter"] = "Q2 2026", ["ReportUrl"] = "",
+        };
+        // The markup CaseNotifications renders for the report.
+        var html = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SummaryTable"] = "<table cellpadding=\"4\" style=\"border-collapse:collapse\"><tr><th align=\"left\"></th>" +
+                               "<th align=\"right\">Q3 2026</th><th align=\"right\">Q2 2026</th></tr>" +
+                               "<tr><td>Cases opened</td><td align=\"right\">12</td><td align=\"right\">9</td></tr>" +
+                               "<tr><td>Median time to contain</td><td align=\"right\">2.5 h</td><td align=\"right\">—</td></tr></table>",
+        };
+
+        var msg = await TestEmail.Composer().ComposeAsync("executive-report", ["a@x.test"], tokens, htmlTokens: html);
+
+        var lines = msg.TextBody.Split('\n');
+        lines.Should().Contain("| Q3 2026 | Q2 2026");
+        lines.Should().Contain("Cases opened | 12 | 9");
+        lines.Should().Contain("Median time to contain | 2.5 h | —");
+    }
 }
 
 /// <summary>BUG-373: a token holding a line break mustn't put one in the subject header, where MailMessage refuses it.</summary>

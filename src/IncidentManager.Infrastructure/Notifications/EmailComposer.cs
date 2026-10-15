@@ -88,6 +88,13 @@ public sealed partial class EmailComposer : IEmailComposer
     [GeneratedRegex(@"\s*[\p{Cc}\u2028\u2029]+\s*")]
     private static partial Regex LineBreakRegex();
 
+    // BUG-554: a row's last cell end (with any whitespace) goes with the row end, so a line has no trailing separator.
+    [GeneratedRegex(@"(?:</t[dh]>\s*)?</tr>", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex RowEndRegex();
+
+    [GeneratedRegex(@"</t[dh]>", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex CellEndRegex();
+
     /// <summary>
     /// BUG-373: a subject is one header line. A token holding a line break (a two-paragraph @mention, a handoff, an
     /// imported multi-line case title) made <c>MailMessage.Subject</c> throw, so the email was lost or failed every retry.
@@ -113,6 +120,9 @@ public sealed partial class EmailComposer : IEmailComposer
         var html = SubstituteHtml(template, tokens, htmlTokens);
         // <li> and block ends become line breaks so lists survive the tag strip.
         html = html.Replace("</li>", "\n").Replace("</p>", "\n\n").Replace("<br/>", "\n").Replace("<br>", "\n");
+        // BUG-554: a table row is a line and its cells are separated, or the executive report's figures run together.
+        html = RowEndRegex().Replace(html, "\n");
+        html = CellEndRegex().Replace(html, " | ");
         var text = WebUtility.HtmlDecode(TagRegex().Replace(html, ""));
         return string.Join('\n', text.Split('\n').Select(l => l.Trim())).Trim();
     }
