@@ -44,7 +44,8 @@ public sealed class FileSealStore : ISealStore
     /// or a manual seal beside the background job) each keep their copy: the name carries the seal's id.
     /// </summary>
     internal static string FileName(IntegritySeal seal, string extension) =>
-        $"seal-{seal.UpToSequence:D9}-{seal.SealedAtUtc.UtcDateTime:yyyyMMddTHHmmssZ}-{seal.Id.ToString("N")[..8]}.{extension}";
+        string.Create(System.Globalization.CultureInfo.InvariantCulture,   // BUG-531: Gregorian on any server culture
+            $"seal-{seal.UpToSequence:D9}-{seal.SealedAtUtc.UtcDateTime:yyyyMMddTHHmmssZ}-{seal.Id.ToString("N")[..8]}.{extension}");
 
     internal static async Task WriteNewAsync(string path, byte[] content, CancellationToken ct)
     {
