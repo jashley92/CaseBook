@@ -1868,8 +1868,8 @@ public sealed class CaseService
     }
 
     /// <summary>
-    /// HR-03: one line on how each closed case ended: its closing brief's conclusion (the current brief's working
-    /// assessment, when it closed with an outcome), else the reason given when it closed.
+    /// HR-03: one line on how each closed case ended: its closing brief's conclusion (the working assessment of the brief
+    /// as it stood at the latest close, when it closed with an outcome), else the reason given when it closed.
     /// </summary>
     private static async Task<Dictionary<Guid, string>> ClosingLinesAsync(IAppDbContext db, IEnumerable<Guid> caseIds,
         CancellationToken ct)
@@ -1878,17 +1878,22 @@ public sealed class CaseService
         if (ids.Count == 0) return [];
         var withOutcome = await db.Cases.AsNoTracking().Where(c => ids.Contains(c.Id) && c.OutcomeKey != null)
             .Select(c => c.Id).ToListAsync(ct);
+        // BUG-527 sibling: the brief as it stood at the latest close (Case.ClosingBrief, BUG-310), not a revision since.
         var briefs = await db.CaseBriefs.AsNoTracking()
-            .Where(b => withOutcome.Contains(b.CaseId) && b.IsCurrent && b.WorkingAssessment != null)
-            .Select(b => new { b.CaseId, b.WorkingAssessment }).ToListAsync(ct);
+            .Where(b => withOutcome.Contains(b.CaseId))
+            .Select(b => new { b.CaseId, b.Version, b.CreatedAtUtc, b.WorkingAssessment }).ToListAsync(ct);
         var closes = await db.StatusChanges.AsNoTracking()
-            .Where(s => ids.Contains(s.CaseId) && s.To == CasePhase.Closed && s.Reason != null)
+            .Where(s => ids.Contains(s.CaseId) && s.To == CasePhase.Closed)
             .Select(s => new { s.CaseId, s.Reason, s.ChangedAtUtc }).ToListAsync(ct);
         var lines = new Dictionary<Guid, string>();
         foreach (var id in ids)
         {
-            var line = briefs.FirstOrDefault(b => b.CaseId == id)?.WorkingAssessment
-                       ?? closes.Where(s => s.CaseId == id).OrderByDescending(s => s.ChangedAtUtc).FirstOrDefault()?.Reason;
+            var close = closes.Where(s => s.CaseId == id).MaxBy(s => s.ChangedAtUtc);
+            var assessment = close is null ? null
+                : briefs.Where(b => b.CaseId == id && b.CreatedAtUtc <= close.ChangedAtUtc).MaxBy(b => b.Version)?.WorkingAssessment;
+            // BUG-527 sibling: the brief is Markdown; the line is shown as plain text.
+            var line = (string.IsNullOrWhiteSpace(assessment) ? null : Content.RichText.ToText(assessment))
+                       ?? closes.Where(s => s.CaseId == id && s.Reason != null).MaxBy(s => s.ChangedAtUtc)?.Reason;
             if (!string.IsNullOrWhiteSpace(line)) lines[id] = TaskResults.Excerpt(line, 220);
         }
         return lines;

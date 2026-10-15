@@ -130,6 +130,34 @@ public sealed class SeenBeforeTests : IDisposable
         row.WorstDisposition.Should().Be(EntityDisposition.Compromised);
     }
 
+    // BUG-527 sibling: the line quotes the brief as it stood at the latest close (BUG-310), not a revision made since, and
+    // as plain text, not its Markdown.
+    [Fact]
+    public async Task The_closing_line_is_the_brief_at_closure_as_plain_text()
+    {
+        var db = NewContext();
+        await using var _ = db;
+        await DevDataSeeder.SeedCaseOutcomesAsync(db, _clock);
+        var svc = Cases(db);
+        var old = (await svc.CreateAsync(Req("Takeover"))).Id;
+        await svc.AddEntityAsync(old, EntityType.Account, "J.Morales@contoso-insurance.example", null,
+            EntityDisposition.Compromised, null, null);
+        _clock.UtcNow = _clock.UtcNow.AddHours(4);
+        await svc.ChangePhaseAsync(old, CasePhase.Closed, null, closing: new(CaseOutcomeCatalog.Confirmed,
+            "Phishing and MFA fatigue gave an attacker the session.", "Account takeover; **no** payment was made."));
+        _clock.UtcNow = _clock.UtcNow.AddDays(1);
+        var current = (await svc.GetDetailAsync(old))!.Briefs.Single(b => b.IsCurrent).Id;
+        (await svc.ReviseBriefAsync(old, current, "What happened.", "Rewritten after closure.", null, null)).Should().BeTrue();
+
+        (await svc.FindCaseHistoryForIocsAsync(["j.morales@contoso-insurance.example"])).Should().ContainSingle()
+            .Which.ClosingLine.Should().Be("Account takeover; no payment was made.");
+        var fresh = (await svc.CreateAsync(Req("Mfa"))).Id;
+        await svc.AddEntityAsync(fresh, EntityType.EmailAddress, "j.morales@contoso-insurance.example", null,
+            EntityDisposition.Unknown, null, null);
+        (await svc.FindEntityOverlapsAsync(fresh)).Should().ContainSingle()
+            .Which.ClosingLine.Should().Be("Account takeover; no payment was made.");
+    }
+
     [Fact]
     public async Task Exercises_and_cases_the_viewer_cannot_see_are_not_history()
     {
