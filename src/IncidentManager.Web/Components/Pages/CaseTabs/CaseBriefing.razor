@@ -146,9 +146,7 @@
                 <h2 id="@(IdPrefix)remains">What remains</h2>
                 @{
                     // BUG-299: a list's questions with how each is being answered; prose (before the list, or all of it) as written.
-                    var parts = CaseNext.QuestionParts(b?.OpenQuestions);
-                    var questions = parts?.Items ?? [];
-                    var prose = parts is { } qp ? qp.Prose : string.IsNullOrWhiteSpace(b?.OpenQuestions) ? null : b.OpenQuestions;
+                    var (prose, questions) = BriefingRemains.Parts(b?.OpenQuestions);   // BUG-533: as the copied text has it
                     var gate = GateLine(); var notice = NoticeLine(now);
                 }
                 @if (questions.Count == 0 && prose is null && gate is null && notice is null)
@@ -498,7 +496,8 @@
         Part("What we are doing", CaseNext.Open(Case, now).Select(t => "- " + t.Title
             + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({Users.DisplayFor(t.Owner)})")
             + (t.DueAtUtc is { } d ? $", due {TimeDisp.Short(d)}" : "")));
-        Part("What remains", (CaseNext.Questions(b?.OpenQuestions) ?? []).Select(q => "? " + Plain(q))
+        // BUG-533: prose questions too (Questions is null for prose, and drops prose before a list), as the page shows them.
+        Part("What remains", BriefingRemains.Lines(b?.OpenQuestions, Plain)
             .Append(NoticeLine(now) ?? "").Append(GateLine() ?? ""));
         Part("Why", Decisions().Select(d => $"Decision, {TimeDisp.Short(d.OccurredAtUtc)}: {Plain(d.Description)}"
             + (string.IsNullOrWhiteSpace(d.Rationale) ? "" : $" Why: {d.Rationale}")));
