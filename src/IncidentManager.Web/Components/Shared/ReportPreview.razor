@@ -187,7 +187,7 @@ else
                                     }
                                     @foreach (var x in Model.Iocs)
                                     {
-                                        <tr><td>@x.Type</td><td><code class="small">@x.Value</code></td><td>@x.Verdict</td><td>@(x.Tlp ?? "—")</td><td class="text-nowrap">@x.AddedAtUtc.ToString("yyyy-MM-dd")</td><td>@x.Description</td></tr>
+                                        <tr><td>@x.Type</td><td><code class="small">@x.Value</code></td><td>@x.Verdict</td><td>@(x.Tlp ?? "—")</td><td class="text-nowrap">@x.Added</td><td>@x.Description</td></tr>
                                     }
                                 </tbody>
                             </table>

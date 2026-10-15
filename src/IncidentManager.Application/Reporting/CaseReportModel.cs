@@ -77,7 +77,12 @@ public sealed record ReportRelationshipRow(string Source, string Relationship, s
 public sealed record ReportTechniqueRow(string TechniqueId, string Name, string Tactic, string Source = "Tagged");
 /// <summary>PROD-45: one indicator of compromise (malicious or suspicious), value defanged when reports defang.</summary>
 public sealed record ReportIocRow(string Type, string Value, string Verdict, string? Tlp, DateTimeOffset AddedAtUtc,
-    string? Source, string? Description);
+    string? Source, string? Description)
+{
+    /// <summary>BUG-537: the date added as both renderers print it, in the invariant (Gregorian) calendar whatever the
+    /// server's culture.</summary>
+    public string Added => AddedAtUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+}
 
 /// <summary>One ordered step of the reconstructed attack narrative (Event timeline), for the report.</summary>
 /// <param name="Where">On a third-party case, "Vendor" or "Our environment" (after a pivot); null on an internal case.</param>
