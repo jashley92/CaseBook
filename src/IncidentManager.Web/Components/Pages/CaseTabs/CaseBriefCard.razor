@@ -289,9 +289,11 @@
         finally { _saving = false; }
     }
 
+    // BUG-545: a held key doesn't repeat. keymap.js's BUG-536 guard doesn't reach .im-own-keys, and after a stale refusal
+    // the editor re-baselines, so a repeat would save over the colleague's brief before the warning could be read.
     private async Task EditorKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && _editing) await Save();
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && !e.Repeat && _editing) await Save();
     }
 
     private async Task Save()

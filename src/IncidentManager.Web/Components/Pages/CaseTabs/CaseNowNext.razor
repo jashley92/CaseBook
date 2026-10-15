@@ -284,10 +284,11 @@
     }
 
     // BUG-370: the pane handles its own Ctrl/Cmd+Enter (keymap.js leaves .im-own-keys alone): in the Done form it marks
-    // the task done, as the button would (it stays off while a required result is blank).
+    // the task done, as the button would (it stays off while a required result is blank). BUG-545: a held key doesn't
+    // repeat (keymap.js's BUG-536 guard doesn't reach .im-own-keys).
     private async Task DoneKey(KeyboardEventArgs e, ActionItem t)
     {
-        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey)) return;
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat) return;
         if (t.FollowsUpQuestion && string.IsNullOrWhiteSpace(_result)) return;
         await Done(t);
     }
