@@ -1052,6 +1052,42 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_resumed_import_reopened_after_a_stopped_apply_warns_it_may_write_again(/* BUG-541 */)
+    {
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        }
+        await using var ctx = NewContext();
+        var svc = NewImportService(ctx);
+
+        // A first apply fails part-way and is put back with what it wrote (ResumeJson).
+        var preview = (await svc.BuildPreviewForPendingAsync(pid))!;
+        var claim = await svc.ClaimPendingAsync(pid);
+        preview.Timeline.ForEach(t => t.Include = false);
+        await svc.ApplyAsync(preview);
+        preview.Timeline.ForEach(t => t.Include = true);
+        await svc.ReleaseClaimAsync(pid, preview, claim);
+        (await ctx.PendingImports.AsNoTracking().SingleAsync(p => p.Id == pid)).ResumeJson.Should().NotBeNull();
+
+        // A second one is claimed and then stops without recording or releasing (a recycle), and is reopened.
+        var resumed = (await svc.BuildPreviewForPendingAsync(pid))!;
+        resumed.Warnings.Should().Contain(w => w.Contains("won't be written again"));
+        (await svc.ClaimPendingAsync(pid)).Should().NotBeNull();
+        _clock.UtcNow = _clock.UtcNow.Add(CaseImportService.StaleClaim).AddMinutes(1);
+        (await svc.ReopenStuckAsync(pid)).Should().BeTrue();
+
+        var reopened = (await svc.BuildPreviewForPendingAsync(pid))!;
+        reopened.CreatedCaseId.Should().Be(preview.CreatedCaseId, "known writes stay marked, so the case isn't filed twice");
+        reopened.Warnings.Should().Contain(w => w.Contains("stopped without finishing") && w.Contains(_user.UserId)
+                                              && w.Contains("may have written more than the items marked"));
+        reopened.Warnings.Should().NotContain(w => w.Contains("won't be written again"),
+            "the stopped apply's own writes were never recorded");
+    }
+
+    [Fact]
     public async Task A_classification_the_role_cannot_file_is_dropped_from_the_preview(/* BUG-542 */)
     {
         _user.PermissionSet = [Permission.ViewCases, Permission.EditCases];   // no ChangeClassification (REV-14)

@@ -457,11 +457,19 @@ public sealed class CaseImportService
             .FirstOrDefaultAsync(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending, ct);
         if (row is null) return null;
 
+        var reopenedBy = row.DecisionNote is { } note && note.StartsWith(ReopenedMarker, StringComparison.Ordinal)
+            ? note[ReopenedMarker.Length..].Trim() : null;
+
         // BUG-146: an apply that failed part-way left the reviewed preview, marked with what it wrote.
         if (row.ResumeJson is { } resume && JsonSerializer.Deserialize<CaseImportPreview>(resume, ResumeJsonOptions) is { } resumed)
         {
-            resumed.Warnings.Add("An earlier apply of this import stopped part-way. The items already written are marked and " +
-                                 "won't be written again; applying carries on into the same case.");
+            // BUG-541: a later apply that stopped without releasing (WF-94) recorded nothing, so what it wrote isn't marked.
+            resumed.Warnings.Add(reopenedBy is null
+                ? "An earlier apply of this import stopped part-way. The items already written are marked and " +
+                  "won't be written again; applying carries on into the same case."
+                : $"An earlier apply of this import (by {reopenedBy}) stopped without finishing and may have written more than " +
+                  "the items marked here: its summary note, timeline entries and tasks. Check the case before applying: applying " +
+                  "carries on into the same case and writes again anything not marked (entities aren't duplicated).");
             return resumed;
         }
 
@@ -472,9 +480,8 @@ public sealed class CaseImportService
         if (parsed.Document!.Target is { } target) target.CaseId = null;
         var preview = await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
         // WF-18/WF-94: an apply that stopped without recording anything may have written before it stopped.
-        if (row.DecisionNote is { } note && note.StartsWith(ReopenedMarker, StringComparison.Ordinal))
+        if (reopenedBy is { } who)
         {
-            var who = note[ReopenedMarker.Length..].Trim();
             preview.Warnings.Add(row.TargetCaseId is null
                 ? $"An earlier apply of this import (by {who}) stopped without finishing and may have created a case before it " +
                   "did. Check the case list for it before applying, and pick it as the target if it's there, or the case is filed twice."
