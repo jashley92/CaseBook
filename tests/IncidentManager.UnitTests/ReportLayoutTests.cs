@@ -182,6 +182,68 @@ public class ReportLayoutTests
             Count(noImpact, marker).Should().Be(1, marker);
     }
 
+    private static readonly System.DateTimeOffset At = new(2026, 3, 4, 10, 0, 0, System.TimeSpan.Zero);
+
+    private static CaseReportModel VendorCase(bool withImpact) => new()
+    {
+        Sections = withImpact ? System.Enum.GetValues<ReportSection>() : [ReportSection.EventTimeline, ReportSection.SystemsReviewed, ReportSection.Outcome],
+        CaseNumber = "2026-09", Title = "Vendor", Classification = "Breach", Phase = "Closed", Severity = "High",
+        Origin = "Third party", VendorName = "Acme", ImpactedAssets = "srv1", LegalReferred = true, LegalNote = "Counsel engaged.",
+        DataTypesInvolved = "SSNs",
+        ActivityBeganAtUtc = At, ActivityBeganApproximate = "the first attack step is dated only", DetectedAtUtc = At.AddHours(2),
+        ResolvedAtUtc = At.AddHours(8), ClosedAtUtc = At.AddDays(2), ChangedAfterClosure = "Changed 2 times after closure by Dana.",
+        DisclosureMilestones = [new ReportTimelineItem(At, "Vendor notified", "They told us", "email")],
+        AttackChain = [new ReportAttackStep(1, At, "Initial Access", "actor", "host", "T1566", "Phish", "Vendor"),
+            new ReportAttackStep(2, At.AddHours(1), "Execution", "actor", "srv1", null, "Ran", "Our environment")],
+        Entities = [new ReportEntityRow("Host", "srv1", null, "Malicious", null, "EDR", "TLP:RED")],
+        GeneratedBy = "tester", GeneratedAtUtc = At, ContentHash = new string('a', 64),
+    };
+
+    [Fact]
+    public void The_preview_helpers_carry_what_the_Word_report_prints(/* BUG-517 */)
+    {
+        var m = VendorCase(withImpact: false);
+        m.AttackChainHeaders.Should().Contain("Where");
+        m.AttackChainRow(m.AttackChain[1])[2].Should().Be("Our environment");
+        m.AttackChainCaption.Should().Contain("Acme's environment").And.Contain("after the pivot");
+        CaseReportModel.EntityHeaders.Should().Contain("TLP");
+        CaseReportModel.EntityRow(m.Entities[0]).Should().Contain("TLP:RED");
+        m.OutcomeStamps.Should().Equal(
+            "Activity began: 2026-03-04 10:00:00Z (approximate: the first attack step is dated only)",
+            "Detected: 2026-03-04 12:00:00Z", "Recovery started: 2026-03-04 18:00:00Z", "Closed: 2026-03-06 10:00:00Z");
+        m.SystemsImpactedAssetsLine.Should().Be("Impacted assets: srv1");
+        m.OutcomeLegalPointer.Should().Be("Legal/Privacy: see the case facts at the top.");
+        m.FactsLines.Should().Equal("Data context (analyst notes): SSNs", "Legal/Privacy referral recorded. Counsel engaged.");
+
+        // Every line the preview renders from the model is in the Word report too.
+        var xml = WordXml(new ReportGenerator().GenerateWord(m));
+        foreach (var text in m.AttackChainHeaders.Concat(m.AttackChain.SelectMany(m.AttackChainRow).Where(c => c.Length > 0))
+                     .Concat(CaseReportModel.EntityRow(m.Entities[0]).Where(c => c.Length > 0))
+                     .Concat(m.DisclosureMilestones.SelectMany(CaseReportModel.DisclosureRow).Where(c => c.Length > 0))
+                     .Concat(m.OutcomeStamps).Concat(m.FactsLines)
+                     .Append(m.AttackChainCaption).Append(CaseReportModel.DisclosureCaption).Append(m.SystemsImpactedAssetsLine!)
+                     .Append(m.OutcomeLegalPointer!).Append(m.ChangedAfterClosure!))
+            xml.Should().Contain(text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;"), "the Word report prints \"{0}\" too", text);
+
+        var withImpact = VendorCase(withImpact: true);
+        withImpact.SystemsImpactedAssetsLine.Should().Be("Impacted assets: see Business Impact.");
+        withImpact.OutcomeLegalPointer.Should().Be("Legal/Privacy: see Business Impact.");
+        withImpact.FactsLines.Should().Equal("Legal/Privacy referral, data context: see Business Impact.");
+        withImpact.BusinessImpactLines.Should().Contain("Impacted assets: srv1").And.Contain("Legal/Privacy referral recorded. Counsel engaged.");
+    }
+
+    [Fact]
+    public void An_internal_case_keeps_its_six_column_attack_chain(/* BUG-517 */)
+    {
+        var m = VendorCase(withImpact: false) with { VendorName = null, DisclosureMilestones = [] };
+        m.IsVendorCase.Should().BeFalse();
+        m.ShowsAttackChain.Should().BeTrue();
+        m.AttackChainHeaders.Should().HaveCount(6).And.NotContain("Where");
+        m.AttackChainRow(m.AttackChain[0]).Should().HaveCount(6);
+        (m with { AttackChain = [] }).ShowsAttackChain.Should().BeTrue("an internal case prints the table with (none)");
+        (VendorCase(false) with { AttackChain = [] }).ShowsAttackChain.Should().BeFalse("a vendor case without steps shows the milestones only");
+    }
+
     private static string WordXml(byte[] docx)
     {
         using var zip = new ZipArchive(new MemoryStream(docx), ZipArchiveMode.Read);

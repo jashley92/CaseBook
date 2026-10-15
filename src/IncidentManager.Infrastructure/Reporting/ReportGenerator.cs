@@ -103,33 +103,14 @@ public sealed partial class ReportGenerator : IReportGenerator
             {
                 // A third-party case has two parts: the attacker's steps at the vendor (if the vendor reported them)
                 // and the disclosure milestones. An internal case has the attack chain only.
-                var vendorCase = m.DisclosureMilestones.Count > 0 || !string.IsNullOrWhiteSpace(m.VendorName);
+                // BUG-517: the captions, columns and rows come from the model, which the preview renders too.
                 body.AppendChild(Heading("Event Timeline"));
-                if (m.AttackChain.Count > 0 || !vendorCase)
+                if (m.ShowsAttackChain)
                 {
-                    var vendor = string.IsNullOrWhiteSpace(m.VendorName) ? "the vendor" : m.VendorName;
-                    var pivoted = m.AttackChain.Any(x => x.Where == "Our environment");
-                    body.AppendChild(P(!vendorCase
-                        ? "Reconstructed adversary activity in order: MITRE ATT&CK tactic(s), actor → target, and technique."
-                        : pivoted
-                            ? $"The attacker's activity in order: in {vendor}'s environment as the vendor reported it, then in our environment after the pivot. MITRE ATT&CK tactic(s), actor → target, and technique."
-                            : $"The attacker's activity in {vendor}'s environment, as the vendor reported it: MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
+                    body.AppendChild(P(m.AttackChainCaption, italic: true, size: 18));
                     foreach (var png in m.AttackChainImages)
                         body.AppendChild(BodyPicture(main, png, "Attack chain", CaseReportModel.AttackChainAlt));
-                    string[] Row(ReportAttackStep x) =>
-                    [
-                        x.Order.ToString(CultureInfo.InvariantCulture),
-                        x.When,
-                        x.Tactics,
-                        string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
-                        x.TechniqueId ?? "",
-                        x.Description
-                    ];
-                    body.AppendChild(vendorCase
-                        ? WordTable(["#", "When (UTC)", "Where", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
-                            m.AttackChain.Select(x => Row(x).Take(2).Append(x.Where ?? "").Concat(Row(x).Skip(2)).ToArray()))
-                        : WordTable(["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
-                            m.AttackChain.Select(Row)));
+                    body.AppendChild(WordTable(m.AttackChainHeaders, m.AttackChain.Select(m.AttackChainRow)));
                     // ST-02: say once that approximate times are as reported, rather than leave them to look like gaps.
                     if (m.AttackChain.Any(x => x.Stated is not null))
                         body.AppendChild(P(ReportAttackStep.ApproximateNote, italic: true, size: 18));
@@ -137,10 +118,8 @@ public sealed partial class ReportGenerator : IReportGenerator
                 if (m.DisclosureMilestones.Count > 0)
                 {
                     body.AppendChild(SubHeading("Disclosure milestones"));
-                    body.AppendChild(P("What the vendor reported to us and what we confirmed, in order.", italic: true, size: 18));
-                    body.AppendChild(WordTable(
-                        ["When (UTC)", "Milestone", "What happened", "Source"],
-                        m.DisclosureMilestones.Select(x => new[] { x.When, x.Type, x.Description, x.Source ?? "" })));
+                    body.AppendChild(P(CaseReportModel.DisclosureCaption, italic: true, size: 18));
+                    body.AppendChild(WordTable(CaseReportModel.DisclosureHeaders, m.DisclosureMilestones.Select(CaseReportModel.DisclosureRow)));
                 }
                 break;
             }
@@ -159,11 +138,8 @@ public sealed partial class ReportGenerator : IReportGenerator
                     + (m.IndicatorsDefanged ? " " + CaseReportModel.DefangNote : ""), italic: true, size: 18));
                 if (m.EntityGraphImage is { } graph)
                     body.AppendChild(BodyPicture(main, graph, "Entity relationship graph", CaseReportModel.EntityGraphAlt));
-                if (!string.IsNullOrWhiteSpace(m.ImpactedAssets))
-                    body.AppendChild(P(ImpactHome(m) ? "Impacted assets: see Business Impact." : $"Impacted assets: {m.ImpactedAssets}"));
-                body.AppendChild(WordTable(
-                    ["Type", "Value", "Label", "Disposition", "TLP", "Source"],
-                    m.Entities.Select(x => new[] { x.Type, x.Value, x.Label ?? "", x.Disposition, x.Tlp ?? "", x.Source ?? "" })));
+                if (m.SystemsImpactedAssetsLine is { } assets) body.AppendChild(P(assets));
+                body.AppendChild(WordTable(CaseReportModel.EntityHeaders, m.Entities.Select(CaseReportModel.EntityRow)));
                 break;
 
             case ReportSection.Indicators:
@@ -261,52 +237,15 @@ public sealed partial class ReportGenerator : IReportGenerator
         body.AppendChild(P($"Origin: {m.Origin}{(m.VendorName is null ? "" : $" ({m.VendorName})")}", size: 20));
         if (m.DetectionCaseId is not null) body.AppendChild(P($"Detection case: {m.DetectionCaseId}", size: 20));
         if (m.SharingLine is { } sharing) body.AppendChild(P(sharing, size: 20));
-        if (ImpactHome(m))
-        {
-            // BUG-81: said once, in Business Impact; the facts only point there.
-            var held = new[] { m.LegalReferred ? "Legal/Privacy referral" : null, m.LegalHold ? "legal hold" : null,
-                m.DataTypesInvolved is not null ? "data context" : null }.OfType<string>().ToList();
-            if (held.Count > 0) body.AppendChild(P($"{Capitalise(string.Join(", ", held))}: see Business Impact.", size: 20));
-            return;
-        }
-        if (m.DataTypesInvolved is not null) body.AppendChild(P($"Data context (analyst notes): {m.DataTypesInvolved}", size: 20));
-        AppendLegal(body, m, size: 20);
-    }
-
-    /// <summary>
-    /// BUG-81: the legal referral and hold, the data context and the impacted assets are each printed once. Their home
-    /// is Business Impact when the profile includes it; otherwise the facts (and Systems Reviewed for the assets).
-    /// </summary>
-    private static bool ImpactHome(CaseReportModel m) => m.Sections.Contains(ReportSection.BusinessImpact);
-
-    private static string Capitalise(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
-
-    private static void AppendLegal(Body body, CaseReportModel m, int size = 22)
-    {
-        if (m.LegalReferred) body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}", size: size));
-        if (m.LegalHold) body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted.", size: size));
+        // BUG-81: said once, in Business Impact when the profile has it; the facts only point there.
+        foreach (var line in m.FactsLines) body.AppendChild(P(line, size: 20));
     }
 
     private static void AppendBusinessImpact(Body body, CaseReportModel m)
     {
-        var any = false;
-        if (m.AffectedIndividualsCount is { } n) { body.AppendChild(P(string.Create(CultureInfo.InvariantCulture, $"Affected individuals: {n:N0}"))); any = true; }
-        if (m.DataElementsSummary is not null) { body.AppendChild(P($"Data elements: {m.DataElementsSummary}")); any = true; }
-        if (m.NotificationTriggersSummary is not null) { body.AppendChild(P($"Notification triggers: {m.NotificationTriggersSummary}")); any = true; }
-        if (!string.IsNullOrWhiteSpace(m.AffectedStates)) { body.AppendChild(P($"Affected jurisdictions: {m.AffectedStates}")); any = true; }
-        if (!string.IsNullOrWhiteSpace(m.ImpactedAssets)) { body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}")); any = true; }
-        if (m.DataTypesInvolved is not null) { body.AppendChild(P($"Data context (analyst notes): {m.DataTypesInvolved}")); any = true; }
-        if (m.LegalReferred || m.LegalHold) { AppendLegal(body, m); any = true; }
-        if (m.MaterialityStatus is { } ms)
-        {
-            var by = string.IsNullOrWhiteSpace(m.MaterialityDecisionMaker) ? "" : $" by {m.MaterialityDecisionMaker}";
-            // WF-36: the day the call was made, in the organization's zone (the model carries it there).
-            var on = m.MaterialityDecidedOnUtc is { } d ? string.Create(CultureInfo.InvariantCulture, $" on {d.DateTime:yyyy-MM-dd}") : "";
-            body.AppendChild(P($"Materiality: {ms}{(m.MaterialityDetermined ? $", determined{by}{on}" : "")}."));
-            if (!string.IsNullOrWhiteSpace(m.MaterialityRationale)) body.AppendChild(P($"Materiality rationale: {m.MaterialityRationale}"));
-            any = true;
-        }
-        if (!any) body.AppendChild(P("(no impact assessment recorded)"));
+        var lines = m.BusinessImpactLines;
+        foreach (var line in lines) body.AppendChild(P(line));
+        if (lines.Count == 0) body.AppendChild(P("(no impact assessment recorded)"));
     }
 
     // INV-19: the brief's written parts, in their fixed order.
@@ -324,21 +263,10 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.Outcome is { } outcome) body.AppendChild(P($"Outcome: {outcome}"));
         if (m.Conclusion is { } conclusion) body.AppendChild(P($"Conclusion: {conclusion}"));
         body.AppendChild(P($"Current phase: {m.Phase}. Classification: {m.Classification}. Severity: {m.Severity}."));
-        // HR-16: in the order they happened, as the timeline tells it; "Resolved" was the move into Recovery.
-        var stamps = new (string Label, DateTimeOffset? At)[]
-        {
-            ("Activity began", m.ActivityBeganAtUtc), ("Detected", m.DetectedAtUtc),
-            m.ContainmentNotNeeded is { } why ? ($"Containment not needed ({why})", m.ContainmentDecidedAtUtc) : ("Contained", m.ContainedAtUtc),
-            ("Recovery started", m.ResolvedAtUtc), ("Reported to regulators", m.ReportedAtUtc), ("Closed", m.ClosedAtUtc)
-        };
-        foreach (var (label, at) in stamps.Where(s => s.At is not null).OrderBy(s => s.At))
-            body.AppendChild(P(label == "Activity began" && m.ActivityBeganApproximate is { } approx
-                ? $"{label}: {at:u} (approximate: {approx})"   // ST-04
-                : $"{label}: {at:u}"));
+        foreach (var stamp in m.OutcomeStamps) body.AppendChild(P(stamp));   // HR-16, ST-04
         if (m.ChangedAfterClosure is { } after) body.AppendChild(P(after));   // HR-15
         // BUG-81: the referral and hold are printed in their home section; the outcome points there.
-        if (m.LegalReferred || m.LegalHold)
-            body.AppendChild(P(ImpactHome(m) ? "Legal/Privacy: see Business Impact." : "Legal/Privacy: see the case facts at the top."));
+        if (m.OutcomeLegalPointer is { } legal) body.AppendChild(P(legal));
     }
 
     private static void AppendAppendix(Body body, CaseReportModel m)

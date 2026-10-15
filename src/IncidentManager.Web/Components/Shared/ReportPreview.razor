@@ -33,6 +33,7 @@ else
             Origin: @Model.Origin@(Model.VendorName is null ? "" : $" ({Model.VendorName})")
             @if (Model.DetectionCaseId is not null) { <text> &nbsp;&middot;&nbsp; Detection case: @Model.DetectionCaseId</text> }
             @if (Model.SharingLine is { } sharing) { <br />@sharing }
+            @foreach (var line in Model.FactsLines) { <br />@line }   @* BUG-517: as the Word facts (BUG-81) *@
         </div>
 
         @foreach (var section in Model.Sections)
@@ -46,66 +47,78 @@ else
                         break;
 
                     case ReportSection.BusinessImpact:
-                        @if (!HasImpact)
+                        @* BUG-517: the lines the Word report prints, from the model. *@
+                        @if (Model.BusinessImpactLines is not { Count: > 0 } impact)
                         {
                             <p class="mb-0 text-muted fst-italic">(no impact assessment recorded)</p>
                         }
                         else
                         {
                             <ul class="mb-0 small">
-                                @if (Model.AffectedIndividualsCount is { } n) { <li>Affected individuals: @n.ToString("N0")</li> }
-                                @if (Model.DataElementsSummary is not null) { <li>Data elements: @Model.DataElementsSummary</li> }
-                                @if (Model.NotificationTriggersSummary is not null) { <li>Notification triggers: @Model.NotificationTriggersSummary</li> }
-                                @if (!string.IsNullOrWhiteSpace(Model.AffectedStates)) { <li>Affected jurisdictions: @Model.AffectedStates</li> }
-                                @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets)) { <li>Impacted assets: @Model.ImpactedAssets</li> }
-                                @if (Model.DataTypesInvolved is not null) { <li>Data context (analyst notes): @Model.DataTypesInvolved</li> }
-                                @if (Model.LegalReferred) { <li>Legal/Privacy referral recorded. @Model.LegalNote</li> }
-                                @if (Model.LegalHold) { <li>Legal hold in effect. Case data must be preserved and not deleted.</li> }
-                                @if (Model.MaterialityStatus is { } ms)
-                                {
-                                    <li>
-                                        Materiality: @ms@(Model.MaterialityDetermined ? $", determined{(string.IsNullOrWhiteSpace(Model.MaterialityDecisionMaker) ? "" : $" by {Model.MaterialityDecisionMaker}")}{(Model.MaterialityDecidedOnUtc is { } dd ? $" on {dd:yyyy-MM-dd}" : "")}" : "").
-                                        @if (!string.IsNullOrWhiteSpace(Model.MaterialityRationale)) { <span>@Model.MaterialityRationale</span> }
-                                    </li>
-                                }
+                                @foreach (var line in impact) { <li>@line</li> }
                             </ul>
                         }
                         break;
 
                     case ReportSection.EventTimeline:
-                        <p class="small fst-italic text-muted mb-1">Reconstructed adversary activity in order: ATT&amp;CK tactic(s), actor → target, and technique.</p>
-                        @foreach (var png in Model.AttackChainImages)
+                        @* BUG-517: a vendor case's "Where" column, captions and disclosure milestones, as in the Word report. *@
+                        @if (Model.ShowsAttackChain)
                         {
-                            <img class="img-fluid border rounded mb-2" src="@Png(png)" alt="@CaseReportModel.AttackChainAlt" />
+                            <p class="small fst-italic text-muted mb-1">@Model.AttackChainCaption</p>
+                            @foreach (var png in Model.AttackChainImages)
+                            {
+                                <img class="img-fluid border rounded mb-2" src="@Png(png)" alt="@CaseReportModel.AttackChainAlt" />
+                            }
+                            @if (Model.AttackChain.Count == 0)
+                            {
+                                <p class="mb-0 text-muted fst-italic">(none)</p>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered small mb-0">
+                                        <thead><tr>@foreach (var h in Model.AttackChainHeaders) { <th>@h</th> }</tr></thead>
+                                        <tbody>
+                                            @foreach (var x in Model.AttackChain)
+                                            {
+                                                var cells = Model.AttackChainRow(x);
+                                                <tr>
+                                                    @for (var i = 0; i < cells.Length; i++)
+                                                    {
+                                                        <td class="@(i == 1 && x.Stated is null ? "text-nowrap" : "")">@cells[i]</td>
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                @if (Model.AttackChain.Any(x => x.Stated is not null))
+                                {
+                                    <p class="small fst-italic text-muted mt-1 mb-0">@ReportAttackStep.ApproximateNote</p>
+                                }
+                            }
                         }
-                        @if (Model.AttackChain.Count == 0)
+                        @if (Model.DisclosureMilestones.Count > 0)
                         {
-                            <p class="mb-0 text-muted fst-italic">(none)</p>
-                        }
-                        else
-                        {
+                            <p class="small fw-semibold mt-2 mb-0" style="color:#44546A">Disclosure milestones</p>
+                            <p class="small fst-italic text-muted mb-1">@CaseReportModel.DisclosureCaption</p>
                             <div class="table-responsive">
                                 <table class="table table-sm table-bordered small mb-0">
-                                    <thead><tr><th>#</th><th>When (UTC)</th><th>Tactic(s)</th><th>Actor → Target</th><th>Technique</th><th>What happened</th></tr></thead>
+                                    <thead><tr>@foreach (var h in CaseReportModel.DisclosureHeaders) { <th>@h</th> }</tr></thead>
                                     <tbody>
-                                        @foreach (var x in Model.AttackChain)
+                                        @foreach (var x in Model.DisclosureMilestones)
                                         {
+                                            var cells = CaseReportModel.DisclosureRow(x);
                                             <tr>
-                                                <td>@x.Order</td>
-                                                <td class="@(x.Stated is null ? "text-nowrap" : "")">@x.When</td>
-                                                <td>@x.Tactics</td>
-                                                <td>@(string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}")</td>
-                                                <td>@x.TechniqueId</td>
-                                                <td>@x.Description</td>
+                                                @for (var i = 0; i < cells.Length; i++)
+                                                {
+                                                    <td class="@(i == 0 && x.Stated is null ? "text-nowrap" : "")">@cells[i]</td>
+                                                }
                                             </tr>
                                         }
                                     </tbody>
                                 </table>
                             </div>
-                            @if (Model.AttackChain.Any(x => x.Stated is not null))
-                            {
-                                <p class="small fst-italic text-muted mt-1 mb-0">@ReportAttackStep.ApproximateNote</p>
-                            }
                         }
                         break;
 
@@ -134,21 +147,28 @@ else
                         {
                             <img class="img-fluid border rounded mb-2" src="@Png(graph)" alt="@CaseReportModel.EntityGraphAlt" />
                         }
-                        @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets))
+                        @if (Model.SystemsImpactedAssetsLine is { } assets)
                         {
-                            <p class="small mb-1">Impacted assets: @Model.ImpactedAssets</p>
+                            <p class="small mb-1">@assets</p>
                         }
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered small mb-0">
-                                <thead><tr><th>Type</th><th>Value</th><th>Label</th><th>Disposition</th><th>Source</th></tr></thead>
+                                <thead><tr>@foreach (var h in CaseReportModel.EntityHeaders) { <th>@h</th> }</tr></thead>
                                 <tbody>
                                     @if (Model.Entities.Count == 0)
                                     {
-                                        <tr><td colspan="5" class="text-muted">(none)</td></tr>
+                                        <tr><td colspan="@CaseReportModel.EntityHeaders.Length" class="text-muted">(none)</td></tr>
                                     }
                                     @foreach (var x in Model.Entities)
                                     {
-                                        <tr><td>@x.Type</td><td><code class="small">@x.Value</code></td><td>@x.Label</td><td>@x.Disposition</td><td>@x.Source</td></tr>
+                                        var cells = CaseReportModel.EntityRow(x);
+                                        <tr>
+                                            @for (var i = 0; i < cells.Length; i++)
+                                            {
+                                                if (i == 1) { <td><code class="small">@cells[i]</code></td> }
+                                                else { <td>@cells[i]</td> }
+                                            }
+                                        </tr>
                                     }
                                 </tbody>
                             </table>
@@ -198,14 +218,11 @@ else
                             @if (Model.Outcome is { } outcome) { <li><strong>Outcome: @outcome</strong></li> }
                             @if (Model.Conclusion is { } conclusion) { <li>Conclusion: @conclusion</li> }
                             <li>Current phase: @Model.Phase. Classification: @Model.Classification. Severity: @Model.Severity.</li>
-                            @if (Model.DetectedAtUtc is { } d) { <li>Detected: @d.ToString("u")</li> }
-                            @if (Model.ContainedAtUtc is { } cn) { <li>Contained: @cn.ToString("u")</li> }
-                            @if (Model.ContainmentNotNeeded is { } why) { <li>Containment not needed (@why): @Model.ContainmentDecidedAtUtc?.ToString("u")</li> }
-                            @if (Model.ResolvedAtUtc is { } r) { <li>Resolved: @r.ToString("u")</li> }
-                            @if (Model.ReportedAtUtc is { } rep) { <li>Reported to regulators: @rep.ToString("u")</li> }
-                            @if (Model.ClosedAtUtc is { } cl) { <li>Closed: @cl.ToString("u")</li> }
-                            @if (Model.LegalReferred) { <li>Referred to Legal/Privacy. @Model.LegalNote</li> }
-                            @if (Model.LegalHold) { <li>Legal hold in effect. Case data must be preserved and not deleted.</li> }
+                            @* BUG-517: the dated stamps in order (activity began, recovery started), after-closure note and
+                               legal pointer, as the Word report prints them. *@
+                            @foreach (var stamp in Model.OutcomeStamps) { <li>@stamp</li> }
+                            @if (Model.ChangedAfterClosure is { } after) { <li>@after</li> }
+                            @if (Model.OutcomeLegalPointer is { } legal) { <li>@legal</li> }
                         </ul>
                         break;
 
@@ -229,7 +246,9 @@ else
                         @foreach (var n in Model.Notes)
                         {
                             <p class="small fw-semibold mb-0">[@n.AtUtc.ToString("u")] @n.Author</p>
-                            <p class="small" style="white-space:pre-wrap">@n.Body</p>
+                            @* BUG-517: a note keeps its formatting, as in Word. *@
+                            @if (n.Blocks is { Count: > 0 } blocks) { <RichBlocksView Blocks="blocks" /> }
+                            else { <p class="small" style="white-space:pre-wrap">@n.Body</p> }
                         }
                         break;
 
@@ -259,16 +278,6 @@ else
 
     private string Org => string.IsNullOrWhiteSpace(Model!.OrganizationName) ? "[Company Name]" : Model.OrganizationName!;
     private string Team => string.IsNullOrWhiteSpace(Model!.TeamName) ? "[Team Name]" : Model.TeamName!;
-
-    private bool HasImpact => Model!.AffectedIndividualsCount is not null
-        || Model.DataElementsSummary is not null
-        || !string.IsNullOrWhiteSpace(Model.AffectedStates)
-        || !string.IsNullOrWhiteSpace(Model.ImpactedAssets)
-        || Model.DataTypesInvolved is not null
-        || Model.LegalReferred
-        || Model.LegalHold
-        || Model.MaterialityStatus is not null;
-
 
     private static string Heading(ReportSection s) => s switch
     {
