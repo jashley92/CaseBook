@@ -206,6 +206,36 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.7
+
+A fix release with no migration. Things to check:
+
+- **New case:** ticking or unticking "Tabletop / exercise case" checks the indicators again. A live case can no longer
+  be filed without the duplicate and campaign check, and a drill no longer quietly drops a chosen link. Indicators are
+  filed only as entity types an admin offers.
+- **Past quarters stay as reported:** the Program report and Program overview keep a past quarter's containment and
+  resolution figures when a case is later moved back into Containment. A later correction to a case's detected or
+  occurred time no longer changes a quarter that has ended.
+- **Active Directory:** on a slow but working domain controller, the list of trusted domains is kept again, so
+  `DOMAIN\name` lookups work. Only a single directory search that runs into its 10-second limit counts as incomplete.
+- **Case record:**
+  - Typing a time back to the minute it showed no longer moves an entry an hour in the repeated autumn hour.
+  - Editing an attack step keeps tactics its picker doesn't show, for example from an import.
+  - The Things tab and the New IOC dialog never default to, or auto-detect, a type or verdict an admin has hidden.
+  - A task result put on the record from Now/Next is logged as the same type the Tasks tab uses, and says which.
+  - Gates passed when a case is filed stay as their own timeline rows.
+  - Tactics read in ATT&CK matrix order in the Briefing, the case report and the review draft, named as in the app.
+  - The case preview's "+N other cases" counts only cases on its own side of the exercise line.
+- **Navigation:** switching between UTC and local time, or "Reload the page", keeps the case where you were. "Show on
+  the timeline", entry links, "Cited by" and "changes since" work whatever timeline lens is on. The Desk's "Browse all
+  cases" opens all cases.
+- **Smaller fixes:**
+  - Export date ranges and token expiry limits work under any server calendar.
+  - A Word template's table inside a text box shows its own card's item.
+  - Two graph-layout saves at once no longer lose the layout.
+  - A release tagged on a release-notes commit finds its code's quality-gate result in more cases.
+  - v1.6.6's note on tagged questions also applies to Known lines.
+
 ### v1.6.6
 
 A fix release with no migration. Things to check:
@@ -230,7 +260,7 @@ A fix release with no migration. Things to check:
   - A note promoted to the timeline, or an entry edited, keeps its time in the repeated autumn hour.
   - When an admin hides Analysis, forms default to the first type offered.
   - After editing an entity, the add form gets its own verdict back.
-  - A question with `[[tags]]` is limited by what you typed.
+  - A question or Known line with `[[tags]]` is limited by what you typed.
   - A climb such as Complex Event to Incident names every gate it passed.
   - Accounts copied by a supersede keep their directory details.
   - Tactics are listed in ATT&CK matrix order everywhere, so Defense Impairment comes before Discovery.
