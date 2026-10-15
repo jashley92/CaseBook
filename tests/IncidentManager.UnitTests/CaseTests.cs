@@ -1014,6 +1014,36 @@ public class CaseTests
     }
 
     [Fact]
+    public void Gates_passed_when_a_case_was_filed_never_fold_into_a_later_escalation(/* BUG-504 */)
+    {
+        // Filed as an Incident (the creation save passes Promotion and Incident escalation), escalated 30 s later.
+        var c = Case.Open(2026, 7, "Takeover", "Mailbox takeover", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "a1", Now);
+        c.RecordGatePassage(StageGateTrigger.PromoteToAdverseEvent, false, null, "Filed: takeover", "[MET] x", "a1", Now);
+        c.RecordGatePassage(StageGateTrigger.EscalateToIncident, false, null, "Filed: takeover", "[MET] y", "a1", Now.AddMilliseconds(40));
+        var at = Now.AddSeconds(30);
+        c.RecordGatePassage(StageGateTrigger.EscalateToBreach, false, null, "Data left", "[MET] z", "ic1", at);
+        c.Reclassify(Classification.Breach, "Data left", "ic1", at);
+        var labels = new IncidentManager.Application.Cases.MilestoneLabels(x => x?.ToString() ?? "Complex Event", s => s.ToString(), p => p.ToString(), m => "");
+
+        var ms = IncidentManager.Application.Cases.CaseMilestones.Project(c, labels);
+
+        ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Classification).Note
+            .Should().Be("Breach escalation gate passed");
+        ms.Where(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Gate).Select(m => (m.Title, m.Detail))
+            .Should().Equal(("Promotion gate passed", "Filed: takeover"), ("Incident escalation gate passed", "Filed: takeover"));
+
+        // Lowered and raised again: that second Incident passage guards the re-escalation, so it folds.
+        c.Reclassify(Classification.AdverseEvent, "Not a breach after all", "ic1", Now.AddMinutes(5));
+        c.RecordGatePassage(StageGateTrigger.EscalateToIncident, false, null, "Takeover again", "[MET] y", "ic1", Now.AddMinutes(9));
+        c.Reclassify(Classification.Incident, "Takeover again", "ic1", Now.AddMinutes(9));
+        ms = IncidentManager.Application.Cases.CaseMilestones.Project(c, labels);
+        ms.Where(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Classification).Select(m => m.Note)
+            .Should().Equal("Breach escalation gate passed", null, "Incident escalation gate passed");
+        ms.Count(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Gate).Should().Be(2);
+    }
+
+    [Fact]
     public void AddEntity_again_does_not_downgrade_benign_either()
     {
         var c = NewCase();

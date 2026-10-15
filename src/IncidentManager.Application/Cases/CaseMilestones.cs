@@ -202,9 +202,10 @@ public static class CaseMilestones
         // into that milestone as a note; an override stays its own flagged row, at the transition's time.
         // BUG-492: a climb (Complex Event to Incident) passes a gate per rung in one save; each folds in, in climb order.
         var folded = new Dictionary<int, List<StageGateTrigger>>();
+        var filing = FilingPassages(c);
         foreach (var g in c.GatePassages.OrderBy(g => g.PassedAtUtc).ThenBy(g => g.Trigger))
         {
-            var guarded = GuardedTransitionKey(c, g);
+            var guarded = filing.Contains(g) ? null : GuardedTransitionKey(c, g);   // BUG-504
             var at = guarded is { } gk && list.FirstOrDefault(m => m.Key == gk) is { } tm ? tm.AtUtc : g.PassedAtUtc;
             if (!g.WasOverridden && guarded is { } key && list.FindIndex(m => m.Key == key) is var i and >= 0)
             {
@@ -305,6 +306,19 @@ public static class CaseMilestones
                                                   // BUG-492: a rung passed on the way up guards the climb past it
                                                   && (to is null || x.To >= to || g.Trigger == StageGateTrigger.PromoteToAdverseEvent))
             .OrderBy(x => (x.ChangedAtUtc - g.PassedAtUtc).Duration()).Select(x => $"cls:{x.Id}").FirstOrDefault();
+    }
+
+    // BUG-504: the passages the creation save recorded: a case filed onto a rung passes the climb up to it (CreateAsync),
+    // once per gate. Each is the first passage of a gate on that climb, recorded before any later classification change
+    // (passing one of those gates again needs a lowering first). They guard the filing, so they never fold into a later change.
+    private static HashSet<GatePassage> FilingPassages(Case c)
+    {
+        if (c.ClassificationChanges.FirstOrDefault(IsInitial(c)) is not { } initial) return [];
+        var firstChange = c.ClassificationChanges.Where(x => !IsInitial(c)(x)).Select(x => (DateTimeOffset?)x.ChangedAtUtc).Min();
+        return StageGates.StageGateTriggers.Climb(null, initial.To)
+            .Select(t => c.GatePassages.Where(g => g.Trigger == t && (firstChange is null || g.PassedAtUtc <= firstChange))
+                .MinBy(g => g.PassedAtUtc))
+            .OfType<GatePassage>().ToHashSet();
     }
 
     private static string Span(TimeSpan t) =>
