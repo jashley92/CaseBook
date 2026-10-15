@@ -491,6 +491,10 @@ $template = $null
 if ($appSrc) { $template = Get-ChildItem -Path (Split-Path -Parent $appSrc) -Recurse -Filter 'appsettings.Production.template.json' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
 if (-not $template) { $t2 = Join-Path $deployDir 'appsettings.Production.template.json'; if (Test-Path $t2) { $template = $t2 } }
 $missingData = @()
+function Get-JsonValue($node, [string]$path) {
+    foreach ($part in $path.Split(':')) { if ($null -eq $node -or -not $node.PSObject.Properties[$part]) { return $null }; $node = $node.$part }
+    return $node
+}
 if ($template) {
     # Every string the template sets to "__DATA_ROOT__\..." -> (path in the JSON, suffix under the data root).
     function Get-DataRootSettings($node, [string]$prefix) {
@@ -501,10 +505,6 @@ if ($template) {
                 [pscustomobject]@{ Path = $path; Suffix = $prop.Value.Substring('__DATA_ROOT__'.Length).TrimStart('\') }
             } elseif ($prop.Value -is [System.Management.Automation.PSCustomObject]) { Get-DataRootSettings $prop.Value $path }
         }
-    }
-    function Get-JsonValue($node, [string]$path) {
-        foreach ($part in $path.Split(':')) { if ($null -eq $node -or -not $node.PSObject.Properties[$part]) { return $null }; $node = $node.$part }
-        return $node
     }
     $wanted  = @(Get-DataRootSettings (Get-Content $template -Raw | ConvertFrom-Json) '')
     $liveCfg = Get-Content $prodSettings -Raw | ConvertFrom-Json
@@ -517,7 +517,9 @@ if ($template) {
             }
         }
     }
-    $missingAll = @($wanted | Where-Object { -not (Get-JsonValue $liveCfg $_.Path) })
+    # BUG-544: the chain key paths are left to the check below. Blank, they mean "beside the signing key", which is
+    # right wherever that isn't the site folder; filling them in from the data root could orphan the key.
+    $missingAll = @($wanted | Where-Object { $_.Path -notlike 'Integrity:ChainKey:*' -and -not (Get-JsonValue $liveCfg $_.Path) })
     # Only plain storage folders are filled in automatically. The seal signing key is never moved for you: a new
     # location would orphan the existing key, so a missing path stops the upgrade. Anything else (the session key
     # ring, the backup-status file an external job writes) is reported for the admin to set.
@@ -547,6 +549,81 @@ if ($template) {
     }
 } else {
     Write-Warn2 "No appsettings.Production.template.json found -- skipping the data-folder settings check."
+}
+
+# 3f. BUG-544: KEY FILES BESIDE THE SIGNING KEY. The chain key file (Certificate source) and the retired key folders
+# default to the folder of Integrity:SigningKeyPath even when the signing key isn't a file, and with no SigningKeyPath
+# that is App_Data\keys under the site folder, which the deploy's mirror copy below empties (a lost chain key then stops
+# startup, BUG-26). Each such setting is pointed at the data root's keys folder, any file already there in the site is
+# copied across first, and a clash or an unknown data root stops the run here, before anything changes.
+$keyMoves = @()
+$cfgNow   = Get-Content $prodSettings -Raw | ConvertFrom-Json
+$sigPath  = "$(Get-JsonValue $cfgNow 'Integrity:SigningKeyPath')"
+if (-not $sigPath) {
+    # The app's own default, from the build being deployed (as the new build will read it).
+    foreach ($b in @((Join-Path $appSrc 'appsettings.json'), (Join-Path $SitePath 'appsettings.json'))) {
+        if (-not $sigPath -and (Test-Path $b)) {
+            try { $sigPath = "$(Get-JsonValue (Get-Content $b -Raw | ConvertFrom-Json) 'Integrity:SigningKeyPath')" } catch { $sigPath = '' }
+        }
+    }
+    if (-not $sigPath) { $sigPath = 'App_Data\keys\seal-signing.pem' }
+}
+# A relative path is from the content root, the site folder.
+$sigFull  = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($sigPath)) { $sigPath } else { Join-Path $SitePath $sigPath }))
+$keysDirNow = Split-Path -Parent $sigFull
+$siteFull = [IO.Path]::GetFullPath($SitePath).TrimEnd('\')
+$inSite   = $keysDirNow.Equals($siteFull, [StringComparison]::OrdinalIgnoreCase) -or
+            $keysDirNow.StartsWith($siteFull + '\', [StringComparison]::OrdinalIgnoreCase)
+if ($inSite) {
+    $sigSource = "$(Get-JsonValue $cfgNow 'Integrity:SigningKey:Source')"
+    if ((-not $sigSource) -or ($sigSource -ieq 'File')) {
+        throw ("Integrity:SigningKeyPath ($sigFull) is inside the site folder, which the upgrade mirrors from the new " +
+               "build, so the seal signing key would be deleted. Nothing has been changed. Move the key (and any 'retired' " +
+               "and chain key files beside it) under the data root, set the path to it (OPERATIONS.md section 2), then re-run.")
+    }
+    $derived = @()
+    $chainOn = "$(Get-JsonValue $cfgNow 'Integrity:ChainKey:Enabled')" -ieq 'true'
+    if ($chainOn -and "$(Get-JsonValue $cfgNow 'Integrity:ChainKey:Source')" -ieq 'Certificate') {
+        if (-not "$(Get-JsonValue $cfgNow 'Integrity:ChainKey:WrappedKeyPath')") {
+            $derived += [pscustomobject]@{ Path = 'Integrity:ChainKey:WrappedKeyPath'; Name = 'chain-key.json'; Folder = $false } }
+        if (-not "$(Get-JsonValue $cfgNow 'Integrity:ChainKey:RetiredWrappedKeysPath')") {
+            $derived += [pscustomobject]@{ Path = 'Integrity:ChainKey:RetiredWrappedKeysPath'; Name = 'chain-retired'; Folder = $true } }
+    }
+    # Earlier signing keys' public keys, which seals signed before a key change are checked with.
+    if (-not "$(Get-JsonValue $cfgNow 'Integrity:RetiredPublicKeysPath')") {
+        $derived += [pscustomobject]@{ Path = 'Integrity:RetiredPublicKeysPath'; Name = 'retired'; Folder = $true } }
+    if ($derived.Count -gt 0 -and -not $DataRoot) {
+        throw ("$(($derived | ForEach-Object { $_.Path }) -join ', ') not set, so the file(s) go beside Integrity:SigningKeyPath " +
+               "in $keysDirNow, inside the site folder, where the upgrade's mirror copy deletes them. Nothing has been " +
+               "changed. Re-run with -DataRoot <your data root, e.g. E:\CaseBookData> so they can be moved under it, or set " +
+               "the path(s) yourself (OPERATIONS.md section 2).")
+    }
+    foreach ($d in $derived) {
+        $from = Join-Path $keysDirNow $d.Name
+        $to   = Join-Path (Join-Path $DataRoot 'keys') $d.Name
+        # Pairs of (file in the site, same file under the data root); a file already at the target must be the same one.
+        $pairs = @()
+        if ($d.Folder) {
+            if (Test-Path $from -PathType Container) {
+                $pairs = @(Get-ChildItem -Path $from -File | ForEach-Object { [pscustomobject]@{ From = $_.FullName; To = Join-Path $to $_.Name } })
+            }
+        } elseif (Test-Path $from -PathType Leaf) { $pairs = @([pscustomobject]@{ From = $from; To = $to }) }
+        foreach ($p in $pairs) {
+            if ((Test-Path $p.To) -and (Get-FileHash $p.To).Hash -ne (Get-FileHash $p.From).Hash) {
+                throw ("$($p.From) (in the site folder) and $($p.To) (under the data root) are different files. Nothing has " +
+                       "been changed. Work out which one the app uses, keep a copy of both, set $($d.Path) to the right " +
+                       "one, then re-run.")
+            }
+        }
+        if (-not $d.Folder -and $pairs.Count -eq 0 -and (Test-Path $to)) {
+            Write-Warn2 "$($d.Path): no $($d.Name) in the site folder; the one already at $to will be used."
+        }
+        $keyMoves += [pscustomobject]@{ Path = $d.Path; Value = $to; Folder = $d.Folder; Files = $pairs }
+    }
+    if ($keyMoves.Count -gt 0) {
+        Write-Warn2 ("Key files beside the signing key would sit in the site folder -- will be moved under $DataRoot\keys " +
+                     "after the backup: " + (($keyMoves | ForEach-Object { "$($_.Path) = $($_.Value) ($($_.Files.Count) file(s) to copy)" }) -join '; '))
+    }
 }
 
 # BUG-314: the warm-up decides whether the new build started, by asking the site at $ProbeUrl. Asked now, before anything
@@ -647,7 +724,7 @@ if ($LASTEXITCODE -ge 8) { throw "Failed to snapshot the current site for rollba
 Write-Info "Rollback snapshot: $rollbackDir"
 
 # --- 5b. Add any missing data-folder settings (the config is backed up above) ---------
-if ($missingData.Count -gt 0) {
+if ($missingData.Count -gt 0 -or $keyMoves.Count -gt 0) {
     Write-Step "Adding missing data-folder settings to appsettings.Production.json"
     $liveCfg = Get-Content $prodSettings -Raw | ConvertFrom-Json
     # BUG-144: a new store folder gets the app identity's Modify, as the installer grants each store. Copying the data
@@ -655,8 +732,11 @@ if ($missingData.Count -gt 0) {
     $pool = Get-Item "IIS:\AppPools\$AppPoolName"
     $appIdentity = if ($pool.processModel.identityType -eq 'SpecificUser' -and $pool.processModel.userName) {
         $pool.processModel.userName } else { "IIS APPPOOL\$AppPoolName" }
-    foreach ($m in $missingData) {
-        $value = Join-Path $DataRoot $m.Suffix
+    # BUG-544: with the key settings of step 3f, each with the files to copy across from the site folder.
+    $settings = @($missingData | ForEach-Object { [pscustomobject]@{ Path = $_.Path; Value = (Join-Path $DataRoot $_.Suffix); Files = @() } }) +
+                @($keyMoves | ForEach-Object { [pscustomobject]@{ Path = $_.Path; Value = $_.Value; Files = $_.Files } })
+    foreach ($m in $settings) {
+        $value = $m.Value
         $node = $liveCfg; $parts = $m.Path.Split(':')
         for ($i = 0; $i -lt $parts.Length - 1; $i++) {
             if (-not $node.PSObject.Properties[$parts[$i]]) { $node | Add-Member -NotePropertyName $parts[$i] -NotePropertyValue ([pscustomobject]@{}) }
@@ -672,6 +752,15 @@ if ($missingData.Count -gt 0) {
             $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
                 $appIdentity, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
             Set-Acl -Path $dir -AclObject $acl
+        }
+        # A checked copy before the setting points at it; the site's own copy goes with the mirror below.
+        foreach ($f in $m.Files) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $f.To) | Out-Null
+            Copy-Item -LiteralPath $f.From -Destination $f.To -Force
+            if ((Get-FileHash -LiteralPath $f.To).Hash -ne (Get-FileHash -LiteralPath $f.From).Hash) {
+                throw "Copying $($f.From) to $($f.To) didn't produce the same file. appsettings.Production.json is unchanged."
+            }
+            Write-Info "Copied $($f.From) -> $($f.To)"
         }
         Write-Info "$($m.Path) = $value"
     }

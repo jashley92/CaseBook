@@ -199,7 +199,7 @@ it must be keyed.
 | `Secret` | CyberArk: an `@cyberark:Safe=…;Object=…` reference to **32 random bytes, base64-encoded**. |
 | `RetiredSecrets` | CyberArk: references to earlier keys, so entries hashed with them still verify. |
 | `CertificateThumbprint`, `StoreLocation` | Certificate: the certificate the key is encrypted to (it can be the signing certificate); the app account needs read on its private key. |
-| `WrappedKeyPath`, `RetiredWrappedKeysPath` | Certificate: the encrypted key file (`chain-key.json` beside the signing key) and a folder of earlier ones (`chain-retired`). |
+| `WrappedKeyPath`, `RetiredWrappedKeysPath` | Certificate: the encrypted key file and a folder of earlier ones. The installer sets them to `<DataRoot>\keys\chain-key.json` and `<DataRoot>\keys\chain-retired`; blank means `chain-key.json` and `chain-retired` beside `SigningKeyPath`, even when the signing key isn't a file. Keep them out of the site folder: an upgrade mirrors it from the new build. If they're blank and that folder is in the site (no `SigningKeyPath`), `Upgrade-CaseBook.ps1` copies any files there to `<DataRoot>\keys` and sets the paths (and `RetiredPublicKeysPath`), and stops instead if a different file is already there. |
 
 Making a CyberArk key (Windows PowerShell or PowerShell 7), then storing the output as the object's content:
 

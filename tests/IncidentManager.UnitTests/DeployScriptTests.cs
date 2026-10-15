@@ -52,6 +52,23 @@ public partial class DeployScriptTests
         withoutComments.Should().NotContain("inheritInChildApplications");
     }
 
+    [Fact]
+    public void The_template_keeps_the_chain_key_under_the_data_root_where_it_always_was(/* BUG-544 */)
+    {
+        // Blank, these paths mean "beside SigningKeyPath", which with no SigningKeyPath is the site folder an upgrade
+        // mirrors (deleting the key). Set explicitly, they must still be the folder and names the blank default gives a
+        // fresh install, so an existing key isn't moved.
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "appsettings.Production.template.json")));
+        var integrity = doc.RootElement.GetProperty("Integrity");
+        var keysFolder = Path.GetDirectoryName(integrity.GetProperty("SigningKeyPath").GetString()!.Replace('\\', '/'))!.Replace('\\', '/');
+        var chain = integrity.GetProperty("ChainKey");
+
+        keysFolder.Should().Be("__DATA_ROOT__/keys");
+        chain.GetProperty("WrappedKeyPath").GetString()!.Replace('\\', '/').Should().Be(keysFolder + "/chain-key.json");
+        chain.GetProperty("RetiredWrappedKeysPath").GetString()!.Replace('\\', '/').Should().Be(keysFolder + "/chain-retired");
+    }
+
     [GeneratedRegex(@"sqlcmd(\.exe)?\b.*\s-i\s", RegexOptions.None)]
     private static partial Regex SqlcmdWithInputFile();
 
