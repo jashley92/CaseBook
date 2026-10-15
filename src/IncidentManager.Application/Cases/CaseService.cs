@@ -1592,6 +1592,7 @@ public sealed class CaseService
         if (kind == TimelineKind.Event) description = Content.MarkdownService.OneLine(description);
         TimelineEntry.EnsureDecisionHasRationale(type, decision?.Rationale);
         followUps?.Validate();
+        using var linkGate = await LinkGateAsync(followUps?.LinkCaseId is not null, ct);   // BUG-525
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         await EnsureEvidenceOnCaseAsync(db, id, evidenceId, ct);
@@ -1709,9 +1710,8 @@ public sealed class CaseService
             var visible = await Scoped(db.Cases.AsNoTracking()).AnyAsync(x => x.Id == other, ct);
             if (!visible) throw new InvalidOperationException("The case to link must exist and be visible to you.");
             await EnsureSameSideAsync(db, c.Id, other, ct);
-            var already = await db.CaseLinks.AsNoTracking().AnyAsync(l =>
-                (l.CaseId == c.Id && l.RelatedCaseId == other) || (l.CaseId == other && l.RelatedCaseId == c.Id), ct);
-            if (!already)
+            // BUG-525: the caller holds the link gate (LinkGateAsync) from before this look through its save.
+            if (!await LinkedAsync(db, c.Id, other, ct))
                 db.CaseLinks.Add(new CaseLink
                 {
                     CaseId = c.Id, RelatedCaseId = other, Type = f.LinkType, Description = null,
@@ -1731,6 +1731,7 @@ public sealed class CaseService
     {
         Require();
         followUps?.Validate();
+        using var linkGate = await LinkGateAsync(followUps?.LinkCaseId is not null, ct);   // BUG-525
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         await EnsureEvidenceOnCaseAsync(db, id, evidenceId, ct);
@@ -2279,11 +2280,9 @@ public sealed class CaseService
             throw new InvalidOperationException("Both cases must exist and be visible to you.");
         await EnsureSameSideAsync(db, caseId, relatedCaseId, ct);
 
+        using var gate = await LinkGateAsync(true, ct);   // BUG-525
         // One link per pair, regardless of direction — keeps the relationship unambiguous.
-        var already = await db.CaseLinks.AsNoTracking().AnyAsync(l =>
-            (l.CaseId == caseId && l.RelatedCaseId == relatedCaseId) ||
-            (l.CaseId == relatedCaseId && l.RelatedCaseId == caseId), ct);
-        if (already) return null;
+        if (await LinkedAsync(db, caseId, relatedCaseId, ct)) return null;
 
         var link = new CaseLink
         {
@@ -2295,8 +2294,37 @@ public sealed class CaseService
             CreatedAtUtc = _clock.UtcNow
         };
         db.CaseLinks.Add(link);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            // BUG-525: a link added past the gate (another process) hits the unique index. The pair is linked, as asked.
+            using var fresh = _factory.CreateDbContext();
+            if (await LinkedAsync(fresh, caseId, relatedCaseId, ct)) return null;
+            throw;
+        }
         return link.Id;
+    }
+
+    // BUG-525: whether two cases are linked, either way round.
+    private static Task<bool> LinkedAsync(IAppDbContext db, Guid a, Guid b, CancellationToken ct) =>
+        db.CaseLinks.AsNoTracking().AnyAsync(l => (l.CaseId == a && l.RelatedCaseId == b) || (l.CaseId == b && l.RelatedCaseId == a), ct);
+
+    // BUG-525: linking is a look, then an insert. One at a time (the app runs as one instance, as WF-40), so two people
+    // linking the same two cases at once, either way round, can't both find no link and both add one. Taken after the
+    // other checks and held through the save; nothing under it waits on another link.
+    private static readonly SemaphoreSlim LinkGate = new(1, 1);
+
+    private static async Task<IDisposable?> LinkGateAsync(bool needed, CancellationToken ct)
+    {
+        if (!needed) return null;
+        await LinkGate.WaitAsync(ct);
+        return new LinkGateHeld();
+    }
+
+    private sealed class LinkGateHeld : IDisposable
+    {
+        private int _released;
+        public void Dispose() { if (Interlocked.Exchange(ref _released, 1) == 0) LinkGate.Release(); }
     }
 
     /// <summary>
@@ -2389,21 +2417,6 @@ public sealed class CaseService
         }
         var now = _clock.UtcNow;
 
-        // A "Related to" link between the two becomes "Duplicate of". BUG-161: a "Part of campaign" link stays: the campaign
-        // views walk those links, so removing it would drop cases linked through the duplicate out of the campaign.
-        var existing = await db.CaseLinks.Where(l =>
-            (l.CaseId == duplicateId && l.RelatedCaseId == primaryId) || (l.CaseId == primaryId && l.RelatedCaseId == duplicateId))
-            .ToListAsync(ct);
-        var linked = existing.Any(l => l.Type == CaseLinkType.DuplicateOf && l.CaseId == duplicateId);
-        db.CaseLinks.RemoveRange(existing.Where(l => l.Type != CaseLinkType.PartOfCampaign
-            && !(l.Type == CaseLinkType.DuplicateOf && l.CaseId == duplicateId)));
-        if (!linked)
-            db.CaseLinks.Add(new CaseLink
-            {
-                CaseId = duplicateId, RelatedCaseId = primaryId, Type = CaseLinkType.DuplicateOf,
-                Description = reason.Length > 500 ? reason[..500] : reason, CreatedBy = _user.UserId, CreatedAtUtc = now
-            });
-
         var copied = 0;
         var added = new List<CaseEntity>();
         if (copyIndicators)
@@ -2434,7 +2447,27 @@ public sealed class CaseService
                    + $"\n\nReason: {reason}",
         });
 
-        await db.SaveChangesAsync(ct);
+        bool linked;
+        // BUG-525: the pair's links are read and changed under the link gate, through the save, as LinkCaseAsync does.
+        using (await LinkGateAsync(true, ct))
+        {
+            // A "Related to" link between the two becomes "Duplicate of". BUG-161: a "Part of campaign" link stays: the
+            // campaign views walk those links, so removing it would drop cases linked through the duplicate out of the campaign.
+            var existing = await db.CaseLinks.Where(l =>
+                (l.CaseId == duplicateId && l.RelatedCaseId == primaryId) || (l.CaseId == primaryId && l.RelatedCaseId == duplicateId))
+                .ToListAsync(ct);
+            linked = existing.Any(l => l.Type == CaseLinkType.DuplicateOf && l.CaseId == duplicateId);
+            db.CaseLinks.RemoveRange(existing.Where(l => l.Type != CaseLinkType.PartOfCampaign
+                && !(l.Type == CaseLinkType.DuplicateOf && l.CaseId == duplicateId)));
+            if (!linked)
+                db.CaseLinks.Add(new CaseLink
+                {
+                    CaseId = duplicateId, RelatedCaseId = primaryId, Type = CaseLinkType.DuplicateOf,
+                    Description = reason.Length > 500 ? reason[..500] : reason, CreatedBy = _user.UserId, CreatedAtUtc = now
+                });
+
+            await db.SaveChangesAsync(ct);
+        }
         // BUG-493: the accounts copied across get their "as added" directory snapshot on the kept case, as any add does
         // (BUG-416); best effort, once the supersede is saved.
         await CaptureAccountsAsync(primary.Id, added, new Accounts.AccountDirectoryService.CaptureAllowance(), ct);

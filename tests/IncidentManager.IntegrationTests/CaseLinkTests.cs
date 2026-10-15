@@ -192,5 +192,111 @@ public sealed class CaseLinkTests : IDisposable
         options.Select(o => o.Id).Should().ContainSingle().Which.Should().Be(gamma); // not self, not linked Beta
     }
 
+    // BUG-525: holds the first save that adds a link, after its "already linked?" look and before its insert, so a second
+    // link can be tried inside that window. Registered ahead of the audit interceptor, so it doesn't hold the chain gate.
+    private sealed class HoldLinkSave : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        public readonly TaskCompletionSource Reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _held;
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context!.ChangeTracker.Entries<IncidentManager.Domain.Entities.CaseLink>().Any(e => e.State == EntityState.Added)
+                && Interlocked.Exchange(ref _held, 1) == 0)
+            {
+                Reached.SetResult();
+                await Release.Task;
+            }
+            return result;
+        }
+    }
+
+    private CaseService HeldService(AppDbContext db, HoldLinkSave hold) =>
+        new(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+                .UseSqlite(_connection)
+                .AddInterceptors(hold, new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+                .Options),
+            _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(),
+            new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+
+    // Runs the second link while the first is held; it must wait for the first instead of looking past it.
+    private static async Task<T> SecondWhileFirstHeldAsync<T>(HoldLinkSave hold, Task first, Func<Task<T>> second)
+    {
+        await hold.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var run = Task.Run(second);
+        (await Task.WhenAny(run, Task.Delay(400))).Should().NotBe(run, "the second link waits while the first is saving");
+        hold.Release.SetResult();
+        await first;
+        return await run;
+    }
+
+    [Theory]
+    [InlineData(false)]   // the same direction (and type): the unique index would refuse the second with a raw error
+    [InlineData(true)]    // the reverse direction: nothing in the schema stops a second row
+    public async Task Two_people_linking_the_same_cases_at_once_make_one_link(bool reverse)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = (await svc.CreateAsync(Req("Alpha"))).Id;
+        var beta = (await svc.CreateAsync(Req("Beta"))).Id;
+        var hold = new HoldLinkSave();
+
+        var first = HeldService(db, hold).LinkCaseAsync(alpha, beta, CaseLinkType.RelatedTo, null);
+        var second = await SecondWhileFirstHeldAsync(hold, first, () => reverse
+            ? svc.LinkCaseAsync(beta, alpha, CaseLinkType.PartOfCampaign, null)
+            : svc.LinkCaseAsync(alpha, beta, CaseLinkType.RelatedTo, null));
+
+        (await first).Should().NotBeNull();
+        second.Should().BeNull("the pair was already linked");
+        (await db.CaseLinks.AsNoTracking().CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_follow_up_link_and_a_reverse_link_at_once_make_one_link()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = (await svc.CreateAsync(Req("Alpha"))).Id;
+        var beta = (await svc.CreateAsync(Req("Beta"))).Id;
+        var hold = new HoldLinkSave();
+
+        var first = HeldService(db, hold).AddTimelineEntryAsync(alpha, TimelineKind.Investigation, TimelineEntryType.Other,
+            _clock.UtcNow, "Same sender as Beta", null, followUps: new EntryFollowUps(LinkCaseId: beta));
+        var second = await SecondWhileFirstHeldAsync(hold, first,
+            () => svc.LinkCaseAsync(beta, alpha, CaseLinkType.RelatedTo, null));
+
+        second.Should().BeNull("the follow-up linked the pair first");
+        (await db.CaseLinks.AsNoTracking().CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_link_the_unique_index_refuses_because_it_was_just_made_elsewhere_reads_as_already_linked()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = (await svc.CreateAsync(Req("Alpha"))).Id;
+        var beta = (await svc.CreateAsync(Req("Beta"))).Id;
+        var hold = new HoldLinkSave();
+
+        var first = HeldService(db, hold).LinkCaseAsync(alpha, beta, CaseLinkType.RelatedTo, null);
+        await hold.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        // The same link, written past the gate (another server, say) while the first is between its look and its insert.
+        await using (var other = NewContext())
+        {
+            other.CaseLinks.Add(new IncidentManager.Domain.Entities.CaseLink
+            {
+                CaseId = alpha, RelatedCaseId = beta, Type = CaseLinkType.RelatedTo, CreatedBy = "someone", CreatedAtUtc = _clock.UtcNow
+            });
+            await other.SaveChangesAsync();
+        }
+        hold.Release.SetResult();
+
+        (await first).Should().BeNull();
+        (await db.CaseLinks.AsNoTracking().CountAsync()).Should().Be(1);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

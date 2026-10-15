@@ -1277,6 +1277,12 @@
             Toasts.Warning(ex.Message);
             return; // keep the picker and description so the user can adjust and retry
         }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            // BUG-525: a save the database refused shows a message, not a broken page; the form stays for a retry.
+            Toasts.Warning("The link wasn't saved. Reload the case and try again.");
+            return;
+        }
         _addingLink = false;
         ClearLinkTarget();
         _linkDesc = null;
