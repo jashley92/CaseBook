@@ -65,6 +65,7 @@ public sealed class ReportProfileService
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
         var profile = new ReportProfile { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
+        using var gate = await ReportTemplateService.EnterFileGateAsync(ct);   // BUG-524: the template check with the save
         await EnsureTemplateAsync(db, input.TemplateId, ct);
         ApplyContent(profile, input);
         db.ReportProfiles.Add(profile);
@@ -99,6 +100,7 @@ public sealed class ReportProfileService
 #pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
+        using var gate = await ReportTemplateService.EnterFileGateAsync(ct);   // BUG-524: the template check with the save
         await EnsureTemplateAsync(db, input.TemplateId, ct);
         profile.Name = name;
         profile.ModifiedBy = _user.UserId;
@@ -122,7 +124,9 @@ public sealed class ReportProfileService
         await db.SaveChangesAsync(ct);
     }
 
-    // A default template must exist and be active (archived templates can't be picked for new reports).
+    // A default template must exist and be active (archived templates can't be picked for new reports). BUG-524: called
+    // under the template library gate, with the save, so an archive or delete (which check no profile uses the template,
+    // under the same gate) can't land between this check and the save.
     private static async Task EnsureTemplateAsync(IAppDbContext db, Guid? templateId, CancellationToken ct)
     {
         if (templateId is not { } tid) return;

@@ -1042,6 +1042,36 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_live_templates_with_one_name_stop_an_import_with_their_name_not_a_raw_error(/* BUG-524 */)
+    {
+        var source = NewInstance("dup-src");
+        await SeedTemplateDefaultAsync(source.Factory, source.Store);
+        var bundle = (await source.Config.ExportAsync()).Envelope.Bundle;
+        var target = NewInstance("dup-dst");
+        await SeedTemplateDefaultAsync(target.Factory, target.Store);
+        using (var db = target.Factory.CreateDbContext())
+        {
+            // Stored before the name check ran under the library gate (a double upload).
+            var bytes = _engine.Starter();
+            var dup = new IncidentManager.Domain.Entities.ReportTemplate { Name = "examiner PACK", FileName = "examiner.docx",
+                Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant(),
+                SizeBytes = bytes.LongLength, IsActive = true, CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow };
+            db.ReportTemplates.Add(dup);
+            await db.SaveChangesAsync();
+            await target.Store.CommitAsync(await target.Store.StageAsync(dup.Id, bytes));
+        }
+
+        (await target.Config.Invoking(c => c.PreviewAsync(bundle)).Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("More than one Word template on this server is named").And.Contain("Rename one");
+        (await target.Config.Invoking(c => c.ImportAsync(Signed(bundle))).Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("More than one Word template on this server is named");
+
+        // A bundle without the library (from before v3) leaves it alone, so the duplicate doesn't stop it.
+        var older = bundle with { ReportTemplates = null };
+        await target.Config.Invoking(c => c.ImportAsync(Signed(older))).Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task A_bundle_with_a_template_stored_before_report_tlp_was_required_still_imports(/* BUG-151 */)
     {
         var source = NewInstance("pre152");

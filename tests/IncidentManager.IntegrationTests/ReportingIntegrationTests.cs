@@ -1218,6 +1218,39 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_uploads_or_a_rename_with_one_name_at_once_store_one(/* BUG-524 */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        await using (NewContext()) { } // build the schema
+        var engine = new WordTemplateEngine();
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
+        var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+        var other = (await templates.UploadAsync("Other", "other.docx", engine.Starter())).Id!.Value;
+
+        // A double upload and a rename to the same name, while another writer holds the library gate: each name check runs
+        // with its save, after the one before, so only the first gets the name.
+        Task a, b, rename;
+        using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
+        {
+            a = Task.Run(() => templates.UploadAsync("House style", "house.docx", engine.Starter()));
+            b = Task.Run(() => templates.UploadAsync("house STYLE", "house.docx", engine.Starter()));
+            rename = Task.Run(() => templates.RenameAsync(other, "House Style"));
+            await Task.Delay(200);
+            a.IsCompleted.Should().BeFalse("the name check and the save wait for the library gate");
+            b.IsCompleted.Should().BeFalse();
+            rename.IsCompleted.Should().BeFalse();
+        }
+        var failures = new List<Exception>();
+        foreach (var t in new[] { a, b, rename })
+            try { await t; }
+            catch (InvalidOperationException ex) { failures.Add(ex); }
+
+        failures.Should().HaveCount(2).And.AllSatisfy(e => e.Message.Should().Contain("already exists"));
+        (await templates.ListAllAsync()).Count(t => t.Name.Equals("House style", StringComparison.OrdinalIgnoreCase)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Two_lessons_defaults_set_at_once_leave_one(/* BUG-487 */)
     {
         _user.RoleSet = [AppRole.SysAdmin];

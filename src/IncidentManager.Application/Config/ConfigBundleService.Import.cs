@@ -553,7 +553,12 @@ public sealed partial class ConfigBundleService
         var staged = new List<Reporting.StagedTemplate>();   // BUG-199: put in place only once the import is saved
         // BUG-238: each staged file's row and what it described before, to put back if the file can't be put in place.
         var stagedRows = new Dictionary<Reporting.StagedTemplate, (ReportTemplate Row, (string FileName, string Sha256, long Size)? Before)>();
-        var library = libraryRows.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        // BUG-524: duplicate live names were refused by CheckReportTemplatesAsync when the bundle carries templates (only then
+        // is the library matched by name); an older bundle leaves the library alone, so a duplicate doesn't stop it.
+        var library = new Dictionary<string, ReportTemplate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in libraryRows)
+            if (!library.TryAdd(row.Name, row) && bundle.ReportTemplates is not null)
+                throw new InvalidOperationException("This bundle can't be imported. " + DuplicateLiveTemplate(row.Name));
         foreach (var t in bundle.ReportTemplates ?? [])
         {
             var bytes = templateFiles[t.Name];
@@ -805,7 +810,13 @@ public sealed partial class ConfigBundleService
         // a template wins over the live one, and the bundle's profiles set their default (other live profiles keep theirs).
         using var db = _factory.CreateDbContext();
         var liveTemplates = await db.ReportTemplates.AsNoTracking().Select(t => new { t.Id, t.Name, t.IsActive }).ToListAsync(ct);
-        var active = liveTemplates.ToDictionary(t => t.Name, t => t.IsActive, StringComparer.OrdinalIgnoreCase);
+        // BUG-524: two live templates with one name, ignoring case (stored before the name check ran under the library
+        // gate) can't be matched by name, so the import stops with their name instead of a raw "same key" error.
+        foreach (var dup in liveTemplates.GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1)
+                     .Select(g => g.Key).Order(StringComparer.Ordinal))
+            problems.Add(DuplicateLiveTemplate(dup));
+        var active = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in liveTemplates) active.TryAdd(t.Name, t.IsActive);
         foreach (var t in bundle.ReportTemplates.Where(t => files.ContainsKey(t.Name ?? ""))) active[t.Name] = t.IsActive;
         var liveNames = liveTemplates.ToDictionary(t => t.Id, t => t.Name);
         var defaults = (await db.ReportProfiles.AsNoTracking().Where(p => p.TemplateId != null)
@@ -831,6 +842,11 @@ public sealed partial class ConfigBundleService
             throw new InvalidOperationException("This bundle can't be imported. " + string.Join(" ", problems));
         return (files, warnings);
     }
+
+    // BUG-524: names the duplicate and what to do, for the check above and the import's library lookup.
+    private static string DuplicateLiveTemplate(string name) =>
+        $"More than one Word template on this server is named \"{name}\" (names match regardless of case). Rename one under Word templates " +
+        "on the Administration page, then import again.";
 
     // WF-45: a known check's threshold is clamped to its floor (defaulted when absent) and a parameterless one carries none,
     // as on the Gates page: "at least 0 evidence items" passed every case. An unknown check keeps its value for review.

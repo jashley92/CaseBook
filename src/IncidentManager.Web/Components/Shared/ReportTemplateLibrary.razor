@@ -62,9 +62,9 @@
                        placeholder="e.g. Examiner pack (blank uses the file name)" />
             </div>
             <div class="col-auto">
-                <label class="btn btn-sm btn-primary mb-0">
-                    <span class="bi bi-upload me-1" aria-hidden="true"></span>Upload .docx…
-                    <InputFile class="d-none" accept=".docx" OnChange="Upload" />
+                <label class="btn btn-sm btn-primary mb-0 @(_uploading ? "disabled" : "")" aria-disabled="@(_uploading ? "true" : "false")">
+                    <span class="bi bi-upload me-1" aria-hidden="true"></span>@(_uploading ? "Uploading…" : "Upload .docx…")
+                    <InputFile class="d-none" accept=".docx" OnChange="Upload" disabled="@_uploading" />
                 </label>
             </div>
         </div>
@@ -249,8 +249,14 @@
         return ms.ToArray();
     }
 
+    // BUG-524: one upload at a time, until the list has reloaded. The control is disabled while it runs, but a second pick
+    // can land before the re-render.
+    private bool _uploading;
+
     private async Task Upload(InputFileChangeEventArgs e)
     {
+        if (_uploading) return;
+        _uploading = true;
         _problems = null;
         try
         {
@@ -264,6 +270,7 @@
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _problems = [NotSaved]; }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _problems = [ex.Message]; }
+        finally { _uploading = false; }
     }
 
     private async Task Replace(ReportTemplateView t, InputFileChangeEventArgs e)

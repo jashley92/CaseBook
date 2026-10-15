@@ -303,6 +303,42 @@ public sealed class ReportProfileTests : IDisposable
     }
 
     [Fact]
+    public async Task A_profile_picks_its_template_under_the_library_gate_so_an_archive_cant_slip_between(/* BUG-524 */)
+    {
+        var svc = NewProfileService();
+        var id = await svc.CreateAsync(new ReportProfileInput("Executive summary", null, true, 1, ExecLayout));
+        var opened = (await svc.GetAsync(id))!;
+        var templateId = Guid.NewGuid();
+        using (var db = NewContext())
+        {
+            db.ReportTemplates.Add(new IncidentManager.Domain.Entities.ReportTemplate
+                { Id = templateId, Name = "House style", FileName = "house.docx", Sha256 = "00",
+                  IsActive = true, CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow });
+            db.SaveChanges();
+        }
+
+        // An archive holds the library gate while it checks no profile uses the template, then saves; the profile's
+        // "is it active" check and save wait for it, so they see the archive and refuse, instead of passing just before it.
+        Task update, create;
+        using (await ReportTemplateService.EnterFileGateAsync())
+        {
+            update = Task.Run(() => svc.UpdateAsync(id, new ReportProfileInput("Executive summary", null, true, 1, ExecLayout, templateId), opened.Stamp));
+            create = Task.Run(() => svc.CreateAsync(new ReportProfileInput("Full pack", null, true, 2, ExecLayout, templateId)));
+            await Task.Delay(200);
+            update.IsCompleted.Should().BeFalse("the template check and the save wait for the library gate");
+            create.IsCompleted.Should().BeFalse();
+            using var db = NewContext();
+            (await db.ReportTemplates.SingleAsync(t => t.Id == templateId)).IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        await update.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*archived*");
+        await create.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*archived*");
+        (await svc.GetAsync(id))!.TemplateId.Should().BeNull();
+        (await svc.ListAllAsync()).Should().NotContain(p => p.Name == "Full pack");
+    }
+
+    [Fact]
     public async Task A_profile_saved_between_the_name_check_and_the_insert_is_reported_as_a_duplicate(/* BUG-339 */)
     {
         // The other save lands after CreateAsync's AnyAsync check but before its own insert reaches the unique index.

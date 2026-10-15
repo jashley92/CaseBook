@@ -68,7 +68,6 @@ public sealed class ReportTemplateService
         if (!check.Ok) return new ReportTemplateUpload(check, null);
 
         using var db = _factory.CreateDbContext();
-        await EnsureUniqueNameAsync(db, cleanName, null, ct);
         var t = new ReportTemplate
         {
             Name = cleanName,
@@ -81,6 +80,9 @@ public sealed class ReportTemplateService
         await FileGate.WaitAsync(ct);
         try
         {
+            // BUG-524: the name check with the save, under the gate a rename and an import hold, so a double upload or two
+            // admins can't both pass it and store two templates with one name (there's no unique index on the name).
+            await EnsureUniqueNameAsync(db, cleanName, null, ct);
             var staged = await store.StageAsync(t.Id, docx, ct);   // BUG-199: in place only once the row is saved
             db.ReportTemplates.Add(t);
             await SaveThenCommitAsync(db, store, staged, () => db.ReportTemplates.Remove(t), ct);
@@ -120,13 +122,15 @@ public sealed class ReportTemplateService
     }
 
     // BUG-487: also held while the lessons-learned default or the active flag is checked and saved, so those (and an
-    // import, which holds it) run one at a time (CaseBook runs as one instance; see known issues).
+    // import, which holds it) run one at a time (CaseBook runs as one instance; see known issues). BUG-524: and while a
+    // name is checked and saved, and while a report profile checks its template is active and saves.
     private static readonly SemaphoreSlim FileGate = new(1, 1);
 
     /// <summary>
     /// BUG-403: the template file gate, for another writer of template files (a config import), so its staging and commit
-    /// can't interleave with an upload or replace. Taken after <see cref="GuardGate"/>, never before it (nothing here takes
-    /// GuardGate). Dispose the result to release it.
+    /// can't interleave with an upload or replace. Taken after <see cref="GuardGate"/>, never before it (nothing here, nor
+    /// <see cref="ReportProfileService"/>, takes GuardGate). Not re-entrant: never call a method that takes it while holding
+    /// it. Dispose the result to release it.
     /// </summary>
     public static async Task<IDisposable> EnterFileGateAsync(CancellationToken ct = default)
     {
@@ -173,6 +177,7 @@ public sealed class ReportTemplateService
     {
         AdminActionPermissions.Require<ReportTemplateService>(_user);
         var cleanName = RequireName(name);
+        using var gate = await EnterFileGateAsync(ct);   // BUG-524: not between another upload's or rename's name check and its save
         using var db = _factory.CreateDbContext();
         var t = await FindAsync(db, id, ct);
         await EnsureUniqueNameAsync(db, cleanName, id, ct);
