@@ -56,6 +56,8 @@ public sealed class ReportProfileService
     public async Task<Guid> CreateAsync(ReportProfileInput input, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportProfileService>(_user);
+        // BUG-524/539: the name and template checks with the save, under the gate the import and the library hold.
+        using var gate = await ReportTemplateService.EnterFileGateAsync(ct);
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A profile name is required.");
@@ -65,7 +67,6 @@ public sealed class ReportProfileService
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
         var profile = new ReportProfile { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
-        using var gate = await ReportTemplateService.EnterFileGateAsync(ct);   // BUG-524: the template check with the save
         await EnsureTemplateAsync(db, input.TemplateId, ct);
         ApplyContent(profile, input);
         db.ReportProfiles.Add(profile);
@@ -86,6 +87,9 @@ public sealed class ReportProfileService
     public async Task UpdateAsync(Guid id, ReportProfileInput input, string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportProfileService>(_user);
+        // BUG-539: the stamp and name are checked under the gate too, so a save that waited behind an import or another
+        // save sees what it wrote and refuses, instead of overwriting it.
+        using var gate = await ReportTemplateService.EnterFileGateAsync(ct);
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
                       ?? throw new InvalidOperationException("That report profile no longer exists. Reload the page and try again.");
@@ -100,13 +104,20 @@ public sealed class ReportProfileService
 #pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
-        using var gate = await ReportTemplateService.EnterFileGateAsync(ct);   // BUG-524: the template check with the save
         await EnsureTemplateAsync(db, input.TemplateId, ct);
         profile.Name = name;
         profile.ModifiedBy = _user.UserId;
         profile.ModifiedAtUtc = _clock.UtcNow;
         ApplyContent(profile, input);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex)
+        {
+            // BUG-539: as on create, a rename onto a name saved meanwhile by a writer outside the gate (the unique index refused it).
+            using var check = _factory.CreateDbContext();
+            if (await check.ReportProfiles.AnyAsync(p => p.Name == name && p.Id != id, ct))
+                throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.", ex);
+            throw;
+        }
     }
 
     /// <summary>
@@ -117,6 +128,7 @@ public sealed class ReportProfileService
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportProfileService>(_user);
+        using var gate = await ReportTemplateService.EnterFileGateAsync(ct);   // BUG-539: not between an edit's load and its save
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct);
         if (profile is null) return;

@@ -363,6 +363,54 @@ public sealed class ReportProfileTests : IDisposable
         (await db.ReportProfiles.CountAsync(p => p.Name == "Executive summary")).Should().Be(1);
     }
 
+    [Fact]
+    public async Task A_rename_onto_a_name_saved_meanwhile_is_reported_as_a_duplicate(/* BUG-539 */)
+    {
+        var id = await NewProfileService().CreateAsync(new ReportProfileInput("Full pack", null, true, 1, null));
+        var racer = new BeforeFirstSave(async () =>
+        {
+            await using var other = NewContext();
+            other.ReportProfiles.Add(new IncidentManager.Domain.Entities.ReportProfile
+                { Name = "Executive summary", CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow });
+            await other.SaveChangesAsync();
+        });
+        var factory = new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(racer,
+                new AuditChainInterceptor(_hasher, _user, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()))
+            .Options);
+
+        var rename = async () => await new ReportProfileService(factory, _user, _clock)
+            .UpdateAsync(id, new ReportProfileInput("Executive summary", null, true, 1, null));
+
+        (await rename.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*already exists*");
+        (await NewProfileService().GetAsync(id))!.Name.Should().Be("Full pack");
+    }
+
+    [Fact]
+    public async Task An_edit_that_waited_behind_an_import_sees_its_change_and_refuses(/* BUG-539 */)
+    {
+        var svc = NewProfileService();
+        var id = await svc.CreateAsync(new ReportProfileInput("Executive summary", null, true, 1, ExecLayout));
+        var opened = (await svc.GetAsync(id))!;
+
+        // An import holds the library gate while it rewrites the profile; the edit's stamp check waits for it, so it sees
+        // the import's change and refuses instead of overwriting it.
+        Task edit;
+        using (await ReportTemplateService.EnterFileGateAsync())
+        {
+            edit = Task.Run(() => svc.UpdateAsync(id, new ReportProfileInput("Executive summary", "mine", true, 1, ExecLayout), opened.Stamp));
+            await Task.Delay(200);
+            edit.IsCompleted.Should().BeFalse("the stamp check waits for the library gate");
+            await using var db = NewContext();
+            (await db.ReportProfiles.SingleAsync(p => p.Id == id)).Description = "imported";
+            await db.SaveChangesAsync();
+        }
+
+        await edit.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*since you opened it*");
+        (await svc.GetAsync(id))!.Description.Should().Be("imported");
+    }
+
     /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
     private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
     {
