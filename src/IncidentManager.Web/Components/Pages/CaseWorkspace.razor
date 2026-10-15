@@ -153,7 +153,7 @@ else
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
                          PresetEntityFilter="_timelineEntity" OnPresetHandled="() => _timelineEntity = null" OnOpenEntity="OpenEntity"
                          AutofocusComposer="_timelineAutofocus" OnAutofocusHandled="() => _timelineAutofocus = false"
-                         FocusNoteId="QNote" FocusEntryId="QEntry" OpenNotes="_openNotes" OnOpenNotesHandled="() => _openNotes = false" />
+                         FocusNoteId="QNote" FocusEntryId="_focusEntry" OpenNotes="_openNotes" OnOpenNotesHandled="() => _openNotes = false" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
         @if (_newTimelineIds.Count > 0)
         {
@@ -498,6 +498,7 @@ else
         if (_partsFor != Id) _closeOut.Discard();   // RD-14: a close-out draft belongs to its case
         var tab = ResolvePart(QPart) ?? (_partsFor != Id ? DefaultPart() : _activeTab);
         _partsFor = Id;
+        _focusEntry = QEntry;   // BUG-510
         await SetTab(tab);
         // U-30: a fresh case view starts with a clean slate — nothing is "new" until a collaborator acts.
         _flash.Clear();
@@ -642,9 +643,27 @@ else
     private async Task FocusItem((string Tab, Guid Id) target)
     {
         _flash[target.Id] = (Ui.AvatarHue(_myId ?? ""), target.Tab);
-        _scrollToId = (target.Tab switch { "Timeline" => "tl-", "Notes" => "note-", "Tasks" => "task-", _ => "ev-" }) + target.Id;   // HR-17: notes; RD-04: tasks
+        // BUG-510: an entry is brought into view by the timeline itself, which leaves a lens or filter that hides it; a bare
+        // scroll found nothing to scroll to on Working notes. A timeline on screen is asked directly; one this mounts gets
+        // it as ?entry= does.
+        if (target.Tab == "Timeline")
+        {
+            var shown = _activeTab == "Timeline" && !PhoneNowNext ? _timelineTab : null;
+            if (shown is { Disposed: false })
+            {
+                await SetTab(target.Tab);
+                await shown.ShowEntryAsync(target.Id);
+                return;
+            }
+            _focusEntry = target.Id;
+        }
+        else _scrollToId = (target.Tab switch { "Notes" => "note-", "Tasks" => "task-", _ => "ev-" }) + target.Id;   // HR-17: notes; RD-04: tasks
         await SetTab(target.Tab);   // clears the flash a moment after it's seen
     }
+
+    // BUG-510: the entry the timeline is to jump to (?entry=, a task's chip, an evidence file's "Cited by"). Cleared once the
+    // timeline has had it, so the same entry can be jumped to again, and a later visit to the tab doesn't jump.
+    private Guid? _focusEntry;
 
     private async Task SetTab(string tab)
     {
@@ -713,6 +732,11 @@ else
             _watchedHeadFor = _case.Id;
             try { await JS.InvokeVoidAsync("imMotion.watchHead", "ws-head", "ws-sticky"); }
             catch (JSException) { } catch (JSDisconnectedException) { }
+        }
+        if (_focusEntry is not null && _activeTab == "Timeline" && !PhoneNowNext && _timelineTab is { Disposed: false })
+        {
+            _focusEntry = null;   // BUG-510: the timeline has it (it jumps on the change, not the value)
+            StateHasChanged();
         }
         if (_scrollToId is { } scrollTo)
         {
