@@ -77,8 +77,10 @@ public static class CaseNarrative
             sb.Append(heading);
             foreach (var e in steps.Take(MaxSteps))
             {
-                var tactics = e.Tactics.Select(t => t.Tactic).Where(t => t != MitreTactic.Unspecified).Distinct().ToList();
-                var tag = tactics.Count > 0 ? string.Join(", ", tactics.Select(TacticWord))
+                // BUG-500: in matrix order, with the app's labels.
+                var tactics = e.Tactics.Select(t => t.Tactic).Where(t => t != MitreTactic.Unspecified).Distinct()
+                    .OrderBy(Reporting.DiagramPalette.TacticRank).ToList();
+                var tag = tactics.Count > 0 ? string.Join(", ", tactics.Select(Reporting.DiagramPalette.TacticLabel))
                     : milestones ? TypeWord(e.Type) : null;
                 sb.Append(CultureInfo.InvariantCulture, $"- {Cases.StepTime.Text(e, Stamp)}");
                 if (pivoted && !milestones && Cases.EventSteps.WhereLabel(c, e) is { } place) sb.Append(' ').Append(place);
@@ -157,18 +159,6 @@ public static class CaseNarrative
     {
         CasePhase.PostIncident => "Post-incident",
         _ => p.ToString(),
-    };
-
-    private static string TacticWord(MitreTactic t) => t switch
-    {
-        MitreTactic.InitialAccess => "Initial Access",
-        MitreTactic.PrivilegeEscalation => "Privilege Escalation",
-        MitreTactic.CredentialAccess => "Credential Access",
-        MitreTactic.LateralMovement => "Lateral Movement",
-        MitreTactic.CommandAndControl => "Command and Control",
-        MitreTactic.ResourceDevelopment => "Resource Development",
-        MitreTactic.DefenseImpairment => "Defense Impairment",
-        _ => t.ToString(),
     };
 
     private static string TypeWord(TimelineEntryType t) => t switch

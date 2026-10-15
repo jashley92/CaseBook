@@ -74,6 +74,10 @@ public sealed class ReportingIntegrationTests : IDisposable
             caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
             await cases.AddEventStepAsync(caseId, _clock.UtcNow, new[] { MitreTactic.CommandAndControl },
                 null, null, null, "Beacon to the C2 host", "SIEM");
+            // BUG-500: tactics in matrix order (DefenseImpairment's enum value is last), technique rows labelled as the app does.
+            await cases.AddEventStepAsync(caseId, _clock.UtcNow, new[] { MitreTactic.Exfiltration, MitreTactic.DefenseImpairment, MitreTactic.InitialAccess },
+                null, null, null, "Several at once", "SIEM");
+            await cases.AddEventStepAsync(caseId, _clock.UtcNow, Array.Empty<MitreTactic>(), "T1059", null, null, "Ran a script", "EDR");
             await cases.AddNoteAsync(caseId, "Named-author note");
         }
 
@@ -90,7 +94,9 @@ public sealed class ReportingIntegrationTests : IDisposable
             m.ClassificationHistory.Should().NotBeEmpty();
             m.ClassificationHistory.Should().OnlyContain(h => h.By.StartsWith("Name of "));
             m.ClassificationHistory.SelectMany(h => new[] { h.From, h.To }).Should().NotContain(new[] { "AdverseEvent", "ComplexEvent" });
-            m.AttackChain.Should().Contain(s => s.Tactics.Contains("Command And Control") || s.Tactics.Contains("Command and Control"));
+            m.AttackChain.Should().Contain(s => s.Tactics == "Command and Control");
+            m.AttackChain.Should().Contain(s => s.Tactics == "Initial Access, Defense Impairment, Exfiltration");
+            m.Techniques.Should().Contain(t => t.TechniqueId == "T1059").Which.Tactic.Should().Be("Unmapped");
             m.Assignments.Select(a => a.Role).Should().NotContain("IncidentCommander");
         }
     }

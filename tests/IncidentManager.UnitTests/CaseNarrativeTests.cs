@@ -59,6 +59,17 @@ public class CaseNarrativeTests
     }
 
     [Fact]
+    public void A_steps_tactics_read_in_matrix_order(/* BUG-500 */)
+    {
+        var c = Case.Open(2026, 7, "Multi", "Several tactics", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
+        c.AddEventStep(T0, [MitreTactic.CommandAndControl, MitreTactic.DefenseImpairment, MitreTactic.InitialAccess], null, null, null,
+            "Beacon after the phish", null, "ic1", T0);
+
+        CaseNarrative.Draft(c, _ => null, Sev, T0.AddDays(1))
+            .Should().Contain("(Initial Access, Defense Impairment, Command and Control): Beacon after the phish.");
+    }
+
+    [Fact]
     public void A_vendor_attack_that_pivoted_into_our_network_reads_as_one_sequence_saying_where()
     {
         var c = Case.Open(2026, 9, "Vendor", "Vendor breach reached us", null, Severity.High, CaseOrigin.ThirdParty, "ic1", T0);

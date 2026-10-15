@@ -954,7 +954,8 @@ public sealed class ReportService
                 .Select((x, i) => new ReportAttackStep(
                     i + 1,
                     x.OccurredAtUtc,
-                    string.Join(", ", x.Tactics.Select(t => Humanize(t.Tactic.ToString())).OrderBy(s => s)),
+                    // BUG-500: in matrix order with the app's labels, as on the timeline and the diagrams.
+                    string.Join(", ", x.Tactics.Select(t => t.Tactic).Distinct().OrderBy(DiagramPalette.TacticRank).Select(DiagramPalette.TacticLabel)),
                     d.Text(EntityName(c, x.ActorEntityId)),
                     d.Text(EntityName(c, x.TargetEntityId)),
                     x.TechniqueId,
@@ -1009,7 +1010,7 @@ public sealed class ReportService
                 .ToList(),
             // HR-13: the tags plus the techniques recorded on the attack chain.
             Techniques = Mitre.CaseTechniques.For(c)
-                .Select(x => new ReportTechniqueRow(x.TechniqueId, x.Name, Humanize(x.Tactic.ToString()),
+                .Select(x => new ReportTechniqueRow(x.TechniqueId, x.Name, DiagramPalette.TacticLabel(x.Tactic),   // BUG-500
                     string.Join("; ", new[]
                     {
                         x.IsTagged ? "Tagged" : null,
