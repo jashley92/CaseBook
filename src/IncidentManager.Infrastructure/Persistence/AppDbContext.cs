@@ -79,17 +79,27 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         ColumnLengthGuard.Check(ChangeTracker);
-        BumpCaseEditVersions();
+        var checkedCases = BumpCaseEditVersions();
         try { return base.SaveChanges(acceptAllChangesOnSuccess); }
         catch (DbUpdateException ex) when (IsLostRace(ex)) { throw new Application.Cases.ConcurrentEditException(ex); }
+        catch (DbUpdateException ex) when (checkedCases.Count > 0)
+        {
+            if (CaseChangedMeanwhile(checkedCases)) throw new Application.Cases.ConcurrentEditException(ex);
+            throw;
+        }
     }
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         ColumnLengthGuard.Check(ChangeTracker);
-        BumpCaseEditVersions();
+        var checkedCases = BumpCaseEditVersions();
         try { return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
         catch (DbUpdateException ex) when (IsLostRace(ex)) { throw new Application.Cases.ConcurrentEditException(ex); }
+        catch (DbUpdateException ex) when (checkedCases.Count > 0)
+        {
+            if (await CaseChangedMeanwhileAsync(checkedCases, cancellationToken)) throw new Application.Cases.ConcurrentEditException(ex);
+            throw;
+        }
     }
 
     // BUG-113: the case's edit version didn't match, or (whichever the database checks first) a second current brief.
@@ -98,6 +108,36 @@ public sealed class AppDbContext : DbContext, IAppDbContext
         || ex.InnerException?.Message is { } m
            && (m.Contains("IX_CaseBriefs_OneCurrent", StringComparison.Ordinal)
                || m.Contains("CaseBriefs.CaseId, CaseBriefs.IsCurrent", StringComparison.Ordinal));
+
+    // BUG-581: the database may insert a new child of a case (an assignment, a data element, a technique) before it checks
+    // the case's version, so a save that lost the race fails on the child's unique index instead. Whatever the database
+    // refused, a case this save checked that has moved on since it was read means the race was lost. Read afresh, after
+    // the failed save has rolled back; if the read itself fails, the database's own error stands.
+    private bool CaseChangedMeanwhile(Dictionary<Guid, Guid> checkedCases)
+    {
+        try { return Changed(checkedCases, CurrentVersions(checkedCases).ToList()); }
+        catch (Exception e) when (e is System.Data.Common.DbException or InvalidOperationException) { return false; }
+    }
+
+    private async Task<bool> CaseChangedMeanwhileAsync(Dictionary<Guid, Guid> checkedCases, CancellationToken ct)
+    {
+        try { return Changed(checkedCases, await CurrentVersions(checkedCases).ToListAsync(ct)); }
+        catch (Exception e) when (e is System.Data.Common.DbException or InvalidOperationException) { return false; }
+    }
+
+    private IQueryable<KeyValuePair<Guid, Guid>> CurrentVersions(Dictionary<Guid, Guid> checkedCases)
+    {
+        var ids = checkedCases.Keys.ToList();
+        return Cases.AsNoTracking().IgnoreQueryFilters().Where(c => ids.Contains(c.Id))
+            .Select(c => new KeyValuePair<Guid, Guid>(c.Id, EF.Property<Guid>(c, CaseEditVersion)));
+    }
+
+    // A case removed meanwhile has moved on too.
+    private static bool Changed(Dictionary<Guid, Guid> checkedCases, List<KeyValuePair<Guid, Guid>> now)
+    {
+        var current = now.ToDictionary(x => x.Key, x => x.Value);
+        return checkedCases.Any(c => !current.TryGetValue(c.Key, out var v) || v != c.Value);
+    }
 
     /// <summary>BUG-113: the case's shadow concurrency token, renewed by every save that changes the case or anything on it.</summary>
     public const string CaseEditVersion = "EditVersion";
@@ -108,10 +148,12 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     /// starting point only the first lands; the second is refused instead of closing the case twice or leaving two current
     /// briefs. A shadow property, so it stays out of the audit trail and the row hash.
     /// </summary>
-    private void BumpCaseEditVersions()
+    /// <returns>BUG-581: the cases whose version this save checks, each with the version it was read at.</returns>
+    private Dictionary<Guid, Guid> BumpCaseEditVersions()
     {
+        var checkedCases = new Dictionary<Guid, Guid>();
         var cases = ChangeTracker.Entries<Case>().Where(e => e.State is EntityState.Modified or EntityState.Unchanged).ToList();
-        if (cases.Count == 0) return;
+        if (cases.Count == 0) return checkedCases;
         var touched = new HashSet<Guid>();
         foreach (var e in ChangeTracker.Entries())
         {
@@ -120,7 +162,11 @@ public sealed class AppDbContext : DbContext, IAppDbContext
         }
         foreach (var c in cases)
             if (c.State == EntityState.Modified || touched.Contains(c.Entity.Id))
+            {
+                if (c.Property(CaseEditVersion).OriginalValue is Guid read) checkedCases[c.Entity.Id] = read;
                 c.Property(CaseEditVersion).CurrentValue = Guid.NewGuid();
+            }
+        return checkedCases;
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
