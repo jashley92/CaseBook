@@ -59,11 +59,18 @@ public sealed record OverviewWindows(ProgramWindow Current, ProgramWindow Previo
     {
         var start = ZonedDays.StartUtc(from, zone);
         var end = ZonedDays.StartUtc(to.AddDays(1), zone);
-        if (end > now) end = now;
         var days = to.DayNumber - from.DayNumber + 1;
+        var previousStart = ZonedDays.StartUtc(from.AddDays(-days), zone);
+        var previousEnd = start;
+        // BUG-561 (as REV-55): a range ending today stops now, so the one before stops at the same point, not a whole day later.
+        if (end > now)
+        {
+            end = now;
+            previousEnd = previousStart + (now - start);
+        }
         var months = For(OverviewPeriod.Last12Months, now, zone).Months;
         return new(new(start, end, RangeLabel(from, to)),
-            new(ZonedDays.StartUtc(from.AddDays(-days), zone), start, days == 1 ? "the day before" : $"the {days} days before"),
+            new(previousStart, previousEnd, days == 1 ? "the day before" : $"the {days} days before"),
             months);
     }
 

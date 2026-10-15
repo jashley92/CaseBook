@@ -560,8 +560,11 @@ public sealed class ProgramReportTests : IDisposable
             new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), "1 Jul – 30 Sep 2026"));
         custom.Previous.Should().Be(new ProgramWindow(new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero),
             custom.Current.StartUtc, "the 92 days before"));
-        OverviewWindows.ForRange(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 8), now, TimeZoneInfo.Utc)
-            .Current.EndUtc.Should().Be(now, "today runs to now");
+        var toToday = OverviewWindows.ForRange(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 8), now, TimeZoneInfo.Utc);
+        toToday.Current.EndUtc.Should().Be(now, "today runs to now");
+        // BUG-561: so the eight days before run to the same point (7.5 days in), not a whole eight days.
+        toToday.Previous.Should().Be(new ProgramWindow(new DateTimeOffset(2026, 9, 23, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero), "the 8 days before"));
         OverviewWindows.RangeLabel(new DateOnly(2025, 12, 15), new DateOnly(2026, 1, 10)).Should().Be("15 Dec 2025 – 10 Jan 2026");
 
         var today = new DateOnly(2026, 10, 8);
