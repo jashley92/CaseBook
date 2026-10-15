@@ -446,6 +446,25 @@ public sealed class CaseSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task The_previews_other_cases_count_stays_on_its_side_of_the_exercise_line(/* BUG-505 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var live = (await svc.CreateAsync(Req("Live"))).Id;
+        var otherLive = (await svc.CreateAsync(Req("OtherLive"))).Id;
+        var drill = (await svc.CreateAsync(Drill("Drill"))).Id;
+        var otherDrill = (await svc.CreateAsync(Drill("OtherDrill"))).Id;
+        var drill3 = (await svc.CreateAsync(Drill("ThirdDrill"))).Id;
+        foreach (var id in new[] { live, otherLive, drill, otherDrill, drill3 })
+            await svc.AddEntityAsync(id, EntityType.IpAddress, "198.51.100.23", null, EntityDisposition.Malicious, null, null);
+
+        (await svc.GetPreviewAsync(live))!.Indicators[0].OtherCases.Should().Be(1, "the drills aren't counted");
+        (await svc.GetPreviewAsync(drill))!.Indicators[0].OtherCases.Should().Be(2, "nor the live cases");
+
+        static CreateCaseRequest Drill(string name) { var r = Req(name); r.IsExercise = true; return r; }
+    }
+
+    [Fact]
     public async Task Search_covers_the_record_and_says_where_it_matched()
     {
         // HR-09: an old case can be found by what happened in it, not only its number, title, IOCs or notes.

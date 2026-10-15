@@ -584,7 +584,8 @@ public sealed class CaseService
             .Take(5).ToList();
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower() to SQL LOWER(); culture overloads don't translate.
         var keys = top.Select(e => e.Value.ToLower()).Distinct().ToList();
-        var visibleIds = visible.Select(c => c.Id);
+        // BUG-505: only cases on the same side of the exercise line (WF-48): a live case counts no drill, and the reverse.
+        var visibleIds = visible.Where(c => c.IsExercise == head.IsExercise).Select(c => c.Id);
         var shared = keys.Count == 0
             ? new Dictionary<string, int>()
             : (await db.CaseEntities.AsNoTracking()
