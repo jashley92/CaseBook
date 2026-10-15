@@ -27,7 +27,7 @@ else
                 <div class="col-auto">
                     <label class="form-label small mb-0" for="rdr-code">Code</label>
                     <input id="rdr-code" class="form-control form-control-sm" style="max-width:8rem" maxlength="16"
-                           placeholder="e.g. NY" @bind="_code" disabled="@(_editId is not null)" />
+                           placeholder="e.g. NY" pattern="[^,;]*" title="One jurisdiction per rule: no commas or semicolons" @bind="_code" disabled="@(_editId is not null)" />
                 </div>
                 <div class="col">
                     <label class="form-label small mb-0" for="rdr-label">Label</label>

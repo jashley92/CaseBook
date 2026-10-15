@@ -208,5 +208,26 @@ public sealed class NotificationDeadlineServiceTests : IDisposable
         (await NewRules().ListAllAsync()).Single(r => r.Code == "NY").WindowHours.Should().Be(48);
     }
 
+    [Fact]
+    public async Task A_rule_code_holding_a_separator_is_refused_but_an_old_one_can_still_be_edited(/* BUG-558 */)
+    {
+        foreach (var code in new[] { "NY,CA", "NY;CA" })
+        {
+            var act = () => NewRules().SaveAsync(null, code, "New York and California", 72);
+            (await act.Should().ThrowAsync<ArgumentException>()).WithMessage("*one jurisdiction*");
+        }
+
+        // One saved before the check: kept as it is, and still retimed (the code isn't changed by an edit).
+        await using (var db = NewContext())
+        {
+            db.NotificationRules.Add(new IncidentManager.Domain.Entities.NotificationRule
+                { Code = "NY;CA", Label = "Old", WindowHours = 72, IsActive = true, CreatedBy = "admin", CreatedAtUtc = _clock.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        var old = (await NewRules().ListAllAsync()).Single(r => r.Code == "NY;CA");
+        await NewRules().SaveAsync(old.Id, old.Code, "Old", 48, old.Stamp);
+        (await NewRules().ListAllAsync()).Single(r => r.Code == "NY;CA").WindowHours.Should().Be(48);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

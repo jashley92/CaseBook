@@ -358,6 +358,28 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_rule_code_holding_a_separator_is_refused_and_a_live_one_is_named(/* BUG-558 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+
+        var combined = live with { NotificationRules = [new ConfigNotificationRule("NY,CA", "New York and California", 72, true, false)] };
+        await ((Func<Task>)(() => svc.PreviewAsync(combined))).Should().ThrowAsync<ArgumentException>().WithMessage("*one jurisdiction*\"NY,CA\"*");
+        await ((Func<Task>)(() => svc.ImportAsync(Signed(combined)))).Should().ThrowAsync<ArgumentException>().WithMessage("*one jurisdiction*");
+        (await db.NotificationRules.AnyAsync(r => r.Code == "NY,CA")).Should().BeFalse();
+
+        // One saved here before the check is named by the preview, not rewritten.
+        db.NotificationRules.Add(new IncidentManager.Domain.Entities.NotificationRule
+            { Code = "TX;FL", Label = "Old", WindowHours = 72, IsActive = true, CreatedBy = "admin", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        var diff = await svc.PreviewAsync(live);
+        diff.Warnings!.Should().ContainSingle(w => w.Contains("\"TX;FL\"") && w.Contains("never applies"));
+        (await db.NotificationRules.AsNoTracking().CountAsync(r => r.Code == "TX;FL")).Should().Be(1);
+    }
+
+    [Fact]
     public async Task A_bundle_gets_the_admin_pages_rules_for_roles_mappings_gates_and_taxonomy(/* WF-45 */)
     {
         await using var db = NewContext();

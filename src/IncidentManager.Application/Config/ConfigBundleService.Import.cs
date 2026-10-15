@@ -162,6 +162,12 @@ public sealed partial class ConfigBundleService
             items.Add(new ConfigDiffItem("Data element", d.Label, change));
         }
 
+        // BUG-558: a rule saved here before codes were checked for separators never matches a jurisdiction; say so rather
+        // than rewrite it (which code was meant is the administrator's call).
+        foreach (var r in live.NotificationRules.Where(r => r.IsActive && NotificationRuleService.HasSeparator(r.Code)))
+            warnings.Add($"The deadline rule \"{r.Code}\" here never applies: a code is one jurisdiction, and cases with " +
+                         "those jurisdictions get the default window. Delete it under Settings, Regulatory deadlines, and add a rule for each jurisdiction.");
+
         return new ConfigDiff(items, warnings);
     }
 
@@ -260,6 +266,7 @@ public sealed partial class ConfigBundleService
             var code = (r.Code ?? "").Trim();
             if (code.Length is 0 or > NotificationRuleService.MaxCodeLength)
                 problems.Add($"A notification rule's code must be 1 to {NotificationRuleService.MaxCodeLength} characters (\"{code}\").");
+            if (NotificationRuleService.HasSeparator(code)) problems.Add(NotificationRuleService.SeparatorMessage(code));   // BUG-558
             if (string.IsNullOrWhiteSpace(r.Label) || r.Label.Trim().Length > NotificationRuleService.MaxLabelLength)
                 problems.Add($"Notification rule {code} needs a label of 1 to {NotificationRuleService.MaxLabelLength} characters.");
             if (r.WindowHours is <= 0 or > NotificationRuleService.MaxWindowHours)

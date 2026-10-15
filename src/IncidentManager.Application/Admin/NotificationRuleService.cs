@@ -74,6 +74,8 @@ public sealed class NotificationRuleService
         label = (label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(code)) throw new ArgumentException("A jurisdiction code is required.");
         if (code.Length > MaxCodeLength) throw new ArgumentException($"A code must be {MaxCodeLength} characters or fewer.");
+        // BUG-558: a new code only (it's immutable, so a rule saved before this can still be relabelled, retimed or deleted).
+        if (id is null && HasSeparator(code)) throw new ArgumentException(SeparatorMessage(code));
         if (string.IsNullOrWhiteSpace(label)) throw new ArgumentException("A label is required.");
         if (label.Length > MaxLabelLength) throw new ArgumentException($"A label must be {MaxLabelLength} characters or fewer.");
         if (windowHours is <= 0 or > MaxWindowHours)
@@ -143,6 +145,16 @@ public sealed class NotificationRuleService
         db.NotificationRules.Remove(rule);
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// BUG-558: a data element's jurisdictions are split on "," and ";" (BUG-404), so a rule whose code holds either never
+    /// matches a jurisdiction and its cases silently get the default window. Rules saved before this are kept as they are
+    /// (shown by the config import) rather than rewritten.
+    /// </summary>
+    public static bool HasSeparator(string? code) => code is not null && code.AsSpan().IndexOfAny(',', ';') >= 0;
+
+    public static string SeparatorMessage(string code) =>
+        $"A rule's code is one jurisdiction, so it can't contain \",\" or \";\" (\"{code}\"). Add a rule for each jurisdiction.";
 
     private static NotificationRuleView Project(NotificationRule r) =>
         new(r.Id, r.Code, r.Label, r.WindowHours, r.IsActive, r.IsSystem, StampOf(r));
