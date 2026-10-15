@@ -206,6 +206,33 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.8
+
+A fix release with no migration. Things to check:
+
+- **Exercise Breach emails** carry the EXERCISE note exactly once in both the HTML and text bodies, whatever the
+  template.
+- **Report preview** shows what the Word report will contain: a vendor case's disclosure milestones and "Where"
+  column, each entity's TLP, "Activity began", "Recovery started" and changes made after closure.
+- **Administration:**
+  - Two Word templates can no longer end up with the same name. If a server already has a duplicate name, a config
+    import names it and asks you to rename one, instead of failing.
+  - A save that's stored but can't be put into effect yet counts as saved. Saving again is no longer refused, and
+    Taxonomy label changes made with an order change are kept.
+- **Cases:**
+  - Bulk "Refer to Legal" keeps a referral another analyst made after you selected the cases.
+  - Two people linking the same two cases at once make one link.
+  - Back from your default view leaves the case list.
+- **Search and import:**
+  - Find and "seen before" quote a closed case's conclusion as it stood at closure, as plain text.
+  - An imported case whose detected or activity time is impossible has that time left out with a warning, so Apply
+    works.
+- **Exports:**
+  - An audit-trail CSV's first line can't be turned into formulas by a case number.
+  - File names and the compliance bundle's audit entry use Gregorian dates whatever the server's language settings.
+  The notification bell and due dates do the same.
+- **Releases** find the quality-gate result when docs commits were pushed after the tagged one.
+
 ### v1.6.7
 
 A fix release with no migration. Things to check:
