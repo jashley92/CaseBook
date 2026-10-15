@@ -57,29 +57,41 @@ public sealed class SavedViewService
     /// </summary>
     public async Task<Guid?> ToggleDefaultAsync(Guid id, CancellationToken ct = default)
     {
-        using var db = _factory.CreateDbContext();
-        var me = _user.UserId;
+        // BUG-540: two quick toggles (two stars, two tabs) each read "no other default" and each set theirs, leaving two.
+        // The read and the save run one at a time (CaseBook runs as one instance; see known issues).
+        await DefaultGate.WaitAsync(ct);
+        try
+        {
+            using var db = _factory.CreateDbContext();
+            var me = _user.UserId;
 
-        var target = await db.SavedViews.FirstOrDefaultAsync(v => v.Id == id, ct);
-        if (target is null) return null;
-        if (!string.Equals(target.OwnerUserId, me, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("You can only set one of your own views as default.");
+            var target = await db.SavedViews.FirstOrDefaultAsync(v => v.Id == id, ct);
+            if (target is null) return null;
+            if (!string.Equals(target.OwnerUserId, me, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("You can only set one of your own views as default.");
 
-        var mine = await db.SavedViews.Where(v => v.OwnerUserId == me && v.IsDefault).ToListAsync(ct);
-        var wasDefault = target.IsDefault;
-        foreach (var v in mine) v.IsDefault = false; // clear any existing default
-        target.IsDefault = !wasDefault;              // toggle the target
-        await db.SaveChangesAsync(ct);
-        return target.IsDefault ? target.Id : null;
+            var mine = await db.SavedViews.Where(v => v.OwnerUserId == me && v.IsDefault).ToListAsync(ct);
+            var wasDefault = target.IsDefault;
+            foreach (var v in mine) v.IsDefault = false; // clear any existing default
+            target.IsDefault = !wasDefault;              // toggle the target
+            await db.SaveChangesAsync(ct);
+            return target.IsDefault ? target.Id : null;
+        }
+        finally { DefaultGate.Release(); }
     }
+
+    private static readonly SemaphoreSlim DefaultGate = new(1, 1);
 
     /// <summary>The current user's default landing view (the query to apply on a bare /cases), or null.</summary>
     public async Task<SavedViewItem?> DefaultAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var me = _user.UserId;
+        // BUG-540: two defaults stored before the toggle was serialised resolve the same way every time.
         var v = await db.SavedViews.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.OwnerUserId == me && x.IsDefault, ct);
+            .Where(x => x.OwnerUserId == me && x.IsDefault)
+            .OrderBy(x => x.Name).ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(ct);
         return v is null ? null
             : new SavedViewItem(v.Id, v.Name, v.Query, v.IsShared, IsMine: true, OwnerName: "you", IsDefault: true);
     }

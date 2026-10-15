@@ -147,5 +147,65 @@ public sealed class SavedViewTests : IDisposable
         (await NewService().ListAsync()).Should().BeEmpty();
     }
 
+    // BUG-540: holds the first toggle's save, after its "which is my default?" read and before its write, so a second
+    // toggle can be tried inside that window.
+    private sealed class HoldToggleSave : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        public readonly TaskCompletionSource Reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _held;
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _held, 1) == 0)
+            {
+                Reached.SetResult();
+                await Release.Task;
+            }
+            return result;
+        }
+    }
+
+    [Fact]
+    public async Task Two_quick_default_toggles_leave_one_default(/* BUG-540 */)
+    {
+        _user.UserId = "alice";
+        var first = await NewService().SaveAsync("First", "sla=true", isShared: false);
+        var second = await NewService().SaveAsync("Second", "overdue=true", isShared: false);
+        var hold = new HoldToggleSave();
+        var held = new SavedViewService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(hold, new AuditChainInterceptor(_hasher, _user, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()))
+            .Options), _user, _dir, _clock);
+
+        var a = held.ToggleDefaultAsync(first);
+        await hold.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var b = Task.Run(() => NewService().ToggleDefaultAsync(second));
+        (await Task.WhenAny(b, Task.Delay(400))).Should().NotBe(b, "the second toggle waits while the first is saving");
+        hold.Release.SetResult();
+
+        (await a).Should().Be(first);
+        (await b).Should().Be(second);
+        (await NewService().ListAsync()).Where(v => v.IsDefault).Select(v => v.Id).Should().Equal(second);
+        (await NewService().DefaultAsync())!.Id.Should().Be(second);
+    }
+
+    [Fact]
+    public async Task Two_stored_defaults_resolve_to_the_same_one_every_time(/* BUG-540 */)
+    {
+        _user.UserId = "alice";
+        // As two toggles at once left them before the toggle was serialised; inserted in reverse name order.
+        await using (var db = new AppDbContext(Options()))
+        {
+            db.SavedViews.Add(new IncidentManager.Domain.Entities.SavedView { OwnerUserId = "alice", Name = "Zulu", IsDefault = true, CreatedAtUtc = _clock.UtcNow });
+            db.SavedViews.Add(new IncidentManager.Domain.Entities.SavedView { OwnerUserId = "alice", Name = "Alpha", IsDefault = true, CreatedAtUtc = _clock.UtcNow });
+            await db.SaveChangesAsync();
+        }
+
+        (await NewService().DefaultAsync())!.Name.Should().Be("Alpha");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

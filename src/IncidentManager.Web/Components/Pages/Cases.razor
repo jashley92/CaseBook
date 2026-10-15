@@ -203,7 +203,7 @@
                     <button type="button" class="btn @(v.IsDefault ? "btn-warning" : "btn-outline-secondary")"
                             title="@(v.IsDefault ? "Your default view. Cases opens here." : "Set as your default view")"
                             aria-pressed="@Ui.Aria(v.IsDefault)" aria-label="@($"{(v.IsDefault ? "Unset" : "Set")} {v.Name} as default view")"
-                            @onclick="() => ToggleDefault(v)">
+                            disabled="@_defaultBusy" @onclick="() => ToggleDefault(v)">
                         <span class="bi @(v.IsDefault ? "bi-star-fill" : "bi-star")" aria-hidden="true"></span>
                     </button>
                     <button type="button" class="btn btn-outline-secondary" title="Delete this view"
@@ -761,8 +761,13 @@ else
         if (_peekId is not null && _cursor != before && _cursor >= 0 && _cursor < n) _peekId = p.Items[_cursor].Id;
     }
 
+    // BUG-540: a second click (on this star or another) while a toggle runs would toggle against the stale list.
+    private bool _defaultBusy;
+
     private async Task ToggleDefault(SavedViewItem v)
     {
+        if (_defaultBusy) return;
+        _defaultBusy = true;
         try
         {
             await Views.ToggleDefaultAsync(v.Id);
@@ -772,6 +777,7 @@ else
         {
             Toasts.Error(ex.Message);
         }
+        finally { _defaultBusy = false; }
     }
 
     // Runs on initial load and on every query-string change (e.g. a dashboard drill-in).
