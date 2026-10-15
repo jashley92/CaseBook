@@ -40,7 +40,7 @@ used) or `owner:` alongside `type:` or `by:` (tasks aren't record entries).
 
 | Filter | Meaning |
 |---|---|
-| `entity:VALUE` | Cases with that exact entity value, and the entries and tasks that mention it |
+| `entity:VALUE` | Cases with that exact entity value, and the entries, tasks and notes that mention it or tag it (by its label too). With words, every word must still appear |
 | `status:open`, `status:closed` | Open or closed cases (an archived case isn't open; archived results are labelled) |
 | `class:event`, `adverse`, `incident`, `breach` | The rung (`event` is a Complex Event) |
 | `type:decision`, `handoff`, `adversary`, `response`, or any entry type (`containment`, `communication`, …) | Which record entries; with a type filter Find lists entries only |

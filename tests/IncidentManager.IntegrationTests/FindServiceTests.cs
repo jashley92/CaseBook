@@ -459,6 +459,71 @@ public sealed class FindServiceTests : IDisposable
     }
 
     [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_entity_filter_narrows_and_words_must_still_appear(string provider /* BUG-564 */)
+    {
+        Use(provider);
+        Guid deltaId;
+        using (var db = NewContext())
+        {
+            var ip = db.CaseEntities.Single(e => e.CaseId == _alpha && e.Value == "203.0.113.66");
+            ip.Label = "Foreign ASN egress";
+            var tag = $"[Foreign ASN egress](entity:{ip.Id})";
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = _alpha, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Note,
+                OccurredAtUtc = H(-20), Description = $"Seen from {tag} at 02:10", CreatedBy = "robin", CreatedAtUtc = H(-20) });
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "Ask the ISP about it", AboutRef = $"entity:{ip.Id}",
+                CreatedBy = "robin", CreatedAtUtc = H(-20) });
+            db.Notes.Add(new AnalystNote { CaseId = _alpha, Body = $"Probably {tag}", CreatedBy = "analyst1", CreatedAtUtc = H(-19) });
+            // Another indicator on the same case, tagged only by its label.
+            var dom = new CaseEntity { CaseId = _alpha, Type = EntityType.Domain, Value = "evil.example.com", Label = "C2 host",
+                CreatedBy = "robin", CreatedAtUtc = H(-18) };
+            db.CaseEntities.Add(dom);
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = _alpha, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Note,
+                OccurredAtUtc = H(-17), Description = $"Beacon from 203.0.113.66 to [C2 host](entity:{dom.Id})", CreatedBy = "robin", CreatedAtUtc = H(-17) });
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "Sinkhole it for 203.0.113.66", AboutRef = $"entity:{dom.Id}",
+                CreatedBy = "robin", CreatedAtUtc = H(-17) });
+            // A closed case whose closing brief tags the IP by its label.
+            var d = Case.Open(2025, 41, "Egress_Review", "Egress review", Classification.AdverseEvent, Severity.Low, CaseOrigin.InternalDetection, "lee", H(-760));
+            var dip = new CaseEntity { Type = EntityType.IpAddress, Value = "203.0.113.66", Label = "Provider", CreatedBy = "lee", CreatedAtUtc = H(-750) };
+            d.Entities.Add(dip);
+            d.ReviseBrief("Egress review", $"[Provider](entity:{dip.Id}) traffic confirmed.", null, null, null, "lee", H(-700));
+            d.ChangePhase(CasePhase.Closed, "done", "lee", H(-700), outcomeKey: "benign");
+            db.Cases.Add(d);
+            db.SaveChanges();
+            deltaId = d.Id;
+        }
+
+        // The filter alone still lists what tags the entity (WF-83).
+        var only = await NewFind().FindAsync("entity:203.0.113.66 in:notes");
+        only.Entries.Should().Contain(e => e.Text.Contains("Seen from"));
+        only.Tasks.Should().Contain(t => t.Title == "Ask the ISP about it");
+        only.Notes.Should().Contain(n => n.Text.Contains("Probably"));
+
+        // A word that appears nowhere: tagging the entity doesn't make the word appear.
+        var absent = await NewFind().FindAsync("entity:203.0.113.66 ransomware in:notes");
+        absent.Entries.Should().BeEmpty();
+        absent.Tasks.Should().BeEmpty();
+        absent.Notes.Should().BeEmpty();
+
+        // A word that does appear (here in the tag's visible label) is found.
+        var present = await NewFind().FindAsync("entity:203.0.113.66 isp in:notes");
+        present.Tasks.Should().ContainSingle(t => t.Title == "Ask the ISP about it");
+        present.Entries.Should().BeEmpty();
+        // A closing brief: the word in its tag's label (the tag counts for the filter, the label for the word).
+        var provider2 = await NewFind().FindAsync("entity:203.0.113.66 provider");
+        provider2.Entries.Should().Contain(e => e.IsClosingBrief && e.CaseId == deltaId);
+        provider2.Entries.Should().NotContain(e => e.Text.Contains("Seen from"));
+
+        // Another indicator under the filter is found by its own tags, not the filter's.
+        var ioc = await NewFind().FindAsync("entity:203.0.113.66 evil.example.com");
+        ioc.ReadAs.Should().Be(FindReadAs.Indicator);
+        ioc.Entries.Should().ContainSingle().Which.Text.Should().StartWith("Beacon from");
+        ioc.Tasks.Should().ContainSingle().Which.Title.Should().Be("Sinkhole it for 203.0.113.66");
+
+        // The bare indicator still finds what tags it.
+        (await NewFind().FindAsync("evil.example.com")).Entries.Should().ContainSingle(e => e.Text.StartsWith("Beacon from"));
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
     public async Task Sign_in_names_owner_and_hidden_link_text(string provider /* WF-84, WF-87, WF-89 */)
     {
         Use(provider);

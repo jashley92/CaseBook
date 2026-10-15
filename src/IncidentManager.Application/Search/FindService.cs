@@ -201,13 +201,15 @@ public sealed class FindService
 
         // WF-83: an entity is tagged in text as [label](entity:<id>), by its label as often as its value, and a task can be
         // about it; the entity filter and an indicator search find those too (as the timeline's entity filter does).
-        List<string> tagRefs = [];
-        if (q.Entity is not null) tagRefs = entityIds.Take(MaxTagRefs).Select(id => $"entity:{id}").ToList();
-        else if (readAs == FindReadAs.Indicator)
+        // BUG-564: two sets. The filter's tags narrow (ANDed in the entity: blocks); the indicator's tags count as a match
+        // for the indicator itself. Words have none: every word must appear, and a tag doesn't make a word appear.
+        List<string> filterRefs = q.Entity is null ? [] : entityIds.Take(MaxTagRefs).Select(id => $"entity:{id}").ToList();
+        List<string> indicatorRefs = [];
+        if (readAs == FindReadAs.Indicator)
         {
 #pragma warning disable CA1304, CA1311, CA1862
             var exact = IocObservable.Normalize(iocType!.Value, text).ToLower();
-            tagRefs = (await db.CaseEntities.AsNoTracking().Where(e => caseIds.Contains(e.CaseId) && e.Value.Trim().ToLower() == exact)
+            indicatorRefs = (await db.CaseEntities.AsNoTracking().Where(e => caseIds.Contains(e.CaseId) && e.Value.Trim().ToLower() == exact)
                 .Select(e => e.Id).Take(MaxTagRefs).ToListAsync(ct)).Select(id => $"entity:{id}").ToList();
 #pragma warning restore CA1304, CA1311, CA1862
         }
@@ -342,11 +344,13 @@ public sealed class FindService
         {
             var eq = db.TimelineEntries.AsNoTracking().Where(e => e.IsCurrent && caseIds.Contains(e.CaseId));
 #pragma warning disable CA1304, CA1311, CA1862
-            var taggedEntries = await TaggingAsync(eq, r => e => e.Description.Contains(r), e => e.Id, tagRefs, ct);
+            Func<string, Expression<Func<TimelineEntry, bool>>> entryTags = r => e => e.Description.Contains(r);
+            var taggedEntries = await TaggingAsync(eq, entryTags, e => e.Id, filterRefs, ct);
+            var entriesTaggingIoc = await TaggingAsync(eq, entryTags, e => e.Id, indicatorRefs, ct);
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
                     eq = eq.Where(e => e.Description.ToLower().Contains(t) || (e.Rationale != null && e.Rationale.ToLower().Contains(t))
-                                       || taggedEntries.Contains(e.Id)
+                                       || entriesTaggingIoc.Contains(e.Id)
                                        || (alsoPersonId != null && ((e.Version == 1 && e.CreatedBy == alsoPersonId) || alsoRecorded.Contains(e.Id))));
             // WF-09: who recorded it is the first version's author, not whoever last edited it.
             if (readAs == FindReadAs.Person)
@@ -395,11 +399,12 @@ public sealed class FindService
                     await cases.Where(c => c.Phase == CasePhase.Closed && c.OutcomeKey != null).Select(c => c.Id).ToListAsync(ct), ct);
                 var bq = db.CaseBriefs.AsNoTracking().Where(b => closingIds.Contains(b.Id) && b.WorkingAssessment != null);
 #pragma warning disable CA1304, CA1311, CA1862
-                var taggedBriefs = await TaggingAsync(bq, r => b => b.WorkingAssessment!.Contains(r) || (b.Summary != null && b.Summary.Contains(r)),
-                    b => b.Id, tagRefs, ct);
+                Func<string, Expression<Func<CaseBrief, bool>>> briefTags = r => b => b.WorkingAssessment!.Contains(r) || (b.Summary != null && b.Summary.Contains(r));
+                var taggedBriefs = await TaggingAsync(bq, briefTags, b => b.Id, filterRefs, ct);
+                var briefsTaggingIoc = await TaggingAsync(bq, briefTags, b => b.Id, indicatorRefs, ct);
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
                     bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(t) || (b.Summary != null && b.Summary.ToLower().Contains(t))
-                                       || taggedBriefs.Contains(b.Id));
+                                       || briefsTaggingIoc.Contains(b.Id));
                 if (q.Entity is { } ent2) { var v = ent2.ToLower(); bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(v) || taggedBriefs.Contains(b.Id)); }
 #pragma warning restore CA1304, CA1311, CA1862
                 if (recheck)
@@ -429,13 +434,14 @@ public sealed class FindService
         if (tasksApply && q.EntryKind is null && q.EntryType is null && by is null)
         {
             var tq = db.ActionItems.AsNoTracking().Where(t => caseIds.Contains(t.CaseId));
-            var taggedTasks = await TaggingAsync(tq, r => x => x.AboutRef == r || (x.Description != null && x.Description.Contains(r)),
-                x => x.Id, tagRefs, ct);
+            Func<string, Expression<Func<ActionItem, bool>>> taskTags = r => x => x.AboutRef == r || (x.Description != null && x.Description.Contains(r));
+            var taggedTasks = await TaggingAsync(tq, taskTags, x => x.Id, filterRefs, ct);
+            var tasksTaggingIoc = await TaggingAsync(tq, taskTags, x => x.Id, indicatorRefs, ct);
 #pragma warning disable CA1304, CA1311, CA1862
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
                     tq = tq.Where(x => x.Title.ToLower().Contains(t) || (x.Description != null && x.Description.ToLower().Contains(t))
-                                       || taggedTasks.Contains(x.Id)
+                                       || tasksTaggingIoc.Contains(x.Id)
                                        || (x.Owner != null && alsoOwner.Contains(x.Owner.Trim().ToLower())));   // WF-89
             if (q.Entity is { } ent3)
             {
@@ -509,11 +515,13 @@ public sealed class FindService
             && (readAs is FindReadAs.Indicator or FindReadAs.Words or FindReadAs.Person || by is not null || q.Entity is not null))
         {
             var nq = db.Notes.AsNoTracking().Where(n => n.IsCurrent && caseIds.Contains(n.CaseId));
-            var taggedNotes = await TaggingAsync(nq, r => n => n.Body.Contains(r), n => n.Id, tagRefs, ct);
+            Func<string, Expression<Func<AnalystNote, bool>>> noteTags = r => n => n.Body.Contains(r);
+            var taggedNotes = await TaggingAsync(nq, noteTags, n => n.Id, filterRefs, ct);
+            var notesTaggingIoc = await TaggingAsync(nq, noteTags, n => n.Id, indicatorRefs, ct);
 #pragma warning disable CA1304, CA1311, CA1862
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    nq = nq.Where(n => n.Body.ToLower().Contains(t) || taggedNotes.Contains(n.Id));
+                    nq = nq.Where(n => n.Body.ToLower().Contains(t) || notesTaggingIoc.Contains(n.Id));
             if (q.Entity is { } ent4) { var v = ent4.ToLower(); nq = nq.Where(n => n.Body.ToLower().Contains(v) || taggedNotes.Contains(n.Id)); }
 #pragma warning restore CA1304, CA1311, CA1862
             // WF-09: as for entries, the note's first author.
