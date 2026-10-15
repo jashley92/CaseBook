@@ -305,6 +305,40 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_case_reported_with_nothing_in_play_keeps_what_was_kept_while_an_element_added_is_outstanding(/* BUG-555 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        db.DataElements.Add(new DataElement { Key = "EMAIL", Label = "Email address", IsActive = true,
+            CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });   // no regulator
+        db.DataElements.Add(new DataElement { Key = "DL", Label = "Driver's licence", NotificationJurisdictions = "NJ",
+            IsActive = true, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        await NewCases(NewContext()).UpdateImpactAssessmentAsync(id, 500, ["EMAIL"], "NY");
+        await NewCases(NewContext()).MarkReportedAsync(id, _clock.UtcNow);   // nothing in play: reported as a whole
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().NotBeNull();
+
+        await NewCases(NewContext()).UpdateImpactAssessmentAsync(id, 500, ["EMAIL", "DL"], "NY");   // NJ by mistake
+        var open = await NewDeadlines().EvaluateAsync(id);
+        open.ReportedAtUtc.Should().BeNull("NJ came into play after the report");
+        open.Statuses.Select(s => s.JurisdictionCode).Should().Equal("NJ");
+
+        await NewCases(NewContext()).UpdateImpactAssessmentAsync(id, 500, ["EMAIL"], "NY");   // taken out again
+        await SetJurisdictionsAsync("EMAIL", "CA");   // an admin gives the element a regulator afterwards
+
+        // What was kept still stands: nothing was in play for EMAIL when the case was reported.
+        (await NewDeadlines().EvaluateAsync(id)).Statuses.Should().BeEmpty();
+        await using (var check = NewContext())
+            (await check.Cases.AsNoTracking().SingleAsync(c => c.Id == id)).ReportedJurisdictions.Should().Be(";EMAIL");
+        // The reported time isn't restored (nothing records it once cleared); recording it again keeps the same set.
+        await NewCases(NewContext()).MarkReportedAsync(id, _clock.UtcNow);
+        var again = await NewDeadlines().EvaluateAsync(id);
+        again.ReportedAtUtc.Should().NotBeNull();
+        again.Statuses.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task A_notice_keeps_the_deadline_it_was_made_against(/* WF-77 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);   // material 10 h ago: due in 62 h under 72 h

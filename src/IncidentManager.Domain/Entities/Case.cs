@@ -1428,6 +1428,28 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     /// <summary>
+    /// BUG-555: a case reported as a whole while nothing was in play goes back to unreported when an element added brings
+    /// a regulator in. Unlike <see cref="ClearReported"/> (a mis-entry) it keeps <see cref="ReportedJurisdictions"/>, so
+    /// removing that element is judged against what was kept, and a later admin change doesn't apply to the case. A kept
+    /// value from before its elements were recorded gets <paramref name="elementsBefore"/> (the elements before the edit),
+    /// or an added one couldn't be told apart. The reported time isn't kept: it has to be recorded again.
+    /// </summary>
+    public void Unreport(IEnumerable<string> elementsBefore, string actor, DateTimeOffset nowUtc)
+    {
+        if (ReportedAtUtc is null) return;
+        EnsureNotArchived("change its report");
+        ReportedAtUtc = null;
+        if (ReportedJurisdictions is { } kept && KeptElementKeys(kept) is null)
+        {
+            var withElements = kept + ";" + string.Join(',', elementsBefore.Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(k => k, StringComparer.Ordinal));
+            // Too long to hold them: today's settings apply, as before.
+            ReportedJurisdictions = withElements.Length <= MaxReportedJurisdictionsLength ? withElements : null;
+        }
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>
     /// BUG-09: records when one regulator was notified (or corrects the time). Validated like the reported time.
     /// Call <see cref="ReportedFromNotices"/> afterwards, with the jurisdictions in play.
     /// </summary>

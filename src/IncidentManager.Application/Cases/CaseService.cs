@@ -1488,7 +1488,8 @@ public sealed class CaseService
                 .Where(a => a.EntityType == nameof(Case) && a.EntityId == key && a.AfterJson != null && a.AfterJson.Contains(field))
                 .OrderByDescending(a => a.Sequence).Select(a => new { a.Actor, a.AtUtc }).FirstOrDefaultAsync(ct);
             c.NoticesFromWholeReport(before, recorded?.Actor ?? "system", recorded?.AtUtc ?? reported, _user.UserId, now);
-            if (c.JurisdictionNotices.Count == 0) c.ClearReported(_user.UserId, now);
+            // BUG-555: nothing was in play when it was reported; it's outstanding now, but keeps what was kept.
+            if (c.JurisdictionNotices.Count == 0) c.Unreport(keysBefore, _user.UserId, now);
         }
         // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
         var wasReported = c.ReportedAtUtc is not null;
