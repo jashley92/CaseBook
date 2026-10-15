@@ -1075,6 +1075,10 @@ public sealed class CaseImportTests : IDisposable
         // A second one is claimed and then stops without recording or releasing (a recycle), and is reopened.
         var resumed = (await svc.BuildPreviewForPendingAsync(pid))!;
         resumed.Warnings.Should().Contain(w => w.Contains("won't be written again"));
+        // BUG-556: a second failed apply saves the resumed preview, warnings and all, before the stopped one.
+        var claim2 = await svc.ClaimPendingAsync(pid);
+        await svc.ReleaseClaimAsync(pid, resumed, claim2);
+        (await svc.BuildPreviewForPendingAsync(pid))!.Warnings.Should().ContainSingle(w => w.Contains("won't be written again"));
         (await svc.ClaimPendingAsync(pid)).Should().NotBeNull();
         _clock.UtcNow = _clock.UtcNow.Add(CaseImportService.StaleClaim).AddMinutes(1);
         (await svc.ReopenStuckAsync(pid)).Should().BeTrue();
@@ -1085,6 +1089,13 @@ public sealed class CaseImportTests : IDisposable
                                               && w.Contains("may have written more than the items marked"));
         reopened.Warnings.Should().NotContain(w => w.Contains("won't be written again"),
             "the stopped apply's own writes were never recorded");
+
+        // And one more failed apply after the reopen still shows the warning once.
+        var claim3 = await svc.ClaimPendingAsync(pid);
+        await svc.ReleaseClaimAsync(pid, reopened, claim3);
+        (await svc.BuildPreviewForPendingAsync(pid))!.Warnings.Should()
+            .ContainSingle(w => w.Contains("may have written more than the items marked"))
+            .And.NotContain(w => w.Contains("won't be written again"));
     }
 
     [Fact]

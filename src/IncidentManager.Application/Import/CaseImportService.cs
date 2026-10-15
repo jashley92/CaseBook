@@ -463,6 +463,9 @@ public sealed class CaseImportService
         // BUG-146: an apply that failed part-way left the reviewed preview, marked with what it wrote.
         if (row.ResumeJson is { } resume && JsonSerializer.Deserialize<CaseImportPreview>(resume, ResumeJsonOptions) is { } resumed)
         {
+            // BUG-556: the saved Warnings are the reviewed preview's, from its own load (an earlier resume's "won't be written
+            // again", a target since replaced by the created case), so they're rebuilt here rather than shown again.
+            resumed.Warnings.Clear();
             // BUG-541: a later apply that stopped without releasing (WF-94) recorded nothing, so what it wrote isn't marked.
             resumed.Warnings.Add(reopenedBy is null
                 ? "An earlier apply of this import stopped part-way. The items already written are marked and " +
