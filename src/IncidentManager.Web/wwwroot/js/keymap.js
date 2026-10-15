@@ -137,8 +137,10 @@ window.imKeymap = (function () {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); clearLeader(); sendGlobal('palette'); return; }
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             // BUG-328: inside a dialog, sheet or side panel it's that one's, never the tab composer's behind it.
+            // BUG-536: a held key repeats; only the first press submits, or a repeat posted the tab's composer once a
+            // dialog's apply finished and closed it.
             const cmd = submitCommand(e.target);
-            if (caseRef && cmd) { e.preventDefault(); sendCase(cmd); }
+            if (caseRef && cmd) { e.preventDefault(); if (!e.repeat) sendCase(cmd); }
             return;
         }
         if (e.key === 'Escape') { clearLeader(); sendGlobal('escape'); return; }
