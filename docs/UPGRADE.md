@@ -226,8 +226,7 @@ A fix release with no migration. Things to check:
 - **Import:** a user who can't change classification is offered Complex Event only. A reopened import warns it may
   already have written more than the marked items.
 - **Smaller fixes:** a cut-off audit or access-log CSV says "100000" rows in one cell; the report preview dates
-  indicators in the Gregorian calendar; v1.6.8 was held by its new quality-gate check until two patterns got a time
-  limit.
+  indicators in the Gregorian calendar.
 
 ### v1.6.8
 
