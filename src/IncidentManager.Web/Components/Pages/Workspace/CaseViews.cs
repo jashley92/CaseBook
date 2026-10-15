@@ -40,6 +40,15 @@ public static class CaseViews
     public static string Url(Guid caseId, string part, Guid? evidence = null) =>
         $"cases/{caseId}?tab={Uri.EscapeDataString(part)}" + (evidence is { } e ? $"&evidence={e}" : "");
 
+    /// <summary>BUG-509: the part and evidence panel an address from <see cref="Url"/> carries, read back.</summary>
+    public static (string? Part, Guid? Evidence) Read(string url)
+    {
+        var at = url.IndexOf('?');
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(at < 0 ? "" : url[at..]);
+        return (q.TryGetValue("tab", out var t) ? t.ToString() : null,
+            q.TryGetValue("evidence", out var e) ? IncidentManager.Web.Components.Shared.QueryValue.Id(e.ToString()) : null);
+    }
+
     /// <summary>A closed case opens on its Briefing (the outcome leads); an open one on its Record.</summary>
     public static string DefaultPart(Case? c) => c?.Phase == CasePhase.Closed ? "Briefing" : "Timeline";
 

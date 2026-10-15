@@ -141,21 +141,33 @@
             var zone = await JS.InvokeAsync<string>("imTime.zone");
             var mode = await JS.InvokeAsync<string>("imTime.mode");
             var clock = await JS.InvokeAsync<string>("imTime.clock");
+            _firstZone = true;
             TimeDisp.Configure(zone, string.Equals(mode, "local", StringComparison.OrdinalIgnoreCase)
                 ? TimeDisplayMode.Local : TimeDisplayMode.Utc, clock == "12");
         }
         catch
         {
             // Interop unavailable — stay on the UTC default.
+            _firstZone = true;
             TimeDisp.Configure(null, TimeDisplayMode.Utc);
         }
+        finally { _firstZone = false; }
     }
 
-    private void OnTimeChanged() => InvokeAsync(() =>
+    // BUG-509: the rebuild for the circuit's first display zone is still the page's first load, so the router's address
+    // (its deep link not yet seen) is the one to open; a later toggle rebuilds the page where the viewer is.
+    private bool _firstZone;
+
+    private void OnTimeChanged()
     {
-        _timeVersion++;   // bump the cascade so @Body (every visible timestamp) re-renders
-        StateHasChanged();
-    });
+        var firstZone = _firstZone;   // Configure raises Changed before it returns
+        InvokeAsync(() =>
+        {
+            if (firstZone) Tabs.ForgetWritten();
+            _timeVersion++;   // bump the cascade so @Body (every visible timestamp) re-renders
+            StateHasChanged();
+        });
+    }
 
     // --- Display preferences follow the account ---
     // theme.js / time.js report every theme, sidebar, density, time-zone or clock change here, and the whole set is

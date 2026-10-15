@@ -2,6 +2,7 @@
    everything. REL-07: the case was archived or restricted out from under a viewer holding unsaved text, so the
    workspace is held for a copy-out. REL-08: their permission changed since it loaded. S-21: a view-only role. *@
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 
 @if (AccessLost)
@@ -21,7 +22,7 @@ else if (PermissionLost)
         <div>
             <div class="fw-semibold">Your access to this case has changed.</div>
             <div class="small mb-0">Some actions are no longer available to you.
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => Nav.NavigateTo(Nav.Uri, forceLoad: true)">Reload the page</button>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ReloadPage">Reload the page</button>
                 to refresh your view.</div>
         </div>
     </div>
@@ -35,6 +36,14 @@ else if (!Access.CanEdit)
 }
 
 @code {
+    // BUG-509: the browser's address, which the workspace keeps current with replaceState; Nav.Uri is the address the
+    // case was opened with, so reloading it brought back a closed panel, a spent deep link and the old part.
+    private async Task ReloadPage()
+    {
+        try { await JS.InvokeVoidAsync("location.reload"); }
+        catch (JSException) { Nav.NavigateTo(Nav.Uri, forceLoad: true); }
+    }
+
     [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
     [Parameter] public bool AccessLost { get; set; }
     [Parameter] public bool PermissionLost { get; set; }

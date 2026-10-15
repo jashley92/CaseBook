@@ -60,7 +60,7 @@ public partial class CaseWorkspace
         _phoneTab = HasDeepLink ? null : "Now";
     }
 
-    private bool HasDeepLink => !string.IsNullOrEmpty(QTab) || QEntry is not null || QNote is not null || QEntity is not null || QEvidence is not null;
+    private bool HasDeepLink => !string.IsNullOrEmpty(QPart) || QEntry is not null || QNote is not null || QEntity is not null || QEvidence is not null;
 
     private bool PhoneNowNext => _phone && _phoneTab is "Now" or "Next";
 

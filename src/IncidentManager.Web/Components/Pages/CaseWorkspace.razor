@@ -260,17 +260,25 @@ else
     /// <summary>Deep-link a specific entity (from an inline entity tag chip): <c>?entity={guid}</c> opens it in the
     /// entity panel (INV-11) over the current tab, and focuses its row when the Entities tab is open.</summary>
     [SupplyParameterFromQuery(Name = "entity")] public string? QEntityRaw { get; set; }
-    private Guid? QEntity => QueryValue.Id(QEntityRaw);   // BUG-31: a bad value is ignored, not an error
+    private Guid? QEntity => _resume is null ? QueryValue.Id(QEntityRaw) : null;   // BUG-31: a bad value is ignored, not an error
     /// <summary>RD-06: an evidence file to open in its panel (a cited-file chip links here).</summary>
     [SupplyParameterFromQuery(Name = "evidence")] public string? QEvidenceRaw { get; set; }
-    private Guid? QEvidence => QueryValue.Id(QEvidenceRaw);
+    private Guid? QEvidence => _resume is { } r ? r.Evidence : QueryValue.Id(QEvidenceRaw);
 
     /// <summary>INV-37: deep-link one note (a mention email's link): <c>?tab=Notes&amp;note={guid}</c> brings it into view.</summary>
     [SupplyParameterFromQuery(Name = "note")] public string? QNoteRaw { get; set; }
-    private Guid? QNote => QueryValue.Id(QNoteRaw);
+    private Guid? QNote => _resume is null ? QueryValue.Id(QNoteRaw) : null;
     /// <summary>RD-20: one record entry to bring into view (a Find result): <c>?tab=Timeline&amp;entry={guid}</c>.</summary>
     [SupplyParameterFromQuery(Name = "entry")] public string? QEntryRaw { get; set; }
-    private Guid? QEntry => QueryValue.Id(QEntryRaw);
+    private Guid? QEntry => _resume is null ? QueryValue.Id(QEntryRaw) : null;
+    private string? QPart => _resume is { } r ? r.Part : QTab;
+
+    // BUG-509: MainLayout rebuilds the page in place on a time-mode change, and the router hands the new one the address
+    // it last navigated to, which replaceState (SyncTabUrl) never updated: a closed panel, a spent ?entry=, ?entity= or
+    // ?note= and the old part came back. Such a page starts from the address last written instead (it carries no
+    // one-shot link), until the next navigation, whose address is the real one.
+    private (string? Part, Guid? Evidence)? _resume;
+    private bool _resumeHeld;
 
     // RD-11: the case's views and their parts (Workspace/CaseViews); the active part is the routing key.
     private bool _openNotes;
@@ -427,6 +435,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (OpenTabs.WrittenUrlFor(Id) is { } written) _resume = CaseViews.Read(written);   // BUG-509
         _dotNetRef = DotNetObjectReference.Create(this);
         _myId = CurrentUser.UserId;
         await RefreshPermissionsAsync();
@@ -448,6 +457,8 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        if (_resumeHeld) _resume = null;   // BUG-509: only a rebuilt page's first parameters are stale; later ones are a navigation
+        _resumeHeld = true;
         // BUG-05: the route component is reused when the Id changes, so the live subscription and anything held for
         // the last case (an open dialog, the access banners, a refusal's demoted permissions) move to the new case.
         if (_subscribedTo != Id)
@@ -485,7 +496,7 @@ else
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.
         // RD-11: a different case opens on its default view.
         if (_partsFor != Id) _closeOut.Discard();   // RD-14: a close-out draft belongs to its case
-        var tab = ResolvePart(QTab) ?? (_partsFor != Id ? DefaultPart() : _activeTab);
+        var tab = ResolvePart(QPart) ?? (_partsFor != Id ? DefaultPart() : _activeTab);
         _partsFor = Id;
         await SetTab(tab);
         // U-30: a fresh case view starts with a clean slate — nothing is "new" until a collaborator acts.

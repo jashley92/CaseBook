@@ -7,6 +7,7 @@
    Scope controls the copy: "page" (the default, a whole routed page failed) vs. a named section such as a
    case tab, so a per-tab boundary can say "This tab couldn't load" without implying the whole case broke. *@
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="im-card">
     <div class="empty-state">
@@ -54,6 +55,10 @@
         if (OnRecover.HasDelegate)
             await OnRecover.InvokeAsync();
         else
-            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+        {
+            // BUG-509: the browser's address; a page that keeps it with replaceState (the case workspace) is past Nav.Uri.
+            try { await JS.InvokeVoidAsync("location.reload"); }
+            catch (JSException) { Nav.NavigateTo(Nav.Uri, forceLoad: true); }
+        }
     }
 }
