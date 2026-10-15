@@ -206,6 +206,32 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.10
+
+A fix release with no migration. Things to check:
+
+- **One fixed culture.** CaseBook now formats every date and number the same way whatever the server account's
+  regional settings. A Buddhist or Hijri year, or a comma decimal, can no longer appear anywhere.
+- **Defaults stay deleted.** Deleting every stage gate, case template or report profile now sticks. The defaults are
+  seeded only on a real first start, not whenever a table is empty.
+- **Briefs:** holding Ctrl/Cmd+Enter in the brief editor saves once, so a "someone else changed this" warning can't be
+  skipped and a colleague's brief overwritten. A held Enter adds one Desk task or saves one view.
+- **Timeline:** 'l' and "Show on the timeline" no longer leave a hidden type or tactic filter, or the Story lens,
+  hiding entries. 'n' waits while a working note is edited in place. Saving Details again after a refusal keeps the
+  times shown.
+- **Regulator reporting:** a case reported with nothing in play keeps what was kept when an added element reopens
+  it, so later changes are judged against the original. The reported time is recorded again by the user.
+- **Program report and overview:** a past quarter's SLA targets stay put when an old setting is changed then reset; a
+  custom range ending today is compared with the same span before it. The executive email's text part lists one
+  figure per line.
+- **Administration:** playbook template saves wait for a running import and never break the page on a name clash. A
+  deadline rule's code can't contain "," or ";" (such a rule never applied; the import preview names any
+  existing one). The config import preview counts profiles, rules, outcomes, settings and roles the way the import
+  applies them.
+- **Smaller fixes:** "Send test event" reports a missing Event Log source; the Word preview shows the template now
+  selected; the idle lock fires after a long sleep; a resumed import shows only current warnings; a SQL Server
+  database that can't be opened stops startup instead of getting a new chain key.
+
 ### v1.6.9
 
 A fix release with no migration. Things to check:
