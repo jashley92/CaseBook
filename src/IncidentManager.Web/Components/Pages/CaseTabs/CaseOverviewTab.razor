@@ -696,6 +696,7 @@
     private DateTime? _edDetected;
     private DateTime? _edOccurred;
     private DateTime? _edDetectedShown, _edOccurredShown;   // WF-68: as seeded, to keep an untouched instant
+    private DateTimeOffset? _edDetectedAt, _edOccurredAt;   // BUG-553: the instants those were seeded from
     private string? _detailsError;
     private string? _detailsBaseline; // FR-06: field signature captured when the editor opened
 
@@ -1059,6 +1060,7 @@
         _edDetected = Case.DetectedAtUtc is { } d ? UtcToWall(d) : null;
         _edOccurred = Case.OccurredAtUtc is { } o ? UtcToWall(o) : null;
         (_edDetectedShown, _edOccurredShown) = (_edDetected, _edOccurred);
+        (_edDetectedAt, _edOccurredAt) = (Case.DetectedAtUtc, Case.OccurredAtUtc);
         _detailsError = null;
         _detailsBaseline = Case.DetailsConcurrencyStamp(); // FR-06: baseline for the optimistic-concurrency check
         _editingDetails = true;
@@ -1079,7 +1081,9 @@
         try
         {
             await Cases.UpdateDetailsAsync(CaseId, _edTitle, _edSummary, _edDetection, _edDataTypes, _edImpacted,
-                Kept(_edDetected, _edDetectedShown, Case.DetectedAtUtc)!.Value, Kept(_edOccurred, _edOccurredShown, Case.OccurredAtUtc),
+                // BUG-553: the instants the form was seeded from, not the reloaded case's: after a stale refusal the case
+                // holds the colleague's time, and "Save again to overwrite" would keep it while the form shows ours.
+                Kept(_edDetected, _edDetectedShown, _edDetectedAt)!.Value, Kept(_edOccurred, _edOccurredShown, _edOccurredAt),
                 _detailsBaseline);
         }
         catch (StaleEditException ex) // FR-06: another author changed these fields while we were editing
