@@ -947,20 +947,29 @@ else
 
     // The investigation types a task result can be logged as: not a Decision (that needs a why) and not the
     // third-party disclosure milestones.
-    private static IReadOnlyList<TimelineEntryType> LoggableTypes =>
+    internal static IReadOnlyList<TimelineEntryType> LoggableTypes =>
         Ui.Options<TimelineEntryType>("TimelineEntryType")
             .Where(t => t is not (TimelineEntryType.Decision or TimelineEntryType.Notified or TimelineEntryType.ScopeConfirmed
                 or TimelineEntryType.DataConfirmed or TimelineEntryType.Remediation or TimelineEntryType.RegulatoryNotification))
             .ToList();
 
+    /// <summary>
+    /// The type a task's result is logged as. HR-10: what the task was (Contain → Containment); a question's answer is
+    /// Analysis. BUG-478: a type an admin has hidden can't show in the select, so then the first one offered. BUG-508:
+    /// shared with Now/Next, which has no select and logged every result as Analysis.
+    /// </summary>
+    public static TimelineEntryType ResultTypeFor(ActionItem t, IReadOnlyList<TimelineEntryType> offered)
+    {
+        var wanted = t.FollowsUpQuestion ? TimelineEntryType.Analysis : t.Kind.ResultType();
+        return offered.Count == 0 || offered.Contains(wanted) ? wanted : offered[0];
+    }
+
+    internal static TimelineEntryType ResultTypeFor(ActionItem t) => ResultTypeFor(t, LoggableTypes);
+
     private void BeginComplete(ActionItem t)
     {
         _completingId = t.Id;
-        // HR-10: the result is logged as what the task was (Contain → Containment); a question's answer is Analysis.
-        _doneType = t.FollowsUpQuestion ? TimelineEntryType.Analysis : t.Kind.ResultType();
-        // BUG-478: a type an admin has hidden can't show in the select, so the result goes in as the first one offered.
-        var offered = LoggableTypes;
-        if (!offered.Contains(_doneType) && offered.Count > 0) _doneType = offered[0];
+        _doneType = ResultTypeFor(t);
         _doneResult = null; _doneKnown = false; _doneKnownLine = null;
         _doneWhen = _doneWhenDefault = ToWall(Clock.UtcNow);
         _doneLog = true;
