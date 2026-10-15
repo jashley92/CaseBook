@@ -2537,25 +2537,43 @@ public sealed class CaseService
         Require();
         if (positions.Count == 0) return;
 
-        using var db = _factory.CreateDbContext();
-
-        // Only persist for cases the current user is allowed to see.
-        var visible = await Scoped(db.Cases.AsNoTracking()).AnyAsync(c => c.Id == caseId, ct);
-        if (!visible) return;
-
-        var validIds = (await db.CaseEntities.AsNoTracking()
-            .Where(e => e.CaseId == caseId).Select(e => e.Id).ToListAsync(ct)).ToHashSet();
-
-        var existing = await db.EntityLayouts.Where(l => l.CaseId == caseId).ToListAsync(ct);
-        var byEntity = existing.ToDictionary(l => l.EntityId);
-
-        foreach (var p in positions)
+        // BUG-512: two saves for a new entity (two tabs, two quick drags) both find no row and both insert; the second hits
+        // the unique EntityId index. As BUG-368, that one goes again from a fresh read and updates the row that won. So does
+        // one whose row (or entity) was removed meanwhile.
+        for (var attempt = 0; ; attempt++)
         {
-            if (!validIds.Contains(p.EntityId)) continue;
-            if (byEntity.TryGetValue(p.EntityId, out var row)) { row.X = p.X; row.Y = p.Y; }
-            else db.EntityLayouts.Add(new EntityLayout { CaseId = caseId, EntityId = p.EntityId, X = p.X, Y = p.Y });
+            using var db = _factory.CreateDbContext();
+
+            // Only persist for cases the current user is allowed to see.
+            var visible = await Scoped(db.Cases.AsNoTracking()).AnyAsync(c => c.Id == caseId, ct);
+            if (!visible) return;
+
+            var validIds = (await db.CaseEntities.AsNoTracking()
+                .Where(e => e.CaseId == caseId).Select(e => e.Id).ToListAsync(ct)).ToHashSet();
+
+            var existing = await db.EntityLayouts.Where(l => l.CaseId == caseId).ToListAsync(ct);
+            var byEntity = existing.ToDictionary(l => l.EntityId);
+
+            var adding = false;
+            foreach (var p in positions)
+            {
+                if (!validIds.Contains(p.EntityId)) continue;
+                if (byEntity.TryGetValue(p.EntityId, out var row)) { row.X = p.X; row.Y = p.Y; }
+                else
+                {
+                    // An entity listed twice takes its last position, not a second row.
+                    db.EntityLayouts.Add(byEntity[p.EntityId] = new EntityLayout { CaseId = caseId, EntityId = p.EntityId, X = p.X, Y = p.Y });
+                    adding = true;
+                }
+            }
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+            catch (Exception ex) when (attempt == 0 && (ex is ConcurrentEditException || (adding && ex is DbUpdateException)))
+            { /* lost the insert race (or a row went meanwhile): go again from what's there now */ }
         }
-        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

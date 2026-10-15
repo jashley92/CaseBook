@@ -465,6 +465,64 @@ public sealed class CaseSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task A_graph_layout_save_that_loses_the_insert_race_updates_the_row_that_won(/* BUG-512 */)
+    {
+        Guid caseId, raced, other;
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            caseId = (await svc.CreateAsync(Req("Graph"))).Id;
+            await svc.AddEntityAsync(caseId, EntityType.IpAddress, "203.0.113.9", null, EntityDisposition.Malicious, null, null);
+            await svc.AddEntityAsync(caseId, EntityType.Host, "FIN-WKS-09", null, EntityDisposition.Unknown, null, null);
+            raced = (await db.CaseEntities.SingleAsync(e => e.Value == "203.0.113.9")).Id;
+            other = (await db.CaseEntities.SingleAsync(e => e.Value == "FIN-WKS-09")).Id;
+        }
+
+        // The other tab's insert lands after this save found no row but before its own insert reaches the unique index.
+        var racer = new BeforeFirstSave(async () =>
+        {
+            await using var o = NewContext();
+            o.EntityLayouts.Add(new IncidentManager.Domain.Entities.EntityLayout { CaseId = caseId, EntityId = raced, X = 1, Y = 1 });
+            await o.SaveChangesAsync();
+        });
+        await using (var db = NewContext())
+        {
+            var racing = new CaseService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+                    .UseSqlite(_connection)
+                    .AddInterceptors(racer, new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+                    .Options),
+                _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(),
+                new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            // The other entity is listed twice: it takes its last position, in one row.
+            await racing.SaveGraphLayoutAsync(caseId, [new(raced, 50, 60), new(other, 5, 5), new(other, 7, 8)]);
+        }
+
+        await using (var db = NewContext())
+        {
+            (await db.EntityLayouts.Where(l => l.CaseId == caseId).ToListAsync())
+                .Select(l => (l.EntityId, l.X, l.Y)).Should().BeEquivalentTo(new[] { (raced, 50d, 60d), (other, 7d, 8d) });
+        }
+    }
+
+    /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
+    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private bool _done;
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_done)
+            {
+                _done = true;
+                await during();
+            }
+            return result;
+        }
+    }
+
+    [Fact]
     public async Task Search_covers_the_record_and_says_where_it_matched()
     {
         // HR-09: an old case can be found by what happened in it, not only its number, title, IOCs or notes.
