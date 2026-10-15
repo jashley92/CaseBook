@@ -90,7 +90,8 @@
                     </div>
                     @if (_desk.Cases.Count == 0)
                     {
-                        <p class="im-desk-empty">Nothing assigned to you right now. <a href="cases">Browse all cases</a>.</p>
+                        @* BUG-501: a bare "cases" opens the user's default view, not All. *@
+                        <p class="im-desk-empty">Nothing assigned to you right now. <a href="cases?scope=all">Browse all cases</a>.</p>
                     }
                     else
                     {
