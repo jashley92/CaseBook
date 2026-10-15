@@ -206,8 +206,10 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         // details) isn't repeated on its own: the outer row's copies fill it per item, as before BUG-382.
         // BUG-467: a text box is a block of its own, like a nested table: its paragraphs (in both the drawing and the VML
         // fallback copy) repeat inside it, before the paragraph or row that anchors it, which repeats for its own fields only.
+        // BUG-502: nor is a row in a text box whose anchoring paragraph uses the same list: that paragraph's copies fill it.
         foreach (var row in root.Descendants<TableRow>().OrderByDescending(r => r.Ancestors<TableRow>().Count()).ToList())
-            if (ListIn(OwnText(row)) is { } prefix && !row.Ancestors<TableRow>().Any(a => ListIn(OwnText(a)) == prefix))
+            if (ListIn(OwnText(row)) is { } prefix && !row.Ancestors<TableRow>().Any(a => ListIn(OwnText(a)) == prefix)
+                && !row.Ancestors<Paragraph>().Any(a => !InTable(a) && ListIn(OwnText(a)) == prefix))
                 Repeat(row, prefix, m, emptyText: "(none)");
         foreach (var p in root.Descendants<Paragraph>().Where(p => !InTable(p)).OrderByDescending(p => p.Ancestors<Paragraph>().Count()).ToList())
             if (ListIn(OwnText(p)) is { } prefix && !p.Ancestors<Paragraph>().Any(a => !InTable(a) && ListIn(OwnText(a)) == prefix))

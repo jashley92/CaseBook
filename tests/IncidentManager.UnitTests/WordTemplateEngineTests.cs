@@ -435,6 +435,31 @@ public class WordTemplateEngineTests
     }
 
     [Fact]
+    public void A_table_row_in_a_text_box_of_the_same_list_as_its_anchor_repeats_with_it_per_item(/* BUG-502 */)
+    {
+        // A card: the indicator in the anchoring paragraph, and a details table of the same indicator in its text box.
+        var template = DocWithParts([CardWithTable(), new Paragraph(R("{{report.tlp}}"))]);
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(_engine.Render(template, Model())), false);
+        var body = result.MainDocumentPart!.Document!.Body!;
+        var cards = body.Elements<Paragraph>().SkipLast(1).ToList();
+        cards.Should().HaveCount(2, "one paragraph, with its box, per indicator");
+        cards.Select(c => c.Descendants<Text>().First().Text).Should().Equal("203[.]0[.]113[.]66", "hxxps://evil[.]test");
+        cards.Select(c => string.Join("|", c.Descendants<TableRow>().Select(r => r.InnerText))).Should()
+            .Equal("IP Address|IP Address", "Url|Url");   // each card's table (drawing and fallback) holds its own indicator only
+
+        static Paragraph CardWithTable()
+        {
+            var p = TextBoxAnchor("{{ioc.value}}", new Paragraph(R("Type")));
+            foreach (var box in p.Descendants().Where(e => e.LocalName == "txbxContent").ToList())
+                box.AppendChild(new Table(new TableProperties(), new TableGrid(new GridColumn { Width = "2000" }),
+                        new TableRow(new TableCell(new Paragraph(R("{{ioc.type}}"))))))
+                    .InsertAfterSelf(new Paragraph());   // a text box ends in a paragraph
+            return p;
+        }
+    }
+
+    [Fact]
     public void A_list_in_a_text_box_in_a_table_cell_repeats_inside_the_box_not_the_row(/* BUG-467 */)
     {
         var cell = new TableCell(TextBoxAnchor("", new Paragraph(R("{{ioc.value}}"))));
