@@ -15,6 +15,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
+// BUG-547: first, before any thread or service starts, so the server's culture never reaches a date or a number.
+IncidentManager.Web.Services.AppCulture.Pin();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Don't advertise the server implementation.
