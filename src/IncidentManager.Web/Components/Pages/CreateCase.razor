@@ -116,7 +116,7 @@
                 @* PROD-43: mark a drill so it never pollutes real metrics. Fixed at creation. *@
                 <div class="col-12">
                     <div class="form-check">
-                        <InputCheckbox class="form-check-input" id="isExercise" @bind-Value="_request.IsExercise" />
+                        <InputCheckbox class="form-check-input" id="isExercise" @bind-Value="_request.IsExercise" @bind-Value:after="OnExerciseChanged" />
                         <label class="form-check-label" for="isExercise">
                             <span class="bi bi-mortarboard me-1" aria-hidden="true"></span>Tabletop / exercise case
                         </label>
@@ -402,6 +402,21 @@
     {
         _overlapPrompt = false;
         await RefreshGates();   // indicators count toward "at least one entity"
+    }
+
+    // BUG-496: a drill is checked against no live case, so the last check (and its matches, history, link choices and
+    // prompt) no longer holds once the box changes. Re-check now, superseding one still running, so Create sees fresh
+    // matches; a drill's gates can differ too.
+    private async Task OnExerciseChanged()
+    {
+        _overlapPrompt = false;
+        _checkedInput = null;
+        _matches = new();
+        _history = [];
+        _linkChoice.Clear();
+        if (IndicatorLines(_indicators).Any()) await CheckOverlaps();
+        else { ++_checkSeq; _checking = false; }
+        await RefreshGates();
     }
 
     // BUG-61: the gates the case would pass if filed as the form stands. Ticks survive a re-check of the same gates.
