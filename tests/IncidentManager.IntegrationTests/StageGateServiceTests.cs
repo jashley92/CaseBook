@@ -209,5 +209,58 @@ public sealed class StageGateServiceTests : IDisposable
         (await svc.GetAsync(id))!.CommentaryMinLength.Should().Be(0, "a negative minimum is clamped");
     }
 
+    [Fact]
+    public async Task Two_gates_saved_at_once_leave_one_active_and_one_per_name(/* BUG-538 */)
+    {
+        var svc = NewService();
+        var other = await svc.CreateAsync(BreachGate(active: false) with { Name = "Other" });
+
+        // Two creates of an active gate for one transition, and a rename onto the same name, while another writer holds
+        // GuardGate: each check runs with its save, after the one before, so only the first passes.
+        Task a, b, rename;
+        using (await GuardGate.EnterAsync())
+        {
+            a = Task.Run(() => svc.CreateAsync(BreachGate()));
+            b = Task.Run(() => svc.CreateAsync(BreachGate() with { Name = "Breach readiness v2" }));
+            rename = Task.Run(() => svc.UpdateAsync(other, BreachGate(active: false) with { Name = "breach READINESS" }));
+            await Task.Delay(200);
+            a.IsCompleted.Should().BeFalse("the checks and the save wait for GuardGate");
+            b.IsCompleted.Should().BeFalse();
+            rename.IsCompleted.Should().BeFalse();
+        }
+        var failures = new List<Exception>();
+        foreach (var t in new[] { a, b, rename })
+            try { await t; }
+            catch (InvalidOperationException ex) { failures.Add(ex); }
+
+        failures.Should().HaveCount(2);
+        var gates = await svc.ListAllAsync();
+        gates.Count(g => g.IsActive && g.Trigger == StageGateTrigger.EscalateToBreach).Should().Be(1);
+        gates.Count(g => g.Name.Equals("Breach readiness", StringComparison.OrdinalIgnoreCase)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_edit_that_waited_behind_another_save_sees_it_and_refuses(/* BUG-538 */)
+    {
+        var svc = NewService();
+        var id = await svc.CreateAsync(BreachGate());
+        var opened = (await svc.GetAsync(id))!;
+
+        // The stamp is read under the gate too, so a change saved while the edit waited is seen, not overwritten.
+        Task edit;
+        using (await GuardGate.EnterAsync())
+        {
+            edit = Task.Run(() => svc.UpdateAsync(id, BreachGate() with { Description = "mine" }, opened.Stamp));
+            await Task.Delay(200);
+            edit.IsCompleted.Should().BeFalse();
+            await using var db = NewContext();
+            (await db.StageGates.SingleAsync(g => g.Id == id)).Description = "theirs";
+            await db.SaveChangesAsync();
+        }
+
+        await edit.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*since you opened it*");
+        (await svc.GetAsync(id))!.Description.Should().Be("theirs");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

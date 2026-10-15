@@ -222,10 +222,18 @@ public sealed partial class ConfigBundleService
     // Closing, and which one a close is judged against would be whichever row the database returned first.
     private static void CheckSingleActiveGates(ConfigBundle incoming, ConfigBundle live)
     {
-        var after = live.StageGates.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
-        foreach (var g in incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is not null))
-            after[g.Name] = g;
-        var clashes = after.Values.Where(g => g.IsActive)
+        // BUG-538: two live gates with one name, ignoring case (saved at once before the name check ran under GuardGate),
+        // can't be matched by name: a bundle gate of that name stops the import with the name, not a raw "same key" error.
+        // A duplicate the bundle doesn't carry is left alone, and both rows still count below.
+        var imported = incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is not null).ToList();
+        var importedNames = imported.Select(g => g.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ambiguous = live.StageGates.GroupBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1 && importedNames.Contains(g.Key))
+            .Select(g => importedNames.TryGetValue(g.Key, out var asImported) ? asImported : g.Key).Order(StringComparer.Ordinal).ToList();
+        if (ambiguous.Count > 0)
+            throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", ambiguous.Select(DuplicateLiveGate)));
+        var after = live.StageGates.Where(g => !importedNames.Contains(g.Name)).Concat(imported);
+        var clashes = after.Where(g => g.IsActive)
             .GroupBy(g => ParseEnum<StageGateTrigger>(g.Trigger))
             .Where(t => t.Key is not null && t.Count() > 1)
             .Select(t => $"\"{StageGateTriggers.Label(t.Key!.Value)}\" would have {t.Count()} active gates " +
@@ -235,6 +243,10 @@ public sealed partial class ConfigBundleService
             throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", clashes) +
                 " A transition has one active gate. Deactivate one (here or in the bundle's source), then try again.");
     }
+
+    private static string DuplicateLiveGate(string name) =>
+        $"More than one stage gate on this server is named \"{name}\" (names match regardless of case). Rename one on the " +
+        "Stage gates page, then import again.";
 
     // REV-49: S-18 says a bundle mustn't write what the admin pages would refuse; CheckSettings did that for settings only.
     // The rest came in as given: a notification rule with a window of 0 (every case it triggers past its deadline at once,

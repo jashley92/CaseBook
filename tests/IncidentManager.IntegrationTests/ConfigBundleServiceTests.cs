@@ -445,6 +445,31 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_live_gates_with_one_name_stop_an_import_with_their_name_not_a_raw_error(/* BUG-538 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var bundle = await svc.BuildBundleAsync();
+        var gate = bundle.StageGates.First(g => g.IsActive);
+        // Stored before the name check ran under GuardGate (two saves at once).
+        db.StageGates.Add(new StageGate { Trigger = Enum.Parse<StageGateTrigger>(gate.Trigger), Name = gate.Name.ToUpperInvariant(),
+            IsActive = false, CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+
+        (await svc.Invoking(s => s.PreviewAsync(bundle)).Should().ThrowAsync<ArgumentException>())
+            .Which.Message.Should().Contain($"More than one stage gate on this server is named \"{gate.Name}\"").And.Contain("Rename one");
+        (await svc.Invoking(s => s.ImportAsync(Signed(bundle), sourceTrusted: true)).Should().ThrowAsync<ArgumentException>())
+            .Which.Message.Should().Contain("More than one stage gate on this server is named");
+
+        // A bundle that doesn't carry that gate leaves both rows alone, so the duplicate doesn't stop it.
+        var without = bundle with { StageGates = bundle.StageGates.Where(g => g != gate).ToList() };
+        await svc.Invoking(s => s.ImportAsync(Signed(without), sourceTrusted: true)).Should().NotThrowAsync();
+        (await db.StageGates.AsNoTracking().Select(g => g.Name).ToListAsync())
+            .Count(n => n.Equals(gate.Name, StringComparison.OrdinalIgnoreCase)).Should().Be(2);
+    }
+
+    [Fact]
     public async Task Reimporting_an_unchanged_bundle_shows_no_changes()
     {
         await using var db = NewContext();
