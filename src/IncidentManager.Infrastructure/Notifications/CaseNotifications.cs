@@ -171,7 +171,14 @@ public sealed class CaseNotifications : ICaseNotifications
     private static string WithExerciseNote(string html)
     {
         if (html.Contains(ExerciseNoteMark, StringComparison.Ordinal)) return html;
-        var body = System.Text.RegularExpressions.Regex.Match(html, "<body[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        // Bounded (S6444): a body tag that can't be found in time gets the note in front, as the fallback does.
+        System.Text.RegularExpressions.Match body;
+        try
+        {
+            body = System.Text.RegularExpressions.Regex.Match(html, "<body[^>]*>",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase, RegexTimeout);
+        }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { return ExerciseNoteHtml + html; }
         if (!body.Success) return ExerciseNoteHtml + html;
         const string banner = "<div style=\"margin:0;padding:12px 16px;background:#fff4ce;color:#3b2f00;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;\">"
                               + "<strong>EXERCISE.</strong> This is a tabletop case, not a real breach. No action is needed.</div>";
@@ -182,8 +189,11 @@ public sealed class CaseNotifications : ICaseNotifications
     private static string WithoutLine(string text, string line)
     {
         var kept = string.Join('\n', text.Split('\n').Where(l => !string.Equals(l.Trim(), line, StringComparison.Ordinal)));
-        return System.Text.RegularExpressions.Regex.Replace(kept, "\n{3,}", "\n\n").Trim();
+        return System.Text.RegularExpressions.Regex.Replace(kept, "\n{3,}", "\n\n", System.Text.RegularExpressions.RegexOptions.None,
+            RegexTimeout).Trim();
     }
+
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
     // INV-37: a link straight to one note (the workspace opens the Notes tab and brings it into view).
     private string? NoteUrl(Guid caseId, Guid noteId) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{caseId}?tab=Notes&note={noteId}";

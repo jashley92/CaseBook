@@ -230,7 +230,8 @@ A fix release with no migration. Things to check:
 - **Exports:**
   - An audit-trail CSV's first line can't be turned into formulas by a case number.
   - File names and the compliance bundle's audit entry use Gregorian dates whatever the server's language settings.
-  The notification bell and due dates do the same.
+- **Dates on screen:** the notification bell and due dates use Gregorian dates whatever the server's language
+  settings, like every other time shown.
 - **Releases** find the quality-gate result when docs commits were pushed after the tagged one.
 
 ### v1.6.7
