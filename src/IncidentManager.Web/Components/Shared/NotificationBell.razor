@@ -100,7 +100,7 @@
         {
             // First use on this browser: treat everything so far as seen, so the badge only
             // lights up for activity that happens from now on.
-            _seenIso = DateTimeOffset.UtcNow.ToString("o");
+            _seenIso = DateTimeOffset.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
             await JS.InvokeVoidAsync("imActivity.setSeen", _seenIso);
         }
         _seenLoaded = true;
@@ -134,7 +134,9 @@
     {
         if (!_seenLoaded) return false;
         if (string.Equals(it.Actor, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase)) return false;
-        return DateTimeOffset.TryParse(_seenIso, out var seen) && it.AtUtc > seen;
+        // BUG-529: the marker is a round-trip ("o") stamp; read it the same way, not with the server culture's calendar.
+        return DateTimeOffset.TryParse(_seenIso, System.Globalization.CultureInfo.InvariantCulture,
+                   System.Globalization.DateTimeStyles.RoundtripKind, out var seen) && it.AtUtc > seen;
     }
 
     private async Task Toggle()
@@ -143,7 +145,7 @@
         if (_open)
         {
             // Opening the panel marks everything currently shown as seen.
-            _seenIso = DateTimeOffset.UtcNow.ToString("o");
+            _seenIso = DateTimeOffset.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
             await JS.InvokeVoidAsync("imActivity.setSeen", _seenIso);
             _unread = 0;
         }
