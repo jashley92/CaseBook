@@ -105,6 +105,15 @@ public sealed class CaseImportService
         CancellationToken ct = default)
     {
         var preview = BuildPreviewCore(doc, _clock.UtcNow);
+        // BUG-542: REV-14, as CreateCase offers it: a rung this user can't file is dropped here, so the import page and the
+        // API's preview agree, and Apply doesn't fail as Forbidden. A reviewer previews a queued one again under their role.
+        if (preview.NewCase is { Classification: { } cls } nc && !_user.Has(Permission.ChangeClassification))
+        {
+            nc.Classification = null;
+            var label = Admin.TaxonomyCatalog.DefaultLabel("Classification", cls.ToString());
+            preview.Warnings.Add($"The document files this as {label}, a classification your role can't file, so it's prepared as " +
+                                 "a Complex Event. Someone who can change a case's classification promotes it onto the ladder.");
+        }
 
         var existingId = intoCaseId ?? doc.Target?.CaseId;
         if (existingId is { } id)

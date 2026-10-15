@@ -1052,6 +1052,29 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_classification_the_role_cannot_file_is_dropped_from_the_preview(/* BUG-542 */)
+    {
+        _user.PermissionSet = [Permission.ViewCases, Permission.EditCases];   // no ChangeClassification (REV-14)
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var preview = await svc.BuildPreviewAsync(FullDoc());
+        preview.NewCase!.Classification.Should().BeNull("the role files Complex Events");
+        preview.Warnings.Should().Contain(w => w.Contains("Incident") && w.Contains("can't file"));
+
+        var result = await svc.ApplyAsync(preview);   // not Forbidden
+        (await db.Set<Case>().AsNoTracking().SingleAsync(c => c.Id == result.CaseId)).Classification.Should().BeNull();
+
+        // Queued through the API by this role, a reviewer who can classify sees the document's classification.
+        var json = FullDocJson();
+        var (pid, submitted) = await svc.SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        submitted.NewCase!.Classification.Should().BeNull();
+        _user.PermissionSet = null;
+        var reviewed = (await NewImportService(db).BuildPreviewForPendingAsync(pid))!;
+        reviewed.NewCase!.Classification.Should().Be(Classification.Incident);
+        reviewed.Warnings.Should().NotContain(w => w.Contains("can't file"));
+    }
+
+    [Fact]
     public async Task Confirming_a_pending_import_applies_it_and_marks_it_applied()
     {
         Guid pid;

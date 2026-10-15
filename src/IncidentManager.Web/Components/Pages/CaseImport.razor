@@ -9,6 +9,7 @@
 @inject IJSRuntime JS
 @inject CaseService Cases
 @inject ISeverityLabels SevLabels
+@inject ICurrentUser CurrentUser
 
 <PageTitle>Import case</PageTitle>
 
@@ -101,7 +102,8 @@ else if (_pending.Count > 0)
                     <select id="imp-class-hint" class="form-select form-select-sm" value="@(_promptClassification?.ToString() ?? "")"
                             @onchange="e => _promptClassification = Enum.TryParse<Classification>(e.Value?.ToString(), out var c) ? c : null">
                         <option value="">Let the AI choose</option>
-                        @foreach (var cl in Enum.GetValues<Classification>()) { <option value="@cl">@Ui.Label(cl)</option> }
+                        @* BUG-542: a rung this role can't file (REV-14) would only be dropped from the document. *@
+                        @if (CanClassify) { @foreach (var cl in Enum.GetValues<Classification>()) { <option value="@cl">@Ui.Label(cl)</option> } }
                     </select>
                 </div>
             }
@@ -197,8 +199,14 @@ else if (_pending.Count > 0)
                     <select id="imp-nc-class" class="form-select form-select-sm" value="@(nc.Classification?.ToString() ?? "")"
                             @onchange="async e => { SetClassification(nc, e.Value?.ToString()); await RefreshGates(); }">
                         <option value="">Complex Event</option>
-                        @foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }
+                        @* BUG-542: REV-14, as CreateCase: only the rungs this role can file (the preview drops any other). *@
+                        @if (CanClassify) { @foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> } }
                     </select>
+                    @if (!CanClassify)
+                    {
+                        <div class="form-text">Your role files Complex Events. Someone who can change a case's classification
+                            promotes it onto the ladder.</div>
+                    }
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small mb-1" for="imp-nc-severity">Severity</label>
@@ -703,6 +711,8 @@ else if (_pending.Count > 0)
               && (nc.Origin != CaseOrigin.ThirdParty || !string.IsNullOrWhiteSpace(nc.VendorName))   // BUG-117
             : p.ExistingCaseId is not null;
     }
+
+    private bool CanClassify => CurrentUser.Has(Permission.ChangeClassification);   // BUG-542: REV-14
 
     private void SetClassification(CreateCaseRequest nc, string? raw)
         => nc.Classification = Enum.TryParse<Classification>(raw, out var c) ? c : null;
