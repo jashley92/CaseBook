@@ -299,5 +299,47 @@ public sealed class DataElementServiceTests : IDisposable
         (await check.Cases.AsNoTracking().SingleAsync()).ReportedAtUtc.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task A_new_element_whose_key_was_saved_meanwhile_is_refused_in_words(/* BUG-567 */)
+    {
+        // A writer outside the gate saves the same key after SaveAsync chose it, before its insert reaches the unique index.
+        var racer = new BeforeFirstSave(async () =>
+        {
+            await using var other = NewContext();
+            other.DataElements.Add(new DataElement { Key = "HealthRecord", Label = "Health record (theirs)", SortOrder = 99,
+                IsActive = true, CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow });
+            await other.SaveChangesAsync();
+        });
+        var racing = new DataElementService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(racer, new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+            .Options), _user, _clock);
+        var rows = RowsFrom(await racing.ListAllAsync());
+        rows.Add(new DataElementRow(null, "Health record", null));
+
+        (await racing.Invoking(s => s.SaveAsync(rows)).Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("Another administrator added a data element at the same moment*");
+        await using var check = NewContext();
+        (await check.DataElements.AsNoTracking().SingleAsync(e => e.Key == "HealthRecord")).Label.Should().Be("Health record (theirs)");
+    }
+
+    /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
+    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private bool _done;
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_done)
+            {
+                _done = true;
+                await during();
+            }
+            return result;
+        }
+    }
+
     public void Dispose() => _connection.Dispose();
 }

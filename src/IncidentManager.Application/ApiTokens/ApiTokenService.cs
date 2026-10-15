@@ -110,6 +110,9 @@ public sealed class ApiTokenService
         var roles = CleanRoles(roleNames);
         ValidateExpiry(expiresAtUtc, MaxSystemLifetime);
         if (roles.Count == 0) throw new ArgumentException("Grant the token at least one role.");
+        // BUG-567: the role check with the save, under the gate a role delete (which refuses while a token holds the role)
+        // and an import hold, so a token can't be left holding a deleted role that a later role of that name would fill.
+        using var guard = await Admin.GuardGate.EnterAsync(ct);
         await EnsureRolesExistAsync(roles, ct);
         await EnsureSystemNameFreeAsync(n, ct);
         return await CreateAsync(n, ApiTokenKind.System, "apitoken:" + Slug(n), n, roles, expiresAtUtc, ct);

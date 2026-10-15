@@ -230,6 +230,12 @@
         {
             Toasts.Error(ex.Message);
         }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            // BUG-567: a save the import can't word (the database refused it) mustn't end the circuit. Nothing was imported.
+            Toasts.Error("The bundle couldn't be imported: the database refused the change, so nothing was imported. " +
+                         "Reload the page to see the current configuration, then try again.");
+        }
         finally
         {
             _applying = false;

@@ -132,6 +132,8 @@ public sealed class TaxonomyAdminService
         }
         if (edits.Count == 0) return;
 
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: not between an import's load and its save
+
         // BUG-437: a reset (or change) of a label another save removed meanwhile is refused by the context as a
         // ConcurrentEditException, and the whole save rolls back. Labels have no stamp (each is set as typed), so it goes
         // again from a fresh read: a label already gone is then left alone.
@@ -199,6 +201,7 @@ public sealed class TaxonomyAdminService
         if (hiddenMembers.Count >= catalogValues.Count)
             throw new ArgumentException("At least one option must stay visible.");
 
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: the stamp check with the save, and not inside an import
         using var db = _factory.CreateDbContext();
         var rows = await db.AppSettings
             .Where(s => s.Key.StartsWith(TaxonomyCatalog.KeyPrefix + kind + ":"))

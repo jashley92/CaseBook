@@ -78,6 +78,7 @@ public sealed class DataElementService
     public async Task SaveAsync(IReadOnlyList<DataElementRow> rows, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<DataElementService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: the stamp and key checks with the save, and not inside an import
         var labels = new List<string>(rows.Count);
         foreach (var r in rows)
         {
@@ -96,6 +97,7 @@ public sealed class DataElementService
         var byId = existing.ToDictionary(e => e.Id);
         var now = _clock.UtcNow;
         var usedKeys = existing.Select(e => e.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var added = new List<string>();
         var rescoped = new List<string>();   // WF-11: elements whose jurisdictions change
 
         for (var i = 0; i < rows.Count; i++)
@@ -124,6 +126,7 @@ public sealed class DataElementService
             {
                 var key = UniqueKey(label, usedKeys);
                 usedKeys.Add(key);
+                added.Add(key);
                 db.DataElements.Add(new DataElement
                 {
                     Key = key,
@@ -141,7 +144,17 @@ public sealed class DataElementService
         // WF-11: cases not yet reported are judged on the new jurisdictions; reported ones keep what was in play. BUG-390:
         // in the same save, so a recheck that fails doesn't leave the change saved and the cases never rechecked.
         await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, db.DataElements.Local, _user.UserId, now, ct);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (added.Count > 0)
+        {
+            // BUG-567: an element with one of the new keys was saved meanwhile by a writer outside the gate (the unique index
+            // refused it). Said plainly, not an error page; nothing from this save is kept.
+            using var check = _factory.CreateDbContext();
+            if (await check.DataElements.AnyAsync(e => added.Contains(e.Key), ct))
+                throw new InvalidOperationException("Another administrator added a data element at the same moment, so nothing was " +
+                    "saved. Reload the page to see their change, then make yours again.", ex);
+            throw;
+        }
     }
 
     /// <summary>Archives (<paramref name="archived"/> = true) or restores an element — built-in ones included.
@@ -149,6 +162,7 @@ public sealed class DataElementService
     public async Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<DataElementService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: not between a save's (or an import's) load and its save
         using var db = _factory.CreateDbContext();
         var el = await db.DataElements.FirstOrDefaultAsync(e => e.Id == id, ct)
             ?? throw new InvalidOperationException("That data element no longer exists. Reload the page and try again.");
@@ -167,6 +181,7 @@ public sealed class DataElementService
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<DataElementService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: as SetArchivedAsync
         using var db = _factory.CreateDbContext();
         var el = await db.DataElements.FirstOrDefaultAsync(e => e.Id == id, ct);
         if (el is null) return;

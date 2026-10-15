@@ -96,6 +96,7 @@ public sealed class AdminSettingsService
 
     private async Task SetCoreAsync(string key, string? value, bool checkExpected, string? expectedStored, CancellationToken ct)
     {
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: the stored-value check with the save, and not inside an import
         using var db = _factory.CreateDbContext();
         if (!SettingsCatalog.ByKey.TryGetValue(key, out var def))
             throw new InvalidOperationException($"'{key}' is not an editable operational setting.");
@@ -160,6 +161,7 @@ public sealed class AdminSettingsService
     public async Task ResetAsync(string key, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<AdminSettingsService>(_user, _siem);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: not between an import's load and its save
         using var db = _factory.CreateDbContext();
         var existing = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
         if (existing is null) return;

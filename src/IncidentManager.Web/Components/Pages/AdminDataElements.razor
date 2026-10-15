@@ -191,6 +191,12 @@ else
             Toasts.Error(ex.Message);
             return;
         }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            // BUG-567: any other refused save (the service words the ones it can tell apart) mustn't end the circuit.
+            Toasts.Error("The data elements couldn't be saved. Reload the page to see the current list, then try again.");
+            return;
+        }
         await LoadAsync();
         Toasts.Success("Data elements saved");
     }
@@ -208,6 +214,11 @@ else
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
+            return;
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)   // BUG-567: as on save
+        {
+            Toasts.Error("The data element couldn't be changed. Reload the page and try again.");
             return;
         }
         await ReloadKeepingEdits();

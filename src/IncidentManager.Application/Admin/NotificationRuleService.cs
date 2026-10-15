@@ -70,6 +70,7 @@ public sealed class NotificationRuleService
         CancellationToken ct = default)
     {
         AdminActionPermissions.Require<NotificationRuleService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: the stamp and code checks with the save, and not inside an import
         code = (code ?? "").Trim().ToUpperInvariant();
         label = (label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(code)) throw new ArgumentException("A jurisdiction code is required.");
@@ -123,6 +124,7 @@ public sealed class NotificationRuleService
     public async Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<NotificationRuleService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: not between a save's (or an import's) load and its save
         using var db = _factory.CreateDbContext();
         var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == id, ct)
             ?? throw new InvalidOperationException("That rule no longer exists. Reload the page and try again.");
@@ -137,6 +139,7 @@ public sealed class NotificationRuleService
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<NotificationRuleService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: as SetArchivedAsync
         using var db = _factory.CreateDbContext();
         var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == id, ct);
         if (rule is null) return;

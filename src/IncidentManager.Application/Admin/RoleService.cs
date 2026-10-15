@@ -45,6 +45,7 @@ public sealed class RoleService
     public async Task CreateRoleAsync(string name, string? description, IEnumerable<Permission> permissions, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<RoleService>(_user, _siem);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-567: the name check with the save, and not inside an import
         using var db = _factory.CreateDbContext();
         name = (name ?? "").Trim();
         if (Role.NameProblem(name) is { } problem) throw new ArgumentException(problem);
@@ -148,6 +149,9 @@ public sealed class RoleService
     public async Task AddMappingAsync(string adGroup, string roleName, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<RoleService>(_user, _siem);
+        // BUG-567: the role check with the save, so a role deleted meanwhile (or an import) can't leave a dormant mapping that
+        // a later role of that name would pick up.
+        using var guard = await GuardGate.EnterAsync(ct);
         using var db = _factory.CreateDbContext();
         adGroup = (adGroup ?? "").Trim();
         roleName = (roleName ?? "").Trim();
