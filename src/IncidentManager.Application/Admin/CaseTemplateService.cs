@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -71,6 +72,7 @@ public sealed class CaseTemplateService
     public async Task<Guid> CreateAsync(TemplateInput input, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<CaseTemplateService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-557: the name check with the save, and not inside an import
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
@@ -99,12 +101,12 @@ public sealed class CaseTemplateService
     public async Task UpdateAsync(Guid id, TemplateInput input, string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<CaseTemplateService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-557: the stamp and name checks with the save
         using var db = _factory.CreateDbContext();
         var template = await db.CaseTemplates.Include(t => t.Steps).FirstOrDefaultAsync(t => t.Id == id, ct)
                        ?? throw new InvalidOperationException("That template no longer exists. Reload the page and try again.");
         if (expectedStamp is not null && !string.Equals(StampOf(template), expectedStamp, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Someone changed the template \"{template.Name}\" since you opened it, so nothing was saved: " +
-                "it would have undone that. Reload the page, then make your change again.");
+            throw new InvalidOperationException(ChangedSinceOpened(template.Name));
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
@@ -122,18 +124,41 @@ public sealed class CaseTemplateService
         db.CaseTemplateSteps.RemoveRange(template.Steps);
         template.Steps.Clear();
         ApplyContent(template, input);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        // BUG-557: a writer outside the gate changed or removed it meanwhile (the context's message is about cases).
+        catch (ConcurrentEditException ex) { throw new InvalidOperationException(ChangedSinceOpened(template.Name), ex); }
+        catch (DbUpdateException ex)
+        {
+            // BUG-557: as on create, a rename onto a name saved meanwhile by a writer outside the gate (the unique index refused it).
+            using var check = _factory.CreateDbContext();
+            if (await check.CaseTemplates.AnyAsync(t => t.Name == name && t.Id != id, ct))
+                throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.", ex);
+            throw;
+        }
     }
+
+    private static string ChangedSinceOpened(string name) =>
+        $"Someone changed the template \"{name}\" since you opened it, so nothing was saved: " +
+        "it would have undone that. Reload the page, then make your change again.";
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<CaseTemplateService>(_user);
+        using var guard = await GuardGate.EnterAsync(ct);   // BUG-557: not between an edit's (or an import's) load and its save
         using var db = _factory.CreateDbContext();
         var template = await db.CaseTemplates.Include(t => t.Steps).FirstOrDefaultAsync(t => t.Id == id, ct);
         if (template is null) return;
         db.CaseTemplateSteps.RemoveRange(template.Steps);
         db.CaseTemplates.Remove(template);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        // BUG-557: it or its steps changed meanwhile (a writer outside the gate); the context's message is about cases.
+        catch (ConcurrentEditException ex)
+        {
+            using var check = _factory.CreateDbContext();
+            if (!await check.CaseTemplates.AnyAsync(t => t.Id == id, ct)) return;   // already gone
+            throw new InvalidOperationException($"Someone changed the template \"{template.Name}\" while you deleted it, so it " +
+                "wasn't deleted. Reload the page and try again.", ex);
+        }
     }
 
     private static void ApplyContent(CaseTemplate t, TemplateInput input)

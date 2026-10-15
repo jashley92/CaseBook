@@ -282,6 +282,12 @@ else
             Toasts.Error(ex.Message);
             return;
         }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            // BUG-557: any other refused save (the service words the ones it can tell apart) mustn't end the circuit.
+            Toasts.Error("The template couldn't be saved. Reload the page to see the current templates, then try again.");
+            return;
+        }
 
         _edit = null;
         await LoadAsync();
@@ -294,6 +300,11 @@ else
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
+            return;
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)   // BUG-557: as on save
+        {
+            Toasts.Error($"The template '{t.Name}' couldn't be deleted. Reload the page and try again.");
             return;
         }
         await LoadAsync();

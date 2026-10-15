@@ -271,5 +271,120 @@ public sealed class CaseTemplateTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Two_template_saves_onto_one_name_at_once_leave_one(/* BUG-557 */)
+    {
+        Guid other;
+        await using (var db = NewContext()) other = await NewTemplateService(db).CreateAsync(Phishing() with { Name = "Ransomware" });
+
+        // A create and a rename onto the same name while another writer (an import) holds GuardGate: each check runs with
+        // its save, after the other's, so whichever goes second is refused, in either order.
+        Task create, rename;
+        using (await GuardGate.EnterAsync())
+        {
+            create = Task.Run(async () => { await using var db = NewContext(); await NewTemplateService(db).CreateAsync(Phishing()); });
+            rename = Task.Run(async () => { await using var db = NewContext(); await NewTemplateService(db).UpdateAsync(other, Phishing() with { Name = "PHISHING wave" }); });
+            await Task.Delay(200);
+            create.IsCompleted.Should().BeFalse("the name check and the save wait for GuardGate");
+            rename.IsCompleted.Should().BeFalse();
+        }
+        var failures = new List<Exception>();
+        foreach (var t in new[] { create, rename })
+            try { await t; }
+            catch (InvalidOperationException ex) { failures.Add(ex); }
+
+        failures.Should().ContainSingle().Which.Message.Should().Contain("already exists");
+        await using var check = NewContext();
+        (await NewTemplateService(check).ListAllAsync()).GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .Should().OnlyContain(g => g.Count() == 1);
+    }
+
+    [Fact]
+    public async Task A_template_edit_that_waited_behind_another_save_sees_it_and_refuses(/* BUG-557 */)
+    {
+        await using var db = NewContext();
+        var svc = NewTemplateService(db);
+        var id = await svc.CreateAsync(Phishing());
+        var opened = (await svc.GetAsync(id))!;
+
+        Task edit;
+        using (await GuardGate.EnterAsync())
+        {
+            edit = Task.Run(() => svc.UpdateAsync(id, Phishing() with { Description = "mine" }, opened.Stamp));
+            await Task.Delay(200);
+            edit.IsCompleted.Should().BeFalse();
+            await using var other = NewContext();
+            (await other.CaseTemplates.SingleAsync(t => t.Id == id)).Description = "theirs";
+            await other.SaveChangesAsync();
+        }
+
+        await edit.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*the template*since you opened it*");
+        (await svc.GetAsync(id))!.Description.Should().Be("theirs");
+    }
+
+    [Fact]
+    public async Task A_template_rename_onto_a_name_saved_meanwhile_is_reported_as_a_duplicate(/* BUG-557 */)
+    {
+        Guid id;
+        await using (var db = NewContext()) id = await NewTemplateService(db).CreateAsync(Phishing());
+        // A writer outside the gate saves the name after UpdateAsync's check, before its save reaches the unique index.
+        var racer = new BeforeFirstSave(async () =>
+        {
+            await using var other = NewContext();
+            other.CaseTemplates.Add(new IncidentManager.Domain.Entities.CaseTemplate
+                { Name = "Ransomware", CreatedBy = "admin2", CreatedAtUtc = _clock.UtcNow });
+            await other.SaveChangesAsync();
+        });
+
+        var rename = async () => await new CaseTemplateService(RacingFactory(racer), _user, _clock)
+            .UpdateAsync(id, Phishing() with { Name = "Ransomware" });
+
+        (await rename.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*already exists*");
+        await using var check = NewContext();
+        (await NewTemplateService(check).GetAsync(id))!.Name.Should().Be("Phishing wave");
+    }
+
+    [Fact]
+    public async Task A_template_changed_under_an_edit_by_a_writer_outside_the_gate_says_so_about_the_template(/* BUG-557 */)
+    {
+        Guid id;
+        await using (var db = NewContext()) id = await NewTemplateService(db).CreateAsync(Phishing());
+        // Its steps are replaced after the edit loaded them, so the edit's delete of the old steps finds nothing.
+        var racer = new BeforeFirstSave(async () =>
+        {
+            await using var other = NewContext();
+            await other.CaseTemplateSteps.Where(s => s.TemplateId == id).ExecuteDeleteAsync();
+        });
+
+        var edit = async () => await new CaseTemplateService(RacingFactory(racer), _user, _clock)
+            .UpdateAsync(id, Phishing() with { Description = "mine" });
+
+        (await edit.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Someone changed the template \"Phishing wave\"*");
+    }
+
+    private TestDbContextFactory RacingFactory(BeforeFirstSave racer) =>
+        new(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(racer, new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+            .Options);
+
+    /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
+    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        private bool _done;
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_done)
+            {
+                _done = true;
+                await during();
+            }
+            return result;
+        }
+    }
+
     public void Dispose() => _connection.Dispose();
 }
