@@ -2552,9 +2552,13 @@ else
                 {
                     // BUG-535: 'l' logs an investigation finding whatever lens or composer mode was on ('n' opens the
                     // notes lens below, in Working note mode).
+                    // BUG-551: and off the Story lens, without a type or tactic filter that would hide the finding (as
+                    // SwitchLens does; there's no entry edit open to cancel here).
                     _decOnly = false;
+                    _keyOnly = false;
                     _notesOnly = false;
                     if (_tlLens == TimelineKind.Event) _tlLens = null;
+                    ClearKindFilters();
                     SetMode(ComposerMode.Finding);
                 }
             }
@@ -2576,7 +2580,9 @@ else
             if (PresetEntityFilter is { } en)
             {
                 // BUG-510: off the Working notes lens too, which hid the filtered timeline (and later threw the filter away).
-                if (!NoteEditKeepsNotes()) { _decOnly = false; _keyOnly = false; _notesOnly = false; _tlLens = null; _tlFilterEntity = en; }
+                // BUG-551: a type or tactic filter isn't shown on Everything, so it goes (as with SwitchLens, but an open
+                // entry edit is kept).
+                if (!NoteEditKeepsNotes()) { _decOnly = false; _keyOnly = false; _notesOnly = false; _tlLens = null; ClearKindFilters(); _tlFilterEntity = en; }
                 _ = OnPresetHandled.InvokeAsync();   // REV-38: applied once; it isn't applied again on the next visit
             }
         }
@@ -3004,6 +3010,13 @@ else
         _tlFilterTactic = null;
         _tlFilterSource = "";
         _tlFilterEntity = null;
+    }
+
+    // BUG-551: the type and tactic filters are shown only on a focused lens, so a path that leaves one clears them.
+    private void ClearKindFilters()
+    {
+        _tlFilterType = null;
+        _tlFilterTactic = null;
     }
 
     private List<TimelineEntry> FilteredTimeline(IEnumerable<TimelineEntry> entries)
