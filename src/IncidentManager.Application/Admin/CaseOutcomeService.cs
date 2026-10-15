@@ -97,6 +97,14 @@ public sealed class CaseOutcomeService
         var existing = await db.CaseOutcomes.ToListAsync(ct);
         var byId = existing.ToDictionary(o => o.Id);
         var usedKeys = existing.Select(o => o.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // BUG-569: nor a key a close recorded or a deleted outcome had (a close may have started using it as it was
+        // deleted), so a new outcome never takes an old one's meaning.
+        if (rows.Any(r => r.Id is null))
+        {
+            usedKeys.UnionWith(await db.StatusChanges.AsNoTracking().Where(s => s.OutcomeKey != null).Select(s => s.OutcomeKey!).Distinct().ToListAsync(ct));
+            usedKeys.UnionWith(await db.Cases.AsNoTracking().Where(c => c.OutcomeKey != null).Select(c => c.OutcomeKey!).Distinct().ToListAsync(ct));
+            usedKeys.UnionWith(await RetiredKeys.DeletedAsync(db, nameof(CaseOutcome), ct));
+        }
         var now = _clock.UtcNow;
 
         for (var i = 0; i < rows.Count; i++)

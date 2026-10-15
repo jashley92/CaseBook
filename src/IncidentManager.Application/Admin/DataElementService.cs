@@ -97,6 +97,13 @@ public sealed class DataElementService
         var byId = existing.ToDictionary(e => e.Id);
         var now = _clock.UtcNow;
         var usedKeys = existing.Select(e => e.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // BUG-569: nor a key a case records or a deleted element had (a case save may have started using it as it was
+        // deleted), so a new element never takes an old one's meaning.
+        if (rows.Any(r => r.Id is null))
+        {
+            usedKeys.UnionWith(await db.CaseDataElements.AsNoTracking().Select(c => c.ElementKey).Distinct().ToListAsync(ct));
+            usedKeys.UnionWith(await RetiredKeys.DeletedAsync(db, nameof(DataElement), ct));
+        }
         var added = new List<string>();
         var rescoped = new List<string>();   // WF-11: elements whose jurisdictions change
 

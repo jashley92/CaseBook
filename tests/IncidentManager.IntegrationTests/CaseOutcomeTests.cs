@@ -228,5 +228,29 @@ public sealed class CaseOutcomeTests : IDisposable
         await admin.Invoking(a => a.SetArchivedAsync(last.Id, true)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*at least one*");
     }
 
+    [Fact]
+    public async Task A_new_outcome_never_gets_a_deleted_or_recorded_key(/* BUG-569 */)
+    {
+        var (db, _, id) = await OpenCaseAsync();
+        await using var _ = db;
+        var admin = Outcomes();
+        await admin.SaveAsync([new CaseOutcomeRow(null, "Insider misuse", null)]);
+        var first = (await admin.ListAllAsync()).Single(o => o.Label == "Insider misuse");
+        await admin.DeleteAsync(first.Id);
+
+        // A close that started using an outcome as it was deleted kept its key with no row (closes don't wait for admin
+        // edits), and that delete is older than the audit trail.
+        await using (var other = NewContext())
+        {
+            (await other.Cases.SingleAsync(c => c.Id == id)).OutcomeKey = "VendorError";
+            await other.SaveChangesAsync();
+        }
+
+        await admin.SaveAsync([new CaseOutcomeRow(null, "Insider misuse", null), new CaseOutcomeRow(null, "Vendor error", null)]);
+        var all = await admin.ListAllAsync();
+        all.Single(o => o.Label == "Insider misuse").Key.Should().NotBe(first.Key, "that key was deleted");
+        all.Single(o => o.Label == "Vendor error").Key.Should().NotBe("VendorError", "a case records that key, though no outcome has it");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

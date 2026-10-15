@@ -83,7 +83,8 @@ active. Gate edits don't change past passages, which recorded their own outcome.
 - **Data elements** are the personal-data categories an impact assessment records (13 system ones, such as SSN,
   payment card and medical information). Each has a stable key (stored on cases, never renamed), a label you can
   change, a sort order, and **notification jurisdictions** (`US, NY`) that drive the deadline clock. System
-  elements can be archived but not deleted; custom ones can be deleted only if no case uses them.
+  elements can be archived but not deleted; custom ones can be deleted only if no case uses them. A deleted
+  element's key isn't reused: an element added later with the same label gets a numbered key (`PassportNumber2`).
 - **Notification rules** set the window per jurisdiction code (NY and US, 72 hours, are seeded). System rules
   can't be deleted.
 
@@ -95,8 +96,8 @@ What a case can conclude, chosen in the close-out view ([closing](case-lifecycle
 and printed in the report. Six are seeded: Confirmed, Policy violation, Benign or expected, False positive,
 Inconclusive and Duplicate. Each has a stable key (stored on cases, never renamed), a label and a one-line
 description you can change, and a sort order. Added outcomes get a key made from the label ("Insider misuse" →
-`InsiderMisuse`). Built-in outcomes can be archived but not deleted; an added one can be deleted only if no close
-recorded it. At least one outcome must stay active. Keep the wording neutral: it's part of the case record.
+`InsiderMisuse`), never one a deleted outcome had or a case records (then it's numbered, `InsiderMisuse2`).
+Built-in outcomes can be archived but not deleted; an added one can be deleted only if no close recorded it. At least one outcome must stay active. Keep the wording neutral: it's part of the case record.
 
 ## API tokens
 

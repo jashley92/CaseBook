@@ -189,6 +189,36 @@ public sealed class DataElementServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_new_element_never_gets_a_deleted_or_recorded_key(/* BUG-569 */)
+    {
+        var svc = NewService();
+        var rows = RowsFrom(await svc.ListAllAsync());
+        rows.Add(new DataElementRow(null, "Passport number", null));
+        await svc.SaveAsync(rows);
+        var first = (await svc.ListAllAsync()).Single(e => e.Label == "Passport number");
+        await svc.DeleteAsync(first.Id);
+
+        // A case save that started using an element as it was deleted kept the key with no row (case saves don't wait for
+        // admin edits), and that delete is older than the audit trail.
+        await using (var db = NewContext())
+        {
+            var c = Case.Open(2026, 1, "Ref", "Ref", Classification.Incident, Severity.Low, CaseOrigin.InternalDetection, "a", _clock.UtcNow);
+            c.SetImpactAssessment(1, new[] { "TaxRecord" }, null, "a", _clock.UtcNow);
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+        }
+
+        rows = RowsFrom(await svc.ListAllAsync());
+        rows.Add(new DataElementRow(null, "Passport number", null));
+        rows.Add(new DataElementRow(null, "Tax record", null));
+        await svc.SaveAsync(rows);
+
+        var all = await svc.ListAllAsync();
+        all.Single(e => e.Label == "Passport number").Key.Should().NotBe(first.Key, "that key was deleted");
+        all.Single(e => e.Label == "Tax record").Key.Should().NotBe("TaxRecord", "a case records that key, though no element has it");
+    }
+
+    [Fact]
     public async Task Duplicate_labels_are_rejected()
     {
         var svc = NewService();
