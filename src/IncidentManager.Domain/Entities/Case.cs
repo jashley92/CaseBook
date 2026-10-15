@@ -119,8 +119,8 @@ public class Case : AuditableEntity, IHashableEntity
     /// settings (<see cref="KeptInPlay"/>). It stays as it was when the case goes back to unreported (an element added
     /// brings in a new regulator, a notice is removed), so today's settings don't come back in full, and removing the
     /// element added by mistake puts the case back to reported. Only clearing every notice (a mis-entry) empties it. Null
-    /// for a case never reported, and for one reported before it was recorded (back-filled at start-up, without the
-    /// elements). Derived from the notices and the reported time, which are hashed; kept out of the canonical.
+    /// for a case never reported, and for one reported before it was recorded (back-filled at start-up). BUG-563: a value
+    /// from before the elements were recorded gets them at start-up, and before the elements next change. Derived from the notices and the reported time, which are hashed; kept out of the canonical.
     /// </summary>
     public string? ReportedJurisdictions { get; set; }
 
@@ -184,10 +184,18 @@ public class Case : AuditableEntity, IHashableEntity
         var codes = string.Join(',', (inPlay ?? []).SelectMany(j => j.Split(CodeSeparators))
             .Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
-        var elements = string.Join(',', DataElements.Select(d => d.ElementKey).Distinct(StringComparer.OrdinalIgnoreCase)
+        ReportedJurisdictions = WithElements(codes, DataElements.Select(d => d.ElementKey)) ?? codes;
+    }
+
+    /// <summary>
+    /// BUG-284: a kept value's codes followed by <paramref name="elements"/> ("NY,NJ;SSN,DL"); null when that's too long to
+    /// store. BUG-563: also how a kept value from before the elements were recorded gets them.
+    /// </summary>
+    public static string? WithElements(string kept, IEnumerable<string> elements)
+    {
+        var withElements = kept.Split(';')[0] + ";" + string.Join(',', elements.Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(k => k, StringComparer.Ordinal));
-        var withElements = codes + ";" + elements;
-        ReportedJurisdictions = withElements.Length <= MaxReportedJurisdictionsLength ? withElements : codes;
+        return withElements.Length <= MaxReportedJurisdictionsLength ? withElements : null;
     }
     public DateTimeOffset? ContainedAtUtc { get; set; }
     /// <summary>
@@ -660,6 +668,11 @@ public class Case : AuditableEntity, IHashableEntity
         AffectedIndividualsCount = affectedIndividualsCount;
 
         var desired = dataElementKeys.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+        // BUG-563: a kept value from before its elements were recorded gets the ones the case has before this change, so
+        // every reader can tell an element added now from one it had (without them, only the kept codes were in play).
+        if (ReportedJurisdictions is { } kept && KeptElementKeys(kept) is null && !desired.SetEquals(DataElements.Select(d => d.ElementKey))
+            && WithElements(kept, DataElements.Select(d => d.ElementKey)) is { } withElements)
+            ReportedJurisdictions = withElements;
         DataElements.RemoveAll(d => !desired.Contains(d.ElementKey));
         foreach (var key in desired.Where(k => DataElements.All(d => d.ElementKey != k)))
             DataElements.Add(new CaseDataElement { CaseId = Id, ElementKey = key });
@@ -1439,13 +1452,9 @@ public class Case : AuditableEntity, IHashableEntity
         if (ReportedAtUtc is null) return;
         EnsureNotArchived("change its report");
         ReportedAtUtc = null;
+        // Too long to hold them: today's settings apply, as before.
         if (ReportedJurisdictions is { } kept && KeptElementKeys(kept) is null)
-        {
-            var withElements = kept + ";" + string.Join(',', elementsBefore.Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(k => k, StringComparer.Ordinal));
-            // Too long to hold them: today's settings apply, as before.
-            ReportedJurisdictions = withElements.Length <= MaxReportedJurisdictionsLength ? withElements : null;
-        }
+            ReportedJurisdictions = WithElements(kept, elementsBefore);
         Touch(actor, nowUtc);
     }
 

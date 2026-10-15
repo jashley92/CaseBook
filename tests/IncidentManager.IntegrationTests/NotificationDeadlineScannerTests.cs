@@ -339,6 +339,67 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task An_element_added_to_a_case_with_a_legacy_kept_set_stays_in_play(/* BUG-563 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        db.DataElements.Add(new DataElement { Key = "DL", Label = "Driver's licence", NotificationJurisdictions = "NJ",
+            IsActive = true, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        await NewCases(NewContext()).RecordNoticeAsync(id, "NY", _clock.UtcNow);   // NY notified: reported
+        await db.Cases.Where(c => c.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ReportedJurisdictions, "NY"));   // kept before the elements were
+
+        await NewCases(NewContext()).UpdateImpactAssessmentAsync(id, 500, ["SSN", "DL"], "NY");
+        await using (var check = NewContext())
+            (await check.Cases.AsNoTracking().SingleAsync(c => c.Id == id)).ReportedJurisdictions.Should().Be("NY;SSN");
+        var open = await NewDeadlines().EvaluateAsync(id);
+        open.ReportedAtUtc.Should().BeNull("NJ came into play after the report");
+        open.Statuses.Select(s => s.JurisdictionCode).Should().Equal("NJ", "NY");
+
+        // A later edit still counts DL as added, and an admin change elsewhere doesn't report it.
+        await NewCases(NewContext()).UpdateImpactAssessmentAsync(id, 900, ["SSN", "DL"], "NY");
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        (await NewDeadlines().EvaluateAsync(id)).Statuses.Select(s => s.JurisdictionCode).Should().Equal("NJ", "NY");
+        await NewCases(NewContext()).RecordNoticeAsync(id, "NJ", _clock.UtcNow);
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task A_legacy_kept_set_gets_its_elements_at_start_up(/* BUG-563 */)
+    {
+        var reopened = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        var second = Case.Open(2026, 2, "Breach", "Second breach", Classification.Breach, Severity.High,
+            CaseOrigin.InternalDetection, "alice", _clock.UtcNow.AddHours(-11));
+        second.SetImpactAssessment(500, ["SSN"], "NY", "alice", _clock.UtcNow);
+        second.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", _clock.UtcNow.AddHours(-10),
+            "Reasonable likelihood of harm.", "alice", _clock.UtcNow);
+        db.Cases.Add(second);
+        var reported = second.Id;
+        db.DataElements.Add(new DataElement { Key = "DL", Label = "Driver's licence", NotificationJurisdictions = "NJ",
+            IsActive = true, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        foreach (var id in new[] { reopened, reported })
+            await NewCases(NewContext()).RecordNoticeAsync(id, "NY", _clock.UtcNow);
+        await NewCases(NewContext()).UpdateImpactAssessmentAsync(reopened, 500, ["SSN", "DL"], "NY");   // NJ outstanding
+        // As an earlier release left them: the codes only.
+        await db.Cases.ExecuteUpdateAsync(s => s.SetProperty(c => c.ReportedJurisdictions, "NY"));
+        (await NewDeadlines().EvaluateAsync(reopened)).Statuses.Select(s => s.JurisdictionCode).Should().Equal("NY");
+
+        (await ReportedJurisdictionsBackfill.RunAsync(NewContext())).Should().Be(2);
+
+        await using var check = NewContext();
+        var kept = await check.Cases.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.ReportedJurisdictions);
+        kept[reopened].Should().Be("NY;SSN", "DL brings in NJ, which wasn't kept: it's what reopened the case");
+        kept[reported].Should().Be("NY;SSN");
+        (await NewDeadlines().EvaluateAsync(reopened)).Statuses.Select(s => s.JurisdictionCode).Should().Equal("NJ", "NY");
+        (await ReportedJurisdictionsBackfill.RunAsync(check)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_notice_keeps_the_deadline_it_was_made_against(/* WF-77 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);   // material 10 h ago: due in 62 h under 72 h
@@ -426,7 +487,7 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         }
 
         await using var check = NewContext();
-        (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("NY");
+        (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("NY;SSN");   // BUG-563
         // WF-93: not an audited change, which counted as a change after closure on every closed reported case.
         (await check.AuditLog.LongCountAsync()).Should().Be(auditBefore);
         (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(check)).Should().Be(0);
@@ -468,7 +529,7 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         await using (var db = NewContext())
             (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db)).Should().Be(1);
         await using var check = NewContext();
-        (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("CA,NY");
+        (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("CA,NY;SSN");   // BUG-563: with the elements
         (await check.JurisdictionNotices.AsNoTracking().SingleAsync()).Jurisdiction.Should().Be("NY;CA", "the hashed row isn't rewritten");
     }
 

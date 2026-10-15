@@ -45,6 +45,25 @@ public class CaseUnreportTests
     }
 
     [Fact]
+    public void A_legacy_kept_set_gets_the_elements_before_they_change(/* BUG-563 */)
+    {
+        var c = Reported(["NY"]);
+        c.ReportedJurisdictions = "NY";   // back-filled before the elements were recorded
+
+        c.SetImpactAssessment(20, ["EMAIL"], null, "bob", Now);   // the count only: nothing to tell apart
+        c.ReportedJurisdictions.Should().Be("NY");
+
+        c.SetImpactAssessment(20, ["EMAIL", "DL"], null, "bob", Now);
+        c.ReportedJurisdictions.Should().Be("NY;EMAIL");
+        // Every reader now sees DL as added, with or without the elements before the edit.
+        Case.KeptInPlay(c.ReportedJurisdictions, ["EMAIL", "DL"], added => added.Contains("DL") ? ["NJ"] : [])
+            .Should().Equal("NY", "NJ");
+
+        c.SetImpactAssessment(20, ["DL"], null, "bob", Now);   // a later edit keeps what was recorded
+        c.ReportedJurisdictions.Should().Be("NY;EMAIL");
+    }
+
+    [Fact]
     public void A_case_not_reported_is_left_alone()
     {
         var c = Reported([]);
