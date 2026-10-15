@@ -105,8 +105,9 @@
                             <span class="@Ui.DispositionBadge(i.Disposition)">@Ui.Label(i.Disposition)</span>
                             @if (i.OtherCases > 0)
                             {
-                                @* PROD-10: pivot by entity id so the indicator value never rides in a URL. *@
-                                <a class="small text-nowrap" href="intel/indicators?entity=@i.EntityId"
+                                @* PROD-10: pivot by entity id so the indicator value never rides in a URL. BUG-505: a drill's
+                                   count is of drills, so its link shows them (WF-91). *@
+                                <a class="small text-nowrap" href="@($"intel/indicators?entity={i.EntityId}{(p.IsExercise ? "&exercises=1" : "")}")"
                                    title="Every case this indicator appears on">+@i.OtherCases</a>
                             }
                         </li>
