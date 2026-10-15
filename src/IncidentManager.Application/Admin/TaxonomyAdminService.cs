@@ -248,10 +248,13 @@ public sealed class TaxonomyAdminService
             // BUG-438: a row this changes or removes went between the read above and this save.
             try { await SaveAsync(db, added, ct); }
             catch (ConcurrentEditException ex) { throw StaleOrder(k, ex); }
-            _reloader.ReloadOrThrow();   // BUG-270
+            _reloader.Reload();
         }
         // The rows as saved (Local leaves out the removed ones), so the page can save again without reloading the card.
-        return StampOf(k, key => db.AppSettings.Local.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))?.Value);
+        var stamp = StampOf(k, key => db.AppSettings.Local.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))?.Value);
+        // BUG-270 / BUG-526: saved but not in effect; the new stamp travels with it, so the page's next save isn't refused as stale.
+        if (changed) _reloader.ThrowIfNotInEffect(stamp);
+        return stamp;
     }
 
     private static InvalidOperationException StaleOrder(TaxonomyKind k, Exception? inner = null) =>

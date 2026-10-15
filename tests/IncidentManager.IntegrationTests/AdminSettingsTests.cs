@@ -71,6 +71,25 @@ public sealed class AdminSettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_save_or_reset_the_reload_couldnt_apply_is_told_apart_from_one_that_didnt_happen(/* BUG-526 */)
+    {
+        await using var db = NewContext();
+        var svc = new AdminSettingsService(NewFactory(), _user, _clock, new FailedReload());
+
+        // The page treats this one as saved: it moves its baseline on and carries on with the rest of the section.
+        (await svc.Invoking(s => s.SetAsync("Reporting:SectionLayout", "[]", null)).Should().ThrowAsync<SettingsNotInEffectException>())
+            .Which.ReloadError.Should().Be("timeout");
+        // So the retry from the reloaded page (the stored value as its baseline) isn't refused as a stale edit.
+        var stored = (await svc.GetEffectiveAsync()).Single(e => e.Definition.Key == "Reporting:SectionLayout");
+        stored.IsOverridden.Should().BeTrue();
+        await svc.Invoking(s => s.SetAsync("Reporting:SectionLayout", "[]", stored.Value))
+            .Should().ThrowAsync<SettingsNotInEffectException>("saved again, still not in effect, but not refused as stale");
+
+        await svc.Invoking(s => s.ResetAsync("Reporting:SectionLayout")).Should().ThrowAsync<SettingsNotInEffectException>();
+        (await db.AppSettings.AsNoTracking().AnyAsync(x => x.Key == "Reporting:SectionLayout")).Should().BeFalse("it was reset");
+    }
+
+    [Fact]
     public async Task Set_persists_normalized_value_and_reports_it_as_overridden()
     {
         await using (var db = NewContext())

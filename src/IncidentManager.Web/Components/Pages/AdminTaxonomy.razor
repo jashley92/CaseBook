@@ -178,6 +178,9 @@ else
         var kind = _kinds.FirstOrDefault(k => k.Id == kindId);
         if (kind is null) return;
 
+        // BUG-526: the order or labels saved but not in effect (the settings reload failed). Treated as nothing saved, the
+        // card kept its old stamp, so the retry was refused as stale, and the labels weren't saved at all.
+        string? notInEffect = null;
         try
         {
             // REV-28: only when this card's order or hidden set changed. Sending the loaded ones back with a label edit
@@ -188,7 +191,8 @@ else
                 var hidden = kind.Members.Where(m => m.Hidden).Select(m => m.Value).ToList();
                 // BUG-438: refused if another admin reordered or hid options since this card loaded. Once saved, the card's
                 // baseline moves on, so a label refused below can be saved again without this being refused as stale.
-                kind.Stamp = await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden, kind.Stamp);
+                try { kind.Stamp = await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden, kind.Stamp); }
+                catch (SettingsNotInEffectException ex) { kind.Stamp = ex.NewStamp ?? kind.Stamp; notInEffect = ex.Message; }
                 kind.OriginalOrder = ordered;
                 foreach (var m in kind.Members) m.OriginalHidden = m.Hidden;
             }
@@ -201,15 +205,19 @@ else
                 var current = m.OriginalOverride ?? "";
                 if (!string.Equals(next, current, StringComparison.Ordinal)) labels[m.Value] = next;
             }
-            if (labels.Count > 0) await Taxonomy.SetLabelAsync(kindId, labels);
+            if (labels.Count > 0)
+                try { await Taxonomy.SetLabelAsync(kindId, labels); }
+                catch (SettingsNotInEffectException ex) { notInEffect = ex.Message; }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
+            if (notInEffect is not null) Toasts.Error(notInEffect);
             return;
         }
 
         await ReloadKind(kindId);
-        Toasts.Success($"Saved {kind.Title}.");
+        if (notInEffect is not null) Toasts.Error(notInEffect);
+        else Toasts.Success($"Saved {kind.Title}.");
     }
 }

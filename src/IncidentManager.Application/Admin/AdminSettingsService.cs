@@ -148,13 +148,10 @@ public sealed class AdminSettingsService
 
     /// <summary>
     /// REV-60: the change is saved (and audited), but a reload that couldn't read the settings keeps the earlier values,
-    /// so it isn't in effect yet. The page would otherwise show the new value as if it were.
+    /// so it isn't in effect yet. The page would otherwise show the new value as if it were. BUG-526: as a
+    /// <see cref="SettingsNotInEffectException"/>, so the page can tell it from a save that didn't happen.
     /// </summary>
-    private void ThrowIfNotInEffect()
-    {
-        if (_reloader.LastError is { } error)
-            throw new InvalidOperationException(SettingsReloads.NotInEffectMessage(error));
-    }
+    private void ThrowIfNotInEffect() => _reloader.ThrowIfNotInEffect();
 
     /// <summary>
     /// Removes the DB override for a setting so it reverts to its server-side/catalog default. The

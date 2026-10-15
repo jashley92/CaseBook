@@ -1235,10 +1235,11 @@
         _savingSection = true;
         try
         {
+            string? notInEffect = null;   // BUG-526
             try
             {
-                await Settings.ResetAsync("Branding:AccentColor");
-                await Settings.ResetAsync("Branding:InkColor");
+                notInEffect = await SavedEvenIfNotInEffect(() => Settings.ResetAsync("Branding:AccentColor")) ?? notInEffect;
+                notInEffect = await SavedEvenIfNotInEffect(() => Settings.ResetAsync("Branding:InkColor")) ?? notInEffect;
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
             {
@@ -1250,7 +1251,8 @@
             _brandError = null;
             await ReloadKeepingEdits(dropBrand: true);
             await JS.InvokeVoidAsync("imBrand.apply", "");
-            Toasts.Info("Brand colors reset to defaults.");
+            if (notInEffect is not null) Toasts.Error(notInEffect);
+            else Toasts.Info("Brand colors reset to defaults.");
         }
         finally { _savingSection = false; }
     }
@@ -1352,26 +1354,34 @@
             var changed = 0;
             var saved = new List<string>();   // REV-40: the keys already in effect if a later one fails
             var layoutSaved = false;
+            // BUG-526: a key whose settings reload failed is saved all the same (not yet in effect). Treated as nothing saved,
+            // the layout kept its old stamp and the retry was refused as stale. So carry on with the rest, then warn.
+            string? notInEffect = null;
             try
             {
                 foreach (var s in _effective.Where(e => groups.Contains(e.Definition.Group)).ToList())
                 {
                     if (!Differs(s.Definition.Key)) continue;
-                    await Settings.SetAsync(s.Definition.Key, _form.GetValueOrDefault(s.Definition.Key));
+                    var value = _form.GetValueOrDefault(s.Definition.Key);
+                    notInEffect = await SavedEvenIfNotInEffect(() => Settings.SetAsync(s.Definition.Key, value)) ?? notInEffect;
                     saved.Add(s.Definition.Key);
                     changed++;
                 }
                 if (saveLayout)
                 {
                     // BUG-438: the layout is saved whole, so one another administrator saved since this page loaded is refused.
-                    await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout), _layoutLoadedFrom);
+                    var layout = ReportLayout.Serialize(_layout);
+                    var loadedFrom = _layoutLoadedFrom;
+                    notInEffect = await SavedEvenIfNotInEffect(() => Settings.SetAsync("Reporting:SectionLayout", layout, loadedFrom)) ?? notInEffect;
                     layoutSaved = true;
                     changed++;
                 }
                 if (saveBrand)
                 {
-                    if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
-                    if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
+                    notInEffect = await SavedEvenIfNotInEffect(() => accent is null
+                        ? Settings.ResetAsync("Branding:AccentColor") : Settings.SetAsync("Branding:AccentColor", accent)) ?? notInEffect;
+                    notInEffect = await SavedEvenIfNotInEffect(() => ink is null
+                        ? Settings.ResetAsync("Branding:InkColor") : Settings.SetAsync("Branding:InkColor", ink)) ?? notInEffect;
                     changed++;
                 }
             }
@@ -1385,12 +1395,14 @@
                 if (layoutSaved) names.Add("the report layout");
                 await ReloadKeepingEdits(saved, dropLayout: layoutSaved);
                 Toasts.Error($"Saved {string.Join(", ", names)}, but not the rest: {ex.Message}");
+                if (notInEffect is not null) Toasts.Error(notInEffect);
                 return;
             }
 
             await ReloadKeepingEdits(keys, dropBrand: hasBrand, dropLayout: hasLayout);
             if (saveBrand) await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
-            Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {title}.");
+            if (notInEffect is not null) Toasts.Error(notInEffect);
+            else Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {title}.");
         }
         finally
         {
@@ -1439,12 +1451,21 @@
         _savingSection = true;
         try
         {
-            try { await Settings.ResetAsync(key); }
+            string? notInEffect;
+            try { notInEffect = await SavedEvenIfNotInEffect(() => Settings.ResetAsync(key)); }   // BUG-526
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
             await ReloadKeepingEdits([key]);
-            Toasts.Info("Reverted to default.");
+            if (notInEffect is not null) Toasts.Error(notInEffect);
+            else Toasts.Info("Reverted to default.");
         }
         finally { _savingSection = false; }
+    }
+
+    // BUG-526: runs one settings save. A save whose reload failed is saved, so its warning is returned, not thrown.
+    private static async Task<string?> SavedEvenIfNotInEffect(Func<Task> save)
+    {
+        try { await save(); return null; }
+        catch (SettingsNotInEffectException ex) { return ex.Message; }
     }
 
     private bool SigningKeyPresent()

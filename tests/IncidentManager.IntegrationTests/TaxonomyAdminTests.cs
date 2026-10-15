@@ -47,6 +47,37 @@ public sealed class TaxonomyAdminTests : IDisposable
 
     private sealed class NoOpReloader : ISettingsReloader { public void Reload() { } }
 
+    private sealed class FailedReload : ISettingsReloader
+    {
+        public void Reload() { }
+        public string? LastError => "timeout";
+    }
+
+    [Fact]
+    public async Task An_order_saved_but_not_in_effect_carries_its_new_stamp_so_the_next_save_isnt_stale(/* BUG-526 */)
+    {
+        var failing = new TaxonomyAdminService(NewFactory(), _clock, _user, new FailedReload());
+        var opened = (await NewService().GetEffectiveAsync()).Single(k => k.Id == "EntityDisposition").Stamp;
+
+        var ex = (await failing.Invoking(s => s.SetVisibilityOrderAsync("EntityDisposition",
+            new[] { "Malicious", "Benign", "Unknown", "Suspicious", "Compromised" }, new[] { "Suspicious" }, opened))
+            .Should().ThrowAsync<SettingsNotInEffectException>()).Which;
+
+        ex.Message.Should().StartWith("Saved, but not in effect yet");
+        ex.NewStamp.Should().Be((await NewService().GetEffectiveAsync()).Single(k => k.Id == "EntityDisposition").Stamp)
+            .And.NotBe(opened);
+        // The card saves again on the stamp it was handed, without a reload, and isn't refused as stale.
+        await NewService().Invoking(s => s.SetVisibilityOrderAsync("EntityDisposition",
+            new[] { "Malicious", "Benign", "Unknown", "Suspicious", "Compromised" }, Array.Empty<string>(), ex.NewStamp))
+            .Should().NotThrowAsync();
+
+        // Labels: saved, and told apart from a label that wasn't.
+        await failing.Invoking(s => s.SetLabelAsync("EntityDisposition", new Dictionary<string, string?> { ["Malicious"] = "Bad" }))
+            .Should().ThrowAsync<SettingsNotInEffectException>();
+        (await NewService().GetEffectiveAsync()).Single(k => k.Id == "EntityDisposition").Members
+            .Single(m => m.Value == "Malicious").Override.Should().Be("Bad");
+    }
+
     [Fact]
     public async Task Setting_a_label_stores_an_override_and_reports_it_as_effective()
     {

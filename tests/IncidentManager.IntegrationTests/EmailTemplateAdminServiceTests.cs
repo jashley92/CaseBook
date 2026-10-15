@@ -43,6 +43,31 @@ public sealed class EmailTemplateAdminServiceTests : IDisposable
     private EmailTemplateAdminService NewService() => new(NewFactory(), _clock, _user, new NoOpReloader());
     private sealed class NoOpReloader : ISettingsReloader { public void Reload() { } }
 
+    private sealed class FailedReload : ISettingsReloader
+    {
+        public void Reload() { }
+        public string? LastError => "timeout";
+    }
+
+    [Fact]
+    public async Task A_save_or_reset_not_in_effect_is_saved_and_the_next_save_isnt_stale(/* BUG-526 */)
+    {
+        var failing = new EmailTemplateAdminService(NewFactory(), _clock, _user, new FailedReload());
+        var opened = (await NewService().GetAsync("assignment")).Stamp;
+
+        await failing.Invoking(s => s.SaveAsync("assignment", "Custom subject", "<p>Hi</p>", opened))
+            .Should().ThrowAsync<SettingsNotInEffectException>();
+        // The page reloads as for a save, so its next save carries the saved template's stamp and is accepted.
+        var saved = await NewService().GetAsync("assignment");
+        saved.EffectiveSubject.Should().Be("Custom subject");
+        await failing.Invoking(s => s.SaveAsync("assignment", "Custom subject 2", "<p>Hi</p>", saved.Stamp))
+            .Should().ThrowAsync<SettingsNotInEffectException>("saved again, not refused as a stale edit");
+        (await NewService().GetAsync("assignment")).EffectiveSubject.Should().Be("Custom subject 2");
+
+        await failing.Invoking(s => s.ResetAsync("assignment")).Should().ThrowAsync<SettingsNotInEffectException>();
+        (await NewService().GetAsync("assignment")).IsOverridden.Should().BeFalse();
+    }
+
     [Fact]
     public async Task Defaults_are_returned_and_not_overridden()
     {

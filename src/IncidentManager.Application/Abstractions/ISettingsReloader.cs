@@ -20,12 +20,35 @@ public static class SettingsReloads
         "Saved, but not in effect yet: CaseBook couldn't reload settings from the database " +
         $"({error}), so the earlier values still apply. Save again once the database is reachable, or restart the app.";
 
-    /// <summary>Reloads, then throws <see cref="InvalidOperationException"/> when the reload couldn't read the settings.</summary>
+    /// <summary>Reloads, then throws <see cref="SettingsNotInEffectException"/> when the reload couldn't read the settings.</summary>
     public static void ReloadOrThrow(this ISettingsReloader reloader)
     {
         reloader.Reload();
-        if (reloader.LastError is { } error) throw new InvalidOperationException(NotInEffectMessage(error));
+        reloader.ThrowIfNotInEffect();
     }
+
+    /// <summary>BUG-526: throws <see cref="SettingsNotInEffectException"/>, carrying <paramref name="newStamp"/>, when the last
+    /// reload couldn't read the settings.</summary>
+    public static void ThrowIfNotInEffect(this ISettingsReloader reloader, string? newStamp = null)
+    {
+        if (reloader.LastError is { } error) throw new SettingsNotInEffectException(error, newStamp);
+    }
+}
+
+/// <summary>
+/// BUG-526: the change is saved (and audited), but the settings reload after it couldn't read the settings, so the earlier
+/// values still apply. An <see cref="InvalidOperationException"/>, so a catch of that still shows the message; a page that
+/// catches this treats the save as done (moves its stamps on, carries on with the rest, reloads) and then shows the message
+/// as a warning. Treated as nothing saved, the retry was refused as a stale edit.
+/// </summary>
+public sealed class SettingsNotInEffectException(string reloadError, string? newStamp = null)
+    : InvalidOperationException(SettingsReloads.NotInEffectMessage(reloadError))
+{
+    /// <summary>Why the reload couldn't read the settings.</summary>
+    public string ReloadError { get; } = reloadError;
+
+    /// <summary>The saved item's stamp after the save, for a method that returns one (a taxonomy order), else null.</summary>
+    public string? NewStamp { get; } = newStamp;
 }
 
 /// <summary>BUG-245: the value the server's own configuration (appsettings, environment) gives a setting, without the

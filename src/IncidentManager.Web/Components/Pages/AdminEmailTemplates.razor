@@ -194,11 +194,16 @@ else
         _error = null;
         try
         {
-            await Templates.SaveAsync(_selectedId, _subject, _body, _stamp);
+            // BUG-526: saved but not in effect (the settings reload failed) is saved: the stamp moves on as for a save, or the
+            // retry was refused as a stale edit.
+            string? notInEffect = null;
+            try { await Templates.SaveAsync(_selectedId, _subject, _body, _stamp); }
+            catch (SettingsNotInEffectException ex) { notInEffect = ex.Message; }
             _views = await Templates.GetAllAsync();
             if (Selected is { } saved) _stamp = saved.Stamp;
             await UpdatePreview();
-            Toasts.Success("Template saved");
+            if (notInEffect is not null) _error = notInEffect;
+            else Toasts.Success("Template saved");
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
@@ -211,12 +216,15 @@ else
         _error = null;
         try
         {
-            await Templates.ResetAsync(_selectedId);
+            string? notInEffect = null;   // BUG-526: as for Save
+            try { await Templates.ResetAsync(_selectedId); }
+            catch (SettingsNotInEffectException ex) { notInEffect = ex.Message; }
             _views = await Templates.GetAllAsync();
             var v = Selected;
             if (v is not null) { _subject = v.EffectiveSubject; _body = v.EffectiveBody; _stamp = v.Stamp; }
             await UpdatePreview();
-            Toasts.Success("Reverted to the default");
+            if (notInEffect is not null) _error = notInEffect;
+            else Toasts.Success("Reverted to the default");
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
