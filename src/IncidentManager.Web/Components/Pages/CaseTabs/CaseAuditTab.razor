@@ -288,8 +288,9 @@ else
         if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
         if (f.Action is { } act) qs.Add($"action={act}");
         if (f.EntityType is { } et) qs.Add($"entity={Uri.EscapeDataString(et)}");
-        if (fromDay is { } from) qs.Add($"from={from:yyyy-MM-dd}");
-        if (toDay is { } to) qs.Add($"to={to:yyyy-MM-dd}");
+        // BUG-511: Gregorian whatever the server culture, as the endpoint reads it.
+        if (fromDay is { } from) qs.Add($"from={from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
+        if (toDay is { } to) qs.Add($"to={to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
         return "export/case-audit.csv?" + string.Join("&", qs);
     }
 

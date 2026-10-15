@@ -72,9 +72,10 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label" for="tok-expires">Expires <span class="text-danger">*</span></label>
+                    @* BUG-511: the limits in the Gregorian form the date field reads, whatever the server culture. *@
                     <DateInput id="tok-expires" class="form-control" @bind-Value="_expiresDate"
-                           min="@DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd")"
-                           max="@DateTime.UtcNow.Date.Add(ApiTokenService.MaxSystemLifetime).ToString("yyyy-MM-dd")" />
+                           min="@DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)"
+                           max="@DateTime.UtcNow.Date.Add(ApiTokenService.MaxSystemLifetime).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" />
                     <div class="form-text">Up to @((int)ApiTokenService.MaxSystemLifetime.TotalDays) days. To rotate, create a new token before this one expires.</div>
                 </div>
             </div>

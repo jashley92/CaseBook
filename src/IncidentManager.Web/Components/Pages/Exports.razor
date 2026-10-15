@@ -135,8 +135,9 @@
     private string ComplianceHref()
     {
         var qs = new List<string>();
-        if (_from is { } f) qs.Add($"from={f:yyyy-MM-dd}");
-        if (_to is { } t) qs.Add($"to={t:yyyy-MM-dd}");
+        // BUG-511: Gregorian whatever the server culture, as the endpoint reads it.
+        if (_from is { } f) qs.Add($"from={f.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
+        if (_to is { } t) qs.Add($"to={t.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
         return "export/compliance-bundle.zip" + (qs.Count > 0 ? "?" + string.Join("&", qs) : "");
     }
 }

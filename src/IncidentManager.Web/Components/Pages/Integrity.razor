@@ -199,8 +199,9 @@ else
     // Compliance evidence bundle range (UTC). Defaults to year-to-date — the natural §500.17(b) window.
     private DateOnly _bundleFrom = new(DateTime.UtcNow.Year, 1, 1);
     private DateOnly _bundleTo = DateOnly.FromDateTime(DateTime.UtcNow);
-    private string BundleHref =>
-        $"export/compliance-bundle.zip?from={_bundleFrom:yyyy-MM-dd}&to={_bundleTo:yyyy-MM-dd}";
+    // BUG-511: Gregorian whatever the server culture, as the endpoint reads it.
+    private string BundleHref => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+        $"export/compliance-bundle.zip?from={_bundleFrom:yyyy-MM-dd}&to={_bundleTo:yyyy-MM-dd}");
 
     protected override async Task OnInitializedAsync()
     {

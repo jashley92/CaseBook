@@ -181,8 +181,9 @@ else
         if (f.CaseNumber is { } cn) qs.Add($"case={Uri.EscapeDataString(cn)}");
         if (f.AccessType is { } t) qs.Add($"type={t}");
         if (f.RestrictedOnly) qs.Add("restricted=true");
-        if (fromDay is { } from) qs.Add($"from={from:yyyy-MM-dd}");
-        if (toDay is { } to) qs.Add($"to={to:yyyy-MM-dd}");
+        // BUG-511: Gregorian whatever the server culture, as the endpoint reads it.
+        if (fromDay is { } from) qs.Add($"from={from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
+        if (toDay is { } to) qs.Add($"to={to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
         return "export/access-log.csv" + (qs.Count > 0 ? "?" + string.Join("&", qs) : "");
     }
 }
