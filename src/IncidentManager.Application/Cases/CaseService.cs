@@ -1475,6 +1475,7 @@ public sealed class CaseService
         // it had keep the ones kept at notice time (editing the count must not reopen it after an admin change), and
         // removing one added since takes its jurisdictions out again (BUG-284).
         var after = Case.KeptInPlay(kept, c.DataElements.Select(d => d.ElementKey).ToList(), live, elementsIfUnknown: keysBefore);
+        var wasReported = c.ReportedAtUtc is not null;   // BUG-570: before the BUG-555 branch can unreport it
         // BUG-104: a case reported as a whole (no notice per jurisdiction: reported before notices were per jurisdiction,
         // or when none was in play) covered the jurisdictions in play then, and no others. Those become notices at that
         // time, so one that comes into play now is outstanding until its regulator is notified.
@@ -1492,7 +1493,6 @@ public sealed class CaseService
             if (c.JurisdictionNotices.Count == 0) c.Unreport(keysBefore, _user.UserId, now);
         }
         // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
-        var wasReported = c.ReportedAtUtc is not null;
         c.ReportedFromNotices(after, _user.UserId, now);
         await db.SaveChangesAsync(ct);
         await FreezeNoticeDuesAsync(id, ct);   // WF-77: notices a BUG-104 conversion recorded

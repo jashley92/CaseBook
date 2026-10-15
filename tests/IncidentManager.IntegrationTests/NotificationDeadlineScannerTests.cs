@@ -339,6 +339,35 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_case_reported_with_nothing_in_play_is_reminded_again_when_an_element_reopens_it(/* BUG-570 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 70);   // 70 h into NY's 72 h: at risk
+        await SaveNyRuleAsync();
+        EnableClock();
+        var tracker = new DeadlineReminderTracker();
+        var notifications = new CapturingNotifications();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+
+        await using var db = NewContext();
+        db.DataElements.Add(new DataElement { Key = "EMAIL", Label = "Email address", IsActive = true,
+            CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });   // no regulator
+        await db.SaveChangesAsync();
+        CaseService Cases() => new(NewFactory(), _user, _clock, new CaseNumberGenerator(NewContext()), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            notifySettings: _settings, notifyRules: new NotificationRuleService(NewFactory(), _user, _clock), deadlineReminders: tracker);
+        await Cases().UpdateImpactAssessmentAsync(id, 500, ["EMAIL"], "NY");
+        await Cases().MarkReportedAsync(id, _clock.UtcNow);   // nothing in play: reported as a whole
+
+        await Cases().UpdateImpactAssessmentAsync(id, 500, ["EMAIL", "SSN"], "NY");   // NY comes back into play
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().BeNull();
+
+        // Its clock runs again, so the reminder sent before the report doesn't hold back this one.
+        notifications.Received.Clear();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+        notifications.Received.Single().State.Should().Be(SlaState.AtRisk);
+    }
+
+    [Fact]
     public async Task An_element_added_to_a_case_with_a_legacy_kept_set_stays_in_play(/* BUG-563 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);
