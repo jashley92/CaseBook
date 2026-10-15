@@ -131,9 +131,12 @@ public class ExportCsvTests
     public void An_export_cut_at_its_limit_says_so(/* REV-65 */)
     {
         Lines(AuditCsv.Build([], Generated, "2026-0042", truncatedAt: 100_000))[1]
-            .Should().Be("# Truncated: only the newest 100,000 rows are here. Narrow the date range to export the rest.");
-        Lines(AccessLogCsv.Build([], Generated, truncatedAt: 100_000))[1].Should().StartWith("# Truncated: only the newest 100,000");
+            .Should().Be("# Truncated: only the newest 100000 rows are here. Narrow the date range to export the rest.");
+        Lines(AccessLogCsv.Build([], Generated, truncatedAt: 100_000))[1].Should().StartWith("# Truncated: only the newest 100000");
         Lines(AccessLogCsv.Build([], Generated))[1].Should().StartWith("actor,", "an export that wasn't cut has no such line");
+        // BUG-543: a comma in the line would split it into cells and read as "the newest 100".
+        Lines(AuditCsv.Build([], Generated, truncatedAt: 100_000))[1].Should().NotContain(",");
+        Lines(AccessLogCsv.Build([], Generated, truncatedAt: 100_000))[1].Should().NotContain(",");
     }
 
     [Fact]

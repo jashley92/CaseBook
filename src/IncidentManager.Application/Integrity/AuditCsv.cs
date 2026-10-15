@@ -22,8 +22,9 @@ public static class AuditCsv
         sb.Append("# CaseBook audit trail: ").Append(scope).Append(", generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
         // REV-65: an export cut at its row limit says so, so the missing oldest rows aren't mistaken for no activity.
+        // BUG-543: no thousands separator; a spreadsheet would split "100,000" at the comma and show "100".
         if (truncatedAt is { } limit)
-            sb.Append("# Truncated: only the newest ").Append(limit.ToString("N0", inv))
+            sb.Append("# Truncated: only the newest ").Append(limit.ToString(inv))
               .Append(" rows are here. Narrow the date range to export the rest.\r\n");
 
         // `changes` renders the captured before/after diff (e.g. "Legal hold: No → Yes") so an examiner sees

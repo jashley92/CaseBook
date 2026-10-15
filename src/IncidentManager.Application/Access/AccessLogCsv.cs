@@ -20,8 +20,9 @@ public static class AccessLogCsv
         sb.Append("# CaseBook access log (read and access telemetry, kept outside the tamper-evident chain), generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
         // REV-65: an export cut at its row limit says so, so the missing oldest rows aren't mistaken for no activity.
+        // BUG-543: no thousands separator; a spreadsheet would split "100,000" at the comma and show "100".
         if (truncatedAt is { } limit)
-            sb.Append("# Truncated: only the newest ").Append(limit.ToString("N0", inv))
+            sb.Append("# Truncated: only the newest ").Append(limit.ToString(inv))
               .Append(" rows are here. Narrow the date range to export the rest.\r\n");
 
         sb.Append("actor,access_type,case_number,target,restricted,count,first_seen_utc,last_seen_utc\r\n");
