@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
@@ -421,13 +422,14 @@ public sealed class CaseImportService
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.Status, PendingImportStatus.Pending)
                 // WF-94: kept on the row, so whoever previews it next (not only this reviewer's tab) is warned.
-                .SetProperty(p => p.DecisionNote, $"{ReopenedMarker} {row.DecidedBy} at {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC")
+                // BUG-531: saved text, so the invariant calendar, not the server culture's.
+                .SetProperty(p => p.DecisionNote, $"{ReopenedMarker} {row.DecidedBy} at {Utc(at)}")
                 .SetProperty(p => p.DecidedBy, (string?)null)
                 .SetProperty(p => p.DecidedAtUtc, (DateTimeOffset?)null), ct);
         if (reopened != 1) return false;
         if (_audit is not null)
             await _audit.RecordAsync(AuditAction.Update, "PendingImport", pendingId.ToString(), null,
-                $"Reopened a stuck import \"{row.Summary}\" (claimed by {row.DecidedBy} at {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC, no case recorded)", ct);
+                $"Reopened a stuck import \"{row.Summary}\" (claimed by {row.DecidedBy} at {Utc(at)}, no case recorded)", ct);
         return true;
     }
 
@@ -617,7 +619,7 @@ public sealed class CaseImportService
     {
         var p = new CaseImportPreview { TargetKind = CaseImportTargetKind.NewCase };
         p.Origin = Clamp(doc.Origin, MaxSource, "Origin", p.Warnings);
-        p.NewCase = BuildNewCase(doc.Target?.NewCase, p.Warnings);
+        p.NewCase = BuildNewCase(doc.Target?.NewCase, nowUtc, p.Warnings);
 
         var summary = Clamp(doc.Summary, MaxSummary, "Summary", p.Warnings);
         if (!string.IsNullOrWhiteSpace(summary))
@@ -769,8 +771,32 @@ public sealed class CaseImportService
         return p;
     }
 
-    private static CreateCaseRequest BuildNewCase(CaseImportNewCase? nc, List<string> warnings)
+    private static CreateCaseRequest BuildNewCase(CaseImportNewCase? nc, DateTimeOffset nowUtc, List<string> warnings)
     {
+        // BUG-528: CreateAsync refuses a detected time in the future, activity after detection, or a dwell over
+        // Case.MaxDwellYears, and the preview can't edit either time, so a bad one is left out (with a warning) and
+        // CreateAsync defaults it, rather than failing every Apply. Occurred is checked against the detected time
+        // CreateAsync will use: the document's, or filing time.
+        var detected = nc?.DetectedAtUtc;
+        if (detected > nowUtc)
+        {
+            warnings.Add($"The detected time ({Utc(detected.Value)}) is in the future, so it was left out. The case counts from when it's filed.");
+            detected = null;
+        }
+        var occurred = nc?.OccurredAtUtc;
+        var against = detected ?? nowUtc;
+        if (occurred > against)
+        {
+            warnings.Add($"The time activity began ({Utc(occurred.Value)}) is {(occurred > nowUtc ? "in the future" : "after it was detected")}, so it was left out.");
+            occurred = null;
+        }
+        // (A detected time in the first years of the calendar can't take AddYears at all, so its occurred time goes too.)
+        else if (occurred is not null && (against.Year <= Case.MaxDwellYears || occurred < against.AddYears(-Case.MaxDwellYears)))
+        {
+            warnings.Add($"The time activity began ({Utc(occurred.Value)}) is more than {Case.MaxDwellYears} years before it was detected, so it was left out. Check the year.");
+            occurred = null;
+        }
+
         var title = Clamp(nc?.Title, MaxTitle, "Title", warnings) ?? string.Empty;
         var descriptive = Clamp(nc?.DescriptiveName, MaxDescriptiveName, "Descriptive name", warnings);
         if (string.IsNullOrWhiteSpace(descriptive))
@@ -800,14 +826,16 @@ public sealed class CaseImportService
             Severity = ParseEnum(nc?.Severity, Severity.Medium, "severity", warnings),
             Origin = ParseEnum(nc?.Origin, CaseOrigin.InternalDetection, "origin", warnings),
             Summary = Clamp(nc?.Summary, MaxSummary, "Case summary", warnings),
-            DetectedAtUtc = nc?.DetectedAtUtc,
-            OccurredAtUtc = nc?.OccurredAtUtc,
+            DetectedAtUtc = detected,
+            OccurredAtUtc = occurred,
             DataTypesInvolved = Clamp(nc?.DataTypesInvolved, 4000, "Data context", warnings),   // BUG-247: the column, not a label's 300
             ImpactedAssets = Clamp(nc?.ImpactedAssets, 4000, "Impacted assets", warnings),   // BUG-105: the column
             DetectionCaseId = Clamp(nc?.DetectionCaseId, 100, "Detection case ID", warnings),
             VendorName = Clamp(nc?.VendorName, 300, "Vendor name", warnings)   // BUG-117: a third-party case needs one
         };
     }
+
+    private static string Utc(DateTimeOffset at) => at.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC";
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 

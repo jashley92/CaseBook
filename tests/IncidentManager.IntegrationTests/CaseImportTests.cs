@@ -344,10 +344,12 @@ public sealed class CaseImportTests : IDisposable
 
         var parsed = CaseImportService.Parse(json);
         parsed.Ok.Should().BeTrue(parsed.Error);
-        var p = CaseImportService.BuildPreviewCore(parsed.Document!, _clock.UtcNow);
+        // BUG-528: previewed after the sample's detection (this class's clock is earlier), as any real import of it is.
+        var p = CaseImportService.BuildPreviewCore(parsed.Document!, parsed.Document!.Target!.NewCase!.DetectedAtUtc!.Value.AddDays(1));
 
         p.Warnings.Should().BeEmpty();
-        p.NewCase!.Classification.Should().BeNull();
+        p.NewCase!.DetectedAtUtc.Should().NotBeNull();
+        p.NewCase.Classification.Should().BeNull();
         p.NewCase.Severity.Should().Be(Severity.High);
         p.NewCase.DetectionCaseId.Should().Be("4812");
         p.Entities.Should().ContainSingle(e => e.Value == "203.0.113.66" && e.Disposition == EntityDisposition.Malicious);
@@ -602,6 +604,55 @@ public sealed class CaseImportTests : IDisposable
     }
 
     // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
+
+    public static TheoryData<int?, int?, bool, bool> BadCaseTimes => new()
+    {
+        // detected (days from now), occurred (days from now), detected kept, occurred kept
+        { 2, null, false, true },          // detected in the future
+        { 2, -1, false, true },            // detected in the future; occurred checked against filing time instead
+        { 2, 1, false, false },            // both in the future
+        { -5, 1, true, false },            // activity in the future
+        { -5, -2, true, false },           // activity after detection
+        { null, 3, true, false },          // no detected time: activity after filing time
+        { -5, -5 - 366 * 10, true, false },  // dwell over Case.MaxDwellYears
+        { -5, -5 - 365 * 9, true, true },  // a long but plausible dwell is kept
+    };
+
+    [Theory, MemberData(nameof(BadCaseTimes))]
+    public async Task A_new_case_time_create_would_refuse_is_left_out_with_a_warning_so_apply_succeeds(
+        int? detectedDays, int? occurredDays, bool detectedKept, bool occurredKept /* BUG-528 */)
+    {
+        var now = _clock.UtcNow;
+        DateTimeOffset? detected = detectedDays is { } d ? now.AddDays(d) : null;
+        DateTimeOffset? occurred = occurredDays is { } o ? now.AddDays(o) : null;
+        var doc = FullDoc();
+        doc.Target!.NewCase!.DetectedAtUtc = detected;
+        doc.Target.NewCase.OccurredAtUtc = occurred;
+
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var preview = await svc.BuildPreviewAsync(doc);
+        preview.NewCase!.DetectedAtUtc.Should().Be(detectedKept ? detected : null);
+        preview.NewCase.OccurredAtUtc.Should().Be(occurredKept ? occurred : null);
+        preview.Warnings.Count(w => w.Contains("was left out")).Should().Be((detectedKept ? 0 : 1) + (occurredKept ? 0 : 1));
+
+        var result = await svc.ApplyAsync(preview);   // refused by CreateAsync before the fix
+        var c = await db.Cases.AsNoTracking().SingleAsync(x => x.Id == result.CaseId);
+        c.DetectedAtUtc.Should().Be(detectedKept && detected is not null ? detected.Value : now);
+        c.OccurredAtUtc.Should().Be(occurredKept ? occurred : null);
+    }
+
+    [Fact]
+    public void A_detected_time_in_the_first_years_of_the_calendar_does_not_break_the_preview(/* BUG-528 */)
+    {
+        var doc = FullDoc();
+        doc.Target!.NewCase!.DetectedAtUtc = new DateTimeOffset(5, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        doc.Target.NewCase.OccurredAtUtc = new DateTimeOffset(4, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var nc = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow).NewCase!;
+
+        nc.OccurredAtUtc.Should().BeNull("CreateAsync can't check its dwell, so it would refuse it");
+    }
 
     private static CaseImportDocument FullDoc() => new()
     {
@@ -907,12 +958,16 @@ public sealed class CaseImportTests : IDisposable
 
         var claimer = _user.UserId;
         _user.UserId = "analyst2";   // another reviewer
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("th-TH");   // BUG-531
         try { (await svc.ReopenStuckAsync(pid)).Should().BeTrue(); }
-        finally { _user.UserId = claimer; }
+        finally { _user.UserId = claimer; System.Globalization.CultureInfo.CurrentCulture = culture; }
 
         (await svc.ListPendingAsync()).Should().ContainSingle(p => p.Id == pid).Which.StuckClaimedBy.Should().BeNull();
         (await svc.BuildPreviewForPendingAsync(pid)).Should().NotBeNull();
-        (await ctx.AuditLog.AsNoTracking().AnyAsync(a => a.EntityType == "PendingImport" && a.Summary!.Contains("Reopened a stuck import")))
+        // BUG-531: saved text is in the invariant calendar, whatever the server culture (reopened below under th-TH).
+        (await ctx.PendingImports.AsNoTracking().SingleAsync(p => p.Id == pid)).DecisionNote.Should().Contain("at 2026-09-20 12:00 UTC");
+        (await ctx.AuditLog.AsNoTracking().AnyAsync(a => a.EntityType == "PendingImport" && a.Summary!.Contains("Reopened a stuck import") && a.Summary.Contains("at 2026-09-20 12:00 UTC")))
             .Should().BeTrue();
     }
 
