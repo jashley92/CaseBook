@@ -28,7 +28,8 @@ public sealed class UserMirrorMiddleware
             if (!string.IsNullOrWhiteSpace(userId))
             {
                 // Store the real display name (AD lookup for DOMAIN\sam), not the domain-qualified logon.
-                var display = WindowsNames.Friendly(principal.Identity.Name) ?? userId;
+                // BUG-565: bounded, and awaited so a slow domain controller doesn't hold the request's thread.
+                var display = await WindowsNames.FriendlyAsync(principal.Identity.Name) ?? userId;
                 var upn = principal.FindFirstValue(ClaimTypes.Upn);
                 var email = principal.FindFirstValue(ClaimTypes.Email);
 

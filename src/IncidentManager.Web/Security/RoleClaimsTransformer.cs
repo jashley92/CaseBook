@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Security.Principal;
 using IncidentManager.Application.Abstractions;
@@ -13,13 +12,8 @@ namespace IncidentManager.Web.Security;
 /// </summary>
 public sealed class RoleClaimsTransformer : IClaimsTransformation
 {
-    // SID -> account name (e.g. "AD\SOC-AppAdmins"). Stable for the process lifetime; caching avoids an
-    // AD/LSA lookup per request. A group rename is picked up on the next app restart. BUG-223: a lookup that found no
-    // name (an AD blip as much as an orphaned SID) is kept only for RetryUnresolved, so a group whose first lookup hit
-    // a DC failover doesn't lose its name-mapped roles for everyone until the app pool recycles.
-    private static readonly ConcurrentDictionary<string, (string? Name, DateTime RetryAfterUtc)> SidNameCache =
-        new(StringComparer.OrdinalIgnoreCase);
-    private static readonly TimeSpan RetryUnresolved = TimeSpan.FromMinutes(5);
+    // SID -> account name, kept (BUG-223: an unresolved one only for a while) and, BUG-565, bounded on the request path.
+    private static readonly SidNames Sids = new();
 
     private static ILogger? _log;   // the first instance's; the lookups below are static (shared with the S-10 re-check)
     private readonly IRoleDirectory _directory;
@@ -65,41 +59,34 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
     /// </summary>
     public static IReadOnlySet<string> GroupCandidates(ClaimsPrincipal principal)
     {
-        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // WF-42: only the signed-in identity's claims. The roles CaseBook grants ride on an unauthenticated identity it
         // adds (here and in the S-10 re-check); read as groups, a role named like an AD group picked up that group's
         // mappings, and a removed mapping never took the role away.
-        foreach (var c in principal.Identities.Where(i => i.IsAuthenticated).SelectMany(i => i.Claims))
+        return CandidatesFor(principal.Identities.Where(i => i.IsAuthenticated).SelectMany(i => i.Claims)
+            .Where(c => c.Type == ClaimTypes.Role || c.Type == ClaimTypes.GroupSid)
+            .Select(c => c.Value));
+    }
+
+    /// <summary>Each group value (a SID, or already a name) with the account name(s) of the SIDs among them. BUG-565:
+    /// the SIDs not yet named are translated together, in one bounded wait, rather than one blocking call each.</summary>
+    internal static IReadOnlySet<string> CandidatesFor(IEnumerable<string> values)
+    {
+        var list = values.ToList();
+        var names = Sids.Resolve(list);
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in list)
         {
-            if (c.Type != ClaimTypes.Role && c.Type != ClaimTypes.GroupSid) continue;
-            candidates.Add(c.Value);
-            foreach (var name in NamesForSid(c.Value)) candidates.Add(name);
+            candidates.Add(value);
+            if (names.TryGetValue(value, out var resolved))
+                foreach (var name in NamesForSid(value, resolved)) candidates.Add(name);
         }
         return candidates;
     }
 
-    /// <summary>The account name(s) for a group SID: "DOMAIN\Group" and the bare "Group". Empty for a
-    /// value that isn't a SID (already a name) or that can't be resolved.</summary>
-    internal static IEnumerable<string> NamesForSid(string value)
+    /// <summary>The account name(s) for a group SID resolved to <paramref name="resolved"/>: "DOMAIN\Group" and the
+    /// bare "Group".</summary>
+    private static IEnumerable<string> NamesForSid(string value, string resolved)
     {
-        if (!value.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase))
-            yield break;
-
-        var now = DateTime.UtcNow;
-        if (!SidNameCache.TryGetValue(value, out var cached) || (cached.Name is null && now >= cached.RetryAfterUtc))
-        {
-            string? name = null;
-            if (OperatingSystem.IsWindows())
-            {
-                try { name = new SecurityIdentifier(value).Translate(typeof(NTAccount)).Value; }
-                catch { /* well-known/orphaned SID, or AD unreachable: tried again after RetryUnresolved */ }
-            }
-            cached = (name, now + RetryUnresolved);
-            SidNameCache[value] = cached;
-        }
-        var resolved = cached.Name;
-        if (resolved is null) yield break;
-
         yield return resolved;                                  // DOMAIN\Group
         var slash = resolved.IndexOf('\\');
         // BUG-188: a group name is unique only within its domain, so the bare "Group" is offered only for a group of
@@ -119,6 +106,11 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
     // Null when the server isn't domain-joined (no other domain to tell apart); "" when it is but its domain couldn't
     // be found, which matches no domain, so only names that carry their domain map until it's found (fail closed).
+    // BUG-565: the lookup was made under ServerDomainLock with no time limit, so a hung DC queued every request that
+    // asked behind it. It's now bounded like the SIDs' names: while it hasn't answered, the domain isn't known ("").
+    private static readonly BoundedDirectoryCalls<string?> ServerDomainLookup = new(
+        _ => new Dictionary<string, string?> { [""] = FindServerDomainSid() }, (_, _) => { }, _ => "", 1, 1);
+
     private static string? ServerDomainSid()
     {
         if (_serverDomainSid is { } known) return known;
@@ -128,26 +120,38 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
             if (_serverDomainSid is { } again) return again;
             if (!IsDomainJoined()) return null;
             if (DateTime.UtcNow < _serverDomainRetryUtc) return "";
-            try
+        }
+        ServerDomainLookup.Wait([""], SidNames.Timeout);
+        return _serverDomainSid ?? "";
+    }
+
+    // On the lookup's own thread; records what it found (or when to try again), even after its callers stopped waiting.
+    private static string? FindServerDomainSid()
+    {
+        string? found = null;
+        Exception? error = null;
+        try
+        {
+            if (OperatingSystem.IsWindows())
+                found = ((SecurityIdentifier)new NTAccount(Environment.MachineName + "$").Translate(typeof(SecurityIdentifier)))
+                    .AccountDomainSid?.Value;
+        }
+        catch (Exception ex) { error = ex; }
+        lock (ServerDomainLock)
+        {
+            if (found is not null)
             {
-                var sid = (SecurityIdentifier)new NTAccount(Environment.MachineName + "$").Translate(typeof(SecurityIdentifier));
-                if (sid.AccountDomainSid?.Value is { } found)
-                {
-                    if (_serverDomainWarned) _log?.LogWarning("Found this server's domain: bare AD group names map again.");
-                    _serverDomainWarned = false;
-                    return _serverDomainSid = found;
-                }
+                if (_serverDomainWarned) _log?.LogWarning("Found this server's domain: bare AD group names map again.");
+                _serverDomainWarned = false;
+                return _serverDomainSid = found;
             }
-            catch (Exception ex)
-            {
-                if (!_serverDomainWarned)
-                    _log?.LogCritical(ex, "Couldn't look up this server's AD domain (a DC unreachable?). Until it's found, " +
-                        "only role mappings that name the domain (DOMAIN\\Group) take effect. Retrying every {Seconds} s.",
-                        RetryServerDomain.TotalSeconds);
-                _serverDomainWarned = true;
-            }
+            if (!_serverDomainWarned)
+                _log?.LogCritical(error, "Couldn't look up this server's AD domain (a DC unreachable?). Until it's found, " +
+                    "only role mappings that name the domain (DOMAIN\\Group) take effect. Retrying every {Seconds} s.",
+                    RetryServerDomain.TotalSeconds);
+            _serverDomainWarned = true;
             _serverDomainRetryUtc = DateTime.UtcNow + RetryServerDomain;
-            return "";
+            return null;
         }
     }
 

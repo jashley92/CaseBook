@@ -52,8 +52,14 @@ flowchart LR
 - **What:** Windows Integrated Authentication through IIS; AD group SIDs resolved to group names and mapped to
   CaseBook roles; display names looked up for the user directory.
 - **Auth:** Kerberos/NTLM; the app pool's identity reads group names.
-- **Failure:** a SID that can't be resolved is cached as unknown for the process lifetime; if the role directory
-  can't load at startup it's empty, and **nobody gets permissions** until it loads.
+- **Failure:** a SID that can't be resolved is cached as unknown for five minutes, then tried again (BUG-223); if the
+  role directory can't load at startup it's empty, and **nobody gets permissions** until it loads.
+- **Request-path lookups (BUG-565):** a signed-in user's display name and the names of their group SIDs are looked up
+  on their own threads, one lookup per name at a time, waited on for 2 seconds (display name) or 5 seconds (a
+  sign-in's unnamed groups, translated together). Past that the bare username is shown, or the group matches only
+  mappings by SID, for that request; nothing is kept as unresolved, and an answer that lands later is kept. A domain
+  with two lookups still blocked isn't asked again until one returns, so a hung domain controller holds a few
+  threads rather than one per request.
 - **Local testing:** not possible on the development handler; use a domain-joined test server.
 - **Account entities (BUG-416):** an Account entity (or an email address the directory knows) is looked up when it's
   added to a case, and its details (display name, title, department, manager, email, enabled, locked, expiry, last

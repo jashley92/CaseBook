@@ -171,9 +171,9 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     private OwnerAccess? Unreachable(bool known, (AccountGroups? Account, DateTimeOffset At) last, DateTimeOffset now, bool failOpen) =>
         known && now - last.At < LastKnownLimit ? Access(last.Account) : failOpen ? null : new OwnerAccess(false, NoRoles);
 
-    // The same names a sign-in matches mappings against: the SID, and "DOMAIN\Group" and "Group".
-    private static IEnumerable<string> Candidates(IEnumerable<string> groupSids) =>
-        groupSids.SelectMany(sid => RoleClaimsTransformer.NamesForSid(sid).Prepend(sid));
+    // The same names a sign-in matches mappings against: the SID, and "DOMAIN\Group" and "Group" (BUG-565: translated
+    // together, bounded).
+    private static IEnumerable<string> Candidates(IEnumerable<string> groupSids) => RoleClaimsTransformer.CandidatesFor(groupSids);
 
     // BUG-127: an owner id is however the user signed in: DOMAIN\sam under Windows sign-in (WindowsIdentity carries no
     // name-identifier or UPN claim), a UPN or a SID otherwise. FindByIdentity without a type tries each of those forms.
