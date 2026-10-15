@@ -1763,7 +1763,7 @@ else
         // go: left set, it switched to the notes lens on a later render.
         if (_tlEditId is not null) Toasts.Info("Save or cancel the entry you're editing, then try again.");
         else if (!_notesOnly) await SwitchToNotes();
-        else if (AutofocusComposer) SetMode(ComposerMode.Note);
+        else if (AutofocusComposer && _notesList is not { IsEditing: true }) SetMode(ComposerMode.Note);   // BUG-552: declined
         await OnOpenNotesHandled.InvokeAsync();
         StateHasChanged();
     }
@@ -2542,8 +2542,9 @@ else
         {
             // BUG-534: an open entry edit is the composer, so 'l' or 'n' leaves it be. BUG-535: and 'l' beside a working
             // note being edited (Ctrl+Enter there saves the note). Either way the shortcut is let go, so it can't fire
-            // later, once the edit ends.
-            if (!CanEdit || _tlEditId is not null || (!OpenNotes && NoteEditKeepsNotes())) _ = OnAutofocusHandled.InvokeAsync();
+            // later, once the edit ends. BUG-552: 'n' too: a note typed in the composer was lost when Ctrl+Enter saved
+            // the note being edited instead.
+            if (!CanEdit || _tlEditId is not null || NoteEditKeepsNotes()) _ = OnAutofocusHandled.InvokeAsync();
             else
             {
                 _autofocusPending = true;
