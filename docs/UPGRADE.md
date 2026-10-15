@@ -206,6 +206,28 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.11
+
+A fix release with no migration. Things to check:
+
+- **A slow domain controller no longer stalls the app.** Display names and group names are looked up with a short
+  time limit (2 s and 5 s). Until a name arrives the sign-in name is shown; a group not named in time matches role
+  mappings by SID only for that request, so a user may hold fewer roles until the next refresh.
+- **Find:** `entity:` with words lists only rows where every word appears, and an indicator searched beside `entity:`
+  is matched by its own tags.
+- **Regulator reporting:** on a case reported before CaseBook recorded its data elements, an element added later keeps
+  its regulator's deadline on the case page and in reminders. Such cases get their elements recorded at start-up. A
+  case reported with nothing in play is reminded again when an added element reopens a deadline.
+- **Pages left while loading:** the case list, case page, notification bell and alert banners no longer keep
+  refreshing in the background, and a note editor closed mid-load no longer stops the next one attaching.
+- **Administration:** changes to settings, taxonomy, roles, AD mappings, data elements, deadline rules and system API
+  tokens wait for a running config import, and a data element saved twice at once no longer breaks the page. The
+  import preview counts AD mappings the way the import applies them. A new outcome or data element never takes a
+  deleted one's key, so re-adding a deleted item gives it a numbered key (for example `PassportNumber2`).
+- **Smaller fixes:** editing a task's other fields no longer moves a due set in the repeated autumn hour; the case
+  beside no longer names the previous case while the next loads, and Ctrl+Enter inside it submits nothing; the
+  Integrity page, evidence list and stored-report table show a short hash instead of failing on it.
+
 ### v1.6.10
 
 A fix release with no migration. Things to check:
