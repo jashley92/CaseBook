@@ -22,25 +22,46 @@
         return loading;
     }
 
+    // BUG-549: the latest render (or clear) per container. A slower earlier one that finishes last is dropped instead of
+    // replacing the preview of the template now selected.
+    const latest = new WeakMap();
+    const next = container => { const t = (latest.get(container) ?? 0) + 1; latest.set(container, t); return t; };
+
+    const options = {
+        className: 'docx',
+        inWrapper: true,
+        breakPages: true,
+        renderHeaders: true,
+        renderFooters: true,
+        useBase64URL: true,
+        ignoreFonts: true
+    };
+
     window.imDocxView = {
         // streamRef: a DotNetStreamReference holding the .docx. Replaces whatever the container showed before.
         render: async function (container, streamRef) {
             if (!container) return;
-            await ready();
-            const data = await streamRef.arrayBuffer();
-            container.replaceChildren();
-            await window.docx.renderAsync(data, container, container, {
-                className: 'docx',
-                inWrapper: true,
-                breakPages: true,
-                renderHeaders: true,
-                renderFooters: true,
-                useBase64URL: true,
-                ignoreFonts: true
-            });
+            const token = next(container);
+            const current = () => latest.get(container) === token;
+            try {
+                await ready();
+                const data = await streamRef.arrayBuffer();   // read even when stale, so the stream is released
+                if (!current()) return;
+                container.replaceChildren();
+                // renderAsync's own steps, split so nothing is written to the container until this render is known
+                // to still be the latest.
+                const doc = await window.docx.parseAsync(data, options);
+                const nodes = await window.docx.renderDocument(doc, options);
+                if (!current()) return;
+                container.replaceChildren(...nodes);
+            } catch (e) {
+                if (current()) throw e;   // a superseded render's failure isn't the shown template's
+            }
         },
         clear: function (container) {
-            if (container) container.replaceChildren();
+            if (!container) return;
+            next(container);
+            container.replaceChildren();
         }
     };
 })();
