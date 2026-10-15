@@ -1258,19 +1258,32 @@ public sealed class CaseService
         };
     }
 
-    public async Task ReferToLegalAsync(Guid id, string? contact, string? relevanceNote,
-        string? expectedStamp = null, CancellationToken ct = default)
+    /// <summary>Records (or edits) the Legal referral. BUG-519: with <paramref name="onlyIfNotReferred"/> (the bulk path), a
+    /// case already referred keeps its referral and this returns false.</summary>
+    public async Task<bool> ReferToLegalAsync(Guid id, string? contact, string? relevanceNote,
+        string? expectedStamp = null, bool onlyIfNotReferred = false, CancellationToken ct = default)
     {
         Require();
-        using var db = _factory.CreateDbContext();
-        var c = await LoadTrackedAsync(db, id, ct);
-        // REL-02: expected-value optimistic-concurrency (as on the details/impact editors). If the referral
-        // fields changed since the modal was opened, refuse rather than silently clobbering the other author.
-        if (expectedStamp is not null && c.LegalReferralConcurrencyStamp() != expectedStamp)
-            throw new StaleEditException(c.LegalReferralConcurrencyStamp(),
-                "Someone else changed the Legal referral while you were editing. Reload and try again.");
-        c.ReferToLegal(_user.UserId, contact, relevanceNote, _clock.UtcNow);
-        await db.SaveChangesAsync(ct);
+        for (var attempt = 0; ; attempt++)
+        {
+            using var db = _factory.CreateDbContext();
+            var c = await LoadTrackedAsync(db, id, ct);
+            // BUG-519: judged on the case as it stands now, not the caller's list snapshot.
+            if (onlyIfNotReferred && c.LegalReferral is { IsReferred: true }) return false;
+            // REL-02: expected-value optimistic-concurrency (as on the details/impact editors). If the referral
+            // fields changed since the modal was opened, refuse rather than silently clobbering the other author.
+            if (expectedStamp is not null && c.LegalReferralConcurrencyStamp() != expectedStamp)
+                throw new StaleEditException(c.LegalReferralConcurrencyStamp(),
+                    "Someone else changed the Legal referral while you were editing. Reload and try again.");
+            c.ReferToLegal(_user.UserId, contact, relevanceNote, _clock.UtcNow);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return true;
+            }
+            // BUG-519: another save landed first (perhaps a referral); look again from a fresh read.
+            catch (ConcurrentEditException) when (onlyIfNotReferred && attempt == 0) { }
+        }
     }
 
     /// <summary>Records the regulatory-notification milestone (PROD-07): sets <c>ReportedAtUtc</c>, stopping the

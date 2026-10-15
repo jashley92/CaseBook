@@ -1272,11 +1272,10 @@ else
         var note = string.IsNullOrWhiteSpace(_bulkReferNote) ? null : _bulkReferNote.Trim();
         var done = 0;
         var alreadyOn = 0;
+        var kept = 0;
         try
         {
-            // BUG-162: a case already referred keeps its referral (when, by whom, the contact and note); referring it again
-            // would replace them with this batch's.
-            foreach (var c in targets.Where(c => verb != BulkVerb.Refer || !c.LegalReferred))
+            foreach (var c in targets)
             {
                 try
                 {
@@ -1284,8 +1283,10 @@ else
                     {
                         if (!await CaseSvc.AddAssigneeAsync(c.Id, toId, toName, role)) { alreadyOn++; continue; }
                     }
-                    else
-                        await CaseSvc.ReferToLegalAsync(c.Id, contact, note);
+                    // BUG-162: a case already referred keeps its referral (when, by whom, the contact and note); referring it
+                    // again would replace them with this batch's. BUG-519: the service judges that on the case as it stands
+                    // now, since the list's snapshot isn't refreshed while a selection is held.
+                    else if (!await CaseSvc.ReferToLegalAsync(c.Id, contact, note, onlyIfNotReferred: true)) { kept++; continue; }
                     done++;
                 }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1297,7 +1298,6 @@ else
         finally { _bulkBusy = false; }
 
         if (opening == _bulkOpening) CloseBulk();   // BUG-379: only the opening this run came from
-        var kept = verb == BulkVerb.Refer ? targets.Count(c => c.LegalReferred) : 0;
         if (kept > 0)
             Toasts.Info($"{kept} case{(kept == 1 ? " was" : "s were")} already referred and kept {(kept == 1 ? "its" : "their")} referral.");
         if (alreadyOn > 0)

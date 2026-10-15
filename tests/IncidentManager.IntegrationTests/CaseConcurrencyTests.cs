@@ -212,6 +212,31 @@ public sealed class CaseConcurrencyTests : IDisposable
         reloaded.LegalReferral.ReferredToContact.Should().Be("GC-B"); // B's referral was not clobbered
     }
 
+    // BUG-519: the bulk "Refer to Legal" judges "already referred" on the case as it stands, not on the list's snapshot,
+    // so a referral made meanwhile keeps its contact and note. The workspace modal (no flag) still edits the referral.
+    [Fact]
+    public async Task A_bulk_referral_keeps_a_referral_made_meanwhile_and_the_modal_still_edits_it()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        var other = await NewCaseAsync(svc);
+
+        // Another analyst refers the case after the bulk selection was made.
+        await svc.ReferToLegalAsync(id, "GC-B", "B relevance note");
+
+        (await svc.ReferToLegalAsync(id, "Bulk contact", "Bulk note", onlyIfNotReferred: true)).Should().BeFalse();
+        (await svc.ReferToLegalAsync(other, "Bulk contact", "Bulk note", onlyIfNotReferred: true)).Should().BeTrue();
+
+        var kept = await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id);
+        kept.LegalReferral.ReferredToContact.Should().Be("GC-B");
+        kept.LegalReferral.RegulatoryRelevanceNote.Should().Be("B relevance note");
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == other)).LegalReferral.ReferredToContact.Should().Be("Bulk contact");
+
+        (await svc.ReferToLegalAsync(id, "GC-C", "C note", expectedStamp: await LegalStampAsync(id))).Should().BeTrue();
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id)).LegalReferral.ReferredToContact.Should().Be("GC-C");
+    }
+
     [Fact]
     public async Task A_stale_materiality_save_is_rejected_but_a_rebaselined_resave_succeeds()
     {
