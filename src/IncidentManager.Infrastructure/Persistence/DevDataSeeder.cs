@@ -254,13 +254,22 @@ public static class DevDataSeeder
     }
 
     /// <summary>
+    /// BUG-546: true only when this reference data has never existed: the table is empty AND the trail has no entry
+    /// of that type. An admin can delete every gate, template or profile; that must not bring the defaults back,
+    /// active, at the next restart. (Built-in data elements, outcomes and rules can't be deleted, so empty means new.)
+    /// </summary>
+    private static async Task<bool> IsFirstRunAsync<T>(AppDbContext db, DbSet<T> set, string entityType, CancellationToken ct)
+        where T : class =>
+        !await set.AnyAsync(ct) && !await db.AuditLog.AnyAsync(a => a.EntityType == entityType, ct);
+
+    /// <summary>
     /// Seeds two starter report profiles (E-28): a leadership-facing "Executive summary" (narrative only)
     /// and a "Full examiner pack" (every section, pinned so it stays complete even if the global default is
     /// later trimmed). Ordinary editable reference data; seeded only when none exist.
     /// </summary>
     public static async Task SeedDefaultReportProfilesAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
     {
-        if (await db.ReportProfiles.AnyAsync(ct)) return;
+        if (!await IsFirstRunAsync(db, db.ReportProfiles, nameof(ReportProfile), ct)) return;
 
         var now = clock.UtcNow;
 
@@ -352,7 +361,7 @@ public static class DevDataSeeder
     /// </summary>
     public static async Task SeedStarterTemplatesAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
     {
-        if (await db.CaseTemplates.AnyAsync(ct)) return;
+        if (!await IsFirstRunAsync(db, db.CaseTemplates, nameof(CaseTemplate), ct)) return;
 
         var now = clock.UtcNow;
 
@@ -449,7 +458,7 @@ public static class DevDataSeeder
     /// </summary>
     public static async Task SeedDefaultStageGatesAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
     {
-        if (await db.StageGates.AnyAsync(ct)) return;
+        if (!await IsFirstRunAsync(db, db.StageGates, nameof(StageGate), ct)) return;
 
         var now = clock.UtcNow;
 
