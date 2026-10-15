@@ -95,9 +95,11 @@ Actions updates (EF Core and `Microsoft.Extensions.*` majors are held back).
 `.github/workflows/release.yml` runs on a `v*` tag. It first runs every CI job above on the tagged commit, except
 Sonar, which only analyses `main` and PRs. Instead, `tools/ci/check-sonar-quality-gate.sh` finds SonarQube Cloud's
 analysis of the tagged commit on `main` and refuses the release unless its quality gate passed. It waits up to 15
-minutes for that analysis, so a tag pushed with the commit is fine. A commit with no analysis on `main` is refused:
-one that isn't on `main`, a docs-only commit (CI skips those), or one whose CI was cancelled by a newer push. So tag
-the code commit whose CI on `main` passed. Without `SONAR_TOKEN` (a fork) the check warns and is skipped. The job then
+minutes for that analysis, so a tag pushed with the commit is fine. Commits that differ from the tagged one only in
+paths CI ignores (`*.md`, `docs/`, `LICENSE`, `.gitignore`) hold the same code, so an analysis of any of them counts:
+the newest code commit before a release-notes tag, and a docs commit pushed after it in the same push. A commit with
+none of these is refused: one that isn't on `main`, or one whose CI on `main` failed before Sonar or was cancelled by
+a newer push. Tag a commit whose CI on `main` passed, with the release notes already in. Without `SONAR_TOKEN` (a fork) the check warns and is skipped. The job then
 re-checks migration immutability, publishes the app and builds `casebook-<tag>.zip` (`app/`, `deploy/`,
 `migrations-sqlserver.txt`, `VERSION.txt`) with a `.sha256`, then creates the GitHub release.
 

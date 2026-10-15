@@ -8,7 +8,8 @@
 # SONAR_WAIT_SECONDS. A release-notes commit that only touches paths ci.yml ignores (*.md, docs/, LICENSE, .gitignore)
 # gets no CI run of its own when pushed alone, and its changes can't move the gate, so an analysis of any commit from
 # the newest one before it that touches anything else up to the tag also counts (a push is analysed under its last
-# commit, which may itself be a docs commit). A commit with neither (CI on main failed before Sonar, or
+# commit, which may itself be a docs commit). For the same reason a later commit on the branch counts when everything
+# it changed since the tag is ignored by CI (BUG-514). A commit with neither (CI on main failed before Sonar, or
 # the commit isn't on main) fails once the wait runs out: tag a commit whose CI on main passed.
 #
 # Usage: tools/ci/check-sonar-quality-gate.sh [<sha>]      (default: $GITHUB_SHA, else HEAD)
@@ -72,6 +73,15 @@ fi
 
 # BUG-497: every commit from $code_sha to $sha has the same code, so an analysis of any of them stands for the tag.
 revisions="$(echo "$code_sha"; git rev-list "$code_sha..$sha" 2>/dev/null || true)"
+# BUG-514: and any later commit on the branch whose only changes since the tag are ones CI ignores: a push is analysed
+# under its last commit, which can be a docs commit pushed after the tagged one.
+if git rev-parse --verify --quiet "origin/$branch" >/dev/null; then
+  for later in $(git rev-list --ancestry-path "$sha..origin/$branch" 2>/dev/null || true); do
+    if git diff --quiet "$sha" "$later" -- . ':(exclude,glob)**/*.md' ':(exclude)docs' ':(exclude)LICENSE' ':(exclude).gitignore'; then
+      revisions="$revisions"$'\n'"$later"
+    fi
+  done
+fi
 revisions_json="$(jq -Rn --arg extra "$sha" '[inputs, $extra] | unique' <<<"$revisions")"
 
 # Prints the key of the newest analysis whose revision is one of $revisions, or nothing.
