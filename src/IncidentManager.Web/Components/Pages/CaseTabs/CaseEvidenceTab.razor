@@ -100,7 +100,7 @@
                             </div>
                         </td>
                         <td>@FormatSize(ev.SizeBytes)</td>
-                        <td><code class="small">@ev.Sha256[..16]…</code></td>
+                        <td><code class="small">@(ev.Sha256 is { Length: > 16 } h ? h[..16] + "…" : ev.Sha256)</code></td>
                         <td class="small text-muted">@TimeDisp.Long(ev.CreatedAtUtc)<br />@Users.DisplayFor(ev.CreatedBy)</td>
                         <td class="text-nowrap">
                             @if (IsImageEvidence(ev))

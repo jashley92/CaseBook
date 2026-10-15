@@ -45,7 +45,7 @@ else
                             <span class="im-badge im-b-neutral">Draft</span>
                         }
                     </td>
-                    <td><code class="small">@r.ContentSha256[..16]…</code></td>
+                    <td><code class="small">@(r.ContentSha256 is { Length: > 16 } h ? h[..16] + "…" : r.ContentSha256)</code></td>
                     <td class="small text-muted">@TimeDisp.Long(r.CreatedAtUtc)<br />@Users.DisplayFor(r.CreatedBy)</td>
                     <td>
                         <a class="btn btn-sm btn-outline-primary" href="reports/@r.Id" target="_blank">Download</a>
