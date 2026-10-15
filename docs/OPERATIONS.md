@@ -217,7 +217,7 @@ up to each seal is intact, but the per-entry check can't run. So: for CyberArk, 
 vault backup; for Certificate, back up the certificate with its private key **and** `chain-key.json`. Don't turn the
 chain key off afterwards: new entries would get the plain hash, and the check reports that as a break.
 
-A key that can't be loaded stops startup with a message naming the setting. So does a missing `chain-key.json` on a server whose audit log already has entries keyed with a key it doesn't hold (a restore without the keys folder, a moved `WrappedKeyPath`): restore the file rather than letting CaseBook start a new key that would leave those entries unverifiable. A rotation, with the old file in `chain-retired`, starts normally. The Integrity page shows whether the
+A key that can't be loaded stops startup with a message naming the setting. So does a missing `chain-key.json` on a server whose audit log already has entries keyed with a key it doesn't hold (a restore without the keys folder, a moved `WrappedKeyPath`): restore the file rather than letting CaseBook start a new key that would leave those entries unverifiable. So does a missing `chain-key.json` while the database can't be read (unreachable, offline, restoring, or the app account refused): CaseBook can't tell a first start then, so it waits until the database is back. A rotation, with the old file in `chain-retired`, starts normally. The Integrity page shows whether the
 chain key is on, where it comes from and its key id (key ids are derived from the key and reveal nothing).
 
 **Rotating it:** CyberArk: put the old reference in `RetiredSecrets`, point `Secret` at a new object, restart.

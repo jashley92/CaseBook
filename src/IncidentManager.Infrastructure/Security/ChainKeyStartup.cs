@@ -33,8 +33,12 @@ public static class ChainKeyStartup
         // key written now would stay after the database came back.
         try
         {
-            var creator = db.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
-            if (!await creator.ExistsAsync(ct)) return [];
+            // BUG-562: SQL Server's ExistsAsync answers false for error 4060 too (the database is there but can't be opened:
+            // offline, restoring, access refused), so there the log is read directly and only a missing table (208) means
+            // a first start. The database itself is made by deploy/sql/01-Create-Database.sql before the app first starts.
+            if (!db.Database.IsSqlServer()
+                && !await db.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>().ExistsAsync(ct))
+                return [];
             return await db.AuditLog.Where(a => a.HashKeyId != null).Select(a => a.HashKeyId!).Distinct().ToListAsync(ct);
         }
         catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 208) { return []; }   // invalid object name
