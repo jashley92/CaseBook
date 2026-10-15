@@ -233,10 +233,12 @@ public sealed class StageGateServiceTests : IDisposable
             try { await t; }
             catch (InvalidOperationException ex) { failures.Add(ex); }
 
-        failures.Should().HaveCount(2);
+        // The three queue in no fixed order, so which ones are refused varies (b first refuses a, and the rename then has no
+        // name to clash with); what holds every time is that no save slipped past another's check.
+        failures.Should().NotBeEmpty().And.HaveCountLessThan(3);
         var gates = await svc.ListAllAsync();
         gates.Count(g => g.IsActive && g.Trigger == StageGateTrigger.EscalateToBreach).Should().Be(1);
-        gates.Count(g => g.Name.Equals("Breach readiness", StringComparison.OrdinalIgnoreCase)).Should().Be(1);
+        gates.GroupBy(g => g.Name, StringComparer.OrdinalIgnoreCase).Should().OnlyContain(g => g.Count() == 1);
     }
 
     [Fact]
