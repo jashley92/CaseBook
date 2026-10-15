@@ -129,8 +129,13 @@ public sealed partial class ConfigBundleService
         CheckTaxonomy(incoming, live);                   // WF-45: taxonomy keys too
         var items = new List<ConfigDiffItem>();
 
-        Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
-        Diff("Role", incoming.Roles.Where(r => !r.IsSystem), live.Roles, r => r.Name, items);
+        // BUG-559: settings and roles too are compared on what the import writes: a setting's value as the settings page
+        // normalizes it, and a role's description and permission set (a system role is never changed by an import).
+        Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items,
+            (i, l) => ImportedValue(i) == l.Value);
+        Diff("Role", incoming.Roles.Where(r => !r.IsSystem), live.Roles, r => r.Name, items,
+            (i, l) => l.IsSystem || (i.Description == l.Description
+                                     && Role.ParsePermissions(l.PermissionsCsv).SetEquals(Role.ParsePermissions(PermissionNames(i.PermissionsCsv)))));
         // WF-45: a mapping with no group or to a role neither here nor in the bundle isn't imported (a dormant grant a later
         // role of that name would pick up), so the preview doesn't count it and says so.
         var unusable = UnusableMappings(incoming, live.Roles.Select(r => r.Name));
@@ -221,6 +226,10 @@ public sealed partial class ConfigBundleService
     // crafted bundle can't smuggle a server-side/security key into the settings table (S-02).
     private static bool IsImportableSetting(ConfigSetting s) =>
         SettingsCatalog.IsEditable(s.Key) || s.Key.StartsWith(TaxonomyCatalog.KeyPrefix, StringComparison.OrdinalIgnoreCase);
+
+    // S-18: the value an import writes, normalized exactly as the settings page does. (Taxonomy labels are free text.)
+    private static string? ImportedValue(ConfigSetting s) =>
+        SettingsCatalog.ByKey.TryGetValue(s.Key, out var def) ? SettingsCatalog.Normalize(def, s.Value) : s.Value;
 
     // Every importable setting must pass the same rules as the Administration form (limits, listed choices). Throws with
     // every problem listed, so nothing is written and the admin sees them all at the preview.
@@ -441,8 +450,8 @@ public sealed partial class ConfigBundleService
         foreach (var s in bundle.Settings.Where(IsImportableSetting))
         {
             // S-18: validate an operational setting exactly as the settings page does, so a bundle can't write a
-            // value the page would refuse. (Taxonomy labels are free text.)
-            var value = SettingsCatalog.ByKey.TryGetValue(s.Key, out var def) ? SettingsCatalog.Normalize(def, s.Value) : s.Value;
+            // value the page would refuse.
+            var value = ImportedValue(s);
             if (settings.TryGetValue(s.Key, out var row))
             {
                 var changed = row.Value != value;

@@ -1091,6 +1091,39 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_same_server_round_trip_previews_unchanged_and_imports_nothing(/* BUG-559 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        db.Roles.Add(new Role { Name = "Auditor", Description = "Built in", IsSystem = true, PermissionsCsv = "ViewCases",
+            UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "system" });
+        db.AppSettings.Add(new AppSetting { Key = "Email:Enabled", Value = "true", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin1" });
+        await db.SaveChangesAsync();
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+
+        var diff = await svc.PreviewAsync(live);
+        diff.Items.Should().OnlyContain(i => i.Change == ConfigChange.Unchanged);
+        var result = await svc.ImportAsync(Signed(live));
+        (result.Added, result.Updated).Should().Be((0, 0));
+
+        // What the import writes is the same, so the preview says so too: a setting the page would normalize to the stored
+        // value, a role's permissions in another order, and a custom role named like a system one (never changed).
+        var equivalent = live with
+        {
+            Settings = live.Settings.Select(x => x.Key == "Email:Enabled" ? x with { Value = " True " } : x).ToList(),
+            Roles = live.Roles.Where(r => !r.IsSystem)
+                .Select(r => r.Name == "IR Lead" ? r with { PermissionsCsv = "EditCases, ViewCases" } : r)
+                .Append(new ConfigRole("auditor", "Not the built-in one", false, "Administer")).ToList(),
+        };
+        diff = await svc.PreviewAsync(equivalent);
+        diff.Items.Where(i => i.Section is "Setting" or "Role").Should().OnlyContain(i => i.Change == ConfigChange.Unchanged);
+        result = await svc.ImportAsync(Signed(equivalent));
+        (result.Added, result.Updated).Should().Be((diff.Added, diff.Updated)).And.Be((0, 0));
+        (await db.Roles.AsNoTracking().SingleAsync(r => r.Name == "Auditor")).PermissionsCsv.Should().Be("ViewCases");
+    }
+
+    [Fact]
     public async Task Word_templates_and_profile_defaults_are_promoted_to_another_instance()
     {
         var source = NewInstance("source");
