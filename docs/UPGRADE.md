@@ -206,6 +206,29 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.9
+
+A fix release with no migration. Things to check:
+
+- **Upgrade script and the chain key.** When the audit chain key or the retired-key folders have no path set and
+  would fall inside the site folder, the upgrade copies any files there to `<DataRoot>\keys`, checks the copies'
+  hashes and sets the paths, so the next upgrade can't delete them. **Check:** the upgrade now stops before changing
+  anything if a File signing key sits inside the site folder, or if it can't work out the data root (pass
+  `-DataRoot`).
+- **"Copy briefing as text"** includes open questions written as prose, as the briefing page shows them.
+- **Timeline:** the 'n' shortcut and a jump to a note no longer throw away an entry you are editing. 'l' always opens
+  an investigation finding. Holding Ctrl/Cmd+Enter submits once.
+- **Administration:**
+  - Two stage-gate saves at once can't leave two active gates on one transition or two gates with one name. A
+    server that already has a duplicate gate name gets a "rename one" message on config import.
+  - A report profile edit that waited behind an import or upload is refused instead of overwriting it.
+  - Quick clicks on default-view stars leave one default.
+- **Import:** a user who can't change classification is offered Complex Event only. A reopened import warns it may
+  already have written more than the marked items.
+- **Smaller fixes:** a cut-off audit or access-log CSV says "100000" rows in one cell; the report preview dates
+  indicators in the Gregorian calendar; v1.6.8 was held by its new quality-gate check until two patterns got a time
+  limit.
+
 ### v1.6.8
 
 A fix release with no migration. Things to check:
