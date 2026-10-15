@@ -1237,6 +1237,8 @@ else
     }
     private string _evtTechnique = "";
     private MitreTactic _evtTactic = MitreTactic.Unspecified;
+    // BUG-513: a step's other tactics (an imported step can carry several), kept through an edit the picker can't show.
+    private MitreTactic[] _evtOtherTactics = [];
     // E-32: a third-party/vendor case has no ATT&CK kill-chain — its Event steps are vendor-disclosure milestones.
     private TimelineEntryType _evtStage = TimelineEntryType.Notified;
 
@@ -1295,8 +1297,12 @@ else
         : $"{DetectionLabel}…";
 
     // The step model stores a set of tactics; the composer chooses one (via AttackStepPicker).
-    private IReadOnlySet<MitreTactic> EvtTacticSet() =>
-        _evtTactic == MitreTactic.Unspecified ? new HashSet<MitreTactic>() : new HashSet<MitreTactic> { _evtTactic };
+    private IReadOnlySet<MitreTactic> EvtTacticSet()
+    {
+        var set = new HashSet<MitreTactic>(_tlEditId is null ? [] : _evtOtherTactics);
+        if (_evtTactic != MitreTactic.Unspecified) set.Add(_evtTactic);
+        return set;
+    }
 
     private string _tlFilterTypeStr
     {
@@ -1882,7 +1888,7 @@ else
             return;
         }
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
-        _evtTactic = MitreTactic.Unspecified;
+        _evtTactic = MitreTactic.Unspecified; _evtOtherTactics = [];
         ClearTimelineShot(shot);
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
@@ -1926,6 +1932,7 @@ else
         _actorPrev = _evtActorId; _targetPrev = _evtTargetId;
         _evtTechnique = e.TechniqueId ?? "";
         _evtTactic = e.Tactics.Select(t => t.Tactic).OrderBy(Ui.TacticRank).FirstOrDefault();   // BUG-507: the first chip shown
+        _evtOtherTactics = e.Tactics.Select(t => t.Tactic).Where(t => t != _evtTactic && t != MitreTactic.Unspecified).ToArray();
         _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
         _tlPrecision = e.OccurredPrecision ?? TimePrecision.Exact;
         _tlEditPrecision = _tlPrecision;
@@ -2046,7 +2053,7 @@ else
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
         _tlEditId = null; _tlReason = null; ClearDecision();
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
-        _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
+        _evtTactic = MitreTactic.Unspecified; _evtOtherTactics = []; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         _tlPrecision = TimePrecision.Exact; _tlAfter = ""; _tlEditPrecision = null;
         (_tlWhenShown, _tlWhenRecorded) = (null, null);   // BUG-477
         if (_preEditTimes is { } times && _draft is null) (_tlWhen, _tlDay, _tlUntilDay) = times;
@@ -2101,7 +2108,7 @@ else
         _tlAddKind = d.Kind; _special = d.Special; _tlType = d.Type; _tlDesc = d.Desc; _tlSource = d.Source; _tlWhen = d.When;
         _decWhy = d.Why; _decOptions = d.Options; _decBy = d.By;
         _evtTechnique = d.Technique; _evtActorId = d.ActorId; _evtTargetId = d.TargetId; _actorPrev = d.ActorId; _targetPrev = d.TargetId;
-        _evtTactic = d.Tactic; _evtAttackMode = d.AttackMode; _evtStage = d.Stage; _evtOurs = d.Ours;
+        _evtTactic = d.Tactic; _evtOtherTactics = []; _evtAttackMode = d.AttackMode; _evtStage = d.Stage; _evtOurs = d.Ours;
         _tlPrecision = d.Precision; _tlDay = d.Day; _tlUntilDay = d.UntilDay; _tlAfter = CurrentAfter(d.After, _tlEditId);   // BUG-442
         _tagRefs.Clear();
         foreach (var (k, v) in d.TagRefs) _tagRefs[k] = v;
