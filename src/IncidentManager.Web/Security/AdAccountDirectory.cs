@@ -39,7 +39,7 @@ public sealed class AdAccountDirectory : IAccountDirectory
 
     private readonly ILogger<AdAccountDirectory>? _log;
     private readonly Func<string, DirectoryLookup> _query;
-    private readonly Func<IEnumerable<string>> _trustedDomains;
+    private readonly Func<Action<Action>, IEnumerable<string>> _trustedDomains;
     private readonly TimeProvider _time;
     private readonly object _gate = new();
     private readonly Dictionary<string, DateTimeOffset> _failedUntil = new(StringComparer.OrdinalIgnoreCase);
@@ -52,13 +52,14 @@ public sealed class AdAccountDirectory : IAccountDirectory
     private readonly Dictionary<string, int> _hung = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="query">The directory query for a name that may be asked (tests stand in for AD here).</param>
-    /// <param name="trustedDomains">The NetBIOS and DNS names of the domains that may be asked.</param>
+    /// <param name="trustedDomains">The NetBIOS and DNS names of the domains that may be asked. Each directory search is
+    /// run through the action it's given, which judges whether that search ran into its time limit (BUG-498).</param>
     public AdAccountDirectory(ILogger<AdAccountDirectory>? log = null, Func<string, DirectoryLookup>? query = null,
-        Func<IEnumerable<string>>? trustedDomains = null, TimeProvider? time = null)
+        Func<Action<Action>, IEnumerable<string>>? trustedDomains = null, TimeProvider? time = null)
     {
         _log = log;
         _query = query ?? (OperatingSystem.IsWindows() ? Query : _ => DirectoryLookup.Unavailable("Active Directory lookups need Windows."));
-        _trustedDomains = trustedDomains ?? (OperatingSystem.IsWindows() ? TrustedDomains : () => []);
+        _trustedDomains = trustedDomains ?? (OperatingSystem.IsWindows() ? TrustedDomains : _ => []);
         _time = time ?? TimeProvider.System;
     }
 
@@ -208,18 +209,10 @@ public sealed class AdAccountDirectory : IAccountDirectory
     private HashSet<string>? ListTrusted(int generation)
     {
         HashSet<string>? names = null;
-        var started = _time.GetUtcNow();
         try
         {
-            names = new HashSet<string>(_trustedDomains().Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim().TrimEnd('.')),
+            names = new HashSet<string>(_trustedDomains(Searched).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim().TrimEnd('.')),
                 StringComparer.OrdinalIgnoreCase);
-            // BUG-470: a search that reaches its time limit ends with what it had so far and no error, so a listing that
-            // took that long may be missing domains: a failure (retried after BackOff), not a list kept for an hour.
-            if (_time.GetUtcNow() - started >= SearchLimit - TimeSpan.FromSeconds(1))
-            {
-                names = null;
-                _log?.LogWarning("Listing the domains this server trusts took too long to be complete; accounts in a named domain aren't looked up.");
-            }
         }
         catch (Exception ex)
         {
@@ -228,10 +221,14 @@ public sealed class AdAccountDirectory : IAccountDirectory
         lock (_gate)
         {
             _listingsRunning--;
-            // BUG-457: one given up on (a newer one has started since) only records a list it did get.
+            // BUG-457/498: one given up on that a newer one has started after records nothing. With none newer, its late
+            // answer is kept, so a slow but complete list isn't lost.
             var current = generation == _listingGeneration;
-            if (current || names is not null) _trusted = (names, _time.GetUtcNow() + (names is null ? BackOff : TrustedFor));
-            if (current) _listing = null;
+            if (current)
+            {
+                _trusted = (names, _time.GetUtcNow() + (names is null ? BackOff : TrustedFor));
+                _listing = null;
+            }
         }
         return names;
     }
@@ -239,7 +236,7 @@ public sealed class AdAccountDirectory : IAccountDirectory
     // The forest's domains (each domain's crossRef in the configuration partition) and the domains our domain has a
     // trust with (its trustedDomain objects), as NetBIOS and DNS names. Read from our own domain controller.
     [SupportedOSPlatform("windows")]
-    private static IEnumerable<string> TrustedDomains()
+    private static IEnumerable<string> TrustedDomains(Action<Action> searched)
     {
         var names = new List<string>();
         using var rootDse = new DirectoryEntry("LDAP://RootDSE");
@@ -247,40 +244,58 @@ public sealed class AdAccountDirectory : IAccountDirectory
         var domainNc = rootDse.Properties["defaultNamingContext"].Value as string;
         // systemFlags bit 2 (FLAG_CR_NTDS_DOMAIN): the crossRef of an AD domain.
         var domainNcs = Read($"LDAP://CN=Partitions,{config}", "(&(objectClass=crossRef)(systemFlags:1.2.840.113556.1.4.803:=2))",
-            ["nETBIOSName", "dnsRoot"], names, check: "nCName");
+            ["nETBIOSName", "dnsRoot"], names, searched, check: "nCName");
         // BUG-470: the forest's list always has our own domain; one without it was cut short.
         if (domainNc is null || !domainNcs.Contains(domainNc))
             throw new InvalidOperationException("The forest's list of domains came back without this server's own domain.");
-        Read($"LDAP://CN=System,{domainNc}", "(objectClass=trustedDomain)", ["flatName", "trustPartner"], names);
+        Read($"LDAP://CN=System,{domainNc}", "(objectClass=trustedDomain)", ["flatName", "trustPartner"], names, searched);
         return names;
     }
 
     // BUG-457/470: how long one search may take. Only the client's limit is set (a server time limit ends a search the
-    // same silent way), and ListTrusted takes a listing that ran this long to be incomplete.
+    // same silent way), and Searched takes a search that ran this long to be incomplete.
     private static readonly TimeSpan SearchLimit = Timeout;
+
+    // BUG-470: a search that reaches its time limit ends with what it had so far and no error, so one that ran that long
+    // may be missing domains: the listing fails (retried after BackOff) rather than being kept for an hour. BUG-498: each
+    // search is judged on its own; the RootDSE bind and the other search don't count towards its limit.
+    private void Searched(Action search)
+    {
+        var started = _time.GetTimestamp();
+        search();
+        if (_time.GetElapsedTime(started) >= SearchLimit - TimeSpan.FromSeconds(1))
+            throw new TimeoutException("A search for the domains this server trusts ran into its time limit, so it may be incomplete.");
+    }
 
     // Adds the attributes' values to into, and returns the values of check, which tell whether the search was complete.
     [SupportedOSPlatform("windows")]
-    private static HashSet<string> Read(string path, string filter, string[] attributes, List<string> into, string? check = null)
+    private static HashSet<string> Read(string path, string filter, string[] attributes, List<string> into,
+        Action<Action> searched, string? check = null)
     {
         using var root = new DirectoryEntry(path);
+        // BUG-498: bound before the search is timed, so a slow bind isn't taken for a search cut short.
+        _ = root.NativeObject;
         // BUG-457: bounded, so a domain controller that hangs ends the listing instead of holding its thread for good.
         using var searcher = new DirectorySearcher(root, filter, check is null ? attributes : [.. attributes, check], SearchScope.OneLevel)
         {
             ClientTimeout = SearchLimit,
         };
         var checks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using var results = searcher.FindAll();
-        foreach (SearchResult r in results)
+        // The results arrive as they're read, so reading them is part of the search's time.
+        searched(() =>
         {
-            foreach (var a in attributes)
-                if (r.Properties.Contains(a))
-                    foreach (var v in r.Properties[a])
-                        if (v?.ToString() is { Length: > 0 } s) into.Add(s);
-            if (check is not null && r.Properties.Contains(check))
-                foreach (var v in r.Properties[check])
-                    if (v?.ToString() is { Length: > 0 } s) checks.Add(s);
-        }
+            using var results = searcher.FindAll();
+            foreach (SearchResult r in results)
+            {
+                foreach (var a in attributes)
+                    if (r.Properties.Contains(a))
+                        foreach (var v in r.Properties[a])
+                            if (v?.ToString() is { Length: > 0 } s) into.Add(s);
+                if (check is not null && r.Properties.Contains(check))
+                    foreach (var v in r.Properties[check])
+                        if (v?.ToString() is { Length: > 0 } s) checks.Add(s);
+            }
+        });
         return checks;
     }
 

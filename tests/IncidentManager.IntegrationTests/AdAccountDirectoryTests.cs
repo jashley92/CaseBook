@@ -15,9 +15,11 @@ public sealed class AdAccountDirectoryTests
     private readonly ManualTime _time = new();
     private int _listings;
 
-    private AdAccountDirectory Directory(Func<string, DirectoryLookup>? answer = null, Func<IEnumerable<string>>? trusted = null) =>
+    // trusted is given the action each directory search is run through (BUG-498).
+    private AdAccountDirectory Directory(Func<string, DirectoryLookup>? answer = null,
+        Func<Action<Action>, IEnumerable<string>>? trusted = null) =>
         new(query: n => { lock (_asked) _asked.Add(n); return (answer ?? (_ => DirectoryLookup.NotFound))(n); },
-            trustedDomains: trusted ?? (() => { _listings++; return ["CORP", "corp.example.com", "PARTNER", "partner.example."]; }),
+            trustedDomains: trusted ?? (_ => { _listings++; return ["CORP", "corp.example.com", "PARTNER", "partner.example."]; }),
             time: _time);
 
     [Theory]
@@ -63,7 +65,7 @@ public sealed class AdAccountDirectoryTests
         await directory.LookupAsync("EVIL\\c");
         _listings.Should().Be(1);
 
-        var broken = Directory(trusted: () => throw new InvalidOperationException("no DC"));
+        var broken = Directory(trusted: _ => throw new InvalidOperationException("no DC"));
         var result = await broken.LookupAsync("CORP\\jdoe");
         result.Outcome.Should().Be(DirectoryLookupOutcome.Unavailable, "unknown, not 'not looked up' and never 'not found'");
         _asked.Should().Equal("CORP\\a", "PARTNER\\b");
@@ -118,7 +120,7 @@ public sealed class AdAccountDirectoryTests
         using var release = new ManualResetEventSlim();
         var time = new ManualTime { FastTimers = true };   // the 10 s timeout passes in a moment
         var listings = 0;
-        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: () =>
+        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: _ =>
         {
             if (Interlocked.Increment(ref listings) == 1) release.Wait(TimeSpan.FromSeconds(30));   // the DC hangs
             return ["CORP"];
@@ -137,10 +139,14 @@ public sealed class AdAccountDirectoryTests
     [Fact]
     public async Task A_listing_that_ran_into_the_search_time_limit_isnt_kept(/* BUG-470 */)
     {
-        var directory = Directory(trusted: () =>
+        var directory = Directory(trusted: search =>
         {
-            // The search stops at its limit with what it had so far, and no error.
-            if (++_listings == 1) _time.Now += AdAccountDirectory.Timeout;
+            if (++_listings == 1)
+            {
+                search(() => _time.Now += TimeSpan.FromSeconds(1));
+                // The second search stops at its limit with what it had so far, and no error.
+                search(() => _time.Now += AdAccountDirectory.Timeout);
+            }
             return ["CORP"];
         });
 
@@ -155,12 +161,90 @@ public sealed class AdAccountDirectoryTests
     }
 
     [Fact]
+    public async Task A_slow_listing_whose_searches_each_finished_in_time_is_kept(/* BUG-498 */)
+    {
+        var directory = Directory(trusted: search =>
+        {
+            _listings++;
+            _time.Now += TimeSpan.FromSeconds(5);   // the RootDSE bind
+            search(() => _time.Now += TimeSpan.FromSeconds(7));
+            search(() => _time.Now += TimeSpan.FromSeconds(7));
+            return ["CORP"];
+        });
+
+        (await directory.LookupAsync("CORP\\a")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound,
+            "19 s in all, but neither search ran into its own 10 s limit, so the list is complete");
+        _time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
+        (await directory.LookupAsync("CORP\\b")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound);
+        _asked.Should().Equal("CORP\\a", "CORP\\b");
+        _listings.Should().Be(1, "the list is kept for an hour");
+    }
+
+    [Fact]
+    public async Task A_listing_given_up_on_that_comes_back_complete_is_kept(/* BUG-498 */)
+    {
+        using var release = new ManualResetEventSlim();
+        var time = new ManualTime { FastTimers = true };
+        var listings = 0;
+        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: search =>
+        {
+            Interlocked.Increment(ref listings);
+            search(() => time.Now += TimeSpan.FromSeconds(8));
+            search(() => { time.Now += TimeSpan.FromSeconds(8); release.Wait(TimeSpan.FromSeconds(30)); });
+            return ["CORP"];
+        });
+
+        (await directory.LookupAsync("CORP\\a")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable, "the caller stopped waiting");
+        release.Set();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        DirectoryLookup again;
+        do { again = await directory.LookupAsync("CORP\\b"); await Task.Delay(20); }
+        while (again.Outcome != DirectoryLookupOutcome.NotFound && DateTime.UtcNow < deadline);
+        again.Outcome.Should().Be(DirectoryLookupOutcome.NotFound, "the late list was complete, so it's kept");
+        listings.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_listing_given_up_on_doesnt_record_its_list_after_a_newer_one_started(/* BUG-457/498 */)
+    {
+        using var release = new ManualResetEventSlim();
+        using var returned = new ManualResetEventSlim();
+        var time = new ManualTime { FastTimers = true };
+        var listings = 0;
+        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: search =>
+        {
+            var n = Interlocked.Increment(ref listings);
+            if (n == 2) throw new InvalidOperationException("no DC");
+            if (n == 1)
+            {
+                release.Wait(TimeSpan.FromSeconds(30));   // the RootDSE bind hangs, then answers
+                search(() => { });
+                returned.Set();
+            }
+            return ["CORP"];
+        });
+
+        (await directory.LookupAsync("CORP\\a")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable);
+        time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
+        (await directory.LookupAsync("CORP\\b")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable, "the newer listing failed");
+
+        release.Set();
+        returned.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        await Task.Delay(200);   // the first listing records (or not) as it ends
+        (await directory.LookupAsync("CORP\\c")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable,
+            "the newer listing's back-off stands");
+        time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
+        (await directory.LookupAsync("CORP\\d")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound);
+        listings.Should().Be(3, "the domains were listed afresh");
+    }
+
+    [Fact]
     public async Task A_hung_domain_controller_isnt_probed_without_end_and_other_domains_are_still_asked(/* BUG-471 */)
     {
         using var release = new ManualResetEventSlim();
         var time = new ManualTime { FastTimers = true };
         var corp = 0;
-        var directory = new AdAccountDirectory(time: time, trustedDomains: () => ["CORP", "PARTNER"], query: n =>
+        var directory = new AdAccountDirectory(time: time, trustedDomains: _ => ["CORP", "PARTNER"], query: n =>
         {
             if (!n.StartsWith("CORP", StringComparison.Ordinal)) return DirectoryLookup.NotFound;
             Interlocked.Increment(ref corp);
@@ -193,7 +277,7 @@ public sealed class AdAccountDirectoryTests
         using var release = new ManualResetEventSlim();
         var time = new ManualTime { FastTimers = true };
         var listings = 0;
-        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: () =>
+        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: _ =>
         {
             Interlocked.Increment(ref listings);
             release.Wait(TimeSpan.FromSeconds(30));
@@ -214,6 +298,8 @@ public sealed class AdAccountDirectoryTests
         public DateTimeOffset Now { get; set; } = new(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);
         public bool FastTimers { get; init; }
         public override DateTimeOffset GetUtcNow() => Now;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Now.UtcTicks;   // elapsed time follows Now
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
             base.CreateTimer(callback, state, FastTimers && dueTime > TimeSpan.Zero ? TimeSpan.FromMilliseconds(50) : dueTime, period);

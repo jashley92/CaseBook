@@ -65,8 +65,9 @@ flowchart LR
   `COMPUTER\sam`), is shown as *Not looked up*: nothing is sent anywhere, so an indicator naming an attacker's domain
   can't make the server contact it. A domain that failed or timed out isn't asked again for a minute (BUG-420); one
   whose lookups timed out and are still blocked isn't asked again until they return, and other domains are still
-  asked (BUG-471). A domain listing that runs into its 10-second search limit may be incomplete, so it's treated as a
-  failure and retried after a minute, not kept (BUG-470). An
+  asked (BUG-471). A domain listing in which either of its two searches runs into its 10-second limit may be
+  incomplete, so it's treated as a failure and retried after a minute, not kept (BUG-470); a slow listing whose
+  searches each finished in time is kept, even when it comes back after the lookup stopped waiting (BUG-498). An
   add looks up at most 50 accounts within 15 seconds in all (an import shares one allowance), stops at the first
   unavailable answer, and keeps what it took so far; an unreachable directory keeps nothing and the add is saved
   either way. A snapshot is shown as the account's details only when it was taken for the value the entity has now;
