@@ -329,6 +329,35 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_case_filed_after_the_quarter_with_its_detection_corrected_into_it_counts_there(/* BUG-499 follow-up */)
+    {
+        // Filed on 2 Jul (Q3) with the detected time defaulted to then, and corrected the next day to 29 Jun (Q2).
+        _clock.UtcNow = Apr(2).AddMonths(3);
+        Guid id;
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var e = Case.Open(2026, 9, "D", "Late filing", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", _clock.UtcNow);
+            e.DetectedAtUtc = _clock.UtcNow;
+            e.OccurredAtUtc = Apr(28).AddMonths(2);
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+            id = e.Id;
+        }
+        _clock.UtcNow = Apr(3).AddMonths(3);
+        await using (var db = new AppDbContext(Options()))
+        {
+            var e = await db.Cases.SingleAsync(c => c.Id == id);
+            e.DetectedAtUtc = Apr(29).AddMonths(2);
+            await db.SaveChangesAsync();
+        }
+
+        var q2 = (await Service().BuildAsync(Q2)).Current;
+        q2.TimeToDetect.Count.Should().Be(1, "detected on 29 Jun, in Q2, as corrected");
+        (await Service().BuildAsync(new ProgramPeriod(2026, 3))).Current.TimeToDetect.Count.Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_review_recorded_after_the_quarter_does_not_change_it(/* REV-59 */)
     {
         await SeedAsync();

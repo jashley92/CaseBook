@@ -1065,9 +1065,10 @@
     }
 
     // WF-68: a time left as shown keeps its recorded instant; converting it back would read a time in the repeated autumn
-    // hour as standard time and move it an hour (and every deadline that runs from it).
+    // hour as standard time and move it an hour (and every deadline that runs from it). BUG-503 follow-up: compared at the
+    // minute the field shows, so a time typed back to it (which comes back without its seconds) is kept too.
     private DateTimeOffset? Kept(DateTime? edited, DateTime? shown, DateTimeOffset? recorded) =>
-        edited is null ? null : edited == shown && recorded is not null ? recorded : WallToUtc(edited.Value);
+        edited is null ? null : CaseTimelineTab.KeptOrTypedUtc(edited.Value, shown, recorded, TimeDisp.Zone);
 
     private async Task SaveDetails()
     {

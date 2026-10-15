@@ -692,6 +692,9 @@ else
     // never updates: that brought a closed panel and a consumed ?entry= or ?note= back on a refresh and through the tab strip.
     private async Task SyncTabUrl()
     {
+        // A workspace already left (a load or live change still finishing after Back or a sidebar link) mustn't write its
+        // case's address over the page now showing.
+        if (_disposed) return;
         try
         {
             var url = CaseViews.Url(Id, _activeTab, _panelEvidence);

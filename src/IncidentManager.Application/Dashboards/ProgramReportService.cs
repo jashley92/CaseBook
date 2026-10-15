@@ -183,6 +183,9 @@ public sealed class ProgramReportService
         public Stamps StampsAt(CaseRow r, DateTimeOffset end)
         {
             var now = r.Stamps;
+            // A case filed after the end had no record at the end to rebuild; its times today place it, as before BUG-499
+            // (a detected time filed as "now" and corrected back into the window still counts there).
+            if (r.CreatedAtUtc >= end) return now;
             if (StampEdits?.GetValueOrDefault(r.Id) is not { Count: > 0 } edits) return now;
             var i = edits.FindIndex(e => e.At >= end);
             if (i < 0) return now;

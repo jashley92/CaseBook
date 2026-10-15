@@ -2873,6 +2873,13 @@ else
         // BUG-510: the Working notes lens hides every entry too.
         if (_notesOnly || !(_tlLens is null && !_keyOnly) || FiltersActive || ChangedSinceUtc is not null)
         {
+            // Switching lens ends an entry edit (SwitchLens cancels it), so a jump from a panel ("Cited by") or the minimap
+            // asks first rather than throwing the typed edit away.
+            if (_tlEditId is not null)
+            {
+                Toasts.Info("Save or cancel the entry you're editing, then try again.");
+                return;
+            }
             await SwitchLens(null);
             if (ChangedSinceUtc is not null) await OnClearSince.InvokeAsync();
         }
