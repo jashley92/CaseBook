@@ -110,6 +110,32 @@ public sealed class FindServiceTests : IDisposable
     }
 
     [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_closing_brief_is_found_and_quoted_as_it_stood_at_closure_in_plain_text(string provider /* BUG-527 */)
+    {
+        Use(provider);
+        Guid deltaId;
+        using (var db = NewContext())
+        {
+            var d = Case.Open(2025, 40, "Proxy_Drift", "Proxy drift", Classification.AdverseEvent, Severity.Low, CaseOrigin.InternalDetection, "lee", H(-760));
+            d.ReviseBrief("Proxy drift", "The **egress** change was _benign_.", null, null, null, "lee", H(-700));
+            d.ChangePhase(CasePhase.Closed, "done", "lee", H(-700), outcomeKey: "benign");
+            d.ReviseBrief("Proxy drift", "Later wording: rotated keys.", null, null, null, "lee", H(-600));   // after closure
+            db.Cases.Add(d);
+            db.SaveChanges();
+            deltaId = d.Id;
+        }
+
+        var r = await NewFind().FindAsync("egress benign");
+        r.Entries.Should().ContainSingle(e => e.IsClosingBrief && e.CaseId == deltaId)
+            .Which.Text.Should().Be("The egress change was benign.");
+        (await NewFind().FindAsync("status:closed")).Cases.Should().ContainSingle(c => c.Id == deltaId)
+            .Which.ClosingLine.Should().Be("The egress change was benign.");
+
+        // The revision made since isn't the conclusion, so it isn't found as one.
+        (await NewFind().FindAsync("rotated keys")).Entries.Should().NotContain(e => e.IsClosingBrief && e.CaseId == deltaId);
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
     public async Task Plain_question_filters_narrow_the_record_and_are_said_back(string provider)
     {
         Use(provider);

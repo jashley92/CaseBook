@@ -390,8 +390,10 @@ public sealed class FindService
             var briefs = new List<FindEntry>();
             if (q.EntryKind is null && q.EntryType is null && by is null && readAs is FindReadAs.Indicator or FindReadAs.Words)
             {
-                var bq = db.CaseBriefs.AsNoTracking().Where(b => b.IsCurrent && b.WorkingAssessment != null
-                    && cases.Where(c => c.Phase == CasePhase.Closed && c.OutcomeKey != null).Select(c => c.Id).Contains(b.CaseId));
+                // BUG-527: the brief as it stood at the latest close (the BUG-310 rule), not a revision made since.
+                var closingIds = await ClosingBriefIdsAsync(db,
+                    await cases.Where(c => c.Phase == CasePhase.Closed && c.OutcomeKey != null).Select(c => c.Id).ToListAsync(ct), ct);
+                var bq = db.CaseBriefs.AsNoTracking().Where(b => closingIds.Contains(b.Id) && b.WorkingAssessment != null);
 #pragma warning disable CA1304, CA1311, CA1862
                 var taggedBriefs = await TaggingAsync(bq, r => b => b.WorkingAssessment!.Contains(r) || (b.Summary != null && b.Summary.Contains(r)),
                     b => b.Id, tagRefs, ct);
@@ -414,7 +416,7 @@ public sealed class FindService
                 briefs = brows
                     .Where(b => (from is null || (b.ClosedAtUtc ?? b.CreatedAtUtc) >= from) && (to is null || (b.ClosedAtUtc ?? b.CreatedAtUtc) < to))
                     .Select(b => new FindEntry(b.Id, b.CaseId, b.CaseNumber, TimelineKind.Investigation, null, true,
-                        b.ClosedAtUtc ?? b.CreatedAtUtc, Clip(b.WorkingAssessment!), null)).ToList();
+                        b.ClosedAtUtc ?? b.CreatedAtUtc, Clip(Content.RichText.ToText(b.WorkingAssessment)), null)).ToList();   // BUG-527: plain, like entries
             }
             counts[FindKind.Entries] = entryCount + briefs.Count;
             entries = briefs.Concat(entries).OrderByDescending(e => e.AtUtc).Take(limit).ToList();
@@ -666,12 +668,30 @@ public sealed class FindService
         foreach (var id in ids)
         {
             var close = closes.Where(s => s.CaseId == id).MaxBy(s => s.ChangedAtUtc);
+            // BUG-527: the brief is Markdown, quoted as plain text like Find's entries; the close reason is already plain.
             var line = (close is null ? null
-                           : briefs.Where(b => b.CaseId == id && b.CreatedAtUtc <= close.ChangedAtUtc).MaxBy(b => b.Version)?.WorkingAssessment)
+                           : briefs.Where(b => b.CaseId == id && b.CreatedAtUtc <= close.ChangedAtUtc).MaxBy(b => b.Version)?.WorkingAssessment
+                               is { } wa ? Content.RichText.ToText(wa) : null)
                        ?? close?.Reason;
             if (!string.IsNullOrWhiteSpace(line)) lines[id] = TaskResults.Excerpt(line, 220);
         }
         return lines;
+    }
+
+    /// <summary>
+    /// BUG-527: the id of each case's closing brief, the version current at its latest close (the
+    /// <see cref="Case.ClosingBrief"/> rule). <paramref name="ids"/> are closed cases with an outcome.
+    /// </summary>
+    private static async Task<List<Guid>> ClosingBriefIdsAsync(IAppDbContext db, List<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        var briefs = await db.CaseBriefs.AsNoTracking().Where(b => ids.Contains(b.CaseId))
+            .Select(b => new { b.Id, b.CaseId, b.Version, b.CreatedAtUtc }).ToListAsync(ct);
+        var closes = await db.StatusChanges.AsNoTracking().Where(s => ids.Contains(s.CaseId) && s.To == CasePhase.Closed)
+            .Select(s => new { s.CaseId, s.ChangedAtUtc }).ToListAsync(ct);
+        return closes.GroupBy(s => s.CaseId)
+            .Select(g => briefs.Where(b => b.CaseId == g.Key && b.CreatedAtUtc <= g.Max(s => s.ChangedAtUtc)).MaxBy(b => b.Version)?.Id)
+            .OfType<Guid>().ToList();
     }
 
     private static string Clip(string s) => TaskResults.Excerpt(string.Join(' ', s.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)), 260);
