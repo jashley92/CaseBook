@@ -181,7 +181,8 @@ else
                     <td>@AuditLabels.Label(a.Action)</td>
                     <td>@AuditLabels.Entity(a.EntityType)</td>
                     <td class="small">@a.CaseNumber</td>
-                    <td><code class="small">@a.EntryHash[..12]…</code></td>
+                    @* BUG-573: a tampered row's hash can be shorter; the page that shows the break mustn't throw on it. *@
+                    <td><code class="small">@(a.EntryHash is { Length: > 12 } h ? h[..12] + "…" : a.EntryHash)</code></td>
                 </tr>
             }
         </tbody>
