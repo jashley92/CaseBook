@@ -2528,6 +2528,13 @@ else
             _tlAddKind = TimelineKind.Investigation;
             _composerOpen = true;
         }
+        // BUG-510: "changes since" asked for while on the Working notes lens (which has no such filter) shows the timeline.
+        // Before OpenNotes, so a link to a note that arrives with it still opens the note.
+        if (ChangedSinceUtc != _appliedSince)
+        {
+            _appliedSince = ChangedSinceUtc;
+            if (ChangedSinceUtc is not null && _notesOnly && !NoteEditKeepsNotes()) _notesOnly = false;
+        }
         if (OpenNotes && !_notesOnly)
         {
             _ = OpenNotesNow();
@@ -2537,7 +2544,8 @@ else
             _appliedPreset = PresetEntityFilter;
             if (PresetEntityFilter is { } en)
             {
-                _decOnly = false; _keyOnly = false; _tlLens = null; _tlFilterEntity = en;
+                // BUG-510: off the Working notes lens too, which hid the filtered timeline (and later threw the filter away).
+                if (!NoteEditKeepsNotes()) { _decOnly = false; _keyOnly = false; _notesOnly = false; _tlLens = null; _tlFilterEntity = en; }
                 _ = OnPresetHandled.InvokeAsync();   // REV-38: applied once; it isn't applied again on the next visit
             }
         }
@@ -2559,9 +2567,13 @@ else
         StateHasChanged();
     }
 
+    /// <summary>BUG-510: brings an entry into view whatever lens or filter is on (Working notes included).</summary>
+    public Task ShowEntryAsync(Guid entryId) => FocusEntryNow(entryId);
+
     // --- INV-04: show only what changed since the viewer last had the case open (set by the workspace) ---
     [Parameter] public DateTimeOffset? ChangedSinceUtc { get; set; }
     [Parameter] public EventCallback OnClearSince { get; set; }
+    private DateTimeOffset? _appliedSince;
 
     // --- INV-05b: correcting when a transition happened ---
     [Parameter] public bool CanChangeClassification { get; set; }
@@ -2739,6 +2751,15 @@ else
     private IReadOnlySet<string> PromotedSources =>
         Case.TimelineEntries.Where(e => e.IsCurrent && e.PromotedFrom is not null).Select(e => e.PromotedFrom!).ToHashSet();
 
+    // BUG-510: leaving the Working notes lens unmounts its list, and a note being edited in place there would be lost, so
+    // a jump or filter asked for from elsewhere says so instead of switching.
+    private bool NoteEditKeepsNotes()
+    {
+        if (!_notesOnly || _notesList is not { IsEditing: true }) return false;
+        Toasts.Info("Save or cancel the working note you're editing, then try again.");
+        return true;
+    }
+
     private async Task SwitchToNotes()
     {
         await SwitchLens(null);
@@ -2841,7 +2862,9 @@ else
     // A minimap mark brings its entry into view on Everything (so a lens or filter can't hide it).
     private async Task JumpTo(string key)
     {
-        if (!(_tlLens is null && !_keyOnly) || FiltersActive || ChangedSinceUtc is not null)
+        if (NoteEditKeepsNotes()) return;
+        // BUG-510: the Working notes lens hides every entry too.
+        if (_notesOnly || !(_tlLens is null && !_keyOnly) || FiltersActive || ChangedSinceUtc is not null)
         {
             await SwitchLens(null);
             if (ChangedSinceUtc is not null) await OnClearSince.InvokeAsync();
