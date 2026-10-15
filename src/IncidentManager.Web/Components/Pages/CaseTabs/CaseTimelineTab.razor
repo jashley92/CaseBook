@@ -1925,7 +1925,7 @@ else
         _evtTargetId = e.TargetEntityId?.ToString() ?? "";
         _actorPrev = _evtActorId; _targetPrev = _evtTargetId;
         _evtTechnique = e.TechniqueId ?? "";
-        _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
+        _evtTactic = e.Tactics.Select(t => t.Tactic).OrderBy(Ui.TacticRank).FirstOrDefault();   // BUG-507: the first chip shown
         _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
         _tlPrecision = e.OccurredPrecision ?? TimePrecision.Exact;
         _tlEditPrecision = _tlPrecision;

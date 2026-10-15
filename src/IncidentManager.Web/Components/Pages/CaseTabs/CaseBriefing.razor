@@ -356,12 +356,18 @@
 
     private string? Summary() => Case.Briefs.FirstOrDefault(x => x.IsCurrent)?.Summary is { Length: > 0 } s ? s : Case.Summary;
 
-    // The adversary's tactics in the order the attack chain records them, without immediate repeats.
-    private List<MitreTactic> Chain()
+    private List<MitreTactic> Chain() => ChainOf(Case.TimelineEntries);
+
+    /// <summary>
+    /// The adversary's tactics in the order the attack chain records them, without immediate repeats. BUG-507: a step's
+    /// own tactics in ATT&amp;CK matrix order, as the timeline shows them; database order made the chain disagree with it
+    /// and the repeat-collapse vary.
+    /// </summary>
+    public static List<MitreTactic> ChainOf(IEnumerable<TimelineEntry> entries)
     {
         var list = new List<MitreTactic>();
-        foreach (var step in Case.TimelineEntries.Where(e => e.IsCurrent && e.Kind == TimelineKind.Event).InTimelineOrder())
-            foreach (var t in step.Tactics.Select(t => t.Tactic).Where(t => t != MitreTactic.Unspecified))
+        foreach (var step in entries.Where(e => e.IsCurrent && e.Kind == TimelineKind.Event).InTimelineOrder())
+            foreach (var t in step.Tactics.Select(t => t.Tactic).Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
                 if (list.Count == 0 || list[^1] != t) list.Add(t);
         return list;
     }
