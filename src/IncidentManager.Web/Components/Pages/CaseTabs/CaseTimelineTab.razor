@@ -2454,8 +2454,21 @@ else
 
     // BUG-477 (WF-68): an edited entry's time left as shown keeps its recorded instant. Converting it back read a time in
     // the repeated autumn hour as standard time, so editing only the description moved the entry an hour later.
-    private DateTimeOffset KeptWhenUtc() =>
-        _tlEditId is not null && _tlWhen == _tlWhenShown && _tlWhenRecorded is { } recorded ? recorded : WallToUtc(_tlWhen);
+    private DateTimeOffset KeptWhenUtc() => _tlEditId is not null
+        ? KeptOrTypedUtc(_tlWhen, _tlWhenShown, _tlWhenRecorded, TimeDisp.Zone)
+        : WallToUtc(_tlWhen);
+
+    /// <summary>
+    /// BUG-477 (WF-68): the instant to save for a wall time seeded from a recorded one: the recorded instant when the time
+    /// is left as shown, else the typed time. BUG-503: compared at the minute the field shows, since the seeded time keeps
+    /// its seconds but one typed back comes back with none.
+    /// </summary>
+    public static DateTimeOffset KeptOrTypedUtc(DateTime typed, DateTime? shown, DateTimeOffset? recorded, TimeZoneInfo zone) =>
+        shown is { } s && recorded is { } kept && ToMinute(typed) == ToMinute(s)
+            ? kept
+            : IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(typed, zone);
+
+    private static DateTime ToMinute(DateTime t) => new(t.Ticks - t.Ticks % TimeSpan.TicksPerMinute, t.Kind);
 
     // The arrows show where they can do something: on a step that shares its time with a neighbour, or where either
     // neighbour has no stated time.
@@ -2576,7 +2589,7 @@ else
     private void CancelCorrection() { _corr = null; _corrError = null; }
 
     // BUG-477 sibling (WF-68): a time left as shown is the transition's own instant, not its standard-time reading.
-    private DateTimeOffset CorrectedUtc(CaseMilestone m, DateTime w) => w == UtcToWall(m.AtUtc) ? m.AtUtc : WallToUtc(w);
+    private DateTimeOffset CorrectedUtc(CaseMilestone m, DateTime w) => KeptOrTypedUtc(w, UtcToWall(m.AtUtc), m.AtUtc, TimeDisp.Zone);   // BUG-503
 
     // --- BUG-413: retract an entry ---
     private TimelineEntry? _retract;

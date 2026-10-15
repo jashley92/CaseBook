@@ -90,8 +90,8 @@
         try
         {
             // BUG-477 (WF-68): a time left as shown keeps the instant it was written; converting it back would read a
-            // time in the repeated autumn hour as standard time, an hour later.
-            var when = _when == _whenShown ? _whenRecorded : WallToUtc(_when);
+            // time in the repeated autumn hour as standard time, an hour later. BUG-503: compared at the minute shown.
+            var when = IncidentManager.Web.Components.Pages.CaseTabs.CaseTimelineTab.KeptOrTypedUtc(_when, _whenShown, _whenRecorded, TimeDisp.Zone);
             await Cases.PromoteToTimelineAsync(CaseId, SourceRef, _type, when, _text);
             Toasts.Success("Added to the timeline");
             await OnDone.InvokeAsync();
