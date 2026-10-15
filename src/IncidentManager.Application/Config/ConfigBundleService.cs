@@ -147,7 +147,9 @@ public sealed partial class ConfigBundleService
 
         var json = JsonSerializer.Serialize(envelope, ConfigBundleJson.File);
         var bytes = Encoding.UTF8.GetBytes(json);
-        var fileName = $"casebook-config-{_clock.UtcNow.UtcDateTime:yyyyMMdd-HHmmss}.json";
+        // BUG-531: a download name with Gregorian digits whatever the server culture.
+        var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"casebook-config-{_clock.UtcNow.UtcDateTime:yyyyMMdd-HHmmss}.json");
 
         await _audit.RecordAsync(AuditAction.Export, "ConfigBundle", null, null,
             $"Exported configuration bundle ({bundle.Settings.Count} settings, {bundle.Roles.Count} roles, " +

@@ -103,6 +103,29 @@ public sealed class ComplianceBundleTests : IDisposable
     }
 
     [Fact]
+    public async Task The_bundle_name_and_its_audit_line_use_the_gregorian_calendar_on_any_culture(/* BUG-531 */)
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var from = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = new DateTimeOffset(2026, 12, 31, 23, 59, 59, TimeSpan.Zero);
+
+        var was = System.Globalization.CultureInfo.CurrentCulture;
+        ComplianceBundle bundle;
+        try
+        {
+            // th-TH counts years in the Buddhist era (2026 is 2569).
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("th-TH");
+            bundle = await NewBundleService(db).BuildAsync(from, to);
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = was; }
+
+        bundle.FileName.Should().Be("compliance-bundle-20260101-20261231.zip");
+        (await db.AuditLog.OrderByDescending(a => a.Sequence).FirstAsync()).Summary
+            .Should().StartWith("Generated compliance evidence bundle covering 2026-01-01..2026-12-31 (");
+    }
+
+    [Fact]
     public async Task Empty_range_yields_a_bundle_with_no_segment_entries()
     {
         await using var db = NewContext();

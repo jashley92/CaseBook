@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
@@ -128,12 +129,14 @@ public sealed class ComplianceBundleService
                 .OrderBy(a => a.Sequence).AsEnumerable()
             : [];
         await Task.Run(() => ComplianceBundlePack.Zip(model, output, segment), ct);
-        var fileName = $"compliance-bundle-{fromUtc.UtcDateTime:yyyyMMdd}-{toUtc.UtcDateTime:yyyyMMdd}.zip";
+        // BUG-531: the name and the audit summary are saved text; Gregorian digits whatever the server culture.
+        var inv = CultureInfo.InvariantCulture;
+        var fileName = string.Create(inv, $"compliance-bundle-{fromUtc.UtcDateTime:yyyyMMdd}-{toUtc.UtcDateTime:yyyyMMdd}.zip");
 
         // Recorded after building so the bundle never references its own export line.
         await _audit.RecordAsync(AuditAction.Export, nameof(ComplianceBundle), null, null,
-            $"Generated compliance evidence bundle covering " +
-            $"{fromUtc.UtcDateTime:yyyy-MM-dd}..{toUtc.UtcDateTime:yyyy-MM-dd} ({inRange} entries)", ct);
+            string.Create(inv, $"Generated compliance evidence bundle covering " +
+                $"{fromUtc.UtcDateTime:yyyy-MM-dd}..{toUtc.UtcDateTime:yyyy-MM-dd} ({inRange} entries)"), ct);
 
         return (fileName, model);
     }

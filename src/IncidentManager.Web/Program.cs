@@ -664,7 +664,8 @@ app.MapGet("/export/metrics.csv", async (
     var withExercises = string.Equals(exercises, "true", StringComparison.OrdinalIgnoreCase);
     var metrics = await dashboard.GetAsync(withExercises, ct);
     var csv = IncidentManager.Application.Dashboards.MetricsCsv.Build(metrics, clock.UtcNow, withExercises);
-    var fileName = $"incident-metrics-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    // BUG-531: download names carry Gregorian digits whatever the server culture (here and the exports below).
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"incident-metrics-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
@@ -678,7 +679,7 @@ app.MapGet("/export/legal-register.csv", async (
 {
     var rows = await register.BuildAsync(ct);
     var csv = IncidentManager.Application.Compliance.LegalRegisterService.ToCsv(rows, clock.UtcNow);
-    var fileName = $"legal-obligations-register-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"legal-obligations-register-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
@@ -717,7 +718,7 @@ app.MapGet("/export/improvement-actions.csv", async (
             ? s : IncidentManager.Application.Lessons.RegisterScope.Open,
         null, exercises ?? false);
     var csv = await lessons.ExportRegisterCsvAsync(filter, ct);
-    var fileName = $"improvement-actions-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"improvement-actions-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
@@ -732,7 +733,7 @@ app.MapGet("/export/iocs.csv", async (
 {
     var rows = await feed.GetMaliciousIocsAsync(ct);
     var csv = IncidentManager.Application.Export.IocFeedCsv.Build(rows, clock.UtcNow);
-    var fileName = $"malicious-iocs-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"malicious-iocs-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);   // no BOM: machines read it (BUG-168)
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
@@ -768,7 +769,7 @@ app.MapGet("/export/case-audit.csv", async (
     var csv = IncidentManager.Application.Integrity.AuditCsv.Build(rows.Take(ExportRowLimit).ToList(), clock.UtcNow, @case,
         rows.Count > ExportRowLimit ? ExportRowLimit : null);
     var safe = @case.Replace('/', '-').Replace('\\', '-');
-    var fileName = $"case-audit-{safe}-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"case-audit-{safe}-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     // BUG-155: logged against the case, so the access log's case and "restricted only" filters find it.
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, await cases.FindIdByNumberAsync(@case, ct),
         fileName, null, ct);
@@ -799,7 +800,7 @@ app.MapGet("/export/access-log.csv", async (
     var rows = await access.QueryAsync(filter, take: ExportRowLimit + 1, ct);   // REV-65
     var csv = IncidentManager.Application.Access.AccessLogCsv.Build(rows.Take(ExportRowLimit).ToList(), clock.UtcNow,
         rows.Count > ExportRowLimit ? ExportRowLimit : null);
-    var fileName = $"access-log-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"access-log-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     // BUG-132: pulling the access log is itself an access, recorded with the slice that was pulled.
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
         IncidentManager.Application.Access.AccessLogCsv.ExportLabel(fileName, filter), null, ct);

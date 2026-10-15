@@ -112,6 +112,24 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_export_name_uses_the_gregorian_calendar_on_any_culture(/* BUG-531 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+
+        var was = System.Globalization.CultureInfo.CurrentCulture;
+        ConfigExport export;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("th-TH");
+            export = await NewService(db).ExportAsync();
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = was; }
+
+        export.FileName.Should().Be("casebook-config-20260908-120000.json", "th-TH would have named it 2569");
+    }
+
+    [Fact]
     public async Task The_signature_verifies_over_the_canonical_bundle()
     {
         await using var db = NewContext();
