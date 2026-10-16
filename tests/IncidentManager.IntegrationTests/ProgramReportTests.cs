@@ -661,6 +661,12 @@ public sealed class ProgramReportTests : IDisposable
         OverviewWindows.TryRange("2019-01-01", "2026-01-01", today, out var tooLong).Should().BeNull();
         tooLong.Should().Be("Pick a range of five years or less.");
 
+        // C12: a typed year-1 range is refused, and the comparison range never runs before the calendar.
+        OverviewWindows.TryRange("0001-01-02", "0001-01-03", today, out var ancient).Should().BeNull();
+        ancient.Should().Be("Pick dates from 1900 on.");
+        OverviewWindows.ForRange(new DateOnly(1, 1, 2), new DateOnly(1, 1, 3), now, TimeZoneInfo.Utc).Previous.StartUtc
+            .Should().Be(new DateTimeOffset(1, 1, 2, 0, 0, 0, TimeSpan.Zero));
+
         OverviewWindows.Parse(null).Should().Be(OverviewPeriod.Last12Months);
         OverviewWindows.Parse("quarter").Should().Be(OverviewPeriod.QuarterToDate);
         OverviewWindows.Key(OverviewPeriod.Last30Days).Should().Be("30d");

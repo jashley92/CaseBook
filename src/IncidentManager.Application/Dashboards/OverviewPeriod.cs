@@ -37,6 +37,9 @@ public sealed record OverviewWindows(ProgramWindow Current, ProgramWindow Previo
     /// <summary>The longest custom range: five years.</summary>
     public const int MaxCustomDays = 5 * 366;
 
+    /// <summary>The earliest year a custom range may start in.</summary>
+    public const int MinRangeYear = 1900;
+
     /// <summary>A custom range from two <c>yyyy-MM-dd</c> dates, or null with why not. A range that runs past
     /// <paramref name="today"/> stops there.</summary>
     public static (DateOnly From, DateOnly To)? TryRange(string? from, string? to, DateOnly today, out string? error)
@@ -47,6 +50,8 @@ public sealed record OverviewWindows(ProgramWindow Current, ProgramWindow Previo
             || !DateOnly.TryParseExact(to, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t))
             error = "Give both dates.";
         else if (f > t) error = "The start date is after the end date.";
+        // C12: a typed year-1 date put the comparison range (and a zone ahead of UTC, the range itself) before the calendar.
+        else if (f.Year < MinRangeYear) error = $"Pick dates from {MinRangeYear} on.";
         else if (f > today) error = "The range starts after today.";
         else if (t > today ? today.DayNumber - f.DayNumber >= MaxCustomDays : t.DayNumber - f.DayNumber >= MaxCustomDays)
             error = "Pick a range of five years or less.";
@@ -60,7 +65,8 @@ public sealed record OverviewWindows(ProgramWindow Current, ProgramWindow Previo
         var start = ZonedDays.StartUtc(from, zone);
         var end = ZonedDays.StartUtc(to.AddDays(1), zone);
         var days = to.DayNumber - from.DayNumber + 1;
-        var previousStart = ZonedDays.StartUtc(from.AddDays(-days), zone);
+        // C12: never before the calendar's second day (a zone ahead of UTC still has a local midnight there).
+        var previousStart = ZonedDays.StartUtc(DateOnly.FromDayNumber(Math.Max(from.DayNumber - days, 1)), zone);
         var previousEnd = start;
         // BUG-561 (as REV-55): a range ending today stops now, so the one before stops at the same point, not a whole day later.
         if (end > now)
