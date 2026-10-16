@@ -381,12 +381,9 @@ public static partial class IocImportConverter
         _ => raw.Trim(),   // passes through; the preview flags an unknown value and defaults it
     };
 
-    /// <summary>Trims a cell and undoes the formula-injection guard our own CSV exports add (a leading ').</summary>
-    private static string Clean(string cell)
-    {
-        var v = cell.Trim();
-        return v.Length > 1 && v[0] == '\'' && "=+-@\t\r".Contains(v[1]) ? v[1..] : v;
-    }
+    /// <summary>Trims a cell and undoes the formula-injection guards our own CSV exports add (a leading ', and BUG-579's
+    /// one after each ';'), through the same <see cref="Csv.Unguard"/> the export's <see cref="Csv.Escape"/> pairs with.</summary>
+    private static string Clean(string cell) => Csv.Unguard(cell.Trim());
 
     /// <summary>RFC-4180 reader: quoted fields, doubled quotes, embedded commas/newlines, CRLF or LF.</summary>
     public static List<List<string>> ParseCsv(string text)

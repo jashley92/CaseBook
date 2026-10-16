@@ -159,6 +159,22 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void A_value_guarded_after_a_semicolon_comes_back_as_it_was(/* BUG-579 */)
+    {
+        // The feed guards each piece after a ';' too (a ';'-separator Excel starts a cell there); a re-import undoes
+        // every guard, not only the leading one, so the value (and its comment) isn't stored with stray apostrophes.
+        var feed = IocFeedCsv.Build(
+            [new IocFeedRow(EntityType.Url, "https://evil.example/a;=b", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, ["2026-01"], ["x;@y"])],
+            DateTimeOffset.UnixEpoch);
+        feed.Should().Contain(";'=b", "the export guards after the ';'");
+
+        var e = IocImportConverter.Convert(feed).Document!.Entities!.Single();
+
+        e.Value.Should().Be("https://evil.example/a;=b");
+        e.Source.Should().Be("x;@y");
+    }
+
+    [Fact]
     public void The_feeds_tlp_column_comes_back_and_a_json_list_is_named(/* BUG-274 */)
     {
         var feed = IocFeedCsv.Build(
