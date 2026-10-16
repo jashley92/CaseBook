@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Admin;
 using IncidentManager.Application.Security;
 using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Enums;
@@ -27,23 +28,33 @@ public static class Ui
     /// unaffected, so a value hidden here still renders through <see cref="Label(Domain.Enums.EntityType)"/>
     /// and friends. Before the taxonomy provider is wired, this is just the enum's values.
     /// </summary>
-    public static IReadOnlyList<TEnum> Options<TEnum>(string kind) where TEnum : struct, Enum
-    {
-        var names = Enum.GetNames<TEnum>();
-        if (_taxonomy is null) return Enum.GetValues<TEnum>();
+    public static IReadOnlyList<TEnum> Options<TEnum>(string kind) where TEnum : struct, Enum => OptionsFrom<TEnum>(kind, _taxonomy);
 
-        var order = _taxonomy.Order(kind);
-        int Rank(string name)
+    /// <summary>
+    /// <see cref="Options{TEnum}"/> from a given provider. C16: only a kind the catalog lets an admin hide and reorder
+    /// (<see cref="TaxonomyKind.AllowVisibilityOrder"/>) is filtered and reordered; for the others (the classification
+    /// ladder, the phases) a hidden or order setting that got into the configuration anyway (appsettings, a hand-edited
+    /// row) is ignored here, as the admin page and the import ignore it, so a pick-list never drops a ladder rung.
+    /// </summary>
+    public static IReadOnlyList<TEnum> OptionsFrom<TEnum>(string kind, ITaxonomyDisplay? taxonomy) where TEnum : struct, Enum
+    {
+        var values = Enum.GetValues<TEnum>();
+        if (taxonomy is null || !TaxonomyCatalog.Kinds.Any(k => k.Id == kind && k.AllowVisibilityOrder)) return values;
+
+        var order = taxonomy.Order(kind);
+        var names = Array.ConvertAll(values, v => v.ToString());
+        int Rank(int at)
         {
             for (var i = 0; i < order.Count; i++)
-                if (order[i] == name) return i;
-            return order.Count + Array.IndexOf(names, name); // unlisted members keep their natural order, after listed ones
+                if (order[i] == names[at]) return i;
+            return order.Count + at; // unlisted members keep their natural order, after listed ones
         }
 
-        return names
-            .Where(n => !_taxonomy.IsHidden(kind, n))
+        // C16: the members themselves, not their names read back into the enum.
+        return Enumerable.Range(0, values.Length)
+            .Where(i => !taxonomy.IsHidden(kind, names[i]))
             .OrderBy(Rank)
-            .Select(Enum.Parse<TEnum>)
+            .Select(i => values[i])
             .ToList();
     }
 

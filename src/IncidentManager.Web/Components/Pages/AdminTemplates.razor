@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Policies.Administer)]
 @layout AdminLayout
 @using IncidentManager.Application.Admin
+@using IncidentManager.Domain.Common
 @using IncidentManager.Domain.Enums
 @inject CaseTemplateService Templates
 @inject ToastService Toasts
@@ -261,13 +262,14 @@ else
     {
         if (_edit is null) return;
 
+        // BUG-592: the select's value by name only (a number or a list isn't one); blank is "no default".
         var input = new TemplateInput(
             _edit.Name,
             _edit.Description,
             _edit.IsActive,
             _edit.SortOrder,
-            string.IsNullOrEmpty(_edit.DefaultClassification) ? null : Enum.Parse<Classification>(_edit.DefaultClassification),
-            string.IsNullOrEmpty(_edit.DefaultSeverity) ? null : Enum.Parse<Severity>(_edit.DefaultSeverity),
+            EnumNames.OrNull<Classification>(_edit.DefaultClassification),
+            EnumNames.OrNull<Severity>(_edit.DefaultSeverity),
             _edit.DefaultDataTypes,
             _edit.SummaryBoilerplate,
             _edit.Steps.Select(s => new TemplateStepInput(s.Title, s.Description, s.OwnerHint, s.DueOffsetHours, s.Kind)).ToList());

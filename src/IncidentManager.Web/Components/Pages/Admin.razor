@@ -5,6 +5,7 @@
 @using IncidentManager.Application.Reporting
 @using IncidentManager.Application.Abstractions
 @using IncidentManager.Application.Branding
+@using IncidentManager.Domain.Common
 @attribute [Authorize(Policy = Policies.Administer)]
 @inject IncidentManager.Web.Siem.SiemTestService SiemTest
 @layout AdminLayout
@@ -943,7 +944,7 @@
     private string DisplayLabel(SettingDefinition def)
     {
         var parts = def.Key.Split(':');
-        return parts is ["Sla", _, .., var sevName] && Enum.TryParse<Severity>(sevName, out var sev)
+        return parts is ["Sla", _, .., var sevName] && EnumNames.TryParse<Severity>(sevName, out var sev)
             ? def.Label.Replace(sev.ToString(), SevLabels.For(sev))
             : def.Label;
     }

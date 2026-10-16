@@ -24,12 +24,7 @@ public partial class EnumParsingTests
     private static readonly Dictionary<string, int> Allowed = new(StringComparer.Ordinal)
     {
         // Wave 2: UI (.razor) files, owned by the UI fixers. Each reads a select or query value.
-        ["IncidentManager.Web/Components/Pages/AccessLogPage.razor"] = 1,
-        ["IncidentManager.Web/Components/Pages/Admin.razor"] = 1,
-        ["IncidentManager.Web/Components/Pages/AdminTemplates.razor"] = 2,
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseAuditTab.razor"] = 1,
-        ["IncidentManager.Web/Components/Pages/ImprovementActionsPage.razor"] = 1,
-        ["IncidentManager.Web/Components/Pages/IndicatorsPage.razor"] = 2,
         // Wave 2: files outside this wave's list (reported). Each reads text the app itself wrote, or startup config.
         ["IncidentManager.Domain/Entities/Role.cs"] = 1,                       // letters only and IsDefined (WF-45)
         ["IncidentManager.Application/Mitre/AttackCatalog.cs"] = 1,            // the embedded ATT&CK catalog
@@ -37,7 +32,6 @@ public partial class EnumParsingTests
         ["IncidentManager.Infrastructure/Security/RsaSealSigner.cs"] = 1,      // the same setting, checked by CertificateLookup first
         ["IncidentManager.Web/Security/CurrentUser.cs"] = 1,                   // permission claims the app issued by name
         ["IncidentManager.Web/Security/PagePolicies.cs"] = 1,                  // [Authorize] policy constants
-        ["IncidentManager.Web/Components/Shared/Ui.cs"] = 1,                   // Enum.GetNames output
     };
 
     [Fact]

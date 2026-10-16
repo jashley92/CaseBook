@@ -5,6 +5,7 @@
    500.17 certification. Read-only here: actions are edited on their case's Lessons learned tab. Exercise
    (tabletop) cases are left out unless asked for. Neutral wording by design; these records are discoverable. *@
 @using IncidentManager.Application.Lessons
+@using IncidentManager.Domain.Common
 @inject LessonsService Lessons
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
@@ -151,7 +152,7 @@
 
     private async Task OnScopeChanged(ChangeEventArgs e)
     {
-        _scope = Enum.TryParse<RegisterScope>(e.Value?.ToString(), out var s) ? s : RegisterScope.Open;
+        _scope = EnumNames.TryParse<RegisterScope>(e.Value?.ToString(), out var s) ? s : RegisterScope.Open;
         await Load();
     }
 

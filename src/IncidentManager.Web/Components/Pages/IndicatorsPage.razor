@@ -5,6 +5,7 @@
    surface instead of a badge buried inside one case. Read-only: entities are edited on their case's IOCs tab.
    A case's IOC table links here by entity id (?entity=…) so the indicator value never rides in a URL. *@
 @using IncidentManager.Application.Intel
+@using IncidentManager.Domain.Common
 @using IncidentManager.Domain.Observables
 @inject IndicatorService Indicators
 @inject TimeDisplay TimeDisp
@@ -239,7 +240,7 @@
         {
             "ioc" => (IndicatorTypeScope.Indicators, (EntityType?)null),
             "all" => (IndicatorTypeScope.AllTypes, null),
-            var k => (IndicatorTypeScope.AllTypes, Enum.TryParse<EntityType>(k, out var t) ? t : (EntityType?)null),
+            var k => (IndicatorTypeScope.AllTypes, EnumNames.OrNull<EntityType>(k)),
         };
         var library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises), ct);
         if (seq == _loadSeq) _library = library;
@@ -261,7 +262,7 @@
 
     private async Task OnVerdictChanged(ChangeEventArgs e)
     {
-        _disposition = Enum.TryParse<EntityDisposition>(e.Value?.ToString(), out var d) ? d : null;
+        _disposition = EnumNames.OrNull<EntityDisposition>(e.Value?.ToString());
         await Load();
     }
 

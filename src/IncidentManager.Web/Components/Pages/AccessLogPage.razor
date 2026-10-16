@@ -4,6 +4,7 @@
 @attribute [Authorize(Policy = Policies.Administer)]
 @implements IDisposable
 @using IncidentManager.Application.Access
+@using IncidentManager.Domain.Common
 @inject IAccessLogService AccessLog
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
@@ -134,7 +135,7 @@ else
     {
         Actor = string.IsNullOrWhiteSpace(_actor) ? null : _actor,
         CaseNumber = string.IsNullOrWhiteSpace(_caseNumber) ? null : _caseNumber.Trim(),
-        AccessType = Enum.TryParse<AccessType>(_type, out var t) ? t : null,
+        AccessType = EnumNames.OrNull<AccessType>(_type),   // BUG-592: a name only
         RestrictedOnly = _restrictedOnly,
         FromUtc = _from is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
         // BUG-463: the end of the day without AddDays(1), which threw for 9999-12-31 (as the CSV export does it).
