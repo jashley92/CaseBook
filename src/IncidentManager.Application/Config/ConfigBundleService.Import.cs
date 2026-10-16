@@ -770,6 +770,7 @@ public sealed partial class ConfigBundleService
         // BUG-390: committed, so the settings reload, the role-cache invalidation and the SIEM events happen whatever fails
         // after this point (the template row put back, the audit line), not only when all of it works.
         var notPlaced = new List<string>();
+        string? reloadError = null;
         try
         {
             // BUG-238: a file that can't be put in place (open, read-only) mustn't stop what follows: the roles, mappings and
@@ -803,7 +804,7 @@ public sealed partial class ConfigBundleService
         {
             // S-18: take effect now (as the settings and roles pages do) rather than at the next restart, and stream each
             // access-affecting change to the SIEM exactly as the per-item pages would, so an import can't hide one.
-            if (changedSettings.Count > 0) _reloader?.Reload();
+            if (changedSettings.Count > 0) reloadError = _reloader?.ReloadAndReport();
             if (changedRoles.Count > 0 || addedMappings.Count > 0) _roles?.Invalidate();
             foreach (var key in changedSettings)
                 _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
@@ -814,7 +815,7 @@ public sealed partial class ConfigBundleService
         }
 
         return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true, notPlaced,
-            changedSettings.Count > 0 ? _reloader?.LastError : null);   // BUG-270
+            reloadError);   // BUG-270; BUG-623: this reload's error, not the last one's
     }
 
     /// <summary>

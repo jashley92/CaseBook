@@ -11,6 +11,16 @@ public interface ISettingsReloader
 
     /// <summary>REV-60: why the last reload couldn't read the in-app settings (the earlier values stay in effect), or null.</summary>
     string? LastError => null;
+
+    /// <summary>
+    /// BUG-623: reloads, and returns why this reload couldn't read the in-app settings (null when it could). A save uses
+    /// this rather than <see cref="Reload"/> then <see cref="LastError"/>, which with two reloads at once can be the other's.
+    /// </summary>
+    string? ReloadAndReport()
+    {
+        Reload();
+        return LastError;
+    }
 }
 
 /// <summary>REV-60 / BUG-270: the one way a save that changed settings says they're saved but not in effect.</summary>
@@ -21,17 +31,14 @@ public static class SettingsReloads
         $"({error}), so the earlier values still apply. Save again once the database is reachable, or restart the app.";
 
     /// <summary>Reloads, then throws <see cref="SettingsNotInEffectException"/> when the reload couldn't read the settings.</summary>
-    public static void ReloadOrThrow(this ISettingsReloader reloader)
-    {
-        reloader.Reload();
-        reloader.ThrowIfNotInEffect();
-    }
+    public static void ReloadOrThrow(this ISettingsReloader reloader) => ThrowIfNotInEffect(reloader.ReloadAndReport());
 
-    /// <summary>BUG-526: throws <see cref="SettingsNotInEffectException"/>, carrying <paramref name="newStamp"/>, when the last
-    /// reload couldn't read the settings.</summary>
-    public static void ThrowIfNotInEffect(this ISettingsReloader reloader, string? newStamp = null)
+    /// <summary>BUG-526: throws <see cref="SettingsNotInEffectException"/>, carrying <paramref name="newStamp"/>, when the
+    /// reload couldn't read the settings. BUG-623: <paramref name="reloadError"/> is what that reload's
+    /// <see cref="ISettingsReloader.ReloadAndReport"/> returned.</summary>
+    public static void ThrowIfNotInEffect(string? reloadError, string? newStamp = null)
     {
-        if (reloader.LastError is { } error) throw new SettingsNotInEffectException(error, newStamp);
+        if (reloadError is { } error) throw new SettingsNotInEffectException(error, newStamp);
     }
 }
 

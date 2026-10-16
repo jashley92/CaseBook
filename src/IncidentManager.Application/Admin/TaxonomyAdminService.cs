@@ -246,17 +246,18 @@ public sealed class TaxonomyAdminService
             }
         }
 
+        string? reloadError = null;
         if (changed)
         {
             // BUG-438: a row this changes or removes went between the read above and this save.
             try { await SaveAsync(db, added, ct); }
             catch (ConcurrentEditException ex) { throw StaleOrder(k, ex); }
-            _reloader.Reload();
+            reloadError = _reloader.ReloadAndReport();
         }
         // The rows as saved (Local leaves out the removed ones), so the page can save again without reloading the card.
         var stamp = StampOf(k, key => db.AppSettings.Local.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))?.Value);
         // BUG-270 / BUG-526: saved but not in effect; the new stamp travels with it, so the page's next save isn't refused as stale.
-        if (changed) _reloader.ThrowIfNotInEffect(stamp);
+        if (changed) SettingsReloads.ThrowIfNotInEffect(reloadError, stamp);
         return stamp;
     }
 

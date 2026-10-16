@@ -42,8 +42,12 @@ public sealed class UserDirectory : IUserDirectory
         Invalidate();
     }
 
+    // C21: a full reload stores its read only if no reload that started later has stored one.
+    private readonly LatestWins _reloads = new();
+
     public void Invalidate()
     {
+        var ticket = _reloads.Begin();
         try
         {
             using var scope = _scopes.CreateScope();
@@ -53,7 +57,7 @@ public sealed class UserDirectory : IUserDirectory
                 u => u.Sid,
                 u => new UserSummary(u.Sid, u.DisplayName, u.UserPrincipalName, u.Email, u.RolesCsv),
                 StringComparer.OrdinalIgnoreCase);
-            lock (_swap) _byId = all;
+            _reloads.TryPublish(ticket, () => { lock (_swap) _byId = all; });
         }
         catch
         {

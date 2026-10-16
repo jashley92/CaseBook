@@ -138,9 +138,9 @@ public sealed class AdminSettingsService
                     "was saved. Reload the page to see their change, then make yours again.", ex);
             throw;
         }
-        _reloader.Reload(); // make the override take effect at runtime, no restart
+        var reloadError = _reloader.ReloadAndReport(); // make the override take effect at runtime, no restart
         _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
-        ThrowIfNotInEffect();
+        ThrowIfNotInEffect(reloadError);
     }
 
     private static string ChangedSinceOpened(SettingDefinition def) =>
@@ -152,7 +152,7 @@ public sealed class AdminSettingsService
     /// so it isn't in effect yet. The page would otherwise show the new value as if it were. BUG-526: as a
     /// <see cref="SettingsNotInEffectException"/>, so the page can tell it from a save that didn't happen.
     /// </summary>
-    private void ThrowIfNotInEffect() => _reloader.ThrowIfNotInEffect();
+    private static void ThrowIfNotInEffect(string? reloadError) => SettingsReloads.ThrowIfNotInEffect(reloadError);
 
     /// <summary>
     /// Removes the DB override for a setting so it reverts to its server-side/catalog default. The
@@ -171,8 +171,8 @@ public sealed class AdminSettingsService
         // BUG-437: another reset (a double click, or another administrator) removed it first; it's reset either way. The
         // context reports the lost delete as a ConcurrentEditException, not EF's own exception.
         catch (ConcurrentEditException) { return; }
-        _reloader.Reload(); // revert to the server-side/default value at runtime
+        var reloadError = _reloader.ReloadAndReport(); // revert to the server-side/default value at runtime
         _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
-        ThrowIfNotInEffect();
+        ThrowIfNotInEffect(reloadError);
     }
 }

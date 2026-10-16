@@ -1,6 +1,7 @@
 using IncidentManager.Application.Admin;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 
 namespace IncidentManager.Infrastructure.Configuration;
@@ -16,15 +17,21 @@ public sealed class DbSettingsConfigurationSource : IConfigurationSource
 {
     private readonly string _provider;
     private readonly string _connectionString;
+    private readonly IInterceptor[] _interceptors;
 
     public DbSettingsConfigurationSource(string provider, string connectionString)
+        : this(provider, connectionString, []) { }
+
+    /// <summary>For tests: the settings read goes through <paramref name="interceptors"/>.</summary>
+    internal DbSettingsConfigurationSource(string provider, string connectionString, IInterceptor[] interceptors)
     {
         _provider = provider;
         _connectionString = connectionString;
+        _interceptors = interceptors;
     }
 
     public IConfigurationProvider Build(IConfigurationBuilder builder) =>
-        new DbSettingsConfigurationProvider(_provider, _connectionString);
+        new DbSettingsConfigurationProvider(_provider, _connectionString, _interceptors);
 }
 
 /// <summary>Reads the operational settings out of the database into the configuration key space.</summary>
@@ -32,12 +39,24 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
 {
     private readonly string _provider;
     private readonly string _connectionString;
+    private readonly IInterceptor[] _interceptors;
 
     public DbSettingsConfigurationProvider(string provider, string connectionString)
+        : this(provider, connectionString, []) { }
+
+    internal DbSettingsConfigurationProvider(string provider, string connectionString, IInterceptor[] interceptors)
     {
         _provider = provider;
         _connectionString = connectionString;
+        _interceptors = interceptors;
     }
+
+    /// <summary>
+    /// BUG-623: every load (the read and the store) runs under this one lock, and so does a reload and the reading of its
+    /// error (<see cref="ConfigurationReloader"/>). Two reloads at once (two saves, or an email template saved outside
+    /// the import gate) could each read, and the one that read first store last, putting back a value just saved.
+    /// </summary>
+    internal static readonly object LoadGate = new();
 
     /// <summary>
     /// S-02: keys found in the AppSettings table that are <b>not</b> in the operational whitelist and were
@@ -48,6 +67,11 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
     public static IReadOnlyCollection<string> RejectedKeys { get; private set; } = Array.Empty<string>();
 
     public override void Load()
+    {
+        lock (LoadGate) LoadCore();
+    }
+
+    private void LoadCore()
     {
         var data = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var rejected = new List<string>();
@@ -117,7 +141,7 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
         }
         catch (Exception ex)
         {
-            LastLoadError = ex.Message;
+            LoadError = ex.Message;
             // BUG-29: a failed Reload() (the database briefly unreachable) keeps the overrides already loaded, rather
             // than reverting every administered setting to its file default until the next successful reload.
             if (_loaded) return;
@@ -128,7 +152,7 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
             return;
         }
 
-        LastLoadError = null;
+        LoadError = null;
         _loaded = true;
         RejectedKeys = rejected;
         Data = data;
@@ -140,8 +164,9 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
     // Whether a load has read the table successfully (after which a failed reload keeps what it read).
     private bool _loaded;
 
-    /// <summary>BUG-29: why the last load failed, or null when it succeeded.</summary>
-    public static string? LastLoadError { get; private set; }
+    /// <summary>BUG-29: why this provider's last load failed, or null when it succeeded. BUG-623: the provider's own (it
+    /// was a static shared by every provider), read under <see cref="LoadGate"/> by the reload that ran the load.</summary>
+    public string? LoadError { get; private set; }
 
     private AppDbContext BuildContext()
     {
@@ -150,6 +175,7 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
             options.UseSqlServer(_connectionString);
         else
             options.UseSqlite(_connectionString);
+        if (_interceptors.Length > 0) options.AddInterceptors(_interceptors);
 
         // No audit interceptor here — this context only reads settings during configuration load.
         return new AppDbContext(options.Options);

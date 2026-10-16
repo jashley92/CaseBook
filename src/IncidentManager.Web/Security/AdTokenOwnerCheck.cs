@@ -3,6 +3,7 @@ using System.DirectoryServices.AccountManagement;
 using System.Runtime.Versioning;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.ApiTokens;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Web.Security;
 
@@ -111,13 +112,21 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
                 // report, a reminder rerouted and marked sent, a token refused. It's AD being unreachable instead.
                 // BUG-609: kept as a partial answer, which a token falls back on when there's no whole one.
                 _log?.LogWarning("Active Directory didn't name all of an account's groups in time when checking an API token's owner.");
-                _partial[ownerUserId] = (named, now);
-                _failedAt[ownerUserId] = now;
+                if (!_order.TryPublish(ownerUserId, pending.Number, () =>
+                    {
+                        _partial[ownerUserId] = (named, now);
+                        _failedAt[ownerUserId] = now;
+                    }))
+                    return Newest(ownerUserId, now, failOpen);
                 return Unreachable(ownerUserId, known, last, now, failOpen);
             }
-            _answers[ownerUserId] = (named, now);
-            _partial.TryRemove(ownerUserId, out _);
-            _failedAt.TryRemove(ownerUserId, out _);
+            if (!_order.TryPublish(ownerUserId, pending.Number, () =>
+                {
+                    _answers[ownerUserId] = (named, now);
+                    _partial.TryRemove(ownerUserId, out _);
+                    _failedAt.TryRemove(ownerUserId, out _);
+                }))
+                return Newest(ownerUserId, now, failOpen);
             return Access(named);
         }
         catch (TimeoutException)
@@ -146,7 +155,7 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     // finishes after its callers stopped waiting only frees its place; its answer isn't kept.
     private Pending Start(string ownerUserId)
     {
-        var pending = new Pending { Domain = DomainOf(ownerUserId) };
+        var pending = new Pending { Domain = DomainOf(ownerUserId), Number = _order.Begin() };
         pending.Lookup = Task.Factory.StartNew(() =>
         {
             try { return _lookup(ownerUserId); }
@@ -174,7 +183,18 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         public bool Done;
         public bool Hung;   // timed out, still blocked
         public string Domain = "";
+        public long Number;   // BUG-628: when it started, against the account's other lookups
     }
+
+    // BUG-628: a lookup's answer is stored only if no lookup for the account that started later has stored one. Naming
+    // the groups comes after the lookup has freed its place, so a newer lookup could answer "disabled" while an older one
+    // was still naming an "enabled" answer's groups, which then landed last: the disabled owner's token kept its roles
+    // for 15 minutes (a day, were AD then unreachable).
+    private readonly LatestWinsByKey<string> _order = new(StringComparer.OrdinalIgnoreCase);
+
+    // BUG-628: what a newer lookup stored (its whole answer, else as with AD unreachable: its partial one).
+    private OwnerAccess? Newest(string ownerUserId, DateTimeOffset now, bool failOpen) =>
+        Unreachable(ownerUserId, _answers.TryGetValue(ownerUserId, out var last), last, now, failOpen);
 
     // The domain QueryDirectory asks: DOMAIN of DOMAIN\sam, else "" (a UPN or SID goes to the server's own domain).
     private static string DomainOf(string ownerUserId)
