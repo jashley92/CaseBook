@@ -19,6 +19,7 @@
 @inject IJSRuntime JS
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Application.Preferences.UserDisplayPreferenceService DisplayPrefs
+@inject UnsavedEdits Edits
 
 @* INV-26: one toolbar row — the lens, the reading controls and "Add" — so the history starts near the top of the
    tab. Filters open in a second row only when asked for (or while one is set); each lens explains itself on hover. *@
@@ -1306,8 +1307,10 @@ else
     // C16: the Decision mode (and the Decisions lens's composer) only while an admin hasn't hidden the Decision type.
     private bool DecisionOffered => InvestigationTypeOptions().Contains(TimelineEntryType.Decision);
 
-    // Timeline editing: the composer form doubles as an editor when an entry is selected.
-    private Guid? _tlEditId;
+    // Timeline editing: the composer form doubles as an editor when an entry is selected. BUG-578: one edit at a time
+    // (Edit on another entry is refused); BUG-601: a save closes only the edit it saved.
+    private readonly EditSlot<Guid> _tlEdit = new();
+    private Guid? _tlEditId => _tlEdit.Current?.Key;
     private string? _tlEditStamp;   // BUG-196: the step's row hash when its edit opened
     private string? _tlReason;
     private readonly HashSet<Guid> _tlHistoryOpen = new();
@@ -1340,11 +1343,29 @@ else
 
     protected override void OnInitialized()
     {
+        // BUG-578: what this tab holds typed but unsaved, so a tab switch, leaving the case or the time-display redraw
+        // asks before losing it. The add composer's Markdown is the workspace's to judge (FR-02 keeps it across a tab
+        // switch); an entry edit in that editor isn't kept, so the open edit itself counts.
+        Edits.Track(this, "the timeline entry you're editing", () => _tlEditId is not null, Region);
+        Edits.Track(this, "the timeline entry you're writing", ComposerHoldsText, Region);
+        Edits.Track(this, "the reason you're writing", () => (_corr is not null && HasText(_corrReason)) || (_retract is not null && HasText(_retractReason)), Region);
+        Edits.Track(this, "the IOC you're adding", () => _newIocFor is not null && HasText(_newIocValue), Region);
         // U-46: seed the "Occurred" input to now in the viewer's active display zone (like Details / tasks).
         _tlWhen = WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone);
         _tlType = OfferedType(_tlType);   // BUG-478
         _evtStage = CaseEntitiesTab.OfferedOr(_evtStage, DisclosureStages());   // C16: Notified unless an admin hid it
     }
+
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    private static bool HasText(string? s) => !string.IsNullOrWhiteSpace(s);
+
+    // BUG-578: the add composer's plain fields hold text: an event step's description, the source, a question, a
+    // decision's why, options and who, and the Then section's lines.
+    private bool ComposerHoldsText() => _tlEditId is null
+        && ((_tlAddKind == TimelineKind.Event && HasText(_tlDesc)) || HasText(_tlSource) || HasText(_question)
+            || HasText(_decWhy) || HasText(_decOptions) || HasText(_decBy)
+            || _fuTasks.Exists(t => HasText(t.Title)) || (_fuQuestionOpen && HasText(_fuQuestion)) || (_fuKnownOpen && HasText(_fuKnown)));
 
     // BUG-478: the type wanted if the select offers it, else the first type it offers (not Decision, which changes the
     // mode). Analysis hidden by an admin left the select showing nothing while the save used Analysis.
@@ -1452,7 +1473,11 @@ else
         if (wantMentions && _mentionsFor != CaseId)
         {
             _mentionsFor = CaseId;
-            try { _mentionable = await Cases.MentionableAsync(CaseId); } catch (Exception) { _mentionable = []; }
+            // BUG-601: a load begun for an earlier case (or before the tab went) doesn't land over this one's.
+            var load = _mentionLoad.Begin();
+            IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> found;
+            try { found = await Cases.MentionableAsync(CaseId); } catch (Exception) { found = []; }
+            if (_mentionLoad.IsCurrent(load)) _mentionable = found;
         }
         foreach (var (id, seed) in desired)
         {
@@ -1513,7 +1538,7 @@ else
     private void ResetFollowUps()
     {
         _fuTasks.Clear();
-        _fuLinkSeq++;   // BUG-482: a search still running doesn't land in the next entry's Then
+        _fuLinkSearch.Invalidate();   // BUG-482: a search still running doesn't land in the next entry's Then
         _fuQuestionOpen = _fuKnownOpen = _fuLinkOpen = false;
         _fuQuestion = _fuKnown = _fuLinkQuery = null;
         _fuQuestionTask = true;
@@ -1562,21 +1587,21 @@ else
         Case.Assignments.OrderBy(a => a.Role).Select(a => (a.UserId, Users.DisplayFor(a.UserId)))
             .DistinctBy(x => x.UserId).ToList();
 
-    // BUG-482 (as BUG-454): each search, and each pick or clear, takes a number; only the latest one's results land, so
+    // BUG-482 (as BUG-454): each search takes a ticket, and a pick or clear drops them; only the latest one's results land, so
     // an older (slower) query's, or one for a box since cleared, doesn't replace them.
-    private int _fuLinkSeq;
+    private readonly LoadSequence _fuLinkSearch = new();
 
     private async Task SearchFuLink()
     {
-        var seq = ++_fuLinkSeq;
+        var search = _fuLinkSearch.Begin();
         if (string.IsNullOrWhiteSpace(_fuLinkQuery)) { _fuLinkResults = []; return; }
         var found = await Cases.SearchLinkableCasesAsync(CaseId, _fuLinkQuery, take: 6);
-        if (seq == _fuLinkSeq) _fuLinkResults = found;
+        if (_fuLinkSearch.IsCurrent(search)) _fuLinkResults = found;
     }
 
-    private void PickFuLink(LinkableCase r) { _fuLinkSeq++; _fuLink = r; _fuLinkResults = []; }
+    private void PickFuLink(LinkableCase r) { _fuLinkSearch.Invalidate(); _fuLink = r; _fuLinkResults = []; }
 
-    private void RemoveFuLink() { _fuLinkSeq++; _fuLinkOpen = false; _fuLink = null; _fuLinkQuery = null; _fuLinkResults = []; }
+    private void RemoveFuLink() { _fuLinkSearch.Invalidate(); _fuLinkOpen = false; _fuLink = null; _fuLinkQuery = null; _fuLinkResults = []; }
 
     private RenderFragment ThenSection() => @<div class="im-then mt-2">
         <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -1679,6 +1704,7 @@ else
     private bool _editorMentions;
     private IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> _mentionable = [];
     private Guid _mentionsFor;
+    private readonly LoadSequence _mentionLoad = new();
     private string? _question;
     private bool _questionTask = true;
 
@@ -1739,8 +1765,9 @@ else
         _saving = true;
         try
         {
-            await Cases.AddOpenQuestionAsync(CaseId, Tagged(_question) ?? "", _questionTask);
-            _question = null;
+            var sent = _question;
+            await Cases.AddOpenQuestionAsync(CaseId, Tagged(sent) ?? "", _questionTask);
+            _question = DraftText.ClearIfUnchanged(_question, sent, null);   // BUG-601: what was typed meanwhile stays
             await OnChanged.InvokeAsync();
             Toasts.Success(_questionTask ? "Question added to the brief, with a task to answer it" : "Question added to the brief");
         }
@@ -1765,7 +1792,7 @@ else
             try { mentions = await JS.InvokeAsync<string[]>("markdownEditor.getMentions", InvEditorId); } catch (JSException) { }
             await Cases.AddNoteAsync(CaseId, body, mentions);
             ComposerDrafts?.Remove(InvEditorId);
-            try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); } catch (JSException) { }
+            await ClearEditorIfUnchanged(body);   // BUG-601
             await OnChanged.InvokeAsync();
             Toasts.Success(mentions.Length > 0 ? $"Working note saved; {IncidentManager.Application.Common.Plural.Of(mentions.Length, "person", "people")} emailed" : "Working note saved");
         }
@@ -1789,22 +1816,23 @@ else
 
     private async Task OpenNotesNow()
     {
-        // BUG-534: switching lens cancels an open entry edit, so the 'n' shortcut or a link to a note asks first, as JumpTo
-        // does. Already on the notes lens, 'n' just puts the composer in Working note mode. Either way the request is let
-        // go: left set, it switched to the notes lens on a later render.
-        if (_tlEditId is not null) Toasts.Info("Save or cancel the entry you're editing, then try again.");
-        else if (!_notesOnly) await SwitchToNotes();
+        // BUG-534: an open entry edit isn't left by a lens switch (BUG-578: the switch refuses), so the 'n' shortcut or a
+        // link to a note says so, as JumpTo does. Already on the notes lens, 'n' just puts the composer in Working note
+        // mode. Either way the request is let go: left set, it switched to the notes lens on a later render.
+        if (_tlEditId is not null) Toasts.Info(EditSlot.Refusal(EditWhat));
+        else if (!_notesOnly) SwitchToNotes();
         else if (AutofocusComposer && _notesList is not { IsEditing: true }) SetMode(ComposerMode.Note);   // BUG-552: declined
         await OnOpenNotesHandled.InvokeAsync();
         StateHasChanged();
     }
 
-    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active.</summary>
+    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active. BUG-602: a working
+    /// note edited in place has its own keys (.im-own-keys, CaseNotesTab), so this is never that edit's: handing it the
+    /// composer's Ctrl+Enter saved the note being edited instead of the note typed in the composer.</summary>
     public async Task SubmitAsync()
     {
         if (!CanEdit) return;
         if (_newIocFor is not null || _corr is not null || _retract is not null) return;   // BUG-328: this tab's own dialog is open
-        if (_notesOnly && _notesList is { IsEditing: true } list) { await list.SubmitAsync(); return; }
         if (_tlEditId is not null)
         {
             if (_tlAddKind == TimelineKind.Event) await SaveEventEdit(); else await SaveInvestigationEdit();
@@ -1871,9 +1899,11 @@ else
         var whenUtc = KeptWhenUtc();   // C3: nothing recorded for a new entry, so as typed
         var withShot = _tlShotBytes is not null;
         var shot = _tlShotBytes;   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
+        // BUG-601: what was sent, so only that is cleared after the save; text typed while it ran stays.
+        var (sent, sentSource, sentDecision) = (_tlDesc, _tlSource, (_decWhy, _decOptions, _decBy));
         try
         {
-            await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource,
+            await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, sent, sentSource,
                 decision: Decision(), followUps: FollowUps(), screenshot: TimelineShot());
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1882,11 +1912,25 @@ else
             return;
         }
         var saved = SaveSummary();
-        _tlDesc = ""; _tlSource = null; ClearTimelineShot(shot); ClearDecision(); ResetFollowUps();
+        _tlDesc = DraftText.ClearIfUnchanged(_tlDesc, sent);
+        _tlSource = DraftText.ClearIfUnchanged(_tlSource, sentSource, null);
+        ClearTimelineShot(shot); ClearDecisionIfUnchanged(sentDecision); ResetFollowUps();
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
         Toasts.Success(saved ?? (!withShot ? "Timeline entry added" : "Timeline entry added with screenshot"));
-        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
+        await ClearEditorIfUnchanged(sent);
+    }
+
+    // BUG-601: the composer's editor is emptied after a save only while it still holds what was saved; emptied
+    // regardless, it lost what was typed in it while the save ran.
+    private async Task ClearEditorIfUnchanged(string sent)
+    {
+        try
+        {
+            var now = await JS.InvokeAsync<string?>("markdownEditor.getValue", InvEditorId);
+            if (now is null || string.Equals(now, sent, StringComparison.Ordinal))
+                await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, "");
+        }
         catch (JSException) { /* best effort */ }
     }
 
@@ -1905,20 +1949,23 @@ else
         var disclosure = IsThirdParty && !_evtAttackMode;
         var withShot = _tlShotBytes is not null;
         var shot = _tlShotBytes;   // BUG-483 sibling
+        // BUG-601: what was sent, so only that is cleared after the save; what was typed or picked while it ran stays.
+        var (sent, sentSource, sentTechnique, sentActor, sentTarget, sentTactic) =
+            (_tlDesc, _tlSource, _evtTechnique, _evtActorId, _evtTargetId, _evtTactic);
         try
         {
             if (disclosure)
             {
                 // REV-24: as stated in the composer (a date, a window), like an attack step.
                 await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(_tlDesc)!, _tlSource, type: _evtStage, followUps: FollowUps(), timing: Timing(), screenshot: TimelineShot());
+                    Tagged(sent)!, sentSource, type: _evtStage, followUps: FollowUps(), timing: Timing(), screenshot: TimelineShot());
             }
             else
             {
-                Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
-                Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
-                var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                var added = await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource,
+                Guid? actor = Guid.TryParse(sentActor, out var a) ? a : null;
+                Guid? target = Guid.TryParse(sentTarget, out var t) ? t : null;
+                var technique = string.IsNullOrWhiteSpace(sentTechnique) ? null : sentTechnique;
+                var added = await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(sent)!, sentSource,
                     followUps: FollowUps(), environment: StepWhere, timing: Timing(), screenshot: TimelineShot());
                 // A run of steps without times is entered in order: the next one comes after this one.
                 if (_tlPrecision == TimePrecision.NotStated) _tlAfter = added.ToString();
@@ -1929,8 +1976,15 @@ else
             Toasts.Error(ex.Message);
             return;
         }
-        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
-        _evtTactic = MitreTactic.Unspecified; _evtOtherTactics = [];
+        _tlDesc = DraftText.ClearIfUnchanged(_tlDesc, sent);
+        _tlSource = DraftText.ClearIfUnchanged(_tlSource, sentSource, null);
+        _evtTechnique = DraftText.ClearIfUnchanged(_evtTechnique, sentTechnique);
+        if (_evtTactic == sentTactic) _evtTactic = MitreTactic.Unspecified;
+        _evtActorId = DraftText.ClearIfUnchanged(_evtActorId, sentActor);
+        _evtTargetId = DraftText.ClearIfUnchanged(_evtTargetId, sentTarget);
+        if (_evtActorId.Length == 0) _actorPrev = "";
+        if (_evtTargetId.Length == 0) _targetPrev = "";
+        _evtOtherTactics = [];
         ClearTimelineShot(shot);
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
@@ -1939,11 +1993,29 @@ else
         Toasts.Success(savedStep ?? (!withShot ? $"{what} added" : $"{what} added with screenshot"));
     }
 
-    // Switch the timeline lens (All / Event / Investigation); abandon any in-progress edit and clear
-    // kind-specific filters that no longer apply.
-    private async Task SwitchLens(TimelineKind? lens)
+    // A lens button: switch the timeline lens (All / Event / Investigation).
+    private void SwitchLens(TimelineKind? lens)
     {
-        if (_tlEditId is not null) await CancelTimelineEdit();
+        if (LensSwitchRefused(toNotes: false)) return;
+        ShowLens(lens);
+    }
+
+    // BUG-578: a lens button with an entry edit open used to cancel it, losing what was typed (the lens also sets what the
+    // composer adds); off the Working notes lens it unmounted a note being edited there. Both are refused now, as a jump
+    // is (JumpTo).
+    private bool LensSwitchRefused(bool toNotes)
+    {
+        if (_tlEditId is not null)
+        {
+            Toasts.Info(EditSlot.Refusal(EditWhat));
+            return true;
+        }
+        return !toNotes && NoteEditKeepsNotes();
+    }
+
+    // Show a lens, clearing kind-specific filters that no longer apply. Callers have refused over an open edit.
+    private void ShowLens(TimelineKind? lens)
+    {
         _decOnly = false;
         _keyOnly = false;
         _notesOnly = false;
@@ -1955,16 +2027,28 @@ else
     // In the All lens the composer serves both timelines; pick which one to add to.
     private void SetAddKind(TimelineKind kind) => _tlAddKind = kind;
 
+    // BUG-578: Edit on another entry while one is open is refused with the standard toast; it replaced the open edit and
+    // what was typed in it. Edit on the open one again does nothing (it re-seeded over the typing).
+    private const string EditWhat = "entry";
+
+    private bool RefusesAnotherEdit(TimelineEntry e)
+    {
+        if (!_tlEdit.IsOpen) return false;
+        if (!_tlEdit.IsOpenFor(e.Id)) Toasts.Info(EditSlot.Refusal(EditWhat));
+        return true;
+    }
+
     // Load an Event step into the composer for an in-place correction.
     private async Task StartEventEdit(TimelineEntry e)
     {
+        if (RefusesAnotherEdit(e)) return;
         await StashDraftAsync();
+        if (!_tlEdit.TryOpen(e.Id, Toasts, EditWhat)) return;   // another Edit opened one while the draft was read
         _special = null;
         _tlAddKind = TimelineKind.Event;
         _editFocusPending = true;   // BUG-410
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
         _evtOurs = e.Environment == StepEnvironment.Ours;
-        _tlEditId = e.Id;
         _tlEditStamp = e.RowHash ?? "";   // BUG-196
         _tlReason = null;
         _tlWhen = WallClock.ToWall(e.OccurredAtUtc, TimeDisp.Zone);
@@ -2000,7 +2084,8 @@ else
 
     private async Task SaveEventEditCore()
     {
-        if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
+        if (_tlEdit.Current is not { } edit || string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var id = edit.Key;
         // Captured before CancelTimelineEdit resets the composer mode, so the toast names what was edited.
         var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure milestone updated" : IsThirdParty ? "Attack step updated" : "Event step updated";
         try
@@ -2025,7 +2110,7 @@ else
         catch (StaleEditException ex)
         {
             Toasts.Error(ex.Message);
-            await CancelTimelineEdit();
+            if (_tlEdit.IsCurrent(edit)) await CancelTimelineEdit();   // BUG-601: not an edit opened while this ran
             await OnChanged.InvokeAsync();
             return;
         }
@@ -2034,7 +2119,7 @@ else
             Toasts.Error(ex.Message);
             return;
         }
-        await CancelEditToRow();   // BUG-410: the step keeps its id, so go back to it
+        if (_tlEdit.IsCurrent(edit)) await CancelEditToRow();   // BUG-410: the step keeps its id, so go back to it
         await OnChanged.InvokeAsync();
         Toasts.Success(savedLabel);
     }
@@ -2042,10 +2127,11 @@ else
     // Load an Investigation entry into the Markdown composer to edit; saving creates a new version.
     private async Task StartInvestigationEdit(TimelineEntry e)
     {
+        if (RefusesAnotherEdit(e)) return;
         await StashDraftAsync();
+        if (!_tlEdit.TryOpen(e.Id, Toasts, EditWhat)) return;   // another Edit opened one while the draft was read
         _special = null;   // BUG-33: a Working note or Question composer hides the entry's type, time and source
         _tlAddKind = TimelineKind.Investigation;
-        _tlEditId = e.Id;
         _editFocusPending = true;   // BUG-410
         _tlReason = null;
         _tlType = e.Type;
@@ -2068,15 +2154,19 @@ else
 
     private async Task SaveInvestigationEditCore()
     {
-        if (_tlEditId is not { } id) return;
-        try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
+        if (_tlEdit.Current is not { } edit) return;
+        var id = edit.Key;
+        var desc = _tlDesc;
+        try { desc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
         catch (JSException) { /* fall back to bound value */ }
+        if (!_tlEdit.IsCurrent(edit)) return;   // BUG-601: cancelled while the editor was read (the composer is the draft's now)
+        _tlDesc = desc;
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = KeptWhenUtc();
         if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
         try { await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason, Decision()); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't save the entry. {ex.Message}"); return; }
-        await CancelTimelineEdit();
+        if (_tlEdit.IsCurrent(edit)) await CancelTimelineEdit();   // BUG-601: not an edit opened while this ran
         await OnChanged.InvokeAsync();
         Toasts.Success("Investigation entry saved as a new version");
     }
@@ -2093,7 +2183,7 @@ else
     private async Task CancelTimelineEdit()
     {
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
-        _tlEditId = null; _tlReason = null; ClearDecision();
+        _tlEdit.Close(); _tlReason = null; ClearDecision();
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtOtherTactics = []; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         _tlPrecision = TimePrecision.Exact; _tlAfter = ""; _tlEditPrecision = null;
@@ -2131,8 +2221,13 @@ else
 
     private async Task StashDraftAsync()
     {
-        if (_tlEditId is not null) return;   // switching from one edit to another keeps the draft from before the first
+        if (_tlEditId is not null) return;   // an edit is open (Start refuses another): its draft is already kept
         _preEditTimes = (_tlWhen, _tlDay, _tlUntilDay);   // BUG-300: kept even when there's no text to stash
+        // BUG-578: the composer as it is now, before the editor is read; a second Edit click that opened an edit while
+        // this waited would otherwise have its entry's fields taken as the draft.
+        var draft = new ComposerDraft(_tlAddKind, _special, _tlType, _tlDesc, _tlSource, _tlWhen, _decWhy, _decOptions, _decBy,
+            _evtTechnique, _evtActorId, _evtTargetId, _evtTactic, _evtAttackMode, _evtStage, _evtOurs, _tlPrecision,
+            _tlDay, _tlUntilDay, _tlAfter, new Dictionary<string, string>(_tagRefs, StringComparer.Ordinal));
         var desc = _tlDesc;
         // BUG-371: only a mounted editor holds the text. In Question mode it's gone (read back into _tlDesc), and its
         // getValue is "", which dropped the Finding being written.
@@ -2140,11 +2235,9 @@ else
         {
             try { desc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId) ?? desc; }
             catch (JSException) { /* use the bound value */ }
+            if (_tlEditId is not null) return;   // another Edit click opened an edit (and kept this draft) meanwhile
         }
-        _draft = string.IsNullOrWhiteSpace(desc) && string.IsNullOrWhiteSpace(_decWhy) ? null
-            : new ComposerDraft(_tlAddKind, _special, _tlType, desc, _tlSource, _tlWhen, _decWhy, _decOptions, _decBy,
-                _evtTechnique, _evtActorId, _evtTargetId, _evtTactic, _evtAttackMode, _evtStage, _evtOurs, _tlPrecision,
-                _tlDay, _tlUntilDay, _tlAfter, new Dictionary<string, string>(_tagRefs, StringComparer.Ordinal));
+        _draft = string.IsNullOrWhiteSpace(desc) && string.IsNullOrWhiteSpace(draft.Why) ? null : draft with { Desc = desc };
     }
 
     private void RestoreDraft(ComposerDraft d)
@@ -2179,10 +2272,10 @@ else
     }
 
     // --- INV-10: evidence an entry cites ---
-    private Guid? _citing;
+    private readonly FormSession<Guid> _cite = new();   // the entry whose picker is open
     private readonly HashSet<Guid> _citeSel = new();
     private List<Guid> _citeOpened = [];
-    private bool _citeSaving;
+    private readonly InFlight _citeSaving = new();
 
     private List<Evidence> CitedBy(TimelineEntry e) => Case.Citations.Where(x => x.TimelineEntryId == e.Id)
         .Select(x => Case.Evidence.FirstOrDefault(ev => ev.Id == x.EvidenceId)).OfType<Evidence>()
@@ -2315,7 +2408,7 @@ else
                 }
             </div>
         }
-        @if (_citing == e.Id)
+        @if (_cite.IsOpenFor(e.Id))
         {
             @* BUG-425: im-own-keys: Ctrl/Cmd+Enter in the picker does nothing, rather than add the composer's entry. *@
             <div class="tl-cite-pick border rounded p-2 mt-2 bg-body-tertiary im-own-keys">
@@ -2331,8 +2424,8 @@ else
                     </div>
                 }
                 <div class="d-flex gap-2 justify-content-end mt-1">
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _citing = null">Cancel</button>
-                    <button class="btn btn-sm btn-primary" disabled="@_citeSaving" @onclick="() => SaveCite(e.Id)">Save</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="_cite.Close">Cancel</button>
+                    <button class="btn btn-sm btn-primary" disabled="@_citeSaving.Busy" @onclick="SaveCite">Save</button>
                 </div>
             </div>
         }
@@ -2340,7 +2433,7 @@ else
 
     private void StartCite(TimelineEntry e)
     {
-        _citing = e.Id;
+        _cite.Open(e.Id);
         _citeSel.Clear();
         foreach (var ev in CitedBy(e)) _citeSel.Add(ev.Id);
         _citeOpened = [.. _citeSel];   // BUG-297
@@ -2348,18 +2441,21 @@ else
 
     private void ToggleCite(Guid id, bool on) { if (on) _citeSel.Add(id); else _citeSel.Remove(id); }
 
-    private async Task SaveCite(Guid entryId)
+    // BUG-603: one save at a time (a double-click saved twice). BUG-601: the save closes the picker it saved, not one
+    // opened on another entry while it ran.
+    private Task SaveCite() => _citeSaving.Run(SaveCiteCore);
+
+    private async Task SaveCiteCore()
     {
-        _citeSaving = true;
+        if (_cite.Current is not { } s) return;
         try
         {
-            await Cases.CiteEvidenceAsync(CaseId, entryId, _citeSel.ToList(), openedWith: _citeOpened);
-            _citing = null;
+            await Cases.CiteEvidenceAsync(CaseId, s.Key, _citeSel.ToList(), openedWith: _citeOpened);
+            _cite.CloseIf(s);
             await OnChanged.InvokeAsync();
             Toasts.Success("Evidence cited");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
-        finally { _citeSaving = false; }
     }
 
     // --- INV-06: decision entries ---
@@ -2380,6 +2476,14 @@ else
         IsDecision ? new CaseService.DecisionDetails(_decWhy ?? "", _decOptions, _decBy) : null;
 
     private void ClearDecision() { _decWhy = null; _decOptions = null; _decBy = null; }
+
+    // BUG-601: after a save, each of the decision's fields is cleared only if it's still what was sent.
+    private void ClearDecisionIfUnchanged((string? Why, string? Options, string? By) sent)
+    {
+        _decWhy = DraftText.ClearIfUnchanged(_decWhy, sent.Why, null);
+        _decOptions = DraftText.ClearIfUnchanged(_decOptions, sent.Options, null);
+        _decBy = DraftText.ClearIfUnchanged(_decBy, sent.By, null);
+    }
 
     // Catch-up aids: after containment, entries are often recorded in a burst. The composer keeps the last time
     // used; these step it back or forward so a busy hour can be rebuilt quickly.
@@ -2531,7 +2635,11 @@ else
         return e.OccurredPrecision == TimePrecision.NotStated || Loose(i - 1) || Loose(i + 1);
     }
 
-    private async Task MoveStep(TimelineEntry e, bool earlier)
+    // BUG-603: one move at a time; a double-click moved the step twice.
+    private readonly InFlight _moving = new();
+    private Task MoveStep(TimelineEntry e, bool earlier) => _moving.Run(() => MoveStepCore(e, earlier));
+
+    private async Task MoveStepCore(TimelineEntry e, bool earlier)
     {
         try { await Cases.MoveEventStepAsync(CaseId, e.Id, earlier); }
         catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
@@ -2659,15 +2767,19 @@ else
         if (!_corrOpen.Remove(changeId)) _corrOpen.Add(changeId);
     }
 
+    // BUG-601: which opening of the dialog a save is for (as _retractForm).
+    private readonly FormSession<string> _corrForm = new();
+
     private void StartCorrection(CaseMilestone m)
     {
+        _corrForm.Open(m.Key);
         _corr = m;
         _corrWhen = WallClock.ToWall(m.AtUtc, TimeDisp.Zone);
         _corrReason = null;
         _corrError = null;
     }
 
-    private void CancelCorrection() { _corr = null; _corrError = null; }
+    private void CancelCorrection() { _corrForm.Close(); _corr = null; _corrError = null; }
 
     // BUG-477 sibling (WF-68): a time left as shown is the transition's own instant, not its standard-time reading.
     private DateTimeOffset CorrectedUtc(CaseMilestone m, DateTime w) =>
@@ -2680,12 +2792,17 @@ else
     private string? _retractError;
     private bool _retractSaving;
 
+    // BUG-601: which opening of the dialog a save is for, so it closes (or reports into) only that one, not a dialog
+    // opened on another entry after this one was dismissed.
+    private readonly FormSession<Guid> _retractForm = new();
+
     private void StartRetract(TimelineEntry e)
     {
+        _retractForm.Open(e.Id);
         _retract = e; _retractStamp = e.RowHash ?? ""; _retractReason = null; _retractError = null;
     }
 
-    private void CancelRetract() { _retract = null; _retractError = null; }
+    private void CancelRetract() { _retractForm.Close(); _retract = null; _retractError = null; }
 
     private void OnRetractKey(KeyboardEventArgs e)
     {
@@ -2694,26 +2811,27 @@ else
 
     private async Task SaveRetract()
     {
-        if (_retract is not { } e || _retractSaving || string.IsNullOrWhiteSpace(_retractReason)) return;
+        if (_retract is not { } e || _retractForm.Current is not { } form || _retractSaving || string.IsNullOrWhiteSpace(_retractReason)) return;
         _retractSaving = true;
         _retractError = null;
         try
         {
             await Cases.RetractTimelineEntryAsync(CaseId, e.Id, _retractReason.Trim(), _retractStamp);
             if (_tlEditId == e.Id) await CancelTimelineEdit();   // it can't be edited once retracted
-            _retract = null;
+            if (_retractForm.CloseIf(form)) _retract = null;
             await OnChanged.InvokeAsync();
             Toasts.Success(e.Kind == TimelineKind.Event ? "Step retracted" : "Entry retracted");
         }
         catch (StaleEditException ex)
         {
-            _retract = null;
+            if (_retractForm.CloseIf(form)) _retract = null;
             Toasts.Error(ex.Message);
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
-            _retractError = ex.Message;
+            if (_retractForm.IsCurrent(form)) _retractError = ex.Message;
+            else Toasts.Error(ex.Message);
         }
         finally { _retractSaving = false; }
     }
@@ -2760,19 +2878,20 @@ else
 
     private async Task SaveCorrectionCore()
     {
-        if (_corr?.Transition is not { } t || _corrWhen is not { } w || string.IsNullOrWhiteSpace(_corrReason)) return;
+        if (_corr?.Transition is not { } t || _corrForm.Current is not { } form || _corrWhen is not { } w || string.IsNullOrWhiteSpace(_corrReason)) return;
         _corrSaving = true;
         _corrError = null;
         try
         {
             await Cases.CorrectTransitionTimeAsync(CaseId, t.Kind, t.ChangeId, CorrectedUtc(_corr, w), _corrReason);
-            _corr = null;
+            if (_corrForm.CloseIf(form)) _corr = null;
             await OnChanged.InvokeAsync();
             Toasts.Success("Time corrected");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
-            _corrError = ex.Message;
+            if (_corrForm.IsCurrent(form)) _corrError = ex.Message;
+            else Toasts.Error(ex.Message);
         }
         finally
         {
@@ -2788,9 +2907,10 @@ else
     // RD-13: Story and Everything read in two lanes.
     private bool Lanes => _tlLens is null && !_notesOnly && !_decOnly;
 
-    private async Task SwitchToStory()
+    private void SwitchToStory()
     {
-        await SwitchLens(null);
+        if (LensSwitchRefused(toNotes: false)) return;
+        ShowLens(null);
         _keyOnly = true;
         _tlOldestFirst = true;
     }
@@ -2824,16 +2944,18 @@ else
         return true;
     }
 
-    private async Task SwitchToNotes()
+    private void SwitchToNotes()
     {
-        await SwitchLens(null);
+        if (LensSwitchRefused(toNotes: true)) return;
+        ShowLens(null);
         _notesOnly = true;
         SetMode(ComposerMode.Note);   // the composer, if opened here, writes a working note
     }
 
-    private async Task SwitchToDecisions()
+    private void SwitchToDecisions()
     {
-        await SwitchLens(TimelineKind.Investigation);
+        if (LensSwitchRefused(toNotes: false)) return;
+        ShowLens(TimelineKind.Investigation);
         _decOnly = true;
         // The composer, if opened here, records a decision. C16: unless an admin has hidden Decision.
         if (DecisionOffered) _tlType = TimelineEntryType.Decision;
@@ -2931,14 +3053,14 @@ else
         // BUG-510: the Working notes lens hides every entry too.
         if (_notesOnly || !(_tlLens is null && !_keyOnly) || FiltersActive || ChangedSinceUtc is not null)
         {
-            // Switching lens ends an entry edit (SwitchLens cancels it), so a jump from a panel ("Cited by") or the minimap
-            // asks first rather than throwing the typed edit away.
+            // A lens switch doesn't leave an entry edit (BUG-578), so a jump from a panel ("Cited by") or the minimap says
+            // so rather than throwing the typed edit away.
             if (_tlEditId is not null)
             {
-                Toasts.Info("Save or cancel the entry you're editing, then try again.");
+                Toasts.Info(EditSlot.Refusal(EditWhat));
                 return;
             }
-            await SwitchLens(null);
+            ShowLens(null);
             if (ChangedSinceUtc is not null) await OnClearSince.InvokeAsync();
         }
         _showMilestones = true;
@@ -3108,6 +3230,8 @@ else
     public async ValueTask DisposeAsync()
     {
         Disposed = true;
+        Edits.Forget(this);
+        _mentionLoad.Invalidate();
         await StashDraft();
         foreach (var id in _mdEditors)
         {

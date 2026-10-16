@@ -31,6 +31,9 @@ else
             <div class="card-body py-2">
                 @if (_editNoteId == n.Id)
                 {
+                    @* BUG-602: the editor's own Ctrl/Cmd+Enter saves it (keymap.js leaves .im-own-keys to it); the timeline
+                       composer's Ctrl+Enter is the composer's, not this edit's. *@
+                    <div class="im-own-keys" @onkeydown="e => EditKey(e, n)">
                     @* EasyMDE enhances this textarea; keyed by note id so switching notes remounts a fresh editor. *@
                     <textarea id="@NoteEditEditorId(n.Id)" class="form-control mb-2" aria-label="Edit note"></textarea>
                     @if (!n.IsCurrent && Notes.FirstOrDefault(x => x.IsCurrent && x.SupersedesNoteId == n.Id) is { } newer)
@@ -42,6 +45,7 @@ else
                     }
                     <button class="btn btn-sm btn-primary" @onclick="SaveNoteEdit" disabled="@(!n.IsCurrent)">Save new version</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelNoteEdit">Cancel</button>
+                    </div>
                 }
                 else
                 {
@@ -156,12 +160,17 @@ else
     private bool _focusDone;
     private object[] MentionCandidates => _mentionable.Select(u => (object)new { id = u.UserId, name = u.DisplayName }).ToArray();
 
+    private readonly LoadSequence _mentionLoad = new();
+
     protected override async Task OnParametersSetAsync()
     {
         if (CanEdit && _mentionsFor != CaseId)
         {
             _mentionsFor = CaseId;
-            _mentionable = await Cases.MentionableAsync(CaseId);
+            // BUG-601: a load begun for an earlier case (or before the lens went) doesn't land over this one's.
+            var load = _mentionLoad.Begin();
+            var found = await Cases.MentionableAsync(CaseId);
+            if (_mentionLoad.IsCurrent(load)) _mentionable = found;
         }
     }
 
@@ -177,7 +186,9 @@ else
     private static string NoteEditEditorId(Guid noteId) => $"noteedit-md-{noteId}";
     private readonly HashSet<string> _mdEditors = new();  // element ids of currently-mounted EasyMDE instances
 
-    private Guid? _editNoteId;
+    // BUG-578: one note edited at a time (Edit on another is refused); BUG-601: a save closes only the edit it saved.
+    private readonly EditSlot<Guid> _noteEdit = new();
+    private Guid? _editNoteId => _noteEdit.Current?.Key;
     private string _editNoteBody = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -232,13 +243,15 @@ else
             })
             .ToArray();
 
-    /// <summary>A note is being edited in place (Ctrl/⌘+Enter saves it).</summary>
+    /// <summary>A note is being edited in place (leaving the lens would unmount it).</summary>
     public bool IsEditing => _editNoteId is not null;
 
-    /// <summary>Ctrl/⌘+Enter from the timeline: save the note being edited.</summary>
-    public async Task SubmitAsync()
+    // BUG-602: Ctrl/⌘+Enter in the editor saves the note being edited, as its button does (not a superseded one). A held
+    // key doesn't repeat (BUG-545; keymap.js's BUG-536 guard doesn't reach .im-own-keys).
+    private async Task EditKey(KeyboardEventArgs e, AnalystNote n)
     {
-        if (CanEdit && _editNoteId is not null) await SaveNoteEdit();
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && !e.Repeat && CanEdit && n.IsCurrent && _editNoteId == n.Id)
+            await SaveNoteEdit();
     }
 
     // The teammates whose "@Name" appears in the editor's text (an edit keeps its earlier mentions; only new ones notify).
@@ -250,7 +263,8 @@ else
 
     private async Task StartNoteEdit(AnalystNote note)
     {
-        _editNoteId = note.Id;
+        // BUG-578: Edit on another note while one is open is refused; it replaced the open edit and what was typed in it.
+        if (!_noteEdit.TryOpen(note.Id, Toasts, "working note")) return;
         _editNoteBody = note.Body;
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteEditEditorId(note.Id), note.Body); }
         catch (JSException) { /* editor not mounted yet; ReconcileEditors seeds it from _editNoteBody */ }
@@ -258,7 +272,7 @@ else
 
     private void CancelNoteEdit()
     {
-        _editNoteId = null;
+        _noteEdit.Close();
         _editNoteBody = "";
     }
 
@@ -274,14 +288,17 @@ else
 
     private async Task SaveNoteEditCore()
     {
-        if (_editNoteId is not { } noteId) return;
-        try { _editNoteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }
-        catch (JSException) { /* fall back to bound value */ }
-        if (string.IsNullOrWhiteSpace(_editNoteBody)) return;
+        if (_noteEdit.Current is not { } edit) return;
+        var noteId = edit.Key;
+        var body = _editNoteBody;
+        try { body = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }
+        catch (JSException) { /* fall back to the text it opened with */ }
+        if (string.IsNullOrWhiteSpace(body)) return;
         var mentions = await MentionsIn(NoteEditEditorId(noteId));
-        try { await Cases.EditNoteAsync(CaseId, noteId, _editNoteBody, mentions); }
+        if (!_noteEdit.IsCurrent(edit)) return;   // BUG-601: cancelled while the editor was read
+        try { await Cases.EditNoteAsync(CaseId, noteId, body, mentions); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't save the note. {ex.Message}"); return; }
-        CancelNoteEdit();
+        if (_noteEdit.CloseIf(edit)) _editNoteBody = "";   // BUG-601: not an edit opened while this ran
         await OnChanged.InvokeAsync();
         Toasts.Success("Note updated");
     }
@@ -291,6 +308,7 @@ else
     public async ValueTask DisposeAsync()
     {
         Disposed = true;
+        _mentionLoad.Invalidate();
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }

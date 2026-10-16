@@ -22,18 +22,12 @@ public partial class EditPreservationTests
     // time-display redraw then loses them without asking).
     private static readonly Dictionary<string, int> Untracked = new(StringComparer.Ordinal)
     {
-        // wave 2b, U1 (timeline, notes)
-        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 1,   // 15 text field(s), no Edits.Track
         // wave 2b, U4 (pages, admin, other shared)
-        ["Shared/PromoteToTimeline.razor"] = 1,   // 1 text field(s), no Edits.Track
     };
 
     // Wave 2b: "Edit" / "Done" on a row that replaces another row's open edit instead of refusing (EditSlot.TryOpen).
     private static readonly Dictionary<string, int> Replacing = new(StringComparer.Ordinal)
     {
-        // wave 2b, U1 (timeline, notes)
-        ["Pages/CaseTabs/CaseNotesTab.razor"] = 1,   // StartNoteEdit
-        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // StartEventEdit; StartInvestigationEdit
         // wave 2b, U4 (pages, admin, other shared)
         ["Shared/RegulatoryDeadlineRules.razor"] = 1,   // BeginEdit
     };

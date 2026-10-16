@@ -5,6 +5,8 @@
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
 @inject IClock Clock
+@inject UnsavedEdits Edits
+@implements IDisposable
 
 @* BUG-425: im-own-keys: Ctrl/Cmd+Enter here adds it to the timeline (keymap.js leaves it to KeyDown), not the tab's composer. *@
 <div class="im-promote border rounded p-2 mt-2 bg-body-tertiary im-own-keys" @onkeydown="KeyDown">
@@ -50,6 +52,7 @@
     [Parameter, EditorRequired] public DateTimeOffset WrittenAtUtc { get; set; }
     [Parameter] public EventCallback OnDone { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
+    [CascadingParameter] public EditRegion? Region { get; set; }
 
     private readonly string _id = Guid.NewGuid().ToString("N")[..8];
     private string _text = "";
@@ -69,6 +72,8 @@
 
     protected override void OnInitialized()
     {
+        // BUG-578: the text or time changed here is unsaved input; a tab switch or leaving the case asks before losing it.
+        Edits.Track(this, "the entry you're putting on the record", Changed, Region);
         _text = Text;
         _when = _whenShown = WallClock.ToWall(WrittenAtUtc, TimeDisp.Zone);
         _whenRecorded = WrittenAtUtc;
@@ -76,6 +81,11 @@
         var offered = PromotableTypes;
         if (!offered.Contains(_type) && offered.Count > 0) _type = offered[0];
     }
+
+    private bool Changed() =>
+        !string.Equals(_text, Text, StringComparison.Ordinal) || WallClock.ToMinute(_when) != WallClock.ToMinute(_whenShown);
+
+    public void Dispose() => Edits.Forget(this);
 
     private async Task KeyDown(KeyboardEventArgs e)
     {

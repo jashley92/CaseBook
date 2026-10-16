@@ -21,8 +21,6 @@ public partial class InFlightGuardTests
     // guard) and takes the entry off; a fixed site left listed fails the stale check below.
     private static readonly Dictionary<string, int> Allowed = new(StringComparer.Ordinal)
     {
-        // wave 2b, U1 (timeline, notes)
-        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // SaveCite (Cases.CiteEvidenceAsync); MoveStep (Cases.MoveEventStepAsync)
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/AccountApiTokens.razor"] = 1,   // Revoke (Tokens.RevokeAsync)
         ["Pages/Admin.razor"] = 5,   // SendTest (Email.SendTestAsync); SendTestChat (Chat.SendTestAsync); SendSiemTest (SiemTest.SendTestAsync); OnLogoSelected (Branding.SaveLogoAsync); RemoveLogo (Brandi...

@@ -71,9 +71,7 @@ public partial class KeyboardPathTests
     // not by where the keys were pressed (BUG-602: Ctrl+Enter in the notes composer saved the in-place note edit).
     private static readonly Dictionary<string, int> RoutedByState = new(StringComparer.Ordinal)
     {
-        // wave 2b, U1 (timeline, notes): the notes lens hands the composer's Ctrl+Enter to an open note edit. Give the
-        // edit its own keys (.im-own-keys and its own Ctrl+Enter handler) and drop the IsEditing branch.
-        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 1,
+
     };
 
     [Fact]
