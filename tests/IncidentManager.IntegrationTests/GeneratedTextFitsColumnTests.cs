@@ -94,7 +94,6 @@ public sealed partial class GeneratedTextFitsColumnTests
         ("CaseAuditTab.razor", "value[..(max - 1)]"),
         ("CaseTimelineTab.razor", "text[..(ActionItem.MaxTitleLength - 1)]"),
         ("CaseTimelineTab.razor", "t[..87]"),
-        ("CreateCase.razor", "s[..42]"),
         ("Integrity.razor", "h[..12]"),
         ("StoredReportTable.razor", "h[..16]"),
         ("DateFieldBase.cs", "text[..Format.Length]"),

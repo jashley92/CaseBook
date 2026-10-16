@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Policies.EditCases)]
 @using IncidentManager.Application.Admin
 @using Microsoft.Extensions.Logging
+@implements IDisposable
 @inject CaseService Cases
 @inject ILogger<CreateCase> Logger
 @inject CaseTemplateService Templates
@@ -14,6 +15,7 @@
 @inject ICurrentUser CurrentUser
 @inject IOrganizationTimeZone OrgZone
 @inject IClock Clock
+@inject CaseListMemory ListMemory
 
 <PageTitle>New case</PageTitle>
 
@@ -285,13 +287,17 @@
         </div>
 
         @* FR-04: the check ran on Create and surfaced related cases the analyst hadn't seen — pause once so
-           they can relate one above, then Create again to file (or file as-is). *@
+           they can relate one above, then file. BUG-602: only this alert's own button files past the pause; a second
+           click on Create case (a double-click, or Enter in a field) used to satisfy it unseen. *@
         @if (_overlapPrompt)
         {
-            <div class="alert alert-warning mb-0">
-                <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
-                Open cases already reference these indicators (see above). Link any that are related, then click
-                <strong>Create case</strong> again. To keep it separate, click <strong>Create case</strong> without linking.
+            <div class="alert alert-warning mb-0 d-flex flex-wrap align-items-center gap-2">
+                <span>
+                    <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
+                    Open cases already reference these indicators (see above). Link any that are related, then click
+                    <strong>Create anyway</strong>. To keep it separate, click it without linking.
+                </span>
+                <button type="button" class="btn btn-sm btn-warning" @onclick="CreateAnyway" disabled="@(_saving || _checking || GateUnresolved)">Create anyway</button>
             </div>
         }
 
@@ -326,12 +332,12 @@
         }
 
         <div class="nc-actions">
-            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking || GateUnresolved)">@(_created is null ? "Create case" : "Finish setup")</button>
+            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking || GateUnresolved || _overlapPrompt)">@(_created is null ? "Create case" : "Finish setup")</button>
             @if (_created is not null)
             {
                 <a class="btn btn-outline-primary" href="cases/@_created.Id">Open case as-is</a>
             }
-            <a class="btn btn-outline-secondary" href="cases">Cancel</a>
+            <a class="btn btn-outline-secondary" href="@ListMemory.BackHref">Cancel</a>   @* BUG-593: the list as it was left *@
         </div>
     </div>
 </EditForm>
@@ -405,7 +411,7 @@
         !_checking && _matches.Count == 0 && _checkedInput == _indicators && IndicatorLines(_indicators).Any();
 
     private void SetLink(Guid caseId, string? raw)
-        => _linkChoice[caseId] = Enum.TryParse<CaseLinkType>(raw, out var t) ? t : (CaseLinkType?)null;
+        => _linkChoice[caseId] = IncidentManager.Domain.Common.EnumNames.OrNull<CaseLinkType>(raw);
 
     // FR-04: any edit or re-check clears the "paused for review" state so a stale prompt never lingers.
     private async Task OnIndicatorsChanged()
@@ -477,15 +483,17 @@
         _checking = true;
         List<CaseIocMatch> matches;
         IReadOnlyList<CaseHistoryMatch> history;
+        IReadOnlyDictionary<string, string>? labels = null;
         try
         {
             matches = (await Cases.FindOpenCaseMatchesForIocsAsync(lines)).ToList();
             history = await Cases.FindCaseHistoryForIocsAsync(lines);
-            if (history.Count > 0 && _outcomeLabels.Count == 0) _outcomeLabels = await Outcomes.LabelsAsync();
+            if (history.Count > 0 && _outcomeLabels.Count == 0) labels = await Outcomes.LabelsAsync();
         }
         finally { if (seq == _checkSeq) _checking = false; }
         if (seq != _checkSeq) return;
         (_matches, _history) = (matches, history);
+        if (labels is not null) _outcomeLabels = labels;   // BUG-601: with the check they came with, as the rest
         // Drop choices for cases that are no longer matched (indicators edited).
         foreach (var id in _linkChoice.Keys.Where(k => _matches.All(m => m.CaseId != k)).ToList())
             _linkChoice.Remove(id);
@@ -499,7 +507,7 @@
         // FR-03: default Detected to now in the viewer's display zone. If the display zone resolves after
         // first render (U-29 reconfigures TimeDisp, remounting this page via the layout @key), this re-seeds
         // with the correct zone — the user hasn't interacted yet at that point.
-        _detectedWall = UtcToWall(DateTimeOffset.UtcNow);
+        _detectedWall = IncidentManager.Web.Components.Pages.Workspace.WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone);
         await RefreshGates();
     }
 
@@ -522,21 +530,12 @@
             var sev = await JS.InvokeAsync<string?>("localStorage.getItem", SevKey);
             var org = await JS.InvokeAsync<string?>("localStorage.getItem", OriginKey);
             var changed = false;
-            if (Enum.TryParse<Severity>(sev, out var s)) { _request.Severity = s; changed = true; }
-            if (Enum.TryParse<CaseOrigin>(org, out var o)) { _request.Origin = o; changed = true; }
+            if (IncidentManager.Domain.Common.EnumNames.TryParse<Severity>(sev, out var s)) { _request.Severity = s; changed = true; }
+            if (IncidentManager.Domain.Common.EnumNames.TryParse<CaseOrigin>(org, out var o)) { _request.Origin = o; changed = true; }
             if (changed) StateHasChanged();
         }
         catch { /* localStorage unavailable — the form's own defaults stand */ }
     }
-
-    // Wall-clock ⇄ UTC in the viewer's active display zone (U-29), matching the Overview details editor.
-    private DateTimeOffset WallToUtc(DateTime wall)
-    {
-        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
-    }
-
-    private DateTime UtcToWall(DateTimeOffset utc)
-        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
 
     private async Task OnTemplateChanged(ChangeEventArgs e)
     {
@@ -572,7 +571,7 @@
         var t = (title ?? "").Trim();
         if (t.Length == 0) return "";
         var s = string.Join(' ', t.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6));
-        return s.Length <= 42 ? s : s[..42].TrimEnd();
+        return IncidentManager.Application.Common.TextFit.Cap(s, 42, "").TrimEnd();   // C12: never half a surrogate pair
     }
 
     // Reflects the scheme the auto-number would use. The per-year sequence is only known at save time, so
@@ -619,20 +618,20 @@
     }
 
     // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
-    private bool _inFlight;
+    private readonly InFlight _submitting = new();
 
-    private async Task Submit()
-    {
-        if (_inFlight) return;
-        _inFlight = true;
-        try { await SubmitCore(); }
-        finally { _inFlight = false; }
-    }
+    private Task Submit() => _submitting.Run(() => SubmitCore(pastOverlapPause: false));
 
-    private async Task SubmitCore()
+    // BUG-602: the duplicate pause's own button, the one way past it.
+    private Task CreateAnyway() => _submitting.Run(() => SubmitCore(pastOverlapPause: true));
+
+    private async Task SubmitCore(bool pastOverlapPause)
     {
         _error = null;
         if (_created is null && !CheckRequired()) return;
+        // BUG-602: paused on matches the analyst hadn't seen, a second Create case (a double-click's second click, Enter in a
+        // field) filed without a look. The pause holds until "Create anyway", or an edit that re-checks.
+        if (_created is null && _overlapPrompt && !pastOverlapPause) return;
 
         // FR-04: the duplicate/campaign check must not be skippable. If indicators were entered but the check
         // is stale (typed then clicked Create without ever blurring / checking), run it now; if it surfaces
@@ -660,8 +659,8 @@
         try
         {
             // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
-            _request.DetectedAtUtc = _detectedWall is { } dw ? WallToUtc(dw) : null;
-            _request.OccurredAtUtc = _occurredWall is { } ow ? WallToUtc(ow) : null;
+            _request.DetectedAtUtc = _detectedWall is { } dw ? IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(dw, TimeDisp.Zone) : null;
+            _request.OccurredAtUtc = _occurredWall is { } ow ? IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(ow, TimeDisp.Zone) : null;
             _request.PlannedEntityCount = PlannedIndicatorCount();
             _request.AttestedRequirementIds = _gate.Attested.ToHashSet();
             _request.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
@@ -699,7 +698,7 @@
                 await JS.InvokeVoidAsync("localStorage.setItem", OriginKey, _request.Origin.ToString());
             }
             catch { /* non-fatal — the case is already created */ }
-            Nav.NavigateTo($"cases/{_created.Id}");
+            if (!_disposed) Nav.NavigateTo($"cases/{_created.Id}");   // BUG-601: not from a page already left
         }
         catch (Exception ex)
         {
@@ -713,4 +712,7 @@
             _saving = false;
         }
     }
+
+    private bool _disposed;
+    public void Dispose() => _disposed = true;
 }

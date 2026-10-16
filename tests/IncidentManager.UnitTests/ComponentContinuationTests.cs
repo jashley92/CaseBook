@@ -42,7 +42,6 @@ public partial class ComponentContinuationTests
         ["Pages/AdminRoles.razor"] = 3,   // LoadAsync: _roles = await Roles.ListRolesAsync; LoadAsync: _mappings = await Roles.ListMappingsAsync; LoadAsync: _review = await AccessReview.BuildAsync
         ["Pages/AgendaPage.razor"] = 1,   // Load: _board = board (Svc.GetBoardAsync)
         ["Pages/CampaignPage.razor"] = 1,   // OnParametersSetAsync: _rollup = await Svc.GetRollupAsync
-        ["Pages/CreateCase.razor"] = 1,   // CheckOverlapsCore: _outcomeLabels = await Outcomes.LabelsAsync
         ["Pages/FindPage.razor"] = 1,   // Run: _result = result (Finder.FindAsync)
         ["Pages/ImprovementActionsPage.razor"] = 1,   // Load: _register = register (Lessons.GetRegisterAsync)
         ["Pages/IndicatorsPage.razor"] = 1,   // Load: _library = library (Indicators.SearchAsync)
@@ -74,7 +73,6 @@ public partial class ComponentContinuationTests
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/Admin.razor"] = 1,   // OnBeforeLeave<lambda>: Nav.NavigateTo(
         ["Pages/CaseByNumber.razor"] = 1,   // OnParametersSetAsync: Nav.NavigateTo(
-        ["Pages/CreateCase.razor"] = 1,   // SubmitCore: Nav.NavigateTo(
         ["Pages/Home.razor"] = 1,   // OnInitializedAsync: Nav.NavigateTo(
         ["Shared/CaseTabStrip.razor"] = 1,   // Close: Nav.NavigateTo(
         ["Shared/ErrorFallback.razor"] = 1,   // Retry: Nav.NavigateTo(
