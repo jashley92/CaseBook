@@ -21,6 +21,8 @@
 #                      "docker exec casebook-sql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P ..."
 #   UPGRADE_TEST_PORT  local port for the app under test (default 5199)
 #   UPGRADE_TEST_KEEP_DB  set to 1 to keep the upgraded database afterwards (its name is printed), for inspection
+#   UPGRADE_TEST_OUT   optional short folder for the integrity-check test build (Windows: the SQL client's native DLL
+#                      fails to load from a very long path, "The filename or extension is too long")
 set -euo pipefail
 
 from_ref="${1:?usage: upgrade-path.sh <from-ref> [<to-ref>]}"
@@ -139,6 +141,7 @@ audit_after="$(sql "SELECT COUNT(*) FROM [$db].dbo.AuditLog")"
 
 # The upgraded records pass the integrity check's record rules (BUG-64/65): no false alarm on real release data.
 log "Checking the upgraded records against the audit trail"
-CASEBOOK_VERIFY_SQL="$conn" dotnet test "$to_dir/tests/IncidentManager.IntegrationTests" --nologo -v q   --filter "FullyQualifiedName~An_existing_database_passes_when_one_is_named" >"$work/verify.log" 2>&1   || { grep -E "Expected|Failed " "$work/verify.log" | head -10; fail "the upgraded records fail the integrity check"; }
+verify_out=(); [[ -n "${UPGRADE_TEST_OUT:-}" ]] && verify_out=(--output "$UPGRADE_TEST_OUT")
+CASEBOOK_VERIFY_SQL="$conn" dotnet test "$to_dir/tests/IncidentManager.IntegrationTests" --nologo -v q "${verify_out[@]}"   --filter "FullyQualifiedName~An_existing_database_passes_when_one_is_named" >"$work/verify.log" 2>&1   || { grep -E "Expected|Failed |Exception" "$work/verify.log" | head -10 || tail -20 "$work/verify.log"; fail "the upgraded records fail the integrity check (log above)"; }
 
 log "PASS $from_ref -> ${to_ref:-working tree}: $(echo "$expected" | wc -l | tr -d ' ') migrations applied, $cases_after cases and $audit_after audit rows preserved"
