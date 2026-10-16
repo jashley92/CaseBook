@@ -35,8 +35,9 @@ public static class IcsWriter
             Line(sb, "UID", Escape(e.Uid));
             sb.Append("DTSTAMP:").Append(stamp).Append("\r\n");
             sb.Append("DTSTART:").Append(Stamp(e.StartUtc)).Append("\r\n");
-            // A follow-up item is a point-in-time deadline; give it a nominal 30-minute block.
-            sb.Append("DTEND:").Append(Stamp(e.StartUtc.AddMinutes(30))).Append("\r\n");
+            // A follow-up item is a point-in-time deadline; give it a nominal 30-minute block. BUG-577: held at the last
+            // instant for a due at the end of 9999, which made the whole feed throw for everyone who could see the task.
+            sb.Append("DTEND:").Append(Stamp(Common.Instants.AddClamped(e.StartUtc, TimeSpan.FromMinutes(30)))).Append("\r\n");
             Line(sb, "SUMMARY", Escape(e.Summary));
             if (!string.IsNullOrWhiteSpace(e.Description))
                 Line(sb, "DESCRIPTION", Escape(e.Description!));
@@ -75,12 +76,18 @@ public static class IcsWriter
     private static string Stamp(DateTimeOffset t) =>
         t.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
 
-    // RFC 5545 §3.3.11: escape backslash, semicolon, comma; newlines become \n.
-    private static string Escape(string s) => s
+    // RFC 5545 §3.3.11: escape backslash, semicolon, comma; newlines become \n. C13: other control characters (which
+    // the TEXT grammar doesn't allow, and some clients reject the whole feed over) are left out; a tab stays.
+    private static string Escape(string s) => DropControls(s)
         .Replace("\\", "\\\\")
         .Replace(";", "\\;")
         .Replace(",", "\\,")
         .Replace("\r\n", "\\n")
         .Replace("\n", "\\n")
         .Replace("\r", "\\n");
+
+    private static string DropControls(string s) =>
+        s.Any(c => char.IsControl(c) && c is not ('\t' or '\r' or '\n'))
+            ? string.Concat(s.Where(c => !char.IsControl(c) || c is '\t' or '\r' or '\n'))
+            : s;
 }

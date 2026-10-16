@@ -58,6 +58,14 @@ public class IcsWriterTests
     }
 
     [Fact]
+    public void Control_characters_in_text_are_left_out(/* C13: RFC 5545 allows no CONTROL other than HTAB in text */)
+    {
+        var ics = IcsWriter.Write("x", [new IcsEvent("i1", Now, "Patch\u0007 box\u001b now", "a\u0000b", null, false)], Now);
+
+        ics.Should().Contain("SUMMARY:Patch box now").And.Contain("DESCRIPTION:ab");
+    }
+
+    [Fact]
     public void Omits_optional_lines_when_absent()
     {
         var ics = IcsWriter.Write("x", [new IcsEvent("i1", Now, "s", null, null, false)], Now);

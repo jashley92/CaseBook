@@ -21,7 +21,8 @@ public static class ZonedDays
         if (zone.IsInvalidTime(local)) local = local.AddHours(1);
         // One that falls back at midnight has 00:00 twice; the day starts at the first, which has the larger offset.
         var offset = zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local).Max() : zone.GetUtcOffset(local);
-        return new DateTimeOffset(local, offset).ToUniversalTime();
+        // BUG-577: 0001-01-01 east of Greenwich starts before the first representable instant; held there, not thrown.
+        return Common.Instants.FromLocalClamped(local, offset);
     }
 
     /// <summary>The local calendar date of <paramref name="instant"/> in <paramref name="zone"/>.</summary>
