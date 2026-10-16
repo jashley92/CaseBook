@@ -63,6 +63,10 @@ public static class ChatPayload
     // BUG-361: a MessageCard's title and text are Markdown, so "[Open in CaseBook](https://evil)" was a disguised link.
     // Only the brackets are escaped: Teams connectors aren't documented to honour every Markdown escape, and an
     // unhonoured one would show as a stray backslash in ordinary case text (2026-01_Wave). The summary is plain text.
+    // BUG-580: they're also HTML, so <a href> was a disguised link and <img> a tracking pixel: &, < and > are entities
+    // (& first, so an entity typed in case text shows as typed).
     private static string? TeamsEscape(string? s) =>
-        string.IsNullOrEmpty(s) ? s : s.Replace("[", @"\[", StringComparison.Ordinal).Replace("]", @"\]", StringComparison.Ordinal);
+        string.IsNullOrEmpty(s) ? s : s.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal)
+            .Replace("[", @"\[", StringComparison.Ordinal).Replace("]", @"\]", StringComparison.Ordinal);
 }

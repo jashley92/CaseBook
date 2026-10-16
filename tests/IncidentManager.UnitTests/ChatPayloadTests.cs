@@ -77,7 +77,25 @@ public class ChatPayloadTests
 
         var root = JsonDocument.Parse(json).RootElement;
         root.GetProperty("title").GetString().Should().Be("2026-01_Wave *now*", "only link syntax is escaped");
-        root.GetProperty("text").GetString().Should().Be(@"\[Open in CaseBook\](https://evil.example) `x` <b>");
+        root.GetProperty("text").GetString().Should().Be(@"\[Open in CaseBook\](https://evil.example) `x` &lt;b&gt;");
         root.GetProperty("summary").GetString().Should().Be("2026-01_Wave *now*", "the summary is plain text");
+    }
+
+    [Fact]
+    public void Teams_case_text_cannot_add_html(/* BUG-580 */)
+    {
+        var json = ChatPayload.Serialize(ChatWebhookFormat.Teams, new ChatNotification(
+            "<a href=\"https://evil.example\">Open in CaseBook</a>",
+            "R&D <img src=\"https://evil.example/t.gif\"> &lt;x&gt;", "https://cb.example/cases/1"));
+
+        var root = JsonDocument.Parse(json).RootElement;
+        root.GetProperty("title").GetString().Should()
+            .Be("&lt;a href=\"https://evil.example\"&gt;Open in CaseBook&lt;/a&gt;");
+        root.GetProperty("text").GetString().Should()
+            .Be("R&amp;D &lt;img src=\"https://evil.example/t.gif\"&gt; &amp;lt;x&amp;gt;", "an entity typed in case text shows as typed");
+        root.GetProperty("summary").GetString().Should().Be("<a href=\"https://evil.example\">Open in CaseBook</a>",
+            "the summary is plain text");
+        root.GetProperty("potentialAction")[0].GetProperty("targets")[0].GetProperty("uri").GetString()
+            .Should().Be("https://cb.example/cases/1", "the link CaseBook builds is left as it is");
     }
 }
