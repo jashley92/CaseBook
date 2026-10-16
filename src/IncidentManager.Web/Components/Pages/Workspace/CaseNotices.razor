@@ -55,7 +55,14 @@
     [Parameter] public EventCallback OnChanged { get; set; }
 
     // F-12: approve / withdraw a pending two-person hold release (the service enforces approver ≠ requester).
-    private async Task ApproveHoldRelease()
+    // BUG-603: one at a time (a double-click showed a false refusal from the second).
+    private readonly InFlight _releasing = new();
+
+    private Task ApproveHoldRelease() => _releasing.Run(ApproveHoldReleaseCore);
+
+    private Task CancelHoldRelease() => _releasing.Run(CancelHoldReleaseCore);
+
+    private async Task ApproveHoldReleaseCore()
     {
         try
         {
@@ -66,7 +73,7 @@
         catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
     }
 
-    private async Task CancelHoldRelease()
+    private async Task CancelHoldReleaseCore()
     {
         try
         {

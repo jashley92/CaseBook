@@ -22,7 +22,15 @@ public partial class CaseWorkspace
 {
     // Quick self-assign from the Actions menu — picks the case up as an Analyst without opening the modal.
     // Self-assignments never notify (the notifier skips assignee == assigner).
-    private async Task AssignToMe()
+    // BUG-603 (C8): one at a time each (a double-click, the menu and the palette). A second Assign to me said someone else
+    // had changed the case; a second hold or archive showed a false refusal.
+    private readonly InFlight _assigning = new();
+    private readonly InFlight _holding = new();
+    private readonly InFlight _archiving = new();
+
+    private Task AssignToMe() => _assigning.Run(AssignToMeCore);
+
+    private async Task AssignToMeCore()
     {
         try
         {
@@ -45,16 +53,21 @@ public partial class CaseWorkspace
     private async Task OpenShot(Guid evidenceId)
     {
         _previewShotId = evidenceId;
+        if (!_recordingView.Add(evidenceId)) return;   // BUG-603: a double-click on the thumbnail is one "Viewed"
         // PROD-13: opening the preview is a deliberate look at the evidence, so it lands in the chain of custody
         // as "Viewed" (the thumbnails that load on their own never do). Best-effort: a failed write must not
         // stop the person seeing the image.
         try { await EvidenceSvc.RecordViewedAsync(evidenceId); }
         catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException) { }
+        finally { _recordingView.Remove(evidenceId); }
     }
+    private readonly HashSet<Guid> _recordingView = [];
     private void CloseShot() => _previewShotId = null;
 
 
-    private async Task SetLegalHold(bool held)
+    private Task SetLegalHold(bool held) => _holding.Run(() => SetLegalHoldCore(held));
+
+    private async Task SetLegalHoldCore(bool held)
     {
         _retentionMsg = null;
         try
@@ -69,7 +82,9 @@ public partial class CaseWorkspace
         }
     }
 
-    private async Task SetArchived(bool archived)
+    private Task SetArchived(bool archived) => _archiving.Run(() => SetArchivedCore(archived));
+
+    private async Task SetArchivedCore(bool archived)
     {
         _retentionMsg = null;
         var id = Id;
