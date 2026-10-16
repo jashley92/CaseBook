@@ -66,7 +66,6 @@ public partial class ComponentContinuationTests
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 7,   // AddQuestion: _question = null;; AddTimelineCore: _tlDesc = "";; AddTimelineCore: _tlSource = null;; AddEventStepCore: _tlDesc = "";; AddEventStepC...
         // wave 2b, U3 (entities, overview, panels, evidence)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 6,   // AddEntity: _enValue = "";; AddEntity: _enLabel = null;; AddEntity: _enDescription = null;; AddEntity: _enSource = null;; AddRelationship: _relSour...
-        ["Pages/CaseTabs/CaseEvidenceTab.razor"] = 1,   // Upload: _evDesc = null;
         ["Pages/CaseTabs/CaseOverviewTab.razor"] = 1,   // AddLink: _linkDesc = null;
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/AccountApiTokens.razor"] = 1,   // CreateToken: _name = "";

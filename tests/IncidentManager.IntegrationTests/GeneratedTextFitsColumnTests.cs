@@ -93,7 +93,6 @@ public sealed partial class GeneratedTextFitsColumnTests
         ("AdminConfigBundle.razor", "s[..12]"),
         ("CaseAuditTab.razor", "value[..(max - 1)]"),
         ("CaseEntitiesTab.razor", "label[..21]"),
-        ("CaseEvidenceTab.razor", "h[..16]"),
         ("CaseOverviewTab.razor", "text[..157]"),
         ("CaseTimelineTab.razor", "text[..(ActionItem.MaxTitleLength - 1)]"),
         ("CaseTimelineTab.razor", "t[..87]"),

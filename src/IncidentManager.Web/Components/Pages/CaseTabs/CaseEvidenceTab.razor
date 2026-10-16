@@ -9,6 +9,8 @@
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
 @inject ILogger<CaseEvidenceTab> Logger
+@inject UnsavedEdits Edits
+@implements IDisposable
 
 <div id="evidence-dropzone">
     <AuthorizeView Policy="@Policies.EditCases">
@@ -21,7 +23,7 @@
                     </div>
                     <div class="col-md-5">
                         <label class="form-label small mb-0" for="ev-desc">Description</label>
-                        <input id="ev-desc" class="form-control form-control-sm" @bind="_evDesc" disabled="@_busy"
+                        <input id="ev-desc" class="form-control form-control-sm" @bind="_evDesc" @bind:event="oninput" disabled="@_busy"
                                maxlength="@IncidentManager.Application.Evidence.EvidenceService.MaxDescriptionLength" />
                     </div>
                     <div class="col-md-2">
@@ -100,7 +102,7 @@
                             </div>
                         </td>
                         <td>@FormatSize(ev.SizeBytes)</td>
-                        <td><code class="small">@(ev.Sha256 is { Length: > 16 } h ? h[..16] + "…" : ev.Sha256)</code></td>
+                        <td><code class="small">@IncidentManager.Application.Common.TextFit.Cap(ev.Sha256, 17)</code></td>
                         <td class="small text-muted">@TimeDisp.Long(ev.CreatedAtUtc)<br />@Users.DisplayFor(ev.CreatedBy)</td>
                         <td class="text-nowrap">
                             @if (IsImageEvidence(ev))
@@ -115,13 +117,13 @@
                             <a class="btn btn-sm btn-outline-primary" href="evidence/@ev.Id" target="_blank">Download</a>
                             @if (CanEdit)
                             {
-                                <button type="button" class="btn btn-sm btn-link ms-1" @onclick="() => _taskFor = _taskFor == ev.Id ? null : ev.Id"
+                                <button type="button" class="btn btn-sm btn-link ms-1" @onclick="() => ToggleTask(ev.Id)"
                                         title="Start a task about this file"><span class="bi bi-plus-lg" aria-hidden="true"></span> Task</button>
                             }
                         </td>
                     </tr>
                     var evTasks = Tasks.Where(t => t.AboutRef == $"{ActionItem.AboutEvidence}:{ev.Id}").ToList();
-                    @if (evTasks.Count > 0 || _taskFor == ev.Id)
+                    @if (evTasks.Count > 0 || _taskFor.Contains(ev.Id))
                     {
                         @* INV-28: the tasks about this file, and a new one. *@
                         <tr class="im-custody-row">
@@ -135,10 +137,10 @@
                                         }
                                     </div>
                                 }
-                                @if (_taskFor == ev.Id)
+                                @if (_taskFor.Contains(ev.Id))
                                 {
                                     <QuickTask CaseId="CaseId" About="@($"{ActionItem.AboutEvidence}:{ev.Id}")" Placeholder="A task about this file"
-                                               OnDone="async () => { _taskFor = null; await OnChanged.InvokeAsync(); }" OnCancel="() => _taskFor = null" />
+                                               OnDone="async () => { _taskFor.Remove(ev.Id); await OnChanged.InvokeAsync(); }" OnCancel="() => _taskFor.Remove(ev.Id)" />
                                 }
                             </td>
                         </tr>
@@ -181,7 +183,7 @@
                                     <span class="small text-muted">No custody events recorded.</span>
                                 }
                                 <AuthorizeView Policy="@Policies.EditCases" Context="xfer">
-                                    @if (_transferFor == ev.Id)
+                                    @if (_transfer.IsOpenFor(ev.Id))
                                     {
                                         @* PROD-13: a hand-off outside CaseBook is attested here, since no export ships evidence bytes. *@
                                         <div class="border rounded p-2 mt-2 bg-body">
@@ -190,23 +192,23 @@
                                             <div class="row g-2">
                                                 <div class="col-md-4">
                                                     <label class="form-label small mb-0" for="xfer-to-@ev.Id">Recipient</label>
-                                                    <input id="xfer-to-@ev.Id" class="form-control form-control-sm" maxlength="200" @bind="_xferTo"
+                                                    <input id="xfer-to-@ev.Id" class="form-control form-control-sm" maxlength="200" @bind="_xferTo" @bind:event="oninput" disabled="@_xferBusy"
                                                            placeholder="e.g. Outside counsel (Smith LLP)" />
                                                 </div>
                                                 <div class="col-md-3">
                                                     <label class="form-label small mb-0" for="xfer-how-@ev.Id">Method <span class="text-muted">(optional)</span></label>
-                                                    <input id="xfer-how-@ev.Id" class="form-control form-control-sm" maxlength="100" @bind="_xferHow"
+                                                    <input id="xfer-how-@ev.Id" class="form-control form-control-sm" maxlength="100" @bind="_xferHow" @bind:event="oninput" disabled="@_xferBusy"
                                                            placeholder="e.g. Encrypted SFTP" />
                                                 </div>
                                                 <div class="col-md-5">
                                                     <label class="form-label small mb-0" for="xfer-why-@ev.Id">Purpose</label>
-                                                    <input id="xfer-why-@ev.Id" class="form-control form-control-sm" maxlength="500" @bind="_xferWhy"
+                                                    <input id="xfer-why-@ev.Id" class="form-control form-control-sm" maxlength="500" @bind="_xferWhy" @bind:event="oninput" disabled="@_xferBusy"
                                                            placeholder="e.g. Forensic analysis under engagement letter" />
                                                 </div>
                                             </div>
                                             @if (_xferError is not null) { <div class="text-danger small mt-1">@_xferError</div> }
                                             <div class="mt-2 d-flex gap-2">
-                                                <button class="btn btn-sm btn-primary" @onclick="() => SaveTransfer(ev.Id)" disabled="@_xferBusy">Record transfer</button>
+                                                <button class="btn btn-sm btn-primary" @onclick="SaveTransfer" disabled="@_xferBusy">Record transfer</button>
                                                 <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTransfer">Cancel</button>
                                             </div>
                                         </div>
@@ -251,7 +253,20 @@
     [Parameter] public EventCallback<Guid> OnOpenEvidence { get; set; }
     /// <summary>INV-33: the current brief's text (all parts), to say when it cites a file.</summary>
     [Parameter] public string? BriefText { get; set; }
-    private Guid? _taskFor;
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // BUG-578: a description or a transfer typed and not saved is asked about before a tab switch, leaving the case or
+    // the time-display redraw hides it (a picked file alone isn't: picking it again is one click).
+    protected override void OnInitialized()
+    {
+        Edits.Track(this, "the evidence description you're writing", () => !string.IsNullOrWhiteSpace(_evDesc), Region);
+        Edits.Track(this, "the transfer you're recording", () => TransferDirty, Region);
+    }
+
+    public void Dispose() => Edits.Forget(this);
+    // BUG-578: the rows with a quick task open. Opening one on another row used to close (and empty) the first.
+    private readonly HashSet<Guid> _taskFor = [];
+    private void ToggleTask(Guid id) { if (!_taskFor.Add(id)) _taskFor.Remove(id); }
 
     private const long MaxEvidenceBytes = 50 * 1024 * 1024;
 
@@ -289,8 +304,10 @@
         {
             await using var stream = _file.OpenReadStream(MaxEvidenceBytes);
             var name = _file.Name;
-            await Evidence.UploadAsync(CaseId, _file.Name, _file.ContentType, stream, _evDesc);
-            _file = null; _evDesc = null;
+            var sentDesc = _evDesc;
+            await Evidence.UploadAsync(CaseId, _file.Name, _file.ContentType, stream, sentDesc);
+            _file = null;
+            _evDesc = DraftText.ClearIfUnchanged(_evDesc, sentDesc, null);   // BUG-601 (the box is disabled while it uploads)
             await OnChanged.InvokeAsync();
             Toasts.Success($"Uploaded {name}");
         }
@@ -310,7 +327,11 @@
     // bulk gesture, so we don't stage them for a per-file description. Same hashed/custody UploadAsync path.
     private const int MaxDropFiles = 50;
 
-    private async Task OnDropped(InputFileChangeEventArgs e)
+    // BUG-603: a second drop while one is being read in is ignored (_busy, below, covers the uploads themselves).
+    private readonly InFlight _dropping = new();
+    private Task OnDropped(InputFileChangeEventArgs e) => _dropping.Run(() => UploadDropped(e));
+
+    private async Task UploadDropped(InputFileChangeEventArgs e)
     {
         // REL-03: ignore a drop while an upload batch is already streaming. BUG-483: say so; it was dropped without a word.
         if (_busy) { Toasts.Warning("An upload is still running. Drop the files again once it's finished."); return; }
@@ -356,47 +377,72 @@
     // since the last look adds entries, PROD-13); the previous list stays visible while it refreshes.
     private async Task ToggleCustody(Guid evidenceId)
     {
-        if (!_custodyOpen.Add(evidenceId)) { _custodyOpen.Remove(evidenceId); return; }
+        if (_custodyOpen.Contains(evidenceId))
+        {
+            // BUG-578: collapsing hides the row's transfer form: refused while it holds text, else it's let go (so another
+            // row's can open).
+            if (_transfer.IsOpenFor(evidenceId))
+            {
+                if (TransferDirty) { Toasts.Info(EditSlot.Refusal("transfer")); return; }
+                _transfer.Close();
+            }
+            _custodyOpen.Remove(evidenceId);
+            return;
+        }
+        _custodyOpen.Add(evidenceId);
         await LoadCustody(evidenceId);
     }
+
+    // BUG-601: per file, the newest load's list is the one shown (one from before a transfer doesn't land after it).
+    private readonly KeyedLoad<Guid> _custodyLoads = new();
 
     private async Task LoadCustody(Guid evidenceId)
     {
         if (!_custody.ContainsKey(evidenceId)) _custodyLoading.Add(evidenceId);
-        try { _custody[evidenceId] = await Evidence.GetCustodyAsync(evidenceId); }
-        catch { _custody[evidenceId] = new(); }
-        finally { _custodyLoading.Remove(evidenceId); }
+        var t = _custodyLoads.Begin(evidenceId);
+        List<ChainOfCustodyEvent> events;
+        try { events = await Evidence.GetCustodyAsync(evidenceId); }
+        catch { events = new(); }
+        if (!_custodyLoads.IsCurrent(t)) return;
+        _custody[evidenceId] = events;
+        _custodyLoading.Remove(evidenceId);
     }
 
-    // PROD-13: record a hand-off outside CaseBook.
-    private Guid? _transferFor;
+    // PROD-13: record a hand-off outside CaseBook. BUG-578/601: one transfer form at a time (another row's is refused, not
+    // replaced, so what's typed in it stays), and a save closes only its own.
+    private readonly EditSlot<Guid> _transfer = new();
     private string? _xferTo, _xferHow, _xferWhy, _xferError;
     private bool _xferBusy;
 
     private void StartTransfer(Guid evidenceId)
     {
-        _transferFor = evidenceId;
+        if (!_transfer.TryOpen(evidenceId, Toasts, "transfer")) return;
         _xferTo = _xferHow = _xferWhy = _xferError = null;
     }
 
-    private void CancelTransfer() => _transferFor = null;
+    private void CancelTransfer() => _transfer.Close();
 
-    private async Task SaveTransfer(Guid evidenceId)
+    private bool TransferDirty => _transfer.IsOpen
+        && (!string.IsNullOrWhiteSpace(_xferTo) || !string.IsNullOrWhiteSpace(_xferHow) || !string.IsNullOrWhiteSpace(_xferWhy));
+
+    private async Task SaveTransfer()
     {
-        if (_xferBusy) return;
+        if (_xferBusy || _transfer.Current is not { } open) return;
         _xferError = null;
         _xferBusy = true;
         try
         {
-            await Evidence.RecordTransferAsync(evidenceId, _xferTo ?? "", _xferHow, _xferWhy ?? "");
-            _transferFor = null;
-            await LoadCustody(evidenceId);
+            await Evidence.RecordTransferAsync(open.Key, _xferTo ?? "", _xferHow, _xferWhy ?? "");
+            _transfer.CloseIf(open);
             Toasts.Success("Transfer recorded in the chain of custody");
+            await LoadCustody(open.Key);
         }
         catch (Exception ex)
         {
-            _xferError = UserFacingError.Describe(ex, Logger, "recording an evidence transfer",
+            var problem = UserFacingError.Describe(ex, Logger, "recording an evidence transfer",
                 "Couldn't record the transfer. Try again.");
+            if (_transfer.IsCurrent(open)) _xferError = problem;
+            else Toasts.Error(problem);
         }
         finally
         {
