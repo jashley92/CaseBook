@@ -49,7 +49,12 @@ carries on. The marker is audited and hashed like any setting, so removing it is
 recorded by the upgrade) is an audited update with the reason "CaseBook upkeep: not a change to the record"
 (`IntegrityUpkeep`), set through `IAppDbContext.PendingUpkeep`, never from user text (a reason that reads like it is
 refused). Changes after closure, the activity feed, the Desk, team workload, the stale-case reminder and the "updated"
-sort leave those entries out.
+sort leave those entries out. Upkeep re-hashes what it fills in, so it never signs off a row changed outside CaseBook
+(BUG-639): before an upkeep save, `AuditChainInterceptor` checks each row it changes as it was read. It must match its
+stored hash, and that hash must be the one its trail last recorded; where the trail records none, the row must agree
+with its trail as the upgrade requires, and the check must not be strict yet. A row that fails is put back unchanged,
+so the back-fill skips it and the check keeps reporting it. The upgrade's own saves change only the hash, and the
+upgrade has already checked those rows.
 | Hash chain | Every change appends an `AuditLog` row whose hash covers the previous row's hash | Inserted, deleted, reordered or edited history | `AuditChainInterceptor`, `HashChainService` |
 | Signed seals | Periodic RSA signature over the chain head, stored in the database and as files out of band | A competent rewrite that recomputes every hash | `IntegrityService`, `RsaSealSigner`, `FileSealStore` |
 | Ledger (optional) | SQL Server append-only ledger tables plus external digests | Any UPDATE or DELETE, even by `sysadmin`; page-level tampering | `deploy/sql/02-Enable-Ledger.sql` |

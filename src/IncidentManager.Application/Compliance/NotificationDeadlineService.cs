@@ -164,8 +164,9 @@ public sealed class NotificationDeadlineService
 
     /// <summary>
     /// WF-77: records each new notice's deadline as it stands now (see <see cref="JurisdictionNotice.DueAtUtc"/>), for one
-    /// case or, with null, every case with a notice lacking one (start-up). Written straight to the column, not audited:
-    /// it's derived from the rules. A no-op while the deadline clock is off. Returns how many notices it filled.
+    /// case or, with null, every case with a notice lacking one (start-up). An audited change, CaseBook's upkeep (BUG-630);
+    /// a notice changed outside CaseBook isn't filled (BUG-639). A no-op while the deadline clock is off. Returns how many
+    /// notices it filled.
     /// </summary>
     public async Task<int> FreezeNoticeDuesAsync(Guid? caseId = null, CancellationToken ct = default)
     {
@@ -213,7 +214,8 @@ public sealed class NotificationDeadlineService
             db.PendingUpkeep = true;
             try { await db.SaveChangesAsync(ct); }
             finally { db.PendingUpkeep = false; }
-            filled += rows.Count;
+            // BUG-639: a notice changed outside CaseBook is put back as read rather than signed off; the check reports it.
+            filled += rows.Count(r => r.DueAtUtc is not null);
         }
         return filled;
     }

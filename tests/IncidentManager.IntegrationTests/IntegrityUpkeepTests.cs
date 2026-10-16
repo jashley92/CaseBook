@@ -1,6 +1,8 @@
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Integrity;
+using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
@@ -162,5 +164,112 @@ public sealed class IntegrityUpkeepTests
         var bad = await VerifyAsync(database);
         bad!.EntityType.Should().Be(nameof(Case));
         bad.Id.Should().Be(id);
+    }
+
+    // As an older release left a record's trail: the RowHash taken out of its update entries (v1.0-v1.5.0).
+    private static async Task UnrecordHashAsync(TestDatabase database, string type, Guid id)
+    {
+        await using var raw = new AppDbContext(database.OptionsWithoutInterceptors);
+        var key = id.ToString();
+        foreach (var entry in await raw.AuditLog.Where(a => a.EntityType == type && a.EntityId == key && a.AfterJson != null
+                                                             && a.Action != AuditAction.Create).ToListAsync())
+        {
+            var after = JsonNode.Parse(entry.AfterJson!)!.AsObject();
+            after.Remove(nameof(IHashableEntity.RowHash));
+            entry.AfterJson = after.ToJsonString();
+        }
+        await raw.SaveChangesAsync();
+    }
+
+    // As v1.6.3-v1.6.12 left a case: its hash, and its trail's, in format 3.
+    private async Task AsFormat3Async(TestDatabase database, Guid id)
+    {
+        await using var raw = new AppDbContext(database.OptionsWithoutInterceptors);
+        var row = await raw.Cases.Include(c => c.DataElements).SingleAsync(c => c.Id == id);
+        var v4 = row.RowHash!;
+        var v3 = Canonical.V3Prefix + _hasher.Hash(Canonical.InFormat(3, row.BuildCanonicalContent));
+        row.RowHash = v3;
+        var key = id.ToString();
+        foreach (var e in await raw.AuditLog.Where(a => a.EntityType == nameof(Case) && a.EntityId == key && a.AfterJson != null).ToListAsync())
+            e.AfterJson = e.AfterJson!.Replace(v4, v3, StringComparison.Ordinal);
+        await raw.SaveChangesAsync();
+    }
+
+    private async Task<Guid> ReportedWithoutKeptJurisdictionsAsync(TestDatabase database, int skip)
+    {
+        await using var db = database.NewContext();
+        var c = await db.Cases.Include(x => x.DataElements).Where(x => x.ReportedAtUtc == null && x.Phase != CasePhase.Closed)
+            .OrderBy(x => x.CaseNumber).Skip(skip).FirstAsync();
+        c.MarkReported(_clock.UtcNow, "alice", _clock.UtcNow);   // as before WF-11: reported, nothing kept
+        await db.SaveChangesAsync();
+        return c.Id;
+    }
+
+    private static async Task<string?> KeptAsync(TestDatabase database, Guid id)
+    {
+        await using var db = database.NewContext();
+        return await db.Cases.AsNoTracking().Where(c => c.Id == id).Select(c => c.ReportedJurisdictions).SingleAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task The_back_fill_doesnt_sign_off_a_case_changed_in_the_database(string provider /* BUG-639 */)
+    {
+        using var database = Seeded(provider);
+        var id = await ReportedWithoutKeptJurisdictionsAsync(database, 0);
+        // Its title rewritten in the database, and the kept jurisdictions cleared so the back-fill re-hashes it.
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+            await raw.Cases.Where(c => c.Id == id).ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Title, "Nothing to see").SetProperty(c => c.ReportedJurisdictions, (string?)null));
+        (await VerifyAsync(database))!.Id.Should().Be(id);
+
+        await using (var db = database.NewContext()) await ReportedJurisdictionsBackfill.RunAsync(db);
+        (await KeptAsync(database, id)).Should().BeNull("a case that no longer matches its hash isn't filled in");
+        var bad = await VerifyAsync(database);
+        bad!.Id.Should().Be(id, "the change is still reported");
+        bad.Detail.Should().Contain("no longer matches its hash");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task The_back_fill_doesnt_sign_off_a_case_from_before_v151_rewritten_with_its_hash(string provider /* BUG-639 */)
+    {
+        using var database = Seeded(provider);
+        var id = await ReportedWithoutKeptJurisdictionsAsync(database, 0);
+        await UnrecordHashAsync(database, nameof(Case), id);   // its latest entry as v1.0-v1.5.0 wrote it
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            var row = await raw.Cases.Include(c => c.DataElements).SingleAsync(c => c.Id == id);
+            row.Title = "Nothing to see";
+            row.ReportedJurisdictions = null;
+            row.RowHash = _hasher.ComputeRowHash(row);   // recomputed: before the upgrade nothing can tell (BUG-629)
+            await raw.SaveChangesAsync();
+        }
+
+        await using (var db = database.NewContext()) await ReportedJurisdictionsBackfill.RunAsync(db);
+        (await KeptAsync(database, id)).Should().BeNull("it doesn't agree with its trail");
+        RowHashUpgrade.Result result;
+        await using (var db = database.NewContext()) result = await RowHashUpgrade.RunAsync(db, _hasher, _clock);
+        result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(Case)} {id}");
+        (await VerifyAsync(database))!.Id.Should().Be(id);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task The_back_fill_fills_honest_cases_from_older_releases(string provider /* BUG-639 */)
+    {
+        using var database = Seeded(provider);
+        var format3 = await ReportedWithoutKeptJurisdictionsAsync(database, 0);
+        var beforeV151 = await ReportedWithoutKeptJurisdictionsAsync(database, 1);
+        await AsFormat3Async(database, format3);
+        await UnrecordHashAsync(database, nameof(Case), beforeV151);
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
+
+        await using (var db = database.NewContext()) await ReportedJurisdictionsBackfill.RunAsync(db);
+        (await KeptAsync(database, format3)).Should().NotBeNull("a format-3 case that matches its hash and trail is filled");
+        (await KeptAsync(database, beforeV151)).Should().NotBeNull("a case whose trail predates hashes, and agrees with it, is filled");
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
+        await using (var db = database.NewContext()) (await RowHashUpgrade.RunAsync(db, _hasher, _clock)).Left.Should().BeEmpty();
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
     }
 }

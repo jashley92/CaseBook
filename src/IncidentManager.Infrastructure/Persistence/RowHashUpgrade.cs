@@ -105,17 +105,20 @@ public static class RowHashUpgrade
         return Canonical.Covers(Canonical.FormatOf(stored), row.BuildCanonicalContent) ? null : Need.NotCovered;
     }
 
-    // A case's data elements and a step's tactics are in its hash, not hashed on their own: each must be one the trail
-    // records (CaseBook audits every one), or a row planted under the case would be signed off with it.
-    private static string? ChildOutsideTheTrail(IHashableEntity row, RowIntegrityVerifier.ChainRecords records)
+    /// <summary>The child rows a record's hash covers that aren't hashed on their own (a case's data elements, a step's tactics).</summary>
+    internal static IEnumerable<Entity> HashedChildren(IHashableEntity row) => row switch
     {
-        IEnumerable<Entity> children = row switch
-        {
-            Case c => c.DataElements,
-            TimelineEntry t => t.Tactics,
-            _ => [],
-        };
-        foreach (var child in children)
+        Case c => c.DataElements,
+        TimelineEntry t => t.Tactics,
+        _ => [],
+    };
+
+    // A case's data elements and a step's tactics are in its hash, not hashed on their own: each must be one the trail
+    // records (CaseBook audits every one), or a row planted under the case would be signed off with it (BUG-639: the
+    // upkeep guard asks the same).
+    internal static string? ChildOutsideTheTrail(IHashableEntity row, RowIntegrityVerifier.ChainRecords records)
+    {
+        foreach (var child in HashedChildren(row))
             if (!records.TryGet((child.GetType().Name, child.Id.ToString()), out var last) || last.Deleted)
                 return $"its {child.GetType().Name} {child.Id} is in no audit entry";
         return null;

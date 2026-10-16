@@ -478,8 +478,13 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         foreach (var id in new[] { reopened, reported })
             await NewCases(NewContext()).RecordNoticeAsync(id, "NY", _clock.UtcNow);
         await NewCases(NewContext()).UpdateImpactAssessmentAsync(reopened, 500, ["SSN", "DL"], "NY");   // NJ outstanding
-        // As an earlier release left them: the codes only.
-        await db.Cases.ExecuteUpdateAsync(s => s.SetProperty(c => c.ReportedJurisdictions, "NY"));
+        // As an earlier release left them: the codes only (saved through CaseBook, BUG-639: the back-fill refuses a case
+        // changed in the database).
+        await using (var legacy = NewContext())
+        {
+            foreach (var c in await legacy.Cases.Include(x => x.DataElements).ToListAsync()) c.ReportedJurisdictions = "NY";
+            await legacy.SaveChangesAsync();
+        }
         (await NewDeadlines().EvaluateAsync(reopened)).Statuses.Select(s => s.JurisdictionCode).Should().Equal("NY");
 
         (await ReportedJurisdictionsBackfill.RunAsync(NewContext())).Should().Be(2);
@@ -566,7 +571,7 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);
         await using (var db = NewContext())
         {
-            var c = await db.Cases.SingleAsync(x => x.Id == id);
+            var c = await db.Cases.Include(x => x.DataElements).SingleAsync(x => x.Id == id);   // with what its hash covers
             c.MarkReported(_clock.UtcNow, "alice", _clock.UtcNow);   // as before WF-11: nothing recorded
             await db.SaveChangesAsync();
             (await db.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().BeNull();
@@ -618,9 +623,13 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         }
 
         // The start-up backfill freezes the split codes, not "NY;CA" (whose ";" would end the codes part).
+        // Reported as before WF-11 (nothing kept), saved through CaseBook (BUG-639: a case changed in the database isn't filled).
         await using (var db = NewContext())
-            await db.Cases.Where(x => x.Id == id).ExecuteUpdateAsync(u => u
-                .SetProperty(x => x.ReportedAtUtc, notifiedAt).SetProperty(x => x.ReportedJurisdictions, (string?)null));
+        {
+            var c = await db.Cases.Include(x => x.DataElements).SingleAsync(x => x.Id == id);
+            c.MarkReported(notifiedAt, "alice", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
         await using (var db = NewContext())
             (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db)).Should().Be(1);
         await using var check = NewContext();
@@ -666,6 +675,98 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         var bad = await VerifyAsync();
         bad!.EntityType.Should().Be(nameof(JurisdictionNotice));
         bad.Detail.Should().Contain("no longer matches its hash");
+    }
+
+    private async Task<Application.Integrity.RowIntegrityVerifier.RowMismatch?> VerifyRecordsAsync()
+    {
+        await using var db = NewContext();
+        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        return await Application.Integrity.RowIntegrityVerifier.VerifyAsync(db, _hasher, chain);
+    }
+
+    private async Task<Guid> AddNoticeAsync(Guid caseId, string code, DateTimeOffset notifiedAt)
+    {
+        await using var db = NewContext();
+        var n = new JurisdictionNotice { CaseId = caseId, Jurisdiction = code, NotifiedAtUtc = notifiedAt, CreatedBy = "alice", CreatedAtUtc = notifiedAt };
+        db.JurisdictionNotices.Add(n);
+        await db.SaveChangesAsync();
+        return n.Id;
+    }
+
+    private async Task<DateTimeOffset?> KeptDueAsync(Guid noticeId)
+    {
+        await using var db = NewContext();
+        return await db.JurisdictionNotices.AsNoTracking().Where(n => n.Id == noticeId).Select(n => n.DueAtUtc).SingleAsync();
+    }
+
+    [Fact]
+    public async Task A_notice_changed_in_the_database_isnt_given_a_kept_deadline(/* BUG-639 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 80);   // NY was due 8 h ago
+        EnableClock();
+        await SetJurisdictionsAsync("SSN", "NY,NJ");
+        var ny = await AddNoticeAsync(id, "NY", _clock.UtcNow.AddHours(-1));   // told late
+        (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(1);
+        (await VerifyRecordsAsync())?.Detail.Should().BeNull();
+
+        // Its notified time moved before the deadline in the database (a missed notice made to look met), and its kept
+        // deadline cleared so the freeze re-hashes it.
+        await using (var raw = NewContext())
+            await raw.JurisdictionNotices.Where(n => n.Id == ny).ExecuteUpdateAsync(s => s
+                .SetProperty(n => n.NotifiedAtUtc, _clock.UtcNow.AddHours(-20)).SetProperty(n => n.DueAtUtc, (DateTimeOffset?)null));
+        (await VerifyRecordsAsync())!.Id.Should().Be(ny);
+
+        // At start-up ...
+        (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(0);
+        (await KeptDueAsync(ny)).Should().BeNull("a notice that no longer matches its hash isn't given a deadline");
+        (await VerifyRecordsAsync())!.Id.Should().Be(ny, "the change is still reported");
+
+        // ... and when another notice is recorded on the case.
+        await NewCases(NewContext()).RecordNoticeAsync(id, "NJ", _clock.UtcNow);
+        (await KeptDueAsync(ny)).Should().BeNull();
+        await using (var db = NewContext())
+            (await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id && n.Jurisdiction == "NJ")).DueAtUtc
+                .Should().NotBeNull("the honest notice is still given its deadline");
+        var bad = await VerifyRecordsAsync();
+        bad!.Id.Should().Be(ny);
+        bad.Detail.Should().Contain("no longer matches its hash");
+    }
+
+    [Fact]
+    public async Task Honest_notices_from_older_releases_are_given_their_kept_deadline(/* BUG-639 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await SetJurisdictionsAsync("SSN", "NY,NJ");
+        var format3 = await AddNoticeAsync(id, "NY", _clock.UtcNow.AddHours(-1));
+        var beforeV151 = await AddNoticeAsync(id, "NJ", _clock.UtcNow.AddHours(-1));
+        await using (var raw = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options))
+        {
+            // One hashed in format 3 (v1.6.3-v1.6.12), its trail too ...
+            var row = await raw.JurisdictionNotices.SingleAsync(n => n.Id == format3);
+            var v4 = row.RowHash!;
+            var v3 = IncidentManager.Domain.Common.Canonical.V3Prefix
+                     + _hasher.Hash(IncidentManager.Domain.Common.Canonical.InFormat(3, row.BuildCanonicalContent));
+            row.RowHash = v3;
+            var key = format3.ToString();
+            foreach (var e in await raw.AuditLog.Where(a => a.EntityId == key && a.AfterJson != null).ToListAsync())
+                e.AfterJson = e.AfterJson!.Replace(v4, v3, StringComparison.Ordinal);
+            // ... and one whose trail recorded no hash (before v1.5.1).
+            var other = beforeV151.ToString();
+            foreach (var e in await raw.AuditLog.Where(a => a.EntityId == other && a.AfterJson != null).ToListAsync())
+            {
+                var after = System.Text.Json.Nodes.JsonNode.Parse(e.AfterJson!)!.AsObject();
+                after.Remove(nameof(JurisdictionNotice.RowHash));
+                e.AfterJson = after.ToJsonString();
+            }
+            await raw.SaveChangesAsync();
+        }
+        (await VerifyRecordsAsync())?.Detail.Should().BeNull();
+
+        (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(2);
+        (await KeptDueAsync(format3)).Should().NotBeNull();
+        (await KeptDueAsync(beforeV151)).Should().NotBeNull();
+        (await VerifyRecordsAsync())?.Detail.Should().BeNull();
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Integrity;
@@ -8,6 +9,7 @@ using IncidentManager.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace IncidentManager.Infrastructure.Persistence.Interceptors;
 
@@ -235,6 +237,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     private PreparedAudit? Prepare(DbContext ctx)
     {
         ctx.ChangeTracker.DetectChanges();
+        if (ctx is AppDbContext { PendingUpkeep: true } kept) RefuseUnvouchedUpkeep(kept);   // BUG-639
 
         var actor = _user.IsAuthenticated ? _user.UserId : "system";
         var now = _clock.UtcNow;
@@ -308,6 +311,115 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         }
 
         return new PreparedAudit(auditable, caseNumbers, evidenceCases, actor, now, reason, replacedOwned);
+    }
+
+    /// <summary>
+    /// BUG-639: upkeep re-hashes the rows it fills in, and its entry records the new hash, so a row changed outside CaseBook
+    /// (any field) whose derived value was cleared too would be filled in and signed off clean. So each hashable row an
+    /// upkeep save changes must be vouched for as it was read: it matches its stored hash and that hash is the one its trail
+    /// last recorded; or, where the trail records none (a row from before v1.5.1, or from before row hashes), it agrees
+    /// with its trail and its child rows are in it, as the upgrade requires (RowHashUpgrade), and the check isn't strict
+    /// yet. A row that isn't is put back as read, so nothing of it is saved: the writer skips it and the record check
+    /// reports it. The upgrade's own saves change only the hash, and it has vouched for each row itself (some, a row a
+    /// migration wrote, have no trail to vouch for them here).
+    /// </summary>
+    private void RefuseUnvouchedUpkeep(AppDbContext ctx)
+    {
+        var changed = ctx.ChangeTracker.Entries()
+            .Where(e => e.State == EntityState.Modified && e.Entity is IHashableEntity && !e.Metadata.IsOwned() && ChangesContent(e))
+            .ToList();
+        if (changed.Count == 0) return;
+        var replacedOwned = ctx.ChangeTracker.Entries().Where(x => x.Metadata.IsOwned() && x.State == EntityState.Deleted).ToList();
+        var strict = new Lazy<bool>(() => ctx.AppSettings.AsNoTracking()
+            .Any(s => s.Key == RowIntegrityVerifier.UpgradeMarkerKey && s.Value == RowIntegrityVerifier.UpgradeMarkerValue));
+        foreach (var group in changed.GroupBy(e => e.Entity.GetType()))
+        {
+            var records = new RowIntegrityVerifier.ChainRecords();
+            var trails = new Dictionary<string, TrailSnapshot>(StringComparer.OrdinalIgnoreCase);
+            ReadTrail(ctx, group.Key.Name, group.Select(e => ((Entity)e.Entity).Id.ToString()).ToList(), records, trails);
+            foreach (var e in group)
+            {
+                if (Vouched(ctx, e, AsRead(e, replacedOwned), records, trails, strict)) continue;
+                if (e.References.Any(r => r.TargetEntry is { State: EntityState.Added or EntityState.Deleted } t && t.Metadata.IsOwned()))
+                    throw new InvalidOperationException("CaseBook's upkeep doesn't replace a record's details. Nothing was saved.");
+                foreach (var r in e.References)
+                    if (r.TargetEntry is { State: EntityState.Modified } t && t.Metadata.IsOwned()) PutBackAsRead(t);
+                PutBackAsRead(e);
+            }
+        }
+    }
+
+    private bool Vouched(AppDbContext ctx, EntityEntry e, IHashableEntity asRead, RowIntegrityVerifier.ChainRecords records,
+        Dictionary<string, TrailSnapshot> trails, Lazy<bool> strict)
+    {
+        var id = ((Entity)e.Entity).Id.ToString();
+        var stored = e.Property(nameof(IHashableEntity.RowHash)).OriginalValue as string;
+        if (!records.TryGet((e.Entity.GetType().Name, id), out var last) || last.Deleted) return false;
+        if (stored is { Length: > 0 } && !_hasher.RowHashMatches(asRead, stored)) return false;
+        if (last.Hash is not null) return string.Equals(last.Hash, stored, StringComparison.OrdinalIgnoreCase);
+        if (strict.Value || !trails.TryGetValue(id, out var trail) || !trail.Agrees(asRead)) return false;
+        var children = RowHashUpgrade.HashedChildren(asRead).ToList();
+        if (children.Count == 0) return true;
+        var childRecords = new RowIntegrityVerifier.ChainRecords();
+        foreach (var g in children.GroupBy(c => c.GetType().Name))
+            ReadTrail(ctx, g.Key, g.Select(c => c.Id.ToString()).ToList(), childRecords, null);
+        return RowHashUpgrade.ChildOutsideTheTrail(asRead, childRecords) is null;
+    }
+
+    // Each record's entries, in sequence order, into its latest recorded hash and (when asked) what its trail describes.
+    private static void ReadTrail(DbContext ctx, string type, List<string> ids, RowIntegrityVerifier.ChainRecords records,
+        Dictionary<string, TrailSnapshot>? trails)
+    {
+        foreach (var chunk in ids.Chunk(500))
+            foreach (var a in ctx.Set<AuditLogEntry>().AsNoTracking()
+                         .Where(a => a.EntityType == type && a.EntityId != null && chunk.Contains(a.EntityId))
+                         .OrderBy(a => a.Sequence).ToList())
+            {
+                records.Add(a);
+                if (trails is null) continue;
+                if (!trails.TryGetValue(a.EntityId!, out var trail)) trails[a.EntityId!] = trail = new TrailSnapshot();
+                trail.Add(a.Action, a.AfterJson);
+            }
+    }
+
+    private static bool ChangesContent(EntityEntry e) =>
+        e.Properties.Any(p => p.IsModified && !p.Metadata.IsShadowProperty() && p.Metadata.Name != nameof(IHashableEntity.RowHash))
+        || e.References.Any(r => r.TargetEntry is { State: EntityState.Added or EntityState.Modified or EntityState.Deleted } t
+                                 && t.Metadata.IsOwned());
+
+    private static readonly MethodInfo CloneOf =
+        typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+    // A copy of the row as it was read: its changed values (and its changed or replaced value objects') put back.
+    private static IHashableEntity AsRead(EntityEntry e, IReadOnlyList<EntityEntry> replacedOwned)
+    {
+        var copy = WithOriginals(e, CloneOf.Invoke(e.Entity, null)!);
+        foreach (var r in e.References)
+        {
+            if (r.TargetEntry is not { } t || !t.Metadata.IsOwned()) continue;
+            if (t.State == EntityState.Modified) SetClr(r.Metadata, copy, WithOriginals(t, CloneOf.Invoke(t.Entity, null)!));
+            else if (t.State == EntityState.Added) SetClr(r.Metadata, copy, ReplacedBy(t, e, replacedOwned)?.Entity);
+        }
+        return (IHashableEntity)copy;
+    }
+
+    private static object WithOriginals(EntityEntry e, object target)
+    {
+        foreach (var p in e.Properties)
+            if (p.IsModified && !p.Metadata.IsShadowProperty()) SetClr(p.Metadata, target, p.OriginalValue);
+        return target;
+    }
+
+    private static void SetClr(IPropertyBase p, object target, object? value)
+    {
+        if (p.PropertyInfo?.GetSetMethod(true) is { } set) set.Invoke(target, [value]);
+        else p.FieldInfo?.SetValue(target, value);
+    }
+
+    private static void PutBackAsRead(EntityEntry e)
+    {
+        e.CurrentValues.SetValues(e.OriginalValues);
+        e.State = EntityState.Unchanged;
     }
 
     /// <summary>

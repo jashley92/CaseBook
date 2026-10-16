@@ -23,6 +23,7 @@ public static class ReportedJurisdictionsBackfill
         var cases = await db.Cases.AsNoTracking().AsSplitQuery().Include(c => c.DataElements).Include(c => c.JurisdictionNotices)   // S8733
             .Where(c => c.ReportedAtUtc != null && c.ReportedJurisdictions == null)
             .ToListAsync(ct);
+        var written = 0;
         foreach (var c in cases)
         {
             IEnumerable<string> codes = c.JurisdictionNotices.Count > 0
@@ -31,9 +32,9 @@ public static class ReportedJurisdictionsBackfill
             var frozen = string.Join(',', codes.Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
             frozen = Case.WithElements(frozen, c.DataElements.Select(d => d.ElementKey)) ?? frozen;
-            await WriteAsync(db, c.Id, null, frozen, ct);
+            written += await WriteAsync(db, c.Id, null, frozen, ct);
         }
-        return cases.Count + await RepairDamagedAsync(db, ct) + await KeepElementsAsync(db, ct);
+        return written + await RepairDamagedAsync(db, ct) + await KeepElementsAsync(db, ct);
     }
 
     /// <summary>
@@ -49,13 +50,17 @@ public static class ReportedJurisdictionsBackfill
         if (row is null || !string.Equals(row.ReportedJurisdictions, expected, StringComparison.Ordinal)) return 0;
         row.ReportedJurisdictions = value;
         db.PendingUpkeep = true;
-        try { await db.SaveChangesAsync(ct); }
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            // BUG-639: a case changed outside CaseBook is put back as read rather than signed off; the check reports it.
+            return string.Equals(row.ReportedJurisdictions, value, StringComparison.Ordinal) ? 1 : 0;
+        }
         finally
         {
             db.PendingUpkeep = false;
             db.ChangeTracker.Clear();
         }
-        return 1;
     }
 
     // BUG-589: before BUG-404 a code could hold ";", so a codes-only value "NY;CA" read as code NY and element CA, and one
