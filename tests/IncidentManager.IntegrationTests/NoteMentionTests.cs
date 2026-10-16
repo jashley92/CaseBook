@@ -41,12 +41,67 @@ public sealed class NoteMentionTests : IDisposable
         .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
         .Options;
 
+    // BUG-597: what the directory of record says now (null: it can't say, so the mirror stands).
+    private readonly Dictionary<string, IncidentManager.Application.ApiTokens.OwnerAccess?> _ad = new();
+
     private CaseService Svc()
     {
         var db = new AppDbContext(Options());
         return new CaseService(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
             _notifications, new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
-            users: _dir, roles: new CodeRoles());
+            users: _dir, roles: new CodeRoles(),
+            audience: new IncidentManager.Application.Notifications.ReminderAudience(_dir, new CodeRoles(), new Ad(_ad)));
+    }
+
+    private sealed class Ad(Dictionary<string, IncidentManager.Application.ApiTokens.OwnerAccess?> answers)
+        : IncidentManager.Application.ApiTokens.ITokenOwnerCheck
+    {
+        public Task<IncidentManager.Application.ApiTokens.OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default) =>
+            Task.FromResult(answers.GetValueOrDefault(ownerUserId));
+    }
+
+    private static IncidentManager.Application.ApiTokens.OwnerAccess Left() => new(false, new HashSet<string> { "Analyst" });
+
+    [Fact]
+    public async Task A_leaver_the_directory_has_disabled_is_not_emailed_a_mention_or_a_handoff(/* BUG-597 */)
+    {
+        var id = await SeedAsync(restricted: false);
+        _ad["outsider"] = Left();   // still "Analyst" in the mirror, from their last sign-in
+
+        await Svc().AddNoteAsync(id, "@Teammate @Outsider see this", ["teammate", "outsider"]);
+        _notifications.Mentioned.Should().Equal("teammate");
+        await using (var db = new AppDbContext(Options()))
+            (await db.Notes.SingleAsync()).MentionsCsv.Should().Be("teammate,outsider", "the note still records who it mentions");
+
+        await Svc().EditNoteAsync(id, (await CurrentNote()).Id, "@Teammate @Outsider @Legal see this", ["teammate", "outsider", "legal"]);
+        _notifications.Mentioned.Should().Equal("teammate", "legal");
+
+        await Svc().HandOffAsync(id, "outsider", "Over to you.", reassignMyOpenTasks: false, notify: true);
+        _notifications.HandedOff.Should().BeEmpty();
+        _ad["teammate"] = null;   // the directory can't say: the mirror stands (WF-57)
+        await Svc().HandOffAsync(id, "teammate", "Over to you.", reassignMyOpenTasks: false, notify: true);
+        _notifications.HandedOff.Should().Equal("teammate");
+    }
+
+    [Fact]
+    public async Task An_assignment_is_announced_only_to_someone_entitled_to_the_case(/* BUG-596 */)
+    {
+        var id = await SeedAsync(restricted: true);
+        _dir.Add(new("norole", "No role", null, null, ""));
+        _dir.Add(new("leaver", "Leaver", null, null, "Analyst"));
+        _ad["leaver"] = Left();
+
+        await Svc().AssignAsync(id, "norole", "No role", CaseAssignmentRole.Analyst);
+        await Svc().ReassignAsync(id, "teammate", "leaver", "Leaver", CaseAssignmentRole.Analyst);   // joins as teammate leaves
+        await Svc().Invoking(s => s.UnassignAsync(id, "leaver")).Should().NotThrowAsync();
+        await Svc().AssignAsync(id, "leaver", "Leaver", CaseAssignmentRole.Analyst);
+        await Svc().AddAssigneeAsync(id, "stranger", "Not in the mirror", CaseAssignmentRole.Analyst);
+        _notifications.Assigned.Should().BeEmpty("none of them can open the case, so none is told about it");
+
+        await Svc().AssignAsync(id, "outsider", "Outsider", CaseAssignmentRole.Analyst);
+        _notifications.Assigned.Should().Equal(["outsider"], "joining a restricted case's team lets them see it");
+        await Svc().AssignAsync(id, "ic", "IC", CaseAssignmentRole.IncidentCommander);
+        _notifications.Assigned.Should().Equal(["outsider"], "a self-assignment isn't announced, as before");
     }
 
     private async Task<Guid> SeedAsync(bool restricted)
@@ -173,6 +228,7 @@ public sealed class NoteMentionTests : IDisposable
             new("outsider", "Outsider", null, null, "Analyst"),
             new("legal", "Legal", null, null, "LegalPrivacy"),
         ];
+        public void Add(UserSummary u) => _all.Add(u);
         public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;
         public IReadOnlyList<UserSummary> All() => _all;
         public UserSummary? Resolve(string userId) => _all.FirstOrDefault(u => u.UserId == userId);
@@ -187,7 +243,12 @@ public sealed class NoteMentionTests : IDisposable
         public List<Guid> NoteIds { get; } = new();
         public List<string> HandedOff { get; } = new();
         public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default) => Task.CompletedTask;
+        public List<string> Assigned { get; } = new();
+        public Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default)
+        {
+            Assigned.Add(assigneeUserId);
+            return Task.CompletedTask;
+        }
         public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
         public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
         public Task OnMentionedAsync(Case c, string byUserId, IReadOnlyCollection<string> mentionedUserIds, string noteExcerpt, Guid noteId, CancellationToken ct = default)

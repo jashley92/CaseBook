@@ -67,6 +67,9 @@ public static class DependencyInjection
         // service); the notify-once tracker is a singleton so "already reminded" survives between passes.
         services.AddScoped<Notifications.OverdueActionItemScanner>();
         services.AddScoped<Notifications.UndeliveredAlertService>();   // BUG-101
+        // BUG-596/597: the one audience filter for notifications from user actions (CaseService), asking the directory
+        // of record (ITokenOwnerCheck, when registered) as the reminder scans do.
+        services.AddTransient<Notifications.ReminderAudience>();
         services.AddSingleton<Notifications.IOverdueActionItemTracker, Notifications.OverdueActionItemTracker>();
         // E-03d: due-soon after-action scan (fires ahead of the deadline). Same shape as the overdue scan;
         // a separate tracker so the "due soon" and "overdue" reminders for one item are independent episodes.

@@ -104,6 +104,16 @@ public sealed class ReminderAudience(IUserDirectory? users, IRoleDirectory? role
         return kept;
     }
 
+    /// <summary>
+    /// BUG-596/597: the people a notification from a user's action (an assignment, an @mention, a handoff) may go to, by
+    /// the same rule as the reminders: entitled now, by the directory of record where it can say, and able to see a
+    /// restricted case. The instance from DI lives as long as its caller (a circuit, in the UI), so each call looks
+    /// people up afresh rather than keep an answer that would outlast someone leaving.
+    /// </summary>
+    public Task<List<string>> RecipientsAsync(IEnumerable<string> userIds, bool isRestricted, string? incidentCommander,
+        IReadOnlyCollection<string> team, CancellationToken ct = default) =>
+        new ReminderAudience(users, roles, owners).EntitledOnlyAsync(userIds, isRestricted, incidentCommander, team, ct);
+
     // The roles a person holds now: those the directory of record maps them to when it answers, else the mirror's.
     private async Task<string?> RolesNowAsync(string userId, CancellationToken ct)
     {

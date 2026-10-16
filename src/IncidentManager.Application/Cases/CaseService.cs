@@ -104,8 +104,10 @@ public sealed class CaseService
         IExerciseEscalationPolicy? exercise = null,
         Notifications.IDeadlineReminderTracker? deadlineReminders = null,
         IEvidenceStore? evidenceStore = null,
-        Accounts.AccountDirectoryService? accounts = null)
+        Accounts.AccountDirectoryService? accounts = null,
+        Notifications.ReminderAudience? audience = null)
     {
+        _audience = audience;
         _accounts = accounts;
         _evidenceStore = evidenceStore;
         _deadlineReminders = deadlineReminders;
@@ -129,6 +131,17 @@ public sealed class CaseService
 
     private readonly IEvidenceStore? _evidenceStore;   // WF-31
     private readonly Accounts.AccountDirectoryService? _accounts;   // BUG-416
+    private readonly Notifications.ReminderAudience? _audience;   // BUG-596/597
+
+    /// <summary>
+    /// BUG-596/597: of <paramref name="userIds"/>, the people a notification about <paramref name="c"/> may go to: active
+    /// and entitled now (the directory of record where it can say, else the mirror) and able to see a restricted case,
+    /// as the reminder scans judge it (BUG-377). An assignment email went to a no-role user or a leaver, and a mention or
+    /// handoff to someone the directory had disabled, because only the mirror's roles were checked, or nothing at all.
+    /// </summary>
+    private Task<List<string>> RecipientsAsync(Case c, IEnumerable<string> userIds, CancellationToken ct) =>
+        (_audience ?? new Notifications.ReminderAudience(_users, _roles)).RecipientsAsync(userIds, c.IsRestricted,
+            c.IncidentCommander, c.Assignments.Select(a => a.UserId).ToList(), ct);
 
     /// <summary>WF-31: a screenshot pasted into the composer, stored as evidence with the entry it illustrates.</summary>
     public sealed record Screenshot(string FileName, string ContentType, byte[] Bytes, string? Description = "Pasted into the timeline");
@@ -1527,8 +1540,11 @@ public sealed class CaseService
         c.Assign(userId, displayName, role, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
 
-        // E-03b: tell the assignee (out of band; never fails the assignment).
-        await _notifications.OnAssignedAsync(c, userId, displayName, role, _user.UserId, ct);
+        // E-03b: tell the assignee (out of band; never fails the assignment). Not on a self-assignment (as before), and
+        // only when they're entitled to the case (BUG-596).
+        if (!string.Equals(userId, _user.UserId, StringComparison.OrdinalIgnoreCase)
+            && (await RecipientsAsync(c, [userId], ct)).Count > 0)
+            await _notifications.OnAssignedAsync(c, userId, displayName, role, _user.UserId, ct);
         return true;
     }
 
@@ -1562,7 +1578,9 @@ public sealed class CaseService
         if (leaving is not null && fromUserId != toUserId) c.Unassign(leaving.UserId, _user.UserId, now);
         if (!joined && !namesCommander && !promoted && leaving is null) return false;   // nothing changed
         await db.SaveChangesAsync(ct);
-        if (joined || promoted) await _notifications.OnAssignedAsync(c, toUserId, toDisplayName, seat, _user.UserId, ct);
+        if ((joined || promoted) && !string.Equals(toUserId, _user.UserId, StringComparison.OrdinalIgnoreCase)
+            && (await RecipientsAsync(c, [toUserId], ct)).Count > 0)   // BUG-596
+            await _notifications.OnAssignedAsync(c, toUserId, toDisplayName, seat, _user.UserId, ct);
         return true;
     }
 
@@ -2678,8 +2696,9 @@ public sealed class CaseService
         };
         c.Notes.Add(note);
         await db.SaveChangesAsync(ct);
-        if (mentions.Count > 0)
-            await _notifications.OnMentionedAsync(c, _user.UserId, mentions, note.Body, note.Id, ct);
+        // BUG-597: the note records everyone it mentions; only those the directory still entitles are emailed.
+        if (mentions.Count > 0 && await RecipientsAsync(c, mentions, ct) is { Count: > 0 } notify)
+            await _notifications.OnMentionedAsync(c, _user.UserId, notify, note.Body, note.Id, ct);
     }
 
     /// <summary>
@@ -2699,8 +2718,8 @@ public sealed class CaseService
         next.MentionsCsv = string.Join(',', mentions);
         await db.SaveChangesAsync(ct);
         var added = mentions.Where(m => !before.Contains(m, StringComparer.OrdinalIgnoreCase)).ToList();
-        if (added.Count > 0)
-            await _notifications.OnMentionedAsync(c, _user.UserId, added, next.Body, next.Id, ct);
+        if (added.Count > 0 && await RecipientsAsync(c, added, ct) is { Count: > 0 } notify)   // BUG-597
+            await _notifications.OnMentionedAsync(c, _user.UserId, notify, next.Body, next.Id, ct);
     }
 
     /// <summary>
@@ -3034,7 +3053,8 @@ public sealed class CaseService
                 moved++;
             }
         await db.SaveChangesAsync(ct);
-        if (notify && CleanMentions(c, [toUserId]).Count > 0)
+        // BUG-597: emailed only when the directory still entitles them (the check above is the mirror's, as the picker).
+        if (notify && CleanMentions(c, [toUserId]).Count > 0 && (await RecipientsAsync(c, [toUserId], ct)).Count > 0)
             await _notifications.OnHandedOffAsync(c, _user.UserId, toUserId, text, ct);
         return moved;
     }
