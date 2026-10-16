@@ -21,8 +21,6 @@ public partial class KeyboardPathTests
     private static readonly Dictionary<string, int> NoRepeatCheck = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Shared/AttackMatrixPicker.razor"] = 1,   // IsActivate
-        ["Shared/CommandPalette.razor"] = 1,   // OnKeyDown
     };
 
     // Wave 2b: fields a plain Enter saves that bind on change (the save reads the value from before the typing).

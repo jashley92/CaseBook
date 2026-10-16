@@ -145,8 +145,9 @@
 
 @code {
     // Keyboard activation for the matrix cells (role="button"): Enter or Space, like a native button. Keys from
-    // the nested expand button are its own, so they don't also toggle the cell.
-    private static bool IsActivate(KeyboardEventArgs e) => e.Key is "Enter" or " ";
+    // the nested expand button are its own, so they don't also toggle the cell. C6: a held key acts once (its repeats
+    // toggled the cell on and off, or picked it again).
+    private static bool IsActivate(KeyboardEventArgs e) => e is { Repeat: false, Key: "Enter" or " " };
 
     [Parameter] public IReadOnlyDictionary<string, MitreTactic> Current { get; set; } = new Dictionary<string, MitreTactic>();
     [Parameter] public EventCallback<IReadOnlyDictionary<string, MitreTactic>> OnApply { get; set; }
