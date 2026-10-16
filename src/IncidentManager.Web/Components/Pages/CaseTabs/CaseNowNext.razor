@@ -280,6 +280,13 @@
 
     public void Dispose() => Edits.Forget(this);
 
+    // BUG-610: a task done elsewhere (a colleague, the Tasks tab) or pushed past the tasks shown takes its open Done… with
+    // it: its form (and Cancel) is gone, and the open slot refused every other Done….
+    protected override void OnParametersSet()
+    {
+        if (_done.Current is { } d && !CaseNext.Open(Case, Clock.UtcNow).Take(TasksShown).Any(t => t.Id == d.Key)) _done.Close();
+    }
+
     // RD-25: completing a task, with its result, from Next. BUG-578: Done… on a second task while one is open is refused
     // (it re-seeded over the typed result); BUG-601: a save closes only its own task's form.
     private readonly EditSlot<Guid> _done = new();
