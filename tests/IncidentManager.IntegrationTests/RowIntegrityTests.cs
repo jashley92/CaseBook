@@ -656,6 +656,61 @@ public sealed class RowIntegrityTests
     }
 
     [Fact]
+    public async Task An_upgraded_database_is_strict_and_catches_a_planted_or_rewritten_row()
+    {
+        // Upgrade test hook (C18), with the one above: the new build's start-up upgrade marked the check strict, and a
+        // tamper made after it is caught: a row planted with no hash, and a row the upgrade recorded (one from the older
+        // release) rewritten with its hash recomputed. Each tamper is rolled back. Does nothing without a database.
+        if (Environment.GetEnvironmentVariable("CASEBOOK_VERIFY_SQL") is not { Length: > 0 } conn) return;
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(conn).Options;
+        await using (var db = new AppDbContext(options))
+            (await RowIntegrityVerifier.UpgradedAsync(db)).Should().BeTrue("the start-up upgrade writes its marker");
+
+        async Task<RowIntegrityVerifier.RowMismatch?> TamperedAsync(Func<AppDbContext, Task> tamper)
+        {
+            await using var db = new AppDbContext(options);
+            await using var tx = await db.Database.BeginTransactionAsync();
+            await tamper(db);
+            db.ChangeTracker.Clear();
+            var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+            var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain);
+            await tx.RollbackAsync();
+            return bad;
+        }
+
+        var planted = Guid.NewGuid();
+        var bad = await TamperedAsync(async db =>
+        {
+            var caseId = await db.Cases.Select(c => c.Id).FirstAsync();
+            db.Notes.Add(new AnalystNote { Id = planted, CaseId = caseId, Body = "Planted", CreatedBy = "x", CreatedAtUtc = _clock.UtcNow });
+            await db.SaveChangesAsync();
+        });
+        bad.Should().NotBeNull("a hashless row planted after the upgrade is caught");
+        bad!.Id.Should().Be(planted);
+
+        // A row the upgrade recorded (its trail from the older release didn't record its hash), rewritten.
+        await using (var db = new AppDbContext(options))
+        {
+            var recorded = await db.AuditLog.AsNoTracking()
+                .Where(a => a.Reason == IntegrityUpkeep.Reason && (a.EntityType == nameof(TimelineEntry) || a.EntityType == nameof(Case)))
+                .Select(a => new { a.EntityType, a.EntityId }).FirstOrDefaultAsync();
+            if (recorded is null) return;   // a release whose every row already had its hash recorded
+            var id = Guid.Parse(recorded.EntityId!);
+            bad = await TamperedAsync(async t =>
+            {
+                IHashableEntity row = recorded.EntityType == nameof(Case)
+                    ? await t.Cases.Include(c => c.DataElements).SingleAsync(c => c.Id == id)
+                    : await t.TimelineEntries.Include(e => e.Tactics).SingleAsync(e => e.Id == id);
+                if (row is Case c) c.Title = "Nothing to see here"; else ((TimelineEntry)row).Description = "Nothing happened.";
+                row.RowHash = _hasher.ComputeRowHash(row);
+                await t.SaveChangesAsync();
+            });
+            bad.Should().NotBeNull($"a {recorded.EntityType} the upgrade recorded, rewritten with its hash recomputed, is caught");
+            bad!.Id.Should().Be(id);
+        }
+    }
+
+    [Fact]
     public void Every_hashable_table_is_checked()
     {
         using var database = TestDatabase.Open(TestDatabase.Sqlite);
