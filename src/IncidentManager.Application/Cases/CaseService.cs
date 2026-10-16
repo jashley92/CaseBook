@@ -1305,11 +1305,17 @@ public sealed class CaseService
     /// Records that regulators were notified. BUG-09: with jurisdictions in play, this records a notice for each one not
     /// yet notified (all at once); otherwise it sets the reported time directly, as before.
     /// </summary>
-    public async Task MarkReportedAsync(Guid id, DateTimeOffset reportedAtUtc, CancellationToken ct = default)
+    /// <param name="expectedReportedAtUtc">BUG-594: the reported time the page showed (<c>Shown.Of(null)</c>: not reported).
+    /// Given, the save is refused when it has changed since, so a stale page doesn't overwrite a colleague's time.</param>
+    public async Task MarkReportedAsync(Guid id, DateTimeOffset reportedAtUtc, Shown<DateTimeOffset?>? expectedReportedAtUtc = null,
+        CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadWithNoticesAsync(db, id, ct);
+        if (expectedReportedAtUtc is { } shown && shown.Value != c.ReportedAtUtc)
+            throw new StaleEditException(Stamp(c.ReportedAtUtc),
+                "Someone else recorded when regulators were notified while you were looking. Review it, then record yours again if it's still needed.");
         var now = _clock.UtcNow;
         var inPlay = await InPlayAsync(db, c, ct);
         if (inPlay.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
@@ -1326,17 +1332,34 @@ public sealed class CaseService
     }
 
     /// <summary>BUG-09: records (or corrects) when one regulator was notified; the case counts as reported once all in play are.</summary>
-    public async Task RecordNoticeAsync(Guid id, string jurisdiction, DateTimeOffset notifiedAtUtc, CancellationToken ct = default)
+    /// <param name="expectedNotifiedAtUtc">BUG-594: when the page showed this regulator as notified (<c>Shown.Of(null)</c>:
+    /// not yet). Given, the save is refused when that has changed since, so a stale page doesn't overwrite a colleague's
+    /// notice (a notice coded "NY;CA" before v1.6.10 counts for NY and CA, as everywhere else, BUG-428).</param>
+    public async Task RecordNoticeAsync(Guid id, string jurisdiction, DateTimeOffset notifiedAtUtc,
+        Shown<DateTimeOffset?>? expectedNotifiedAtUtc = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadWithNoticesAsync(db, id, ct);
+        if (expectedNotifiedAtUtc is { } shown)
+        {
+            var noticed = Case.ByNoticeCode(c.JurisdictionNotices.Select(n => (n.Jurisdiction, (DateTimeOffset?)n.NotifiedAtUtc)));
+            var current = noticed.GetValueOrDefault(NoticeCode(jurisdiction));
+            if (shown.Value != current)
+                throw new StaleEditException(Stamp(current),
+                    "Someone else recorded this regulator's notice while you were looking. Review it, then record yours again if it's still needed.");
+        }
         var now = _clock.UtcNow;
         c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now);
         c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
+
+    // BUG-594: a recorded time as a StaleEditException's stamp ("" for none).
+    private static string Stamp(DateTimeOffset? at) => at?.ToString("o", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+
+    private static string NoticeCode(string? jurisdiction) => (jurisdiction ?? "").Trim();
 
     // WF-77: a new notice's deadline is kept as it stands when the notice is recorded, so its on-time outcome is fixed.
     private async Task FreezeNoticeDuesAsync(Guid id, CancellationToken ct)
@@ -3098,13 +3121,60 @@ public sealed class CaseService
         await db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).ToListAsync(ct);
         var currentId = c.Briefs.FirstOrDefault(b => b.IsCurrent)?.Id;
         if (currentId != expectedCurrentId)
-            throw new StaleEditException(currentId?.ToString() ?? "",
-                "Someone else saved a newer version of the brief while you were editing. Your text is still here; review theirs, then save again to replace it.");
+        {
+            // BUG-595: versions CaseBook appended meanwhile (a question, a Known line, WF-30) are merged in, not refused:
+            // refused, the editor's next save dropped them.
+            var merged = await MergeAppendedAsync(db, caseId, expectedCurrentId, [summary, workingAssessment, known, openQuestions], ct)
+                         ?? throw new StaleEditException(currentId?.ToString() ?? "",
+                             "Someone else saved a newer version of the brief while you were editing. Your text is still here; review theirs, then save again to replace it.");
+            (summary, workingAssessment, known, openQuestions) = (merged[0], merged[1], merged[2], merged[3]);
+        }
         var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
         if (c.ReviseBrief(summary, workingAssessment, known, openQuestions, nextSteps, _user.UserId, _clock.UtcNow) is null)
             return false;
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    /// <summary>
+    /// BUG-595: the editor's parts (summary, assessment, known, questions) with what was added since the version it opened
+    /// from, when every version since is one CaseBook appended (WF-30): a part the editor left alone takes the part as it
+    /// stands; in Known and Open questions, the lines appended meanwhile are added after the editor's text. Null when a
+    /// version since was a revision, or a part both changed otherwise (a summary edit in the details): that's refused.
+    /// </summary>
+    private static async Task<string?[]?> MergeAppendedAsync(IAppDbContext db, Guid caseId, Guid? openedFrom, string?[] mine,
+        CancellationToken ct)
+    {
+        var versions = (await db.CaseBriefs.AsNoTracking().Where(b => b.CaseId == caseId).ToListAsync(ct)).ToDictionary(b => b.Id);
+        var current = versions.Values.FirstOrDefault(b => b.IsCurrent);
+        Domain.Entities.CaseBrief? opened = null;
+        for (var b = current; b is not null && b.Id != openedFrom; b = b.SupersedesBriefId is { } prev ? versions.GetValueOrDefault(prev) : null)
+        {
+            if (!b.Appended) return null;
+            if (b.SupersedesBriefId is null && openedFrom is not null) return null;   // the version opened from isn't in the chain
+        }
+        if (current is null) return null;
+        if (openedFrom is not null && !versions.TryGetValue(openedFrom.Value, out opened)) return null;
+        string?[] baseParts = [opened?.Summary, opened?.WorkingAssessment, opened?.Known, opened?.OpenQuestions];
+        string?[] nowParts = [current.Summary, current.WorkingAssessment, current.Known, current.OpenQuestions];
+        var result = new string?[4];
+        for (var i = 0; i < 4; i++)
+        {
+            var (was, now, edited) = (baseParts[i], nowParts[i], Clean(mine[i]));
+            if (now == was) result[i] = mine[i];
+            else if (edited == was) result[i] = now;
+            else if (i >= 2 && now is not null && (was is null || now.StartsWith(was + "\n", StringComparison.Ordinal)))
+            {
+                var lines = (edited ?? "").Split('\n').Select(l => l.Trim()).ToHashSet(StringComparer.Ordinal);
+                var added = now[(was?.Length ?? 0)..].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(l => !lines.Contains(l));
+                result[i] = string.Join('\n', new[] { edited }.Concat(added).Where(p => !string.IsNullOrEmpty(p)));
+            }
+            else return null;
+        }
+        return result;
+
+        static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
     }
 
     /// <summary>Confirms the current brief still stands without changing it (no new version). Refused when someone saved

@@ -263,5 +263,123 @@ public sealed class CaseConcurrencyTests : IDisposable
             .Should().Be(MaterialityStatus.NotMaterial);
     }
 
+    [Fact]
+    public async Task A_stale_page_cannot_overwrite_a_colleagues_reported_time(/* BUG-594 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        var colleague = _clock.UtcNow.AddMinutes(5);
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+
+        // Both pages showed "not reported"; the colleague records first.
+        await svc.MarkReportedAsync(id, colleague, Shown.Of<DateTimeOffset?>(null));
+        var ex = await Assert.ThrowsAsync<StaleEditException>(() => svc.MarkReportedAsync(id, _clock.UtcNow, Shown.Of<DateTimeOffset?>(null)));
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id)).ReportedAtUtc.Should().Be(colleague);
+        ex.CurrentStamp.Should().NotBeEmpty();
+
+        // A page showing the colleague's time corrects it; the old call shape (no value shown) still saves as before.
+        await svc.MarkReportedAsync(id, colleague.AddMinutes(1), Shown.Of<DateTimeOffset?>(colleague));
+        await svc.MarkReportedAsync(id, colleague.AddMinutes(2));
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id)).ReportedAtUtc.Should().Be(colleague.AddMinutes(2));
+    }
+
+    [Fact]
+    public async Task A_stale_page_cannot_overwrite_a_colleagues_notice(/* BUG-594 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        var colleague = _clock.UtcNow.AddMinutes(5);
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+
+        await svc.RecordNoticeAsync(id, "NY", colleague, Shown.Of<DateTimeOffset?>(null));
+        await Assert.ThrowsAsync<StaleEditException>(() => svc.RecordNoticeAsync(id, "ny", _clock.UtcNow, Shown.Of<DateTimeOffset?>(null)));
+        (await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).NotifiedAtUtc.Should().Be(colleague);
+
+        // Another regulator isn't affected, and a page showing the colleague's time corrects it.
+        await svc.RecordNoticeAsync(id, "CA", _clock.UtcNow, Shown.Of<DateTimeOffset?>(null));
+        await svc.RecordNoticeAsync(id, "NY", colleague.AddMinutes(1), Shown.Of<DateTimeOffset?>(colleague));
+        (await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id && n.Jurisdiction == "NY")).NotifiedAtUtc
+            .Should().Be(colleague.AddMinutes(1));
+    }
+
+    private async Task<Domain.Entities.CaseBrief> CurrentBriefAsync(Guid id)
+    {
+        await using var db = NewContext();
+        return await db.CaseBriefs.AsNoTracking().SingleAsync(b => b.CaseId == id && b.IsCurrent);
+    }
+
+    [Fact]
+    public async Task The_brief_editor_keeps_lines_added_meanwhile_and_saves(/* BUG-595 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        await svc.ReviseBriefAsync(id, null, "Phish reached Finance", "Commodity kit", "- Lure from a lookalike domain", null);
+        var opened = (await CurrentBriefAsync(id)).Id;
+
+        // While the editor is open, the same user adds a question (Question mode) - an appended version.
+        await svc.AddOpenQuestionAsync(id, "Did anyone enter credentials?", followUp: false);
+
+        (await svc.ReviseBriefAsync(id, opened, "Phish reached Finance; one mailbox accessed", "Commodity kit",
+            "- Lure from a lookalike domain\n- MFA prompt approved", null)).Should().BeTrue();
+        var saved = await CurrentBriefAsync(id);
+        saved.Summary.Should().Be("Phish reached Finance; one mailbox accessed");
+        saved.Known.Should().Be("- Lure from a lookalike domain\n- MFA prompt approved");
+        saved.OpenQuestions.Should().Be("- Did anyone enter credentials?", "the question added meanwhile is kept, not dropped");
+        saved.Appended.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task The_brief_editor_appends_lines_added_meanwhile_to_a_part_it_changed(/* BUG-595 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        await svc.ReviseBriefAsync(id, null, "Phish", null, null, "- Who clicked?");
+        var opened = (await CurrentBriefAsync(id)).Id;
+        await svc.AddOpenQuestionAsync(id, "Was MFA bypassed?", followUp: false);
+
+        await svc.ReviseBriefAsync(id, opened, "Phish", null, null, "- Who clicked? (two users)");
+        (await CurrentBriefAsync(id)).OpenQuestions.Should().Be("- Who clicked? (two users)\n- Was MFA bypassed?");
+    }
+
+    [Fact]
+    public async Task The_brief_editor_is_still_refused_over_a_colleagues_revision(/* BUG-595 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        await svc.ReviseBriefAsync(id, null, "Phish", "Commodity", null, null);
+        var opened = (await CurrentBriefAsync(id)).Id;
+        await svc.AddOpenQuestionAsync(id, "Was MFA bypassed?", followUp: false);
+        await svc.ReviseBriefAsync(id, (await CurrentBriefAsync(id)).Id, "Phish", "Targeted", null, "- Was MFA bypassed?");   // a revision
+
+        await Assert.ThrowsAsync<StaleEditException>(() => svc.ReviseBriefAsync(id, opened, "Phish", "Commodity kit", null, null));
+        (await CurrentBriefAsync(id)).WorkingAssessment.Should().Be("Targeted");
+    }
+
+    [Fact]
+    public async Task The_brief_editor_is_refused_when_a_part_it_changed_was_replaced_meanwhile(/* BUG-595 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        await svc.ReviseBriefAsync(id, null, "Phish", "Commodity", null, null);
+        var opened = (await CurrentBriefAsync(id)).Id;
+        // A summary edit in the case details is an appended version too (WF-30), but it replaces the summary.
+        var c = await db.Cases.AsNoTracking().FirstAsync(x => x.Id == id);
+        await svc.UpdateDetailsAsync(id, c.Title, "Phish, contained", null, null, null, c.DetectedAtUtc ?? _clock.UtcNow, null);
+
+        await Assert.ThrowsAsync<StaleEditException>(() => svc.ReviseBriefAsync(id, opened, "Phish (finance)", "Commodity", null, null));
+        (await CurrentBriefAsync(id)).Summary.Should().Be("Phish, contained");
+
+        // Left alone in the editor, the replaced summary is taken as it now stands.
+        await svc.ReviseBriefAsync(id, opened, "Phish", "Targeted", null, null);
+        var saved = await CurrentBriefAsync(id);
+        (saved.Summary, saved.WorkingAssessment).Should().Be(("Phish, contained", "Targeted"));
+    }
+
     public void Dispose() => _connection.Dispose();
 }
