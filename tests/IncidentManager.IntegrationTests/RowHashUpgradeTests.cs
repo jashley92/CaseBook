@@ -318,6 +318,37 @@ public sealed class RowHashUpgradeTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task The_close_gates_notifications_check_is_recorded_as_its_migration_inserted_it_and_not_once_weakened(string provider /* BUG-643 */)
+    {
+        using var database = Seeded(provider);
+        Guid gate;
+        await using (var db = database.NewContext()) gate = await db.StageGates.Where(g => (int)g.Trigger == 3).Select(g => g.Id).FirstAsync();
+        var honest = Guid.NewGuid();
+        var weakened = Guid.NewGuid();
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            // As ClosureGateNotificationsRecorded inserted it, and a copy of it made advisory in the database since.
+            StageGateRequirement Inserted(Guid id, int order, bool blocking) => new()
+            {
+                Id = id, GateId = gate, Order = order, Kind = 0, CheckKey = "NotificationsRecorded",
+                Label = "Required regulatory notifications recorded", IsBlocking = blocking,
+            };
+            raw.StageGateRequirements.AddRange(Inserted(honest, 93, blocking: true), Inserted(weakened, 94, blocking: false));
+            await raw.SaveChangesAsync();
+        }
+
+        var result = await UpgradeAsync(database);
+        result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(StageGateRequirement)} {weakened}");
+        await using (var db = database.NewContext())
+            (await db.StageGateRequirements.AsNoTracking().SingleAsync(r => r.Id == honest)).RowHash.Should()
+                .StartWith(Canonical.V4Prefix, "the requirement as the migration wrote it is recorded");
+        var bad = await VerifyRecordsAsync(database);
+        bad!.Id.Should().Be(weakened);
+        bad.Detail.Should().Contain("has no hash");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_template_the_library_migration_made_from_a_profile_is_recorded_when_it_matches_the_profiles_trail(string provider)
     {
         using var database = Seeded(provider);
