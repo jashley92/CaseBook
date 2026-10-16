@@ -70,11 +70,15 @@ else
     {
         var next = wasActive ? State.Tabs.Where(t => t.CaseId != id).Select(t => (Guid?)t.CaseId).LastOrDefault() : null;
         await State.CloseAsync(id);
-        if (wasActive) Nav.NavigateTo(next is { } n ? State.UrlFor(n) : "desk");
+        // BUG-601: only while the closed case is still the page: a link followed during the close is where the user went.
+        if (wasActive && !_disposed && ActiveCaseId() == id) Nav.NavigateTo(next is { } n ? State.UrlFor(n) : "desk");
     }
+
+    private bool _disposed;
 
     public void Dispose()
     {
+        _disposed = true;
         State.Changed -= OnChanged;
         Nav.LocationChanged -= OnLocation;
     }

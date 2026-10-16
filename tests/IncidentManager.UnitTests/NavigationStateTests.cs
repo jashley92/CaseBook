@@ -20,10 +20,12 @@ public partial class NavigationStateTests
         ["PhoneNav.razor"] = "menu entry: the default view by design (PROD-24)",
         ["CommandPalette.razor"] = "palette 'Cases' / 'c': the default view by design (PROD-24)",
         ["CaseListMemory.cs"] = "BUG-474: the back link with nothing remembered is the default view",
-        // wave 2: a cancel / way back to the list; decide whether it should name a view.
-        ["Error.razor"] = "wave 2",
-        ["NotFoundPage.razor"] = "wave 2", ["ErrorFallback.razor"] = "wave 2",
-        ["StyleGuide.razor"] = "wave 2 (a design sample)",
+        // Reviewed in wave 2b: a way out of an error or a missing page is the default view, like the menu entry; the list
+        // as it was left (CaseListMemory) could be what failed. (The New case and Import Cancel links now use it.)
+        ["Error.razor"] = "error page's way out: the default view, like the menu entry (PROD-24)",
+        ["NotFoundPage.razor"] = "not-found page's way out: the default view, like the menu entry (PROD-24)",
+        ["ErrorFallback.razor"] = "a failed page's way out: the default view; the remembered list could be what failed",
+        ["StyleGuide.razor"] = "a design sample's stat tile, not a working link",
     };
 
     [Fact]

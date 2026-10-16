@@ -41,12 +41,10 @@ public partial class ComponentContinuationTests
         ["Pages/AdminOutcomes.razor"] = 1,   // LoadAsync: _active = all (Outcomes.ListAllAsync)
         ["Pages/AdminRoles.razor"] = 3,   // LoadAsync: _roles = await Roles.ListRolesAsync; LoadAsync: _mappings = await Roles.ListMappingsAsync; LoadAsync: _review = await AccessReview.BuildAsync
         ["Pages/AgendaPage.razor"] = 1,   // Load: _board = board (Svc.GetBoardAsync)
-        ["Pages/CampaignPage.razor"] = 1,   // OnParametersSetAsync: _rollup = await Svc.GetRollupAsync
         ["Pages/FindPage.razor"] = 1,   // Run: _result = result (Finder.FindAsync)
         ["Pages/ImprovementActionsPage.razor"] = 1,   // Load: _register = register (Lessons.GetRegisterAsync)
         ["Pages/IndicatorsPage.razor"] = 1,   // Load: _library = library (Indicators.SearchAsync)
         ["Pages/ProgramReportPage.razor"] = 1,   // Load: _report = report (Program.BuildAsync)
-        ["Shared/CasePeek.razor"] = 1,   // OnParametersSetAsync: _p = p (Cases.GetPreviewAsync)
         ["Shared/ReportProfilesEditor.razor"] = 2,   // LoadAsync: _profiles = await Profiles.ListAllAsync; LoadAsync: _templates = await Templates.ListActiveAsync
         ["Shared/ReportTemplateLibrary.razor"] = 1,   // OpenPreview: _cases = page (Cases.ListAsync)
         ["Shared/TeamWorkloadPanel.razor"] = 1,   // LoadWorkload: _w = await Workload.GetAsync
@@ -72,10 +70,6 @@ public partial class ComponentContinuationTests
     {
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/Admin.razor"] = 1,   // OnBeforeLeave<lambda>: Nav.NavigateTo(
-        ["Pages/CaseByNumber.razor"] = 1,   // OnParametersSetAsync: Nav.NavigateTo(
-        ["Pages/Home.razor"] = 1,   // OnInitializedAsync: Nav.NavigateTo(
-        ["Shared/CaseTabStrip.razor"] = 1,   // Close: Nav.NavigateTo(
-        ["Shared/ErrorFallback.razor"] = 1,   // Retry: Nav.NavigateTo(
     };
 
     [Fact]

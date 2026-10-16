@@ -1,6 +1,7 @@
 @page "/"
 @* RD-17: the landing. Roles that see every case start on Program; everyone else on their Desk. *@
 @attribute [Authorize(Policy = Policies.ViewCases)]
+@implements IDisposable
 @inject NavigationManager Nav
 @inject IAuthorizationService AuthZ
 @inject AuthenticationStateProvider AuthState
@@ -12,6 +13,10 @@
     {
         var user = (await AuthState.GetAuthenticationStateAsync()).User;
         var all = (await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded;
-        Nav.NavigateTo(all ? "program" : "desk", replace: true);
+        // BUG-601: a link followed while this ran is where the user is going; the landing doesn't replace it.
+        if (!_disposed) Nav.NavigateTo(all ? "program" : "desk", replace: true);
     }
+
+    private bool _disposed;
+    public void Dispose() => _disposed = true;
 }

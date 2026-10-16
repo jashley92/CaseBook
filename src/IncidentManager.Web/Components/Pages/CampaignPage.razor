@@ -233,11 +233,18 @@
     private string? AnchorNumber => _rollup?.Members.FirstOrDefault(m => m.CaseId == _rollup.AnchorCaseId)?.CaseNumber;
     private IReadOnlyList<Crumb> _crumbs => [new Crumb("Campaigns", "intel/campaigns"), new Crumb(AnchorNumber ?? "Campaign")];
 
+    // BUG-601: following a link to another campaign while one loads showed whichever rollup landed last, under the other's
+    // address; only the newest load lands.
+    private readonly LoadSequence _loads = new();
+
     protected override async Task OnParametersSetAsync()
     {
+        var t = _loads.Begin();
         _loaded = false;
         _rollup = null;
-        _rollup = await Svc.GetRollupAsync(Id);
+        var rollup = await Svc.GetRollupAsync(Id);
+        if (!_loads.IsCurrent(t)) return;
+        _rollup = rollup;
         _loaded = true;
     }
 }

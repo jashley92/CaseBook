@@ -1,5 +1,6 @@
 @page "/cases/{Number}"
 @attribute [Authorize(Policy = Policies.ViewCases)]
+@implements IDisposable
 @inject CaseService Cases
 @inject NavigationManager Nav
 
@@ -18,12 +19,20 @@
 
     private bool _notFound;
 
+    // BUG-601: a lookup still running when another number's link was followed (or the page was left) forwarded there late,
+    // replacing the page now showing; only the newest one, on a page still shown, forwards.
+    private readonly LoadSequence _lookups = new();
+
     protected override async Task OnParametersSetAsync()
     {
         _notFound = false;
+        var t = _lookups.Begin();
         var id = await Cases.FindIdByNumberAsync(Uri.UnescapeDataString(Number ?? ""));
+        if (!_lookups.IsCurrent(t)) return;
         if (id is null) { _notFound = true; return; }
         var query = new Uri(Nav.Uri).Query;
         Nav.NavigateTo($"cases/{id}{query}", replace: true);
     }
+
+    public void Dispose() => _lookups.Invalidate();
 }

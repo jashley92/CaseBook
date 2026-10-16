@@ -156,15 +156,18 @@
     private CasePreview? _p;
     private bool _loading = true;
     private Guid _loadedFor;
+    // BUG-601: A, then B, then A again while A's first load ran: the id compare let that older load land too; only the
+    // newest load lands.
+    private readonly LoadSequence _loads = new();
 
     protected override async Task OnParametersSetAsync()
     {
         if (_loadedFor == CaseId) return;
         _loadedFor = CaseId;
         _loading = true;
-        var id = CaseId;
-        var p = await Cases.GetPreviewAsync(id);
-        if (id != CaseId) return; // a newer selection arrived while this one loaded
+        var t = _loads.Begin();
+        var p = await Cases.GetPreviewAsync(CaseId);
+        if (!_loads.IsCurrent(t)) return; // a newer selection arrived while this one loaded
         _p = p;
         _loading = false;
         // C-05: a preview shows case content, so it's recorded like an open (best-effort; coalesced into a view-session).
