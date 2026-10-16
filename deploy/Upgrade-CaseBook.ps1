@@ -132,7 +132,8 @@ if ($sourceCount -ne 1) { throw "Specify exactly one source: -Version <vX.Y.Z>, 
 
 $deployDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot  = Split-Path -Parent $deployDir
-$stamp     = Get-Date -Format 'yyyyMMdd-HHmmss'
+. (Join-Path $deployDir 'lib\CaseBookStamp.ps1')   # BUG-600: Get-CaseBookStamp
+$stamp     = Get-CaseBookStamp   # local time, invariant culture: backup folders and .bak names sort on any server
 
 # --- 1. Resolve the live deployment from IIS + appsettings.Production.json -----
 Write-Step "Resolving the '$SiteName' deployment"
@@ -894,7 +895,7 @@ if (-not $started -or ($lastStatus -ge 500)) {
 if ($targetVersion) {
     $verLines = @("Version: $targetVersion")
     if ($currentVersion -and $currentVersion -ne '(unknown)' -and $currentVersion -ne $targetVersion) { $verLines += "Previous: $currentVersion" }
-    $verLines += "Upgraded: $(Get-Date -Format 'yyyy-MM-dd HH:mm zzz')"
+    $verLines += "Upgraded: $(Get-CaseBookStamp -Format 'yyyy-MM-dd HH:mm zzz')"
     $verLines += "By: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
     Set-Content -Path (Join-Path $SitePath 'VERSION.txt') -Value $verLines -Encoding utf8
 }

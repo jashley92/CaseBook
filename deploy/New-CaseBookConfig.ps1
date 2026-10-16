@@ -116,7 +116,7 @@ try { $certs = @(Get-ChildItem Cert:\LocalMachine\My -ErrorAction Stop | Where-O
 if ($certs.Count -gt 0) {
     Write-Host "  Installed certificates in LocalMachine\My:" -ForegroundColor Gray
     for ($i = 0; $i -lt $certs.Count; $i++) {
-        Write-Host ("    [{0}] {1}  (exp {2})  {3}" -f $i, $certs[$i].Subject, $certs[$i].NotAfter.ToString('yyyy-MM-dd'), $certs[$i].Thumbprint)
+        Write-Host ("    [{0}] {1}  (exp {2})  {3}" -f $i, $certs[$i].Subject, $certs[$i].NotAfter.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture), $certs[$i].Thumbprint)
     }
     $pick = Ask -Prompt 'Cert number to bind, a full thumbprint, or blank for HTTP-only' -Default ''
     if ($pick -match '^\d+$' -and [int]$pick -lt $certs.Count) {
@@ -182,7 +182,7 @@ $LedgerDigestPath = Ask -Prompt 'Digest folder, ideally an immutable (WORM) shar
 function Q([string] $v) { "'" + ($v -replace "'", "''") + "'" }
 
 $body = @"
-# CaseBook install answers - generated $(Get-Date -Format 'yyyy-MM-dd HH:mm') by New-CaseBookConfig.ps1.
+# CaseBook install answers - generated $((Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)) by New-CaseBookConfig.ps1.
 # Pass to the installers with -ConfigFile. Sensitive (names AD groups/hosts/account); do NOT commit.
 # Holds NO passwords - gMSA is passwordless; a normal account's password is prompted at install time.
 @{

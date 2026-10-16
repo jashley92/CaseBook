@@ -75,10 +75,67 @@ public partial class DeployScriptTests
     [GeneratedRegex(@"\s-I(\s|$)", RegexOptions.None)]
     private static partial Regex UpperIFlag();
 
-    private static string RepoRoot()
+    internal static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
             if (File.Exists(Path.Combine(dir.FullName, "IncidentManager.sln"))) return dir.FullName;
         throw new InvalidOperationException("Couldn't find the repo root (IncidentManager.sln).");
+    }
+}
+
+/// <summary>
+/// BUG-600 (C12): a date the deploy scripts write into a file name, a file or a version record is formatted with the
+/// invariant culture. Windows PowerShell's <c>Get-Date -Format</c> and <c>.ToString('yyyy...')</c> use the server's
+/// culture, whose calendar can be Thai Buddhist (2569) or Hijri (1448): ledger digest names then sorted out of order,
+/// and Verify-LedgerDigests -Latest picked the wrong digests.
+/// </summary>
+public partial class DeployScriptCultureTests
+{
+    private static readonly string Deploy = Path.Combine(DeployScriptTests.RepoRoot(), "deploy");
+
+    private static IEnumerable<(string File, int Line, string Text)> ScriptLines() =>
+        Directory.EnumerateFiles(Deploy, "*.ps*1", SearchOption.AllDirectories)
+            // Comment lines too: one in a here-string is written into a generated file.
+            .SelectMany(f => File.ReadLines(f).Select((line, i) => (File: Path.GetRelativePath(Deploy, f), Line: i + 1, Text: line)));
+
+    [GeneratedRegex(@"Get-Date\b[^|;]*-Format\b|\[datetime\]::Parse\(|-as\s+\[datetime\]|\.ToShort(Date|Time)String\(|\.ToLong(Date|Time)String\(", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex CultureDate();
+
+    // A date format pattern passed to ToString without a culture.
+    [GeneratedRegex(@"\.ToString\(\s*'[^']*(yyyy|HH|dd|MM)[^']*'\s*\)", RegexOptions.None, 1000)]
+    private static partial Regex ToStringWithDatePattern();
+
+    [Fact]
+    public void Dates_are_formatted_with_the_invariant_culture()
+    {
+        var offenders = ScriptLines()
+            .Where(l => CultureDate().IsMatch(l.Text) || ToStringWithDatePattern().IsMatch(l.Text))
+            .Select(l => $"{l.File}:{l.Line}: {l.Text.Trim()}")
+            .ToList();
+
+        offenders.Should().BeEmpty("use Get-CaseBookStamp (lib\\CaseBookStamp.ps1) or pass [Globalization.CultureInfo]::InvariantCulture");
+    }
+
+    [Fact]
+    public void Ledger_digests_are_named_and_ordered_by_an_invariant_stamp()
+    {
+        var export = File.ReadAllText(Path.Combine(Deploy, "Export-LedgerDigest.ps1"));
+        var verify = File.ReadAllText(Path.Combine(Deploy, "Verify-LedgerDigests.ps1"));
+
+        export.Should().Contain("Get-CaseBookStamp").And.Contain(@"lib\CaseBookStamp.ps1");
+        verify.Should().Contain("ConvertFrom-CaseBookStamp").And.Contain(@"lib\CaseBookStamp.ps1");
+        verify.Should().NotMatchRegex(@"Sort-Object\s+(-Property\s+)?Name\b", "the newest digest is the latest stamp, not the last name");
+
+        var stamp = File.ReadAllText(Path.Combine(Deploy, "lib", "CaseBookStamp.ps1"));
+        stamp.Should().Contain("InvariantCulture").And.Contain("ParseExact");
+    }
+
+    [Fact]
+    public void The_upgrade_script_keeps_its_byte_order_mark()
+    {
+        // It has carried a UTF-8 BOM since v1.5; a rewrite that drops it changes how Windows PowerShell 5.1 reads it.
+        var bytes = File.ReadAllBytes(Path.Combine(Deploy, "Upgrade-CaseBook.ps1"));
+        bytes.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]).Should().BeTrue();
+        File.ReadAllText(Path.Combine(Deploy, "Upgrade-CaseBook.ps1")).Should().Contain(@"lib\CaseBookStamp.ps1");
     }
 }

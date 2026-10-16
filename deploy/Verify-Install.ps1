@@ -182,11 +182,11 @@ if ($ConfigFile) {
             } elseif (-not $cert.HasPrivateKey) {
                 Bad "Cert $tp has no private key - IIS can't bind TLS with it"
             } elseif ($cert.NotAfter -lt (Get-Date)) {
-                Bad "Cert $tp EXPIRED $($cert.NotAfter.ToString('yyyy-MM-dd'))"
+                Bad "Cert $tp EXPIRED $($cert.NotAfter.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture))"
             } elseif ($cert.NotAfter -lt (Get-Date).AddDays(30)) {
-                Warn "Cert $tp valid but expires soon ($($cert.NotAfter.ToString('yyyy-MM-dd')))"
+                Warn "Cert $tp valid but expires soon ($($cert.NotAfter.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)))"
             } else {
-                Ok "Cert $tp present, has private key, valid to $($cert.NotAfter.ToString('yyyy-MM-dd'))"
+                Ok "Cert $tp present, has private key, valid to $($cert.NotAfter.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture))"
             }
         } else {
             Warn "No CertificateThumbprint - Install-CaseBook will create an HTTP binding; add TLS before real case data"

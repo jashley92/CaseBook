@@ -41,6 +41,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $scriptDir 'lib\CaseBookSql.ps1')
+. (Join-Path $scriptDir 'lib\CaseBookStamp.ps1')   # BUG-600: ConvertFrom-CaseBookStamp
 
 try {
     $fromFile = Merge-CaseBookConfig -ConfigFile $ConfigFile -Bound $PSBoundParameters -Names @('SqlInstance', 'DbName', 'LedgerDigestPath')
@@ -51,7 +52,18 @@ try {
     if (-not $SqlInstance) { throw 'Missing SqlInstance.' }
     if (-not $DigestPath -or -not (Test-Path $DigestPath)) { throw "Digest folder not found: $DigestPath" }
 
-    $files = @(Get-ChildItem -Path $DigestPath -Filter "casebook-ledger-$DbName-*.json" | Sort-Object Name)
+    # BUG-600: oldest to newest by the ledger block each digest covers, then by the stamp in its name, not by the name:
+    # a name stamped in a server culture with another calendar (Thai 2569, Hijri 1448) sorted out of order.
+    $files = @(Get-ChildItem -Path $DigestPath -Filter "casebook-ledger-$DbName-*.json" | ForEach-Object {
+            $block = $null
+            try { $block = [long](([System.IO.File]::ReadAllText($_.FullName) | ConvertFrom-Json).block_id) } catch { $block = $null }
+            $stamp = $null
+            if ($_.Name -match '-(\d{8}-\d{6})Z\.json$') { $stamp = ConvertFrom-CaseBookStamp $Matches[1] }
+            [pscustomobject]@{ File = $_; Block = $block; Stamp = $stamp }
+        } | Sort-Object @{ Expression = { if ($null -eq $_.Block) { [long]::MaxValue } else { $_.Block } } },
+                        @{ Expression = { if ($null -eq $_.Stamp) { [datetime]::MaxValue } else { $_.Stamp } } },
+                        @{ Expression = { $_.File.Name } } |
+        ForEach-Object { $_.File })
     if ($Latest -gt 0) { $files = @($files | Select-Object -Last $Latest) }
     if ($files.Count -eq 0) { throw "No digests for [$DbName] in $DigestPath." }
 

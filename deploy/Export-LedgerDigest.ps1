@@ -41,6 +41,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $scriptDir 'lib\CaseBookSql.ps1')
+. (Join-Path $scriptDir 'lib\CaseBookStamp.ps1')   # BUG-600: Get-CaseBookStamp
 
 try {
     $fromFile = Merge-CaseBookConfig -ConfigFile $ConfigFile -Bound $PSBoundParameters -Names @('SqlInstance', 'DbName', 'LedgerDigestPath')
@@ -59,7 +60,7 @@ try {
     } finally { $conn.Close() }
     if (-not $digest -or $digest -is [DBNull]) { throw 'SQL Server returned no digest. Is the ledger enabled (Enable-Ledger.ps1)?' }
 
-    $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+    $stamp = Get-CaseBookStamp -Utc   # BUG-600: invariant culture, so names sort and parse on any server
     $file = Join-Path $DigestPath ("casebook-ledger-{0}-{1}Z.json" -f $DbName, $stamp)
     # ASCII: the digest is plain JSON, and this keeps the file byte-identical across PowerShell versions.
     [System.IO.File]::WriteAllText($file, [string]$digest, [System.Text.Encoding]::ASCII)
