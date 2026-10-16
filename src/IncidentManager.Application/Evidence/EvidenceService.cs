@@ -184,8 +184,9 @@ public sealed class EvidenceService
 
         var caseNumber = await db.Cases.AsNoTracking().Where(c => c.Id == evidence.CaseId)
             .Select(c => c.CaseNumber).FirstOrDefaultAsync(ct);
+        // BUG-598: a damaged row's short hash threw here, after the custody row was saved (no audit line; a retry doubled it).
         await _audit.RecordAsync(AuditAction.EvidenceTransferred, nameof(Domain.Entities.Evidence), evidence.Id.ToString(),
-            caseNumber, $"Transferred {evidence.OriginalFileName} (sha256 {evidence.Sha256[..12]}…). {custody.Details}", ct);
+            caseNumber, $"Transferred {evidence.OriginalFileName} (sha256 {Common.ShortHash.Of(evidence.Sha256)}). {custody.Details}", ct);
         return custody;
     }
 

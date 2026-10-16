@@ -275,6 +275,23 @@ public sealed class EvidenceUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task A_transfer_of_evidence_with_a_damaged_hash_is_still_audited_once(/* BUG-598 */)
+    {
+        // The audit line sliced Sha256[..12] after the custody row was saved: a short stored hash threw there, so the
+        // attested transfer never reached the audit chain, and a retry recorded the custody event twice.
+        var (svc, _, evId) = await SeedEvidenceAsync();
+        await using (var db = NewContext())
+            await db.Evidence.Where(e => e.Id == evId).ExecuteUpdateAsync(s => s.SetProperty(e => e.Sha256, "abc123"));
+
+        await svc.RecordTransferAsync(evId, "Outside counsel", null, "Privileged review");
+
+        (await svc.GetCustodyAsync(evId)).Count(e => e.Action == "Transferred").Should().Be(1);
+        await using var check = NewContext();
+        var line = await check.AuditLog.AsNoTracking().SingleAsync(a => a.Action == AuditAction.EvidenceTransferred);
+        line.Summary.Should().Contain("(sha256 abc123)");
+    }
+
+    [Fact]
     public async Task A_text_preview_shows_the_start_of_the_file_and_records_a_view(/* RD-06 */)
     {
         var (svc, caseId, _) = await SeedEvidenceAsync();
