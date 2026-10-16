@@ -2282,7 +2282,7 @@ else
     }
 
     // --- INV-10: evidence an entry cites ---
-    private readonly FormSession<Guid> _cite = new();   // the entry whose picker is open
+    private readonly EditSlot<Guid> _cite = new();   // the entry whose picker is open (BUG-578: one at a time)
     private readonly HashSet<Guid> _citeSel = new();
     private List<Guid> _citeOpened = [];
     private readonly InFlight _citeSaving = new();
@@ -2443,7 +2443,7 @@ else
 
     private void StartCite(TimelineEntry e)
     {
-        _cite.Open(e.Id);
+        if (!_cite.TryOpen(e.Id, Toasts, "evidence picks")) return;   // BUG-578: another entry's picks stay
         _citeSel.Clear();
         foreach (var ev in CitedBy(e)) _citeSel.Add(ev.Id);
         _citeOpened = [.. _citeSel];   // BUG-297

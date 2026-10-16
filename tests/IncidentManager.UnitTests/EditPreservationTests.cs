@@ -27,9 +27,6 @@ public partial class EditPreservationTests
     // Wave 2b: "Edit" / "Done" on a row that replaces another row's open edit instead of refusing (EditSlot.TryOpen).
     private static readonly Dictionary<string, int> Replacing = new(StringComparer.Ordinal)
     {
-        // BUG-615: found when the scan learnt `_slot.Open(row.Id)`: Cite evidence on a second entry replaces the first
-        // entry's picks (a FormSession, not an EditSlot). Reported for the timeline's owner.
-        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 1,
     };
 
     // Reviewed openers that replace nothing a user could lose: each opens a modal dialog, which covers the rows, so no
