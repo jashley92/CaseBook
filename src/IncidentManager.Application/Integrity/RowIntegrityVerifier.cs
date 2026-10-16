@@ -102,6 +102,7 @@ public static class RowIntegrityVerifier
         var tableOf = new Dictionary<string, int>(StringComparer.Ordinal);
         var present = new HashSet<(string, string)>();
         var suspects = new List<(int Table, Guid Id, RowMismatch Bad)>();
+        var strict = await UpgradedAsync(db, ct);   // C18
         for (var i = 0; i < tables.Count; i++)
         {
             tableOf[tables[i].ElementType.Name] = i;
@@ -109,7 +110,7 @@ public static class RowIntegrityVerifier
             {
                 var entity = (Entity)row;
                 present.Add((row.GetType().Name, entity.Id.ToString()));
-                if (Check(row, recorded, hasher) is not { } bad) continue;
+                if (Check(row, recorded, hasher, strict) is not { } bad) continue;
                 if (recheck is null) return bad;
                 suspects.Add((i, entity.Id, bad));   // looked at again once the scan is done
             }
@@ -118,7 +119,7 @@ public static class RowIntegrityVerifier
         // A record the chain last recorded as created or changed (with a row hash, so after row hashes existed) that is
         // no longer in its table was deleted outside CaseBook: the app records every removal.
         var missing = recorded.All.Where(r => IsMissing(r.Key, r.Value, tableOf, present)).Select(r => r.Key).ToList();
-        var lineage = await LineageAsync(db, ct);
+        var lineage = await LineageAsync(db, strict, ct);
         if (recheck is null)
             return missing.Select(k => Missing(k, recorded)).FirstOrDefault() ?? lineage;
 
@@ -129,7 +130,7 @@ public static class RowIntegrityVerifier
             await recheck.CatchUp(ct);
             var still = new List<(int Table, Guid Id, RowMismatch Bad)>();
             foreach (var (table, id, _) in suspects)
-                if (await Reread(db, table, id, ct) is { } again && Check(again, recorded, hasher) is { } bad)   // gone since: the removal decides
+                if (await Reread(db, table, id, ct) is { } again && Check(again, recorded, hasher, strict) is { } bad)   // gone since: the removal decides
                     still.Add((table, id, bad));
             suspects = still;
             var gone = new List<(string Type, string Id)>();
@@ -143,8 +144,25 @@ public static class RowIntegrityVerifier
         if (missing.Count > 0) return Missing(missing[0], recorded);
         if (lineage is null) return null;
         await recheck.CatchUp(ct);   // a save in progress settles before a lineage is called wrong
-        return await LineageAsync(db, ct);
+        return await LineageAsync(db, strict, ct);
     }
+
+    /// <summary>
+    /// C18: the AppSetting the start-up upgrade (RowHashUpgrade) writes once it has recorded the hash of every record that
+    /// matches its trail and moved every record its hash didn't cover to format 4. From then on the check is strict
+    /// (<see cref="Check"/>): no record may lack a hash or a trail entry recording it, a hash must cover what its record
+    /// holds, and no migration's cleared hash is excused. Until it's written (an upgrade that failed part way, say) the
+    /// check is as it was. Audited and hashed like any setting, so removing or changing it is itself flagged; the settings
+    /// provider skips the key.
+    /// </summary>
+    public const string UpgradeMarkerKey = "Integrity:RowHashFormat";
+
+    /// <summary>The marker's value: the format the upgrade brought every record to.</summary>
+    public const string UpgradeMarkerValue = "4";
+
+    /// <summary>Whether the upgrade's marker is written (the check is strict).</summary>
+    public static Task<bool> UpgradedAsync(IAppDbContext db, CancellationToken ct = default) =>
+        db.AppSettings.AsNoTracking().AnyAsync(s => s.Key == UpgradeMarkerKey && s.Value == UpgradeMarkerValue, ct);
 
     /// <summary>
     /// BUG-315: which version of a note, an investigation entry or the brief is the current one isn't in any row's hash
@@ -156,7 +174,29 @@ public static class RowIntegrityVerifier
     /// </summary>
     // Read as a join from each later version to the one it replaced (later versions are few), not a load of every row:
     // this runs with every check, about every ten minutes.
-    private static async Task<RowMismatch?> LineageAsync(IAppDbContext db, CancellationToken ct) =>
+    private static async Task<RowMismatch?> LineageAsync(IAppDbContext db, bool strict, CancellationToken ct) =>
+        await ReplacedButCurrentAsync(db, ct) ?? (strict ? await HiddenAsync(db, ct) : null);
+
+    /// <summary>
+    /// BUG-634 (owner's decision): a note or timeline entry marked not current that no later version replaced and that
+    /// wasn't retracted has dropped out of the case and every report, and CaseBook never does that: a version stops
+    /// being current only when the next one is written, or when it's retracted. Checked once the upgrade has run (strict),
+    /// so the trail it records first is the baseline.
+    /// </summary>
+    private static async Task<RowMismatch?> HiddenAsync(IAppDbContext db, CancellationToken ct) =>
+        Hidden(nameof(AnalystNote), await db.Notes.AsNoTracking()
+            .Where(n => !n.IsCurrent && !db.Notes.Any(later => later.SupersedesNoteId == n.Id))
+            .Select(n => n.Id).FirstOrDefaultAsync(ct))
+        ?? Hidden(nameof(TimelineEntry), await db.TimelineEntries.AsNoTracking()
+            .Where(t => !t.IsCurrent && t.RetractedAtUtc == null && !db.TimelineEntries.Any(later => later.SupersedesEntryId == t.Id))
+            .Select(t => t.Id).FirstOrDefaultAsync(ct));
+
+    private static RowMismatch? Hidden(string type, Guid id) =>
+        id == Guid.Empty ? null
+            : new RowMismatch(type, id, null,
+                $"{type} {id} is marked not current, but no later version replaced it and it wasn't retracted: hidden outside CaseBook.");
+
+    private static async Task<RowMismatch?> ReplacedButCurrentAsync(IAppDbContext db, CancellationToken ct) =>
         Lineage(nameof(AnalystNote), await (from later in db.Notes.AsNoTracking() where later.SupersedesNoteId != null
                                             join earlier in db.Notes.AsNoTracking() on later.SupersedesNoteId equals (Guid?)earlier.Id
                                             where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
@@ -199,7 +239,7 @@ public static class RowIntegrityVerifier
     private static Task<IHashableEntity?> Reread(IAppDbContext db, int table, Guid id, CancellationToken ct) =>
         Tables(db).ElementAt(table).Where(r => ((Entity)(object)r).Id == id).FirstOrDefaultAsync(ct);
 
-    private static RowMismatch? Check(IHashableEntity row, ChainRecords recorded, IHashChainService hasher)
+    private static RowMismatch? Check(IHashableEntity row, ChainRecords recorded, IHashChainService hasher, bool strict)
     {
         var entity = (Entity)row;
         var type = row.GetType().Name;
@@ -208,6 +248,11 @@ public static class RowIntegrityVerifier
         if (known && last.Deleted)
             return new RowMismatch(type, entity.Id, last.Sequence,
                 $"{type} {entity.Id} was removed (audit entry {last.Sequence}) and put back outside CaseBook.");
+        // BUG-620/621: once the upgrade has recorded every record's hash (and those its migrations wrote), a record
+        // without one was added or had its hash cleared outside CaseBook, in every table and whatever the trail says.
+        if (strict && row.RowHash is not { Length: > 0 })
+            return new RowMismatch(type, entity.Id, known ? last.Sequence : null,
+                $"{type} {entity.Id} has no hash, and every record has had one since the upgrade: it was added or changed outside CaseBook.");
         if (row.RowHash is not { Length: > 0 } stored)
         {
             // BUG-422: a table hashed from its first row has no row from before row hashes, so one without a hash was
@@ -240,13 +285,25 @@ public static class RowIntegrityVerifier
         if (last.Hash is { } chained && !string.Equals(chained, stored, StringComparison.OrdinalIgnoreCase))
             return new RowMismatch(type, entity.Id, last.Sequence,
                 $"{type} {entity.Id} doesn't match its last recorded change (audit entry {last.Sequence}): it was rewritten outside CaseBook.");
+        if (!strict) return null;
+        // BUG-629: the upgrade recorded the hash of every record whose latest entry (from before v1.5.1) didn't, so one
+        // like that now was rewritten, its hash recomputed to match, outside CaseBook.
+        if (last.Hash is null)
+            return new RowMismatch(type, entity.Id, last.Sequence,
+                $"{type} {entity.Id}'s last recorded change (audit entry {last.Sequence}) doesn't record its hash, and every record's has since the upgrade: it was rewritten outside CaseBook.");
+        // C18: and moved every record its hash didn't cover to format 4, so a value an older hash leaves out was set since,
+        // outside CaseBook (a kept deadline, a release request, a version link).
+        if (!Canonical.Covers(Canonical.FormatOf(stored), row.BuildCanonicalContent))
+            return new RowMismatch(type, entity.Id, last.Sequence,
+                $"{type} {entity.Id} holds a value its hash (format {Canonical.FormatOf(stored)}) doesn't cover, and every record has been hashed with what it holds since the upgrade: it was changed outside CaseBook.");
         return null;
     }
 
     /// <summary>
     /// Types a released migration rewrote and cleared the row hash of (ClosureGateHonestChecks, on stage-gate
     /// requirements), so a cleared hash there isn't a sign of tampering. A migration that clears row hashes must add its
-    /// type here.
+    /// type here. BUG-621: only until the upgrade, which records the hash of each row that still holds what the migration
+    /// wrote (<see cref="MigrationSeededRows"/>); after it a cleared hash is flagged there too (strict).
     /// </summary>
     private static readonly HashSet<string> HashClearedByMigration = new(StringComparer.Ordinal) { nameof(StageGateRequirement) };
 
@@ -304,7 +361,7 @@ public static class RowIntegrityVerifier
             _last[(type, id)] = (hash, e.Sequence, false);
         }
 
-        internal bool TryGet((string Type, string Id) key, out (string? Hash, long Sequence, bool Deleted) last) =>
+        public bool TryGet((string Type, string Id) key, out (string? Hash, long Sequence, bool Deleted) last) =>
             _last.TryGetValue(key, out last);
 
         internal IEnumerable<KeyValuePair<(string Type, string Id), (string? Hash, long Sequence, bool Deleted)>> All => _last;

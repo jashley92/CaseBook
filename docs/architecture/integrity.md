@@ -20,6 +20,36 @@ format, so rows not saved since verify unchanged, and move to format 3 on their 
 version of a note, entry or brief marked current (BUG-315), and a retracted timeline entry marked current (BUG-421),
 which no row hash covers. A table hashed from its first row (account directory snapshots) has no row from before row
 hashes, so a row there without a hash is flagged whether or not the trail records it (BUG-422).
+
+**Canonical format 4 (C18).** Format 3 plus stored values that decide an outcome but were in no hash: a notice's kept
+deadline (BUG-630), a reported case's kept jurisdictions (BUG-631) and its pending legal-hold release request
+(BUG-632), a note's link to the version it replaced (BUG-622), an attack step's lineage and attack fields on an
+investigation entry, a task's completion-recorded time. Each is folded in only when set (`Canonical.Since`), so a record
+without them builds what format 3 built. Reports are hashed from this format (BUG-633). `Canonical.Covers(format)` says
+whether a hash in an older format falls short of a record (it holds a value that format leaves out).
+`CanonicalFormatTests` pins every record's canonical in every format on fixed fixtures, so an older format can never
+change; `CanonicalCoverageTests` changes every stored value of every record and requires the hash to change, or the
+value to be listed with the reason it's left out.
+
+**The upgrade and the strict check (C18).** At the first start of this release, after the back-fills,
+`RowHashUpgrade` looks at every record in every hashed table. One with no hash, or whose latest entry records none (last
+updated before v1.5.1), gets its hash recorded as an audited change when it agrees with what its trail last recorded
+(`TrailSnapshot`: everything its hash covers that the trail recorded is still as recorded; a case's data elements and a
+step's tactics must be in the trail too) or, with no trail, when it still holds what a released migration wrote
+(`MigrationSeededRows`: the close gate's requirements, the report templates the library migration made). One whose hash
+doesn't cover what it holds is re-hashed in format 4 the same way. Anything else is left, logged at start-up, and
+reported by the check. Then it writes the AppSetting `Integrity:RowHashFormat` = `4`, and from then on the record check is
+strict: a record with no hash (in any table, planted or with its hash cleared, BUG-620/621), one whose latest entry
+records no hash (rewritten with its hash recomputed, BUG-629), one holding a value its hash's format doesn't cover, and
+a note or timeline entry marked not current that no later version replaced and that wasn't retracted (hidden,
+BUG-634) are all flagged. If the upgrade fails part way nothing is marked, the check stays as it was, and the next start
+carries on. The marker is audited and hashed like any setting, so removing it is flagged; the settings provider skips it.
+
+**CaseBook's upkeep.** A change CaseBook makes to keep its own records (a derived value filled in at start-up, a hash
+recorded by the upgrade) is an audited update with the reason "CaseBook upkeep: not a change to the record"
+(`IntegrityUpkeep`), set through `IAppDbContext.PendingUpkeep`, never from user text (a reason that reads like it is
+refused). Changes after closure, the activity feed, the Desk, team workload, the stale-case reminder and the "updated"
+sort leave those entries out.
 | Hash chain | Every change appends an `AuditLog` row whose hash covers the previous row's hash | Inserted, deleted, reordered or edited history | `AuditChainInterceptor`, `HashChainService` |
 | Signed seals | Periodic RSA signature over the chain head, stored in the database and as files out of band | A competent rewrite that recomputes every hash | `IntegrityService`, `RsaSealSigner`, `FileSealStore` |
 | Ledger (optional) | SQL Server append-only ledger tables plus external digests | Any UPDATE or DELETE, even by `sysadmin`; page-level tampering | `deploy/sql/02-Enable-Ledger.sql` |
@@ -87,9 +117,11 @@ is never earlier than the one before it (BUG-167), so a time range is a run of c
 | `Users` (mirror), `EntityLayout` (graph positions), `SavedViews`, `PinnedCases`, display and notification preferences | Cosmetic or per-user state. |
 | `PendingImports` | Staging; applying an import goes through normal audited writes. |
 
-Some fields are also deliberately left out of row hashes: a case's custom-number flag, report profile and
-legal-hold release request; an entity's TLP and pin; evidence description and storage path; a report profile's
-template. These are preferences or workflow state, not findings.
+Some fields are also deliberately left out of row hashes: a case's custom-number flag, number parts and report
+profile; evidence and report storage paths (the file there is checked against its SHA-256); a report profile's
+template; a task's creator; an API token's last use; which version of a note, entry or brief is current (the lineage
+rules check it). These are preferences, stamps or checked another way, not findings; `CanonicalCoverageTests` lists each
+with its reason.
 
 API tokens are chained and checked like other records (REV-05), since a token row decides who the API lets in: one
 inserted in the database (an admin identity with a secret of the inserter's choosing) or given more roles there is
@@ -144,7 +176,7 @@ flowchart TB
   as removed, a hashed record the chain never recorded (added in the database), and a record the chain recorded
   that is no longer there (deleted in the database) are all flagged. The app records every removal, so a missing
   record means a write outside it. One released migration cleared stage-gate requirement hashes, so a cleared hash
-  on that table isn't flagged; a migration that clears hashes must say so in `RowIntegrityVerifier`. The
+  on that table isn't flagged until the upgrade has run (see *The upgrade and the strict check* above). The
   transition, assignment and citation tables (status, classification, materiality, severity, assignment and verdict
   changes, case assignments, evidence citations) became hashable later (BUG-70): at startup `RowHashBackfill` gives
   their rows the trail records a hash, without an audit entry, and in those tables a row the trail never recorded is
@@ -197,10 +229,13 @@ gets slower as the chain grows.
 
 ## Rules for developers
 
-1. **Never write to the database outside EF tracking** for audited tables. Raw SQL updates bypass the chain and
-   look like tampering. Data migrations that insert rows leave `RowHash` NULL until the next save.
-2. **Changing a canonical** re-baselines every existing row's hash. Only append new fields, and only when they
-   have a value.
+1. **Never write to the database outside EF tracking** for audited tables. Raw SQL, `ExecuteUpdate` and
+   `ExecuteDelete` bypass the chain and look like tampering (`AuditedWriterBypassTests` fails on one). A start-up fill
+   CaseBook makes for itself is a tracked save with `PendingUpkeep`. A data migration that writes an audited table must
+   be listed in `MigrationSeededRows` with how its rows are told apart from planted ones.
+2. **Changing a canonical** must not change what an earlier format builds (`CanonicalFormatTests` pins each). Add a
+   field in a new format, with `Canonical.Since` (only when set) or `Canonical.From`, pin the new format, and have the
+   upgrade move the records the older hash doesn't cover.
 3. **Don't add a type to `NotAudited`** unless it is genuinely not part of the record.
 4. **Background work is attributed to `system`.** If a job ever needs to write, decide how it should be
    attributed. None does today.

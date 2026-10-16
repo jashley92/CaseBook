@@ -84,6 +84,9 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
 
             foreach (var r in rows)
             {
+                // C18: the integrity upgrade's marker shares this table; it's no setting, and not a tamper signal.
+                if (string.Equals(r.Key, Application.Integrity.RowIntegrityVerifier.UpgradeMarkerKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 if (r.Value is null)
                 {
                     // BUG-192: saved blank. Where blank means "off" it hides the file's default; otherwise the default applies.

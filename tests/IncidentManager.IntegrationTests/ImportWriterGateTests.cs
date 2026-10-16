@@ -191,6 +191,7 @@ public sealed class ImportWriterGateTests : IDisposable
         ["EmailTemplateAdminService.cs"] = "writes email-template AppSettings keys, which aren't importable settings",
         ["DevDataSeeder.cs"] = "development seed data, written at start-up before any request",
         ["RoleSeeder.cs"] = "built-in roles, written at start-up before any request",
+        ["RowHashUpgrade.cs"] = "C18: records row hashes and writes its marker setting once, at start-up before any request",
     };
 
     /// <summary>Writer methods in gated services that take no gate themselves, and the caller that holds it for them.</summary>

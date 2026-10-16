@@ -16,7 +16,7 @@ Sources of truth: entity classes in `src/IncidentManager.Domain/Entities`, EF ma
 | **Enums are integers** | No value conversions anywhere: enums are stored as `int`, folded into row hashes as numbers, and serialized as numbers in audit JSON. **Append new members; never renumber or remove one.** Exception: `Permission` is stored by *name* inside `Roles.PermissionsCsv`, so never rename a `Permission` member. |
 | **Times are UTC** | `datetimeoffset` on SQL Server; UTC ticks on SQLite (offset lost). Domain code always writes UTC. The UTC/local toggle in the UI is display only. |
 | **Audit columns** | `CreatedAtUtc`/`CreatedBy` (required), `ModifiedAtUtc`/`ModifiedBy` (nullable) on `AuditableEntity` types. **Code sets them**; the interceptor doesn't. |
-| **Row hash** | Types implementing `IHashableEntity` have `RowHash nvarchar(64)`, a SHA-256 of `BuildCanonicalContent()` recomputed on every save. See [integrity.md](integrity.md). |
+| **Row hash** | Types implementing `IHashableEntity` have `RowHash nvarchar(70)`: a format prefix (`v2:` to `v4:`, none for the first) and the SHA-256 of `BuildCanonicalContent()` in that format, recomputed on every save. See [integrity.md](integrity.md). |
 | **Audit chain** | Every insert, update and delete of every type *not* in the interceptor's `NotAudited` list writes a chained `AuditLog` row in the same transaction. |
 | **No soft-delete column** | Nothing has `IsDeleted`. Records are either append-only (never removed), archived (`IsArchived`, `IsActive=false`), or hard-deleted (audited with action `Delete`). **Cases, timeline entries, notes, evidence, tasks and comments are never deleted.** |
 | **No query filters, no rowversion** | Need-to-know is applied explicitly by services (`ForUser`). Concurrency uses field "stamps" computed by the domain, compared before saving. |
@@ -108,11 +108,11 @@ The aggregate root. Every state change on a case goes through a method on `Domai
 | `ContainedAtUtc`, `ResolvedAtUtc`, `ClosedAtUtc` | datetimeoffset | yes | Set the first time the case enters Containment, Recovery or Closed (effective time). Closed is cleared on reopen. |
 | `OutcomeKey` | nvarchar(64) | yes | What the case concluded: a `CaseOutcomes.Key` (no foreign key). Set when it closes, cleared on reopen. Indexed. Hashed only when set. |
 | `ReportedAtUtc` | datetimeoffset | yes | When regulators were notified. Stops **every** jurisdiction's notification clock. |
-| `ReportedJurisdictions` | nvarchar(1000) | yes | The jurisdiction codes in play when the case became reported (WF-11), comma-separated, then `;` and the data elements it had (`NY,NJ;SSN,DL`, BUG-284). What's in play is these plus what today's settings give elements added since; it stays when the case goes back to unreported, so removing an element added by mistake reports it again. Null until first reported; emptied only when every notice is cleared. A value from before the elements were recorded gets them at start-up and before the case's elements next change (BUG-563); one damaged by a code that held `;` before BUG-404 (`NY;CA`, `NY;CA;SSN`) is repaired at start-up (BUG-589). Not in the canonical. Each regulator's notice (`JurisdictionNotices`) likewise keeps `DueAtUtc`, its deadline as it stood when recorded (WF-77), so whether it was on time doesn't move with later rule or materiality changes; also not in the canonical. |
+| `ReportedJurisdictions` | nvarchar(1000) | yes | The jurisdiction codes in play when the case became reported (WF-11), comma-separated, then `;` and the data elements it had (`NY,NJ;SSN,DL`, BUG-284). What's in play is these plus what today's settings give elements added since; it stays when the case goes back to unreported, so removing an element added by mistake reports it again. Null until first reported; emptied only when every notice is cleared. A value from before the elements were recorded gets them at start-up and before the case's elements next change (BUG-563); one damaged by a code that held `;` before BUG-404 (`NY;CA`, `NY;CA;SSN`) is repaired at start-up (BUG-589). In the row hash from canonical format 4, when set (BUG-631); the start-up back-fills are audited as CaseBook upkeep. Each regulator's notice (`JurisdictionNotices`) likewise keeps `DueAtUtc`, its deadline as it stood when recorded (WF-77), so whether it was on time doesn't move with later rule or materiality changes; in the notice's row hash from format 4, when set (BUG-630), and filled as an audited upkeep change. |
 | `IncidentCommander` | nvarchar(200) | yes | User id of the current IC (mirrors the IC assignment). |
 | `IsRestricted` | bit | no | Need-to-know. |
 | `LegalHold` | bit | no | Blocks archiving. |
-| `LegalHoldRelease*` (reason, requested at, by) | | yes | Pending two-person release request. Not hashed. |
+| `LegalHoldRelease*` (reason, requested at, by) | | yes | Pending two-person release request. In the row hash from canonical format 4, when set (BUG-632). |
 | `IsArchived` | bit | no | Hidden from active queues. |
 | `IsExercise` | bit | no | Tabletop case. Set at creation only; no method changes it. |
 | `ReportProfileId` | uniqueidentifier | yes | Preferred report profile. No foreign key; a deleted profile falls back to the default. Not hashed. |
@@ -296,7 +296,7 @@ removed. A campaign is the connected group of `Part of campaign` links.
 
 ## Reporting and review
 
-### `Reports` (A; not row-hashed)
+### `Reports` (A; row-hashed from canonical format 4, BUG-633: every column but `StoragePath`)
 
 | Column | Meaning |
 |---|---|
@@ -452,7 +452,10 @@ be edited**; nothing locks them.
     saved view; one IC per case; report version numbers. Keep the checks when you touch these paths.
 12. **References without foreign keys** leave dangling ids if you delete the target. Check the table notes
     above before adding a delete.
-13. **Migrations that insert into hashed tables** leave `RowHash` NULL until the row is next saved.
+13. **Migrations that write hashed tables** leave `RowHash` NULL (or stale), and the strict record check flags such
+    a row. Each one must be listed in `MigrationSeededRows` with how its rows are told apart from planted ones
+    (`AuditedWriterBypassTests` fails until it is); the start-up upgrade records the rows that still hold what it
+    wrote. Better: write such data from code at start-up, through EF, as an audited change.
 14. **An update that touches only `ModifiedBy`/`ModifiedAtUtc` isn't audited.**
 15. **Adding a type to `NotAudited`** removes it from tamper evidence. Don't do it for anything that's part of
     the record.

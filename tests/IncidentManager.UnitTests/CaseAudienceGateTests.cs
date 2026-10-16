@@ -91,7 +91,8 @@ public partial class CaseAudienceGateTests
         ["CriticalAlertOutbox.cs:RetryDueAsync"] = (1, "the alert outbox retrying its own rows (a background job)"),
         ["EvidenceIntegrityVerifier.cs:VerifyAllAsync"] = (2, "the evidence integrity sweep over every file; its result is counts and alerts, not case content"),
         ["RowIntegrityVerifier.cs:Tables"] = (26, "the list of hashed tables the integrity check verifies, every row"),
-        ["RowIntegrityVerifier.cs:LineageAsync"] = (7, "the integrity check's version-lineage test over every row"),
+        ["RowIntegrityVerifier.cs:ReplacedButCurrentAsync"] = (7, "the integrity check's version-lineage test over every row"),
+        ["RowIntegrityVerifier.cs:HiddenAsync"] = (4, "the integrity check's hidden-version test over every row (BUG-634)"),
         // Start-up: migration back-fills and development seed data, before any request
         ["DevDataSeeder.cs:InitializeAsync"] = (1, "development seed data at start-up"),
         ["DevDataSeeder.cs:SeedModelShowcaseAsync"] = (1, "development seed data at start-up"),

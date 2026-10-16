@@ -374,6 +374,26 @@ using (var scope = app.Services.CreateScope())
         app.Logger.LogWarning(ex, "Couldn't record the deadlines of earlier regulator notices; past quarters' notice figures use today's rules.");
     }
 
+    // C18: once, after the back-fills above (their writes are audited): record the hash of every record that matches its
+    // trail (or holds what a migration wrote), re-hash those a hash didn't cover, then make the record check strict. A
+    // failure leaves the check as it was and is tried again at the next start.
+    try
+    {
+        var upgrade = await IncidentManager.Infrastructure.Persistence.RowHashUpgrade.RunAsync(db,
+            scope.ServiceProvider.GetRequiredService<IHashChainService>(), clock);
+        if (upgrade.Marked)
+            app.Logger.LogInformation("Integrity upgrade: recorded the hash of {Recorded} record(s); the record check is now strict.", upgrade.Recorded);
+        foreach (var row in upgrade.Left.Take(50))
+            app.Logger.LogWarning("Integrity upgrade left {Record} unrecorded; the integrity check reports it.", row);
+        if (upgrade.Left.Count > 50)
+            app.Logger.LogWarning("Integrity upgrade left {More} more record(s) unrecorded; the integrity check reports them.", upgrade.Left.Count - 50);
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or Microsoft.EntityFrameworkCore.DbUpdateException
+                                   or System.Data.Common.DbException or TimeoutException)
+    {
+        app.Logger.LogWarning(ex, "The integrity upgrade didn't finish; the record check stays as before and the upgrade runs again at the next start.");
+    }
+
     // Seed system roles (from code) and migrate the file-based AD mapping into the DB on first run,
     // then prime the in-memory role directory so authentication resolves permissions immediately.
     var roleMapping = scope.ServiceProvider

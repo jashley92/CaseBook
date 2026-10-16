@@ -98,4 +98,83 @@ public sealed partial class AuditedWriterBypassTests
         }
         string.Join("\n", offenders).Should().BeEmpty();
     }
+
+    [GeneratedRegex(@"\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE)\s+[\[""]*(\w+)[\]""]*", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex SqlWrite();
+
+    [GeneratedRegex(@"(?:Insert|Update|Delete)Data\s*\(\s*table:\s*""(\w+)""", RegexOptions.None, 1000)]
+    private static partial Regex DataOperation();
+
+    /// <summary>Each (migration, table) a released migration writes with SQL or InsertData/UpdateData/DeleteData, in both
+    /// providers' migrations, with the file it's in.</summary>
+    internal static IEnumerable<(string Migration, string Table, string File)> MigrationWrites()
+    {
+        var root = ComponentSourceScanner.RepoRoot();
+        foreach (var dir in new[] { "src/IncidentManager.Infrastructure/Persistence/Migrations", "src/IncidentManager.Migrations.SqlServer/Migrations" })
+            foreach (var path in Directory.EnumerateFiles(Path.Combine(root, dir), "*.cs")
+                         .Where(f => !f.EndsWith(".Designer.cs", StringComparison.Ordinal) && !f.EndsWith("ModelSnapshot.cs", StringComparison.Ordinal)))
+            {
+                var file = Path.GetFileNameWithoutExtension(path);
+                var migration = file[(file.IndexOf('_') + 1)..];
+                // Up only: Down is never run on a release database.
+                var text = File.ReadAllText(path);
+                var down = text.IndexOf("void Down(", StringComparison.Ordinal);
+                if (down > 0) text = text[..down];
+                var sql = text.Replace("\"\"", "\"", StringComparison.Ordinal);
+                foreach (Match m in SqlWrite().Matches(sql))
+                {
+                    var table = m.Groups[1].Value;
+                    // "UPDATE q ... FROM [Table] q": the alias's table.
+                    if (Regex.Match(sql[m.Index..], $@"FROM\s+[\[""]*(\w+)[\]""]*\s+{Regex.Escape(table)}\b", RegexOptions.None, TimeSpan.FromSeconds(1))
+                        is { Success: true } alias) table = alias.Groups[1].Value;
+                    yield return (migration, table, Path.GetRelativePath(root, path).Replace('\\', '/'));
+                }
+                foreach (Match m in DataOperation().Matches(text))
+                    yield return (migration, m.Groups[1].Value, Path.GetRelativePath(root, path).Replace('\\', '/'));
+            }
+    }
+
+    private static readonly Lazy<IReadOnlyDictionary<string, Type>> Tables = new(() =>
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite("Data Source=:memory:").Options);
+        return db.Model.GetEntityTypes().Where(t => !t.IsOwned() && t.GetTableName() is not null)
+            .GroupBy(t => t.GetTableName()!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().ClrType, StringComparer.OrdinalIgnoreCase);
+    });
+
+    [Fact]
+    public void Every_migration_write_to_an_audited_table_is_listed_with_how_its_rows_are_told_apart(/* C18 */)
+    {
+        var listed = Application.Integrity.MigrationSeededRows.Writes.Select(w => (w.Migration, w.Table)).ToHashSet();
+        var unlisted = new List<string>();
+        var seen = new HashSet<(string, string)>();
+        foreach (var (migration, table, file) in MigrationWrites())
+        {
+            if (!Tables.Value.TryGetValue(table, out var type))
+            {
+                if (table is not ("__EFMigrationsHistory")) unlisted.Add($"{file}: writes {table}, which the model doesn't map");
+                continue;
+            }
+            if (!AuditChainInterceptor.IsAudited(type)) continue;
+            seen.Add((migration, table));
+            if (!listed.Contains((migration, table)))
+                unlisted.Add($"{file}: writes {table} ({type.Name}, audited): list it in MigrationSeededRows with how its rows are told apart");
+        }
+        string.Join("\n", unlisted).Should().BeEmpty();
+        listed.Except(seen).Should().BeEmpty("MigrationSeededRows lists only writes a migration makes");
+    }
+
+    [Theory]
+    [InlineData("migrationBuilder.Sql(@\"UPDATE \"\"CaseBriefs\"\" SET \"\"IsCurrent\"\" = 0\");", "CaseBriefs")]
+    [InlineData("migrationBuilder.Sql(@\"UPDATE q SET q.[Kind] = 0 FROM [StageGateRequirements] q JOIN [StageGates] g ON g.[Id] = q.[GateId]\");", "StageGateRequirements")]
+    [InlineData("migrationBuilder.Sql(\"INSERT INTO [ReportTemplates] ([Id]) SELECT [Id] FROM [ReportProfiles]\");", "ReportTemplates")]
+    public void The_migration_scan_names_the_table_written(string code, string table)
+    {
+        var sql = code.Replace("\"\"", "\"", StringComparison.Ordinal);
+        var m = SqlWrite().Match(sql);
+        var name = m.Groups[1].Value;
+        if (Regex.Match(sql[m.Index..], $@"FROM\s+[\[""]*(\w+)[\]""]*\s+{Regex.Escape(name)}\b", RegexOptions.None, TimeSpan.FromSeconds(1))
+            is { Success: true } alias) name = alias.Groups[1].Value;
+        name.Should().Be(table);
+    }
 }

@@ -10,12 +10,13 @@ Example: a new optional field on a case.
 1. **Domain** (`src/IncidentManager.Domain/Entities/<Entity>.cs`): add the property. If only the domain should
    change it, give it a private setter and a method that validates and sets it (and calls `Touch`).
 2. **Hash** (only for `IHashableEntity` types): decide whether the field is part of the record. If it is, append
-   it to `BuildCanonicalContent()` **only when it has a non-default value**, so existing rows hash exactly as
-   before:
+   it to `BuildCanonicalContent()` **only when it has a value**, in the current format, so existing rows hash exactly
+   as before and an older format builds what it always did:
    ```csharp
-   if (NewField is { Length: > 0 }) sb.Append("|newfield|").Append(NewField);
+   + Canonical.Since(4, NewField is not null, () => "|newfield|" + Canonical.Text(NewField))
    ```
-   Preferences and workflow state stay out of the hash.
+   `CanonicalCoverageTests` fails until the field is in the hash or listed (with why) in its `LeftOut`, and
+   `CanonicalFormatTests` must still pass unchanged. Preferences and stamps stay out of the hash.
 3. **Mapping** (`src/IncidentManager.Infrastructure/Persistence/Configurations/*.cs`): max length, required,
    index. Remember that lengths over 4000 become `nvarchar(max)`, so validate in code.
 4. **Migrations, both providers** (from the repo root, after `dotnet tool restore`):
