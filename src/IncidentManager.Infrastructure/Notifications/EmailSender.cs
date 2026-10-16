@@ -114,7 +114,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
         // BUG-617: nor would anyone try one the relay didn't take, or turned away only for now (BUG-626). A watched send
         // is tried again by its caller, and a refusal would only be refused again.
         else if ((outcome is SendOutcome.NotReached or SendOutcome.Transient) && !DeliveryWatch.Watching)
-            await HoldAsync(to, subject, textBody, htmlBody, attempts: 1, target);
+            await HoldAsync(to, subject, textBody, htmlBody, attempts: outcome == SendOutcome.Transient ? 1 : 0, target);   // BUG-640
     }
 
     // Delivered when the relay took it (for some recipients at least); a failure is logged and reported to the watch.
@@ -292,7 +292,18 @@ public sealed class EmailSender : IEmailSender, IDisposable
                     ? await DeliverLoggedAsync(o, next.RecipientList, next.Subject, next.TextBody, next.HtmlBody, CancellationToken.None)
                     : null;
                 // BUG-617: it stays first until that's final, so it isn't lost to a relay still down and the order holds.
-                if (outcome is SendOutcome.NotReached or SendOutcome.Transient)
+                // BUG-640: a relay that's down says nothing about the email, so it isn't a try; only age gives it up.
+                if (outcome == SendOutcome.NotReached)
+                {
+                    if (_circuit.Time.GetUtcNow() - next.HeldAtUtc < HeldEmail.GiveUpUnreachedAfter)
+                    {
+                        ScheduleDrain(_circuit.RetryIn(target));
+                        return;
+                    }
+                    _log.LogError("A held email to {RecipientCount} recipient(s) still wasn't sent after {Hours} hours with the mail relay " +
+                        "unreachable; it's given up.", next.RecipientList.Count, HeldEmail.GiveUpUnreachedAfter.TotalHours);
+                }
+                else if (outcome == SendOutcome.Transient)
                 {
                     var attempts = next.Attempts + 1;
                     if (attempts < HeldEmail.MaxAttempts)
@@ -300,7 +311,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                         var id = next.Id;
                         await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == id)
                             .ExecuteUpdateAsync(s => s.SetProperty(h => h.Attempts, attempts)));
-                        ScheduleDrain(outcome == SendOutcome.NotReached ? _circuit.RetryIn(target) : BackOff(attempts));
+                        ScheduleDrain(BackOff(attempts));
                         return;
                     }
                     // One that never goes mustn't hold the rest back for ever.

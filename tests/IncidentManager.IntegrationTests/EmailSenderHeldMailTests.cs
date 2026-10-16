@@ -236,7 +236,7 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         var rows = await HeldRowsAsync();
         rows.Should().HaveCount(3, "the one tried wasn't sent, so it's kept (it was taken off before the try)");
         rows[0].RecipientList.Should().Equal("a@example.test");
-        rows[0].Attempts.Should().Be(1, "it was tried once");
+        rows[0].Attempts.Should().Be(0, "it was tried, but a relay that's down doesn't use up a try (BUG-640)");
         _time.Timer!.Due.Should().BeGreaterThan(TimeSpan.Zero, "it's tried again when the relay's next back-off ends");
 
         _mode = "ok";
@@ -252,7 +252,7 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         _mode = "drop";   // one dropped connection: the relay isn't backed off yet
         await _sender.SendAsync(["assignee@example.test"], "Case assigned to you", "b");
         _circuit.TryEnter(_target).Should().BeTrue("one failure doesn't back the relay off");
-        (await HeldRowsAsync()).Should().ContainSingle().Which.Attempts.Should().Be(1);
+        (await HeldRowsAsync()).Should().ContainSingle().Which.Attempts.Should().Be(0, "it didn't reach the relay (BUG-640)");
         _time.Timer!.Due.Should().Be(EmailSender.DrainFloor);
 
         _mode = "ok";
@@ -314,6 +314,42 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         lock (_log.Entries)
             _log.Entries.Should().NotContain(e => e.Message.Contains("@example.test", StringComparison.Ordinal)
                 || e.Message.Contains("Case assigned", StringComparison.Ordinal), "CWE-359: counts, not addresses or subjects");
+    }
+
+    [Fact]
+    public async Task A_relay_outage_doesnt_use_up_the_tries_and_only_age_gives_up(/* BUG-640 */)
+    {
+        BackOff();
+        await _sender.SendAsync(["a@example.test"], "Mentioned", "b");
+        await _sender.SendAsync(["b@example.test"], "Assigned", "b");
+        await _sender.SendAsync(["c@example.test"], "Handed over", "b");
+        var heldAt = _time.Now;
+
+        // The relay stays down for a couple of hours: every back-off's probe fails to reach it.
+        _mode = "drop";
+        for (var probe = 0; probe < 20; probe++)
+        {
+            _time.Now += _circuit.RetryIn(_target);
+            await _sender.DrainHeldAsync();
+            var rows = await HeldRowsAsync();
+            rows.Should().HaveCount(3, $"a relay that's down says nothing about the mail (probe {probe + 1})");
+            rows[0].Attempts.Should().Be(0, "only a relay that answered 'not now' uses up a try");
+        }
+        (_time.Now - heldAt).Should().BeGreaterThan(TimeSpan.FromHours(2)).And.BeLessThan(HeldEmail.GiveUpUnreachedAfter);
+        _log.Has(LogLevel.Error, "given up").Should().BeFalse();
+
+        // Held longer than the age limit, with the relay still down: given up, and logged.
+        _time.Now = heldAt + HeldEmail.GiveUpUnreachedAfter + _circuit.RetryIn(_target);
+        await _sender.DrainHeldAsync();
+        var left = await HeldRowsAsync();
+        left.Should().HaveCount(2);
+        left[0].RecipientList.Should().Equal("b@example.test");
+        _log.Has(LogLevel.Error, "given up").Should().BeTrue("a given-up email leaves a record");
+
+        _mode = "ok";
+        _time.Now += _circuit.RetryIn(_target);
+        await _sender.DrainHeldAsync();
+        Delivered.Should().Be(2, "the rest go once the relay answers");
     }
 
     [Fact]
