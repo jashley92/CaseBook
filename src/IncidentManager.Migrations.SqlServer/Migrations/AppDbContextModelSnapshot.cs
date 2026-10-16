@@ -1749,6 +1749,40 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("GatePassages", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.HeldEmail", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("HeldAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("HtmlBody")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Recipients")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TextBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("HeldEmails", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.ImprovementAction", b =>
                 {
                     b.Property<Guid>("Id")

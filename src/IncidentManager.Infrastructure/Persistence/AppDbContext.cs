@@ -51,6 +51,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<CaseAccessEvent> CaseAccessEvents => Set<CaseAccessEvent>();
     public DbSet<NotificationMark> NotificationMarks => Set<NotificationMark>();   // BUG-95
     public DbSet<AlertDelivery> AlertDeliveries => Set<AlertDelivery>();   // BUG-101
+    public DbSet<HeldEmail> HeldEmails => Set<HeldEmail>();   // BUG-617
     public DbSet<IntegritySeal> IntegritySeals => Set<IntegritySeal>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<Role> Roles => Set<Role>();

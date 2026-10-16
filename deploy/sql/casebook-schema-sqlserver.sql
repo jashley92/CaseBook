@@ -4147,3 +4147,33 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261016201631_HeldEmails'
+)
+BEGIN
+    CREATE TABLE [HeldEmails] (
+        [Id] bigint NOT NULL IDENTITY,
+        [Recipients] nvarchar(max) NOT NULL,
+        [Subject] nvarchar(max) NOT NULL,
+        [TextBody] nvarchar(max) NOT NULL,
+        [HtmlBody] nvarchar(max) NULL,
+        [HeldAtUtc] datetimeoffset NOT NULL,
+        [Attempts] int NOT NULL,
+        CONSTRAINT [PK_HeldEmails] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261016201631_HeldEmails'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261016201631_HeldEmails'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

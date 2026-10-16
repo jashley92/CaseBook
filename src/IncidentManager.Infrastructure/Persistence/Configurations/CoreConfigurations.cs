@@ -758,6 +758,20 @@ public sealed class AlertDeliveryConfiguration : IEntityTypeConfiguration<AlertD
     }
 }
 
+/// <summary>BUG-617: user-action emails the relay didn't take, kept to send when it answers (oldest first, by Id).</summary>
+public sealed class HeldEmailConfiguration : IEntityTypeConfiguration<HeldEmail>
+{
+    public void Configure(EntityTypeBuilder<HeldEmail> b)
+    {
+        b.ToTable("HeldEmails");
+        // nvarchar(max): the email is kept as it would have been sent, so nothing is cut to fit a column.
+        b.Property(x => x.Recipients).IsRequired();
+        b.Property(x => x.Subject).IsRequired();
+        b.Property(x => x.TextBody).IsRequired();
+        b.Ignore(x => x.RecipientList);
+    }
+}
+
 public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
 {
     public void Configure(EntityTypeBuilder<UserNotificationPreference> b)

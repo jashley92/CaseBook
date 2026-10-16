@@ -1743,6 +1743,38 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("GatePassages", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.HeldEmail", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("HeldAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("HtmlBody")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Recipients")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TextBody")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("HeldEmails", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.ImprovementAction", b =>
                 {
                     b.Property<Guid>("Id")

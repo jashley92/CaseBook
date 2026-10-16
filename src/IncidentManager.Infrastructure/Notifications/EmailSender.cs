@@ -1,6 +1,10 @@
 using System.Net.Mail;
 using System.Net.Mime;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Domain.Entities;
+using IncidentManager.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -11,7 +15,8 @@ namespace IncidentManager.Infrastructure.Notifications;
 /// on every send, so administered changes to <c>Email:Enabled</c>, <c>Email:From</c> and the SMTP relay
 /// take effect at runtime (A-08) without a restart. When email is disabled the message is logged rather
 /// than sent; SMTP failures are logged and swallowed so a mail-server problem never breaks the case
-/// operation that triggered the notification. Branded messages carry a multipart/alternative body (a
+/// operation that triggered the notification; an unwatched one the relay didn't take is held in the database and sent
+/// later (BUG-617). Branded messages carry a multipart/alternative body (a
 /// plain-text part plus the HTML) so non-HTML clients still get readable text.
 /// </summary>
 public sealed class EmailSender : IEmailSender, IDisposable
@@ -19,12 +24,21 @@ public sealed class EmailSender : IEmailSender, IDisposable
     private readonly IOptionsMonitor<EmailOptions> _options;
     private readonly ILogger<EmailSender> _log;
     private readonly OutboundCircuit _circuit;
+    private readonly IServiceScopeFactory? _scopes;   // BUG-617: where held mail is kept; without it, none can be
 
-    public EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<EmailSender> log, OutboundCircuit? circuit = null)
+    public EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<EmailSender> log, OutboundCircuit? circuit = null,
+        IServiceScopeFactory? scopes = null)
     {
         _options = options;
         _log = log;
         _circuit = circuit ?? new OutboundCircuit();
+        _scopes = scopes;
+        // BUG-617: mail held before a restart is still in its table, so the first drain looks for it.
+        if (scopes is not null)
+        {
+            _maybeHeld = true;
+            ScheduleDrain(DrainFloor);
+        }
     }
 
     // BUG-576: the relay is backed off by host and port, so a corrected relay setting is tried at once.
@@ -90,23 +104,28 @@ public sealed class EmailSender : IEmailSender, IDisposable
                 _log.LogWarning("The mail relay isn't answering; not sending to {RecipientCount} recipient(s) until it's tried again.", to.Count);
                 DeliveryWatch.ReportDeferred();   // BUG-608: not tried, so an outbox retry isn't spent on it
             }
-            else Hold(new HeldEmail([.. to], subject, textBody, htmlBody), target);   // BUG-608: nobody would try it again
+            else await HoldAsync(to, subject, textBody, htmlBody, attempts: 0, target);   // BUG-608: nobody would try it again
             return;
         }
 
+        var outcome = await DeliverLoggedAsync(o, to, subject, textBody, htmlBody, ct);
         // BUG-608: the relay answers again, so what was held while it didn't goes now.
-        if (await DeliverLoggedAsync(o, to, subject, textBody, htmlBody, ct)) DrainHeldSoon();
+        if (outcome == SendOutcome.Delivered) DrainHeldSoon();
+        // BUG-617: nor would anyone try one the relay didn't take, or turned away only for now (BUG-626). A watched send
+        // is tried again by its caller, and a refusal would only be refused again.
+        else if ((outcome is SendOutcome.NotReached or SendOutcome.Transient) && !DeliveryWatch.Watching)
+            await HoldAsync(to, subject, textBody, htmlBody, attempts: 1, target);
     }
 
-    // True when the relay took it (for some recipients at least); a failure is logged and reported to the watch.
-    private async Task<bool> DeliverLoggedAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
+    // Delivered when the relay took it (for some recipients at least); a failure is logged and reported to the watch.
+    private async Task<SendOutcome> DeliverLoggedAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
         string textBody, string? htmlBody, CancellationToken ct)
     {
         var sent = to.Count(a => MailAddress.TryCreate(a, out _));
         try
         {
             await DeliverAsync(o, to, subject, textBody, htmlBody, ct);
-            return true;
+            return SendOutcome.Delivered;
         }
         catch (SmtpFailedRecipientsException ex) when (ex.InnerExceptions.Length < sent)
         {
@@ -114,7 +133,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
             // them (the executive report went out every hour for a week over one closed mailbox), so it isn't retried.
             _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); {Failed} address(es) were refused.",
                 sent - ex.InnerExceptions.Length, sent, ex.InnerExceptions.Length);
-            return true;
+            return SendOutcome.Delivered;
         }
         catch (SmtpFailedRecipientException ex) when (ex is not SmtpFailedRecipientsException && sent > 1)
         {
@@ -122,7 +141,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
             // the others got the message), so it's the same partial delivery as above.
             _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); 1 address was refused.",
                 sent - 1, sent);
-            return true;
+            return SendOutcome.Delivered;
         }
         catch (Exception ex)
         {
@@ -130,49 +149,83 @@ public sealed class EmailSender : IEmailSender, IDisposable
             // recipient addresses would only leak personal/case data into the log, so log a count instead.
             _log.LogError(ex, "Failed to send notification email to {RecipientCount} recipient(s).", to.Count);
             DeliveryWatch.ReportFailure();   // BUG-08: a scheduled reminder is retried on the next scan
-            return false;
+            return SendOutcomes.Of(ex);
         }
     }
 
-    // BUG-608: an email from a user's action (assign, mention, handoff) that came while the relay was backed off. Nothing
-    // else would try it again (a scan's reminder is retried by the scan, a critical alert by its outbox), and the back-off
-    // dropped it with only a log line. It's held here, in memory and in order, and sent once the relay answers again;
-    // past MaxHeld the newest is dropped and logged. Lost if the app restarts meanwhile.
-    private sealed record HeldEmail(IReadOnlyCollection<string> To, string Subject, string TextBody, string? HtmlBody);
-
+    // BUG-608: an email from a user's action (assign, mention, handoff) that the relay didn't take. Nothing else would try
+    // it again (a scan's reminder is retried by the scan, a critical alert by its outbox), and it was dropped with only a
+    // log line. It's held, in order, and sent once the relay answers again; past MaxHeld the newest is dropped and logged.
+    // BUG-617: held in the HeldEmails table, not in memory, so a restart doesn't lose it; and held too when a send that was
+    // tried didn't reach the relay or was turned away for now, not only while the relay is backed off.
     internal const int MaxHeld = 500;
 
     /// <summary>The least wait before held mail is tried again (settable for a test).</summary>
     internal static TimeSpan DrainFloor { get; set; } = TimeSpan.FromSeconds(15);
 
-    private readonly Queue<HeldEmail> _held = new();   // under its own lock, as are _drainTimer and _drainDue
+    private readonly object _gate = new();   // guards the fields below
     private ITimer? _drainTimer;
     private DateTimeOffset? _drainDue;
+    private bool _maybeHeld;          // false only once a drain found the table empty, and nothing was held since
+    private long _heldGeneration;     // counts holds, so a drain that found nothing knows whether one came meanwhile
+    private int _drainFailures;       // drains in a row that threw (the database unreachable, say), for their back-off
+    private bool _disposed;
     private int _draining;
 
-    internal int HeldCount { get { lock (_held) return _held.Count; } }
+    internal async Task<int> HeldCountAsync() => _scopes is null ? 0 : await WithDbAsync(db => db.HeldEmails.CountAsync());
 
-    private void Hold(HeldEmail email, string target)
+    private async Task HoldAsync(IReadOnlyCollection<string> to, string subject, string textBody, string? htmlBody,
+        int attempts, string target)
     {
         int held;
-        lock (_held)
+        try
         {
-            held = _held.Count < MaxHeld ? _held.Count + 1 : -1;
-            if (held > 0) _held.Enqueue(email);
+            // Without the caller's token: a user's action that ended (or a shutdown) mustn't lose the email it was keeping.
+            held = _scopes is null ? 0 : await WithDbAsync(async db =>
+            {
+                var count = await db.HeldEmails.CountAsync(CancellationToken.None);
+                if (count >= MaxHeld) return -1;
+                db.HeldEmails.Add(new HeldEmail
+                {
+                    Recipients = string.Join(';', to), Subject = subject, TextBody = textBody, HtmlBody = htmlBody,
+                    HeldAtUtc = _circuit.Time.GetUtcNow(), Attempts = attempts,
+                });
+                await db.SaveChangesAsync(CancellationToken.None);
+                return count + 1;
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "An email to {RecipientCount} recipient(s) wasn't sent and couldn't be held to send later.", to.Count);
+            return;
         }
         // CWE-359 as above: counts, not the subject or addresses.
+        if (held == 0)
+        {
+            _log.LogError("An email to {RecipientCount} recipient(s) wasn't sent, and there's nowhere to hold it.", to.Count);
+            return;
+        }
         if (held < 0)
-            _log.LogError("The mail relay isn't answering and {Held} notification emails are already held to send when it does; " +
-                "one to {RecipientCount} recipient(s) was dropped.", MaxHeld, email.To.Count);
-        else
-            _log.LogWarning("The mail relay isn't answering; an email to {RecipientCount} recipient(s) is held ({Held} in all) " +
-                "and sent when it answers again.", email.To.Count, held);
+        {
+            _log.LogError("The mail relay isn't taking mail and {Held} notification emails are already held to send when it does; " +
+                "one to {RecipientCount} recipient(s) was dropped.", MaxHeld, to.Count);
+            return;
+        }
+        _log.LogWarning("The mail relay didn't take an email to {RecipientCount} recipient(s); it's held ({Held} in all) " +
+            "and sent when the relay takes mail again.", to.Count, held);
+        lock (_gate)
+        {
+            _heldGeneration++;
+            _maybeHeld = true;
+        }
         ScheduleDrain(_circuit.RetryIn(target));
     }
 
     private void DrainHeldSoon()
     {
-        if (HeldCount > 0) ScheduleDrain(TimeSpan.Zero, floor: false);
+        bool maybe;
+        lock (_gate) maybe = _maybeHeld;
+        if (maybe) ScheduleDrain(TimeSpan.Zero, floor: false);
     }
 
     // One timer; a drain due sooner replaces one due later, never the other way round.
@@ -180,8 +233,9 @@ public sealed class EmailSender : IEmailSender, IDisposable
     {
         if (floor && delay < DrainFloor) delay = DrainFloor;
         var due = _circuit.Time.GetUtcNow() + delay;
-        lock (_held)
+        lock (_gate)
         {
+            if (_disposed) return;
             if (_drainDue is { } pending && pending <= due) return;
             _drainDue = due;
             _drainTimer ??= CreateDrainTimer();
@@ -202,24 +256,29 @@ public sealed class EmailSender : IEmailSender, IDisposable
     /// <summary>Sends the held mail, oldest first, while the relay lets it; one drain at a time.</summary>
     internal async Task DrainHeldAsync()
     {
-        lock (_held) _drainDue = null;
-        if (Interlocked.Exchange(ref _draining, 1) == 1) return;
+        lock (_gate) _drainDue = null;
+        if (_scopes is null || Interlocked.Exchange(ref _draining, 1) == 1) return;
         var emptied = false;
         try
         {
-            while (true)
+            while (!emptied)
             {
-                HeldEmail next;
-                lock (_held)
+                long seen;
+                lock (_gate) seen = _heldGeneration;
+                var next = await WithDbAsync(db => db.HeldEmails.AsNoTracking().OrderBy(h => h.Id).FirstOrDefaultAsync());
+                lock (_gate) _drainFailures = 0;
+                if (next is null)
                 {
-                    if (!_held.TryPeek(out var first))
+                    // Under the lock, so an email held from now on finds no drain running and schedules its own; one held
+                    // while the table was read is looked for again.
+                    lock (_gate)
                     {
-                        // Under the lock, so an email held from now on finds no drain running and schedules its own.
+                        if (_heldGeneration != seen) continue;
+                        _maybeHeld = false;
                         Volatile.Write(ref _draining, 0);
                         emptied = true;
-                        return;
                     }
-                    next = first;
+                    continue;
                 }
                 var o = _options.CurrentValue;
                 var target = Target(o);
@@ -228,16 +287,40 @@ public sealed class EmailSender : IEmailSender, IDisposable
                     ScheduleDrain(_circuit.RetryIn(target));
                     return;
                 }
-                lock (_held) _held.Dequeue();
                 // Email turned off meanwhile: not sent, as a send made now wouldn't be.
-                if (!o.Enabled) _log.LogInformation("Email delivery disabled; not sending a held email to {RecipientCount} recipient(s).", next.To.Count);
-                else await DeliverLoggedAsync(o, next.To, next.Subject, next.TextBody, next.HtmlBody, CancellationToken.None);
+                SendOutcome? outcome = o.Enabled
+                    ? await DeliverLoggedAsync(o, next.RecipientList, next.Subject, next.TextBody, next.HtmlBody, CancellationToken.None)
+                    : null;
+                // BUG-617: it stays first until that's final, so it isn't lost to a relay still down and the order holds.
+                if (outcome is SendOutcome.NotReached or SendOutcome.Transient)
+                {
+                    var attempts = next.Attempts + 1;
+                    if (attempts < HeldEmail.MaxAttempts)
+                    {
+                        var id = next.Id;
+                        await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == id)
+                            .ExecuteUpdateAsync(s => s.SetProperty(h => h.Attempts, attempts)));
+                        ScheduleDrain(outcome == SendOutcome.NotReached ? _circuit.RetryIn(target) : BackOff(attempts));
+                        return;
+                    }
+                    // One that never goes mustn't hold the rest back for ever.
+                    _log.LogError("A held email to {RecipientCount} recipient(s) still wasn't sent after {Attempts} tries; it's given up.",
+                        next.RecipientList.Count, attempts);
+                }
+                else if (outcome == SendOutcome.Refused)
+                    _log.LogError("The mail relay refused a held email to {RecipientCount} recipient(s); it isn't tried again.", next.RecipientList.Count);
+                else if (outcome is null)
+                    _log.LogInformation("Email delivery disabled; not sending a held email to {RecipientCount} recipient(s).", next.RecipientList.Count);
+                var done = next.Id;
+                await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == done).ExecuteDeleteAsync());
             }
         }
         catch (Exception ex)
         {
+            int failures;
+            lock (_gate) failures = ++_drainFailures;
             _log.LogError(ex, "Sending the held notification emails failed; they're tried again shortly.");
-            ScheduleDrain(DrainFloor);
+            ScheduleDrain(BackOff(failures));
         }
         finally
         {
@@ -245,9 +328,26 @@ public sealed class EmailSender : IEmailSender, IDisposable
         }
     }
 
+    // The wait after the n-th try in a row that didn't go: DrainFloor, doubling, up to the circuit's longest back-off.
+    private static TimeSpan BackOff(int tries) =>
+        TimeSpan.FromTicks(Math.Min(DrainFloor.Ticks << Math.Clamp(tries - 1, 0, 16), OutboundCircuit.MaxBackOff.Ticks));
+
+    private async Task<T> WithDbAsync<T>(Func<AppDbContext, Task<T>> work)
+    {
+        var scopes = _scopes ?? throw new InvalidOperationException("No database to hold email in.");
+        await using var scope = scopes.CreateAsyncScope();
+        await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>()
+            .CreateDbContextAsync(CancellationToken.None);
+        return await work(db);
+    }
+
     public void Dispose()
     {
-        lock (_held) _drainTimer?.Dispose();
+        lock (_gate)
+        {
+            _disposed = true;
+            _drainTimer?.Dispose();
+        }
     }
 
     private async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
@@ -353,7 +453,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
     }
 
     // A relay that answered with a refusal (auth required, sender refused) isn't hung, so it isn't backed off.
-    private static bool Unreachable(Exception ex) => ex switch
+    internal static bool Unreachable(Exception ex) => ex switch
     {
         SmtpException s => s.StatusCode is SmtpStatusCode.GeneralFailure or SmtpStatusCode.ServiceNotAvailable
             || s.InnerException is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException,

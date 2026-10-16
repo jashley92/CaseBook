@@ -124,8 +124,11 @@ schema, for use in the organization's own approved AI tool.
   once email is on again (WF-21); the log records recipient counts only. A relay that times out or can't be reached
   three times in a row within two minutes is backed off (1 minute, doubling to 10) so user actions don't each wait out
   its timeout; meanwhile reminders and outbox alerts wait for their next try (an outbox retry isn't used up), and an
-  assignment, mention or handoff email is held in memory (up to 500, in order) and sent when the relay answers. Held
-  mail is lost if the app restarts before then; past 500 the newest is dropped and logged (BUG-576, BUG-608).
+  assignment, mention or handoff email is held (up to 500, in order) and sent when the relay answers. It's held too
+  when its own send didn't reach the relay or was turned away for now (a 4xx such as "mailbox full"); a permanent
+  refusal (5xx) isn't. Held mail is kept in the `HeldEmails` table, so it survives a restart. It's removed once
+  it's sent, refused for good, or given up after 12 tries (each logged as an error); past 500 the newest is dropped and
+  logged (BUG-576, BUG-608, BUG-617, BUG-626).
 - **Testing:** Administration → Notifications → *Send a test email*. Locally, run an SMTP sink such as smtp4dev
   on localhost:25 with `Email:EnableSsl=false`.
 
