@@ -143,17 +143,26 @@
         }, true);
     }
 
+    // BUG-611: an editor holds unsaved text when it differs from its seed: the saved text it was given (init, setValue),
+    // or '' for text that isn't saved anywhere (a new composer, a draft put back). An edit left as it opened isn't dirty.
     function isDirty(m) {
-        try { return (m.value() || '').trim().length > 0; } catch (e) { return false; }
+        try { return (m.value() || '').trim() !== (m._seed || '').trim(); } catch (e) { return false; }
+    }
+
+    // The seed for a value put in the editor: `saved` when it's given (a string), else the value itself.
+    function seedOf(val, saved) {
+        return typeof saved === 'string' ? saved : (val || '');
     }
 
     window.markdownEditor = {
-        // opts: { mentions?: [{id,name}], entities?: [{id,value,hint}] } — an array is treated as mentions
-        // for backward compatibility.
+        // opts: { mentions?: [{id,name}], entities?: [{id,value,hint}], saved?: string } — an array is treated as mentions
+        // for backward compatibility. BUG-611: `saved` is the text already saved behind `initial` ('' when none is);
+        // left out, `initial` is.
         init: function (id, initial, opts) {
             const el = document.getElementById(id);
             if (!el || typeof EasyMDE === 'undefined') return;
-            if (instances[id]) { instances[id].value(initial || ''); return; }
+            const saved = opts && !Array.isArray(opts) ? opts.saved : undefined;
+            if (instances[id]) { instances[id].value(initial || ''); instances[id]._seed = seedOf(initial, saved); return; }
             const mde = new EasyMDE({
                 element: el,
                 initialValue: initial || '',
@@ -165,6 +174,7 @@
                 toolbar: toolbar(opts),
                 shortcuts: { toggleSideBySide: null, toggleFullScreen: null }
             });
+            mde._seed = seedOf(initial, saved);
             instances[id] = mde;
             if (Array.isArray(opts)) opts = { mentions: opts };
             if (opts && Array.isArray(opts.mentions)) mde._mentionCandidates = opts.mentions;
@@ -180,8 +190,11 @@
         getValue: function (id) {
             return instances[id] ? instances[id].value() : '';
         },
-        setValue: function (id, val) {
-            if (instances[id]) instances[id].value(val || '');
+        // BUG-611: `saved` as for init: '' when the text put back isn't saved anywhere (a stashed draft).
+        setValue: function (id, val, saved) {
+            if (!instances[id]) return;
+            instances[id].value(val || '');
+            instances[id]._seed = seedOf(val, saved);
         },
         focus: function (id) {                     // U-14: place the caret in the editor (keyboard shortcut)
             const mde = instances[id];
@@ -193,19 +206,21 @@
             try { mde.toTextArea(); mde.cleanup && mde.cleanup(); } catch (e) { /* best effort */ }
             delete instances[id];
         },
-        // FR-05: does any mounted composer still hold unsubmitted (non-whitespace) text? Drives the
+        // FR-05: does any mounted composer still hold unsubmitted text (BUG-611: other than its seed)? Drives the
         // unsaved-changes guards (browser beforeunload below + the in-app NavigationLock in the workspace).
         anyDirty: function () {
             return Object.values(instances).some(isDirty);
         },
         // BUG-578 (C7): the ids of the editors holding text, for UnsavedEdits.PendingAsync: only those inside an element
         // `within` selects (a tab's body, the Now/Next pane, a side panel) when it's given, and never those in `except`
-        // (a composer whose text survives what's about to happen, as FR-02's stash survives a tab switch).
+        // (a composer whose text survives what's about to happen, as FR-02's stash survives a tab switch). BUG-611: the
+        // stash keeps new text only, so an excepted editor editing saved text (it has a seed) is still reported.
         dirtyIds: function (within, except) {
             const skip = new Set(except || []);
             const roots = within ? Array.from(document.querySelectorAll(within)) : null;
             return Object.keys(instances).filter(function (id) {
-                if (skip.has(id) || !isDirty(instances[id])) return false;
+                const m = instances[id];
+                if ((skip.has(id) && !(m._seed || '').trim()) || !isDirty(m)) return false;
                 if (!roots) return true;
                 const el = document.getElementById(id);
                 return !!el && roots.some(function (r) { return r.contains(el); });
@@ -235,9 +250,7 @@
         if (suppressUnload) return;
         let dirty = false;
         try {
-            dirty = Object.values(instances).some(function (m) {
-                try { return (m.value() || '').trim().length > 0; } catch (_) { return false; }
-            });
+            dirty = Object.values(instances).some(isDirty);   // BUG-611: as the in-app prompts judge it
         } catch (err) { return; /* never block an unload on an error */ }
         if (dirty) { e.preventDefault(); e.returnValue = ''; }
     });

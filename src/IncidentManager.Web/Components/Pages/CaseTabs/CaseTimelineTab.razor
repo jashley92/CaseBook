@@ -1345,8 +1345,9 @@ else
     {
         // BUG-578: what this tab holds typed but unsaved, so a tab switch, leaving the case or the time-display redraw
         // asks before losing it. The add composer's Markdown is the workspace's to judge (FR-02 keeps it across a tab
-        // switch); an entry edit in that editor isn't kept, so the open edit itself counts.
-        Edits.Track(this, "the timeline entry you're editing", () => _tlEditId is not null, Region);
+        // switch); an entry edit in that editor isn't kept, so markdown-editor.js reports it (it has saved text behind it).
+        // BUG-611: the edit's own fields count once they differ from what it opened with.
+        Edits.Track(this, "the timeline entry you're editing", () => _tlEditId is not null && !Equals(TimelineEditValues(), _tlEditSeed), Region);
         Edits.Track(this, "the timeline entry you're writing", ComposerHoldsText, Region);
         Edits.Track(this, "the reason you're writing", () => (_corr is not null && HasText(_corrReason)) || (_retract is not null && HasText(_retractReason)), Region);
         Edits.Track(this, "the IOC you're adding", () => _newIocFor is not null && HasText(_newIocValue), Region);
@@ -1362,6 +1363,12 @@ else
 
     // BUG-578: the add composer's plain fields hold text: an event step's description, the source, a question, a
     // decision's why, options and who, and the Then section's lines.
+    // BUG-611: an entry edit's fields as they stand (an Investigation entry's text is the editor's, asked in the browser).
+    private object TimelineEditValues() => (_tlType, _tlWhen, _tlDay, _tlUntilDay, _tlPrecision, _tlAfter, _tlSource, _tlReason,
+        _tlAddKind == TimelineKind.Event ? _tlDesc : null, (_evtActorId, _evtTargetId, _evtTechnique, _evtTactic,
+        string.Join(",", _evtOtherTactics), _evtStage, _evtOurs, _evtAttackMode), (_decWhy, _decOptions, _decBy));
+    private object? _tlEditSeed;
+
     private bool ComposerHoldsText() => _tlEditId is null
         && ((_tlAddKind == TimelineKind.Event && HasText(_tlDesc)) || HasText(_tlSource) || HasText(_question)
             || HasText(_decWhy) || HasText(_decOptions) || HasText(_decBy)
@@ -1445,7 +1452,7 @@ else
                     // stash here; otherwise it stayed blank and the next teardown read "" over the stash.
                     if (_mdEditors.Contains(InvEditorId))
                     {
-                        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, stashed); }
+                        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, stashed, ""); }   // BUG-611: unsaved
                         catch (JSException) { /* best effort; _tlDesc still holds it */ }
                     }
                 }
@@ -1482,9 +1489,10 @@ else
         foreach (var (id, seed) in desired)
         {
             if (_mdEditors.Contains(id)) continue;
+            string? saved = _tlEditId is null ? "" : null;   // BUG-611: a new entry's text is all unsaved; an edit's starts saved
             object options = wantMentions
-                ? new { entities = EntityCandidates, mentions = _mentionable.Select(u => (object)new { id = u.UserId, name = u.DisplayName }).ToArray() }
-                : new { entities = EntityCandidates };
+                ? new { entities = EntityCandidates, mentions = _mentionable.Select(u => (object)new { id = u.UserId, name = u.DisplayName }).ToArray(), saved }
+                : new { entities = EntityCandidates, saved };
             try
             {
                 await JS.InvokeVoidAsync("markdownEditor.init", id, seed, options);
@@ -2072,6 +2080,7 @@ else
         _tagRefs.Clear();
         _tlDesc = IncidentManager.Application.Content.TagText.ToEditable(e.Description, _tagRefs) ?? "";
         _tlSource = e.Source;
+        _tlEditSeed = TimelineEditValues();   // BUG-611
     }
 
     private async Task SaveEventEdit()
@@ -2140,6 +2149,7 @@ else
         _tlSource = e.Source;
         _tlDesc = e.Description;
         _decWhy = e.Rationale; _decOptions = e.OptionsConsidered; _decBy = e.DecidedBy;
+        _tlEditSeed = TimelineEditValues();   // BUG-611
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, e.Description); }
         catch (JSException) { /* editor not mounted yet; ReconcileEditor seeds it from _tlDesc */ }
     }
@@ -2193,7 +2203,7 @@ else
         if (_draft is { } d)
         {
             RestoreDraft(d);
-            try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, _tlDesc); }
+            try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, _tlDesc, ""); }   // BUG-611: unsaved
             catch (JSException) { /* not mounted; ReconcileEditor seeds it from _tlDesc */ }
         }
         else if (wasInvestigationEdit)

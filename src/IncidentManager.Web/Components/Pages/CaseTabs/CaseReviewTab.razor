@@ -515,7 +515,9 @@ else
             var draft = await Lessons.DraftWhatHappenedAsync(CaseId, SevLabels.For);
             var id = FieldEditorId("happened");
             var current = (await EditorValue(id)).TrimEnd();
-            await JS.InvokeVoidAsync("markdownEditor.setValue", id, current.Length == 0 ? draft : current + "\n\n" + draft);
+            // BUG-611: the draft isn't saved yet, so the editor's seed stays the saved text (it counts as unsaved).
+            await JS.InvokeVoidAsync("markdownEditor.setValue", id, current.Length == 0 ? draft : current + "\n\n" + draft,
+                _reviewSeed.GetValueOrDefault("happened", ""));
             Toasts.Success(current.Length == 0 ? "Draft added. Review and edit it before saving." : "Draft added below your text. Review and edit it before saving.");
         }
         catch (Exception ex) when (ex is InvalidOperationException or JSException)
