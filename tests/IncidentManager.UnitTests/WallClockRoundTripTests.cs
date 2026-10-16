@@ -13,8 +13,9 @@ namespace IncidentManager.UnitTests;
 /// These scans fail when a component keeps its own wall/UTC conversion, converts a field seeded from a stored instant
 /// back without the kept rule, or sets a draft's time to a stored instant other than through KeptAt.
 /// </summary>
-/// <remarks>What it can't see: a seeded value passed through a local or another method before it's converted (the
-/// conversion is then in code that doesn't know where the value came from); a stored instant carried in a property
+/// <remarks>What it can't see: a seeded value passed to another method before it's converted (the conversion is then
+/// in code that doesn't know where the value came from; a local or a tuple in the seeding method is followed, BUG-615);
+/// a stored instant carried in a property
 /// of another object than a TransitionDraft. KeptTimeTests (integration) checks the helpers' behaviour.</remarks>
 public partial class WallClockRoundTripTests
 {
@@ -82,17 +83,56 @@ public partial class WallClockRoundTripTests
         RederivedIn("Pages/X.razor", kept).Should().BeEmpty();
     }
 
+    [Theory]   // BUG-615: a seed carried through a local, a tuple or a conditional
+    [InlineData("private void Begin(T t) { if (t.Due is { } due) { var shown = DayValues.FromUtc(due, z, o); (_date, _time) = shown; } } private Task Save() => Cases.SaveAsync(ToDueUtc(_date, _time));", true)]
+    [InlineData("private void Begin(T t) { var (d, tm) = DayValues.FromUtc(t.Due, z, o); _date = d; } private Task Save() => Cases.SaveAsync(ToDueUtc(_date, null));", true)]
+    [InlineData("private void Begin(E e) { _when = e.At is { } a ? WallClock.ToWall(a, z) : null; } private Task Save() => Cases.SaveAsync(ToUtc(_when));", true)]
+    [InlineData("private void Begin() { var shown = DayValues.FromUtc(Clock.UtcNow, z, o); (_date, _time) = shown; } private Task Save() => Cases.SaveAsync(ToDueUtc(_date, _time));", false)]
+    [InlineData("private void Begin(T t) { var shown = DayValues.FromUtc(t.Due, z, o); (_date, _time) = shown; } private Task Save() => Cases.SaveAsync(DayValues.Kept(_date, _time, _shown, _stored, z, o));", false)]
+    public void The_rederive_scan_follows_a_seed_through_locals(string snippet, bool flagged)
+    {
+        var parts = new[] { new Source("Pages/X.razor", Strip(snippet), "") };
+        RederivedIn("Pages/X.razor", parts).Any().Should().Be(flagged);
+    }
+
     private static IEnumerable<(string File, string What)> RederivedIn(string file, IReadOnlyList<Source> parts)
     {
         var code = string.Concat(parts.Select(p => p.Code));
         var seeded = Seed().Matches(code).Where(m => !IsNow(m.Groups["arg"].Value)).Select(m => m.Groups["field"].Value)
             .ToHashSet(StringComparer.Ordinal);
+        foreach (var m in parts.SelectMany(p => Methods(p.Code))) SeededThrough(m.Body, seeded);
         foreach (var m in parts.SelectMany(p => Methods(p.Code)))
         {
             if (KeptCall().IsMatch(m.Body)) continue;   // the method decides with the kept rule
             foreach (Match back in Back().Matches(m.Body))
                 if (seeded.Contains(back.Groups["field"].Value))
                     yield return (file, $"{m.Name}: {back.Value.Trim()}");
+        }
+    }
+
+    /// <summary>
+    /// BUG-615: the fields a method seeds from a stored instant through a local or a tuple
+    /// (<c>var shown = DayValues.FromUtc(due, ...); (_date, _time) = shown;</c>), or in a conditional
+    /// (<c>_x = at is { } d ? WallClock.ToWall(d, z) : null</c>). Locals are the method's own; fields are added to
+    /// <paramref name="seeded"/>.
+    /// </summary>
+    private static void SeededThrough(string body, HashSet<string> seeded)
+    {
+        var locals = new HashSet<string>(StringComparer.Ordinal);
+        for (var pass = 0; pass < 2; pass++)   // a copy written above the line that seeds its source is seen on the second pass
+        {
+            foreach (var statement in body.Split(';'))
+            {
+                if (Assignment().Match(statement) is not { Success: true } a) continue;
+                var rhs = a.Groups["rhs"].Value;
+                var fromStored = Conversion().Matches(rhs).Any(c => !IsNow(c.Groups["arg"].Value))
+                    || (BareName().Match(rhs.Trim()) is { Success: true } n && (locals.Contains(n.Value) || seeded.Contains(n.Value)));
+                if (!fromStored) continue;
+                var targets = Names().Matches(a.Groups["lhs"].Value).Select(t => t.Value)
+                    .Concat(ChainedTarget().Matches(rhs).Select(t => t.Groups["name"].Value));
+                foreach (var t in targets.Where(t => t != "var"))
+                    (t.StartsWith('_') ? seeded : locals).Add(t);
+            }
         }
     }
 
@@ -106,6 +146,23 @@ public partial class WallClockRoundTripTests
 
     [GeneratedRegex(@"(?<field>_\w+)\s*=\s*(?:_\w+\s*=\s*)?(?:[\w.]*\.)?(?:UtcToWall|ToWall|FromUtc)\(\s*(?<arg>[^,)]+)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Seed();
+
+    // The first assignment in a statement: `var x =`, `_x =`, `(_a, _b) =`, `var (a, b) =` (not `==`, `=>`, `x.Y =`).
+    [GeneratedRegex(@"(?<![.\w])(?<lhs>(?:var\s+)?(?:\(\s*(?:var\s+)?[_a-z]\w*(?:\s*,\s*(?:var\s+)?[_a-z]\w*)+\s*\)|[_a-z]\w*))\s*=(?![=>])(?<rhs>[^;]*)$",
+        RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex Assignment();
+
+    [GeneratedRegex(@"\b(?:UtcToWall|ToWall|FromUtc)\(\s*(?<arg>[^,)]+)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex Conversion();
+
+    [GeneratedRegex(@"^[_a-z]\w*$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BareName();
+
+    [GeneratedRegex(@"[_a-z]\w*", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex Names();
+
+    [GeneratedRegex(@"(?<![.\w])(?<name>_\w+)\s*=(?![=>])", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex ChainedTarget();
 
     [GeneratedRegex(@"\.When\s*=\s*(?:[\w.]*\.)?(?:UtcToWall|ToWall)\(\s*(?<arg>[^,)]+)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex DraftWhen();

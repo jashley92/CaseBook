@@ -27,6 +27,17 @@ public partial class EditPreservationTests
     // Wave 2b: "Edit" / "Done" on a row that replaces another row's open edit instead of refusing (EditSlot.TryOpen).
     private static readonly Dictionary<string, int> Replacing = new(StringComparer.Ordinal)
     {
+        // BUG-615: found when the scan learnt `_slot.Open(row.Id)`: Cite evidence on a second entry replaces the first
+        // entry's picks (a FormSession, not an EditSlot). Reported for the timeline's owner.
+        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 1,
+    };
+
+    // Reviewed openers that replace nothing a user could lose: each opens a modal dialog, which covers the rows, so no
+    // second row's opener is reachable while it's open.
+    private static readonly HashSet<string> Reviewed = new(StringComparer.Ordinal)
+    {
+        "Pages/CaseTabs/CaseTimelineTab.razor: StartCorrection",   // the milestone-correction dialog (focus-trapped)
+        "Pages/CaseTabs/CaseTimelineTab.razor: StartRetract",      // the retract dialog (focus-trapped)
     };
 
     // The case workspace's own forms: their text is the workspace's (CaseActionDraft, CloseOutDraft, the header's
@@ -66,6 +77,7 @@ public partial class EditPreservationTests
             {
                 if (!RowKey().IsMatch(m.Body)) continue;   // opens nothing for a row
                 if (Refuses().IsMatch(m.Body)) continue;
+                if (Reviewed.Contains($"{file}: {m.Name}")) continue;
                 found.Add((file, m.Name));
             }
         }
@@ -115,6 +127,9 @@ public partial class EditPreservationTests
     [InlineData("private void BeginEdit(ActionItem t) { _editingTaskId = t.Id; _editTitle = t.Title; }", true)]
     [InlineData("private void BeginEdit(ActionItem t) { if (!_edit.TryOpen(t.Id, Toasts, \"task\")) return; _editTitle = t.Title; }", false)]
     [InlineData("private void StartNoteEdit(Note n) { if (_editId is not null) { Toasts.Info(EditSlot.Refusal(\"note\")); return; } _editId = n.Id; }", false)]
+    [InlineData("private void BeginEdit(ActionItem t) { _edit.Open(t.Id); _editTitle = t.Title; }", true)]                     // BUG-615
+    [InlineData("private void BeginEdit(ActionItem t) { _edit.Close(); _edit.Open(t.Id); _editTitle = t.Title; }", true)]
+    [InlineData("private void BeginEdit(ActionItem t) { _picker.Open(Case.Id); }", false)]
     public void The_opener_scan_tells_a_refusal_from_a_replacement(string snippet, bool flagged)
     {
         var m = Methods(Strip(snippet)).Single();
@@ -137,8 +152,10 @@ public partial class EditPreservationTests
     [GeneratedRegex(@"^(?:Start|Begin)\w*$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Opener();
 
-    // The row the edit is for, put in a field: `_editingTaskId = t.Id`, `_editId = id` (not the case itself: one per page).
-    [GeneratedRegex(@"\b_\w*(?:Id|For|Key)\s*=\s*(?:(?!Case\.)\w+\.Id\b|id\b|key\b)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    // The row the edit is for, put in a field (`_editingTaskId = t.Id`, `_editId = id`) or opened in a FormSession /
+    // EditSlot (`_edit.Open(t.Id)`, BUG-615); not the case itself: one per page.
+    [GeneratedRegex(@"\b_\w*(?:Id|For|Key)\s*=\s*(?:(?!Case\.)\w+\.Id\b|id\b|key\b)|\b_\w+\.Open\(\s*(?:(?!Case\.)\w+\.(?:Id|Key)\b|id\b|key\b)",
+        RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex RowKey();
 
     [GeneratedRegex(@"\.TryOpen\(|EditSlot\.Refusal\(|you're editing", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
