@@ -468,6 +468,7 @@ public sealed class ReportConfiguration : IEntityTypeConfiguration<Report>
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.TemplateName).HasMaxLength(200);   // PROD-47
         b.Property(x => x.TemplateSha256).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-633
         b.HasIndex(x => x.CaseId);
     }
 }

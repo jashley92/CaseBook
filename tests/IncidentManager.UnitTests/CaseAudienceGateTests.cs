@@ -90,17 +90,18 @@ public partial class CaseAudienceGateTests
         ["AgendaService.cs:GetFeedItemsAsync"] = (2, "one user's feed (a calendar feed token's owner, the digest): restricted cases are filtered inline for that user (BUG-401)"),
         ["CriticalAlertOutbox.cs:RetryDueAsync"] = (1, "the alert outbox retrying its own rows (a background job)"),
         ["EvidenceIntegrityVerifier.cs:VerifyAllAsync"] = (2, "the evidence integrity sweep over every file; its result is counts and alerts, not case content"),
-        ["RowIntegrityVerifier.cs:Tables"] = (25, "the list of hashed tables the integrity check verifies, every row"),
+        ["RowIntegrityVerifier.cs:Tables"] = (26, "the list of hashed tables the integrity check verifies, every row"),
         ["RowIntegrityVerifier.cs:LineageAsync"] = (7, "the integrity check's version-lineage test over every row"),
         // Start-up: migration back-fills and development seed data, before any request
         ["DevDataSeeder.cs:InitializeAsync"] = (1, "development seed data at start-up"),
         ["DevDataSeeder.cs:SeedModelShowcaseAsync"] = (1, "development seed data at start-up"),
         ["DevDataSeeder.cs:SeedComplianceShowcaseAsync"] = (3, "development seed data at start-up"),
         ["DevDataSeeder.cs:SeedHistoricalDemoAsync"] = (3, "development seed data at start-up"),
-        ["ReportedJurisdictionsBackfill.cs:RunAsync"] = (2, "a start-up back-fill"),
-        ["ReportedJurisdictionsBackfill.cs:RepairDamagedAsync"] = (2, "a start-up back-fill"),
+        ["ReportedJurisdictionsBackfill.cs:RunAsync"] = (1, "a start-up back-fill"),
+        ["ReportedJurisdictionsBackfill.cs:WriteAsync"] = (1, "the start-up back-fill's audited write of one case (BUG-631)"),
+        ["ReportedJurisdictionsBackfill.cs:RepairDamagedAsync"] = (1, "a start-up back-fill"),
         ["ReportedJurisdictionsBackfill.cs:KnownElementKeysAsync"] = (1, "a start-up back-fill"),
-        ["ReportedJurisdictionsBackfill.cs:KeepElementsAsync"] = (2, "a start-up back-fill"),
+        ["ReportedJurisdictionsBackfill.cs:KeepElementsAsync"] = (1, "a start-up back-fill"),
         ["RowHashBackfill.cs:RunAsync"] = (8, "a start-up back-fill"),
     };
 

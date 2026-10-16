@@ -4,8 +4,10 @@ using IncidentManager.Domain.Enums;
 namespace IncidentManager.Domain.Entities;
 
 /// <summary>A generated report (a Word document; earlier releases also produced PDFs, which stay readable): a
-/// working draft until approved as the locked, hashed final.</summary>
-public class Report : AuditableEntity
+/// working draft until approved as the locked, hashed final. BUG-633: a hashed record like the rest, since who generated
+/// it (the approver must be someone else), whether it's the approved final and by whom, and its version decide what an
+/// examiner receives; reports from before it get their hash at the upgrade (RowHashUpgrade).</summary>
+public class Report : AuditableEntity, IHashableEntity
 {
     public Guid CaseId { get; set; }
     public int Version { get; set; }
@@ -31,6 +33,15 @@ public class Report : AuditableEntity
     public bool IsFinal { get; set; }
     public string? ApprovedBy { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
+
+    public string? RowHash { get; set; }
+
+    /// <summary>BUG-633: hashed from format 4, the first a report was hashed in. The storage path is left out, as an
+    /// evidence file's is: the file there is checked against <see cref="ContentSha256"/> on every download and approval.</summary>
+    public string BuildCanonicalContent() => string.Join('|',
+        CaseId, Version.ToString(System.Globalization.CultureInfo.InvariantCulture), Canonical.Num(Kind), Canonical.Num(Format),
+        Canonical.Text(FileName), ContentSha256, Canonical.Num(Tlp), Canonical.Text(TemplateName), TemplateSha256, IsFinal,
+        Canonical.Text(ApprovedBy), Canonical.Time(ApprovedAtUtc), Canonical.Text(CreatedBy), Canonical.Time(CreatedAtUtc));
 
     /// <summary>
     /// Approves and finalizes this report (E-15): the locked final an examiner receives. The stored file and its

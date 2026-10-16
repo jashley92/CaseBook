@@ -64,6 +64,8 @@ public static class RowIntegrityVerifier
         // REV-05: who the API lets in. A token row inserted in the database would otherwise be an admin identity no
         // check flagged.
         db.ApiTokens.AsNoTracking(),
+        // BUG-633: who generated a report (the approver must be someone else), whether it's the approved final, its version.
+        db.Reports.AsNoTracking(),
     ];
 
     /// <summary>

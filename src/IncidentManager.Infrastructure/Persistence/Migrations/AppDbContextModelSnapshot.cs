@@ -2269,6 +2269,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(70)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("StoragePath")
                         .IsRequired()
                         .HasMaxLength(500)

@@ -2277,6 +2277,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
+
                     b.Property<string>("StoragePath")
                         .IsRequired()
                         .HasMaxLength(500)

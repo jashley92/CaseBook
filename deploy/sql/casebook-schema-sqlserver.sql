@@ -4177,3 +4177,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261016210523_ReportRowHash'
+)
+BEGIN
+    ALTER TABLE [Reports] ADD [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261016210523_ReportRowHash'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261016210523_ReportRowHash'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

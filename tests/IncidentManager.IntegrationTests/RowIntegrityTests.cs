@@ -601,6 +601,49 @@ public sealed class RowIntegrityTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_report_rewritten_in_the_database_is_caught(string provider /* BUG-633 */)
+    {
+        using var database = Seeded(provider);
+        Guid id;
+        await using (var db = database.NewContext())
+        {
+            var caseId = await db.Cases.Select(c => c.Id).FirstAsync();
+            var report = new Report
+            {
+                CaseId = caseId, Version = 1, Format = ReportFormat.Word, FileName = "r.docx", StoragePath = "r/1.docx",
+                ContentSha256 = new string('a', 64), CreatedBy = "alice", CreatedAtUtc = _clock.UtcNow,
+            };
+            db.Reports.Add(report);
+            await db.SaveChangesAsync();
+            id = report.Id;
+            report.RowHash.Should().StartWith(Canonical.V4Prefix);
+        }
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
+
+        // Its generator renamed, so the person who generated it can approve it too; or a draft marked the approved final.
+        foreach (var tamper in new Func<AppDbContext, Task>[]
+                 {
+                     raw => raw.Reports.Where(r => r.Id == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.CreatedBy, "bob")),
+                     raw => raw.Reports.Where(r => r.Id == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.IsFinal, true).SetProperty(r => r.ApprovedBy, "carol")),
+                 })
+        {
+            await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors)) await tamper(raw);
+            var bad = await VerifyAsync(database);
+            bad!.EntityType.Should().Be(nameof(Report));
+            bad.Detail.Should().Contain("no longer matches its hash");
+            await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+                await raw.Reports.Where(r => r.Id == id).ExecuteUpdateAsync(s => s
+                    .SetProperty(r => r.CreatedBy, "alice").SetProperty(r => r.IsFinal, false).SetProperty(r => r.ApprovedBy, (string?)null));
+        }
+
+        // And deleted outright.
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+            await raw.Reports.Where(r => r.Id == id).ExecuteDeleteAsync();
+        (await VerifyAsync(database))!.Detail.Should().Contain("is missing");
+    }
+
     [Fact]
     public async Task An_existing_database_passes_when_one_is_named()
     {

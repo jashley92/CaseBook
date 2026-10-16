@@ -39,8 +39,8 @@ public class CanonicalCoverageTests
         ["Case.HasCustomNumber"] = "whether the number was typed in rather than issued: a numbering preference, not case content",
         ["Case.ReportProfileId"] = "which section layout its report uses (E-28): a reporting preference, audited but not case content",
         ["Case.EntityLayouts"] = "graph positions: cosmetic, deliberately outside the audit trail",
-        ["Case.Reports"] = "until BUG-633 makes a report a hashed record of its own",
         ["Evidence.StoragePath"] = "where the file is kept under a random name: its SHA-256 is hashed, and the evidence re-hash checks the file there against it",
+        ["Report.StoragePath"] = "where the file is kept: its SHA-256 is hashed, and the file is checked against it on every download and approval",
         ["Evidence.CustodyEvents"] = "custody events are their own record, outside the audit trail (owner decision, C18)",
         ["ReportProfile.TemplateId"] = "which Word template the profile starts from: each report records the template it used (name and SHA-256)",
         // Read only with another value, and shown only with it: without that value they say nothing.
