@@ -122,7 +122,7 @@ public sealed class MarkdownService : IMarkdownService
                 var navigable = caseId is { } && Guid.TryParse(u.AsSpan(EntityScheme.Length), out _);
                 if (navigable && Guid.TryParse(u.AsSpan(EntityScheme.Length), out var g))
                     // INV-11: no tab in the link, so the entity opens in a side panel over whatever tab is open.
-                    renderer.Write($"<a class=\"im-entity-tag\" href=\"/cases/{caseId}?entity={g}\" title=\"Show CaseBook's details for this entity. The indicator itself isn't opened.\">");
+                    renderer.Write($"<a class=\"im-entity-tag\" href=\"/cases/{caseId}?entity={g}\" title=\"Show details\">");
                 else
                     renderer.Write("<span class=\"im-entity-tag\" title=\"Tagged entity or IOC\">");
                 renderer.Write("<span class=\"bi bi-tag-fill\" aria-hidden=\"true\"></span>");
