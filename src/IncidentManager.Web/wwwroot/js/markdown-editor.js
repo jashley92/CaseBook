@@ -59,10 +59,18 @@
                 list: opts.entities,                                  // {id, value, hint}
                 label: c => c.hint ? (c.value + '  ·  ' + c.hint) : c.value,
                 match: (c, q) => q === '' || c.value.toLowerCase().includes(q) || (c.hint || '').toLowerCase().includes(q),
-                insert: c => '[' + String(c.value).replace(/[\[\]\r\n]/g, '') + '](entity:' + c.id + ') '
+                insert: c => '[' + linkLabel(c.value) + '](entity:' + c.id + ') '
             });
         }
         return triggers;
+    }
+
+    // C13 (wave 2): a tag's label escaped for the text of a [label](entity:id) link, as MarkdownText.LinkLabel does on the
+    // server. A backslash escapes the character after it, so a label like C:\Temp\ escaped the closing bracket and the tag
+    // showed as raw text; brackets used to be dropped, which changed the label. Backslashes and brackets are escaped, and
+    // line breaks, which end a link, become spaces.
+    function linkLabel(value) {
+        return String(value).replace(/[\r\n]+/g, ' ').replace(/[\\\[\]]/g, '\\$&');
     }
 
     function attachAutocomplete(mde, triggers) {
