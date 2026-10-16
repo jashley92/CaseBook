@@ -206,6 +206,59 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.12
+
+A fix release with no migration. It closes whole classes of bug at once, each with a test that fails if the class
+comes back. Things to check:
+
+- **Unsaved text asks first.** Switching case tab, hiding Now/Next, moving or closing a side panel, leaving the case,
+  changing the time display or opening another action over one you've typed in now asks **Stay / Discard** and names
+  what would be lost. Edit on a second row (timeline entry, note, entity, relationship, task, review action, deadline
+  rule, cite picker) while one is open says "Save or cancel the … you're editing, then try again." An edit or editor
+  you haven't changed doesn't ask.
+- **Late results stay out.** A search, preview, lookup or reload that finishes after you've moved on no longer
+  replaces what's on screen or moves the page. Case import's Apply and Reject act only on the preview shown. Text
+  typed while a save runs is kept, and a save closes only its own form.
+- **One click, one action.** Double-clicks and Enter-plus-click no longer save, send, approve or delete twice anywhere
+  in the case, admin and report pages. Saving a view over an existing name needs **Overwrite**; New case's duplicate
+  pause needs **Create anyway**. Ctrl+Enter in the notes composer saves that note, not one being edited in place.
+- **Active Directory.** Sign-in no longer asks AD about each role on every request, and a role named like an AD group
+  is granted again. Display and group names are looked up with a time limit. When AD can't name a user's groups in
+  time, Managers aren't dropped from escalations or reminders, open sessions still lose a role an admin removed, and
+  a personal token keeps only what its named groups grant.
+- **Email and chat.** A relay or webhook that stops answering is backed off after three failed connections in two
+  minutes (1 minute, up to 10). Assignment, mention and handoff emails sent meanwhile are held and sent when it
+  answers (held in memory: an app restart while it's down loses them). Critical-alert retries aren't spent while it's
+  backed off. HTML in case text shows as text in Teams posts.
+- **Who gets case email.** Assignment, mention and handoff emails go only to people still entitled to the case,
+  checked against the directory. A pre-v1.5.1 role name with a comma (e.g. "Readers,SysAdmin") is read as one role;
+  start-up logs any such names so you can rename them.
+- **Regulatory reporting.** A notice or reported time recorded from a stale page is refused when a colleague recorded
+  one meanwhile. The brief editor keeps questions and Known lines added while it was open. The deadline reminder
+  links to the at-risk list (closed cases still owing a notice included). Damaged kept-jurisdiction values from
+  v1.5.7–v1.6.3 are repaired at start-up.
+- **Past quarters stay put.** Correcting a transition time, removing or re-dating a notice, clearing a review,
+  switching deadline tracking off, or tagging a technique later no longer changes a reported quarter. The dashboard's
+  and Metrics CSV's all-time SLA figure now judges each milestone by the targets, severity and class of its time, as
+  the program report does. Nothing is measured from an approximate start. The Cases page no longer loads the SLA
+  history.
+- **Config import.** The preview now runs the import's own code without saving, so it shows exactly what the import
+  will write and refuses what it refuses; importing an unchanged bundle twice changes nothing. Names are read by name
+  only ("4" or "A,B" is no longer another value). Data element keys with "," ";" or spaces are refused. **Note:** if
+  live config already holds an undefined playbook default stored by an older import, importing the server's own
+  export is refused until that playbook is fixed (the message names it).
+- **Exports and limits.** CSV exports guard formulas after a ";" too (Excel set to a ";" separator). The calendar feed
+  no longer fails for the team when a task is due at the end of 9999; task dues must fall between years 2 and 9998.
+  Saving a view with filters over 2,000 characters says so. Evidence transfers are always audited. Ledger digest file
+  names use the Gregorian calendar on any server culture, and Verify-LedgerDigests picks the newest by ledger block.
+- **Smaller fixes:** double "Assign to me" or two people tagging the same technique says "someone else changed this
+  case" instead of failing, and bulk assign no longer stops halfway; editing a task or advancing a phase no longer
+  moves a time in the repeated autumn hour; a long value no longer breaks access-log, alert, directory or
+  import-rejection saves; entity tags with backslashes or brackets show as chips.
+- **From user testing:** pasting a document into Import case works at any size an upload takes (up to 4 MB); entity
+  pills say "Show details for …"; date pickers run from 1970, dates for things that happened stop at today, due dates
+  and targets reach 20 years ahead, and a stored date outside that range can still be kept or have its time edited.
+
 ### v1.6.11
 
 A fix release with no migration. Things to check:
