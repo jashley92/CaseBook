@@ -86,7 +86,11 @@ public sealed class CaseImportService
             zone = named;
         }
         var times = new CaseImportJson.UtcUnlessStated(zone);
+        // CA1869: deliberately per parse: the converter records which times this document wrote without a zone
+        // (UnzonedTimes), so a shared options instance would mix documents' state across concurrent parses.
+#pragma warning disable CA1869
         var options = new JsonSerializerOptions(CaseImportJson.Options);
+#pragma warning restore CA1869
         options.Converters.Clear();
         options.Converters.Add(times);
 
