@@ -692,13 +692,26 @@ else if (_pending.Count > 0)
                 text = await reader.ReadToEndAsync();
             }
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or JSException)
+        catch (ArgumentOutOfRangeException ex)   // BUG-613: what the stream refuses past MaxDocumentBytes, before reading any
         {
-            Logger.LogInformation(ex, "Case-import paste read failed");
+            Logger.LogInformation(ex, "Case-import paste over the size limit");
             if (!_reads.IsCurrent(r)) return;
             (_preview, _shown) = (null, null);
             _parseError = "That's more than 4 MB of text. Upload it as a file instead, or split it.";
             return;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JSException)
+        {
+            // BUG-613: a read that broke off (a stale script, a dropped transfer) isn't the text's size.
+            Logger.LogWarning(ex, "Case-import paste read failed");
+            if (!_reads.IsCurrent(r)) return;
+            (_preview, _shown) = (null, null);
+            _parseError = "Couldn't read the text in the box. Try again, or upload it as a file.";
+            return;
+        }
+        catch (Exception ex) when (ex is TaskCanceledException or JSDisconnectedException)
+        {
+            return;   // BUG-613: the page is going (or the connection went); nothing to say
         }
         finally { _readingBox = false; }
         if (!_reads.IsCurrent(r)) return;
