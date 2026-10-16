@@ -142,8 +142,8 @@ audit_after="$(sql "SELECT COUNT(*) FROM [$db].dbo.AuditLog")"
 # The upgraded records pass the integrity check's record rules (BUG-64/65): no false alarm on real release data.
 # C18: and the start-up upgrade marked the check strict, so a hashless row or a rewritten older row planted now is caught.
 log "Checking the upgraded records against the audit trail"
-verify_out=(); [[ -n "${UPGRADE_TEST_OUT:-}" ]] && verify_out=(--output "$UPGRADE_TEST_OUT")
-CASEBOOK_VERIFY_SQL="$conn" dotnet test "$to_dir/tests/IncidentManager.IntegrationTests" --nologo -v q "${verify_out[@]}"   --filter "FullyQualifiedName~An_existing_database_passes_when_one_is_named|FullyQualifiedName~An_upgraded_database_is_strict" >"$work/verify.log" 2>&1   || { grep -E "Expected|Failed |Exception" "$work/verify.log" | head -10 || tail -20 "$work/verify.log"; fail "the upgraded records fail the integrity check (log above)"; }
+verify_out=(); [[ -n "${UPGRADE_TEST_OUT:-}" ]] && verify_out=(--output "$UPGRADE_TEST_OUT")   # ${arr[@]+...}: bash < 4.4 under set -u
+CASEBOOK_VERIFY_SQL="$conn" dotnet test "$to_dir/tests/IncidentManager.IntegrationTests" --nologo -v q ${verify_out[@]+"${verify_out[@]}"}   --filter "FullyQualifiedName~An_existing_database_passes_when_one_is_named|FullyQualifiedName~An_upgraded_database_is_strict" >"$work/verify.log" 2>&1   || { grep -E "Expected|Failed |Exception" "$work/verify.log" | head -10 || tail -20 "$work/verify.log"; fail "the upgraded records fail the integrity check (log above)"; }
 # Both checks ran (a filter that matched nothing, or a run that found no tests, isn't a pass).
 grep -qE "Passed: +2," "$work/verify.log" || { tail -20 "$work/verify.log"; fail "the integrity checks didn't both run (log above)"; }
 
