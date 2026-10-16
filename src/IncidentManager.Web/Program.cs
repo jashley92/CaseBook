@@ -225,6 +225,8 @@ builder.Services.AddScoped<IncidentManager.Web.Services.CaseTabsState>();
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseListMemory>();
 // PROD-19: lets the open CaseWorkspace publish its action verbs to the hosted command palette.
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseCommandRegistry>();
+// BUG-578: the circuit's unsaved edits, asked before a tab switch, leaving a case or a time-display redraw hides them.
+builder.Services.AddScoped<IncidentManager.Web.Services.UnsavedEdits>();
 
 // Live case-presence (U-01b): one tracker per circuit, also wired as the circuit handler so a
 // closed/crashed tab's presence is cleaned up even if the component never disposes gracefully.
