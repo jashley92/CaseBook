@@ -14,6 +14,7 @@
 @inject IJSRuntime JS
 @inject TimeDisplay TimeDisp
 @inject IClock Clock
+@inject UnsavedEdits Edits
 
 <p class="text-muted small">
     Accounts, hosts, IPs, domains, URLs, file hashes and other indicators tied to this case, and how they relate.
@@ -50,7 +51,7 @@
                         }
                         @* BUG-425: Ctrl/Cmd+Enter in the suggestion's controls links it (keymap.js leaves .im-own-keys to it); not on
                            the case-number link, where it opens the case in a new tab as a link should. *@
-                        <span class="ms-auto d-flex align-items-center gap-1 im-own-keys" @onkeydown='e => SaveOnKey(e, "link", () => LinkRelated(r.CaseId))'>
+                        <span class="ms-auto d-flex align-items-center gap-1 im-own-keys" @onkeydown='e => SaveOnKey(e, () => LinkRelated(r.CaseId))'>
                             <select class="form-select form-select-sm" style="width:auto" aria-label="Relationship type"
                                     @onchange="e => SetRelatedType(r.CaseId, e.Value?.ToString())">
                                 @foreach (var t in Enum.GetValues<CaseLinkType>())
@@ -58,7 +59,7 @@
                                     <option value="@t" selected="@(RelatedTypeFor(r.CaseId) == t)">@Ui.CaseLinkLabel(t, true)</option>
                                 }
                             </select>
-                            <button class="btn btn-sm btn-outline-primary" @onclick='() => Once("link", () => LinkRelated(r.CaseId))'>Link</button>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => LinkRelated(r.CaseId)">Link</button>
                         </span>
                     </li>
                 }
@@ -68,10 +69,10 @@
 }
 
 <AuthorizeView Policy="@Policies.EditCases">
-    <div class="card mb-3 @(_enEditId is not null ? "border-primary" : "")">
+    <div class="card mb-3 @(EditingId is not null ? "border-primary" : "")">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <span>@(_enEditId is null ? "Add entity / IOC" : "Edit entity / IOC")</span>
-            @if (_enEditId is not null)
+            <span>@(EditingId is null ? "Add entity / IOC" : "Edit entity / IOC")</span>
+            @if (EditingId is not null)
             {
                 <span class="small text-muted"><span class="bi bi-pencil-square" aria-hidden="true"></span> Changes are recorded in the audit trail.</span>
             }
@@ -107,7 +108,7 @@
                 <label class="form-label small mb-0" for="ent-source">Source</label>
                 <input id="ent-source" class="form-control form-control-sm" @bind="_enSource" @bind:event="oninput" placeholder="@($"{DetectionLabel}…")" />
             </div>
-            @if (_enEditId is null)
+            @if (EditingId is null)
             {
                 <div class="col-md-1">
                     <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="SubmitComposer" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
@@ -126,7 +127,7 @@
                     }
                 </select>
             </div>
-            @if (_enEditId is not null)
+            @if (EditingId is not null)
             {
                 <div class="col-md-6">
                     @* HR-05: a verdict raised to Malicious or Compromised is a finding, so it needs a one-line why. *@
@@ -152,7 +153,7 @@
     </div>
 
     @* PROD-22: bulk indicator paste. SOC receives IOCs in blocks; parse → refang → auto-type → review → one write. *@
-    @if (_enEditId is null)
+    @if (EditingId is null)
     {
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -174,11 +175,11 @@
                     </p>
                     @* BUG-425: Ctrl/Cmd+Enter in the pasted text parses it; in the review below it adds the selected ones.
                        BUG-449: the text fields here bind on input, so the key reads what was just typed. *@
-                    <div class="im-own-keys" @onkeydown='e => SaveOnKey(e, "paste", ParseBulkOnKey)'>
+                    <div class="im-own-keys" @onkeydown="e => SaveOnKey(e, ParseBulkOnKey)">
                     <textarea class="form-control form-control-sm mb-2" rows="4" aria-label="Paste indicators" @bind="_bulkText" @bind:event="oninput"
                               placeholder="1.2.3.4, evil.example[.]com&#10;hxxp://bad[.]site/x&#10;44d88612fea8a8f36de82e1278abb02f&#10;user@phish.example"></textarea>
                     <div class="d-flex gap-2 mb-2">
-                        <button class="btn btn-sm btn-outline-primary" title="Ctrl / ⌘ + Enter" @onclick='() => Once("paste", ParseBulk)'
+                        <button class="btn btn-sm btn-outline-primary" title="Ctrl / ⌘ + Enter" @onclick="ParseBulk"
                                 disabled="@string.IsNullOrWhiteSpace(_bulkText)">Parse &amp; preview</button>
                         @if (_bulkRows.Count > 0)
                         {
@@ -194,7 +195,7 @@
 
                     @if (_bulkRows.Count > 0)
                     {
-                        <div class="im-own-keys" @onkeydown='e => SaveOnKey(e, "paste", AddBulk)'>
+                        <div class="im-own-keys" @onkeydown="e => SaveOnKey(e, AddBulk)">
                         <div class="row g-2 align-items-end mb-2">
                             <div class="col-md-3">
                                 <label class="form-label small mb-0" for="ent-bulk-disposition">Disposition (all)</label>
@@ -245,7 +246,7 @@
                             </table>
                         </div>
 
-                        <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick='() => Once("paste", AddBulk)'
+                        <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddBulk"
                                 disabled="@(_bulkBusy || !_bulkRows.Any(r => r.Include))">
                             @if (_bulkBusy) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
                             Add @_bulkRows.Count(r => r.Include) indicator(s)
@@ -401,7 +402,7 @@ else
             <div class="card mb-3">
                 <div class="card-header">Add relationship</div>
                 @* BUG-425: Ctrl/Cmd+Enter here adds the relationship, not the entity composer's entity. *@
-                <div class="card-body row g-2 align-items-end im-own-keys" @onkeydown='e => SaveOnKey(e, "relationship", AddRelationship)'>
+                <div class="card-body row g-2 align-items-end im-own-keys" @onkeydown="e => SaveOnKey(e, AddRelationship)">
                     <div class="col-md-4">
                         <label class="form-label small mb-0" for="ent-rel-source">Source</label>
                         <select id="ent-rel-source" class="form-select form-select-sm" @bind="_relSource">
@@ -432,7 +433,7 @@ else
                         </select>
                     </div>
                     <div class="col-md-1">
-                        <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick='() => Once("relationship", AddRelationship)'
+                        <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="AddRelationship"
                                 disabled="@(string.IsNullOrEmpty(_relSource) || string.IsNullOrEmpty(_relTarget))">Add</button>
                     </div>
                     @if (_relError is not null) { <div class="col-12"><div class="text-danger small">@_relError</div></div> }
@@ -450,11 +451,11 @@ else
                     <tbody>
                         @foreach (var r in Case.EntityRelationships.OrderBy(x => x.CreatedAtUtc))
                         {
-                            @if (_relEditId == r.Id)
+                            @if (_relEdit.IsOpenFor(r.Id))
                             {
                                 @* INV-49: correct the type, description or direction in place — one audited change. BUG-425: its own
                                    Ctrl/Cmd+Enter saves it (BUG-449: the description binds on input, so what was just typed). *@
-                                <tr class="im-own-keys" @onkeydown='e => SaveOnKey(e, "relationship-edit", SaveRelationship)'>
+                                <tr class="im-own-keys" @onkeydown="e => SaveOnKey(e, SaveRelationship)">
                                     <td colspan="2">
                                         <div class="row g-2 align-items-end">
                                             <div class="col-md-4">
@@ -496,8 +497,8 @@ else
                                                        placeholder="Description / context (optional)" />
                                             </div>
                                             <div class="col-md-3 d-flex gap-2 justify-content-end">
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _relEditId = null">Cancel</button>
-                                                <button type="button" class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick='() => Once("relationship-edit", SaveRelationship)'>Save</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="_relEdit.Close">Cancel</button>
+                                                <button type="button" class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveRelationship">Save</button>
                                             </div>
                                             @if (_relEditError is not null) { <div class="col-12"><div class="text-danger small" role="alert">@_relEditError</div></div> }
                                         </div>
@@ -565,12 +566,16 @@ else
     private string? _enSource;
     private string? _enDescription;
     private string? _entityError;
-    private Guid? _enEditId;      // entity being corrected in place (null = add mode)
-    private bool VerdictNeedsReason => _enEditId is { } eid && Case.Entities.FirstOrDefault(e => e.Id == eid) is { } was
+    // Entity being corrected in place (none = add mode). BUG-578: one at a time; another row's Edit is refused, not
+    // replaced, and so is one over an entity typed into the add form.
+    private readonly EditSlot<Guid> _enEdit = new();
+    private Guid? EditingId => _enEdit.Current?.Key;
+    private string? _enSeed;   // BUG-578: the form as the edit opened it, so an untouched edit holds nothing up
+    private bool VerdictNeedsReason => EditingId is { } eid && Case.Entities.FirstOrDefault(e => e.Id == eid) is { } was
         && was.Disposition != _enDisposition && _enDisposition is EntityDisposition.Malicious or EntityDisposition.Compromised;
     private string? _enReason;    // optional reason-for-change → audit trail
     // BUG-414: the verdict is changing in this edit, and when it was determined (null = now).
-    private bool VerdictChanging => _enEditId is { } vid && Case.Entities.FirstOrDefault(e => e.Id == vid) is { } before
+    private bool VerdictChanging => EditingId is { } vid && Case.Entities.FirstOrDefault(e => e.Id == vid) is { } before
         && before.Disposition != _enDisposition;
     private DateTime? _enDeterminedWall;
 
@@ -640,8 +645,22 @@ else
         }
     }
 
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // BUG-578: what's typed in this tab's forms (compared with what each opened with) is asked about before a tab switch,
+    // leaving the case or the time-display redraw hides it.
+    private bool AddDirty => !string.IsNullOrWhiteSpace(_enValue) || !string.IsNullOrWhiteSpace(_enLabel)
+        || !string.IsNullOrWhiteSpace(_enDescription) || !string.IsNullOrWhiteSpace(_enSource);
+    private bool EditDirty => EditingId is not null
+        && (EntityInput() != _enSeed || !string.IsNullOrWhiteSpace(_enReason) || _enDeterminedWall is not null);
+    private string EntityInput() => string.Join("\u001f", _enType, _enValue, _enLabel, _enDisposition, _enSource, _enDescription, _enTlp);
+
     protected override void OnInitialized()
     {
+        Edits.Track(this, "the entity you're adding", () => EditingId is null && AddDirty, Region);
+        Edits.Track(this, "the entity you're editing", () => EditDirty, Region);
+        Edits.Track(this, "the relationship you're editing", () => _relEdit.IsOpen && RelationshipInput() != _relEditSeed, Region);
+        Edits.Track(this, "the indicators you pasted", () => _bulkOpen && (!string.IsNullOrWhiteSpace(_bulkText) || _bulkRows.Count > 0), Region);
         _graphRef = DotNetObjectReference.Create(this);
         // BUG-506 (BUG-478 sibling): a default an admin has hidden showed nothing in its select while the save used it.
         _enType = OfferedOr(_enType, EntityTypes);
@@ -668,6 +687,8 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        // BUG-578: a relationship a colleague removed takes its open edit with it (its row is gone), so another can open.
+        if (_relEdit.Current is { } rel && Case.EntityRelationships.All(r => r.Id != rel.Key)) _relEdit.Close();
         // Load overlaps on first mount and whenever the parent signals a live change.
         if (_loadedToken != RefreshToken)
         {
@@ -681,8 +702,19 @@ else
                 await LoadOverlaps();
                 await LoadRelated();
             }
-            try { _links = await Cases.GetCaseLinksAsync(CaseId); } catch (InvalidOperationException) { _links = []; }
+            await LoadLinks();
         }
+    }
+
+    // BUG-601: loads that run side by side (a live refresh's, a save's) each take a ticket; only the newest one's lands.
+    private readonly LoadSequence _linksLoad = new(), _overlapsLoad = new(), _relatedLoad = new();
+
+    private async Task LoadLinks()
+    {
+        var t = _linksLoad.Begin();
+        IReadOnlyList<CaseLinkView> links;
+        try { links = await Cases.GetCaseLinksAsync(CaseId); } catch (InvalidOperationException) { links = []; }
+        if (_linksLoad.IsCurrent(t)) _links = links;
     }
 
     private int EntitySignature()
@@ -694,17 +726,21 @@ else
 
     private async Task LoadOverlaps()
     {
-        _overlaps = (await Cases.FindEntityOverlapsAsync(CaseId))
+        var t = _overlapsLoad.Begin();
+        var overlaps = (await Cases.FindEntityOverlapsAsync(CaseId))
             .GroupBy(o => o.EntityId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<EntityOverlap>)g.ToList());
+        if (_overlapsLoad.IsCurrent(t)) _overlaps = overlaps;
     }
 
     // PROD-40: pull the visible open cases sharing indicators with this one (not already linked). Only
     // editors — who can act on it — see the suggestion.
     private async Task LoadRelated()
     {
+        var t = _relatedLoad.Begin();
         if (!CanEdit) { _related = Array.Empty<RelatedCaseSuggestion>(); return; }
-        _related = await Cases.FindRelatedOpenCasesAsync(CaseId);
+        var related = await Cases.FindRelatedOpenCasesAsync(CaseId);
+        if (_relatedLoad.IsCurrent(t)) _related = related;
     }
 
     private CaseLinkType RelatedTypeFor(Guid caseId) =>
@@ -712,10 +748,12 @@ else
 
     private void SetRelatedType(Guid caseId, string? value)
     {
-        if (Enum.TryParse<CaseLinkType>(value, out var t)) _relatedType[caseId] = t;
+        if (IncidentManager.Domain.Common.EnumNames.TryParse<CaseLinkType>(value, out var t)) _relatedType[caseId] = t;   // BUG-592
     }
 
-    private async Task LinkRelated(Guid otherCaseId)
+    private Task LinkRelated(Guid otherCaseId) => _linking.Run(() => LinkRelatedCore(otherCaseId));
+
+    private async Task LinkRelatedCore(Guid otherCaseId)
     {
         try
         {
@@ -735,18 +773,16 @@ else
 
     // BUG-425: the relationship forms, the paste and the suggestions each save themselves on Ctrl/Cmd+Enter (they're marked
     // .im-own-keys, which keymap.js leaves alone), as their buttons do; one save at a time per form (a paste waiting on the
-    // directory doesn't hold up a relationship save), and a held key doesn't repeat.
-    private readonly HashSet<string> _formSaving = new(StringComparer.Ordinal);
+    // directory doesn't hold up a relationship save), and a held key doesn't repeat. BUG-603: each handler runs through its
+    // form's InFlight itself, so a double-click, Enter and a click, or two confirms don't write twice.
+    private readonly InFlight _linking = new();
+    private readonly InFlight _pasting = new();
+    private readonly InFlight _relAdding = new();
+    private readonly InFlight _relEditing = new();
+    private readonly InFlight _removing = new();
 
-    private async Task Once(string form, Func<Task> save)
-    {
-        if (!_formSaving.Add(form)) return;
-        try { await save(); }
-        finally { _formSaving.Remove(form); }
-    }
-
-    private Task SaveOnKey(KeyboardEventArgs e, string form, Func<Task> save) =>
-        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : Once(form, save);
+    private Task SaveOnKey(KeyboardEventArgs e, Func<Task> save) =>
+        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : save();
 
     private Task ParseBulkOnKey() => string.IsNullOrWhiteSpace(_bulkText) ? Task.CompletedTask : ParseBulk();
 
@@ -769,7 +805,7 @@ else
         _adding = true;
         try
         {
-            if (_enEditId is null) await AddEntity();
+            if (EditingId is null) await AddEntity();
             else await SaveEntityEdit();
         }
         finally { _adding = false; }
@@ -778,7 +814,7 @@ else
     // BUG-416: the type follows the value until it's picked by hand (never while editing an existing one).
     private async Task ValueTyped()
     {
-        if (_enEditId is not null || _enTypePicked || string.IsNullOrWhiteSpace(_enValue)) return;
+        if (EditingId is not null || _enTypePicked || string.IsNullOrWhiteSpace(_enValue)) return;
         // Sonar S6966/S2930: the earlier check is only cancelled here. The call that made it disposes it when it wakes
         // (finally, below), so its Task.Delay or directory call never runs on a disposed token.
         if (_accountCheck is { } earlier) { _accountCheck = null; await earlier.CancelAsync(); }
@@ -792,7 +828,7 @@ else
         {
             await Task.Delay(400, cts.Token);
             if (await AccountDirectory.IsKnownAccountAsync(value, cts.Token)
-                && !cts.IsCancellationRequested && _enValue == value && !_enTypePicked && _enEditId is null
+                && !cts.IsCancellationRequested && _enValue == value && !_enTypePicked && EditingId is null
                 && EntityTypes.Contains(EntityType.Account))   // BUG-506: hidden meanwhile
                 _enType = EntityType.Account;
         }
@@ -806,16 +842,28 @@ else
 
     private async Task AddEntity()
     {
-        if (_enEditId is not null || string.IsNullOrWhiteSpace(_enValue)) return;   // BUG-330: the form is editing one
+        if (EditingId is not null || string.IsNullOrWhiteSpace(_enValue)) return;   // BUG-330: the form is editing one
         _entityError = null;
         try
         {
             var addedVal = _enValue;
             var asked = _enDisposition;
-            var r = await Cases.AddOrMatchEntityAsync(CaseId, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
-            if (_enTlp is not null && !r.AlreadyOnCase) await Cases.SetEntityTlpAsync(CaseId, r.Id, _enTlp);   // PROD-45
-            _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
-            _enTypePicked = false;   // BUG-416: the next value sets the type again
+            var (sentLabel, sentDescription, sentSource, sentTlp) = (_enLabel, _enDescription, _enSource, _enTlp);
+            var r = await Cases.AddOrMatchEntityAsync(CaseId, _enType, addedVal, sentLabel, _enDisposition, sentDescription, sentSource);
+            if (sentTlp is not null && !r.AlreadyOnCase) await Cases.SetEntityTlpAsync(CaseId, r.Id, sentTlp);   // PROD-45
+            // BUG-601: the next indicator, typed or pasted while this one saved, stays in the form.
+            if (EditingId is null)
+            {
+                _enValue = DraftText.ClearIfUnchanged(_enValue, addedVal);
+                _enLabel = DraftText.ClearIfUnchanged(_enLabel, sentLabel, null);
+                _enDescription = DraftText.ClearIfUnchanged(_enDescription, sentDescription, null);
+                _enSource = DraftText.ClearIfUnchanged(_enSource, sentSource, null);
+                if (_enValue.Length == 0)
+                {
+                    if (_enTlp == sentTlp) _enTlp = null;
+                    _enTypePicked = false;   // BUG-416: the next value sets the type again
+                }
+            }
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // the new IOC may correlate with another case — surface "also in" now
             _relatedDismissed = false; // a new IOC may reveal a related case — re-surface the suggestion (PROD-40)
@@ -834,7 +882,9 @@ else
     // --- PROD-22: bulk indicator paste ---
     private void ToggleBulk() => _bulkOpen = !_bulkOpen;
 
-    private async Task ParseBulk()
+    private Task ParseBulk() => _pasting.Run(ParseBulkCore);
+
+    private async Task ParseBulkCore()
     {
         ParseBulkRows();
         // BUG-416: a bare name the directory knows is an account (at most 50 asked, so a big paste isn't held up).
@@ -874,7 +924,9 @@ else
         foreach (var r in _bulkRows) r.Include = include;
     }
 
-    private async Task AddBulk()
+    private Task AddBulk() => _pasting.Run(AddBulkCore);
+
+    private async Task AddBulkCore()
     {
         var rows = _bulkRows.Where(r => r.Include).ToList();
         if (rows.Count == 0 || _bulkBusy) return;
@@ -919,9 +971,11 @@ else
     // Load an existing IOC into the composer to correct it in place.
     private void StartEntityEdit(CaseEntity e)
     {
-        if (_enEditId is null) _enAddDisposition = _enDisposition;   // BUG-484: switching edits keeps the one from before the first
+        // BUG-578: what's typed into the add form, or another entity's edit, is kept: refused instead of re-seeded.
+        if (EditingId is null && AddDirty) { Toasts.Info("Add or clear the entity you're typing, then try again."); return; }
+        if (!_enEdit.TryOpen(e.Id, Toasts, "entity")) return;
+        _enAddDisposition = _enDisposition;   // BUG-484: the add form's, put back when the edit ends
         _entityError = null;
-        _enEditId = e.Id;
         _enReason = null;
         _enType = e.Type;
         _enValue = e.Value;
@@ -933,13 +987,14 @@ else
         _enTlpAtOpen = e.Tlp;
         _enStamp = e.RowHash ?? "";
         _enDeterminedWall = null;   // BUG-414: now, unless set
+        _enSeed = EntityInput();
         _bringIntoView = ("imMotion.focusId", "ent-value");   // BUG-410
     }
 
     private void CancelEntityEdit()
     {
-        if (_enEditId is { } was) _bringIntoView = ("imMotion.scrollToId", RowId(was));   // BUG-410: back to the row
-        _enEditId = null; _enReason = null; _entityError = null; _enTypePicked = false; _enDeterminedWall = null;
+        if (EditingId is { } was) _bringIntoView = ("imMotion.scrollToId", RowId(was));   // BUG-410: back to the row
+        _enEdit.Close(); _enReason = null; _entityError = null; _enTypePicked = false; _enDeterminedWall = null;
         _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
         _enDisposition = OfferedOr(_enAddDisposition, Verdicts);   // BUG-484; BUG-506: to one the select offers
         _enType = OfferedOr(_enType, EntityTypes);   // BUG-506: an edited one's hidden type isn't the next add's
@@ -947,16 +1002,19 @@ else
 
     private async Task SaveEntityEdit()
     {
-        if (_enEditId is not { } id || string.IsNullOrWhiteSpace(_enValue)) return;
+        if (_enEdit.Current is not { } editing || string.IsNullOrWhiteSpace(_enValue)) return;
+        var id = editing.Key;
         _entityError = null;
         try
         {
-            var tlpChanged = _enTlpAtOpen != _enTlp;   // BUG-234: changed in this editor, not just different from now
+            var tlp = _enTlp;   // read before the wait: a Cancel during it empties the form
+            var tlpChanged = _enTlpAtOpen != tlp;   // BUG-234: changed in this editor, not just different from now
             var determined = VerdictChanging ? DeterminedAt.UtcOf(_enDeterminedWall, TimeDisp.Zone, Clock.UtcNow) : null;   // BUG-414
             await Cases.EditEntityAsync(CaseId, id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource, _enReason,
                 expectedStamp: _enStamp, determinedAtUtc: determined);
-            if (tlpChanged) await Cases.SetEntityTlpAsync(CaseId, id, _enTlp);   // PROD-45
-            CancelEntityEdit();
+            if (tlpChanged) await Cases.SetEntityTlpAsync(CaseId, id, tlp);   // PROD-45
+            // BUG-601: cancelled during the save (and the form since used to add one): what's in it now isn't this edit's.
+            if (_enEdit.IsCurrent(editing)) CancelEntityEdit();
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // a changed value/type may change cross-case correlation
             _relatedDismissed = false; // a changed value may reveal/clear a related case (PROD-40)
@@ -965,14 +1023,20 @@ else
         }
         catch (StaleEditException ex)
         {
-            CancelEntityEdit();
+            if (_enEdit.IsCurrent(editing)) CancelEntityEdit();
             Toasts.Error(ex.Message);
             await OnChanged.InvokeAsync();
         }
-        catch (Exception ex) { _entityError = ex.Message; }
+        catch (Exception ex)
+        {
+            if (_enEdit.IsCurrent(editing)) _entityError = ex.Message;
+            else Toasts.Error(ex.Message);
+        }
     }
 
-    private async Task RemoveEntity(Guid entityId)
+    private Task RemoveEntity(Guid entityId) => _removing.Run(() => RemoveEntityCore(entityId));
+
+    private async Task RemoveEntityCore(Guid entityId)
     {
         try { await Cases.RemoveEntityAsync(CaseId, entityId); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't remove the entity. {ex.Message}"); return; }
@@ -990,59 +1054,76 @@ else
         return IncidentManager.Application.Content.LinkTemplate.Fill(template, e.Value);   // BUG-264
     }
 
-    private async Task AddRelationship()
+    private Task AddRelationship() => _relAdding.Run(AddRelationshipCore);
+
+    private async Task AddRelationshipCore()
     {
         _relError = null;
-        if (!Guid.TryParse(_relSource, out var src) || !Guid.TryParse(_relTarget, out var tgt)) return;
+        var (sentSource, sentTarget) = (_relSource, _relTarget);
+        if (!Guid.TryParse(sentSource, out var src) || !Guid.TryParse(sentTarget, out var tgt)) return;
         try
         {
             await Cases.LinkEntitiesAsync(CaseId, src, tgt, _relType, null);
-            _relSource = null; _relTarget = null;
+            // BUG-601: a pick made while it saved is the next relationship's.
+            _relSource = DraftText.ClearIfUnchanged(_relSource, sentSource, null);
+            _relTarget = DraftText.ClearIfUnchanged(_relTarget, sentTarget, null);
             await OnChanged.InvokeAsync();
             Toasts.Success("Relationship added");
         }
         catch (Exception ex) { _relError = ex.Message; }
     }
 
-    // INV-49: in-place relationship edit.
-    private Guid? _relEditId;
+    // INV-49: in-place relationship edit. BUG-578/601: one at a time (another row's Edit is refused, not replaced), and a
+    // save closes only its own.
+    private readonly EditSlot<Guid> _relEdit = new();
     private string? _relEditSource, _relEditTarget, _relEditDescription, _relEditError;
     private EntityRelationshipType _relEditType;
+    private string? _relEditSeed;
+    private string RelationshipInput() => string.Join("\u001f", _relEditSource, _relEditTarget, _relEditType, _relEditDescription);
 
     private void BeginEditRelationship(EntityRelationship r)
     {
-        _relEditId = r.Id;
+        if (!_relEdit.TryOpen(r.Id, Toasts, "relationship")) return;
         _relEditSource = r.SourceEntityId.ToString();
         _relEditTarget = r.TargetEntityId.ToString();
         _relEditType = r.Type;
         _relEditDescription = r.Description;
         _relEditStamp = r.RowHash ?? "";
         _relEditError = null;
+        _relEditSeed = RelationshipInput();
     }
 
     private void SwapRelationship() => (_relEditSource, _relEditTarget) = (_relEditTarget, _relEditSource);
 
-    private async Task SaveRelationship()
+    private Task SaveRelationship() => _relEditing.Run(SaveRelationshipCore);
+
+    private async Task SaveRelationshipCore()
     {
-        if (_relEditId is not { } id || !Guid.TryParse(_relEditSource, out var src) || !Guid.TryParse(_relEditTarget, out var tgt)) return;
+        if (_relEdit.Current is not { } editing || !Guid.TryParse(_relEditSource, out var src) || !Guid.TryParse(_relEditTarget, out var tgt)) return;
         _relEditError = null;
         try
         {
-            await Cases.EditRelationshipAsync(CaseId, id, src, tgt, _relEditType, _relEditDescription, _relEditStamp);
-            _relEditId = null;
+            await Cases.EditRelationshipAsync(CaseId, editing.Key, src, tgt, _relEditType, _relEditDescription, _relEditStamp);
+            _relEdit.CloseIf(editing);
             await OnChanged.InvokeAsync();
             Toasts.Success("Relationship updated");
         }
         catch (StaleEditException ex)
         {
-            _relEditId = null;
+            _relEdit.CloseIf(editing);
             Toasts.Error(ex.Message);
             await OnChanged.InvokeAsync();
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _relEditError = ex.Message; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            if (_relEdit.IsCurrent(editing)) _relEditError = ex.Message;
+            else Toasts.Error(ex.Message);
+        }
     }
 
-    private async Task RemoveRelationship(Guid relationshipId)
+    private Task RemoveRelationship(Guid relationshipId) => _removing.Run(() => RemoveRelationshipCore(relationshipId));
+
+    private async Task RemoveRelationshipCore(Guid relationshipId)
     {
         try { await Cases.UnlinkAsync(CaseId, relationshipId); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't remove the relationship. {ex.Message}"); return; }
@@ -1085,7 +1166,7 @@ else
         return Case.Entities.Select(e =>
         {
             var label = e.Label ?? e.Value;
-            if (label.Length > 22) label = label[..21] + "…";
+            label = IncidentManager.Application.Common.TextFit.Cap(label, 22);
             var color = Ui.DispositionColor(e.Disposition);
             var title = $"{Ui.Label(e.Type)}: {e.Value}" + (string.IsNullOrWhiteSpace(e.Description) ? "" : $" · {e.Description}");
             var pos = layout.TryGetValue(e.Id, out var l) ? l : null;
@@ -1178,13 +1259,29 @@ else
     public async Task OnNodesMoved(EntityPosition[] positions)
     {
         if (!CanEdit || positions is null || positions.Length == 0) return;
-        // Called from the graph script, so a refused save must be reported here rather than thrown back to JS.
-        try { await Cases.SaveGraphLayoutAsync(CaseId, positions); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        // BUG-603: one save at a time. A drag that ends while one runs is saved after it; each sends every node, so the
+        // latest arrangement is the one kept and none is dropped.
+        _layoutNext = positions;
+        if (_layoutSaving) return;
+        _layoutSaving = true;
+        try
         {
-            await InvokeAsync(() => Toasts.Error($"Couldn't save the graph layout. {ex.Message}"));
+            while (_layoutNext is { } next)
+            {
+                _layoutNext = null;
+                // Called from the graph script, so a refused save must be reported here rather than thrown back to JS.
+                try { await Cases.SaveGraphLayoutAsync(CaseId, next); }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+                {
+                    await InvokeAsync(() => Toasts.Error($"Couldn't save the graph layout. {ex.Message}"));
+                }
+            }
         }
+        finally { _layoutSaving = false; }
     }
+
+    private bool _layoutSaving;
+    private EntityPosition[]? _layoutNext;
 
     private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", ActiveGraphId);
 
@@ -1220,7 +1317,7 @@ else
         {
             if (Case.Entities.FirstOrDefault(e => e.Id == entityId) is not { } e) continue;
             var label = e.Label ?? e.Value;
-            if (label.Length > 22) label = label[..21] + "…";
+            label = IncidentManager.Application.Common.TextFit.Cap(label, 22);
             var color = Ui.DispositionColor(e.Disposition);
             nodes.Add(new($"ioc-{entityId:N}", $"{Ui.EntityGlyph(e.Type)} {label}",
                 $"{Ui.Label(e.Type)}: {e.Value} · shared with {IncidentManager.Application.Common.Plural.Of(list.Count, "other case")}", ShapeFor(e.Type), new GraphColor(color, color),
@@ -1284,6 +1381,7 @@ else
     public async ValueTask DisposeAsync()
     {
         Disposed = true;
+        Edits.Forget(this);
         // Sonar S2930: a directory check still waiting is cancelled first, so its Task.Delay ends before the source is
         // disposed (its own call's Dispose after that is a no-op).
         if (_accountCheck is { } check)

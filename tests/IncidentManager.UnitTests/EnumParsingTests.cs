@@ -30,7 +30,6 @@ public partial class EnumParsingTests
         ["IncidentManager.Web/Components/Pages/CaseImport.razor"] = 2,
         ["IncidentManager.Web/Components/Pages/Cases.razor"] = 7,              // ?sev=9 and the like
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseAuditTab.razor"] = 1,
-        ["IncidentManager.Web/Components/Pages/CaseTabs/CaseEntitiesTab.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseReportTab.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseReviewTab.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseTimelineTab.razor"] = 2,

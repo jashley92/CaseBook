@@ -24,7 +24,6 @@ public partial class InFlightGuardTests
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // SaveCite (Cases.CiteEvidenceAsync); MoveStep (Cases.MoveEventStepAsync)
         // wave 2b, U3 (entities, overview, panels, evidence)
-        ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 6,   // LinkRelated (Cases.LinkCaseAsync); RemoveEntity (Cases.RemoveEntityAsync); AddRelationship (Cases.LinkEntitiesAsync); SaveRelationship (Cases.Edit...
         ["Pages/CaseTabs/CaseOverviewTab.razor"] = 10,   // SaveNotice (Cases.RecordNoticeAsync); RemoveNotice (Cases.RemoveNoticeAsync); MarkReported (Cases.MarkReportedAsync); ClearReported (Cases.ClearR...
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/AccountApiTokens.razor"] = 1,   // Revoke (Tokens.RevokeAsync)
