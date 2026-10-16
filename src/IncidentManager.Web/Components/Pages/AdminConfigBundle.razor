@@ -87,7 +87,7 @@
                     <div class="alert @(_verification.SignedByThisInstance ? "alert-success" : "alert-warning") py-2 mb-2">
                         <span class="bi bi-shield-check me-1"></span>Signature valid:
                         @(_verification.SignedByThisInstance ? "signed by this instance" : "signed by another instance")
-                        (key <code>@Trunc(_verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
+                        (key <code>@IncidentManager.Application.Common.ShortHash.Of(_verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
                         from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
                         @if (!_verification.SignedByThisInstance)
                         {
@@ -165,8 +165,6 @@
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync() => _bundle = await Config.BuildBundleAsync();
-
-    private static string Trunc(string s) => s.Length <= 12 ? s : s[..12] + "…";
 
     // BUG-440: bumped by each file chosen and by Cancel, so only the newest choice's preview is shown (and applied). One
     // that finishes after another file was chosen, or after Cancel, is dropped.

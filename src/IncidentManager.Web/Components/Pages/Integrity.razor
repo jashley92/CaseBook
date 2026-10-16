@@ -182,7 +182,7 @@ else
                     <td>@AuditLabels.Entity(a.EntityType)</td>
                     <td class="small">@a.CaseNumber</td>
                     @* BUG-573: a tampered row's hash can be shorter; the page that shows the break mustn't throw on it. *@
-                    <td><code class="small">@(a.EntryHash is { Length: > 12 } h ? h[..12] + "…" : a.EntryHash)</code></td>
+                    <td><code class="small">@IncidentManager.Application.Common.ShortHash.Of(a.EntryHash)</code></td>
                 </tr>
             }
         </tbody>
