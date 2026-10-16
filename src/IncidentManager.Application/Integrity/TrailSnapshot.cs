@@ -84,17 +84,26 @@ public sealed class TrailSnapshot
     private static readonly MethodInfo Clone = typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
     /// <summary>
+    /// A copy of <paramref name="row"/> whose value objects are copied too, so a value set on it doesn't change the row's
+    /// own (its child collections are shared). BUG-639: the upkeep guard builds a row as it was read from one.
+    /// </summary>
+    public static IHashableEntity CopyOf(IHashableEntity row)
+    {
+        var copy = (IHashableEntity)Clone.Invoke(row, null)!;
+        foreach (var p in row.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                     .Where(p => p.PropertyType.Namespace == "IncidentManager.Domain.ValueObjects" && p.GetSetMethod(true) is not null))
+            if (p.GetValue(row) is { } owned) p.GetSetMethod(true)!.Invoke(copy, [Clone.Invoke(owned, null)]);
+        return copy;
+    }
+
+    /// <summary>
     /// Whether <paramref name="row"/> agrees with the trail on everything its hash covers: a copy of the row with each
     /// value the trail recorded put back builds the same format-4 canonical as the row itself.
     /// </summary>
     public bool Agrees(IHashableEntity row)
     {
         var type = row.GetType();
-        var copy = (IHashableEntity)Clone.Invoke(row, null)!;
-        // A value object is copied too, so putting a recorded value back doesn't change the row's own.
-        foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                     .Where(p => p.PropertyType.Namespace == "IncidentManager.Domain.ValueObjects" && p.GetSetMethod(true) is not null))
-            if (p.GetValue(row) is { } owned) p.GetSetMethod(true)!.Invoke(copy, [Clone.Invoke(owned, null)]);
+        var copy = CopyOf(row);
 
         foreach (var (field, raw) in _fields)
         {

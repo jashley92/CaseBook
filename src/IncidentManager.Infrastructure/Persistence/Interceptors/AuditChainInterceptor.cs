@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Integrity;
@@ -387,32 +386,33 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         || e.References.Any(r => r.TargetEntry is { State: EntityState.Added or EntityState.Modified or EntityState.Deleted } t
                                  && t.Metadata.IsOwned());
 
-    private static readonly MethodInfo CloneOf =
-        typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
-
     // A copy of the row as it was read: its changed values (and its changed or replaced value objects') put back.
     private static IHashableEntity AsRead(EntityEntry e, IReadOnlyList<EntityEntry> replacedOwned)
     {
-        var copy = WithOriginals(e, CloneOf.Invoke(e.Entity, null)!);
+        var copy = TrailSnapshot.CopyOf((IHashableEntity)e.Entity);
+        WithOriginals(e, copy);
         foreach (var r in e.References)
         {
             if (r.TargetEntry is not { } t || !t.Metadata.IsOwned()) continue;
-            if (t.State == EntityState.Modified) SetClr(r.Metadata, copy, WithOriginals(t, CloneOf.Invoke(t.Entity, null)!));
-            else if (t.State == EntityState.Added) SetClr(r.Metadata, copy, ReplacedBy(t, e, replacedOwned)?.Entity);
+            if (t.State == EntityState.Modified && r.Metadata.GetGetter().GetClrValueUsingContainingEntity(copy) is { } owned)
+                WithOriginals(t, owned);   // the copy's own copy of the value object
+            else if (t.State == EntityState.Added)
+                SetClr(r.Metadata, copy, ReplacedBy(t, e, replacedOwned)?.Entity);
         }
-        return (IHashableEntity)copy;
+        return copy;
     }
 
-    private static object WithOriginals(EntityEntry e, object target)
+    private static void WithOriginals(EntityEntry e, object target)
     {
         foreach (var p in e.Properties)
-            if (p.IsModified && !p.Metadata.IsShadowProperty()) SetClr(p.Metadata, target, p.OriginalValue);
-        return target;
+            if (p.IsModified && !p.Metadata.IsShadowProperty())
+                SetClr(p.Metadata, target, p.OriginalValue);
     }
 
+    // As EF sets it: through the property (its setter may be private), else its backing field.
     private static void SetClr(IPropertyBase p, object target, object? value)
     {
-        if (p.PropertyInfo?.GetSetMethod(true) is { } set) set.Invoke(target, [value]);
+        if (p.PropertyInfo is { CanWrite: true } prop) prop.SetValue(target, value);
         else p.FieldInfo?.SetValue(target, value);
     }
 
