@@ -14,6 +14,7 @@ namespace IncidentManager.Web.Components.Shared;
 public abstract class DateFieldBase<TValue> : ComponentBase, IAsyncDisposable
 {
     [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private IncidentManager.Web.Services.ToastService Toasts { get; set; } = default!;
 
     [Parameter] public TValue? Value { get; set; }
     [Parameter] public EventCallback<TValue?> ValueChanged { get; set; }
@@ -120,6 +121,24 @@ public abstract class DateFieldBase<TValue> : ComponentBase, IAsyncDisposable
         if (Show(Value) == shown) return;
         _shown = shown;
         await ValueChanged.InvokeAsync(value);
+    }
+
+    /// <summary>BUG-614: the browser put back a date outside the field's range (it said nothing before).</summary>
+    [JSInvokable]
+    public void Refused(string? min, string? max)
+    {
+        var range = (Day(min), Day(max)) switch
+        {
+            ({ } from, { } to) => $"from {from} to {to}",
+            ({ } from, null) => $"from {from} on",
+            (null, { } to) => $"up to {to}",
+            _ => null,
+        };
+        Toasts.Info(range is null ? "That date can't be used here, so it was put back." : $"Pick a date {range}. The date was put back.");
+
+        static string? Day(string? iso) =>
+            iso is { Length: >= 10 } && DateTime.TryParseExact(iso[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+                ? d.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : null;
     }
 
     private async Task Restore()

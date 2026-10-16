@@ -54,11 +54,11 @@
     <form id="po-custom" class="po-custom" @onsubmit="ApplyCustom" @onsubmit:preventDefault>
         <div>
             <label class="form-label small mb-0" for="po-from">From</label>
-            <DateInput Past="true" id="po-from" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_from" />
+            <DateInput Past="true" id="po-from" class="form-control form-control-sm" min="@RangeMin" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_from" />
         </div>
         <div>
             <label class="form-label small mb-0" for="po-to">To</label>
-            <DateInput Past="true" id="po-to" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_to" />
+            <DateInput Past="true" id="po-to" class="form-control form-control-sm" min="@RangeMin" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_to" />
         </div>
         <button type="submit" class="btn btn-sm btn-primary">Show</button>
         <span class="po-custom-hint">Both days included, in the reporting time zone. It's compared with the same number of
@@ -507,6 +507,8 @@ else
     private bool _showAllNeeds;
     private const int NeedsShown = 6;
     private string? _asOf;
+    // BUG-614: the field takes the years the server does (the date fields' own min is 1970).
+    private static readonly string RangeMin = OverviewWindows.MinRangeYear.ToString("D4", System.Globalization.CultureInfo.InvariantCulture) + "-01-01";
     private OverviewPeriod _period;
     private OverviewWindows? _windows;
     private ProgramSnapshot? _cur, _prev;
