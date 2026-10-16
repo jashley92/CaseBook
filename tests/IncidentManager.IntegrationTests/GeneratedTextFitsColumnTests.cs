@@ -92,8 +92,6 @@ public sealed partial class GeneratedTextFitsColumnTests
         // Web (wave 2 for the .razor files; Program.cs and the code-behind belong to the UI owners)
         ("AdminConfigBundle.razor", "s[..12]"),
         ("CaseAuditTab.razor", "value[..(max - 1)]"),
-        ("CaseTimelineTab.razor", "text[..(ActionItem.MaxTitleLength - 1)]"),
-        ("CaseTimelineTab.razor", "t[..87]"),
         ("Integrity.razor", "h[..12]"),
         ("StoredReportTable.razor", "h[..16]"),
         ("DateFieldBase.cs", "text[..Format.Length]"),

@@ -380,7 +380,7 @@
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-type">Type</label>
                         <select id="tl-inv-type" class="form-select form-select-sm" @bind="_tlType">
-                            @foreach (var t in InvestigationTypeOptions().Where(t => _tlEditId is not null || t != TimelineEntryType.Decision))
+                            @foreach (var t in InvestigationComposerOptions())
                             {
                                 <option value="@t">@Ui.Label(t)</option>
                             }
@@ -1008,7 +1008,7 @@ else
                     </dl>
                     <label class="form-label small mb-0" for="tl-corr-when">When it happened (@TimeDisp.Label)</label>
                     <DateTimeInput Past="true" id="tl-corr-when" class="form-control form-control-sm" @bind-Value="_corrWhen" />
-                    <div class="mb-2"><TimeNudges @bind-Value="_corrWhen" Now="@UtcToWall(DateTimeOffset.UtcNow)" /></div>
+                    <div class="mb-2"><TimeNudges @bind-Value="_corrWhen" Now="@WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone)" /></div>
                     <label class="form-label small mb-0" for="tl-corr-reason">Reason for the correction <span class="text-muted">(required)</span></label>
                     <textarea id="tl-corr-reason" class="form-control form-control-sm" rows="2" maxlength="2000"
                               placeholder="e.g. escalated on the containment call at 14:20; entered after sessions were revoked"
@@ -1274,16 +1274,37 @@ else
         TimelineEntryType.Remediation, TimelineEntryType.RegulatoryNotification
     ];
 
-    // Disclosure composer options: the curated set, but preserve a legacy/out-of-set value when editing an
-    // existing disclosure step so it still shows and isn't silently changed on save.
-    private IReadOnlyList<TimelineEntryType> DisclosureComposerOptions() =>
-        _tlEditId is not null && !DisclosureOrder.Contains(_evtStage)
-            ? new[] { _evtStage }.Concat(DisclosureOrder).ToList()
-            : DisclosureOrder;
+    // C16: the milestones a new disclosure step can be: the curated set, in its order, less those an admin has hidden.
+    private static List<TimelineEntryType> DisclosureStages()
+    {
+        var offered = Ui.Options<TimelineEntryType>("TimelineEntryType");
+        return DisclosureOrder.Where(offered.Contains).ToList();
+    }
+
+    // Disclosure composer options: the stages offered, but preserve a legacy/out-of-set (or since hidden, C16) value when
+    // editing an existing disclosure step so it still shows and isn't silently changed on save.
+    private IReadOnlyList<TimelineEntryType> DisclosureComposerOptions()
+    {
+        var options = DisclosureStages();
+        if ((_tlEditId is not null || options.Count == 0) && !options.Contains(_evtStage)) options.Insert(0, _evtStage);
+        return options;
+    }
 
     // Investigation type options: the admin-customizable full list minus the Disclosure-only additions.
     private IReadOnlyList<TimelineEntryType> InvestigationTypeOptions() =>
         Ui.Options<TimelineEntryType>("TimelineEntryType").Where(t => !DisclosureOnly.Contains(t)).ToList();
+
+    // The composer's type select: a new entry isn't a Decision here (that's the Decision mode); an edited entry keeps its
+    // type showing even if an admin has hidden it since (C16), so it isn't silently changed on save.
+    private IReadOnlyList<TimelineEntryType> InvestigationComposerOptions()
+    {
+        var options = InvestigationTypeOptions().Where(t => _tlEditId is not null || t != TimelineEntryType.Decision).ToList();
+        if (_tlEditId is not null && !options.Contains(_tlType)) options.Insert(0, _tlType);
+        return options;
+    }
+
+    // C16: the Decision mode (and the Decisions lens's composer) only while an admin hasn't hidden the Decision type.
+    private bool DecisionOffered => InvestigationTypeOptions().Contains(TimelineEntryType.Decision);
 
     // Timeline editing: the composer form doubles as an editor when an entry is selected.
     private Guid? _tlEditId;
@@ -1304,23 +1325,25 @@ else
         return set;
     }
 
+    // BUG-592: the select's value read by name only (EnumNames).
     private string _tlFilterTypeStr
     {
         get => _tlFilterType?.ToString() ?? "";
-        set => _tlFilterType = Enum.TryParse<TimelineEntryType>(value, out var t) ? t : null;
+        set => _tlFilterType = IncidentManager.Domain.Common.EnumNames.OrNull<TimelineEntryType>(value);
     }
 
     private string _tlFilterTacticStr
     {
         get => _tlFilterTactic?.ToString() ?? "";
-        set => _tlFilterTactic = Enum.TryParse<MitreTactic>(value, out var t) ? t : null;
+        set => _tlFilterTactic = IncidentManager.Domain.Common.EnumNames.OrNull<MitreTactic>(value);
     }
 
     protected override void OnInitialized()
     {
         // U-46: seed the "Occurred" input to now in the viewer's active display zone (like Details / tasks).
-        _tlWhen = UtcToWall(DateTimeOffset.UtcNow);
+        _tlWhen = WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone);
         _tlType = OfferedType(_tlType);   // BUG-478
+        _evtStage = CaseEntitiesTab.OfferedOr(_evtStage, DisclosureStages());   // C16: Notified unless an admin hid it
     }
 
     // BUG-478: the type wanted if the select offers it, else the first type it offers (not Decision, which changes the
@@ -1504,8 +1527,9 @@ else
         var f = new EntryFollowUps(
             Tasks: _fuTasks.Where(t => !string.IsNullOrWhiteSpace(t.Title))
                 .Select(t => new FollowUpTask(t.Title, string.IsNullOrWhiteSpace(t.Owner) ? null : t.Owner, t.Kind,
-                    // WF-24: a bare due date means by the end of that day (23:59 in the viewer's zone), as on the Tasks tab (F-20).
-                    t.Due is { } d ? IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, null, TimeDisp.Zone, OrgZone.Current) : null)).ToList(),   // WF-64
+                    // WF-24: a bare due date means by the end of that day, as on the Tasks tab (F-20); WF-64: 23:59 on the
+                    // organization's calendar, not the viewer's.
+                    t.Due is { } d ? DayValues.ToUtc(d, null, TimeDisp.Zone, OrgZone.Current) : null)).ToList(),
             Question: _fuQuestionOpen ? Tagged(_fuQuestion) : null, QuestionTask: _fuQuestionTask,   // WF-25: [[tags]] as Question mode
             KnownLine: _fuKnownOpen ? Tagged(_fuKnown) : null,   // WF-104
             LinkCaseId: _fuLinkOpen ? _fuLink?.Id : null, LinkType: _fuLinkType);
@@ -1681,7 +1705,7 @@ else
     private IEnumerable<(ComposerMode Mode, string Icon, string Label)> Modes()
     {
         yield return (ComposerMode.Finding, "bi-search", "Finding");
-        yield return (ComposerMode.Decision, "bi-signpost-split", "Decision");
+        if (DecisionOffered) yield return (ComposerMode.Decision, "bi-signpost-split", "Decision");   // C16
         yield return (ComposerMode.Adversary, "bi-lightning", IsThirdParty ? "Attack step" : "Adversary step");
         if (IsThirdParty) yield return (ComposerMode.Disclosure, "bi-megaphone", "Disclosure milestone");
         yield return (ComposerMode.Question, "bi-question-circle", "Question");
@@ -1844,7 +1868,7 @@ else
 
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
-        var whenUtc = WallToUtc(_tlWhen);
+        var whenUtc = KeptWhenUtc();   // C3: nothing recorded for a new entry, so as typed
         var withShot = _tlShotBytes is not null;
         var shot = _tlShotBytes;   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
         try
@@ -1943,7 +1967,7 @@ else
         _tlEditId = e.Id;
         _tlEditStamp = e.RowHash ?? "";   // BUG-196
         _tlReason = null;
-        _tlWhen = UtcToWall(e.OccurredAtUtc);
+        _tlWhen = WallClock.ToWall(e.OccurredAtUtc, TimeDisp.Zone);
         (_tlWhenShown, _tlWhenRecorded) = (_tlWhen, e.OccurredAtUtc);   // BUG-477
         _evtActorId = e.ActorEntityId?.ToString() ?? "";
         _evtTargetId = e.TargetEntityId?.ToString() ?? "";
@@ -2025,7 +2049,7 @@ else
         _editFocusPending = true;   // BUG-410
         _tlReason = null;
         _tlType = e.Type;
-        _tlWhen = UtcToWall(e.OccurredAtUtc);
+        _tlWhen = WallClock.ToWall(e.OccurredAtUtc, TimeDisp.Zone);
         (_tlWhenShown, _tlWhenRecorded) = (_tlWhen, e.OccurredAtUtc);   // BUG-477
         _tlSource = e.Source;
         _tlDesc = e.Description;
@@ -2088,8 +2112,11 @@ else
             catch (JSException) { /* best effort */ }
         }
         // BUG-478: an edited entry's type an admin has since hidden isn't the next new entry's (the select can't show it).
-        if (_tlType != TimelineEntryType.Decision && !InvestigationTypeOptions().Contains(_tlType))
+        // C16: a Decision too, when an admin has hidden it (offered, it's in the list, and the composer stays a decision).
+        if (!InvestigationTypeOptions().Contains(_tlType))
             _tlType = OfferedType(TimelineEntryType.Analysis);
+        // C16: likewise an edited milestone's stage that's hidden, or not a disclosure stage at all.
+        _evtStage = CaseEntitiesTab.OfferedOr(_evtStage, DisclosureStages());
     }
 
     // BUG-35: what was being written when an edit started, put back when the edit ends (saved or cancelled).
@@ -2209,7 +2236,7 @@ else
     {
         if (e.Type != TimelineEntryType.Decision) return null;
         var text = IncidentManager.Application.Content.RichText.ToText(e.Description).ReplaceLineEndings(" ").Trim();
-        return text.Length <= ActionItem.MaxTitleLength ? text : text[..(ActionItem.MaxTitleLength - 1)].TrimEnd() + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(text, ActionItem.MaxTitleLength);   // C12
     }
 
     private RenderFragment TaskButton(TimelineEntry e) => @<text>
@@ -2358,7 +2385,7 @@ else
     // used; these step it back or forward so a busy hour can be rebuilt quickly.
     private RenderFragment TimeNudges() => @<text>
         <div class="tl-nudges" role="group" aria-label="Adjust the time">
-            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = UtcToWall(DateTimeOffset.UtcNow)">Now</button>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone)">Now</button>
             @* BUG-480: Shifted stops at year 1 and 9999; AddHours threw there and the tab showed its error fallback. *@
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromMinutes(-15))" aria-label="15 minutes earlier">&minus;15 min</button>
@@ -2484,22 +2511,13 @@ else
         : KeptWhenUtc();
 
     // BUG-477 (WF-68): an edited entry's time left as shown keeps its recorded instant. Converting it back read a time in
-    // the repeated autumn hour as standard time, so editing only the description moved the entry an hour later.
-    private DateTimeOffset KeptWhenUtc() => _tlEditId is not null
-        ? KeptOrTypedUtc(_tlWhen, _tlWhenShown, _tlWhenRecorded, TimeDisp.Zone)
-        : WallToUtc(_tlWhen);
+    // the repeated autumn hour as standard time, so editing only the description moved the entry an hour later. A new
+    // entry has nothing recorded (CancelTimelineEdit clears it), so its time is read as typed.
+    private DateTimeOffset KeptWhenUtc() => WallClock.Kept(_tlWhen, _tlWhenShown, _tlWhenRecorded, TimeDisp.Zone);
 
-    /// <summary>
-    /// BUG-477 (WF-68): the instant to save for a wall time seeded from a recorded one: the recorded instant when the time
-    /// is left as shown, else the typed time. BUG-503: compared at the minute the field shows, since the seeded time keeps
-    /// its seconds but one typed back comes back with none.
-    /// </summary>
+    /// <summary>C3: WallClock.Kept, for CaseOverviewTab's call until it calls WallClock.Kept itself.</summary>
     public static DateTimeOffset KeptOrTypedUtc(DateTime typed, DateTime? shown, DateTimeOffset? recorded, TimeZoneInfo zone) =>
-        shown is { } s && recorded is { } kept && ToMinute(typed) == ToMinute(s)
-            ? kept
-            : IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(typed, zone);
-
-    private static DateTime ToMinute(DateTime t) => new(t.Ticks - t.Ticks % TimeSpan.TicksPerMinute, t.Kind);
+        WallClock.Kept(typed, shown, recorded, zone);
 
     // The arrows show where they can do something: on a step that shares its time with a neighbour, or where either
     // neighbour has no stated time.
@@ -2644,7 +2662,7 @@ else
     private void StartCorrection(CaseMilestone m)
     {
         _corr = m;
-        _corrWhen = UtcToWall(m.AtUtc);
+        _corrWhen = WallClock.ToWall(m.AtUtc, TimeDisp.Zone);
         _corrReason = null;
         _corrError = null;
     }
@@ -2652,7 +2670,8 @@ else
     private void CancelCorrection() { _corr = null; _corrError = null; }
 
     // BUG-477 sibling (WF-68): a time left as shown is the transition's own instant, not its standard-time reading.
-    private DateTimeOffset CorrectedUtc(CaseMilestone m, DateTime w) => KeptOrTypedUtc(w, UtcToWall(m.AtUtc), m.AtUtc, TimeDisp.Zone);   // BUG-503
+    private DateTimeOffset CorrectedUtc(CaseMilestone m, DateTime w) =>
+        WallClock.Kept(w, WallClock.ToWall(m.AtUtc, TimeDisp.Zone), m.AtUtc, TimeDisp.Zone);   // BUG-503
 
     // --- BUG-413: retract an entry ---
     private TimelineEntry? _retract;
@@ -2816,7 +2835,8 @@ else
     {
         await SwitchLens(TimelineKind.Investigation);
         _decOnly = true;
-        _tlType = TimelineEntryType.Decision;   // the composer, if opened here, records a decision
+        // The composer, if opened here, records a decision. C16: unless an admin has hidden Decision.
+        if (DecisionOffered) _tlType = TimelineEntryType.Decision;
     }
     private bool _showMilestones = true;  // include them in the All chronology
 
@@ -2974,7 +2994,7 @@ else
     private static string OneLine(string? text)
     {
         var t = (text ?? "").Replace('\n', ' ').Trim();
-        return t.Length <= 90 ? t : t[..87] + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(t, 88);   // C12: as before, 87 characters and the ellipsis
     }
 
     private IReadOnlyList<CaseMilestone> Milestones() => CaseMilestones.Project(Case, new MilestoneLabels(
@@ -3056,15 +3076,6 @@ else
 
     /// <summary>ATT&CK technique ID → URL path segment (sub-techniques nest, e.g. T1078.001 → T1078/001).</summary>
     private static string TechniquePath(string techniqueId) => techniqueId.Replace('.', '/');
-
-    // --- Wall-clock ⇄ UTC in the viewer's active display zone (U-29/U-46) ---
-    private DateTimeOffset WallToUtc(DateTime wall)
-    {
-        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
-    }
-
-    private DateTime UtcToWall(DateTimeOffset utc)
-        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
 
     // FR-02: in add mode, capture the Investigation composer's unsubmitted text into the parent-owned store
     // before teardown, so a tab switch preserves it. An in-progress edit (_tlEditId set) is intentionally not

@@ -28,7 +28,6 @@ public partial class EnumParsingTests
         ["IncidentManager.Web/Components/Pages/Admin.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/AdminTemplates.razor"] = 2,
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseAuditTab.razor"] = 1,
-        ["IncidentManager.Web/Components/Pages/CaseTabs/CaseTimelineTab.razor"] = 2,
         ["IncidentManager.Web/Components/Pages/ImprovementActionsPage.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/IndicatorsPage.razor"] = 2,
         // Wave 2: files outside this wave's list (reported). Each reads text the app itself wrote, or startup config.

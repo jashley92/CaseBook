@@ -27,7 +27,7 @@
             <label class="form-label small mb-0" for="@($"promote-when-{_id}")">Occurred (@TimeDisp.Label)</label>
             <DateTimeInput Past="true" id="@($"promote-when-{_id}")" class="form-control form-control-sm" @bind-Value="_when" />
             <div class="tl-nudges" role="group" aria-label="Adjust the time">
-                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = ToWall(Clock.UtcNow)">Now</button>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone)">Now</button>
                 @* BUG-480: TimeNudges.Shifted stops at year 1 and 9999 instead of throwing. *@
                 <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = TimeNudges.Shifted(_when, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
                 <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = TimeNudges.Shifted(_when, TimeSpan.FromMinutes(-15))" aria-label="15 minutes earlier">&minus;15 min</button>
@@ -70,7 +70,7 @@
     protected override void OnInitialized()
     {
         _text = Text;
-        _when = _whenShown = ToWall(WrittenAtUtc);
+        _when = _whenShown = WallClock.ToWall(WrittenAtUtc, TimeDisp.Zone);
         _whenRecorded = WrittenAtUtc;
         // BUG-478: Analysis unless an admin has hidden it; then the first type offered, so the select shows what's saved.
         var offered = PromotableTypes;
@@ -91,7 +91,7 @@
         {
             // BUG-477 (WF-68): a time left as shown keeps the instant it was written; converting it back would read a
             // time in the repeated autumn hour as standard time, an hour later. BUG-503: compared at the minute shown.
-            var when = IncidentManager.Web.Components.Pages.CaseTabs.CaseTimelineTab.KeptOrTypedUtc(_when, _whenShown, _whenRecorded, TimeDisp.Zone);
+            var when = WallClock.Kept(_when, _whenShown, _whenRecorded, TimeDisp.Zone);
             await Cases.PromoteToTimelineAsync(CaseId, SourceRef, _type, when, _text);
             Toasts.Success("Added to the timeline");
             await OnDone.InvokeAsync();
@@ -101,13 +101,5 @@
             Toasts.Error(ex.Message);
         }
         finally { _saving = false; }
-    }
-
-    private DateTime ToWall(DateTimeOffset utc)
-        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
-
-    private DateTimeOffset WallToUtc(DateTime wall)
-    {
-        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
     }
 }

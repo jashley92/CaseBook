@@ -22,17 +22,13 @@ public partial class WallClockRoundTripTests
     // WallClock / DayValues and takes its entry off).
     private static readonly Dictionary<string, int> Copies = new(StringComparer.Ordinal)
     {
-        // wave 2b, U1 (timeline, notes)
-        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 3,   // KeptOrTypedUtc (line 2497); WallToUtc (line 3061); UtcToWall (line 3066)
         // wave 2b, U4 (pages, admin, other shared)
-        ["Shared/PromoteToTimeline.razor"] = 2,   // ToWall (line 106); WallToUtc (line 109)
     };
 
     // Wave 2b: fields seeded from a stored instant and also converted straight back somewhere.
     private static readonly Dictionary<string, int> Rederived = new(StringComparer.Ordinal)
     {
-        // wave 2b, U1 (timeline, notes)
-        ["Pages/CaseTabs/CaseTimelineTab.razor"] = 1,   // AddTimelineCore: WallToUtc(_tlWhen
+
     };
 
     private static readonly string[] HelperFiles = ["Pages/Workspace/TransitionDraft.cs", "Pages/Workspace/DayValues.cs"];
