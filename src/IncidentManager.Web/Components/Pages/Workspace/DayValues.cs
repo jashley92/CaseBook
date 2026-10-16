@@ -25,6 +25,22 @@ public static class DayValues
         return (wall.Date, TimeOnly.FromTimeSpan(wall.TimeOfDay));
     }
 
+    /// <summary>
+    /// C3 (BUG-571): the due to save from a form seeded with a stored one. A date and time left as
+    /// <paramref name="shown"/> (the time to the minute) keep <paramref name="stored"/>; converting them back read a due in
+    /// the repeated autumn hour as standard time, so editing only the title moved the due an hour. Changed, they are read
+    /// as typed (a bare date is the end of that day, WF-64); no date is no due.
+    /// </summary>
+    public static DateTimeOffset? Kept(DateTime? date, TimeOnly? time, (DateTime Date, TimeOnly? Time)? shown,
+        DateTimeOffset? stored, TimeZoneInfo viewer, TimeZoneInfo organization)
+    {
+        if (date is not { } d) return null;
+        if (stored is { } kept && shown is { } s && d.Date == s.Date.Date && ToMinute(time) == ToMinute(s.Time)) return kept;
+        return ToUtc(d, time, viewer, organization);
+    }
+
+    private static TimeOnly? ToMinute(TimeOnly? t) => t is { } v ? new TimeOnly(v.Hour, v.Minute) : null;
+
     /// <summary>The day a stored value stands for (see <see cref="FromUtc"/>).</summary>
     public static DateTime DayOf(DateTimeOffset utc, TimeZoneInfo viewer, TimeZoneInfo organization) =>
         FromUtc(utc, viewer, organization).Date;

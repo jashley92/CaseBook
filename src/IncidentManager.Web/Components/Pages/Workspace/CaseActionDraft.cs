@@ -72,12 +72,9 @@ public sealed class CaseActionDraft
     public DateTimeOffset? DecidedOnUtc(TimeZoneInfo zone)
     {
         if (!MaterialityIsFinal || MaterialityDecidedOn is not { } wall) return null;
-        if (MaterialityDecidedOnRecorded is { } kept)
-        {
-            var shown = WallClock.ToWall(kept, zone);
-            if (shown.AddSeconds(-shown.Second).AddMilliseconds(-shown.Millisecond) == wall) return kept;
-        }
-        return WallClock.ToUtc(wall, zone);
+        // C3: the shared kept-or-typed rule (to the minute shown).
+        var recorded = MaterialityDecidedOnRecorded;
+        return WallClock.Kept(wall, recorded is { } r ? WallClock.ToWall(r, zone) : null, recorded, zone);
     }
     public string? MaterialityRationale { get; set; }
     public string? MaterialityBaseline { get; set; }

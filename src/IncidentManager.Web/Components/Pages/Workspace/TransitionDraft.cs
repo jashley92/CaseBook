@@ -26,11 +26,29 @@ public sealed class TransitionDraft
     /// </summary>
     public bool Edited { get; set; }
 
+    // BUG-582: an offered instant (a finished task's "when") and the minute it was shown at; kept while the box still
+    // shows that minute.
+    private (DateTimeOffset Utc, DateTime Shown)? _kept;
+
+    /// <summary>
+    /// BUG-582 (C3): sets the time to a recorded instant, as set by the analyst. While the box still shows its minute the
+    /// instant itself is saved; converting the wall time back read a time in the repeated autumn hour as standard time, so
+    /// the phase change (and Contained/Resolved) landed an hour late.
+    /// </summary>
+    public void KeptAt(DateTimeOffset at, TimeZoneInfo zone)
+    {
+        var shown = WallClock.ToWall(at, zone);
+        When = shown;
+        Edited = true;
+        _kept = (at, shown);
+    }
+
     /// <summary>Starts over at "now": no ticks, no override, a fresh time.</summary>
     public void Reset(DateTime nowWall)
     {
         When = nowWall;
         Edited = false;
+        _kept = null;
         Attested.Clear();
         Override = null;
     }
@@ -64,7 +82,7 @@ public sealed class TransitionDraft
 
     /// <summary>The chosen time as UTC, or null when it was left at the default (it happened now).</summary>
     public DateTimeOffset? EffectiveUtc(TimeZoneInfo zone) =>
-        Edited && When is { } w ? WallClock.ToUtc(w, zone) : null;
+        Edited && When is { } w ? WallClock.Kept(w, _kept?.Shown, _kept?.Utc, zone) : null;
 
     /// <summary>More than the backdating threshold ago, so the transition needs a reason.</summary>
     public bool Backdated(TimeZoneInfo zone, DateTimeOffset nowUtc) => CaseService.IsBackdated(EffectiveUtc(zone), nowUtc);
@@ -97,6 +115,20 @@ public static class WallClock
 
     public static DateTime ToWall(DateTimeOffset utc, TimeZoneInfo zone) =>
         DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, zone).DateTime, DateTimeKind.Unspecified);
+
+    /// <summary>
+    /// C3 (BUG-477, BUG-503, BUG-582): the instant to save for a wall time seeded from a recorded one. Left as
+    /// <paramref name="shown"/> (to the minute the field shows; one typed back has no seconds), it is
+    /// <paramref name="recorded"/> itself; changed, or with nothing recorded, it is read as typed. Converting an untouched
+    /// time back read one in the repeated autumn hour as standard time and moved it an hour.
+    /// </summary>
+    public static DateTimeOffset Kept(DateTime typed, DateTime? shown, DateTimeOffset? recorded, TimeZoneInfo zone) =>
+        shown is { } s && recorded is { } kept && ToMinute(typed) == ToMinute(s)
+            ? kept
+            : ToUtc(typed, zone);
+
+    /// <summary>A wall time to the minute a datetime-local field shows.</summary>
+    public static DateTime ToMinute(DateTime t) => new(t.Ticks - t.Ticks % TimeSpan.TicksPerMinute, t.Kind);
 }
 
 /// <summary>RD-27: which stage gate a transition runs.</summary>
