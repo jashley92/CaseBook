@@ -563,7 +563,7 @@ else
             @switch (about.Kind)
             {
                 case ActionItem.AboutEntity when Case.Entities.FirstOrDefault(e => e.Id == about.Id) is { } en:
-                    <button type="button" class="im-about-chip" title="About this entity" @onclick="() => OnOpenEntity.InvokeAsync(en.Id)">@Ui.EntityGlyph(en.Type) @(string.IsNullOrWhiteSpace(en.Label) ? en.Value : en.Label)</button>
+                    <button type="button" class="im-about-chip" title="@Ui.EntityDetailsHint(en.Type, string.IsNullOrWhiteSpace(en.Label) ? en.Value : en.Label!)" @onclick="() => OnOpenEntity.InvokeAsync(en.Id)">@Ui.EntityGlyph(en.Type) @(string.IsNullOrWhiteSpace(en.Label) ? en.Value : en.Label)</button>
                     break;
                 case ActionItem.AboutEvidence when Case.Evidence.FirstOrDefault(e => e.Id == about.Id) is { } ev:
                     <button type="button" class="im-about-chip" title="Show this evidence file" @onclick='() => OnFocusItem.InvokeAsync(("Evidence", ev.Id))'><span class="bi bi-paperclip" aria-hidden="true"></span> @ev.OriginalFileName</button>

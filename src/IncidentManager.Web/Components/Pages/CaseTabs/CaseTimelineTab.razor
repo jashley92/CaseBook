@@ -771,12 +771,12 @@ else
                                 <span class="tl-attrib">
                                     @if (EntityById(e.ActorEntityId) is { } a)
                                     {
-                                        <button type="button" class="tl-ent tl-ent-btn" @onclick="() => OnOpenEntity.InvokeAsync(a.Id)" title="Open @EntityShort(a)">@Ui.EntityGlyph(a.Type) @EntityShort(a)</button>
+                                        <button type="button" class="tl-ent tl-ent-btn" @onclick="() => OnOpenEntity.InvokeAsync(a.Id)" title="@Ui.EntityDetailsHint(a.Type, EntityShort(a))">@Ui.EntityGlyph(a.Type) @EntityShort(a)</button>
                                     }
                                     <span class="tl-arrow">&rarr;</span>
                                     @if (EntityById(e.TargetEntityId) is { } tgt)
                                     {
-                                        <button type="button" class="tl-ent tl-ent-btn" @onclick="() => OnOpenEntity.InvokeAsync(tgt.Id)" title="Open @EntityShort(tgt)">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</button>
+                                        <button type="button" class="tl-ent tl-ent-btn" @onclick="() => OnOpenEntity.InvokeAsync(tgt.Id)" title="@Ui.EntityDetailsHint(tgt.Type, EntityShort(tgt))">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</button>
                                     }
                                     else
                                     {

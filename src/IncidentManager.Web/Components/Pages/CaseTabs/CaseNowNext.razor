@@ -230,7 +230,7 @@
                 @foreach (var e in key)
                 {
                     <li>
-                        <button type="button" class="im-nn-ent" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)" title="@e.Value">
+                        <button type="button" class="im-nn-ent" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)" title="@Ui.EntityDetailsHint(e.Type, e.Value)">
                             @if (e.IsPinned) { <span class="bi bi-pin-fill" title="Pinned" aria-label="Pinned"></span> }
                             <span class="im-nn-ent-name">@(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)</span>
                         </button>

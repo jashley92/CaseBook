@@ -338,6 +338,18 @@ public static class Ui
     }
 
     /// <summary>A short glyph/abbreviation for an entity type, used in the graph nodes.</summary>
+    /// <summary>
+    /// The hint on a pill that opens an entity's details panel. BUG-604 (user testing): "Open
+    /// hxxp://…" read as if it would visit the malicious URL, so it says what it opens, and for a link or an address that
+    /// the indicator itself isn't opened.
+    /// </summary>
+    public static string EntityDetailsHint(EntityType type, string name) => type switch
+    {
+        EntityType.Url => $"Show CaseBook's details for {name}. The link isn't opened.",
+        EntityType.Domain or EntityType.IpAddress or EntityType.EmailAddress => $"Show CaseBook's details for {name}. Nothing is sent to it.",
+        _ => $"Show CaseBook's details for {name}"
+    };
+
     public static string EntityGlyph(EntityType t) => t switch
     {
         EntityType.Account => "👤",
