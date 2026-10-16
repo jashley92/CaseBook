@@ -11,6 +11,8 @@
 @inject ToastService Toasts
 @inject IClock Clock
 @inject ILogger<EvidencePanel> Logger
+@inject UnsavedEdits Edits
+@implements IDisposable
 
 @if (File is { } ev)
 {
@@ -33,10 +35,11 @@
                 </a>
                 @if (CanEdit)
                 {
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _addingTask = true; _transferOpen = false; }">
+                    @* BUG-578: opening one doesn't close the other, so what's typed in it stays. *@
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _addingTask = true">
                         <span class="bi bi-plus-lg" aria-hidden="true"></span> Task about it
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _transferOpen = true; _addingTask = false; }">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _transferOpen = true">
                         <span class="bi bi-arrow-left-right" aria-hidden="true"></span> Record a transfer…
                     </button>
                 }
@@ -58,11 +61,11 @@
                     <h3 class="im-entity-panel-h">Record a transfer</h3>
                     <p class="small text-muted mb-2">Who received a copy outside CaseBook, how and why. It's added to the chain of custody and the audit trail.</p>
                     <label class="form-label small mb-0" for="evp-to">Recipient</label>
-                    <input id="evp-to" class="form-control form-control-sm mb-2" maxlength="200" @bind="_xferTo" placeholder="e.g. Outside counsel (Smith LLP)" />
+                    <input id="evp-to" class="form-control form-control-sm mb-2" maxlength="200" @bind="_xferTo" @bind:event="oninput" disabled="@_xferBusy" placeholder="e.g. Outside counsel (Smith LLP)" />
                     <label class="form-label small mb-0" for="evp-how">Method <span class="text-muted">(optional)</span></label>
-                    <input id="evp-how" class="form-control form-control-sm mb-2" maxlength="100" @bind="_xferHow" placeholder="e.g. Encrypted SFTP" />
+                    <input id="evp-how" class="form-control form-control-sm mb-2" maxlength="100" @bind="_xferHow" @bind:event="oninput" disabled="@_xferBusy" placeholder="e.g. Encrypted SFTP" />
                     <label class="form-label small mb-0" for="evp-why">Purpose</label>
-                    <input id="evp-why" class="form-control form-control-sm mb-2" maxlength="500" @bind="_xferWhy" placeholder="e.g. Forensic analysis under engagement letter" />
+                    <input id="evp-why" class="form-control form-control-sm mb-2" maxlength="500" @bind="_xferWhy" @bind:event="oninput" disabled="@_xferBusy" placeholder="e.g. Forensic analysis under engagement letter" />
                     @if (_xferError is not null) { <div class="text-danger small mb-2" role="alert">@_xferError</div> }
                     <div class="d-flex gap-2 justify-content-end">
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _transferOpen = false">Cancel</button>
@@ -193,11 +196,28 @@
     private string? _preview;
     private bool _previewLoading, _previewMissing, _addingTask, _transferOpen, _xferBusy;
     private string? _xferTo, _xferHow, _xferWhy, _xferError;
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // BUG-601: which file the panel shows, as a ticket taken on each switch; a load or a save that finishes after the panel
+    // moved on (even back to the same file) leaves what's shown now alone. Each custody load takes its own too, so an older
+    // list (from before a preview or a transfer was recorded) doesn't land over a newer one.
+    private readonly LoadSequence _showing = new();
+    private LoadSequence.Ticket _shown;
+    private readonly LoadSequence _custodyLoad = new();
+
+    // BUG-578: a transfer typed and not recorded is asked about before the panel closes or moves on.
+    protected override void OnInitialized() =>
+        Edits.Track(this, "the transfer you're recording", () => _transferOpen
+            && (!string.IsNullOrWhiteSpace(_xferTo) || !string.IsNullOrWhiteSpace(_xferHow) || !string.IsNullOrWhiteSpace(_xferWhy)), Region);
+
+    public void Dispose() => Edits.Forget(this);
 
     protected override async Task OnParametersSetAsync()
     {
         if (EvidenceId == _loadedFor) return;
         _loadedFor = EvidenceId;
+        _shown = _showing.Begin();
+        _custodyLoad.Invalidate();
         _custody = null;
         _preview = null;
         _previewLoading = _previewMissing = _addingTask = _transferOpen = false;
@@ -208,19 +228,22 @@
     // BUG-342: after each await, a result for an item the panel has since moved off is dropped.
     private async Task LoadCustody(Guid id)
     {
+        var t = _custodyLoad.Begin();
         List<ChainOfCustodyEvent> custody;
         try { custody = await Evidence.GetCustodyAsync(id); }
         catch (Exception ex) when (ex is InvalidOperationException) { custody = []; }
-        if (_loadedFor == id) _custody = custody;
+        if (_custodyLoad.IsCurrent(t)) _custody = custody;
     }
 
     private async Task LoadPreview(Evidence ev)
     {
+        if (_previewLoading) return;   // BUG-603: one look records one "Viewed"
+        var shown = _shown;
         _previewLoading = true;
         try
         {
             var preview = await Evidence.PreviewTextAsync(ev.Id);
-            if (_loadedFor != ev.Id) return;   // BUG-342
+            if (!_showing.IsCurrent(shown)) return;   // BUG-342
             _preview = preview;
             _previewMissing = preview is null;
             await LoadCustody(ev.Id);   // the view was just recorded
@@ -229,25 +252,30 @@
         {
             Toasts.Error(UserFacingError.Describe(ex, Logger, "previewing evidence", "Couldn't show the preview. Try again."));
         }
-        finally { if (_loadedFor == ev.Id) _previewLoading = false; }
+        finally { if (_showing.IsCurrent(shown)) _previewLoading = false; }
     }
 
     private async Task SaveTransfer(Evidence ev)
     {
         if (_xferBusy) return;
+        var shown = _shown;
         _xferError = null;
         _xferBusy = true;
         try
         {
             await Evidence.RecordTransferAsync(ev.Id, _xferTo ?? "", _xferHow, _xferWhy ?? "");
-            _transferOpen = false;
-            _xferTo = _xferHow = _xferWhy = null;
-            await LoadCustody(ev.Id);
             Toasts.Success("Transfer recorded in the chain of custody");
+            // BUG-601: the panel moved to another file meanwhile: its transfer form isn't this save's to close.
+            if (!_showing.IsCurrent(shown)) return;
+            _transferOpen = false;
+            _xferTo = _xferHow = _xferWhy = null;   // disabled while it saved, so nothing typed since
+            await LoadCustody(ev.Id);
         }
         catch (Exception ex)
         {
-            _xferError = UserFacingError.Describe(ex, Logger, "recording an evidence transfer", "Couldn't record the transfer. Try again.");
+            var problem = UserFacingError.Describe(ex, Logger, "recording an evidence transfer", "Couldn't record the transfer. Try again.");
+            if (_showing.IsCurrent(shown)) _xferError = problem;
+            else Toasts.Error(problem);
         }
         finally { _xferBusy = false; }
     }
@@ -279,7 +307,7 @@
     private string Snippet(string markdown)
     {
         var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
-        return text.Length <= 110 ? text : text[..107] + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(text, 110);
     }
 
     private static bool IsImage(Evidence ev) => ev.ContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;

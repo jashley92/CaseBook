@@ -34,11 +34,8 @@ public partial class ComponentContinuationTests
         ["Pages/CaseTabs/CaseNotesTab.razor"] = 1,   // OnParametersSetAsync: _mentionable = await Cases.MentionableAsync
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // ReconcileEditor: _mentionable = await Cases.MentionableAsync; SearchFuLink: _fuLinkResults = found (Cases.SearchLinkableCasesAsync)
         // wave 2b, U3 (entities, overview, panels, evidence)
-        ["Pages/CaseTabs/AccountDirectoryPanel.razor"] = 1,   // LookUp: _live = result (Directory.LookupAsync)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 3,   // OnParametersSetAsync: _links = await Cases.GetCaseLinksAsync; LoadOverlaps: _overlaps = await Cases.FindEntityOverlapsAsync; LoadRelated: _related...
         ["Pages/CaseTabs/CaseOverviewTab.razor"] = 5,   // SaveNotice: _deadlines = await Deadlines.EvaluateAsync; MarkReported: _deadlines = await Deadlines.EvaluateAsync; OnParametersSetAsync: _lessons =...
-        ["Pages/CaseTabs/EntityPanel.razor"] = 3,   // OnParametersSetAsync: _otherCases = overlaps (Cases.FindEntityOverlapsAsync); OnParametersSetAsync: _outcomeLabels = labels (Outcomes.LabelsAsync); On...
-        ["Pages/CaseTabs/EvidencePanel.razor"] = 1,   // LoadPreview: _preview = preview (Evidence.PreviewTextAsync)
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/Admin.razor"] = 3,   // LoadAsync: _effective = await Settings.GetEffectiveAsync; LoadAsync: _ledger = await Ledger.GetAsync; LoadAsync: _logoDataUri = logo (Branding.GetLogoAsync)
         ["Pages/AdminApiTokens.razor"] = 2,   // LoadAsync: _roles = await Roles.ListRolesAsync; LoadAsync: _tokens = await Tokens.ListAllAsync
@@ -71,7 +68,6 @@ public partial class ComponentContinuationTests
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 6,   // AddEntity: _enValue = "";; AddEntity: _enLabel = null;; AddEntity: _enDescription = null;; AddEntity: _enSource = null;; AddRelationship: _relSour...
         ["Pages/CaseTabs/CaseEvidenceTab.razor"] = 1,   // Upload: _evDesc = null;
         ["Pages/CaseTabs/CaseOverviewTab.razor"] = 1,   // AddLink: _linkDesc = null;
-        ["Pages/CaseTabs/EntityPanel.razor"] = 1,   // SaveVerdict: _verdictReason = null;
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/AccountApiTokens.razor"] = 1,   // CreateToken: _name = "";
         ["Pages/AdminRoles.razor"] = 1,   // AddMappingCore: _newGroup = "";

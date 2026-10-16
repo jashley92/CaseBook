@@ -14,8 +14,8 @@
             <h3 class="im-entity-panel-h">Directory</h3>
             @if (Directory.IsAvailable)
             {
-                <button type="button" class="btn btn-link btn-sm p-0" disabled="@_looking" @onclick="LookUp">
-                    <span class="bi bi-arrow-repeat" aria-hidden="true"></span> @(_looking ? "Looking up…" : "Look up now")
+                <button type="button" class="btn btn-link btn-sm p-0" disabled="@Looking" @onclick="LookUp">
+                    <span class="bi bi-arrow-repeat" aria-hidden="true"></span> @(Looking ? "Looking up…" : "Look up now")
                 </button>
             }
         </div>
@@ -85,8 +85,13 @@
 
     private IReadOnlyList<AccountDirectorySnapshot> _snapshots = [];
     private DirectoryLookup? _live;
-    private bool _looking, _saving, _loaded;
+    private bool _saving, _loaded;
     private (Guid Entity, string Value)? _loadedFor;
+    // BUG-601: lookups by the account they're for. One still running for the entity the panel has moved off doesn't show
+    // "Looking up…" (or hold the button) on this one, and an older one for the same account doesn't land over a newer.
+    private readonly KeyedLoad<(Guid Entity, string Value)> _lookups = new();
+    private (Guid Entity, string Value)? _lookingFor;
+    private bool Looking => _lookingFor == (Entity.Id, Entity.Value);
 
     // BUG-432: the kept details are the newest snapshot taken for the account as it's written now; one taken before the
     // value was edited is listed among the earlier ones, marked with the name it was taken for.
@@ -109,17 +114,19 @@
 
     private async Task LookUp()
     {
-        if (_looking) return;
-        _looking = true;
         var key = (Entity.Id, Entity.Value);
+        if (_lookingFor == key) return;
+        _lookingFor = key;
+        var t = _lookups.Begin(key);
         try
         {
             var result = await Directory.LookupAsync(CaseId, key.Id);
+            if (!_lookups.IsCurrent(t)) return;
             // BUG-432: shown only for the account it was looked up for: not another entity, nor this one after an edit.
             if ((Entity.Id, Entity.Value) == key && string.Equals(result.LookedUp, key.Value, StringComparison.Ordinal)) _live = result;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
-        finally { _looking = false; }
+        finally { if (_lookingFor == key) _lookingFor = null; }
     }
 
     private async Task Keep()

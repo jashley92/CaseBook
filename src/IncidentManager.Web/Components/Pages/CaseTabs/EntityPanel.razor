@@ -15,6 +15,8 @@
 @inject TimeDisplay TimeDisp
 @inject IJSRuntime JS
 @inject IConfiguration Config
+@inject UnsavedEdits Edits
+@implements IDisposable
 
 @if (Entity is { } en)
 {
@@ -69,7 +71,7 @@
                         <div class="im-dossier-reason mt-2">
                             <label class="form-label small mb-1" for="dossier-reason">Why @Ui.Label(pv).ToLowerInvariant()? <span class="text-muted">@(required ? "(required)" : "(optional)")</span></label>
                             <textarea id="dossier-reason" class="form-control form-control-sm im-rec" rows="2" maxlength="2000"
-                                      @bind="_verdictReason" @bind:event="oninput"
+                                      @bind="_verdictReason" @bind:event="oninput" disabled="@_savingVerdict"
                                       placeholder="@(required ? "What shows it, in a line. The reason is kept with the verdict." : "What you checked, in a line.")"></textarea>
                             <div class="mt-2"><DeterminedAt Id="dossier-determined" @bind-Value="_verdictWhen" /></div>
                             @if (_verdictError is not null) { <div class="text-danger small mt-1" role="alert">@_verdictError</div> }
@@ -260,6 +262,18 @@
     private bool _copied;
 
     [Inject] private IClock Clock { get; set; } = null!;
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // BUG-578: a verdict's reason or time typed and not saved is asked about before the panel closes or moves on.
+    protected override void OnInitialized() =>
+        Edits.Track(this, "the verdict you're recording", () => _pendingVerdict is not null && (!string.IsNullOrWhiteSpace(_verdictReason) || _verdictWhen is not null), Region);
+
+    public void Dispose() => Edits.Forget(this);
+
+    // BUG-601: which entity the panel shows, as a ticket taken on each switch; a load or a save that finishes after the
+    // panel moved on (even back to the same entity) leaves what's shown now alone.
+    private readonly LoadSequence _showing = new();
+    private LoadSequence.Ticket _shown;
 
     private void PickVerdict(CaseEntity en, EntityDisposition d)
     {
@@ -273,28 +287,39 @@
     {
         if (_pendingVerdict is not { } d || _savingVerdict) return;
         var seen = _verdictFrom ?? en.Disposition;
+        var shown = _shown;
+        var reason = _verdictReason;
         _savingVerdict = true;
         _verdictError = null;
         try
         {
             // BUG-234: the verdict alone; the other fields stay as they are now, not as this panel last showed them.
             await Cases.SetEntityVerdictAsync(Case.Id, en.Id, d,
-                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim(), expectedDisposition: seen,
+                string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(), expectedDisposition: seen,
                 determinedAtUtc: DeterminedAt.UtcOf(_verdictWhen, TimeDisp.Zone, Clock.UtcNow));
-            _pendingVerdict = null; _verdictFrom = null; _verdictWhen = null;
-            _verdictReason = null;
             Toasts.Success($"Verdict recorded: {Ui.Label(d)}");
+            // BUG-601: the panel moved to another entity meanwhile: its pick and reason aren't this save's to close.
+            if (_showing.IsCurrent(shown))
+            {
+                _pendingVerdict = null; _verdictFrom = null; _verdictWhen = null;
+                _verdictReason = DraftText.ClearIfUnchanged(_verdictReason, reason, null);   // disabled while it saves
+            }
             await OnChanged.InvokeAsync();
         }
         catch (StaleEditException ex)
         {
-            _pendingVerdict = null; _verdictFrom = null;
-            _verdictError = ex.Message;
+            if (_showing.IsCurrent(shown))
+            {
+                _pendingVerdict = null; _verdictFrom = null;
+                _verdictError = ex.Message;
+            }
+            else Toasts.Error(ex.Message);
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
-            _verdictError = ex.Message;
+            if (_showing.IsCurrent(shown)) _verdictError = ex.Message;
+            else Toasts.Error(ex.Message);
         }
         finally { _savingVerdict = false; }
     }
@@ -322,7 +347,11 @@
         return IncidentManager.Application.Content.LinkTemplate.Fill(template, e.Value);   // BUG-264
     }
 
-    private async Task TogglePin(CaseEntity en)
+    // BUG-603: a double-click pins once (the second click read the pin from before the first and undid it).
+    private readonly InFlight _pinning = new();
+    private Task TogglePin(CaseEntity en) => _pinning.Run(() => TogglePinCore(en));
+
+    private async Task TogglePinCore(CaseEntity en)
     {
         try
         {
@@ -351,6 +380,7 @@
     {
         if (EntityId == _loadedFor) return;
         _loadedFor = EntityId;
+        var t = _shown = _showing.Begin();
         _addingTask = false;
         _pendingVerdict = null; _verdictFrom = null;
         _verdictReason = null;
@@ -364,16 +394,16 @@
             var caseId = Case.Id;
             var overlaps = (await Cases.FindEntityOverlapsAsync(caseId, entityId: id))   // BUG-254: this entity's only
                 .DistinctBy(o => o.OtherCaseId).ToList();
-            if (_loadedFor != id) return;
+            if (!_showing.IsCurrent(t)) return;   // BUG-601: an A, B, A switch doesn't let the first A load land
             _otherCases = overlaps;
             if (overlaps.Any(o => o.IsClosed) && _outcomeLabels.Count == 0)
             {
                 var labels = await Outcomes.LabelsAsync();
-                if (_loadedFor != id) return;
+                if (!_showing.IsCurrent(t)) return;
                 _outcomeLabels = labels;
             }
             var comments = await TaskComments.ListForCaseAsync(caseId);   // INV-34
-            if (_loadedFor != id) return;
+            if (!_showing.IsCurrent(t)) return;
             _taskComments = comments;
         }
     }
@@ -448,6 +478,6 @@
     private string Snippet(string markdown)
     {
         var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
-        return text.Length <= 120 ? text : text[..117] + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(text, 120);
     }
 }

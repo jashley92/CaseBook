@@ -28,8 +28,6 @@ public partial class EditPreservationTests
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 1,   // 8 text field(s), no Edits.Track
         ["Pages/CaseTabs/CaseEvidenceTab.razor"] = 1,   // 4 text field(s), no Edits.Track
         ["Pages/CaseTabs/CaseOverviewTab.razor"] = 1,   // 8 text field(s), no Edits.Track
-        ["Pages/CaseTabs/EntityPanel.razor"] = 1,   // 1 text field(s), no Edits.Track
-        ["Pages/CaseTabs/EvidencePanel.razor"] = 1,   // 3 text field(s), no Edits.Track
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/CaseTabs/CaseReviewTab.razor"] = 1,   // 4 text field(s), no Edits.Track
         ["Shared/PromoteToTimeline.razor"] = 1,   // 1 text field(s), no Edits.Track
