@@ -60,12 +60,6 @@ public static class RoleDefinitions
     /// BUG-352: a built-in role by its name only. <see cref="Enum.TryParse{TEnum}(string, out TEnum)"/> also takes a number
     /// ("4" is SysAdmin), a padded name and a comma list, so a custom role named "4" read as a built-in one.
     /// </summary>
-    public static bool TryParseRole(string? name, out AppRole role, bool ignoreCase = false)
-    {
-        var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        foreach (var r in Enum.GetValues<AppRole>())
-            if (string.Equals(r.ToString(), name, comparison)) { role = r; return true; }
-        role = default;
-        return false;
-    }
+    public static bool TryParseRole(string? name, out AppRole role, bool ignoreCase = false) =>
+        Domain.Common.EnumNames.TryParseExact(name, out role, ignoreCase);   // BUG-592: as stored, not trimmed
 }

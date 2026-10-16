@@ -1328,6 +1328,38 @@ public sealed class ConfigBundleServiceTests : IDisposable
         (await check.ReportProfiles.CountAsync(p => p.TemplateId != null)).Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("EscalateToIncident,EscalateToBreach")]   // OR-ed, this was CloseCase
+    [InlineData("3")]
+    [InlineData("4")]                                     // no such transition, stored as one
+    public async Task A_gate_trigger_is_read_by_name_only(string trigger /* BUG-592 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var bundle = live with { StageGates = [.. live.StageGates, live.StageGates[0] with { Name = "Listed", Trigger = trigger, IsActive = false }] };
+
+        var diff = await svc.PreviewAsync(bundle);
+        diff.Items.Should().NotContain(i => i.Name == "Listed");
+        diff.Warnings.Should().Contain(w => w.Contains("\"Listed\"") && w.Contains("doesn't have"));
+        await svc.ImportAsync(Signed(bundle));
+        (await db.StageGates.AsNoTracking().AnyAsync(g => g.Name == "Listed")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_rule_code_saved_in_lower_case_is_the_upper_case_code(/* C16 out of class: NotificationRuleService */)
+    {
+        await using var db = NewContext();
+        db.NotificationRules.Add(new NotificationRule { Code = "ny", Label = "New York", WindowHours = 72, IsActive = true, CreatedBy = "admin1", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        var rules = new IncidentManager.Application.Admin.NotificationRuleService(NewFactory(), _user, _clock);
+
+        await rules.Invoking(r => r.SaveAsync(null, "NY", "New York", 96)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*already exists*");
+        (await db.NotificationRules.CountAsync()).Should().Be(1, "the rule set reads codes ignoring case, so two would throw");
+    }
+
     public void Dispose()
     {
         _connection.Dispose();

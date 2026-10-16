@@ -188,8 +188,7 @@ public sealed partial record FindQuery
         }
         // WF-04: a name only. Enum.TryParse also takes "2" and "containment,eradication" (flags OR'd into another type).
         var name = v.Replace("-", "");
-        return name.All(char.IsAsciiLetter) && Enum.TryParse<TimelineEntryType>(name, ignoreCase: true, out var t) && Enum.IsDefined(t)
-            ? (null, t) : null;
+        return Domain.Common.EnumNames.TryParseExact<TimelineEntryType>(name, out var t, ignoreCase: true) ? (null, t) : null;   // BUG-592
     }
 
     /// <summary>How the words read, before any lookup: a case number, an indicator, or words (a person needs the directory).</summary>

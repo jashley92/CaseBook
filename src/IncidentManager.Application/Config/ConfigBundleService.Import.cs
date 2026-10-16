@@ -5,6 +5,7 @@ using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
 using IncidentManager.Application.Security;
 using IncidentManager.Application.StageGates;
+using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -121,55 +122,28 @@ public sealed partial class ConfigBundleService
     {
         incoming = WithCommaJurisdictions(incoming);
         var live = await BuildBundleAsync(ct);
-        var (_, warnings) = await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
-        CheckSettings(incoming);                         // so does a setting outside its limits
-        CheckNaturalKeys(incoming);                      // and two items that differ only in case
-        CheckSingleActiveGates(incoming, live);          // and a second active gate on one transition
-        CheckItems(incoming, live);                      // and an item the admin pages would refuse
-        CheckTaxonomy(incoming, live);                   // WF-45: taxonomy keys too
-        var items = new List<ConfigDiffItem>();
+        var (templateFiles, warnings) = await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
+        CheckBundle(incoming, live);
 
-        // BUG-559: settings and roles too are compared on what the import writes: a setting's value as the settings page
-        // normalizes it, and a role's description and permission set (a system role is never changed by an import).
-        Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items,
-            (i, l) => ImportedValue(i) == l.Value);
-        Diff("Role", incoming.Roles.Where(r => !r.IsSystem), live.Roles, r => r.Name, items,
-            (i, l) => l.IsSystem || (i.Description == l.Description
-                                     && Role.ParsePermissions(l.PermissionsCsv).SetEquals(Role.ParsePermissions(PermissionNames(i.PermissionsCsv)))));
+        // C2 (BUG-440/517/533/559/568's class): the preview is the import's own apply, run on a context that's never saved,
+        // so its lines, counts and refusals are the import's: a normalized gate or playbook, a demoted lessons default, a
+        // role name or last-administrator refusal, a rule code as stored.
+        using var db = _factory.CreateDbContext();
+        var run = new ImportRun();
+        await ApplyAsync(db, incoming, templateFiles, run, dryRun: true, ct);
+
         // WF-45: a mapping with no group or to a role neither here nor in the bundle isn't imported (a dormant grant a later
         // role of that name would pick up), so the preview doesn't count it and says so.
         var unusable = UnusableMappings(incoming, live.Roles.Select(r => r.Name));
-        DiffMappings(incoming.RoleMappings.Except(unusable), live.RoleMappings, items);
         if (unusable.Count > 0)
             warnings.Add($"{Common.Plural.Of(unusable.Count, "AD mapping")} won't be imported: " +
                          string.Join(", ", unusable.Select(m => $"\"{m.AdGroup} → {m.RoleName}\"")) +
                          " (no AD group, or a role that doesn't exist here or in the bundle).");
-        Diff("Case template", incoming.CaseTemplates, live.CaseTemplates, t => t.Name, items);
         // REV-54: a gate for a transition this version doesn't know is skipped on import, so the preview doesn't count it.
         var unknownGates = incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is null).Select(g => g.Name).ToList();
-        Diff("Stage gate", incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is not null), live.StageGates, g => g.Name, items);
         if (unknownGates.Count > 0)
             warnings.Add($"{Common.Plural.Of(unknownGates.Count, "stage gate")} won't be imported: \"{string.Join("\", \"", unknownGates)}\" " +
                          "guard a transition this version of CaseBook doesn't have.");
-        Diff("Word template", incoming.ReportTemplates ?? [], live.ReportTemplates ?? [], t => t.Name, items);
-        // BUG-559: profiles, rules and outcomes are compared on what the import writes, so the preview's counts are its.
-        var carriesTemplates = incoming.ReportTemplates is not null;
-        Diff("Report profile", incoming.ReportProfiles, live.ReportProfiles, p => p.Name, items, (i, l) => SameProfile(i, l, carriesTemplates));
-        // Notification rules match on their portable jurisdiction Code (null when importing a pre-v2 bundle).
-        Diff("Notification rule", incoming.NotificationRules ?? [], live.NotificationRules, r => r.Code, items,
-            (i, l) => i.Label == l.Label && i.WindowHours == l.WindowHours && i.IsActive == l.IsActive);
-        // HR-01: outcomes match on their stable Key (null when importing a pre-v4 bundle).
-        Diff("Case outcome", incoming.CaseOutcomes ?? [], live.CaseOutcomes ?? [], o => o.Key, items,
-            (i, l) => i.Label == l.Label && i.Description == l.Description && i.SortOrder == l.SortOrder && i.IsActive == l.IsActive);
-
-        // Data elements match on Key (codes are per-instance), so compare a code-agnostic shape.
-        var liveByKey = live.DataElements.ToDictionary(e => e.Key, StringComparer.OrdinalIgnoreCase);
-        foreach (var d in incoming.DataElements)
-        {
-            var change = !liveByKey.TryGetValue(d.Key, out var l) ? ConfigChange.Add
-                : SameElement(d, l) ? ConfigChange.Unchanged : ConfigChange.Update;
-            items.Add(new ConfigDiffItem("Data element", d.Label, change));
-        }
 
         // BUG-558: a rule saved here before codes were checked for separators never matches a jurisdiction; say so rather
         // than rewrite it (which code was meant is the administrator's call).
@@ -177,45 +151,360 @@ public sealed partial class ConfigBundleService
             warnings.Add($"The deadline rule \"{r.Code}\" here never applies: a code is one jurisdiction, and cases with " +
                          "those jurisdictions get the default window. Delete it under Settings, Regulatory deadlines, and add a rule for each jurisdiction.");
 
-        return new ConfigDiff(items, warnings);
+        return new ConfigDiff(run.Items, warnings);
     }
 
-    // Generic diff by natural key. Compares on the canonical JSON of each item so nested collections
-    // (template steps, gate requirements) are compared structurally, not by list reference.
-    private static void Diff<T>(string section, IEnumerable<T> incoming, IEnumerable<T> live,
-        Func<T, string> key, List<ConfigDiffItem> acc, Func<T, T, bool>? same = null) where T : notnull
+    // C2: every refusal the import makes before it writes, in one order, so the preview stops with the same words.
+    private static void CheckBundle(ConfigBundle bundle, ConfigBundle live)
     {
-        // BUG-200: natural keys match regardless of case, as the database's unique indexes do on SQL Server.
-        var byKey = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
-        foreach (var l in live) byKey[key(l)] = l;
-        same ??= (i, l) => Canon(i) == Canon(l);
-        foreach (var i in incoming)
+        CheckSettings(bundle);                 // a setting outside its limits
+        CheckNaturalKeys(bundle);              // two items that differ only in case
+        CheckSingleActiveGates(bundle, live);  // a second active gate on one transition
+        CheckItems(bundle, live);              // an item the admin pages would refuse
+        CheckTaxonomy(bundle, live);           // WF-45: taxonomy keys too
+    }
+
+    /// <summary>C2: what one apply did (or, for the preview, would do), item by item.</summary>
+    private sealed class ImportRun
+    {
+        public List<ConfigDiffItem> Items { get; } = [];
+        public List<string> ChangedSettings { get; } = [];
+        public List<string> ChangedRoles { get; } = [];
+        public List<string> AddedMappings { get; } = [];
+        public List<string> Rescoped { get; } = [];
+        public List<Reporting.StagedTemplate> Staged { get; } = [];
+        // BUG-238: each staged file's row and what it described before, to put back if the file can't be put in place.
+        public Dictionary<Reporting.StagedTemplate, (ReportTemplate Row, (string FileName, string Sha256, long Size)? Before)> StagedRows { get; } = [];
+
+        public void Note(string section, string name, bool isNew, bool changed) =>
+            Items.Add(new ConfigDiffItem(section, name, isNew ? ConfigChange.Add : changed ? ConfigChange.Update : ConfigChange.Unchanged));
+
+        public (int Added, int Updated, int Unchanged) Counts() =>
+            (Items.Count(i => i.Change == ConfigChange.Add), Items.Count(i => i.Change == ConfigChange.Update),
+                Items.Count(i => i.Change == ConfigChange.Unchanged));
+    }
+
+    /// <summary>
+    /// C2: applies a checked bundle to <paramref name="db"/> as a non-destructive upsert, noting each item in
+    /// <paramref name="run"/>. The import saves the context; the preview (<paramref name="dryRun"/>) never does and stages no
+    /// template file. One function, so what the preview says is what the import does.
+    /// </summary>
+    private async Task ApplyAsync(IAppDbContext db, ConfigBundle bundle, Dictionary<string, byte[]> templateFiles, ImportRun run,
+        bool dryRun, CancellationToken ct)
+    {
+        var now = _clock.UtcNow;
+        var actor = _user.UserId;
+
+        // --- Settings (whitelisted + taxonomy only) ---
+        var settings = await db.AppSettings.ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
+        foreach (var s in bundle.Settings.Where(IsImportableSetting))
         {
-            var change = !byKey.TryGetValue(key(i), out var match) ? ConfigChange.Add
-                : same(i, match) ? ConfigChange.Unchanged : ConfigChange.Update;
-            acc.Add(new ConfigDiffItem(section, key(i), change));
+            // S-18: validate an operational setting exactly as the settings page does, so a bundle can't write a
+            // value the page would refuse.
+            var value = ImportedValue(s);
+            if (settings.TryGetValue(s.Key, out var row))
+            {
+                var changed = row.Value != value;
+                if (changed) { row.Value = value; row.UpdatedAtUtc = now; row.UpdatedBy = actor; run.ChangedSettings.Add(s.Key); }
+                run.Note("Setting", s.Key, false, changed);
+            }
+            else
+            {
+                db.AppSettings.Add(new AppSetting { Key = s.Key, Value = value, UpdatedAtUtc = now, UpdatedBy = actor });
+                run.ChangedSettings.Add(s.Key);
+                run.Note("Setting", s.Key, true, true);
+            }
+        }
+
+        // --- Roles (custom only; system roles are code-owned) ---
+        var roles = await db.Roles.ToListAsync(ct);
+        var adminBefore = AdministerMapped(roles, await db.RoleMappings.AsNoTracking().ToListAsync(ct));
+        foreach (var r in bundle.Roles.Where(r => !r.IsSystem))
+        {
+            // BUG-18: matched regardless of case, like the role directory, so "sysadmin" is SysAdmin, not a new role.
+            var existing = roles.FirstOrDefault(x => string.Equals(x.Name, r.Name, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                if (Role.NameProblem(r.Name) is { } problem) throw new ArgumentException($"Role '{r.Name}': {problem}");
+                db.Roles.Add(new Role { Name = r.Name, Description = r.Description, IsSystem = false,
+                    PermissionsCsv = PermissionNames(r.PermissionsCsv), UpdatedAtUtc = now, UpdatedBy = actor });
+                run.ChangedRoles.Add(r.Name);
+                run.Note("Role", r.Name, true, true);
+            }
+            else if (existing.IsSystem) { run.Note("Role", r.Name, false, false); }   // never touch a system role via import
+            else
+            {
+                var perms = PermissionNames(r.PermissionsCsv);
+                var changed = existing.Description != r.Description
+                              || !existing.GetPermissions().SetEquals(Role.ParsePermissions(perms));
+                if (changed) { existing.Description = r.Description; existing.PermissionsCsv = perms; existing.UpdatedAtUtc = now; existing.UpdatedBy = actor; run.ChangedRoles.Add(r.Name); }
+                run.Note("Role", r.Name, false, changed);
+            }
+        }
+
+        // --- AD mappings (existence grants; create if missing) ---
+        var mappings = await db.RoleMappings.ToListAsync(ct);
+        foreach (var raw in bundle.RoleMappings)
+        {
+            // WF-45: as the Roles page: a mapping needs an AD group and a role that exists (one this bundle adds counts),
+            // stored with the role's own spelling. A dormant grant would otherwise wait for a later role of that name.
+            // Skipped, and the preview warns of it (UnusableMappings).
+            var group = (raw.AdGroup ?? "").Trim();
+            if (group.Length == 0) continue;
+            var role = db.Roles.Local.FirstOrDefault(x => string.Equals(x.Name, raw.RoleName?.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (role is null) continue;
+            var name = $"{group} → {role.Name}";
+            // BUG-136: AD group and role names match ignoring case, as SQL Server's unique index does (and AD itself).
+            var exists = mappings.Any(x => string.Equals(x.AdGroup, group, StringComparison.OrdinalIgnoreCase)
+                                           && string.Equals(x.RoleName, role.Name, StringComparison.OrdinalIgnoreCase));
+            if (!exists)
+            {
+                var mapping = new AdGroupRoleMapping { AdGroup = group, RoleName = role.Name, UpdatedAtUtc = now, UpdatedBy = actor };
+                db.RoleMappings.Add(mapping);
+                mappings.Add(mapping);   // a bundle that lists the same mapping twice, in two casings, adds it once
+                run.AddedMappings.Add(name);
+            }
+            run.Note("AD mapping", name, !exists, !exists);
+        }
+
+        // BUG-17: the S-17 anti-lockout rule applies to an import too. A bundle whose version of a role drops
+        // Administer must not leave no AD group with administrator access.
+        if (adminBefore && !AdministerMapped(db.Roles.Local, db.RoleMappings.Local))
+            throw new InvalidOperationException("This bundle would remove the last administrator access: no AD group would map to a " +
+                "role with Administer. Grant Administer to a mapped role first, or edit the bundle.");
+
+        // --- Case templates (upsert fields + replace steps wholesale) ---
+        var templates = await db.CaseTemplates.Include(t => t.Steps).ToListAsync(ct);
+        foreach (var t in bundle.CaseTemplates)
+        {
+            var built = NewTemplate(t, actor, now);
+            var existing = templates.FirstOrDefault(x => string.Equals(x.Name, t.Name, StringComparison.OrdinalIgnoreCase));   // BUG-200
+            // C2: both sides compared as the import writes them (defaults by name, steps in order), so a playbook the bundle
+            // leaves as it is (one seeded here, too) is unchanged, and the same bundle twice changes nothing.
+            var changed = existing is null || Canon(ToConfig(built)) != Canon(ToConfig(NewTemplate(ToConfig(existing), actor, now)));
+            if (existing is null) db.CaseTemplates.Add(built);
+            else if (changed)
+            {
+                existing.Name = t.Name;   // BUG-240: matched ignoring case; take the bundle's, or every import updates it again
+                existing.Description = built.Description; existing.IsActive = built.IsActive; existing.SortOrder = built.SortOrder;
+                existing.DefaultClassification = built.DefaultClassification; existing.DefaultSeverity = built.DefaultSeverity;
+                existing.DefaultDataTypes = built.DefaultDataTypes; existing.SummaryBoilerplate = built.SummaryBoilerplate;
+                existing.ModifiedBy = actor; existing.ModifiedAtUtc = now;
+                db.CaseTemplateSteps.RemoveRange(existing.Steps);
+                existing.Steps.Clear();
+                foreach (var s in t.Steps) existing.Steps.Add(NewStep(existing.Id, s));
+            }
+            run.Note("Case template", t.Name, existing is null, changed);
+        }
+
+        // --- Stage gates (upsert fields + replace requirements wholesale) ---
+        var gates = await db.StageGates.Include(g => g.Requirements).ToListAsync(ct);
+        foreach (var g in bundle.StageGates)
+        {
+            if (ParseEnum<StageGateTrigger>(g.Trigger) is not { } trigger) continue; // skip an unknown transition
+            var built = NewGate(g, trigger, actor, now);
+            var existing = gates.FirstOrDefault(x => string.Equals(x.Name, g.Name, StringComparison.OrdinalIgnoreCase));
+            // C2: both sides compared as the import writes them (thresholds clamped, requirements in order), so a seeded gate
+            // the bundle leaves as it is (no threshold stored) is unchanged, and the same bundle twice changes nothing.
+            var changed = existing is null || Canon(ToConfig(built)) != Canon(ToConfig(NewGate(ToConfig(existing), existing.Trigger, actor, now)));
+            if (existing is null) db.StageGates.Add(built);
+            else if (changed)
+            {
+                existing.Name = g.Name;   // BUG-240: as for case templates
+                existing.Trigger = trigger; existing.IsActive = built.IsActive; existing.Description = built.Description;
+                existing.CommentaryMinLength = built.CommentaryMinLength;
+                existing.ModifiedBy = actor; existing.ModifiedAtUtc = now;
+                db.StageGateRequirements.RemoveRange(existing.Requirements);
+                existing.Requirements.Clear();
+                foreach (var r in g.Requirements) existing.Requirements.Add(NewRequirement(existing.Id, r));
+            }
+            run.Note("Stage gate", g.Name, existing is null, changed);
+        }
+
+        // --- Word templates (PROD-47; match by name, ignoring case; files were checked above) ---
+        var libraryRows = await db.ReportTemplates.ToListAsync(ct);
+        // BUG-524: duplicate live names were refused by CheckReportTemplatesAsync when the bundle carries templates (only then
+        // is the library matched by name); an older bundle leaves the library alone, so a duplicate doesn't stop it.
+        var library = new Dictionary<string, ReportTemplate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in libraryRows)
+            if (!library.TryAdd(row.Name, row) && bundle.ReportTemplates is not null)
+                throw new InvalidOperationException("This bundle can't be imported. " + DuplicateLiveTemplate(row.Name));
+        foreach (var t in bundle.ReportTemplates ?? [])
+        {
+            var bytes = templateFiles[t.Name];
+            var fileName = Path.GetFileName(t.FileName);
+            if (!library.TryGetValue(t.Name, out var existing))
+            {
+                var created = new ReportTemplate { Name = t.Name, FileName = fileName, IsActive = t.IsActive,
+                    IsLessonsDefault = t.LessonsDefault,
+                    Sha256 = t.Sha256.ToLowerInvariant(), SizeBytes = bytes.LongLength, CreatedBy = actor, CreatedAtUtc = now };
+                if (!dryRun) await StageAsync(run, created, null, bytes, ct);   // BUG-199: put in place only once the import is saved
+                db.ReportTemplates.Add(created);
+                library[t.Name] = created;
+                run.Note("Word template", t.Name, true, true);
+            }
+            else
+            {
+                var fileChanged = !string.Equals(existing.Sha256, t.Sha256, StringComparison.OrdinalIgnoreCase);
+                var changed = fileChanged || existing.Name != t.Name || existing.FileName != fileName
+                    || existing.IsActive != t.IsActive || existing.IsLessonsDefault != t.LessonsDefault;
+                if (fileChanged && !dryRun) await StageAsync(run, existing, (existing.FileName, existing.Sha256, existing.SizeBytes), bytes, ct);
+                if (changed) { existing.Name = t.Name; existing.FileName = fileName; existing.IsActive = t.IsActive;
+                    existing.IsLessonsDefault = t.LessonsDefault;
+                    existing.Sha256 = t.Sha256.ToLowerInvariant(); existing.SizeBytes = bytes.LongLength;
+                    existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                run.Note("Word template", t.Name, false, changed);
+            }
+        }
+
+        // At most one lessons-learned default: when the bundle names one, a live template outside the bundle stops being it.
+        // C2: that's a change to the template, so it's previewed and counted.
+        if (bundle.ReportTemplates?.Any(t => t.LessonsDefault) == true)
+            foreach (var other in libraryRows.Where(r => r.IsLessonsDefault
+                         && !bundle.ReportTemplates.Any(t => t.Name.Equals(r.Name, StringComparison.OrdinalIgnoreCase))))
+            {
+                other.IsLessonsDefault = false; other.ModifiedBy = actor; other.ModifiedAtUtc = now;
+                run.Note("Word template", other.Name, false, true);
+            }
+
+        // --- Report profiles ---
+        // A bundle that carries the template library (v3) also sets each profile's default template (null = the built-in
+        // layout). An older bundle leaves defaults as they are.
+        var carriesTemplates = bundle.ReportTemplates is not null;
+        Guid? TemplateIdFor(ConfigReportProfile p) => p.Template is null ? null : library[p.Template].Id;
+        var profiles = await db.ReportProfiles.ToListAsync(ct);
+        foreach (var p in bundle.ReportProfiles)
+        {
+            var existing = profiles.FirstOrDefault(x => string.Equals(x.Name, p.Name, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                db.ReportProfiles.Add(new ReportProfile { Name = p.Name, Description = p.Description, IsActive = p.IsActive,
+                    SortOrder = p.SortOrder, SectionLayout = p.SectionLayout,
+                    TemplateId = carriesTemplates ? TemplateIdFor(p) : null, CreatedBy = actor, CreatedAtUtc = now });
+                run.Note("Report profile", p.Name, true, true);
+            }
+            else
+            {
+                var templateId = carriesTemplates ? TemplateIdFor(p) : existing.TemplateId;
+                var changed = existing.Name != p.Name || existing.Description != p.Description || existing.IsActive != p.IsActive
+                    || existing.SortOrder != p.SortOrder || existing.SectionLayout != p.SectionLayout
+                    || existing.TemplateId != templateId;
+                // BUG-559: matched ignoring case; take the bundle's name, as case templates and gates do (BUG-240).
+                if (changed) { existing.Name = p.Name; existing.Description = p.Description; existing.IsActive = p.IsActive;
+                    existing.SortOrder = p.SortOrder; existing.SectionLayout = p.SectionLayout; existing.TemplateId = templateId;
+                    existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                run.Note("Report profile", p.Name, false, changed);
+            }
+        }
+
+        // --- Case outcomes (HR-01; match by stable Key; absent from a pre-v4 bundle) ---
+        var outcomeRows = await db.CaseOutcomes.ToListAsync(ct);
+        foreach (var o in bundle.CaseOutcomes ?? [])
+        {
+            var existing = outcomeRows.FirstOrDefault(x => string.Equals(x.Key, o.Key, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                db.CaseOutcomes.Add(new CaseOutcome { Key = o.Key, Label = o.Label, Description = o.Description,
+                    SortOrder = o.SortOrder, IsActive = o.IsActive, IsSystem = false, CreatedBy = actor, CreatedAtUtc = now });   // WF-45: built-ins are seeded, not imported
+                run.Note("Case outcome", o.Key, true, true);
+            }
+            else
+            {
+                var changed = existing.Label != o.Label || existing.Description != o.Description
+                    || existing.SortOrder != o.SortOrder || existing.IsActive != o.IsActive;
+                if (changed) { existing.Label = o.Label; existing.Description = o.Description; existing.SortOrder = o.SortOrder;
+                    existing.IsActive = o.IsActive; existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                run.Note("Case outcome", o.Key, false, changed);
+            }
+        }
+
+        // --- Data elements (match by stable Key; codes are per-instance) ---
+        var elements = await db.DataElements.ToListAsync(ct);
+        foreach (var d in bundle.DataElements)
+        {
+            var existing = elements.FirstOrDefault(x => string.Equals(x.Key, d.Key, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                db.DataElements.Add(new DataElement { Key = d.Key, Label = d.Label,
+                    SortOrder = d.SortOrder, IsActive = d.IsActive, IsSystem = false,   // WF-45: built-ins are seeded, not imported
+                    NotificationJurisdictions = d.NotificationJurisdictions, CreatedBy = actor, CreatedAtUtc = now });
+                run.Note("Data element", d.Label, true, true);
+            }
+            else
+            {
+                var changed = existing.Label != d.Label || existing.SortOrder != d.SortOrder
+                    || existing.IsActive != d.IsActive || existing.NotificationJurisdictions != d.NotificationJurisdictions;
+                if (changed && !string.Equals(existing.NotificationJurisdictions ?? "", d.NotificationJurisdictions ?? "", StringComparison.OrdinalIgnoreCase))
+                    run.Rescoped.Add(existing.Key);   // WF-11
+                if (changed) { existing.Label = d.Label; existing.SortOrder = d.SortOrder; existing.IsActive = d.IsActive;
+                    existing.NotificationJurisdictions = d.NotificationJurisdictions;
+                    existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                run.Note("Data element", d.Label, false, changed);
+            }
+        }
+
+        // --- Notification rules (match by portable jurisdiction Code; absent on a pre-v2 bundle) ---
+        var rules = await db.NotificationRules.ToListAsync(ct);
+        foreach (var r in bundle.NotificationRules ?? [])
+        {
+            // REV-49 / C2: the code trimmed and upper-cased, and the label trimmed, as the page saves them, both to match and
+            // to write: " ny " is the NY rule, not a second one the unique index refuses.
+            var code = r.Code.Trim().ToUpperInvariant();
+            var label = r.Label.Trim();
+            var existing = rules.FirstOrDefault(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                db.NotificationRules.Add(new NotificationRule { Code = code, Label = label,
+                    WindowHours = r.WindowHours, IsActive = r.IsActive, IsSystem = false,   // WF-45: built-ins are seeded, not imported
+                    CreatedBy = actor, CreatedAtUtc = now });
+                run.Note("Notification rule", code, true, true);
+            }
+            else
+            {
+                var changed = existing.Label != label || existing.WindowHours != r.WindowHours
+                    || existing.IsActive != r.IsActive;
+                if (changed) { existing.Label = label; existing.WindowHours = r.WindowHours;
+                    existing.IsActive = r.IsActive; existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                run.Note("Notification rule", existing.Code, false, changed);
+            }
         }
     }
 
-    // BUG-568: as the import applies a mapping: the group trimmed, the role name trimmed, both matched ignoring case. A mapping
-    // only exists or doesn't (nothing in it is updated), and one the bundle lists twice is added once.
-    private static void DiffMappings(IEnumerable<ConfigRoleMapping> incoming, IEnumerable<ConfigRoleMapping> live, List<ConfigDiffItem> acc)
+    private async Task StageAsync(ImportRun run, ReportTemplate row, (string FileName, string Sha256, long Size)? before, byte[] bytes,
+        CancellationToken ct)
     {
-        var known = live.Select(m => $"{m.AdGroup}\n{m.RoleName}").ToHashSet(StringComparer.OrdinalIgnoreCase);   // as stored
-        foreach (var m in incoming)
-        {
-            var (group, role) = ((m.AdGroup ?? "").Trim(), (m.RoleName ?? "").Trim());
-            acc.Add(new ConfigDiffItem("AD mapping", $"{group} → {role}",
-                known.Add($"{group}\n{role}") ? ConfigChange.Add : ConfigChange.Unchanged));
-        }
+        var s = await _templateStore!.StageAsync(row.Id, bytes, ct);
+        run.Staged.Add(s);
+        run.StagedRows[s] = (row, before);
     }
 
-    // BUG-559: as the import applies a profile: it takes the bundle's name (BUG-240), and its default template only from a
-    // bundle carrying the library, matched by name ignoring case as the library is.
-    private static bool SameProfile(ConfigReportProfile i, ConfigReportProfile l, bool carriesTemplates) =>
-        i.Name == l.Name && i.Description == l.Description && i.IsActive == l.IsActive && i.SortOrder == l.SortOrder
-        && i.SectionLayout == l.SectionLayout
-        && (!carriesTemplates || string.Equals(i.Template, l.Template, StringComparison.OrdinalIgnoreCase));
+    // C2: a playbook as the import writes it, which is also what it's compared on.
+    private static CaseTemplate NewTemplate(ConfigCaseTemplate t, string actor, DateTimeOffset now)
+    {
+        var created = new CaseTemplate { Name = t.Name, Description = t.Description, IsActive = t.IsActive,
+            SortOrder = t.SortOrder, DefaultClassification = ParseEnum<Classification>(t.DefaultClassification),
+            DefaultSeverity = ParseEnum<Severity>(t.DefaultSeverity),
+            DefaultDataTypes = t.DefaultDataTypes, SummaryBoilerplate = t.SummaryBoilerplate,
+            CreatedBy = actor, CreatedAtUtc = now };
+        created.Steps = t.Steps.Select(s => NewStep(created.Id, s)).ToList();
+        return created;
+    }
+
+    private static CaseTemplateStep NewStep(Guid templateId, ConfigTemplateStep s) => new()
+    {
+        TemplateId = templateId, Order = s.Order, Title = s.Title, Description = s.Description, OwnerHint = s.OwnerHint,
+        DueOffsetHours = s.DueOffsetHours, Kind = s.Kind
+    };
+
+    // C2: a gate as the import writes it, which is also what it's compared on.
+    private static StageGate NewGate(ConfigStageGate g, StageGateTrigger trigger, string actor, DateTimeOffset now)
+    {
+        var created = new StageGate { Trigger = trigger, IsActive = g.IsActive, Name = g.Name,
+            Description = g.Description, CommentaryMinLength = StageGate.ClampCommentary(g.CommentaryMinLength),
+            CreatedBy = actor, CreatedAtUtc = now };
+        created.Requirements = g.Requirements.Select(r => NewRequirement(created.Id, r)).ToList();
+        return created;
+    }
 
     private static string Canon<T>(T item) => System.Text.Json.JsonSerializer.Serialize(item, ConfigBundleJson.Canonical);
 
@@ -230,10 +519,6 @@ public sealed partial class ConfigBundleService
                     : d).ToList()
             }
             : bundle;
-
-    private static bool SameElement(ConfigDataElement a, ConfigDataElement b) =>
-        a.Label == b.Label && a.SortOrder == b.SortOrder && a.IsActive == b.IsActive
-        && a.NotificationJurisdictions == b.NotificationJurisdictions;
 
     // Only whitelisted operational keys and the taxonomy key space are ever importable — defence in depth so a
     // crafted bundle can't smuggle a server-side/security key into the settings table (S-02).
@@ -308,12 +593,21 @@ public sealed partial class ConfigBundleService
         }
         // BUG-267: playbook steps and gates get the pages' rules too.
         foreach (var t in incoming.CaseTemplates)
+        {
+            // BUG-592: a default by its name only ("7" or "Low,High" was stored as a value no list shows).
+            if (!string.IsNullOrWhiteSpace(t.DefaultClassification) && ParseEnum<Classification>(t.DefaultClassification) is null)
+                problems.Add($"Playbook \"{t.Name}\" has the default classification \"{t.DefaultClassification}\", which isn't one this version has.");
+            if (!string.IsNullOrWhiteSpace(t.DefaultSeverity) && ParseEnum<Severity>(t.DefaultSeverity) is null)
+                problems.Add($"Playbook \"{t.Name}\" has the default severity \"{t.DefaultSeverity}\", which isn't one this version has.");
             foreach (var s in t.Steps)
             {
+                if (!Enum.IsDefined(s.Kind))
+                    problems.Add($"Playbook \"{t.Name}\" step \"{s.Title}\" has a task kind this version doesn't have ({(int)s.Kind}).");
                 if (string.IsNullOrWhiteSpace(s.Title)) problems.Add($"Playbook \"{t.Name}\" has a step with no title.");
                 if (s.DueOffsetHours is < 0 or > CaseTemplateStep.MaxDueOffsetHours)
                     problems.Add($"Playbook \"{t.Name}\" step \"{s.Title}\": the due time must be 0 to {CaseTemplateStep.MaxDueOffsetHours:N0} hours.");
             }
+        }
         foreach (var g in incoming.StageGates.Where(g => g.CommentaryMinLength > StageGate.MaxCommentaryMinLength))
             problems.Add($"Stage gate \"{g.Name}\" asks for {g.CommentaryMinLength:N0} characters of commentary; the most is {StageGate.MaxCommentaryMinLength:N0}.");
         if ((incoming.CaseOutcomes ?? []).Any(o => string.IsNullOrWhiteSpace(o.Label)))
@@ -323,6 +617,10 @@ public sealed partial class ConfigBundleService
         // BUG-353: a key longer than its column was refused only at the save, as a generic length error.
         foreach (var d in incoming.DataElements.Where(d => d.Key is { Length: > DataElementService.MaxKeyLength }))
             problems.Add($"Data element \"{d.Label}\" has a key longer than {DataElementService.MaxKeyLength} characters.");
+        // BUG-590: a case keeps its elements' keys in "codes;elements" with the keys comma-separated, so a key holding "," or
+        // ";" (or a space, trimmed off when read) splits into others. Letters, digits, "_" and "-", as the page makes them.
+        foreach (var d in incoming.DataElements.Where(d => !IsElementKey(d.Key)))
+            problems.Add($"Data element \"{d.Label}\" has the key \"{d.Key}\"; a key is letters, digits, \"_\" and \"-\" only.");
         foreach (var o in (incoming.CaseOutcomes ?? []).Where(o => o.Key is { Length: > CaseOutcomeService.MaxKeyLength }))
             problems.Add($"Case outcome \"{o.Label}\" has a key longer than {CaseOutcomeService.MaxKeyLength} characters.");
         if (incoming.CaseOutcomes is { Count: > 0 } outcomes)
@@ -396,11 +694,15 @@ public sealed partial class ConfigBundleService
                 .Select(names => names.Count > 1
                     ? $"{section} \"{string.Join("\" and \"", names)}\" differ only in case."
                     : $"{section}: \"{names[0]}\" appears more than once.");
-        var problems = Check("Case templates", bundle.CaseTemplates, t => t.Name)
+        // C2: settings and roles too (the second of either was written over the first, or hit the unique index), and a rule
+        // code as it's stored (trimmed), so "NY " and "NY" are the same rule.
+        var problems = Check("Settings", bundle.Settings, s => s.Key)
+            .Concat(Check("Roles", bundle.Roles, r => r.Name))
+            .Concat(Check("Case templates", bundle.CaseTemplates, t => t.Name))
             .Concat(Check("Stage gates", bundle.StageGates, g => g.Name))
             .Concat(Check("Report profiles", bundle.ReportProfiles, p => p.Name))
             .Concat(Check("Data elements", bundle.DataElements, d => d.Key))
-            .Concat(Check("Notification rules", bundle.NotificationRules, r => r.Code))
+            .Concat(Check("Notification rules", bundle.NotificationRules, r => r.Code?.Trim()))
             .Concat(Check("Case outcomes", bundle.CaseOutcomes, o => o.Key))
             .ToList();
         if (problems.Count > 0)
@@ -440,334 +742,31 @@ public sealed partial class ConfigBundleService
                 "Confirm it came from a source you trust to import it. Nothing was imported.");
 
         var bundle = WithCommaJurisdictions(envelope.Bundle);   // after the signature check, which covers the bundle as signed
-        var changedSettings = new List<string>();
-        var changedRoles = new List<string>();
-        var addedMappings = new List<string>();
 
         var (templateFiles, _) = await CheckReportTemplatesAsync(bundle, ct);
-        CheckSettings(bundle);
-        CheckNaturalKeys(bundle);
         var liveBefore = await BuildBundleAsync(ct);
-        CheckSingleActiveGates(bundle, liveBefore);
-        CheckItems(bundle, liveBefore);
-        CheckTaxonomy(bundle, liveBefore);
+        CheckBundle(bundle, liveBefore);
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
         var actor = _user.UserId;
-        int added = 0, updated = 0, unchanged = 0;
-        void Tally(bool isNew, bool changed) { if (isNew) added++; else if (changed) updated++; else unchanged++; }
-
-        // --- Settings (whitelisted + taxonomy only) ---
-        var settings = await db.AppSettings.ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
-        foreach (var s in bundle.Settings.Where(IsImportableSetting))
-        {
-            // S-18: validate an operational setting exactly as the settings page does, so a bundle can't write a
-            // value the page would refuse.
-            var value = ImportedValue(s);
-            if (settings.TryGetValue(s.Key, out var row))
-            {
-                var changed = row.Value != value;
-                if (changed) { row.Value = value; row.UpdatedAtUtc = now; row.UpdatedBy = actor; changedSettings.Add(s.Key); }
-                Tally(false, changed);
-            }
-            else
-            {
-                db.AppSettings.Add(new AppSetting { Key = s.Key, Value = value, UpdatedAtUtc = now, UpdatedBy = actor });
-                changedSettings.Add(s.Key);
-                Tally(true, true);
-            }
-        }
-
-        // --- Roles (custom only; system roles are code-owned) ---
-        var roles = await db.Roles.ToListAsync(ct);
-        var adminBefore = AdministerMapped(roles, await db.RoleMappings.AsNoTracking().ToListAsync(ct));
-        foreach (var r in bundle.Roles.Where(r => !r.IsSystem))
-        {
-            // BUG-18: matched regardless of case, like the role directory, so "sysadmin" is SysAdmin, not a new role.
-            var existing = roles.FirstOrDefault(x => string.Equals(x.Name, r.Name, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                if (Role.NameProblem(r.Name) is { } problem) throw new ArgumentException($"Role '{r.Name}': {problem}");
-                db.Roles.Add(new Role { Name = r.Name, Description = r.Description, IsSystem = false,
-                    PermissionsCsv = PermissionNames(r.PermissionsCsv), UpdatedAtUtc = now, UpdatedBy = actor });
-                changedRoles.Add(r.Name);
-                Tally(true, true);
-            }
-            else if (existing.IsSystem) { unchanged++; }   // never touch a system role via import
-            else
-            {
-                var perms = PermissionNames(r.PermissionsCsv);
-                var changed = existing.Description != r.Description
-                              || !existing.GetPermissions().SetEquals(Role.ParsePermissions(perms));
-                if (changed) { existing.Description = r.Description; existing.PermissionsCsv = perms; existing.UpdatedAtUtc = now; existing.UpdatedBy = actor; changedRoles.Add(r.Name); }
-                Tally(false, changed);
-            }
-        }
-
-        // --- AD mappings (existence grants; create if missing) ---
-        var mappings = await db.RoleMappings.ToListAsync(ct);
-        foreach (var raw in bundle.RoleMappings)
-        {
-            // WF-45: as the Roles page: a mapping needs an AD group and a role that exists (one this bundle adds counts),
-            // stored with the role's own spelling. A dormant grant would otherwise wait for a later role of that name.
-            // Skipped as the preview said it would be.
-            var group = (raw.AdGroup ?? "").Trim();
-            if (group.Length == 0) { unchanged++; continue; }
-            var role = db.Roles.Local.FirstOrDefault(x => string.Equals(x.Name, raw.RoleName?.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (role is null) { unchanged++; continue; }
-            var m = raw with { AdGroup = group, RoleName = role.Name };
-            // BUG-136: AD group and role names match ignoring case, as SQL Server's unique index does (and AD itself).
-            var exists = mappings.Any(x => string.Equals(x.AdGroup, m.AdGroup, StringComparison.OrdinalIgnoreCase)
-                                           && string.Equals(x.RoleName, m.RoleName, StringComparison.OrdinalIgnoreCase));
-            if (!exists)
-            {
-                var mapping = new AdGroupRoleMapping { AdGroup = m.AdGroup, RoleName = m.RoleName, UpdatedAtUtc = now, UpdatedBy = actor };
-                db.RoleMappings.Add(mapping);
-                mappings.Add(mapping);   // a bundle that lists the same mapping twice, in two casings, adds it once
-                addedMappings.Add($"{m.AdGroup} → {m.RoleName}");
-                Tally(true, true);
-            }
-            else unchanged++;
-        }
-
-        // BUG-17: the S-17 anti-lockout rule applies to an import too. A bundle whose version of a role drops
-        // Administer must not leave no AD group with administrator access.
-        if (adminBefore && !AdministerMapped(db.Roles.Local, db.RoleMappings.Local))
-            throw new InvalidOperationException("This bundle would remove the last administrator access: no AD group would map to a " +
-                "role with Administer. Grant Administer to a mapped role first, or edit the bundle.");
-
-        // --- Case templates (upsert fields + replace steps wholesale) ---
-        var templates = await db.CaseTemplates.Include(t => t.Steps).ToListAsync(ct);
-        foreach (var t in bundle.CaseTemplates)
-        {
-            var cls = ParseEnum<Classification>(t.DefaultClassification);
-            var sev = ParseEnum<Severity>(t.DefaultSeverity);
-            var existing = templates.FirstOrDefault(x => string.Equals(x.Name, t.Name, StringComparison.OrdinalIgnoreCase));   // BUG-200
-            if (existing is null)
-            {
-                var created = new CaseTemplate { Name = t.Name, Description = t.Description, IsActive = t.IsActive,
-                    SortOrder = t.SortOrder, DefaultClassification = cls, DefaultSeverity = sev,
-                    DefaultDataTypes = t.DefaultDataTypes, SummaryBoilerplate = t.SummaryBoilerplate,
-                    CreatedBy = actor, CreatedAtUtc = now };
-                created.Steps = t.Steps.Select(s => new CaseTemplateStep { TemplateId = created.Id, Order = s.Order,
-                    Title = s.Title, Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours, Kind = s.Kind }).ToList();
-                db.CaseTemplates.Add(created);
-                Tally(true, true);
-            }
-            else if (Canon(t) == Canon(ToConfig(existing))) { unchanged++; }
-            else
-            {
-                existing.Name = t.Name;   // BUG-240: matched ignoring case; take the bundle's, or every import updates it again
-                existing.Description = t.Description; existing.IsActive = t.IsActive; existing.SortOrder = t.SortOrder;
-                existing.DefaultClassification = cls; existing.DefaultSeverity = sev;
-                existing.DefaultDataTypes = t.DefaultDataTypes; existing.SummaryBoilerplate = t.SummaryBoilerplate;
-                existing.ModifiedBy = actor; existing.ModifiedAtUtc = now;
-                db.CaseTemplateSteps.RemoveRange(existing.Steps);
-                existing.Steps.Clear();
-                foreach (var s in t.Steps)
-                    existing.Steps.Add(new CaseTemplateStep { TemplateId = existing.Id, Order = s.Order, Title = s.Title,
-                        Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours, Kind = s.Kind });
-                Tally(false, true);
-            }
-        }
-
-        // --- Stage gates (upsert fields + replace requirements wholesale) ---
-        var gates = await db.StageGates.Include(g => g.Requirements).ToListAsync(ct);
-        foreach (var g in bundle.StageGates)
-        {
-            if (ParseEnum<StageGateTrigger>(g.Trigger) is not { } trigger) continue; // skip an unknown transition
-            var existing = gates.FirstOrDefault(x => string.Equals(x.Name, g.Name, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                var created = new StageGate { Trigger = trigger, IsActive = g.IsActive, Name = g.Name,
-                    Description = g.Description, CommentaryMinLength = StageGate.ClampCommentary(g.CommentaryMinLength),
-                    CreatedBy = actor, CreatedAtUtc = now };
-                created.Requirements = g.Requirements.Select(r => NewRequirement(created.Id, r)).ToList();
-                db.StageGates.Add(created);
-                Tally(true, true);
-            }
-            else if (Canon(g) == Canon(ToConfig(existing))) { unchanged++; }
-            else
-            {
-                existing.Name = g.Name;   // BUG-240: as for case templates
-                existing.Trigger = trigger; existing.IsActive = g.IsActive; existing.Description = g.Description;
-                existing.CommentaryMinLength = StageGate.ClampCommentary(g.CommentaryMinLength);
-                existing.ModifiedBy = actor; existing.ModifiedAtUtc = now;
-                db.StageGateRequirements.RemoveRange(existing.Requirements);
-                existing.Requirements.Clear();
-                foreach (var r in g.Requirements) existing.Requirements.Add(NewRequirement(existing.Id, r));
-                Tally(false, true);
-            }
-        }
-
-        // --- Word templates (PROD-47; match by name, ignoring case; files were checked above) ---
-        var libraryRows = await db.ReportTemplates.ToListAsync(ct);
-        var staged = new List<Reporting.StagedTemplate>();   // BUG-199: put in place only once the import is saved
-        // BUG-238: each staged file's row and what it described before, to put back if the file can't be put in place.
-        var stagedRows = new Dictionary<Reporting.StagedTemplate, (ReportTemplate Row, (string FileName, string Sha256, long Size)? Before)>();
-        // BUG-524: duplicate live names were refused by CheckReportTemplatesAsync when the bundle carries templates (only then
-        // is the library matched by name); an older bundle leaves the library alone, so a duplicate doesn't stop it.
-        var library = new Dictionary<string, ReportTemplate>(StringComparer.OrdinalIgnoreCase);
-        foreach (var row in libraryRows)
-            if (!library.TryAdd(row.Name, row) && bundle.ReportTemplates is not null)
-                throw new InvalidOperationException("This bundle can't be imported. " + DuplicateLiveTemplate(row.Name));
-        foreach (var t in bundle.ReportTemplates ?? [])
-        {
-            var bytes = templateFiles[t.Name];
-            var fileName = Path.GetFileName(t.FileName);
-            if (!library.TryGetValue(t.Name, out var existing))
-            {
-                var created = new ReportTemplate { Name = t.Name, FileName = fileName, IsActive = t.IsActive,
-                    IsLessonsDefault = t.LessonsDefault,
-                    Sha256 = t.Sha256.ToLowerInvariant(), SizeBytes = bytes.LongLength, CreatedBy = actor, CreatedAtUtc = now };
-                var s = await _templateStore!.StageAsync(created.Id, bytes, ct);
-                staged.Add(s);
-                stagedRows[s] = (created, null);
-                db.ReportTemplates.Add(created);
-                library[t.Name] = created;
-                Tally(true, true);
-            }
-            else
-            {
-                var fileChanged = !string.Equals(existing.Sha256, t.Sha256, StringComparison.OrdinalIgnoreCase);
-                var changed = fileChanged || existing.Name != t.Name || existing.FileName != fileName
-                    || existing.IsActive != t.IsActive || existing.IsLessonsDefault != t.LessonsDefault;
-                if (fileChanged)
-                {
-                    var s = await _templateStore!.StageAsync(existing.Id, bytes, ct);
-                    staged.Add(s);
-                    stagedRows[s] = (existing, (existing.FileName, existing.Sha256, existing.SizeBytes));
-                }
-                if (changed) { existing.Name = t.Name; existing.FileName = fileName; existing.IsActive = t.IsActive;
-                    existing.IsLessonsDefault = t.LessonsDefault;
-                    existing.Sha256 = t.Sha256.ToLowerInvariant(); existing.SizeBytes = bytes.LongLength;
-                    existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
-                Tally(false, changed);
-            }
-        }
-
-        // At most one lessons-learned default: when the bundle names one, a live template outside the bundle stops being it.
-        if (bundle.ReportTemplates?.Any(t => t.LessonsDefault) == true)
-            foreach (var other in libraryRows.Where(r => r.IsLessonsDefault
-                         && !bundle.ReportTemplates.Any(t => t.Name.Equals(r.Name, StringComparison.OrdinalIgnoreCase))))
-            {
-                other.IsLessonsDefault = false; other.ModifiedBy = actor; other.ModifiedAtUtc = now;
-            }
-
-        // --- Report profiles ---
-        // A bundle that carries the template library (v3) also sets each profile's default template (null = the built-in
-        // layout). An older bundle leaves defaults as they are.
-        var carriesTemplates = bundle.ReportTemplates is not null;
-        Guid? TemplateIdFor(ConfigReportProfile p) => p.Template is null ? null : library[p.Template].Id;
-        var profiles = await db.ReportProfiles.ToListAsync(ct);
-        foreach (var p in bundle.ReportProfiles)
-        {
-            var existing = profiles.FirstOrDefault(x => string.Equals(x.Name, p.Name, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                db.ReportProfiles.Add(new ReportProfile { Name = p.Name, Description = p.Description, IsActive = p.IsActive,
-                    SortOrder = p.SortOrder, SectionLayout = p.SectionLayout,
-                    TemplateId = carriesTemplates ? TemplateIdFor(p) : null, CreatedBy = actor, CreatedAtUtc = now });
-                Tally(true, true);
-            }
-            else
-            {
-                var templateId = carriesTemplates ? TemplateIdFor(p) : existing.TemplateId;
-                var changed = existing.Name != p.Name || existing.Description != p.Description || existing.IsActive != p.IsActive
-                    || existing.SortOrder != p.SortOrder || existing.SectionLayout != p.SectionLayout
-                    || existing.TemplateId != templateId;
-                // BUG-559: matched ignoring case; take the bundle's name, as case templates and gates do (BUG-240).
-                if (changed) { existing.Name = p.Name; existing.Description = p.Description; existing.IsActive = p.IsActive;
-                    existing.SortOrder = p.SortOrder; existing.SectionLayout = p.SectionLayout; existing.TemplateId = templateId;
-                    existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
-                Tally(false, changed);
-            }
-        }
-
-        // --- Case outcomes (HR-01; match by stable Key; absent from a pre-v4 bundle) ---
-        var outcomeRows = await db.CaseOutcomes.ToListAsync(ct);
-        foreach (var o in bundle.CaseOutcomes ?? [])
-        {
-            var existing = outcomeRows.FirstOrDefault(x => string.Equals(x.Key, o.Key, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                db.CaseOutcomes.Add(new CaseOutcome { Key = o.Key, Label = o.Label, Description = o.Description,
-                    SortOrder = o.SortOrder, IsActive = o.IsActive, IsSystem = false, CreatedBy = actor, CreatedAtUtc = now });   // WF-45: built-ins are seeded, not imported
-                Tally(true, true);
-            }
-            else
-            {
-                var changed = existing.Label != o.Label || existing.Description != o.Description
-                    || existing.SortOrder != o.SortOrder || existing.IsActive != o.IsActive;
-                if (changed) { existing.Label = o.Label; existing.Description = o.Description; existing.SortOrder = o.SortOrder;
-                    existing.IsActive = o.IsActive; existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
-                Tally(false, changed);
-            }
-        }
-
-        // --- Data elements (match by stable Key) ---
-        var elements = await db.DataElements.ToListAsync(ct);
-        var rescoped = new List<string>();
-        foreach (var d in bundle.DataElements)
-        {
-            var existing = elements.FirstOrDefault(x => string.Equals(x.Key, d.Key, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                db.DataElements.Add(new DataElement { Key = d.Key, Label = d.Label,
-                    SortOrder = d.SortOrder, IsActive = d.IsActive, IsSystem = false,   // WF-45: built-ins are seeded, not imported
-                   
-                    NotificationJurisdictions = d.NotificationJurisdictions, CreatedBy = actor, CreatedAtUtc = now });
-                Tally(true, true);
-            }
-            else
-            {
-                var changed = existing.Label != d.Label || existing.SortOrder != d.SortOrder
-                    || existing.IsActive != d.IsActive || existing.NotificationJurisdictions != d.NotificationJurisdictions;
-                if (changed && !string.Equals(existing.NotificationJurisdictions ?? "", d.NotificationJurisdictions ?? "", StringComparison.OrdinalIgnoreCase))
-                    rescoped.Add(existing.Key);   // WF-11
-                if (changed) { existing.Label = d.Label; existing.SortOrder = d.SortOrder; existing.IsActive = d.IsActive;
-                    existing.NotificationJurisdictions = d.NotificationJurisdictions;
-                    existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
-                Tally(false, changed);
-            }
-        }
-
-        // --- Notification rules (match by portable jurisdiction Code; absent on a pre-v2 bundle) ---
-        var rules = await db.NotificationRules.ToListAsync(ct);
-        foreach (var r in bundle.NotificationRules ?? [])
-        {
-            var existing = rules.FirstOrDefault(x => string.Equals(x.Code, r.Code, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                // REV-49: codes are upper-case, as the page saves them.
-                db.NotificationRules.Add(new NotificationRule { Code = r.Code.Trim().ToUpperInvariant(), Label = r.Label.Trim(),
-                    WindowHours = r.WindowHours, IsActive = r.IsActive, IsSystem = false,   // WF-45: built-ins are seeded, not imported
-                    CreatedBy = actor, CreatedAtUtc = now });
-                Tally(true, true);
-            }
-            else
-            {
-                var changed = existing.Label != r.Label || existing.WindowHours != r.WindowHours
-                    || existing.IsActive != r.IsActive;
-                if (changed) { existing.Label = r.Label; existing.WindowHours = r.WindowHours;
-                    existing.IsActive = r.IsActive; existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
-                Tally(false, changed);
-            }
-        }
-
+        var run = new ImportRun();
         try
         {
+            await ApplyAsync(db, bundle, templateFiles, run, dryRun: false, ct);
             // WF-11: as the Data elements page: cases not yet reported are judged on the imported jurisdictions. BUG-390: in
             // the import's own save, so a recheck that fails can't leave the import saved and the cases never rechecked.
-            await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, db.DataElements.Local, actor, now, ct);
+            await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, run.Rescoped, db.DataElements.Local, actor, now, ct);
             await db.SaveChangesAsync(ct);
         }
         catch
         {
-            foreach (var s in staged) await _templateStore!.DiscardAsync(s);
+            foreach (var s in run.Staged) await _templateStore!.DiscardAsync(s);
             throw;
         }
+        var (added, updated, unchanged) = run.Counts();
+        var (staged, stagedRows) = (run.Staged, run.StagedRows);
+        var (changedSettings, changedRoles, addedMappings) = (run.ChangedSettings, run.ChangedRoles, run.AddedMappings);
         // BUG-390: committed, so the settings reload, the role-cache invalidation and the SIEM events happen whatever fails
         // after this point (the template row put back, the audit line), not only when all of it works.
         var notPlaced = new List<string>();
@@ -925,8 +924,12 @@ public sealed partial class ConfigBundleService
         IsBlocking = r.IsBlocking
     };
 
-    private static TEnum? ParseEnum<TEnum>(string? value) where TEnum : struct, Enum =>
-        Enum.TryParse<TEnum>(value, out var v) ? v : null;
+    // BUG-592: by name only. Enum.TryParse read "EscalateToIncident,EscalateToBreach" as CloseCase and stored "4" as a
+    // trigger no gate page shows.
+    private static TEnum? ParseEnum<TEnum>(string? value) where TEnum : struct, Enum => EnumNames.OrNull<TEnum>(value);
+
+    private static bool IsElementKey(string? key) =>
+        !string.IsNullOrEmpty(key) && key.All(c => char.IsLetterOrDigit(c) || c is '_' or '-');
 
     /// <summary>Whether some AD-group mapping grants a role holding Administer (names matched regardless of case).</summary>
     private static bool AdministerMapped(IEnumerable<Role> roles, IEnumerable<AdGroupRoleMapping> mappings)

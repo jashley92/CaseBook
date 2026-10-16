@@ -54,7 +54,8 @@ public static class ReportLayout
         {
             var enabled = !tokenRaw.StartsWith('!');
             var token = enabled ? tokenRaw : tokenRaw[1..].Trim();
-            if (Enum.TryParse<ReportSection>(token, ignoreCase: true, out var section) && seen.Add(section))
+            // BUG-592: by name only; "3" isn't a section (Enum.TryParse read it as EventTimeline, and "99" as no section at all).
+            if (Domain.Common.EnumNames.TryParse<ReportSection>(token, out var section, ignoreCase: true) && seen.Add(section))
                 result.Add(new ReportSectionState(section, enabled));
         }
 

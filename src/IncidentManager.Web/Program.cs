@@ -717,7 +717,7 @@ app.MapGet("/export/improvement-actions.csv", async (
     IClock clock, CancellationToken ct) =>
 {
     var filter = new IncidentManager.Application.Lessons.RegisterFilter(
-        Enum.TryParse<IncidentManager.Application.Lessons.RegisterScope>(scope, ignoreCase: true, out var s)
+        IncidentManager.Domain.Common.EnumNames.TryParse<IncidentManager.Application.Lessons.RegisterScope>(scope, out var s, ignoreCase: true)   // BUG-592
             ? s : IncidentManager.Application.Lessons.RegisterScope.Open,
         null, exercises ?? false);
     var csv = await lessons.ExportRegisterCsvAsync(filter, ct);
@@ -760,7 +760,7 @@ app.MapGet("/export/case-audit.csv", async (
     {
         CaseNumber = @case,
         Actor = string.IsNullOrWhiteSpace(actor) ? null : actor,
-        Action = Enum.TryParse<IncidentManager.Domain.Enums.AuditAction>(action, out var a) ? a : null,
+        Action = IncidentManager.Domain.Common.EnumNames.OrNull<IncidentManager.Domain.Enums.AuditAction>(action),   // BUG-592: "99" isn't an action
         EntityType = string.IsNullOrWhiteSpace(entity) ? null : entity,
         FromUtc = DateOnly.TryParse(from, inv, styles, out var fd)
             ? new DateTimeOffset(fd.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : null,
@@ -792,7 +792,7 @@ app.MapGet("/export/access-log.csv", async (
     {
         Actor = string.IsNullOrWhiteSpace(actor) ? null : actor,
         CaseNumber = string.IsNullOrWhiteSpace(@case) ? null : @case,
-        AccessType = Enum.TryParse<IncidentManager.Domain.Enums.AccessType>(type, out var t) ? t : null,
+        AccessType = IncidentManager.Domain.Common.EnumNames.OrNull<IncidentManager.Domain.Enums.AccessType>(type),   // BUG-592
         RestrictedOnly = string.Equals(restricted, "true", StringComparison.OrdinalIgnoreCase),
         FromUtc = DateOnly.TryParse(from, inv, styles, out var fd)
             ? new DateTimeOffset(fd.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : null,

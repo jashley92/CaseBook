@@ -19,7 +19,7 @@ public sealed class ConfigurationAccessLogPolicy : IAccessLogPolicy
     public ConfigurationAccessLogPolicy(IConfiguration config) => _config = config;
 
     public AccessLogScope Scope =>
-        Enum.TryParse<AccessLogScope>(_config["Access:LogScope"], ignoreCase: true, out var s)
+        Domain.Common.EnumNames.TryParse<AccessLogScope>(_config["Access:LogScope"], out var s, ignoreCase: true)   // BUG-592: by name only
             ? s
             : AccessLogScope.All;
 

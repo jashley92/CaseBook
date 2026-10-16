@@ -23,7 +23,8 @@ public sealed class ConfigurationNotificationDeadlineSettingsProvider : INotific
         {
             var enabled = _config.GetValue<bool?>(Prefix + "Enabled") ?? false;
 
-            var basis = Enum.TryParse<NotificationStartBasis>(_config[Prefix + "StartBasis"], ignoreCase: true, out var b)
+            // BUG-592: by name only; "5" was read as an undefined basis, and no deadline clock started.
+            var basis = Domain.Common.EnumNames.TryParse<NotificationStartBasis>(_config[Prefix + "StartBasis"], out var b, ignoreCase: true)
                 ? b : NotificationStartBasis.Determination;
 
             var defaultWindow = _config.GetValue<int?>(Prefix + "DefaultWindowHours") ?? 72;
