@@ -41,7 +41,7 @@ an optional number) or an **attestation** (a statement the person ticks in the d
 | `MaterialityDetermined` | Passes below Incident; otherwise needs Material or Not material |
 | `LessonsCaptured` | Passes below Incident; otherwise the review has "what happened" and at least one improvement action, or "no actions identified" |
 | `NoOpenTasks` | No open tasks |
-| `NotificationsRecorded` | Passes unless the deadline clock is on, a deadline applies (a data element with notification jurisdictions and a start time) and no reported time is recorded |
+| `NotificationsRecorded` | Passes unless the deadline clock is on, a deadline applies (a start time, and a jurisdiction in play with no notice, judged as the case page judges it: those kept when the case was reported plus those of elements added since) and no reported time is recorded |
 | `EntitiesAssessed` | No entity is left with the verdict **Unknown** ("Assess" goes to the Entities tab; the dialog shows how many are left) |
 
 Rules:
@@ -121,12 +121,14 @@ flowchart LR
   regulators* (Next → *Mark reported…* too) records the same time for every jurisdiction not yet notified. The case
   counts as **reported** (`ReportedAtUtc`) once every jurisdiction in play has a notice, at the latest notice's
   time; that is what reminders, the close gate, archiving and the dashboards check. A data element that brings a
-  new jurisdiction into play makes it unreported again until that regulator is notified. A row's × removes a
+  new jurisdiction into play makes it unreported again until that regulator is notified; one added that brings none
+  in counts as one the case had, so a later admin change to it doesn't bring a regulator in. A row's × removes a
   mis-entered notice; *Clear all notices* removes them all. Milestones "Notified NY" (one per regulator) and
   "Reported to every regulator in play". A case reported before notices were per jurisdiction keeps its single
   reported time, which counts for every jurisdiction.
 - **Reminders**: when `Notifications:DeadlineScan` is on, the incident commander and assignees are emailed once
-  as a deadline becomes at-risk and once when it passes.
+  as a deadline becomes at-risk and once when it passes, for each jurisdiction (regulators on the same deadline share
+  one email; one that joins a deadline already reminded is reminded too).
 - **Closing doesn't stop the clock.** Closed cases with an unrecorded notification keep appearing as "awaiting
   report" until it's recorded. The `NotificationsRecorded` check on the close gate makes recording it a
   requirement for closing.

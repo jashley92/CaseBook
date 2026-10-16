@@ -274,6 +274,7 @@ public sealed class PastPeriodFreezeTests : IDisposable
         ["MoveEventStep"] = "reorders steps through OccurredAtUtc/StepOrder, which EditEventStep's undo covers",
         ["EditNote"] = "analyst notes",
         ["NoticesFromWholeReport"] = "only converts a whole-case report into notices dated at the reported time (no notice moves)",
+        ["KeepElementsWhileReported"] = "adds elements to those a reported case had (BUG-618); the codes kept, notices and reported time don't move",
         ["Restrict"] = "visibility, as Assign",
         ["LiftRestriction"] = "visibility, as Assign",
         ["PlaceLegalHold"] = "legal hold",

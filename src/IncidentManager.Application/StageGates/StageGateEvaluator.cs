@@ -148,16 +148,15 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
             && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled, ct);
 
         // INV-43: a notification clock is running and no report time is recorded — the same trigger and
-        // jurisdiction test as the on-case countdown (NotificationDeadlineService), without the windows.
+        // jurisdiction test as the on-case countdown (NotificationDeadlineService), without the windows. BUG-625: the
+        // jurisdictions in play by the same rule as every other view (what was kept when it was reported), not today's
+        // mapping of every element, which closed a case with a kept regulator still owed and blocked one owing none.
         var notificationPending = false;
         if (_deadlines?.Current is { Enabled: true } nd && c.ReportedAtUtc is null
             && Compliance.NotificationDeadlineService.ResolveStart(nd.StartBasis, c.Classification, c.DetectedAtUtc,
                 c.MatStatus, c.MatDecidedOn, c.MatRecordedAt) is not null)
         {
-            notificationPending = await db.CaseDataElements
-                .Where(d => d.CaseId == caseId)
-                .Join(db.DataElements, d => d.ElementKey, e => e.Key, (d, e) => e.NotificationJurisdictions)
-                .AnyAsync(j => j != null && j != "", ct);
+            notificationPending = await Compliance.NotificationDeadlineService.AnyUnnotifiedAsync(db, caseId, ct);
         }
 
         return new GateCaseFacts(

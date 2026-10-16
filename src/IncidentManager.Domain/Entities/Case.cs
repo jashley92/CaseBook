@@ -188,6 +188,20 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     /// <summary>
+    /// BUG-618: an element added while the case stays reported (it brought no regulator in) counts as one it had (owner
+    /// decision), so a later admin change to that element doesn't put a regulator in play on the case page and register
+    /// while the reminders, dashboard, Desk and close gate (which go by the reported time) see none. Call after
+    /// <see cref="ReportedFromNotices"/>. Too long to hold them, just the codes are kept: then every element counts as had.
+    /// </summary>
+    public void KeepElementsWhileReported()
+    {
+        if (ReportedAtUtc is null || ReportedJurisdictions is not { } kept || KeptElementKeys(kept) is not { } had) return;
+        var current = DataElements.Select(d => d.ElementKey).ToList();
+        if (current.All(k => had.Contains(k, StringComparer.OrdinalIgnoreCase))) return;
+        ReportedJurisdictions = WithElements(kept, had.Concat(current)) ?? kept.Split(';')[0];
+    }
+
+    /// <summary>
     /// BUG-284: a kept value's codes followed by <paramref name="elements"/> ("NY,NJ;SSN,DL"); null when that's too long to
     /// store. BUG-563: also how a kept value from before the elements were recorded gets them.
     /// </summary>

@@ -255,6 +255,27 @@ public sealed class NotificationDeadlineService
             c.ReportedFromNotices(Case.KeptInPlay(c.ReportedJurisdictions, c.DataElements.Select(d => d.ElementKey).ToList(), live), actor, now);
     }
 
+    /// <summary>
+    /// BUG-625: whether a case has a jurisdiction in play with no notice, by the rule every view uses (what was kept when it
+    /// was reported, plus what elements added since bring in: <see cref="Case.KeptInPlay"/>). The close gate's question;
+    /// the caller checks the trigger and the reported time.
+    /// </summary>
+    public static async Task<bool> AnyUnnotifiedAsync(IAppDbContext db, Guid caseId, CancellationToken ct = default)
+    {
+        var c = await db.Cases.AsNoTracking().Where(x => x.Id == caseId)
+            .Select(x => new
+            {
+                x.ReportedJurisdictions,
+                Keys = x.DataElements.Select(d => d.ElementKey).ToList(),
+                Notices = x.JurisdictionNotices.Select(n => n.Jurisdiction).ToList(),
+            })
+            .FirstOrDefaultAsync(ct);
+        if (c is null) return false;
+        var noticed = Case.ByNoticeCode(c.Notices.Select(n => (n, true)));   // BUG-428
+        return Case.KeptInPlay(c.ReportedJurisdictions, c.Keys, Live(await ElementJurisdictionsAsync(db, ct)))
+            .Any(j => !noticed.ContainsKey(j));
+    }
+
     /// <summary>Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.</summary>
     public static async Task<IReadOnlyList<string>> JurisdictionsInPlayAsync(IAppDbContext db, IEnumerable<string> elementKeys,
         CancellationToken ct = default)

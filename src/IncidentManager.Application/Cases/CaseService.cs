@@ -1535,6 +1535,8 @@ public sealed class CaseService
         }
         // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
         c.ReportedFromNotices(after, _user.UserId, now);
+        // BUG-618: still reported (with notices or as a whole), so an element added counts as had.
+        c.KeepElementsWhileReported();
         await db.SaveChangesAsync(ct);
         await FreezeNoticeDuesAsync(id, ct);   // WF-77: notices a BUG-104 conversion recorded
         if (wasReported && c.ReportedAtUtc is null) _deadlineReminders?.ForgetCase(id);   // BUG-156: reminded again

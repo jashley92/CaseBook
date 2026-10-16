@@ -64,6 +64,48 @@ public class CaseUnreportTests
     }
 
     [Fact]
+    public void An_element_added_while_reported_counts_as_had(/* BUG-618 */)
+    {
+        var c = Reported(["NY"]);
+        c.SetImpactAssessment(10, ["EMAIL", "DL"], null, "bob", Now);
+
+        c.KeepElementsWhileReported();
+
+        c.ReportedJurisdictions.Should().Be("NY;DL,EMAIL");
+        Case.KeptInPlay(c.ReportedJurisdictions, ["EMAIL", "DL"], added => added.Contains("DL") ? ["NJ"] : [])
+            .Should().Equal(["NY"], "an admin mapping DL later doesn't bring a regulator in");
+
+        c.SetImpactAssessment(10, ["EMAIL"], null, "bob", Now);   // taken out: still one it had
+        c.KeepElementsWhileReported();
+        c.ReportedJurisdictions.Should().Be("NY;DL,EMAIL");
+    }
+
+    [Fact]
+    public void Elements_added_while_not_reported_stay_added(/* BUG-618 */)
+    {
+        var c = Reported(["NY"]);
+        c.Unreport(["EMAIL"], "bob", Now);
+        c.SetImpactAssessment(10, ["EMAIL", "DL"], null, "bob", Now);
+
+        c.KeepElementsWhileReported();
+
+        c.ReportedJurisdictions.Should().Be("NY;EMAIL", "the case waits on what DL brings in");
+    }
+
+    [Fact]
+    public void Too_many_elements_to_keep_leaves_just_the_codes(/* BUG-618 */)
+    {
+        var c = Reported(["NY"]);
+        var many = Enumerable.Range(0, 120).Select(i => $"ELEMENT{i:D3}").Append("EMAIL").ToList();
+        c.SetImpactAssessment(10, many, null, "bob", Now);
+
+        c.KeepElementsWhileReported();
+
+        c.ReportedJurisdictions.Should().Be("NY");
+        Case.KeptInPlay(c.ReportedJurisdictions, many, _ => ["NJ"]).Should().Equal(["NY"], "every element counts as had");
+    }
+
+    [Fact]
     public void A_case_not_reported_is_left_alone()
     {
         var c = Reported([]);
