@@ -2619,10 +2619,6 @@ else
     // entry has nothing recorded (CancelTimelineEdit clears it), so its time is read as typed.
     private DateTimeOffset KeptWhenUtc() => WallClock.Kept(_tlWhen, _tlWhenShown, _tlWhenRecorded, TimeDisp.Zone);
 
-    /// <summary>C3: WallClock.Kept, for CaseOverviewTab's call until it calls WallClock.Kept itself.</summary>
-    public static DateTimeOffset KeptOrTypedUtc(DateTime typed, DateTime? shown, DateTimeOffset? recorded, TimeZoneInfo zone) =>
-        WallClock.Kept(typed, shown, recorded, zone);
-
     // The arrows show where they can do something: on a step that shares its time with a neighbour, or where either
     // neighbour has no stated time.
     private bool CanReorder(TimelineEntry e)
