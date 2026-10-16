@@ -121,7 +121,11 @@ schema, for use in the organization's own approved AI tool.
 - **Failure:** a scheduled reminder that wasn't delivered isn't marked sent, so the next scan tries it again (BUG-08); a
   breach escalation or integrity alarm is kept in the alert outbox and retried, then shown to administrators as
   undelivered (BUG-101). With email off nothing is marked sent and critical alerts wait in the outbox, so they go out
-  once email is on again (WF-21); the log records recipient counts only.
+  once email is on again (WF-21); the log records recipient counts only. A relay that times out or can't be reached
+  three times in a row within two minutes is backed off (1 minute, doubling to 10) so user actions don't each wait out
+  its timeout; meanwhile reminders and outbox alerts wait for their next try (an outbox retry isn't used up), and an
+  assignment, mention or handoff email is held in memory (up to 500, in order) and sent when the relay answers. Held
+  mail is lost if the app restarts before then; past 500 the newest is dropped and logged (BUG-576, BUG-608).
 - **Testing:** Administration → Notifications → *Send a test email*. Locally, run an SMTP sink such as smtp4dev
   on localhost:25 with `Email:EnableSsl=false`.
 
@@ -135,6 +139,8 @@ schema, for use in the organization's own approved AI tool.
   case)").
 - **Failure and retry:** up to `MaxAttempts` (3) with a 250 ms × attempt back-off. A scheduled reminder's post that still
   fails is tried again at the next scan (WF-20); an event post (an escalation, an assignment) is then dropped and logged.
+  A webhook that fails to answer (or answers 5xx/429) three posts in a row within two minutes is backed off like the
+  mail relay; event posts made meanwhile are dropped and logged.
 - **Limits:** a broadcast channel, not per-user messaging.
 - **Testing:** point the URL at `http://localhost:<port>/` with any request-capture tool.
 

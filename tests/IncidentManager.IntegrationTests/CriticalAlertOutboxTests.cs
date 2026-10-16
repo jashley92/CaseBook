@@ -123,6 +123,31 @@ public sealed class CriticalAlertOutboxTests : IDisposable
     }
 
     [Fact]
+    public async Task A_retry_the_backed_off_relay_never_saw_isnt_counted(/* BUG-608 */)
+    {
+        var outbox = Outbox();
+        _sender.Failing = true;
+        await outbox.SendAsync(AlertDelivery.BreachEscalation, Guid.NewGuid(), "2026-04_Vendor", Message());
+
+        _sender.Deferring = true;   // the relay is backed off: each retry fails fast without trying it
+        for (var i = 0; i < 6; i++)
+        {
+            _clock.UtcNow = _clock.UtcNow.AddHours(1);
+            (await outbox.RetryDueAsync()).Should().Be(0);
+        }
+        await using (var db = Factory().CreateAppDbContext())
+        {
+            var row = await db.AlertDeliveries.AsNoTracking().SingleAsync();
+            row.Retries.Should().Be(0, "no retry reached the relay");
+            row.GaveUpAtUtc.Should().BeNull("six fast-fails used to give it up after four");
+        }
+
+        _sender.Deferring = false;
+        _sender.Failing = false;
+        (await outbox.RetryDueAsync()).Should().Be(1, "it's still due, and goes when the relay answers");
+    }
+
+    [Fact]
     public void Retries_after_a_hold_keep_their_spacing(/* BUG-291 */)
     {
         var t0 = _clock.UtcNow;
@@ -151,6 +176,7 @@ public sealed class CriticalAlertOutboxTests : IDisposable
     private sealed class FlakySender : IEmailSender
     {
         public bool Failing { get; set; }
+        public bool Deferring { get; set; }   // BUG-608: the relay is backed off, so the send is held back untried
         public int Attempts { get; private set; }
         public int? ThrowOnAttempt { get; set; }
 
@@ -158,7 +184,8 @@ public sealed class CriticalAlertOutboxTests : IDisposable
         {
             Attempts++;
             if (Attempts == ThrowOnAttempt) throw new OperationCanceledException("the app is shutting down");
-            if (Failing) DeliveryWatch.ReportFailure();
+            if (Deferring) DeliveryWatch.ReportDeferred();
+            else if (Failing) DeliveryWatch.ReportFailure();
             return Task.CompletedTask;
         }
 

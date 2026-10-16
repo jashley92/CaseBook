@@ -93,8 +93,12 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
             var sent = 0;
             foreach (var a in due)
             {
+                var (delivered, deferred) = await TryRetryAsync(new EmailMessage(a.RecipientList, a.Subject, a.HtmlBody, a.TextBody), ct);
+                // BUG-608: the relay is backed off, so nothing was tried: it stays due (next minute's pass) and none of its four
+                // retries is spent on a send that never reached the relay.
+                if (deferred) continue;
                 a.Retries++;
-                if (await TrySendAsync(new EmailMessage(a.RecipientList, a.Subject, a.HtmlBody, a.TextBody), ct))
+                if (delivered)
                 {
                     a.DeliveredAtUtc = clock.UtcNow;
                     a.NextAttemptAtUtc = null;
@@ -126,10 +130,12 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
     }
 
     // The sender never throws; a watch says whether this send failed.
-    private async Task<bool> TrySendAsync(EmailMessage message, CancellationToken ct)
+    private async Task<bool> TrySendAsync(EmailMessage message, CancellationToken ct) => (await TryRetryAsync(message, ct)).Delivered;
+
+    private async Task<(bool Delivered, bool Deferred)> TryRetryAsync(EmailMessage message, CancellationToken ct)
     {
         using var watch = DeliveryWatch.Begin();
         await email.SendAsync(message, ct);
-        return !watch.Failed;
+        return (!watch.Failed, watch.Deferred);
     }
 }

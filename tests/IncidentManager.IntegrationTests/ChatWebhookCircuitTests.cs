@@ -44,11 +44,19 @@ public sealed class ChatWebhookCircuitTests
         new(hook, new TestOptionsMonitor<ChatOptions>(new ChatOptions { Enabled = true, WebhookUrl = Url, MaxAttempts = 2 }),
             new LiteralSecrets(), NullLogger<ChatWebhookNotifier>.Instance, circuit ?? new OutboundCircuit());
 
+    // BUG-608: backed off on the third failure in a row; the two before the test's first post are taken as read.
+    private static OutboundCircuit TwoFailuresIn()
+    {
+        var circuit = new OutboundCircuit();
+        for (var i = 1; i < OutboundCircuit.FailuresToOpen; i++) circuit.Failed("chat:" + Url);
+        return circuit;
+    }
+
     [Fact]
     public async Task After_the_webhook_stops_answering_posts_fail_fast_and_count_as_undelivered()
     {
         using var hook = new Hook(() => throw new HttpRequestException("connection refused"));
-        var chat = Notifier(hook);
+        var chat = Notifier(hook, TwoFailuresIn());
 
         using (var first = DeliveryWatch.Begin())
         {
@@ -85,7 +93,7 @@ public sealed class ChatWebhookCircuitTests
     {
         var status = HttpStatusCode.ServiceUnavailable;
         using var hook = new Hook(() => new HttpResponseMessage(status));
-        var chat = Notifier(hook);
+        var chat = Notifier(hook, TwoFailuresIn());
 
         await chat.SendAsync(Msg);
         await chat.SendAsync(Msg);

@@ -73,10 +73,14 @@ public sealed class EmailSenderTimeoutTests
         EmailSender.SendTimeout = TimeSpan.FromSeconds(1);
         try
         {
-            var sender = new EmailSender(new Monitor(new EmailOptions
+            var options = new EmailOptions
             {
                 Enabled = true, SmtpHost = "127.0.0.1", SmtpPort = port, EnableSsl = false, From = "casebook@example.test"
-            }), NullLogger<EmailSender>.Instance);
+            };
+            var circuit = new OutboundCircuit();
+            // BUG-608: backed off on the third failure in a row; the two before this one are taken as read.
+            for (var i = 1; i < OutboundCircuit.FailuresToOpen; i++) circuit.Failed(EmailSender.Target(options));
+            using var sender = new EmailSender(new Monitor(options), NullLogger<EmailSender>.Instance, circuit);
 
             using (var first = DeliveryWatch.Begin())
             {

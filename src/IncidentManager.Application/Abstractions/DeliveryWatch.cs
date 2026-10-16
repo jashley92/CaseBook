@@ -73,5 +73,27 @@ public sealed class DeliveryWatch : IDisposable
         for (var w = CurrentWatch.Value; w is not null; w = w._outer) Interlocked.Increment(ref w._failures);
     }
 
+    /// <summary>BUG-608: whether a send now is watched (a scan, an outbox retry), so a failure is tried again by its caller.
+    /// An unwatched one (an email from a user's action) has nobody to try it again.</summary>
+    public static bool Watching => CurrentWatch.Value is not null;
+
+    /// <summary>
+    /// BUG-608: a failure without a try: the channel held the send back (its target is backed off) and nothing was sent.
+    /// Counted as a failure, and as <see cref="Deferred"/>, so an outbox doesn't spend one of its retries on it.
+    /// </summary>
+    public static void ReportDeferred()
+    {
+        for (var w = CurrentWatch.Value; w is not null; w = w._outer)
+        {
+            Interlocked.Increment(ref w._deferred);
+            Interlocked.Increment(ref w._failures);
+        }
+    }
+
+    private int _deferred;
+
+    /// <summary>BUG-608: whether every failure since the watch began was a send held back without being tried.</summary>
+    public bool Deferred => Failed && Volatile.Read(ref _deferred) == Failures;
+
     public void Dispose() => CurrentWatch.Value = _outer;
 }
