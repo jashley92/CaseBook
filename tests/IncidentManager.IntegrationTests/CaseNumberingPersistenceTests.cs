@@ -346,14 +346,14 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
         var c = await svc.CreateAsync(Req("Vendor", Classification.Breach));
         var other = Guid.NewGuid();
         var due = _clock.UtcNow.AddHours(20);
-        reminders.TryMarkNotified(c.Id, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeTrue();
-        reminders.TryMarkNotified(other, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeTrue();
+        reminders.MarkNotified(c.Id, ["NY"], IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().Equal("NY");
+        reminders.MarkNotified(other, ["NY"], IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().Equal("NY");
         await svc.MarkReportedAsync(c.Id, _clock.UtcNow);
 
         await svc.ClearReportedAsync(c.Id);
 
-        reminders.TryMarkNotified(c.Id, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeTrue("its clock runs again");
-        reminders.TryMarkNotified(other, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeFalse("other cases keep theirs");
+        reminders.MarkNotified(c.Id, ["NY"], IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().Equal(["NY"], "its clock runs again");
+        reminders.MarkNotified(other, ["NY"], IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeEmpty("other cases keep theirs");
     }
 
     public void Dispose() => _connection.Dispose();

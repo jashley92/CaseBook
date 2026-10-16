@@ -175,6 +175,70 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_regulator_that_joins_a_clock_already_reminded_is_reminded(/* BUG-619 */)
+    {
+        // Neither NY nor CA has a rule, so both run on the default 72 h window: one clock, same band and due time. The
+        // reminder used to be marked per (case, band, due), so CA, mapped after NY was reminded, never was.
+        await SeedMaterialBreachAsync(hoursAgo: 80);
+        EnableClock();
+        var notifications = new CapturingNotifications();
+        var tracker = new DeadlineReminderTracker();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+        notifications.Received.Single().JurisdictionCodes.Should().Equal("NY");
+
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        notifications.Received.Clear();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1, "California hasn't been reminded");
+        var ca = notifications.Received.Single();
+        ca.JurisdictionCodes.Should().Equal("CA");
+        ca.JurisdictionLabel.Should().Be("CA");
+        ca.State.Should().Be(SlaState.Breached);
+
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(0, "each was reminded once");
+    }
+
+    [Fact]
+    public async Task A_clock_reminded_before_the_upgrade_isnt_reminded_again(/* BUG-619, owner decision */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 80);
+        EnableClock();
+        var due = (await NewDeadlines().EvaluateAsync(id)).Statuses.Single().DueAtUtc;
+        var marks = new InMemoryNotificationMarks();
+        marks.TryAdd(DeadlineIdentity.LegacyKey(id, SlaState.Breached, due));   // as v1.6.12 marked it
+        var tracker = new DeadlineReminderTracker(marks);
+        var notifications = new CapturingNotifications();
+
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(0, "NY was reminded before the upgrade");
+
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+        notifications.Received.Single().JurisdictionCodes.Should().Equal("CA");
+    }
+
+    [Fact]
+    public async Task Removing_one_regulators_notice_reminds_only_that_regulator_again(/* BUG-619 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 80);
+        await SetJurisdictionsAsync("SSN", "NY,NJ,PR");   // none has a rule: one clock
+        EnableClock();
+        var notifications = new CapturingNotifications();
+        var tracker = new DeadlineReminderTracker();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+        notifications.Received.Single().JurisdictionCodes.Should().BeEquivalentTo(["NY", "NJ", "PR"]);
+        CaseService Cases() => new(NewFactory(), _user, _clock, new CaseNumberGenerator(NewContext()), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new StageGateEvaluator(), new TestSlaTargets(),
+            notifySettings: _settings, notifyRules: new NotificationRuleService(NewFactory(), _user, _clock), deadlineReminders: tracker);
+        await Cases().RecordNoticeAsync(id, "PR", _clock.UtcNow);
+        await Cases().RecordNoticeAsync(id, "NJ", _clock.UtcNow);
+
+        await Cases().RemoveNoticeAsync(id, "NJ");   // a mis-entry; PR's notice stands
+
+        notifications.Received.Clear();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+        notifications.Received.Single().JurisdictionCodes.Should().Equal(["NJ"], "NY's clock never stopped, and it was reminded");
+    }
+
+    [Fact]
     public async Task A_reminder_that_failed_to_send_is_sent_again_on_the_next_scan()
     {
         // BUG-08: the reminder used to be marked sent before delivery, so an SMTP outage lost it for good.

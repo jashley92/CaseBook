@@ -92,7 +92,7 @@ public class CaseNotificationsTests
             sent: new InMemoryNotificationMarks());
         var c = NewCase();
         var reminder = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, ["ic1", "a1", "a2"],
-            IncidentManager.Application.Sla.SlaState.AtRisk, "NYDFS", Now.AddHours(10), TimeSpan.FromHours(10));
+            IncidentManager.Application.Sla.SlaState.AtRisk, [new("NY", "NYDFS")], Now.AddHours(10), TimeSpan.FromHours(10));
 
         bool retry;
         using (var watch = DeliveryWatch.Begin())
@@ -109,6 +109,50 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task A_regulator_that_joins_a_clock_already_sent_is_sent_and_only_it(/* BUG-619 */)
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("ic1", "Ina", "ina@insurer.example");
+        var n = new CaseNotifications(sender, TestEmail.Composer(), users, ChatConfig("DeadlineReminders"),
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
+        var c = NewCase();
+        var ny = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, ["ic1"],
+            IncidentManager.Application.Sla.SlaState.Breached, [new("NY", "NYDFS")], Now.AddHours(-8), TimeSpan.FromHours(-8));
+        await n.OnDeadlineApproachingAsync([ny]);
+
+        // CA comes into play on the same clock (the default window): same band, same due time.
+        await n.OnDeadlineApproachingAsync([ny with { Jurisdictions = [new("NY", "NYDFS"), new("CA", "California")] }]);
+
+        sender.Sent.Should().HaveCount(2);
+        sender.Sent[1].HtmlBody.Should().Contain("California: past deadline").And.NotContain("NYDFS");
+        chat.Sent.Should().HaveCount(2, "the channel is told about CA too");
+    }
+
+    [Fact]
+    public async Task A_recipient_sent_a_reminder_before_the_upgrade_isnt_sent_it_again(/* BUG-619, owner decision */)
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("ic1", "Ina", "ina@insurer.example");
+        var marks = new InMemoryNotificationMarks();
+        var n = new CaseNotifications(sender, TestEmail.Composer(), users, TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), new NullChatNotifier(), new FakePrefs(), sent: marks);
+        var c = NewCase();
+        var due = Now.AddHours(-8);
+        // As v1.6.12 marked it for this recipient: no jurisdiction in the key.
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData("ina@insurer.example"u8.ToArray()))[..20];
+        marks.TryAdd($"to|{IncidentManager.Application.Notifications.DeadlineIdentity.LegacyKey(c.Id, IncidentManager.Application.Sla.SlaState.Breached, due)}|{hash}");
+        var ny = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, ["ic1"],
+            IncidentManager.Application.Sla.SlaState.Breached, [new("NY", "NYDFS"), new("NJ", "New Jersey")], due, TimeSpan.FromHours(-8));
+
+        await n.OnDeadlineApproachingAsync([ny]);
+        sender.Sent.Should().BeEmpty("the regulators on that clock were sent to this recipient before");
+
+        await n.OnDeadlineApproachingAsync([ny with { Jurisdictions = [new("CA", "California")] }]);
+        sender.Sent.Should().ContainSingle().Which.HtmlBody.Should().Contain("California: past deadline");
+    }
+
+    [Fact]
     public async Task A_case_with_two_deadlines_needing_attention_lists_both(/* BUG-191 */)
     {
         var sender = new CapturingEmailSender();
@@ -118,8 +162,8 @@ public class CaseNotificationsTests
             sent: new InMemoryNotificationMarks());
         var c = NewCase();
         var ny = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, ["ic1"],
-            IncidentManager.Application.Sla.SlaState.Breached, "NYDFS", Now.AddHours(-8), TimeSpan.FromHours(-8));
-        var ca = ny with { State = IncidentManager.Application.Sla.SlaState.AtRisk, JurisdictionLabel = "California",
+            IncidentManager.Application.Sla.SlaState.Breached, [new("NY", "NYDFS")], Now.AddHours(-8), TimeSpan.FromHours(-8));
+        var ca = ny with { State = IncidentManager.Application.Sla.SlaState.AtRisk, Jurisdictions = [new("CA", "California")],
             DueAtUtc = Now.AddHours(16), Remaining = TimeSpan.FromHours(16) };
 
         await n.OnDeadlineApproachingAsync([ny, ca]);
@@ -140,7 +184,7 @@ public class CaseNotificationsTests
             new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
         var (a, b) = (NewCase(), NewCase());
         var ny = new DeadlineReminder(a.Id, a.CaseNumber, a.Title, a.Severity, ["ic1"],
-            IncidentManager.Application.Sla.SlaState.AtRisk, "NYDFS", Now.AddHours(10), TimeSpan.FromHours(10));
+            IncidentManager.Application.Sla.SlaState.AtRisk, [new("NY", "NYDFS")], Now.AddHours(10), TimeSpan.FromHours(10));
 
         await n.OnDeadlineApproachingAsync([ny, ny with { CaseId = b.Id, CaseNumber = b.CaseNumber }]);
         chat.Sent.Single().Url.Should().Be("https://casebook.example/cases?notify=true", "the at-risk list takes in closed cases still owing a notice");
@@ -162,7 +206,7 @@ public class CaseNotificationsTests
             new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
         var c = NewCase();
         var nobody = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, [],
-            IncidentManager.Application.Sla.SlaState.AtRisk, "NYDFS", Now.AddHours(10), TimeSpan.FromHours(10));
+            IncidentManager.Application.Sla.SlaState.AtRisk, [new("NY", "NYDFS")], Now.AddHours(10), TimeSpan.FromHours(10));
         var noAddress = nobody with { CaseId = Guid.NewGuid(), RecipientUserIds = ["ic1"] };
 
         using (var watch = DeliveryWatch.Begin())

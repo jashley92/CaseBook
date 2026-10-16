@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Notifications;
 using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -361,7 +362,11 @@ public sealed class CaseNotifications : ICaseNotifications
     // WF-20: a scheduled broadcast is watched like a reminder email: when the post fails, the channel's mark is taken back
     // and the items it carried are tried again by the next scan (a Teams 429 during the first breached-deadline scan
     // otherwise lost that post for good).
-    private async Task ChatForAsync<T>(ChatNotification message, List<T> items, Func<T, string> markKey, Func<T, string> itemKey,
+    private Task ChatForAsync<T>(ChatNotification message, List<T> items, Func<T, string> markKey, Func<T, string> itemKey,
+        CancellationToken ct) =>
+        ChatWatchedAsync(message, items, posted => Unsent(posted, markKey, ChatRecipient), itemKey, ct);
+
+    private async Task ChatWatchedAsync<T>(ChatNotification message, List<T> items, Action<List<T>> unsent, Func<T, string> itemKey,
         CancellationToken ct)
     {
         int failures;
@@ -371,7 +376,7 @@ public sealed class CaseNotifications : ICaseNotifications
             failures = send.Failures;
         }
         if (failures == 0) return;
-        Unsent(items, markKey, ChatRecipient);
+        unsent(items);
         DeliveryWatch.Attribute(items.Select(itemKey), failures);
     }
 
@@ -384,8 +389,36 @@ public sealed class CaseNotifications : ICaseNotifications
     private static string DueSoonKey(DueSoonActionItem i) =>
         string.Create(CultureInfo.InvariantCulture, $"duesoon|{i.ActionItemId:N}|{i.DueAtUtc.UtcTicks}");
 
-    private static string DeadlineKey(DeadlineReminder r) =>
-        string.Create(CultureInfo.InvariantCulture, $"deadline|{r.CaseId:N}|{r.State}|{(r.DueAtUtc ?? DateTimeOffset.MinValue).UtcTicks}");
+    // BUG-619: a deadline reminder is marked per jurisdiction it names (DeadlineIdentity), so a regulator that joins a clock
+    // already sent to this recipient is still sent, and one already sent isn't again. Returns each reminder narrowed to the
+    // jurisdictions not yet sent; a legacy mark (no jurisdiction) counts for every one it names.
+    private List<DeadlineReminder> DeadlinesNotYetSentTo(IEnumerable<DeadlineReminder> reminders, string to)
+    {
+        if (_sent is null) return reminders.ToList();
+        var result = new List<DeadlineReminder>();
+        foreach (var r in reminders)
+        {
+            var fresh = DeadlineIdentity.MarkNew(_sent, r.JurisdictionCodes,
+                code => RecipientKey(DeadlineIdentity.Key(r.CaseId, code, r.State, r.DueAtUtc), to),
+                RecipientKey(DeadlineIdentity.LegacyKey(r.CaseId, r.State, r.DueAtUtc), to));
+            if (fresh.Count == r.Jurisdictions.Count) result.Add(r);
+            else if (fresh.Count > 0)
+                result.Add(r with { Jurisdictions = r.Jurisdictions.Where(j => fresh.Contains(j.Code, StringComparer.OrdinalIgnoreCase)).ToList() });
+        }
+        return result;
+    }
+
+    private void DeadlinesUnsent(IEnumerable<DeadlineReminder> reminders, string to)
+    {
+        if (_sent is null) return;
+        foreach (var r in reminders)
+            foreach (var code in r.JurisdictionCodes)
+                _sent.Remove(RecipientKey(DeadlineIdentity.Key(r.CaseId, code, r.State, r.DueAtUtc), to));
+    }
+
+    // A recipient who is both IC and an assignee on the same case gets the same reminder twice.
+    private static string SameReminder(DeadlineReminder r) =>
+        string.Create(CultureInfo.InvariantCulture, $"{r.CaseId:N}|{r.State}|{r.DueAtUtc?.UtcTicks}|{string.Join(",", r.JurisdictionCodes)}");
 
     private static string StaleKey(StaleCaseReminder r) =>
         string.Create(CultureInfo.InvariantCulture, $"stale|{r.CaseId:N}|{r.LastActivityAtUtc.UtcTicks}");
@@ -623,7 +656,7 @@ public sealed class CaseNotifications : ICaseNotifications
         if (reminders.Count == 0) return;
 
         // Chat broadcast (PROD-02): one urgent summary to the shared channel, alongside the per-recipient emails.
-        if (ChatOn("DeadlineReminders") && NotYetSentTo(reminders, DeadlineKey, ChatRecipient) is { Count: > 0 } chatItems)
+        if (ChatOn("DeadlineReminders") && DeadlinesNotYetSentTo(reminders, ChatRecipient) is { Count: > 0 } chatItems)
         {
             var caseCount = chatItems.Select(r => r.CaseId).Distinct().Count();
             var breached = chatItems.Count(r => r.State == SlaState.Breached);
@@ -634,9 +667,9 @@ public sealed class CaseNotifications : ICaseNotifications
                     ? $"{Plural.Of(caseCount, "case")} approaching a deadline."
                     : $"{Plural.Of(chatItems.Count, "deadline")} approaching, across {Plural.Of(caseCount, "case")}.")
                   + " Incident commanders and owners were emailed where reachable.";
-            await ChatForAsync(new ChatNotification(
+            await ChatWatchedAsync(new ChatNotification(
                 "Regulatory notification deadline", detail,
-                DeadlinesUrl(), ChatUrgency.Alert), chatItems, DeadlineKey, r => r.CaseId.ToString(), ct);
+                DeadlinesUrl(), ChatUrgency.Alert), chatItems, posted => DeadlinesUnsent(posted, ChatRecipient), r => r.CaseId.ToString(), ct);
         }
 
         // Group by recipient email, so a person on several at-risk cases gets one reminder listing them all.
@@ -657,10 +690,10 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             // A recipient who is both IC and an assignee on the same case would otherwise see it twice. BUG-191: a case can
             // have more than one clock needing attention (one per deadline), each listed.
-            var ordered = NotYetSentTo(list
-                .DistinctBy(DeadlineKey)
+            var ordered = DeadlinesNotYetSentTo(list
+                .DistinctBy(SameReminder)
                 .OrderBy(r => r.DueAtUtc ?? DateTimeOffset.MaxValue)
-                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), DeadlineKey, to);
+                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), to);
             if (ordered.Count == 0) continue;
 
             // The CTA points at the one case when this recipient's list is a single case, else the case list. BUG-232: one
@@ -678,7 +711,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("notification-deadline", [to], tokens, cta, htmlTokens, ct);
-            if (!await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct)) Unsent(ordered, DeadlineKey, to);
+            if (!await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct)) DeadlinesUnsent(ordered, to);
         }
     }
 

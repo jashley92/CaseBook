@@ -57,7 +57,8 @@ public sealed record DueSoonActionItem(
 /// notification (PROD-37). Carries the resolved recipient user-ids (the incident commander plus the case's
 /// assignees) so the notifier can address them without re-loading, plus the headline jurisdiction's standing
 /// for the email body. <see cref="State"/> is always <see cref="SlaState.AtRisk"/> or
-/// <see cref="SlaState.Breached"/> — the scanner only raises the attention-worthy bands.
+/// <see cref="SlaState.Breached"/> — the scanner only raises the attention-worthy bands. BUG-619: it names the
+/// jurisdictions on that clock it carries, so each is marked as sent on its own.
 /// </summary>
 public sealed record DeadlineReminder(
     Guid CaseId,
@@ -66,9 +67,17 @@ public sealed record DeadlineReminder(
     Severity Severity,
     IReadOnlyList<string> RecipientUserIds,
     SlaState State,
-    string JurisdictionLabel,
+    IReadOnlyList<DeadlineJurisdiction> Jurisdictions,
     DateTimeOffset? DueAtUtc,
-    TimeSpan? Remaining);
+    TimeSpan? Remaining)
+{
+    public IReadOnlyList<string> JurisdictionCodes => Jurisdictions.Select(j => j.Code).ToList();
+
+    public string JurisdictionLabel => string.Join(", ", Jurisdictions.Select(j => j.Label));
+}
+
+/// <summary>BUG-619: a jurisdiction a <see cref="DeadlineReminder"/> is for: its code and how it's shown.</summary>
+public sealed record DeadlineJurisdiction(string Code, string Label);
 
 /// <summary>
 /// An open case that has gone quiet — no recorded activity for longer than its severity's threshold —

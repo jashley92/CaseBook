@@ -1380,10 +1380,15 @@ public sealed class CaseService
         var now = _clock.UtcNow;
         var hadNotices = c.JurisdictionNotices.Count > 0;
         c.RemoveNotice(jurisdiction, _user.UserId, now);
-        if (hadNotices && c.JurisdictionNotices.Count == 0) c.ClearReported(_user.UserId, now);
+        var cleared = hadNotices && c.JurisdictionNotices.Count == 0;
+        if (cleared) c.ClearReported(_user.UserId, now);
         else c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
-        _deadlineReminders?.ForgetCase(id);   // BUG-156: its clock runs again, so it's reminded again
+        // BUG-156: its clock runs again, so it's reminded again. BUG-619: only that regulator's, unless every notice went.
+        if (cleared) _deadlineReminders?.ForgetCase(id);
+        else
+            foreach (var code in Compliance.NotificationDeadlineService.SplitCodes(jurisdiction))   // a legacy "NY;CA" notice
+                _deadlineReminders?.ForgetJurisdiction(id, code);
     }
 
     // WF-11 / BUG-284: what's in play on a case: the jurisdictions kept since it was first reported when there are any,

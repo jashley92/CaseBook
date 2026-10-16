@@ -76,12 +76,15 @@ public sealed class NotificationDeadlineScanner(
             // Jurisdictions on the same clock (band and deadline) share one reminder that names them all.
             foreach (var clock in due[cand.CaseId].GroupBy(s => (s.State, s.DueAtUtc)).OrderBy(g => g.Key.DueAtUtc))
             {
-                // Once per band: a fresh reminder when it enters "at risk" and again if it enters "breached".
-                if (!tracker.TryMarkNotified(cand.CaseId, clock.Key.State, clock.Key.DueAtUtc)) continue;
+                // Once per band: a fresh reminder when it enters "at risk" and again if it enters "breached". BUG-619: per
+                // jurisdiction, so a regulator that joins a clock already reminded is reminded, and only it is named.
+                var fresh = tracker.MarkNotified(cand.CaseId, clock.Select(s => s.JurisdictionCode).ToList(), clock.Key.State, clock.Key.DueAtUtc);
+                if (fresh.Count == 0) continue;
                 reminders.Add(new DeadlineReminder(
-                    cand.CaseId, cand.CaseNumber, cand.CaseTitle, cand.Severity, to,
-                    clock.Key.State, string.Join(", ", clock.Select(s => s.JurisdictionLabel)), clock.Key.DueAtUtc,
-                    clock.First().Remaining));
+                    cand.CaseId, cand.CaseNumber, cand.CaseTitle, cand.Severity, to, clock.Key.State,
+                    clock.Where(s => fresh.Contains(s.JurisdictionCode, StringComparer.OrdinalIgnoreCase))
+                        .Select(s => new DeadlineJurisdiction(s.JurisdictionCode, s.JurisdictionLabel)).ToList(),
+                    clock.Key.DueAtUtc, clock.First().Remaining));
             }
         }
 
@@ -92,7 +95,7 @@ public sealed class NotificationDeadlineScanner(
             await notifications.OnDeadlineApproachingAsync(reminders, ct);
             foreach (var r in reminders.Where(r => watch.ShouldRetry(r.CaseId.ToString())).ToList())
             {
-                tracker.Forget(r.CaseId, r.State, r.DueAtUtc);
+                tracker.Forget(r.CaseId, r.JurisdictionCodes, r.State, r.DueAtUtc);
                 reminders.Remove(r);
             }
         }
