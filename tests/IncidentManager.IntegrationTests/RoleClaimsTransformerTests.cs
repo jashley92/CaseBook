@@ -53,6 +53,25 @@ public sealed class RoleClaimsTransformerTests
         principal.RoleLookups.Should().Be(0, "no role check goes to the directory");
     }
 
+    [WindowsFact]
+    public void A_bare_name_withheld_because_the_servers_domain_isnt_known_yet_leaves_the_answer_incomplete(/* BUG-575, BUG-615 */)
+    {
+        const string sid = "S-1-5-21-1-2-3-1001";
+        var answer = new SidNames.Answer(new Dictionary<string, string> { [sid] = @"CORP\SOC-Managers" }, new HashSet<string>());
+
+        var unknown = RoleClaimsTransformer.Candidates([sid], answer, serverDomainSid: "");
+        unknown.Names.Should().Contain(@"CORP\SOC-Managers").And.NotContain("SOC-Managers", "BUG-188: fail closed");
+        unknown.Complete.Should().BeFalse("the bare name may yet map once the domain is found");
+
+        var own = RoleClaimsTransformer.Candidates([sid], answer, serverDomainSid: "S-1-5-21-1-2-3");
+        own.Names.Should().Contain("SOC-Managers");
+        own.Complete.Should().BeTrue();
+
+        var trusted = RoleClaimsTransformer.Candidates([sid], answer, serverDomainSid: "S-1-5-21-9-9-9");
+        trusted.Names.Should().NotContain("SOC-Managers", "another domain's group matches only a mapping that names it");
+        trusted.Complete.Should().BeTrue("withheld for a known reason, so nothing is missing");
+    }
+
     [Fact]
     public async Task Transforming_again_adds_nothing()
     {

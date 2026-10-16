@@ -29,6 +29,10 @@ public sealed class OutboundTransportRegistryTests
         @"CreateClient\(|new\s+(SmtpClient|UdpClient|TcpClient|HttpClient|Socket)\(|SendMailAsync\(|Dns\.GetHost",
         RegexOptions.None, TimeSpan.FromSeconds(5));
 
+    // `if (... !circuit.TryEnter(...))`: the send is skipped when the circuit says no.
+    private static readonly Regex GatesOnTryEnter = new(@"\bif\s*\([^;{]*!\s*[\w.]+\.TryEnter\(", RegexOptions.None, TimeSpan.FromSeconds(5));
+    private static readonly Regex ReportsFailure = new(@"[\w.]+\.Failed\(\s*\w+\s*\)", RegexOptions.None, TimeSpan.FromSeconds(5));
+
     [Fact]
     public void Every_outbound_transport_backs_off_a_target_that_isnt_answering_or_is_listed()
     {
@@ -46,7 +50,9 @@ public sealed class OutboundTransportRegistryTests
             .ToList();
 
         transports.Should().Contain(t => t.Path.EndsWith("EmailSender.cs", StringComparison.Ordinal));
-        transports.Where(t => !t.Text.Contains("OutboundCircuit", StringComparison.Ordinal) && !NotOnTheUserPath.ContainsKey(t.Path))
+        // BUG-615: naming the type isn't using it. A transport must gate its send on TryEnter's answer and report a
+        // target that didn't answer (Failed); a bypassed TryEnter used to pass here.
+        transports.Where(t => !NotOnTheUserPath.ContainsKey(t.Path) && !(GatesOnTryEnter.IsMatch(t.Text) && ReportsFailure.IsMatch(t.Text)))
             .Select(t => t.Path).Should().BeEmpty("a send to a stalled host would hold every user action that makes one");
         NotOnTheUserPath.Keys.Should().BeSubsetOf(transports.Select(t => t.Path), "a listed transport that's gone is taken off the list");
     }

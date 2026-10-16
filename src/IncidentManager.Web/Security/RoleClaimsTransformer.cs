@@ -103,8 +103,9 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         return Candidates(list, answer, answer.Names.Count > 0 ? await ServerDomainSidAsync() : null);
     }
 
-    // The account name(s) for each group SID resolved: "DOMAIN\Group" and the bare "Group".
-    private static GroupNames Candidates(List<string> values, SidNames.Answer answer, string? serverDomainSid)
+    /// <summary>The account name(s) for each group SID resolved: "DOMAIN\Group" and the bare "Group". Public for a test
+    /// (BUG-615), with <paramref name="serverDomainSid"/> as <see cref="IsLocalToServer"/> takes it.</summary>
+    public static GroupNames Candidates(IReadOnlyList<string> values, SidNames.Answer answer, string? serverDomainSid)
     {
         var complete = answer.Complete;
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
