@@ -80,6 +80,8 @@ jobs:
       # failing gate fails CI on main and PRs (it used to pass, and the release then shipped it).
       # BUG-495: xml:S5734 wants X-Content-Type-Options set in web.config; SecurityHeadersMiddleware sends it on every
       # response (Kestrel and IIS alike), and setting it in IIS too would send the header twice.
+      # csharpsquid:S5332 wants EnableSsl = true on the SmtpClient; EmailSender sets it from Email:EnableSsl, which
+      # defaults to on (S4423) and is turned off only for a relay that does its own TLS. TLS is managed by that setting.
       - name: SonarQube Cloud analysis (begin)
         if: env.SONAR_TOKEN != '' && !startsWith(github.ref, 'refs/tags/')   # analysis is for main and PRs, not tags
         run: >-
@@ -90,9 +92,11 @@ jobs:
           /d:sonar.exclusions="deploy/sql/casebook-schema-sqlserver.sql"
           /d:sonar.cpd.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**"
           /d:sonar.coverage.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**,**/*.razor,src/IncidentManager.Web/Components/**,**/*.ps1,**/*.psm1,**/*.js,**/*.mjs,**/*.py"
-          /d:sonar.issue.ignore.multicriteria=hdr
+          /d:sonar.issue.ignore.multicriteria=hdr,smtp
           /d:sonar.issue.ignore.multicriteria.hdr.ruleKey="xml:S5734"
           /d:sonar.issue.ignore.multicriteria.hdr.resourceKey="**/web.config"
+          /d:sonar.issue.ignore.multicriteria.smtp.ruleKey="csharpsquid:S5332"
+          /d:sonar.issue.ignore.multicriteria.smtp.resourceKey="**/Notifications/EmailSender.cs"
 
       - name: Build
         id: build
