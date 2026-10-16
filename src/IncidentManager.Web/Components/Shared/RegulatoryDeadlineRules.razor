@@ -39,7 +39,7 @@ else
                 </div>
                 <div class="col-auto">
                     <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">@(_editId is null ? "Add rule" : "Save")</button>
-                    @if (_editId is not null)
+                    @if (FormInUse)
                     {
                         <button class="btn btn-sm btn-outline-secondary" @onclick="ResetForm">Cancel</button>
                     }
@@ -136,8 +136,14 @@ else
 
     private async Task LoadAsync() => _all = await Rules.ListAllAsync();
 
+    // The form holds one rule: another rule's edit, or a new rule with something typed in.
+    private bool FormInUse => _editId is not null || !string.IsNullOrEmpty(_code) || !string.IsNullOrEmpty(_label) || _window != 72;
+
     private void BeginEdit(NotificationRuleView r)
     {
+        if (_editId == r.Id) return;   // already open: a second Edit doesn't re-seed over what's typed
+        // BUG-578: Edit on a rule while the form holds another is refused, not written over.
+        if (FormInUse) { Toasts.Info(EditSlot.Refusal("rule")); return; }
         _editId = r.Id;
         _code = r.Code;
         _label = r.Label;

@@ -29,7 +29,6 @@ public partial class EditPreservationTests
     private static readonly Dictionary<string, int> Replacing = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Shared/RegulatoryDeadlineRules.razor"] = 1,   // BeginEdit
     };
 
     // The case workspace's own forms: their text is the workspace's (CaseActionDraft, CloseOutDraft, the header's
