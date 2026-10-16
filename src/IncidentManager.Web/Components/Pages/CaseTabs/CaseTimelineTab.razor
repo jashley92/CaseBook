@@ -389,7 +389,7 @@
                     }
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-when">Occurred (@TimeDisp.Label)</label>
-                        <DateTimeInput id="tl-inv-when" class="form-control form-control-sm" @bind-Value="_tlWhen" />
+                        <DateTimeInput Past="true" id="tl-inv-when" class="form-control form-control-sm" @bind-Value="_tlWhen" />
                         @TimeNudges()
                     </div>
                     <div class="col-md-3">
@@ -1007,7 +1007,7 @@ else
                         <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.AtUtc)</dd>
                     </dl>
                     <label class="form-label small mb-0" for="tl-corr-when">When it happened (@TimeDisp.Label)</label>
-                    <DateTimeInput id="tl-corr-when" class="form-control form-control-sm" @bind-Value="_corrWhen" />
+                    <DateTimeInput Past="true" id="tl-corr-when" class="form-control form-control-sm" @bind-Value="_corrWhen" />
                     <div class="mb-2"><TimeNudges @bind-Value="_corrWhen" Now="@UtcToWall(DateTimeOffset.UtcNow)" /></div>
                     <label class="form-label small mb-0" for="tl-corr-reason">Reason for the correction <span class="text-muted">(required)</span></label>
                     <textarea id="tl-corr-reason" class="form-control form-control-sm" rows="2" maxlength="2000"
@@ -2389,18 +2389,18 @@ else
         @switch (_tlPrecision)
         {
             case TimePrecision.Exact:
-                <DateTimeInput id="tl-atk-when" class="form-control form-control-sm mt-1" aria-label="@($"Date and time ({TimeDisp.Label})")" @bind-Value="_tlWhen" />
+                <DateTimeInput Past="true" id="tl-atk-when" class="form-control form-control-sm mt-1" aria-label="@($"Date and time ({TimeDisp.Label})")" @bind-Value="_tlWhen" />
                 @TimeNudges()
                 break;
             case TimePrecision.Day:
             case TimePrecision.OnOrBefore:
-                <DateInput id="tl-atk-day" class="form-control form-control-sm mt-1" aria-label="Date" @bind-Value="_tlDay" />
+                <DateInput Past="true" id="tl-atk-day" class="form-control form-control-sm mt-1" aria-label="Date" @bind-Value="_tlDay" />
                 break;
             case TimePrecision.Window:
                 <div class="d-flex gap-1 align-items-center mt-1">
-                    <DateInput id="tl-atk-from" class="form-control form-control-sm" aria-label="First date" @bind-Value="_tlDay" />
+                    <DateInput Past="true" id="tl-atk-from" class="form-control form-control-sm" aria-label="First date" @bind-Value="_tlDay" />
                     <span class="small text-muted">to</span>
-                    <DateInput id="tl-atk-until" class="form-control form-control-sm" aria-label="Last date" @bind-Value="_tlUntilDay" />
+                    <DateInput Past="true" id="tl-atk-until" class="form-control form-control-sm" aria-label="Last date" @bind-Value="_tlUntilDay" />
                 </div>
                 break;
             case TimePrecision.NotStated when disclosure:

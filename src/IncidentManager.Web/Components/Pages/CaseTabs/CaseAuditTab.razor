@@ -50,11 +50,11 @@
     </div>
     <div class="col-6 col-md-2">
         <label class="form-label small mb-0" for="audit-from">From (UTC)</label>
-        <DateInput id="audit-from" class="form-control form-control-sm" @bind-Value="State.From" @bind-Value:after="ApplyAuditFilter" />
+        <DateInput Past="true" id="audit-from" class="form-control form-control-sm" @bind-Value="State.From" @bind-Value:after="ApplyAuditFilter" />
     </div>
     <div class="col-6 col-md-2">
         <label class="form-label small mb-0" for="audit-to">To (UTC)</label>
-        <DateInput id="audit-to" class="form-control form-control-sm" @bind-Value="State.To" @bind-Value:after="ApplyAuditFilter" />
+        <DateInput Past="true" id="audit-to" class="form-control form-control-sm" @bind-Value="State.To" @bind-Value:after="ApplyAuditFilter" />
     </div>
 </div>
 

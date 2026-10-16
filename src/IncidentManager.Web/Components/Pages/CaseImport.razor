@@ -335,7 +335,7 @@ else if (_pending.Count > 0)
                                     }
                                     else
                                     {
-                                        <DateTimeInput TValue="DateTime" class="form-control form-control-sm" aria-label="When (UTC)"
+                                        <DateTimeInput Past="true" TValue="DateTime" class="form-control form-control-sm" aria-label="When (UTC)"
                                                        Value="@t.OccurredAtUtc.UtcDateTime" ValueChanged="v => SetOccurred(t, v)" />
                                     }
                                     @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }

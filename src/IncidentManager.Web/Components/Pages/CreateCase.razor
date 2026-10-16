@@ -157,12 +157,12 @@
                    matter was actually detected, not when the case is being filed. *@
                 <div class="col-md-4">
                     <label class="form-label" for="nc-detected">Detected (@TimeDisp.Label) <span class="text-danger">*</span></label>
-                    <DateTimeInput id="nc-detected" class="form-control" @bind-Value="_detectedWall"
+                    <DateTimeInput Past="true" id="nc-detected" class="form-control" @bind-Value="_detectedWall"
                            title="When the activity was first detected or reported, not when the case was filed. Starts the response SLA clock." />
                 </div>
                 <div class="col-md-4">
                     <label class="form-label" for="nc-occurred">Initial activity <span class="text-muted">(optional)</span></label>
-                    <DateTimeInput id="nc-occurred" class="form-control" @bind-Value="_occurredWall"
+                    <DateTimeInput Past="true" id="nc-occurred" class="form-control" @bind-Value="_occurredWall"
                            title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                 </div>
 

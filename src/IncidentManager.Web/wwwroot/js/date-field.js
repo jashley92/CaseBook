@@ -15,17 +15,24 @@ window.imDateField = (function () {
         s.onInput = function () {
             const v = el.value;
             if (v === '' && el.validity && el.validity.badInput) return;   // mid-edit: one segment cleared
+            if (outOfRange(el, v)) return;   // BUG-606: mid-edit (a year half typed, "0202") or outside the field's years
             if (v === s.last) return;
             s.last = v;
             dotnet.invokeMethodAsync('Changed', v).catch(function () { /* circuit gone */ });
         };
         s.onBlur = function () {
-            if (el.value === '' && el.validity && el.validity.badInput && s.last) el.value = s.last;
+            if (((el.value === '' && el.validity && el.validity.badInput) || outOfRange(el, el.value)) && s.last) el.value = s.last;
         };
         el.addEventListener('input', s.onInput);
         el.addEventListener('change', s.onInput);
         el.addEventListener('blur', s.onBlur);
         state.set(el, s);
+    }
+
+    // BUG-606: a value before the field's min or after its max. Same-format ISO text compares in date order.
+    function outOfRange(el, v) {
+        if (!v) return false;
+        return (el.min && v < el.min) || (el.max && v.slice(0, el.max.length) > el.max);
     }
 
     // The server's value changed (a nudge button, a reset, an entry loaded to edit): show it, unless it's already shown.

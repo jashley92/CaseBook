@@ -341,7 +341,7 @@ else
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label small mb-0" for="task-done-when">Completed at (@TimeDisp.Label)</label>
-                                    <DateTimeInput id="task-done-when" class="form-control form-control-sm" @bind-Value="_doneWhen" />
+                                    <DateTimeInput Past="true" id="task-done-when" class="form-control form-control-sm" @bind-Value="_doneWhen" />
                                     @* BUG-480 sibling: Shifted stops at year 1 and 9999 instead of throwing. *@
                                     <div class="tl-nudges" role="group" aria-label="Adjust the time">
                                         <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = ToWall(Clock.UtcNow)">Now</button>

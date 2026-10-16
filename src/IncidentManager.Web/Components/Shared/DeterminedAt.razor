@@ -9,7 +9,7 @@
     now = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMinute));
 }
 <label class="form-label small mb-0" for="@Id">When was it determined? (@TimeDisp.Label)</label>
-<DateTimeInput TValue="DateTime?" id="@Id" class="form-control form-control-sm" Value="@(Value ?? now)" ValueChanged="Changed" />
+<DateTimeInput Past="true" TValue="DateTime?" id="@Id" class="form-control form-control-sm" Value="@(Value ?? now)" ValueChanged="Changed" />
 <TimeNudges Value="@(Value ?? now)" ValueChanged="Changed" Now="@now" />
 <div class="form-text @(Backdated ? "text-warning-emphasis" : "")">
     @(Backdated

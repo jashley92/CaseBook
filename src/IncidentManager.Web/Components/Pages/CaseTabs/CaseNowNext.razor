@@ -62,7 +62,7 @@
                     <div class="im-nn-mark">
                         <label class="form-label small mb-0" for="nn-reported-at">Reported to regulators at (@TimeDisp.Label)</label>
                         <div class="d-flex gap-2">
-                            <DateTimeInput id="nn-reported-at" class="form-control form-control-sm" @bind-Value="_reportedAt" />
+                            <DateTimeInput Past="true" id="nn-reported-at" class="form-control form-control-sm" @bind-Value="_reportedAt" />
                             <button type="button" class="btn btn-sm btn-primary" disabled="@_saving" @onclick="MarkReported">Save</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _marking = false">Cancel</button>
                         </div>

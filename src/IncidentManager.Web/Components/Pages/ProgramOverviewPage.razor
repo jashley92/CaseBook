@@ -54,11 +54,11 @@
     <form id="po-custom" class="po-custom" @onsubmit="ApplyCustom" @onsubmit:preventDefault>
         <div>
             <label class="form-label small mb-0" for="po-from">From</label>
-            <DateInput id="po-from" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_from" />
+            <DateInput Past="true" id="po-from" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_from" />
         </div>
         <div>
             <label class="form-label small mb-0" for="po-to">To</label>
-            <DateInput id="po-to" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_to" />
+            <DateInput Past="true" id="po-to" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @bind-Value="_to" />
         </div>
         <button type="submit" class="btn btn-sm btn-primary">Show</button>
         <span class="po-custom-hint">Both days included, in the reporting time zone. It's compared with the same number of

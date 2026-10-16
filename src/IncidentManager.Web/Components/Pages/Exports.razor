@@ -83,8 +83,8 @@
                     <div class="dl-name">Compliance evidence bundle <span class="dl-fmt">ZIP</span></div>
                     <div class="dl-desc">The tamper-evident audit-chain segment for a date range, its covering integrity seals and a verification report, packaged for a regulator or examiner. Defaults to year-to-date.</div>
                     <div class="dl-range">
-                        <label class="form-label small mb-0">From <DateInput class="form-control form-control-sm" @bind-Value="_from" /></label>
-                        <label class="form-label small mb-0">To <DateInput class="form-control form-control-sm" @bind-Value="_to" /></label>
+                        <label class="form-label small mb-0">From <DateInput Past="true" class="form-control form-control-sm" @bind-Value="_from" /></label>
+                        <label class="form-label small mb-0">To <DateInput Past="true" class="form-control form-control-sm" @bind-Value="_to" /></label>
                     </div>
                 </div>
                 <a class="btn btn-sm btn-outline-primary dl-btn" href="@ComplianceHref()" download>

@@ -19,6 +19,39 @@ public abstract class DateFieldBase<TValue> : ComponentBase, IAsyncDisposable
     [Parameter] public EventCallback<TValue?> ValueChanged { get; set; }
     [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
 
+    /// <summary>
+    /// BUG-606: a field for when something happened (detected, occurred, decided, reported, a filter over past records): it
+    /// offers dates up to today. Otherwise (a due date, a target, an expiry) up to <see cref="YearsAhead"/> years ahead.
+    /// Every date field starts at <see cref="Earliest"/>. A min or max the page sets itself wins.
+    /// </summary>
+    [Parameter] public bool Past { get; set; }
+
+    public static readonly DateTime Earliest = new(1970, 1, 1);
+    public const int YearsAhead = 20;
+
+    [Inject] private IncidentManager.Application.Abstractions.IClock Clock { get; set; } = default!;
+
+    /// <summary>False for a time-only field, which has no date to bound.</summary>
+    protected virtual bool HasDate => true;
+
+    /// <summary>The input's attributes: the page's, plus the date range (BUG-606) where the page set none.</summary>
+    protected IReadOnlyDictionary<string, object>? Attributes
+    {
+        get
+        {
+            if (!HasDate) return AdditionalAttributes;
+            var all = AdditionalAttributes is null
+                ? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, object>(AdditionalAttributes, StringComparer.OrdinalIgnoreCase);
+            // Today in any time zone: a day's slack past UTC's today, so a wall-clock "now" east of UTC is never refused.
+            var today = Clock.UtcNow.UtcDateTime.Date;
+            var latest = Past ? today.AddDays(1).AddMinutes(24 * 60 - 1) : today.AddYears(YearsAhead);
+            all.TryAdd("min", Text(Earliest));
+            all.TryAdd("max", Text(latest));
+            return all;
+        }
+    }
+
     protected static readonly bool IsNullable = Nullable.GetUnderlyingType(typeof(TValue)) is not null;
     protected static readonly Type Underlying = Nullable.GetUnderlyingType(typeof(TValue)) ?? typeof(TValue);
 
