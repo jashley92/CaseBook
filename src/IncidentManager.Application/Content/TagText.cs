@@ -25,7 +25,7 @@ public static partial class TagText
     public static string? ToEditable(string? markdown, IDictionary<string, string> refs) =>
         markdown is null ? null : Link().Replace(markdown, m =>
         {
-            var label = m.Groups["label"].Value;
+            var label = MarkdownText.UnescapeLabel(m.Groups["label"].Value);   // C13: as the reader sees it
             Remember(refs, label, m.Groups["ref"].Value);
             return $"[[{label}]]";
         });
@@ -67,7 +67,7 @@ public static partial class TagText
                 if (hit.Id == Guid.Empty) hit = list.FirstOrDefault(e => Same(e.Value, name));
                 target = hit.Id != Guid.Empty ? $"entity:{hit.Id}" : null;
             }
-            return target is null ? m.Value : $"[{label}]({target})";
+            return target is null ? m.Value : $"[{MarkdownText.LinkLabel(label)}]({target})";
         });
     }
 
@@ -100,7 +100,7 @@ public static partial class TagText
             if (display is null) continue;
             var tag = Writable(label) && named[label!] == 1 ? label
                 : Writable(value) && named[value] == 1 ? value : null;
-            var link = $"[{display}](entity:{e.Id})";
+            var link = $"[{MarkdownText.LinkLabel(display)}](entity:{e.Id})";
             tags.Add((e.Id, string.IsNullOrWhiteSpace(label) ? e.Value : label, tag is not null ? $"[[{tag}]]" : link, link));
         }
         return tags;

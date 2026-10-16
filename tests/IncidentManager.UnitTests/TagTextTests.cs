@@ -107,4 +107,23 @@ public class TagTextTests
         }
         TagText.RefLabels(["a", "A", "b"]).Should().Be("a\nb");
     }
+
+    [Fact]
+    public void A_label_with_a_backslash_saves_as_a_link_that_still_renders_and_round_trips(/* C13 */)
+    {
+        // A trailing backslash escaped the link's closing bracket, so [C:\Temp\](entity:..) rendered as raw text.
+        var path = Guid.Parse("5d6c3a2b-1111-4a5b-8c9d-0e1f2a3b4c5d");
+        (Guid, string?, string)[] entities = [(path, null, @"C:\Temp\")];
+
+        var md = TagText.FromEditable(@"Dropped in [[C:\Temp\]] first.", new Dictionary<string, string>(), entities);
+
+        md.Should().Be($@"Dropped in [C:\\Temp\\](entity:{path}) first.");
+        var html = new MarkdownService().ToHtml(md, Guid.NewGuid());
+        html.Should().Contain("im-entity-tag").And.Contain(@"C:\Temp\").And.NotContain("entity:");
+        var refs = new Dictionary<string, string>();
+        var editable = TagText.ToEditable(md, refs);
+        editable.Should().Be(@"Dropped in [[C:\Temp\]] first.");
+        TagText.FromEditable(editable, refs, entities).Should().Be(md);
+        TagText.PickerTags(entities).Single().Link.Should().Be($@"[C:\\Temp\\](entity:{path})");
+    }
 }
