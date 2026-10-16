@@ -75,6 +75,9 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     /// </summary>
     public string? PendingChangeReason { get; set; }
 
+    /// <summary>C18: see <see cref="IAppDbContext.PendingUpkeep"/>. Not persisted; read and cleared by the interceptor.</summary>
+    public bool PendingUpkeep { get; set; }
+
     // SaveChangesAsync(CancellationToken) is inherited from DbContext and satisfies IAppDbContext; both save paths below
     // check column lengths first.
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

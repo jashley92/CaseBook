@@ -10,8 +10,8 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// WF-11: a case reported before CaseBook recorded which jurisdictions were in play gets them now, so a later change to a
 /// data element's jurisdictions doesn't reopen or re-judge it. Its notices name them when it has any (it was reported
 /// once each was notified); otherwise today's settings are the best record there is. A no-op once every reported case has
-/// them. Runs at start-up, as the system. WF-93: written straight to the column (it's derived and kept out of the canonical),
-/// not as an audited change: an audited one counted as "1 change after closure by system" on every closed reported case.
+/// them. Runs at start-up, as the system. WF-93: an audited change counted as "1 change after closure by system" on every
+/// closed reported case; BUG-631: it's in the row hash now, so it's audited as CaseBook's upkeep, which isn't counted.
 /// BUG-563: with the data elements the case has (BUG-284); and a kept value written before the elements were recorded gets
 /// them too, so wherever what's in play is read, an element added since is told apart from one the case had.
 /// BUG-589: a kept value damaged by a code that held ";" before BUG-404 ("NY;CA", "NY;CA;SSN") is repaired first.
@@ -31,10 +31,31 @@ public static class ReportedJurisdictionsBackfill
             var frozen = string.Join(',', codes.Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
             frozen = Case.WithElements(frozen, c.DataElements.Select(d => d.ElementKey)) ?? frozen;
-            await db.Cases.Where(x => x.Id == c.Id && x.ReportedJurisdictions == null)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.ReportedJurisdictions, frozen), ct);
+            await WriteAsync(db, c.Id, null, frozen, ct);
         }
         return cases.Count + await RepairDamagedAsync(db, ct) + await KeepElementsAsync(db, ct);
+    }
+
+    /// <summary>
+    /// BUG-631: the kept value is in the case's row hash (format 4), so it's written as an audited change, CaseBook's
+    /// upkeep (IntegrityUpkeep: not counted as a change after closure, WF-93, or anywhere else), rather than straight to
+    /// the column, which left it changeable unseen. Only while it still holds <paramref name="expected"/>, as the
+    /// one-statement update did. The case is read with what its hash covers (its data elements).
+    /// </summary>
+    private static async Task<int> WriteAsync(AppDbContext db, Guid id, string? expected, string value, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        var row = await db.Cases.Include(x => x.DataElements).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (row is null || !string.Equals(row.ReportedJurisdictions, expected, StringComparison.Ordinal)) return 0;
+        row.ReportedJurisdictions = value;
+        db.PendingUpkeep = true;
+        try { await db.SaveChangesAsync(ct); }
+        finally
+        {
+            db.PendingUpkeep = false;
+            db.ChangeTracker.Clear();
+        }
+        return 1;
     }
 
     // BUG-589: before BUG-404 a code could hold ";", so a codes-only value "NY;CA" read as code NY and element CA, and one
@@ -54,9 +75,7 @@ public static class ReportedJurisdictionsBackfill
         foreach (var c in cases)
         {
             if (Repaired(c.Kept, known) is not { } fixedValue || fixedValue == c.Kept) continue;
-            var (id, kept) = (c.Id, c.Kept);
-            written += await db.Cases.Where(x => x.Id == id && x.ReportedJurisdictions == kept)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.ReportedJurisdictions, fixedValue), ct);
+            written += await WriteAsync(db, c.Id, c.Kept, fixedValue, ct);
         }
         return written;
     }
@@ -122,8 +141,7 @@ public static class ReportedJurisdictionsBackfill
             var had = c.DataElements.Select(d => d.ElementKey)
                 .Where(k => c.ReportedAtUtc is not null || live([k]).All(j => codes.Contains(j, StringComparer.OrdinalIgnoreCase)));
             if (Case.WithElements(kept, had) is not { } withElements) continue;
-            written += await db.Cases.Where(x => x.Id == c.Id && x.ReportedJurisdictions == kept)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.ReportedJurisdictions, withElements), ct);
+            written += await WriteAsync(db, c.Id, kept, withElements, ct);
         }
         return written;
     }

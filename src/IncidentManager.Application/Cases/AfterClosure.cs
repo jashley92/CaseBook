@@ -90,6 +90,8 @@ public static class AfterClosure
         var numbers = await NumbersHeldAsync(db, caseId, c.CaseNumber, ct);
         var rows = await db.AuditLog.AsNoTracking()
             .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.AtUtc > closedAt && !NotTheCaseRecord.Contains(a.EntityType)
+                        // C18: nor CaseBook's own upkeep (a kept value filled in, a row hash recorded at the upgrade).
+                        && a.Reason != Integrity.IntegrityUpkeep.Reason
                         // WF-93: the v1.5.8-v1.6.2 start-up back-fill of the reported jurisdictions wasn't a change to the record.
                         && !(a.Actor == "system" && a.EntityType == nameof(Case) && a.Action == AuditAction.Update
                              && a.AfterJson != null && a.AfterJson.Contains("\"ReportedJurisdictions\"")))

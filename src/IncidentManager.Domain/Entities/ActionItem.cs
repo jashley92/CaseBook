@@ -73,6 +73,8 @@ public class ActionItem : AuditableEntity, IHashableEntity
         // INV-28: likewise what it's about, only when set.
         if (AboutRef is { } about) content = string.Join('|', content, "about", about);
         // HR-02: likewise who completed it, only when set.
-        return CompletedBy is { Length: > 0 } by ? string.Join('|', content, "by", by) : content;
+        if (CompletedBy is { Length: > 0 } by) content = string.Join('|', content, "by", by);
+        // C18: from format 4, when the completion was recorded (BUG-364: a late record is shown as late), only when set.
+        return content + Canonical.Since(4, CompletionRecordedAtUtc is not null, () => "|recorded|" + Canonical.Time(CompletionRecordedAtUtc));
     }
 }

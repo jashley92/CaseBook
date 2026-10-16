@@ -48,7 +48,8 @@ public sealed class ActivityFeedService
         // WF-99: under every number the case has held, so a promotion since doesn't hide what was done before it.
         var numbers = await Cases.AfterClosure.NumbersHeldAsync(db, caseId, number, ct);
         var rows = await db.AuditLog.AsNoTracking()
-            .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.Actor != me && a.AtUtc > sinceUtc)
+            .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.Actor != me && a.AtUtc > sinceUtc
+                        && a.Reason != Integrity.IntegrityUpkeep.Reason)   // C18: CaseBook's upkeep isn't a change anyone made
             .Select(a => a.Actor)
             .ToListAsync(ct);
         return (rows.Count, rows.Distinct().Select(a => _users.DisplayFor(a)).ToList());
@@ -78,7 +79,7 @@ public sealed class ActivityFeedService
         var me = _user.UserId;
         var rows = await (from a in db.AuditLog.AsNoTracking()
                           join c in scoped on a.CaseNumber equals c.CaseNumber
-                          where !othersOnly || a.Actor != me
+                          where (!othersOnly || a.Actor != me) && a.Reason != Integrity.IntegrityUpkeep.Reason   // C18
                           orderby a.Sequence descending
                           select new FeedRow(a.Sequence, a.AtUtc, a.Actor, a.Action, a.EntityType, a.Summary, a.CaseNumber, c.Id))
                          .Take(take * 2)
@@ -92,7 +93,8 @@ public sealed class ActivityFeedService
         long? floor = rows.Count >= take * 2 ? rows.Min(r => r.Sequence) : null;
         var former = await db.AuditLog.AsNoTracking()
             .Where(a => (floor == null || a.Sequence > floor) && a.CaseNumber != null
-                        && !db.Cases.Any(c => c.CaseNumber == a.CaseNumber) && (!othersOnly || a.Actor != me))
+                        && !db.Cases.Any(c => c.CaseNumber == a.CaseNumber) && (!othersOnly || a.Actor != me)
+                        && a.Reason != Integrity.IntegrityUpkeep.Reason)
             .OrderByDescending(a => a.Sequence)
             .Select(a => new FeedRow(a.Sequence, a.AtUtc, a.Actor, a.Action, a.EntityType, a.Summary, a.CaseNumber, Guid.Empty))
             .Take(take * 2)

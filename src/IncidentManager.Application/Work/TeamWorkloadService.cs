@@ -38,7 +38,9 @@ public sealed class TeamWorkloadService
                 c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.CreatedAtUtc,
                 // REV-15: last activity is the newest audit entry for the case, as the stale-case reminder reads it. The
                 // case row's modified time doesn't move for notes, timeline entries, tasks or hand-offs.
-                LastAudit = db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc),
+                // C18: not CaseBook's upkeep, which isn't work on the case.
+                LastAudit = db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber && a.Reason != Integrity.IntegrityUpkeep.Reason)
+                    .Max(a => (DateTimeOffset?)a.AtUtc),
                 Workers = c.Assignments
                     .Where(a => a.Role != CaseAssignmentRole.Observer)
                     .Select(a => new WorkloadWorker(a.UserId, a.UserDisplayName, a.Role == CaseAssignmentRole.IncidentCommander))

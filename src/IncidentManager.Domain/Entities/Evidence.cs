@@ -28,7 +28,8 @@ public class Evidence : AuditableEntity, IHashableEntity
     {
         var content = string.Join('|',
             CaseId, Canonical.Text(OriginalFileName), Canonical.Text(ContentType), SizeBytes, Sha256, CreatedBy, CreatedAtUtc.ToString("o"));
-        return Canonical.AtLeast(3) ? string.Join('|', content, Canonical.Text(Description)) : content;   // BUG-316: and its description
+        // BUG-316: and its description (C18: an earlier format falls short only of one that's set).
+        return content + Canonical.From(3, Description is not null, () => "|" + Canonical.Text(Description));
     }
 }
 

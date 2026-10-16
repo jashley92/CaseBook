@@ -92,8 +92,8 @@ public class Case : AuditableEntity, IHashableEntity
     public bool LegalHold { get; set; }
 
     // F-12: a pending request to release the legal hold, awaiting a second person's approval (when the org turns
-    // two-person release on). Audited like any change, but deliberately outside the row-hash canonical: it is a
-    // workflow state, not case content, and adding it there would re-baseline every existing case's hash.
+    // two-person release on). Audited like any change. BUG-632: in the canonical from format 4 (only when set, so no
+    // other case re-baselines): a request planted in the database let its "requester" approve the release alone.
     public string? LegalHoldReleaseRequestedBy { get; private set; }
     public DateTimeOffset? LegalHoldReleaseRequestedAtUtc { get; private set; }
     public string? LegalHoldReleaseReason { get; private set; }
@@ -120,7 +120,9 @@ public class Case : AuditableEntity, IHashableEntity
     /// brings in a new regulator, a notice is removed), so today's settings don't come back in full, and removing the
     /// element added by mistake puts the case back to reported. Only clearing every notice (a mis-entry) empties it. Null
     /// for a case never reported, and for one reported before it was recorded (back-filled at start-up). BUG-563: a value
-    /// from before the elements were recorded gets them at start-up, and before the elements next change. Derived from the notices and the reported time, which are hashed; kept out of the canonical.
+    /// from before the elements were recorded gets them at start-up, and before the elements next change. BUG-631: it
+    /// decides which regulators a reported case owes, so it's in the canonical from format 4 (when set), and the start-up
+    /// back-fills are audited changes.
     /// </summary>
     public string? ReportedJurisdictions { get; set; }
 
@@ -2063,7 +2065,13 @@ public class Case : AuditableEntity, IHashableEntity
         // HR-01: the outcome only when one is recorded, so existing rows keep their exact hash.
         + (OutcomeKey is { Length: > 0 } outcome ? "|outcome|" + outcome : "")
         // BUG-165: likewise a containment-not-needed decision.
-        + (ContainmentNotNeededReason is { } why ? "|containmentnotneeded|" + Canonical.Text(why) : "");
+        + (ContainmentNotNeededReason is { } why ? "|containmentnotneeded|" + Canonical.Text(why) : "")
+        // BUG-631: from format 4, the jurisdictions kept in play when it was reported (which regulators it owes).
+        + Canonical.Since(4, ReportedJurisdictions is not null, () => "|reportedin|" + Canonical.Text(ReportedJurisdictions))
+        // BUG-632: and a pending legal-hold release request, whose requester can't be the one who approves it.
+        + Canonical.Since(4, LegalHoldReleaseRequestedBy is not null || LegalHoldReleaseRequestedAtUtc is not null || LegalHoldReleaseReason is not null,
+            () => "|holdrelease|" + Canonical.Text(LegalHoldReleaseRequestedBy) + "|" + Canonical.Time(LegalHoldReleaseRequestedAtUtc)
+                  + "|" + Canonical.Text(LegalHoldReleaseReason));
 
     public static string FormatCaseNumber(int year, int sequence, string descriptiveName)
         => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{year:0000}-{sequence:00}_{descriptiveName}");

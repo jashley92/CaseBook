@@ -34,6 +34,10 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         typeof(UserDisplayPreference) // per-user theme / sidebar / time / density — display preference, not case data
     ];
 
+    /// <summary>C18: whether saves of <paramref name="type"/> are audited (a writer that goes around the interceptor
+    /// leaves no trail of them, so AuditedWriterBypassTests refuses one).</summary>
+    public static bool IsAudited(Type type) => typeof(Entity).IsAssignableFrom(type) && !NotAudited.Contains(type);
+
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
 
     // BUG-113: a case whose only change is its concurrency token (renewed because something on it changed) isn't a change
@@ -275,6 +279,12 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         {
             reason = string.IsNullOrWhiteSpace(app.PendingChangeReason) ? null : app.PendingChangeReason.Trim();
             app.PendingChangeReason = null;
+            var upkeep = app.PendingUpkeep;
+            app.PendingUpkeep = false;
+            // C18: upkeep is left out of every view of who changed what, so a reason typed to read like it is refused.
+            if (IntegrityUpkeep.Mimics(reason))
+                throw new ArgumentException("That reason is reserved for CaseBook's own upkeep. Word it differently. Nothing was saved.");
+            if (upkeep) reason = IntegrityUpkeep.Reason;
             // REV-03: the audit lines are added after ColumnLengthGuard has run, so their reason is checked here: SQLite
             // would keep a longer one and SQL Server would refuse the whole save.
             if (reason is { Length: > MaxReason })

@@ -72,5 +72,11 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     /// </summary>
     string? PendingChangeReason { get; set; }
 
+    /// <summary>
+    /// C18: the save about to be made is CaseBook keeping its own records (<see cref="Integrity.IntegrityUpkeep"/>): its
+    /// update entries carry the upkeep reason. Set immediately before the save; the interceptor clears it.
+    /// </summary>
+    bool PendingUpkeep { get; set; }
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

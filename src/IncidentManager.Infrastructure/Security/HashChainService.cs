@@ -32,16 +32,15 @@ public sealed class HashChainService : IHashChainService
     }
 
     // BUG-24: new row hashes are over the escaped canonical and say which format; older ones are checked as written.
-    // BUG-316: format 3 adds the fields the earlier formats left out.
+    // BUG-316: format 3 adds the fields the earlier formats left out. C18: format 4 the stored values they still did.
     public string ComputeRowHash(IHashableEntity entity) =>
-        Canonical.V3Prefix + Hash(Canonical.InFormat(Canonical.CurrentFormat, entity.BuildCanonicalContent));
+        Canonical.PrefixOf(Canonical.CurrentFormat) + Hash(Canonical.InFormat(Canonical.CurrentFormat, entity.BuildCanonicalContent));
 
     public bool RowHashMatches(IHashableEntity entity, string stored)
     {
-        var (format, prefix) = stored.StartsWith(Canonical.V3Prefix, StringComparison.Ordinal) ? (3, Canonical.V3Prefix)
-            : stored.StartsWith(Canonical.V2Prefix, StringComparison.Ordinal) ? (2, Canonical.V2Prefix)
-            : (1, "");
-        return string.Equals(prefix + Hash(Canonical.InFormat(format, entity.BuildCanonicalContent)), stored, StringComparison.OrdinalIgnoreCase);
+        var format = Canonical.FormatOf(stored);
+        return string.Equals(Canonical.PrefixOf(format) + Hash(Canonical.InFormat(format, entity.BuildCanonicalContent)), stored,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     public void ChainAppend(AuditLogEntry entry, AuditLogEntry? previous)

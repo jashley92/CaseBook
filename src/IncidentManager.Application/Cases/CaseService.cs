@@ -511,9 +511,12 @@ public sealed class CaseService
         CaseSort.CaseNumber => desc ? q.OrderByDescending(c => c.CaseNumber) : q.OrderBy(c => c.CaseNumber),
         // REV-15: the latest work on the case, from its audit trail. The case row's own modified time doesn't move for a
         // note, a timeline entry, a task or a hand-off.
+        // C18: CaseBook's upkeep isn't work on the case.
         CaseSort.Updated => desc
-            ? q.OrderByDescending(c => db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc) ?? c.CreatedAtUtc)
-            : q.OrderBy(c => db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc) ?? c.CreatedAtUtc),
+            ? q.OrderByDescending(c => db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber && a.Reason != Integrity.IntegrityUpkeep.Reason)
+                .Max(a => (DateTimeOffset?)a.AtUtc) ?? c.CreatedAtUtc)
+            : q.OrderBy(c => db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber && a.Reason != Integrity.IntegrityUpkeep.Reason)
+                .Max(a => (DateTimeOffset?)a.AtUtc) ?? c.CreatedAtUtc),
         _ => desc ? q.OrderByDescending(c => c.CreatedAtUtc) : q.OrderBy(c => c.CreatedAtUtc),
     };
 

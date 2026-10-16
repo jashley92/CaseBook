@@ -187,7 +187,7 @@ public sealed class NotificationDeadlineService
         var open = await cases.SelectMany(c => c.JurisdictionNotices).Where(n => n.DueAtUtc == null)
             .Select(n => new { n.Id, n.CaseId, n.Jurisdiction })
             .ToListAsync(ct);
-        var filled = 0;
+        var toFill = new Dictionary<Guid, DateTimeOffset>();
         foreach (var n in open)
         {
             // BUG-456: a legacy notice coded "NY;CA" covers each code (BUG-428), and one kept deadline is read for every code
@@ -198,11 +198,22 @@ public sealed class NotificationDeadlineService
             if (codes.Count == 0 || !codes.All(byCode.ContainsKey)) continue;
             var codeDues = codes.Select(code => byCode[code]).Distinct().ToList();
             if (codeDues.Count != 1) continue;
-            DateTimeOffset? due = codeDues[0];
-            var noticeId = n.Id;
-            filled += await db.JurisdictionNotices
-                .Where(x => x.Id == noticeId && x.DueAtUtc == null)
-                .ExecuteUpdateAsync(u => u.SetProperty(x => x.DueAtUtc, due), ct);
+            toFill[n.Id] = codeDues[0];
+        }
+
+        // BUG-630: the kept deadline is in the notice's row hash, so it's written as an audited change (CaseBook's upkeep,
+        // which no view counts as a change to the case), not straight to the column, which made the notice fail its hash
+        // and left a moved deadline unseen.
+        var filled = 0;
+        foreach (var chunk in toFill.Keys.Chunk(200))
+        {
+            var rows = await db.JurisdictionNotices.Where(x => chunk.Contains(x.Id) && x.DueAtUtc == null).ToListAsync(ct);
+            foreach (var row in rows) row.DueAtUtc = toFill[row.Id];
+            if (rows.Count == 0) continue;
+            db.PendingUpkeep = true;
+            try { await db.SaveChangesAsync(ct); }
+            finally { db.PendingUpkeep = false; }
+            filled += rows.Count;
         }
         return filled;
     }

@@ -61,7 +61,8 @@ public sealed class StaleCaseScanner(
             .Where(c => !c.IsArchived && c.Phase != CasePhase.Closed)
             .Select(c => new Candidate(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander, c.CreatedAtUtc,
-                db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc),
+                // C18: CaseBook's upkeep (a start-up fill, the row-hash upgrade) isn't activity on the case.
+                db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber && a.Reason != Integrity.IntegrityUpkeep.Reason).Max(a => (DateTimeOffset?)a.AtUtc),
                 c.IsRestricted, c.Assignments.Select(a => a.UserId).ToList()))
             .ToListAsync(ct);
 

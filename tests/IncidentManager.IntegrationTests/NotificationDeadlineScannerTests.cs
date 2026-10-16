@@ -581,8 +581,10 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
 
         await using var check = NewContext();
         (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("NY;SSN");   // BUG-563
-        // WF-93: not an audited change, which counted as a change after closure on every closed reported case.
-        (await check.AuditLog.LongCountAsync()).Should().Be(auditBefore);
+        // WF-93 / BUG-631: an audited change (the kept set is in the row hash now), as CaseBook's upkeep, which isn't
+        // counted as a change after closure (IntegrityUpkeepTests).
+        (await check.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).Skip((int)auditBefore).Select(a => a.Reason).ToListAsync())
+            .Should().Equal(Application.Integrity.IntegrityUpkeep.Reason);
         (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(check)).Should().Be(0);
     }
 
@@ -624,6 +626,46 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         await using var check = NewContext();
         (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("CA,NY;SSN");   // BUG-563: with the elements
         (await check.JurisdictionNotices.AsNoTracking().SingleAsync()).Jurisdiction.Should().Be("NY;CA", "the hashed row isn't rewritten");
+    }
+
+    [Fact]
+    public async Task A_kept_deadline_is_recorded_with_the_notices_hash_and_one_moved_later_is_caught(/* BUG-630 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await SetJurisdictionsAsync("SSN", "NY");
+        await using (var db = NewContext())
+        {
+            db.JurisdictionNotices.Add(new JurisdictionNotice
+            {
+                CaseId = id, Jurisdiction = "NY", NotifiedAtUtc = _clock.UtcNow.AddHours(-1), CreatedBy = "alice", CreatedAtUtc = _clock.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+        (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(1);
+
+        async Task<Application.Integrity.RowIntegrityVerifier.RowMismatch?> VerifyAsync()
+        {
+            await using var db = NewContext();
+            var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+            return await Application.Integrity.RowIntegrityVerifier.VerifyAsync(db, _hasher, chain);
+        }
+        await using (var db = NewContext())
+        {
+            var noticeId = (await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).Id.ToString();
+            var last = await db.AuditLog.AsNoTracking().Where(a => a.EntityId == noticeId).OrderByDescending(a => a.Sequence).FirstAsync();
+            last.Reason.Should().Be(Application.Integrity.IntegrityUpkeep.Reason, "an audited change, CaseBook's upkeep");
+            last.AfterJson.Should().Contain(nameof(JurisdictionNotice.DueAtUtc));
+        }
+        (await VerifyAsync())?.Detail.Should().BeNull("the notice's hash covers the deadline it was given");
+
+        // The deadline moved past the notice in the database, turning a missed one into one met (or the other way).
+        await using (var db = NewContext())
+            await db.JurisdictionNotices.Where(n => n.CaseId == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(n => n.DueAtUtc, _clock.UtcNow.AddDays(30)));
+        var bad = await VerifyAsync();
+        bad!.EntityType.Should().Be(nameof(JurisdictionNotice));
+        bad.Detail.Should().Contain("no longer matches its hash");
     }
 
     [Fact]

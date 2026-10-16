@@ -21,13 +21,15 @@ public class JurisdictionNotice : AuditableEntity, IHashableEntity
     /// <summary>
     /// WF-77: the regulator's deadline as it stood when the notice was recorded (the rule's window from the clock's start
     /// then), so whether the notice was on time doesn't change when a rule's window or the materiality decision changes
-    /// later. Null where no clock ran, or for a notice recorded before it was kept (filled at start-up). Derived from the
-    /// rules, so kept out of the canonical, as <see cref="Case.ReportedJurisdictions"/> is.
+    /// later. Null where no clock ran, or for a notice recorded before it was kept (filled at start-up). BUG-630: it decides
+    /// whether the notice was on time, so it's in the canonical from format 4 (when set), and the start-up fill is an
+    /// audited change.
     /// </summary>
     public DateTimeOffset? DueAtUtc { get; set; }
 
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, Jurisdiction, NotifiedAtUtc.ToString("o"), CreatedBy, CreatedAtUtc.ToString("o"));
+        CaseId, Jurisdiction, NotifiedAtUtc.ToString("o"), CreatedBy, CreatedAtUtc.ToString("o"))
+        + Canonical.Since(4, DueAtUtc is not null, () => "|due|" + Canonical.Time(DueAtUtc));
 }

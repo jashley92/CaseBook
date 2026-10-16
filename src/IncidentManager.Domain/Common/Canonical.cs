@@ -23,8 +23,18 @@ public static class Canonical
     /// </summary>
     public const string V3Prefix = "v3:";
 
+    /// <summary>
+    /// C18: starts a row hash over a format-4 canonical: format 3 plus stored values the earlier formats left out (a
+    /// note's and an attack step's lineage, a notice's kept deadline, a case's kept jurisdictions and legal-hold release
+    /// request, a task's completion stamp), each folded in only when set, so a record without them builds what format 3
+    /// built. Reports are hashed from this format. The start-up upgrade (RowHashUpgrade) moves every record its stored
+    /// hash doesn't cover to this format; after it, a hash in an earlier format that leaves out a set value is a change
+    /// made outside CaseBook (<see cref="Covers"/>).
+    /// </summary>
+    public const string V4Prefix = "v4:";
+
     /// <summary>The format row hashes are written in.</summary>
-    public const int CurrentFormat = 3;
+    public const int CurrentFormat = 4;
 
     /// <summary>Whether the canonical being built is in <paramref name="format"/> or later (an entity adds the fields
     /// that format brought in only then).</summary>
@@ -32,21 +42,67 @@ public static class Canonical
 
     [ThreadStatic] private static int t_format;
 
+    // C18: set while building when the record holds a value a later format brought in that this format leaves out.
+    [ThreadStatic] private static bool t_leftOut;
+
     /// <summary>A free-text field: escaped in format 2, as it is in the first format.</summary>
     public static string? Text(string? value) =>
         t_format >= 2 && value is not null && value.AsSpan().IndexOfAny('\\', '|') >= 0
             ? value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("|", "\\|", StringComparison.Ordinal)
             : value;
 
-    /// <summary>Builds a canonical in the given format (1, 2 or 3). Canonicals are built synchronously, so the format is
+    /// <summary>
+    /// C18: a part <paramref name="format"/> brought in: built from that format on, and nothing before it.
+    /// <paramref name="holdsValue"/> says whether the record holds a value the part records, so a hash in an earlier
+    /// format falls short of the record only then (<see cref="Covers"/>).
+    /// </summary>
+    public static string From(int format, bool holdsValue, Func<string> part)
+    {
+        if (t_format >= format) return part();
+        if (holdsValue) t_leftOut = true;
+        return "";
+    }
+
+    /// <summary>C18: a part <paramref name="format"/> brought in that's folded in only when <paramref name="isSet"/>, so
+    /// a record without it builds the same canonical in that format as before it.</summary>
+    public static string Since(int format, bool isSet, Func<string> part) => isSet ? From(format, true, part) : "";
+
+    /// <summary>Builds a canonical in the given format (1 to 4). Canonicals are built synchronously, so the format is
     /// per thread.</summary>
     public static string InFormat(int format, Func<string> build)
     {
-        var previous = t_format;
+        var (previous, left) = (t_format, t_leftOut);
         t_format = format;
         try { return build(); }
-        finally { t_format = previous; }
+        finally { (t_format, t_leftOut) = (previous, left); }
     }
+
+    /// <summary>
+    /// C18: whether a hash in <paramref name="format"/> covers everything the record holds: false when the record has a
+    /// value a later format brought in, which a hash in this one can't show was changed.
+    /// </summary>
+    public static bool Covers(int format, Func<string> build)
+    {
+        var (previous, left) = (t_format, t_leftOut);
+        t_format = format;
+        t_leftOut = false;
+        try
+        {
+            build();
+            return !t_leftOut;
+        }
+        finally { (t_format, t_leftOut) = (previous, left); }
+    }
+
+    /// <summary>The format a stored row hash was written in, from its prefix (none: the first).</summary>
+    public static int FormatOf(string storedHash) =>
+        storedHash.StartsWith(V4Prefix, StringComparison.Ordinal) ? 4
+        : storedHash.StartsWith(V3Prefix, StringComparison.Ordinal) ? 3
+        : storedHash.StartsWith(V2Prefix, StringComparison.Ordinal) ? 2
+        : 1;
+
+    /// <summary>The prefix a row hash in <paramref name="format"/> starts with.</summary>
+    public static string PrefixOf(int format) => format switch { 4 => V4Prefix, 3 => V3Prefix, 2 => V2Prefix, _ => "" };
 
     public static string Time(DateTimeOffset t) => t.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 

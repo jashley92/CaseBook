@@ -180,6 +180,16 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
         // BUG-413: a retraction, folded in only when there is one (no re-baseline).
         if (RetractedAtUtc is { } retracted)
             content = string.Join('|', content, "retracted", Canonical.Time(retracted), RetractedBy, Canonical.Text(RetractReason));
+
+        // C18: from format 4, what the branches above leave out, each only when set: an attack step's (or a first
+        // version's) lineage, and attack fields on an investigation entry.
+        var lineageIn = Kind != TimelineKind.Event && Version > 1;
+        content += Canonical.Since(4, !lineageIn && (Version != 1 || SupersedesEntryId is not null),
+            () => "|lin|" + Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + SupersedesEntryId);
+        if (Kind != TimelineKind.Event)
+            content += Canonical.Since(4, TechniqueId is not null || ActorEntityId is not null || TargetEntityId is not null || Tactics.Count > 0,
+                () => "|step|" + Canonical.Text(TechniqueId) + "|" + ActorEntityId + "|" + TargetEntityId + "|"
+                      + string.Join(',', Tactics.Select(t => (int)t.Tactic).OrderBy(x => x)));
         return content;
     }
 }

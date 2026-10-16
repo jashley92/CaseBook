@@ -43,7 +43,8 @@ public class CaseEntity : AuditableEntity, IHashableEntity
     {
         var content = string.Join('|',
             CaseId, (int)Type, Canonical.Text(Value), Canonical.Text(Label), (int)Disposition, Canonical.Text(Description), Canonical.Text(Source), CreatedBy, CreatedAtUtc.ToString("o"));
-        return Canonical.AtLeast(3) ? string.Join('|', content, Canonical.Num(Tlp), IsPinned) : content;   // BUG-316
+        // BUG-316. C18: a hash in an earlier format falls short only of a marking or pin that's set.
+        return content + Canonical.From(3, Tlp is not null || IsPinned, () => "|" + Canonical.Num(Tlp) + "|" + IsPinned);
     }
 }
 

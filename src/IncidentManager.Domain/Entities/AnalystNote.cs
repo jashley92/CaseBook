@@ -32,6 +32,9 @@ public class AnalystNote : AuditableEntity, IHashableEntity
     public string BuildCanonicalContent()
     {
         var content = string.Join('|', CaseId, Version, Canonical.Text(Body), CreatedBy, CreatedAtUtc.ToString("o"));
-        return MentionsCsv.Length == 0 ? content : string.Join('|', content, "mentions", MentionsCsv);
+        if (MentionsCsv.Length > 0) content = string.Join('|', content, "mentions", MentionsCsv);
+        // BUG-622: from format 4, the version it replaced, so unlinking a version (and putting the earlier wording back as
+        // current) shows.
+        return content + Canonical.Since(4, SupersedesNoteId is not null, () => "|sup|" + SupersedesNoteId);
     }
 }
