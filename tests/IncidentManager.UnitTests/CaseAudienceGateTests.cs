@@ -53,10 +53,11 @@ public partial class CaseAudienceGateTests
         ["CampaignService.cs:ResolveMemberIdsAsync"] = (2, "walks the whole link graph, then keeps the visible component only (ForUser), so a restricted case never bridges two"),
         // Case helpers and services called for a case already checked
         ["AfterClosure.cs:QueryAsync"] = (2, "its callers (ActivityFeedService, ReportService) checked the case through ForUser first"),
+        ["NotificationDeadlineService.cs:AnyUnnotifiedAsync"] = (1, "safe by its caller only: StageGateEvaluator.BuildFactsAsync, which CaseService runs for a case it has already checked (CanSeeAsync / LoadTrackedAsync); returns a bool, nothing of the case"),
         ["NotificationDeadlineService.cs:EvaluateAsync"] = (1, "safe by its callers only: the case overview (a case the workspace loaded through scoping) and SetArchivedAsync (after LoadTrackedAsync)"),
         ["NotificationDeadlineService.cs:FreezeNoticeDuesAsync"] = (2, "a back-fill of notice deadlines (start-up, and CaseService for a case it has just saved); returns a count only"),
         ["NotificationDeadlineService.cs:RecheckUnreportedAsync"] = (1, "inside an administrator's save (the data elements page, a config import); rechecks every unreported case, returns nothing"),
-        ["StageGateEvaluator.cs:BuildFactsAsync"] = (11, "the gates are evaluated through CaseService after CanSeeAsync / ForUser / LoadTrackedAsync for the case"),
+        ["StageGateEvaluator.cs:BuildFactsAsync"] = (10, "the gates are evaluated through CaseService after CanSeeAsync / ForUser / LoadTrackedAsync for the case"),
         ["EvidenceService.cs:RecordTransferAsync"] = (1, "after LoadScopedAsync for the evidence; reads its own case's number"),
         ["EvidenceService.cs:GetCustodyAsync"] = (1, "the evidence's case is checked through ForUser before anything is returned"),
         ["ReportService.cs:StoreAsync"] = (1, "private: its callers checked the case through ForUser"),

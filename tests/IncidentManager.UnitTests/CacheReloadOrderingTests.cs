@@ -18,6 +18,7 @@ public partial class CacheReloadOrderingTests
     // Reload sites that store without an order, by class and method, with why that's safe. Each must still be found.
     private static readonly Dictionary<string, string> Reviewed = new(StringComparer.Ordinal)
     {
+        ["EmailSender.DrainHeldAsync"] = "stores drain bookkeeping (next due, failure count, the held-since-empty flag) under _gate; the queue itself is the HeldEmails table, read fresh on each pass, so no older read of it is ever published",
         ["UserDirectory.TouchAsync"] = "stores the entry it has just written (the caller's values), not a read, under _swap",
         // A hosted service's one loop stores when its last cycle ran: a clock time, not stored state, and one cycle at a time.
         ["DigestHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
