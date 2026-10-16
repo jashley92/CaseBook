@@ -107,11 +107,15 @@ public sealed class IntegrityService
     // BUG-257: with full false, and a check kept from a recent cycle, only the entries written since are read and hashed
     // (on from where the kept verifier stopped); every record is still checked against the kept map. Otherwise the
     // whole chain is read from the start. Either way, what's checked is kept for the next cycle.
-    private async Task<ChainVerificationResult> CheckAsync(bool full, CancellationToken ct)
+    private Task<ChainVerificationResult> CheckAsync(bool full, CancellationToken ct) =>
+        GatedAsync(() => CheckCoreAsync(full: _state is null || full, ct), ct);
+
+    // BUG-257: one check at a time (the kept state is the gate's); a failed one forgets what it kept.
+    private async Task<T> GatedAsync<T>(Func<Task<T>> run, CancellationToken ct)
     {
-        if (_state is null) return await CheckCoreAsync(full: true, ct);
+        if (_state is null) return await run();
         await _state.Gate.WaitAsync(ct);
-        try { return await CheckCoreAsync(full, ct); }
+        try { return await run(); }
         catch
         {
             _state.Forget();
@@ -176,8 +180,22 @@ public sealed class IntegrityService
 
     private async Task<ChainVerificationResult> TrackAsync(bool full, CancellationToken ct)
     {
-        var result = await CheckAsync(full, ct);
+        // C18 (minor, from C21's sweep): the check, the seal check and recording the outcome happen under the check's
+        // gate, so of two checks (the monitor and "Verify now") the one that ran last is the one recorded: an older
+        // result landing after a newer one flipped the banner and could raise the alarm twice. The alarm itself goes
+        // out after the gate is released, so a slow mail relay doesn't hold up the next check.
+        var (result, raise) = await GatedAsync(async () =>
+        {
+            var checkedNow = await CheckCoreAsync(full: _state is null || full, ct);
+            checkedNow = await WithSealAsync(checkedNow, ct);
+            return (checkedNow, _monitor.RecordResult(checkedNow, _clock.UtcNow));
+        }, ct);
+        if (raise) await _alerts.OnChainBrokenAsync(result, ct);
+        return result;
+    }
 
+    private async Task<ChainVerificationResult> WithSealAsync(ChainVerificationResult result, CancellationToken ct)
+    {
         // VerifyAsync is the unkeyed self-consistency check — a tamperer who recomputes every hash would
         // pass it. The signed seals are the independent anchor, but they were only ever checked on demand
         // (a manual "verify seal" / a compliance export). Verify the most-covering seal here too, so a
@@ -185,9 +203,6 @@ public sealed class IntegrityService
         // automatically on the monitor's cadence, not only when someone happens to run a manual check (S-05).
         if (result.IsValid && await VerifyLatestSealAsync(ct) is { } sc && !sc.Result.IsValid)
             result = ChainVerificationResult.Broken(sc.Sequence, "Seal check failed: " + sc.Result.Detail);
-
-        if (_monitor.RecordResult(result, _clock.UtcNow))
-            await _alerts.OnChainBrokenAsync(result, ct);
         return result;
     }
 

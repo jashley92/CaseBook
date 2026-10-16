@@ -7,8 +7,11 @@
       IntegritySeals        signed seals over the audit chain head
       ChainOfCustodyEvents  evidence custody history
 
-  CaseBook already makes these tamper-evident in the application (hash chain +
-  signed seals). The ledger adds an engine-level control underneath: SQL Server
+  CaseBook makes the first two tamper-evident in the application (hash chain +
+  signed seals). Custody events are not in the hash chain (an evidence transfer
+  is also written to the audit trail, other custody events are not), so for
+  them the ledger is the only tamper evidence. The ledger adds an engine-level
+  control underneath: SQL Server
   rejects UPDATE and DELETE on these tables for every principal, including
   db_owner and sysadmin, and keeps a cryptographic digest of every insert. A
   digest exported off the server (Export-LedgerDigest.ps1) later proves the

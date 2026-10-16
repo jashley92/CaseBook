@@ -837,8 +837,9 @@ public sealed class ReportService
         var review = await db.PostIncidentReviews.AsNoTracking().FirstOrDefaultAsync(x => x.CaseId == caseId, ct);
         var actions = Lessons.LessonsService.Ordered(
             await db.ImprovementActions.AsNoTracking().Where(x => x.CaseId == caseId).ToListAsync(ct)).ToList();
-        var canonical = string.Join('\n',
-            new[] { review?.BuildCanonicalContent() ?? "" }.Concat(actions.Select(a => a.BuildCanonicalContent())));
+        // C18: each part in the current canonical format (text escaped), as row hashes are.
+        var canonical = Domain.Common.Canonical.InFormat(Domain.Common.Canonical.CurrentFormat, () => string.Join('\n',
+            new[] { review?.BuildCanonicalContent() ?? "" }.Concat(actions.Select(a => a.BuildCanonicalContent()))));
 
         // The long fields are Markdown (edited like Notes/Summary): the review keeps its formatting as blocks;
         // action details/outcome sit in table cells, so they print as list-aware plain text.
@@ -867,7 +868,9 @@ public sealed class ReportService
         ReportExtras? extras = null)
     {
         var taskResults = extras?.TaskResults ?? new Dictionary<Guid, TaskResult>();
-        var contentHash = _hasher.Hash(c.BuildCanonicalContent());
+        // C18: the case's row hash as CaseBook computes it (current format, prefixed), not a hash of the canonical built
+        // outside any format (which matched no stored hash, and left text unescaped).
+        var contentHash = _hasher.ComputeRowHash(c);
         var opts = _reporting.CurrentValue;
         var d = ReportDefanger.For(c.Entities, opts.DefangIndicators);   // PROD-44
         return new CaseReportModel
