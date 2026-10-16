@@ -3,6 +3,7 @@
 @inject TimeDisplay TimeDisp
 @inject NavigationManager Nav
 @inject IncidentManager.Web.Services.CommandPaletteController Palette
+@inject IncidentManager.Web.Services.UnsavedEdits Edits
 @implements IDisposable
 
 @* Top-bar account menu (U-21): initials avatar + dropdown showing identity, roles, the theme
@@ -254,15 +255,13 @@
     }
 
     // REV-21: a change of time display redraws the page (every component is built again, in the new zone), which clears
-    // unsaved composer text. With some, the change waits for a yes.
+    // unsaved composer text. With some, the change waits for a yes. BUG-578: any unsaved text, plain fields included
+    // (everything UnsavedEdits knows of, which asks the markdown editors too).
     private Func<Task>? _pendingTimeChange;
 
     private async Task<bool> HoldForUnsavedAsync(Func<Task> change)
     {
-        bool dirty;
-        try { dirty = await JS.InvokeAsync<bool>("markdownEditor.anyDirty"); }
-        catch { dirty = false; }   // can't tell: don't obstruct
-        if (!dirty) return false;
+        if ((await Edits.PendingAsync()).Count == 0) return false;   // can't tell (no JS): it doesn't obstruct
         _pendingTimeChange = change;
         return true;
     }

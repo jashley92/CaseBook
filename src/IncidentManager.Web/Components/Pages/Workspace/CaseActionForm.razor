@@ -362,19 +362,30 @@
         _ => false,
     };
 
+    // BUG-601 (C5): a slower answer for an earlier pick or search doesn't land over a later one (a target shown picked
+    // with another's warning, or older results under the newer query).
+    private readonly LoadSequence _picks = new();
+    private readonly LoadSequence _searches = new();
+
     private async Task PickSupersedeTarget(Guid id, string number)
     {
         // BUG-181: what it would expose is known before the target is shown as picked, so Supersede can't be pressed
         // without the warning in between.
+        var t = _picks.Begin();
         var exposure = await Cases.SupersedeExposureAsync(Case.Id, id);   // BUG-129
+        if (!_picks.IsCurrent(t)) return;
         D.SupersedeAck = false;
         D.SupersedeExposure = exposure;
         D.SupersedeTargetId = id;
         D.SupersedeTargetNumber = number;
     }
 
-    private async Task SearchSupersede() =>
-        D.SupersedeResults = await Cases.SearchLinkableCasesAsync(Case.Id, D.SupersedeQuery, take: 8);
+    private async Task SearchSupersede()
+    {
+        var t = _searches.Begin();
+        var results = await Cases.SearchLinkableCasesAsync(Case.Id, D.SupersedeQuery, take: 8);
+        if (_searches.IsCurrent(t)) D.SupersedeResults = results;
+    }
 
     private CaseAssignmentRole? CurrentRole(string userId) =>
         Case.Assignments.FirstOrDefault(a => string.Equals(a.UserId, userId, StringComparison.OrdinalIgnoreCase))?.Role;

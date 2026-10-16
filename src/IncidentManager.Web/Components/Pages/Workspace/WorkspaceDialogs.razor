@@ -1,5 +1,5 @@
 @* RD-27 (extracted from CaseWorkspace): the workspace's own small dialogs: the confirm for a destructive remove (or
-   clearing a reported milestone), FR-05's "discard unsaved text?" before leaving the case, and U-40's screenshot
+   clearing a reported milestone), FR-05's "discard unsaved text?" before leaving the case (BUG-578: or before anything hides it), and U-40's screenshot
    lightbox. Presentational: the workspace decides which is open and holds the focus trap (UX-01), so a dialog over an
    entity or evidence panel still traps focus correctly. *@
 
@@ -36,11 +36,11 @@
                     <button type="button" class="btn-close" aria-label="Close" @onclick="() => OnStay.InvokeAsync()"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-0">You have text on this case that hasn't been saved. If you leave now, it's lost.</p>
+                    <p class="mb-0">You have @(string.IsNullOrEmpty(LeaveWhat) ? "text" : LeaveWhat) on this case that hasn't been saved. If you @(LeaveDoing ?? "leave now"), it's lost.</p>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-outline-secondary" @onclick="() => OnStay.InvokeAsync()">Stay on this page</button>
-                    <button class="btn btn-danger" @onclick="() => OnLeave.InvokeAsync()">Leave &amp; discard</button>
+                    <button class="btn btn-outline-secondary" @onclick="() => OnStay.InvokeAsync()">Stay</button>
+                    <button class="btn btn-danger" @onclick="() => OnLeave.InvokeAsync()">@(LeaveVerb ?? "Leave & discard")</button>
                 </div>
             </div>
         </div>
@@ -80,6 +80,11 @@
     [Parameter] public EventCallback OnRunConfirm { get; set; }
 
     [Parameter] public bool LeaveOpen { get; set; }
+    /// <summary>BUG-578: what's unsaved ("the task you're editing and text in an editor"), what would lose it ("switch to
+    /// Tasks"), and the discard button's label.</summary>
+    [Parameter] public string? LeaveWhat { get; set; }
+    [Parameter] public string? LeaveDoing { get; set; }
+    [Parameter] public string? LeaveVerb { get; set; }
     [Parameter] public EventCallback OnStay { get; set; }
     [Parameter] public EventCallback OnLeave { get; set; }
 

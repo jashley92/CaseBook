@@ -5,6 +5,7 @@
 @inject CaseService Cases
 @inject ToastService Toasts
 @inject ILogger<CaseHeader> Logger
+@inject UnsavedEdits Edits
 
 @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
    overflowing the row and forcing whole-page horizontal scroll. *@
@@ -217,6 +218,11 @@
     // (its typed number was for that case; Save would have renamed this one to it).
     private Guid _renumberFor;
 
+    // BUG-578: a number being typed is asked about before the case is left or the page redrawn.
+    protected override void OnInitialized() =>
+        Edits.Track(this, "the case number you're changing",
+            () => _renumbering && !string.Equals(_editNumber?.Trim(), Case.CaseNumber, StringComparison.Ordinal));
+
     protected override void OnParametersSet()
     {
         if (_renumbering && _renumberFor != Case.Id) CancelRenumber();
@@ -275,8 +281,10 @@
         _renumberError = null;
         try
         {
-            await Cases.RenumberAsync(Case.Id, _editNumber);
-            _renumbering = false;
+            var forCase = _renumberFor;
+            await Cases.RenumberAsync(forCase, _editNumber);
+            // BUG-601: the header may have moved to another case meanwhile, where a rename may since be open.
+            if (_renumberFor == forCase) _renumbering = false;
             await OnChanged.InvokeAsync();
             Toasts.Success("Case number updated");
         }
@@ -299,6 +307,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        Edits.Forget(this);   // BUG-578
         // S2930/S6966: cancel + dispose the last in-flight renumber-availability check.
         if (_renumberCheckCts is not null)
         {

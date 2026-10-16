@@ -75,7 +75,7 @@ public partial class CaseWorkspace
                 }
                 SeedKnownIds();
                 if (LiveRefreshFor(_activeTab, regions)) _liveRefresh++;
-                await SetTab(_activeTab);
+                await ShowTab(_activeTab);
                 FlagNewItems(known, actorId);
                 StateHasChanged();
                 return;
@@ -104,7 +104,7 @@ public partial class CaseWorkspace
         await RefreshPermissionsAsync(); // REL-08: demote the UI if this user's access was revoked mid-session
         _liveRefresh++; // UX-13: signal extracted tabs to re-query the case (an in-progress edit in a
                         // tab component survives, since the component isn't re-created by a reload)
-        await SetTab(_activeTab); // refresh the visible tab's data
+        await ShowTab(_activeTab); // refresh the visible tab's data
         FlagNewItems(prevKnown, actorId); // U-30: flash / pulse / toast a collaborator's additions
         StateHasChanged();
     }

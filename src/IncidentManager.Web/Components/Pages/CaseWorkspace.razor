@@ -26,6 +26,7 @@
 @inject IncidentManager.Application.Evidence.EvidenceService EvidenceSvc
 @inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
 @inject IncidentManager.Web.Services.CaseTabsState OpenTabs
+@inject IncidentManager.Web.Services.UnsavedEdits Edits
 
 <PageTitle>@(_case?.CaseNumber ?? "Case")</PageTitle>
 
@@ -76,8 +77,8 @@ else
             <span class="ms-auto"></span>
             <CasePrimaryAct Case="_case" Access="Access" Slim="true" OnOpenModal="OpenModal" OnAdvanceTo="AdvanceTo" />
         </div>
-    <CaseViewBar Facts="Facts" CloseOutOpen="_closeOut.Open" RailOpen="_railOpen" OnSetView="SetView" OnOpenCloseOut="OpenCloseOut"
-                 OnToggleRail="() => _railOpen = !_railOpen" />
+    <CaseViewBar Facts="Facts" CloseOutOpen="_closeOut.Open" RailOpen="_railOpen" OnSetView="SetView" OnOpenCloseOut="OpenCloseOutFromBar"
+                 OnToggleRail="ToggleRail" />
     </div>
 
     @if (_action.Name is not null && _action.IsSheet)
@@ -87,15 +88,20 @@ else
         </section>
     }
 
-    @* INV-11: an entity in context, over whatever tab is open. *@
+    @* INV-11: an entity in context, over whatever tab is open. BUG-578: the panels' edits are asked about before the
+       panel closes or moves to another item (EditRegion, cascaded). *@
+    <CascadingValue Value="_panelRegion" IsFixed="true">
     <EvidencePanel Case="_case" EvidenceId="_panelEvidence" CanEdit="_canEdit" OnClose="CloseEvidencePanel" OnChanged="Reload"
                    OnPreviewImage="OpenShot" OnShowCitation="ShowCitation" />
     <EntityPanel Case="_case" EntityId="_panelEntity" OnClose="CloseEntityPanel" CanEdit="_canEdit" OnChanged="Reload"
                           OnShowOnTimeline="ShowEntityOnTimeline" OnGoToTab="EntityPanelGoTo" />
+    </CascadingValue>
 
-    @* The shared confirm, FR-05's leave guard and U-40's screenshot lightbox. *@
+    @* The shared confirm, FR-05's leave guard (BUG-578: also before a switch hides unsaved text) and U-40's
+       screenshot lightbox. *@
     <WorkspaceDialogs Confirm="@(_confirm is { } cf ? (cf.Message, cf.Verb) : null)" OnCancelConfirm="CancelConfirm" OnRunConfirm="RunConfirm"
-                      LeaveOpen="_confirmLeaveOpen" OnStay="CancelLeave" OnLeave="ConfirmLeave"
+                      LeaveOpen="DiscardOpen" LeaveWhat="@_discard?.What" LeaveDoing="@_discard?.Doing" LeaveVerb="@_discard?.Verb"
+                      OnStay="CancelLeave" OnLeave="ConfirmLeave"
                       ShotId="_previewShotId" OnCloseShot="CloseShot" OnEscape="OnModalEscape" />
 
     @* Keyed by the active tab so the subtree is rebuilt on a tab switch, replaying the .tabbody
@@ -105,10 +111,12 @@ else
     <div class="ws-body @(PaneShown ? "ws-body-pane" : "")">
     @if (PhoneNowNext)
     {
+        <CascadingValue Value="_paneRegion" IsFixed="true">
         <CaseNowNext @key="_case.Id" Show="@(_phoneTab == "Now" ? "now" : "next")" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
-                     OnChanged="Reload" OnGoToTab="async t => { _phoneTab = null; await SetTab(t); }" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
-                     OnFocusTask='async id => { _phoneTab = null; await FocusItem(("Tasks", id)); }' OnAddTask="async () => { _phoneTab = null; await AddTaskFromPane(); }"
+                     OnChanged="Reload" OnGoToTab="t => LeavePhonePane(() => SetTab(t))" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
+                     OnFocusTask='id => LeavePhonePane(() => FocusItem(("Tasks", id)))' OnAddTask="() => LeavePhonePane(AddTaskFromPane)"
                      OnShowReadiness="ShowReadiness" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
+        </CascadingValue>
     }
     else
     {
@@ -119,6 +127,7 @@ else
     @* BUG-05: keyed on the case too, so following a link to another case on the same tab mounts the tab fresh
        instead of keeping the last case's data and composer state (a staged screenshot, an edit in progress). *@
     <div class="tabbody" @key="TabBodyKey">
+    <CascadingValue Value="_tabRegion" IsFixed="true">
     @* REL-01: a per-tab error boundary. Because .tabbody is @key'd on the active tab, switching tabs mounts
        a fresh boundary — so a tab that throws shows a contained "this tab couldn't load" fallback (the case
        header, tab bar and other tabs stay usable) and recovers when you switch away and back, with no manual
@@ -217,15 +226,18 @@ else
         <ErrorFallback Scope="ErrorFallback.ErrorScope.Section" SectionName="@CaseViews.Label(_activeTab)" />
     </ErrorContent>
     </ErrorBoundary>
+    </CascadingValue>
     </div>@* /.tabbody *@
     }
     @* RD-04: Now and Next beside every tab, where there's room. *@
     @if (PaneShown)
     {
+        <CascadingValue Value="_paneRegion" IsFixed="true">
         <CaseNowNext @key="_case.Id" @ref="_nowNext" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
                      OnChanged="Reload" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
                      OnFocusTask='id => FocusItem(("Tasks", id))' OnAddTask="AddTaskFromPane" OnShowReadiness="ShowReadiness"
                      OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
+        </CascadingValue>
     }
     </div>@* /.ws-body *@
     @if (_phone)
@@ -377,8 +389,6 @@ else
     private Guid _draftsCaseId;
 
     // FR-05: guard against leaving the case (in-app navigation) with unsubmitted composer text.
-    private bool _confirmLeaveOpen;
-    private string? _pendingLeave;
     // REL-07: true once a live-collab reload found the case archived/restricted out from under a viewer who
     // still holds unsaved composer text — we hold the (last-known) workspace and show a banner instead of
     // swapping to the not-found page, so the draft can be copied out.
@@ -438,6 +448,11 @@ else
         if (OpenTabs.WrittenUrlFor(Id) is { } written) _resume = CaseViews.Read(written);   // BUG-509
         _dotNetRef = DotNetObjectReference.Create(this);
         _myId = CurrentUser.UserId;
+        // BUG-578: what the workspace itself holds unsaved, for the Stay / Discard prompt and the time-display redraw.
+        // Registered before the first await (BUG-566), and forgotten in DisposeAsync.
+        Edits.Track(this, ActionWhat, ActionDirty);
+        Edits.Track(this, "the close-out you're writing", CloseOutDirty);
+        Edits.Track(this, "a timeline entry you were writing", () => _composerDrafts.Count > 0 && _activeTab != "Timeline");
         await RefreshPermissionsAsync();
         // BUG-566 (BUG-418's class): rebuilt by the layout's time-zone key or left while the permissions loaded,
         // DisposeAsync has already run, so nothing below may register: the auth handler, a palette provider over a dead
@@ -470,7 +485,11 @@ else
         {
             _caseSub?.Dispose();
             _caseSub = Notifier.SubscribeChanges(Id, OnCaseChangedAsync);   // live collaboration on this case
-            if (_subscribedTo != Guid.Empty)
+            // BUG-601: recorded with the subscription, before the wait below: set after it, a move to a third case during
+            // the wait recorded that case as subscribed to while the subscription was this one's.
+            var previous = _subscribedTo;
+            _subscribedTo = Id;
+            if (previous != Guid.Empty)
             {
                 CloseModal();
                 ++_gateSeq;   // BUG-488: a gate still loading for the last case's dialog or close-out is dropped
@@ -486,7 +505,6 @@ else
                 _reportState.ShowPreview = false;
                 await RefreshPermissionsAsync();
             }
-            _subscribedTo = Id;
         }
         var loadingFor = Id;
         await Reload();
@@ -500,11 +518,16 @@ else
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.
         // RD-11: a different case opens on its default view.
-        if (_partsFor != Id) _closeOut.Discard();   // RD-14: a close-out draft belongs to its case
+        var caseChanged = _partsFor != Id;
+        if (caseChanged) _closeOut.Discard();   // RD-14: a close-out draft belongs to its case
         var tab = ResolvePart(QPart) ?? (_partsFor != Id ? DefaultPart() : _activeTab);
         _partsFor = Id;
         _focusEntry = QEntry;   // BUG-510
-        await SetTab(tab);
+        // BUG-578: a link within this case asks before hiding unsaved text; another case was already asked about by the
+        // navigation lock (and its tabs' edits belong to the case left).
+        if (caseChanged) await ShowTab(tab);
+        else await SetTab(tab);
+        if (Id != loadingFor) return;   // BUG-601: and while the part was shown (the next navigation does what follows)
         // U-30: a fresh case view starts with a clean slate — nothing is "new" until a collaborator acts.
         _flash.Clear();
         _newOnTab.Clear();
@@ -556,7 +579,7 @@ else
         if (_case?.Phase == CasePhase.Closed && _closeOut.Open)
         {
             _closeOut.Discard();
-            if (_activeTab == "Closeout") await SetTab("Briefing");
+            if (_activeTab == "Closeout") await ShowTab("Briefing");
         }
         var taskResults = _case is null ? new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>()
             : await Cases.GetTaskResultsAsync(_case.Id);
@@ -564,7 +587,11 @@ else
         _taskResults = taskResults;
         // HR-01: outcome labels (admin-managed) for the header and the Closed milestone; only closed cases show one.
         if (_case?.StatusChanges.Any(s => s.OutcomeKey is not null) == true && _outcomeLabels.Count == 0)
-            _outcomeLabels = await Outcomes.LabelsAsync();
+        {
+            var labels = await Outcomes.LabelsAsync();
+            if (Stale()) return false;   // BUG-601: every wait here is followed by the check
+            _outcomeLabels = labels;
+        }
         // C-05: record the authorized case-detail open (best-effort; coalesced into a view-session).
         if (_case is not null)
         {
@@ -592,8 +619,12 @@ else
                 try { await OpenTabs.OpenedAsync(_case.Id); }   // RD-21: the case becomes (or comes forward as) a tab
                 catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException) { /* tabs are a convenience */ }
             }
-            await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted, stillOpen: _openRecordedFor == _case.Id);
+            if (Stale()) return false;
+            // BUG-601: noted before the wait, so a load overtaken during it still counts this visit (BUG-243).
+            var stillOpen = _openRecordedFor == _case.Id;
             _openRecordedFor = _case.Id;
+            await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted, stillOpen: stillOpen);
+            if (Stale()) return false;
             var pinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
             if (Stale()) return false;
             _isPinned = pinned;
@@ -670,7 +701,16 @@ else
     // timeline has had it, so the same entry can be jumped to again, and a later visit to the tab doesn't jump.
     private Guid? _focusEntry;
 
+    // BUG-578 (C7-1): a switch that unmounts the tab body or the Now/Next pane with unsaved text in it asks Stay / Discard
+    // first (owner decision); Discard makes the same switch. What the workspace does itself (a load, a live refresh, a
+    // case it has just moved to) calls ShowTab.
     private async Task SetTab(string tab)
+    {
+        if (await HoldForUnsavedAsync(SwitchDoing(tab), "Discard & switch", () => SetTab(tab), LostBy(tab, _phoneTab))) return;
+        await ShowTab(tab);
+    }
+
+    private async Task ShowTab(string tab)
     {
         // RD-08: working notes live in the Timeline's lens.
         if (string.Equals(tab, "Notes", StringComparison.OrdinalIgnoreCase)) { _openNotes = true; tab = "Timeline"; }
@@ -690,8 +730,10 @@ else
     }
 
     // RD-11: a view opens on the part last used there.
-    private Task SetView(string view) =>
-        SetTab(_lastPart.TryGetValue(view, out var last) && Facts.PartsShown(view).Contains(last) ? last : Facts.PartsShown(view)[0]);
+    private Task SetView(string view) => SetTab(PartOfView(view));
+
+    private string PartOfView(string view) =>
+        _lastPart.TryGetValue(view, out var last) && Facts.PartsShown(view).Contains(last) ? last : Facts.PartsShown(view)[0];
 
     // BUG-489: built from where the viewer is now (the part, an open evidence panel), not from Nav.Uri, which replaceState
     // never updates: that brought a closed panel and a consumed ?entry= or ?note= back on a refresh and through the tab strip.
@@ -849,6 +891,7 @@ else
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        Edits.Forget(this);   // BUG-578
         AuthState.AuthenticationStateChanged -= OnAuthStateChanged;
         _caseSub?.Dispose();
         PaletteActions.Clear(this); // PROD-19: stop offering this case's actions (only if we're still the owner)

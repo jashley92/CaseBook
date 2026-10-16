@@ -64,11 +64,34 @@ public partial class CaseWorkspace
 
     private bool PhoneNowNext => _phone && _phoneTab is "Now" or "Next";
 
+    // BUG-578: the phone's Now/Next replaces the tab body, and a view replaces Now/Next: either asks before hiding text.
     private async Task PhoneGo(string tab)
     {
-        if (tab is "Now" or "Next") { _phoneTab = tab; return; }
+        if (tab is "Now" or "Next")
+        {
+            if (await HoldForUnsavedAsync($"show {tab}", "Discard & switch", () => PhoneGo(tab), LostBy(_activeTab, tab))) return;
+            _phoneTab = tab;
+            return;
+        }
+        var part = PartOfView(tab);
+        if (await HoldForUnsavedAsync(SwitchDoing(part), "Discard & switch", () => PhoneGo(tab), LostBy(part, null))) return;
         _phoneTab = null;
-        await SetView(tab);
+        await ShowTab(part);
+    }
+
+    // The phone's Now/Next sends the viewer elsewhere (a tab, a task): it goes away first, once any text in it is let go.
+    private async Task LeavePhonePane(Func<Task> then)
+    {
+        if (await HoldForUnsavedAsync("leave Now and next", "Discard & continue", () => LeavePhonePane(then), _paneRegion)) return;
+        _phoneTab = null;
+        await then();
+    }
+
+    // RD-04: hiding the pane unmounts it.
+    private async Task ToggleRail()
+    {
+        if (_railOpen && PaneShown && await HoldForUnsavedAsync("hide Now and next", "Discard & hide", ToggleRail, _paneRegion)) return;
+        _railOpen = !_railOpen;
     }
 
     private async Task AddTaskFromPane()
@@ -105,8 +128,15 @@ public partial class CaseWorkspace
     private Guid? _panelEntity;
     private Guid? _timelineEntity;
 
+    // BUG-578 (C7-9): a panel moved to another item, or closed, unmounts its forms; with text in them that waits for a yes.
+    private Task<bool> HoldPanelAsync(Guid? nextEntity, Guid? nextEvidence, Func<Task> again) =>
+        (_panelEntity is not null && _panelEntity != nextEntity) || (_panelEvidence is not null && _panelEvidence != nextEvidence)
+            ? HoldForUnsavedAsync("leave this panel", "Discard & continue", again, _panelRegion)
+            : Task.FromResult(false);
+
     private async Task OpenEntity(Guid id)
     {
+        if (await HoldPanelAsync(id, null, () => OpenEntity(id))) return;
         var hadEvidence = _panelEvidence is not null;
         _panelEvidence = null;
         _panelEntity = id;
@@ -118,6 +148,7 @@ public partial class CaseWorkspace
 
     private async Task OpenEvidence(Guid id)
     {
+        if (await HoldPanelAsync(null, id, () => OpenEvidence(id))) return;
         _panelEntity = null;
         _panelEvidence = id;
         await SyncTabUrl();   // BUG-489: the address carries the open panel as a cited-file link's does
@@ -126,6 +157,7 @@ public partial class CaseWorkspace
     // BUG-489: the address bar and the tab strip's return both drop the closed panel.
     private async Task CloseEvidencePanel()
     {
+        if (await HoldPanelAsync(null, null, CloseEvidencePanel)) return;
         _panelEvidence = null;
         await SyncTabUrl();
     }
@@ -133,6 +165,7 @@ public partial class CaseWorkspace
     // A citing entry opens on the timeline, flashed; the brief is in the Now pane (or on the Briefing).
     private async Task ShowCitation(Guid? entryId)
     {
+        if (await HoldPanelAsync(null, null, () => ShowCitation(entryId))) return;
         await CloseEvidencePanel();
         if (entryId is { } id) await FocusItem(("Timeline", id));
         else if (!PaneShown) await SetTab("Briefing");
@@ -140,6 +173,7 @@ public partial class CaseWorkspace
 
     private async Task CloseEntityPanel()
     {
+        if (await HoldPanelAsync(null, null, CloseEntityPanel)) return;
         _panelEntity = null;
         // Drop ?entity= so a reload doesn't reopen it (BUG-489: from the current part, and the tab strip's return too).
         await SyncTabUrl();
@@ -147,6 +181,7 @@ public partial class CaseWorkspace
 
     private async Task ShowEntityOnTimeline(Guid id)
     {
+        if (await HoldPanelAsync(null, null, () => ShowEntityOnTimeline(id))) return;
         await CloseEntityPanel();
         _timelineEntity = id;
         await SetTab("Timeline");
@@ -154,6 +189,7 @@ public partial class CaseWorkspace
 
     private async Task EntityPanelGoTo(string tab)
     {
+        if (await HoldPanelAsync(null, null, () => EntityPanelGoTo(tab))) return;
         await CloseEntityPanel();
         await SetTab(tab);
     }

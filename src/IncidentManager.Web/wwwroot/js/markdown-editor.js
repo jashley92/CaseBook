@@ -143,6 +143,10 @@
         }, true);
     }
 
+    function isDirty(m) {
+        try { return (m.value() || '').trim().length > 0; } catch (e) { return false; }
+    }
+
     window.markdownEditor = {
         // opts: { mentions?: [{id,name}], entities?: [{id,value,hint}] } — an array is treated as mentions
         // for backward compatibility.
@@ -192,8 +196,19 @@
         // FR-05: does any mounted composer still hold unsubmitted (non-whitespace) text? Drives the
         // unsaved-changes guards (browser beforeunload below + the in-app NavigationLock in the workspace).
         anyDirty: function () {
-            return Object.values(instances).some(function (m) {
-                try { return (m.value() || '').trim().length > 0; } catch (e) { return false; }
+            return Object.values(instances).some(isDirty);
+        },
+        // BUG-578 (C7): the ids of the editors holding text, for UnsavedEdits.PendingAsync: only those inside an element
+        // `within` selects (a tab's body, the Now/Next pane, a side panel) when it's given, and never those in `except`
+        // (a composer whose text survives what's about to happen, as FR-02's stash survives a tab switch).
+        dirtyIds: function (within, except) {
+            const skip = new Set(except || []);
+            const roots = within ? Array.from(document.querySelectorAll(within)) : null;
+            return Object.keys(instances).filter(function (id) {
+                if (skip.has(id) || !isDirty(instances[id])) return false;
+                if (!roots) return true;
+                const el = document.getElementById(id);
+                return !!el && roots.some(function (r) { return r.contains(el); });
             });
         },
         // FR-05: let a deliberate, security-driven teardown (the idle lock, Lock now, the client fallback) bypass

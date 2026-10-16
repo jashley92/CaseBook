@@ -107,6 +107,27 @@ public sealed class CaseActionDraft
     public bool HandoffEmail { get; set; } = true;
     public bool HandoffTasks { get; set; } = true;
     public IReadOnlyList<UserSummary> HandoffPeople { get; set; } = [];
+
+    /// <summary>
+    /// BUG-578 (C7): what the analyst can type or set in the open dialog, as one value. The workspace takes it when the
+    /// dialog has been opened (and prefilled), so a dialog whose input differs from that holds something worth asking
+    /// about before another dialog replaces it, or the page is left.
+    /// </summary>
+    public string InputSnapshot() => string.Join("\u001f", new object?[]
+    {
+        Name, ReclassReason, PhaseReason, WasContained, ContainedAt, ContainmentNotNeededReason, ResolvedAt, SeverityReason,
+        ReopenReason, AssignUserId, LegalContact, LegalNote, HoldReleaseReason, MaterialityStatus, MaterialityDecisionMaker,
+        MaterialityDecidedOn, MaterialityRationale, RestrictReason, SupersedeTargetId, SupersedeReason, SupersedeCopy,
+        SupersedeAck, HandoffTo, HandoffState, HandoffDone, HandoffOpen, HandoffWatch, HandoffEmail, HandoffTasks,
+        Transition.Edited, Transition.Edited ? Transition.When : null, Transition.Override,
+        string.Join(",", Transition.Attested.Order()),
+    }.Select(v => v switch
+    {
+        null => "",
+        DateTime d => d.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+        _ => v.ToString(),
+    }));
 }
 
 /// <summary>BUG-337: the case an action dialog or the close-out acted on. A case switch removes the form while it saves,

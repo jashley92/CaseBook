@@ -21,9 +21,24 @@ namespace IncidentManager.Web.Components.Pages;
 /// </summary>
 public partial class CaseWorkspace
 {
-    private async Task OpenModal(string name)
+    private Task OpenModal(string name) => TryOpenModal(name, () => OpenModal(name));
+
+    // BUG-578 (C7-10): what the open dialog's input is called in the Stay / Discard prompt.
+    private const string ActionWhat = "the change you're making";
+
+    // BUG-578: opening a dialog starts its fields, and the transition's time, ticks and override, over. Over an open dialog
+    // (a sheet isn't modal, and the palette works over a modal) with input in it, that waits for Stay / Discard; Discard
+    // runs `again`, the whole act that opened it. False when it didn't open.
+    private bool HoldOpenAction(string doing, Func<Task> again)
     {
-        if (_case is null) return;
+        if (_letGo.Contains(_actionRegion) || !ActionDirty()) return false;
+        _discard ??= new(ActionWhat, doing, "Discard & continue", again, [_actionRegion]);
+        return true;
+    }
+
+    private async Task<bool> TryOpenModal(string name, Func<Task> again)
+    {
+        if (_case is null || HoldOpenAction("start another action", again)) return false;
         var seq = ++_gateSeq;
         var a = _action;
         a.Open(name);
@@ -44,7 +59,10 @@ public partial class CaseWorkspace
         if (name == "holdrelease") a.HoldReleaseReason = null;   // don't carry a cancelled attempt's text over
         if (name == "handoff")
         {
-            a.HandoffPeople = await Cases.MentionableAsync(Id);
+            var people = await Cases.MentionableAsync(Id);
+            // BUG-601: PrefillHandoff reads the case and dialog open now, which a case switch or another dialog replaced.
+            if (seq != _gateSeq || a != _action || _case is null) return false;
+            a.HandoffPeople = people;
             PrefillHandoff();
         }
 
@@ -98,14 +116,17 @@ public partial class CaseWorkspace
             a.MaterialityBaseline = _case.MaterialityConcurrencyStamp(); // REL-02: optimistic-concurrency baseline
         }
 
+        if (seq != _gateSeq || a != _action) return false;   // BUG-488: another dialog or case took over while this loaded
+        SeedAction();   // BUG-578: what it opened with is not "typed"
         var gate = name switch
         {
             "reclass" => await LoadClimbGatesAsync(a.NewClass),
             "status" => await LoadGateAsync(CaseFlowGates.Phase(_case, a.NewPhase)),
             _ => null
         };
-        if (seq != _gateSeq) return;   // BUG-488: another dialog, target or case took over while this loaded
+        if (seq != _gateSeq) return false;   // BUG-488: another dialog, target or case took over while this loaded
         a.Transition.UseGate(gate);
+        return true;
     }
 
     // BUG-488: a dialog's opening, a change of its target, the close-out and a case switch each load a gate, and a
@@ -163,6 +184,10 @@ public partial class CaseWorkspace
         await SetTab("Closeout");
     }
 
+    // BUG-578: the view bar's Close-out closes an open dialog (its ticks, time and override start over next time).
+    private Task OpenCloseOutFromBar() =>
+        HoldOpenAction("open the close-out", OpenCloseOutFromBar) ? Task.CompletedTask : OpenCloseOut();
+
     private async Task LeaveCloseOut(bool discard)
     {
         if (discard) _closeOut.Discard();
@@ -195,7 +220,9 @@ public partial class CaseWorkspace
 
     // FR-05: intercept in-app navigation away from this case when a composer still holds unsubmitted text,
     // and confirm before it's discarded. Same-case navigation (a tab or entity deep-link keeps the editors
-    // mounted) and the security idle-lock's /session-expired landing are never blocked.
+    // mounted) and the security idle-lock's /session-expired landing are never blocked. BUG-578: "unsubmitted text" is
+    // everything UnsavedEdits knows of (plain fields, an open dialog, the timeline's stashed draft), not only the
+    // markdown editors.
     private async Task OnBeforeInternalNav(LocationChangingContext ctx)
     {
         if (_leaveConfirmed) { _leaveConfirmed = false; return; } // already confirmed — let it through
@@ -203,43 +230,108 @@ public partial class CaseWorkspace
         if (target.Contains("session-expired", StringComparison.OrdinalIgnoreCase)) return;
         if (target.Contains($"cases/{Id}", StringComparison.OrdinalIgnoreCase)) return; // same case
         if (_accessLost) return; // REL-07: the case is gone; don't block leaving after a copy-out
-        if (!await AnyDraftDirtyAsync()) return;
+        var pending = await Edits.PendingAsync();
+        if (pending.Count == 0) return;
         ctx.PreventNavigation();
-        _pendingLeave = target;
-        _confirmLeaveOpen = true;
+        _discard = new(UnsavedEdits.Describe(pending), "leave now", "Leave & discard", () =>
+        {
+            _leaveConfirmed = true; // the reissued navigation passes straight through the guard
+            Nav.NavigateTo(target);
+            return Task.CompletedTask;
+        }, []);
         StateHasChanged();
     }
 
-    // FR-05 / REL-07: whether any composer holds unsubmitted text (the JS editor is the source of truth).
-    private async Task<bool> AnyDraftDirtyAsync()
+    // FR-05 / REL-07: whether anything on the page holds unsaved input (BUG-578: UnsavedEdits, markdown included).
+    private async Task<bool> AnyDraftDirtyAsync() => (await Edits.PendingAsync()).Count > 0;
+
+    // --- BUG-578 (C7): the Stay / Discard prompt, for leaving the case and for whatever hides an editor ---------------
+    // What it says is unsaved, what would lose it, its discard button, the regions it asked about, and what Discard does:
+    // the act that was held runs again with those regions let go (_letGo), so it does exactly what it would have done. A
+    // part of that act that would hide text somewhere else still asks about that.
+    private sealed record DiscardPrompt(string What, string Doing, string Verb, Func<Task> Proceed, EditRegion[] Regions);
+    private DiscardPrompt? _discard;
+    private EditRegion[] _letGo = [];
+    private bool DiscardOpen => _discard is not null;
+
+    // The open action dialog, as a region of its own for _letGo (it has no element: ActionDirty is the workspace's).
+    private readonly EditRegion _actionRegion = new("action", "#ws-sheet, .im-action-host");
+
+    private async Task CancelLeave()
     {
-        try { return await JS.InvokeAsync<bool>("markdownEditor.anyDirty"); }
-        catch { return false; } // if we can't tell, don't obstruct
+        _discard = null;
+        await SyncTabUrl();   // a ?tab= link that was held leaves the address on the part still open
     }
 
-    private void CancelLeave()
+    private async Task ConfirmLeave()
     {
-        _confirmLeaveOpen = false;
-        _pendingLeave = null;
+        var prompt = _discard;
+        _discard = null;
+        if (prompt is null) return;
+        var before = _letGo;
+        _letGo = [.. before, .. prompt.Regions];
+        try { await prompt.Proceed(); }
+        finally { _letGo = before; }
     }
 
-    private void ConfirmLeave()
+    /// <summary>BUG-578: whether <paramref name="again"/> waits for a Stay / Discard answer, because what's about to
+    /// happen unmounts <paramref name="lost"/> with unsaved input in it. True: the prompt is up and the caller stops;
+    /// Discard runs <paramref name="again"/> with those regions let go.</summary>
+    private async Task<bool> HoldForUnsavedAsync(string doing, string verb, Func<Task> again, params EditRegion[] lost)
     {
-        var target = _pendingLeave;
-        _confirmLeaveOpen = false;
-        _pendingLeave = null;
-        if (target is null) return;
-        _leaveConfirmed = true; // the reissued navigation passes straight through the guard
-        Nav.NavigateTo(target);
+        lost = lost.Except(_letGo).ToArray();
+        if (lost.Length == 0 || _case is null) return false;
+        if (_discard is not null) return true;   // already asking
+        // FR-02: the timeline's add composer is stashed on a tab switch and comes back, so its text isn't lost by one.
+        var pending = await Edits.PendingAsync([StashedComposerId], lost);
+        if (_discard is not null) return true;
+        if (pending.Count == 0) return false;
+        _discard = new(UnsavedEdits.Describe(pending), doing, verb, again, lost);
+        StateHasChanged();
+        return true;
     }
+
+    // CaseTimelineTab's InvEditorId: the one editor whose text the workspace keeps across a tab switch (FR-02).
+    private string StashedComposerId => $"inv-md-{_case?.Id}";
+
+    // BUG-578: where the workspace's editors live (cascaded to its parts; see UnsavedEdits and EditRegion).
+    private readonly EditRegion _tabRegion = new("tab", ".ws-body .tabbody");
+    private readonly EditRegion _paneRegion = new("pane", ".ws-body .im-nownext");
+    private readonly EditRegion _panelRegion = new("panel", ".im-entity-panel");
+
+    // The regions a move to (part, phone view) would unmount: the tab body when another part (or the phone's Now/Next)
+    // replaces it, and the Now/Next pane when it steps aside (RD-12) or the phone leaves it.
+    private EditRegion[] LostBy(string tab, string? phoneTab)
+    {
+        if (string.Equals(tab, "Notes", StringComparison.OrdinalIgnoreCase)) tab = "Timeline";   // RD-08
+        var lost = new List<EditRegion>(2);
+        var phonePaneThen = _phone && phoneTab is "Now" or "Next";
+        if (!PhoneNowNext && (phonePaneThen || !string.Equals(tab, _activeTab, StringComparison.Ordinal))) lost.Add(_tabRegion);
+        var paneThen = phonePaneThen || (_railOpen && _wide && tab is not ("Briefing" or "Closeout"));
+        if ((PaneShown || PhoneNowNext) && !paneThen) lost.Add(_paneRegion);
+        return lost.ToArray();
+    }
+
+    private static string SwitchDoing(string tab) => $"switch to {CaseViews.Label(tab is "Notes" ? "Timeline" : tab)}";
+
+    // BUG-578: the open action dialog's input, compared with what it opened with (its prefill), so an untouched dialog
+    // never holds anything up. Text typed into a cancelled dialog stays in _action for the page's life, as before.
+    private string? _actionSeed;
+    private void SeedAction() => _actionSeed = _action.Name is null ? null : _action.InputSnapshot();
+    private bool ActionDirty() => _action.Name is not null && _actionSeed is not null && _action.InputSnapshot() != _actionSeed;
+
+    // RD-14: a close-out with a conclusion, a reply pasted in or a time or justification set.
+    private bool CloseOutDirty() => _closeOut.Open
+        && (!string.IsNullOrWhiteSpace(_closeOut.Conclusion) || !string.IsNullOrWhiteSpace(_closeOut.AiReply)
+            || _closeOut.Transition.Edited || !string.IsNullOrWhiteSpace(_closeOut.Transition.Override));
 
     // UX-01: Esc closes whichever .modal.d-block dialog is open (focus is trapped inside it, so the
     // keydown bubbles here). The JS focus-trap restores focus to the trigger on release.
-    private void OnModalEscape(KeyboardEventArgs e)
+    private async Task OnModalEscape(KeyboardEventArgs e)
     {
         if (e.Key != "Escape") return;
         if (_confirm is not null) CancelConfirm();
-        else if (_confirmLeaveOpen) CancelLeave();
+        else if (DiscardOpen) await CancelLeave();
         else if (_previewShotId is not null) CloseShot();
         else if (_action.Name is not null) CloseModal();
     }
@@ -247,7 +339,7 @@ public partial class CaseWorkspace
     // UX-01: which trap is on top, if any (drives arm/release in OnAfterRenderAsync). BUG-88: a dialog opened over a side
     // panel takes focus, and closing it hands focus back to the panel rather than to the page behind both.
     private string? TopTrap =>
-        _confirm is not null || _previewShotId is not null || (_action.Name is not null && !_action.IsSheet) || _confirmLeaveOpen ? "dialog"
+        _confirm is not null || _previewShotId is not null || (_action.Name is not null && !_action.IsSheet) || DiscardOpen ? "dialog"
         : _panelEntity is not null || _panelEvidence is not null ? "panel"
         : null;
     private string? _armedTrap;
@@ -279,11 +371,15 @@ public partial class CaseWorkspace
         var stillOpen = result.Opening == _action.Opening;
         if (stillOpen) _action.Name = null;
         await Reload();
+        // BUG-601: and again after every wait, since the view can move to another case while the case reloads or the
+        // close-out loads: that case's close-out mustn't be opened, or filled in as a duplicate.
+        if (!result.IsFor(Id)) { Toasts.Success(result.ElsewhereMessage); return; }
         if (result.Done.Length > 0) Toasts.Success(result.Done);
         // PROD-11: after superseding, hand straight to the close-out, closing as a duplicate with the reason as its conclusion.
         if (result.CloseReason is { } closeReason && (stillOpen || _action.Name is null))
         {
             await AdvanceTo(CasePhase.Closed);
+            if (!result.IsFor(Id) || !_closeOut.Open || !_closeOut.IsFor(result.CaseId)) return;
             if (_closeOut.Outcomes.Any(o => o.Key == IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate))
                 _closeOut.Outcome = IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate;
             _closeOut.Conclusion = closeReason;
@@ -315,22 +411,28 @@ public partial class CaseWorkspace
 
     private CasePhase? NextPhase() => CaseFlow.NextPhase(_case);
 
-    private async Task AdvanceTo(CasePhase phase)
+    private Task AdvanceTo(CasePhase phase) => AdvanceToCore(phase, () => AdvanceTo(phase));
+
+    // Every advance goes through the status dialog (FR-01 for Close's gate; INV-05 for the rest), so the analyst records
+    // what was achieved and, when entering it after the fact, when it actually happened. BUG-578: false when it waits
+    // for Stay / Discard over another dialog's input (then `again` runs on Discard).
+    private async Task<bool> AdvanceToCore(CasePhase phase, Func<Task> again)
     {
-        // Every advance goes through the status dialog (FR-01 for Close's gate; INV-05 for the rest), so the
-        // analyst records what was achieved and, when entering it after the fact, when it actually happened.
-        await OpenModal("status");
+        if (!await TryOpenModal("status", again)) return false;
         _action.NewPhase = phase;
         await TargetChanged("status"); // load the gate (if any) for the selected target
+        return true;
     }
 
     // HR-10: a finished Contain/Eradicate/Recover task's result becomes what was achieved; the analyst still reviews and
     // applies the change in the dialog (gate, effective time).
     private async Task AdvanceWithResult((CasePhase Phase, string Achieved, DateTimeOffset? At) offer)
     {
-        await AdvanceTo(offer.Phase);
+        if (!await AdvanceToCore(offer.Phase, () => AdvanceWithResult(offer)) || _action.Name != "status") return;
         _action.PhaseReason = offer.Achieved;
-        if (offer.At is { } at) { _action.Transition.When = WallClock.ToWall(at, TimeDisp.Zone); _action.Transition.Edited = true; }
+        // BUG-582: the offered instant is kept while its minute is left as shown (WallClock.Kept), not re-read from the wall.
+        if (offer.At is { } at) _action.Transition.KeptAt(at, TimeDisp.Zone);
+        SeedAction();   // BUG-578: the offer is what it opened with
     }
 
 
@@ -367,6 +469,8 @@ public partial class CaseWorkspace
     // what satisfies the check.
     private async Task FixGateItem(string checkKey)
     {
+        // BUG-578: going to the fix closes the dialog, whose ticks, time and override then start over.
+        if (HoldOpenAction("go to what fixes it", () => FixGateItem(checkKey))) return;
         _action.Name = null;
         switch (checkKey)
         {

@@ -35,7 +35,7 @@ public partial class CaseWorkspace
             // other dialog it came from, such as the timeline's correction dialog. BUG-370: keymap.js says which:
             // "submit:action" only from inside the action dialog or sheet, "submit:dialog" from any other dialog or panel
             // (so a sheet open behind the entity panel isn't applied), and nothing from regions with their own keys.
-            if (_confirm is not null || _confirmLeaveOpen || _previewShotId is not null || cmd == "submit:dialog") return;
+            if (_confirm is not null || DiscardOpen || _previewShotId is not null || cmd == "submit:dialog") return;
             if (_action.Name is not null && (cmd == "submit:action" || !_action.IsSheet))
             {
                 if (_actionForm is not null) await _actionForm.SubmitAsync();
