@@ -24,16 +24,17 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         _log ??= log;
     }
 
-    public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+    public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
         // BUG-574: run again on the same principal (each AuthenticateAsync in a request transforms it), it added another
         // identity each time; the grants are made once.
         if (principal.Identity?.IsAuthenticated != true || principal.Identities.Any(i => i.Label == GrantsLabel))
-            return Task.FromResult(principal);
+            return principal;
 
-        var roleNames = _directory.RolesForGroups(GroupCandidates(principal));
+        // A group not named in time gives this request only its by-SID mappings (BUG-565, failing closed).
+        var roleNames = _directory.RolesForGroups((await GroupCandidatesAsync(principal)).Names);
         if (roleNames.Count == 0)
-            return Task.FromResult(principal);
+            return principal;
 
         // Unauthenticated (no authentication type), so it's never read as the sign-in's groups (WF-42).
         var identity = new ClaimsIdentity { Label = GrantsLabel };
@@ -53,7 +54,7 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         }
 
         principal.AddIdentity(identity);
-        return Task.FromResult(principal);
+        return principal;
     }
 
     /// <summary>BUG-574: marks the identity carrying CaseBook's grants.</summary>
@@ -65,42 +66,64 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
     /// yields both the raw SID and its resolved name, with and without the DOMAIN\ prefix. Shared with the S-10
     /// session re-check so both resolve groups identically.
     /// </summary>
-    public static IReadOnlySet<string> GroupCandidates(ClaimsPrincipal principal)
-    {
-        // WF-42: only the signed-in identity's claims. The roles CaseBook grants ride on an unauthenticated identity it
-        // adds (here and in the S-10 re-check); read as groups, a role named like an AD group picked up that group's
-        // mappings, and a removed mapping never took the role away.
-        return CandidatesFor(principal.Identities.Where(i => i.IsAuthenticated).SelectMany(i => i.Claims)
+    public static GroupNames GroupCandidates(ClaimsPrincipal principal, SidNames? sids = null) =>
+        CandidatesFor(GroupValues(principal), sids);
+
+    /// <summary>As <see cref="GroupCandidates"/>, without holding the caller's thread while the names are looked up.</summary>
+    public static Task<GroupNames> GroupCandidatesAsync(ClaimsPrincipal principal, SidNames? sids = null) =>
+        CandidatesForAsync(GroupValues(principal), sids);
+
+    // WF-42: only the signed-in identity's claims. The roles CaseBook grants ride on an unauthenticated identity it adds
+    // (here and in the S-10 re-check); read as groups, a role named like an AD group picked up that group's mappings, and
+    // a removed mapping never took the role away.
+    private static List<string> GroupValues(ClaimsPrincipal principal) =>
+        principal.Identities.Where(i => i.IsAuthenticated).SelectMany(i => i.Claims)
             .Where(c => c.Type == ClaimTypes.Role || c.Type == ClaimTypes.GroupSid)
-            .Select(c => c.Value));
-    }
+            .Select(c => c.Value).ToList();
+
+    /// <summary>The names a set of groups matches mappings by. BUG-575: <see cref="Complete"/> is false when some of them
+    /// may be missing (a SID not named in time, or a bare name withheld because the server's domain isn't known yet), so a
+    /// caller that must not act on a partial answer can tell.</summary>
+    public sealed record GroupNames(IReadOnlySet<string> Names, bool Complete);
 
     /// <summary>Each group value (a SID, or already a name) with the account name(s) of the SIDs among them. BUG-565:
     /// the SIDs not yet named are translated together, in one bounded wait, rather than one blocking call each.</summary>
-    internal static IReadOnlySet<string> CandidatesFor(IEnumerable<string> values)
+    internal static GroupNames CandidatesFor(IEnumerable<string> values, SidNames? sids = null)
     {
         var list = values.ToList();
-        var names = Sids.Resolve(list);
-        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var value in list)
-        {
-            candidates.Add(value);
-            if (names.TryGetValue(value, out var resolved))
-                foreach (var name in NamesForSid(value, resolved)) candidates.Add(name);
-        }
-        return candidates;
+        var answer = (sids ?? Sids).Resolve(list);
+        return Candidates(list, answer, answer.Names.Count > 0 ? ServerDomainSid() : null);
     }
 
-    /// <summary>The account name(s) for a group SID resolved to <paramref name="resolved"/>: "DOMAIN\Group" and the
-    /// bare "Group".</summary>
-    private static IEnumerable<string> NamesForSid(string value, string resolved)
+    /// <summary>As <see cref="CandidatesFor"/>, waiting asynchronously (BUG-575: the token-owner check's path is async).</summary>
+    internal static async Task<GroupNames> CandidatesForAsync(IEnumerable<string> values, SidNames? sids = null)
     {
-        yield return resolved;                                  // DOMAIN\Group
-        var slash = resolved.IndexOf('\\');
-        // BUG-188: a group name is unique only within its domain, so the bare "Group" is offered only for a group of
-        // this server's own domain (or the machine itself). A same-named group made in a trusted domain matches only a
-        // mapping that names its domain.
-        if (slash >= 0 && IsLocalToServer(value, resolved[..slash])) yield return resolved[(slash + 1)..];   // Group
+        var list = values.ToList();
+        var answer = await (sids ?? Sids).ResolveAsync(list);
+        return Candidates(list, answer, answer.Names.Count > 0 ? await ServerDomainSidAsync() : null);
+    }
+
+    // The account name(s) for each group SID resolved: "DOMAIN\Group" and the bare "Group".
+    private static GroupNames Candidates(List<string> values, SidNames.Answer answer, string? serverDomainSid)
+    {
+        var complete = answer.Complete;
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in values)
+        {
+            candidates.Add(value);
+            if (!answer.Names.TryGetValue(value, out var resolved)) continue;
+            candidates.Add(resolved);                                                   // DOMAIN\Group
+            var slash = resolved.IndexOf('\\');
+            if (slash < 0) continue;
+            // BUG-188: a group name is unique only within its domain, so the bare "Group" is offered only for a group of
+            // this server's own domain (or the machine itself). A same-named group made in a trusted domain matches only
+            // a mapping that names its domain.
+            var domain = resolved[..slash];
+            if (IsLocalToServer(value, domain, Environment.MachineName, serverDomainSid)) candidates.Add(resolved[(slash + 1)..]);   // Group
+            // BUG-575: withheld only because the server's domain isn't known yet, so the answer may be short.
+            else if (serverDomainSid == "" && IsLocalToServer(value, domain, Environment.MachineName, null)) complete = false;
+        }
+        return new GroupNames(candidates, complete);
     }
 
     // The domain this server is joined to, as the domain part of its computer account's SID. BUG-223: only a found one
@@ -121,16 +144,32 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
     private static string? ServerDomainSid()
     {
-        if (_serverDomainSid is { } known) return known;
-        if (!OperatingSystem.IsWindows()) return null;
-        lock (ServerDomainLock)
-        {
-            if (_serverDomainSid is { } again) return again;
-            if (!IsDomainJoined()) return null;
-            if (DateTime.UtcNow < _serverDomainRetryUtc) return "";
-        }
+        if (KnownServerDomainSid(out var sid)) return sid;
         ServerDomainLookup.Wait([""], SidNames.Timeout);
         return _serverDomainSid ?? "";
+    }
+
+    private static async Task<string?> ServerDomainSidAsync()
+    {
+        if (KnownServerDomainSid(out var sid)) return sid;
+        await ServerDomainLookup.WaitAsync([""], SidNames.Timeout);
+        return _serverDomainSid ?? "";
+    }
+
+    // Whether the answer is to hand without asking the directory.
+    private static bool KnownServerDomainSid(out string? sid)
+    {
+        sid = _serverDomainSid;
+        if (sid is not null || !OperatingSystem.IsWindows()) return true;
+        lock (ServerDomainLock)
+        {
+            sid = _serverDomainSid;
+            if (sid is not null) return true;
+            if (!IsDomainJoined()) return true;   // null: not on a domain
+            if (DateTime.UtcNow >= _serverDomainRetryUtc) return false;
+            sid = "";
+            return true;
+        }
     }
 
     // On the lookup's own thread; records what it found (or when to try again), even after its callers stopped waiting.
@@ -168,9 +207,6 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         try { return !string.IsNullOrEmpty(System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName); }
         catch { return true; }   // can't tell: assume joined, so a failed lookup fails closed
     }
-
-    private static bool IsLocalToServer(string sid, string domain) =>
-        !OperatingSystem.IsWindows() || IsLocalToServer(sid, domain, Environment.MachineName, ServerDomainSid());
 
     /// <summary>Whether a group (its SID and the domain part of its name) belongs to the server: a local or built-in
     /// group, or one of the server's domain (<paramref name="serverDomainSid"/>; null when the server isn't on a domain,

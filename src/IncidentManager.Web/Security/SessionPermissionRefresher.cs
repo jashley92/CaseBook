@@ -25,11 +25,15 @@ public sealed class SessionPermissionRefresher
     /// Resolved on first use: the directory loads itself through a DbContext whose audit interceptor needs the current
     /// user, whose auth-state provider needs this — taking it eagerly deadlocks the container at startup (as S-14 found).
     /// </param>
-    public SessionPermissionRefresher(Func<IRoleDirectory> directory, bool windowsMode)
+    /// <param name="sids">The group-name lookup (tests stand in for the directory here); the sign-in's by default.</param>
+    public SessionPermissionRefresher(Func<IRoleDirectory> directory, bool windowsMode, SidNames? sids = null)
     {
         _directoryFactory = directory;
         _windowsMode = windowsMode;
+        _sids = sids;
     }
+
+    private readonly SidNames? _sids;
 
     private IRoleDirectory Directory => _directoryFactory();
 
@@ -37,16 +41,25 @@ public sealed class SessionPermissionRefresher
     /// The principal with its roles and permissions brought up to date, or <c>null</c> when nothing changed (so the
     /// caller doesn't churn the auth state). Identity claims (name, SID, UPN, groups) are kept as they were.
     /// </summary>
-    public ClaimsPrincipal? Refresh(ClaimsPrincipal principal)
+    public ClaimsPrincipal? Refresh(ClaimsPrincipal principal) =>
+        principal.Identity?.IsAuthenticated != true ? null
+            : Apply(principal, _windowsMode ? RoleClaimsTransformer.GroupCandidates(principal, _sids) : null);
+
+    /// <summary>As <see cref="Refresh"/>, without holding the caller's thread while group names are looked up.</summary>
+    public async Task<ClaimsPrincipal?> RefreshAsync(ClaimsPrincipal principal) =>
+        principal.Identity?.IsAuthenticated != true ? null
+            : Apply(principal, _windowsMode ? await RoleClaimsTransformer.GroupCandidatesAsync(principal, _sids) : null);
+
+    private ClaimsPrincipal? Apply(ClaimsPrincipal principal, RoleClaimsTransformer.GroupNames? groups)
     {
-        if (principal.Identity?.IsAuthenticated != true) return null;
+        // BUG-575: a group whose name didn't come back in time would drop its name-mapped roles from an open session
+        // until the next re-check; the session keeps what it has until the answer is whole.
+        if (groups is { Complete: false }) return null;
 
         var heldRoles = AppRoleClaims(principal).Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var heldPerms = principal.FindAll(AppClaimTypes.Permission).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
 
-        IReadOnlySet<string> roles = _windowsMode
-            ? Directory.RolesForGroups(RoleClaimsTransformer.GroupCandidates(principal))
-            : heldRoles;
+        IReadOnlySet<string> roles = groups is not null ? Directory.RolesForGroups(groups.Names) : heldRoles;
         var perms = Directory.PermissionsForRoles(roles);
         if (!_windowsMode && perms.Count == 0) perms = RoleDefinitions.PermissionsForRoleNames(roles); // dev fallback
         var permNames = perms.Select(p => p.ToString()).ToHashSet(StringComparer.Ordinal);

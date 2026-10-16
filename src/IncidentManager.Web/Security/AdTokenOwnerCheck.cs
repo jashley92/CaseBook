@@ -31,9 +31,15 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     private readonly IClock _clock;
     private readonly ILogger<AdTokenOwnerCheck>? _log;
     private readonly Func<string, AccountGroups?> _lookup;
-    // BUG-266: what the directory said (enabled, groups), not the roles: the roles are resolved from the groups on each call,
-    // so a mapping removed in Administration applies at once, as it does to signed-in sessions. Null: no such account.
-    private readonly ConcurrentDictionary<string, (AccountGroups? Account, DateTimeOffset At)> _answers = new(StringComparer.OrdinalIgnoreCase);
+    // BUG-266: what the directory said (enabled, the names its groups match mappings by), not the roles: the roles are
+    // resolved from the groups on each call, so a mapping removed in Administration applies at once, as it does to
+    // signed-in sessions. BUG-575: kept only when every group was named.
+    private readonly ConcurrentDictionary<string, (Known Account, DateTimeOffset At)> _answers = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>An account as last answered: whether it exists, is enabled, and its groups' names.</summary>
+    private sealed record Known(bool Exists, bool Enabled, IReadOnlySet<string> Groups);
+
+    private readonly SidNames? _sids;
     // BUG-292: when the directory last failed for an account; it isn't asked again for a minute, so every call during an
     // outage doesn't wait out its own timeout.
     private readonly ConcurrentDictionary<string, DateTimeOffset> _failedAt = new(StringComparer.OrdinalIgnoreCase);
@@ -53,8 +59,9 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     private readonly Dictionary<string, int> _hung = new(StringComparer.OrdinalIgnoreCase);   // per domain
 
     public AdTokenOwnerCheck(IRoleDirectory roles, IClock clock, ILogger<AdTokenOwnerCheck>? log = null,
-        Func<string, AccountGroups?>? lookup = null, TimeProvider? time = null)
+        Func<string, AccountGroups?>? lookup = null, TimeProvider? time = null, SidNames? sids = null)
     {
+        _sids = sids;
         _roles = roles;
         _clock = clock;
         _log = log;
@@ -96,9 +103,18 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         try
         {
             var account = await pending.Lookup.WaitAsync(Timeout, _time, ct);
-            _answers[ownerUserId] = (account, now);
+            if (await NamedAsync(account) is not { } named)
+            {
+                // BUG-575: some of its groups weren't named in time (or the directory failed naming them). Read as the
+                // whole answer, a Manager mapped by group name lost the role: dropped from escalations and the executive
+                // report, a reminder rerouted and marked sent, a token refused. It's AD being unreachable instead.
+                _log?.LogWarning("Active Directory didn't name all of an account's groups in time when checking an API token's owner.");
+                _failedAt[ownerUserId] = now;
+                return Unreachable(known, last, now, failOpen);
+            }
+            _answers[ownerUserId] = (named, now);
             _failedAt.TryRemove(ownerUserId, out _);
-            return Access(account);
+            return Access(named);
         }
         catch (TimeoutException)
         {
@@ -163,17 +179,22 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         return slash > 0 ? ownerUserId[..slash] : "";
     }
 
-    private OwnerAccess Access(AccountGroups? account) => account is null
-        ? new OwnerAccess(false, NoRoles)
-        : new OwnerAccess(account.Enabled, _roles.RolesForGroups(Candidates(account.GroupSids)));
+    private OwnerAccess Access(Known account) => account.Exists
+        ? new OwnerAccess(account.Enabled, _roles.RolesForGroups(account.Groups))
+        : new OwnerAccess(false, NoRoles);
 
     // The directory can't be asked: the last answer for up to a day, then refused (or, for a feed recipient, not known).
-    private OwnerAccess? Unreachable(bool known, (AccountGroups? Account, DateTimeOffset At) last, DateTimeOffset now, bool failOpen) =>
+    private OwnerAccess? Unreachable(bool known, (Known Account, DateTimeOffset At) last, DateTimeOffset now, bool failOpen) =>
         known && now - last.At < LastKnownLimit ? Access(last.Account) : failOpen ? null : new OwnerAccess(false, NoRoles);
 
     // The same names a sign-in matches mappings against: the SID, and "DOMAIN\Group" and "Group" (BUG-565: translated
-    // together, bounded).
-    private static IEnumerable<string> Candidates(IEnumerable<string> groupSids) => RoleClaimsTransformer.CandidatesFor(groupSids);
+    // together, bounded). Null when some weren't named (BUG-575).
+    private async Task<Known?> NamedAsync(AccountGroups? account)
+    {
+        if (account is null) return new Known(false, false, NoRoles);
+        var groups = await RoleClaimsTransformer.CandidatesForAsync(account.GroupSids, _sids);
+        return groups.Complete ? new Known(true, account.Enabled, groups.Names) : null;
+    }
 
     // BUG-127: an owner id is however the user signed in: DOMAIN\sam under Windows sign-in (WindowsIdentity carries no
     // name-identifier or UPN claim), a UPN or a SID otherwise. FindByIdentity without a type tries each of those forms.

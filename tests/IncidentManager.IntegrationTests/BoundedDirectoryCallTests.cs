@@ -152,13 +152,13 @@ public sealed class BoundedDirectoryCallTests
         try
         {
             var clock = Stopwatch.StartNew();
-            sids.Resolve(["S-1-5-21-1-1", "S-1-5-21-1-2", "SOC-AppAdmins"]).Should().BeEmpty("nothing was named in time");
+            sids.Resolve(["S-1-5-21-1-1", "S-1-5-21-1-2", "SOC-AppAdmins"]).Names.Should().BeEmpty("nothing was named in time");
             clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
             entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();   // C17
             lock (batches) batches.Should().ContainSingle().Which.Should().Equal("S-1-5-21-1-1", "S-1-5-21-1-2");
 
             clock.Restart();
-            sids.Resolve(["S-1-5-21-1-1"]).Should().BeEmpty();
+            sids.Resolve(["S-1-5-21-1-1"]).Names.Should().BeEmpty();
             clock.Elapsed.Should().BeLessThan(Short, "a SID whose translation is still blocked isn't waited on again");
 
             for (var i = 0; i < SidNames.MaxHung + 2; i++) sids.Resolve([$"S-1-5-21-2-{i}"]);
@@ -167,8 +167,8 @@ public sealed class BoundedDirectoryCallTests
         }
         finally { release.Set(); }
 
-        Eventually(() => sids.Resolve(["S-1-5-21-1-1", "S-1-5-21-1-2"]).Count == 2).Should().BeTrue("the late names are kept");
-        sids.Resolve(["S-1-5-21-1-2"]).Should().Equal(new Dictionary<string, string> { ["S-1-5-21-1-2"] = "CORP\\G2" });
+        Eventually(() => sids.Resolve(["S-1-5-21-1-1", "S-1-5-21-1-2"]).Names.Count == 2).Should().BeTrue("the late names are kept");
+        sids.Resolve(["S-1-5-21-1-2"]).Names.Should().Equal(new Dictionary<string, string> { ["S-1-5-21-1-2"] = "CORP\\G2" });
     }
 
     [Fact]
@@ -192,7 +192,7 @@ public sealed class BoundedDirectoryCallTests
         release.Set();
 
         foreach (var r in (await Task.WhenAll(rest.Prepend(first))))
-            r.Should().ContainKey("S-1-5-21-9-1");
+            r.Names.Should().ContainKey("S-1-5-21-9-1");
         asked.Should().Be(1);
     }
 

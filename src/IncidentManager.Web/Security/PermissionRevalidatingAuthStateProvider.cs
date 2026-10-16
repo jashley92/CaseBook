@@ -61,7 +61,7 @@ public sealed class PermissionRevalidatingAuthStateProvider : ServerAuthenticati
     public async Task<bool> RevalidateAsync()
     {
         var state = await GetAuthenticationStateAsync();
-        if (_refresher.Refresh(state.User) is not { } updated) return false;
+        if (await _refresher.RefreshAsync(state.User) is not { } updated) return false;
 
         _publishing = true;
         try { SetAuthenticationState(Task.FromResult(new AuthenticationState(updated))); }
