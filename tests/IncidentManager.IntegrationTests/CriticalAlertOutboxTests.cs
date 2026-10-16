@@ -148,6 +148,20 @@ public sealed class CriticalAlertOutboxTests : IDisposable
     }
 
     [Fact]
+    public async Task An_alert_whose_caller_gave_up_is_still_kept_for_retry(/* BUG-627 */)
+    {
+        // A request that ended, or the app shutting down: the send fails because of the cancelled token, and the same
+        // token refused the row, so the alarm was neither sent nor kept.
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        _sender.Failing = true;
+        await Outbox().SendAsync(AlertDelivery.BreachEscalation, Guid.NewGuid(), "2026-04_Vendor", Message(), cancelled.Token);
+
+        await using var db = Factory().CreateAppDbContext();
+        (await db.AlertDeliveries.AsNoTracking().SingleAsync()).NextAttemptAtUtc.Should().NotBeNull("it's tried again later");
+    }
+
+    [Fact]
     public void Retries_after_a_hold_keep_their_spacing(/* BUG-291 */)
     {
         var t0 = _clock.UtcNow;

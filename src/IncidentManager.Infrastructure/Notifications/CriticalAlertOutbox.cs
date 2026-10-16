@@ -53,8 +53,10 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
             // longer than the column is kept as several rows (none dropped); the subject is shortened.
             var subject = TextFit.Cap(message.Subject, MaxSubjectLength);
             DateTimeOffset? next = null;
+            // BUG-627: kept without the caller's token. The send failed because the caller gave up (a request ended, the
+            // app is shutting down), and the same token then refused the row too: the alarm was neither sent nor kept.
             await using var scope = scopes.CreateAsyncScope();
-            await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct);
+            await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(CancellationToken.None);
             foreach (var recipients in RecipientLists(message.To))
             {
                 var row = new AlertDelivery
@@ -67,7 +69,7 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
                 next = row.NextAttemptAtUtc;
                 db.AlertDeliveries.Add(row);
             }
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
             log.LogWarning("A {Kind} email wasn't delivered; it will be tried again at {NextAttempt:u}.", kind, next);
         }
         catch (Exception ex)
