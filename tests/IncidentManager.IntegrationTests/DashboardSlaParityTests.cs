@@ -86,6 +86,11 @@ public abstract class DashboardSlaParityTests : IDisposable
             m.MeanHoursToResolve.Should().Be(expected.MeanResolve, user.UserId);
             m.OverdueActionItems.Should().Be(expected.Overdue, user.UserId);
             m.Trend.Should().Equal(expected.Trend, user.UserId);
+
+            // BUG-612: the Cases page's counts, without the all-time history: everything else as the dashboard has it.
+            var counts = await NewDashboard(user).GetAsync(includeExercises: false, withSlaHistory: false);
+            counts.Should().BeEquivalentTo(m with { ContainmentMet = 0, ContainmentMissed = 0, ResolutionMet = 0, ResolutionMissed = 0,
+                DetectionMet = 0, DetectionMissed = 0 }, user.UserId);
         }
 
         // The case list's "SLA over or at risk" filter uses the same rules, and still applies to archived cases.

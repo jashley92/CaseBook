@@ -700,7 +700,7 @@ else
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
         _canEdit = (await Authz.AuthorizeAsync(auth.User, Policies.EditCases)).Succeeded;
-        _dash = await Dashboard.GetAsync();
+        _dash = await Dashboard.GetAsync(includeExercises: false, withSlaHistory: false);   // BUG-612: the counts only
         _outcomes = (await Outcomes.ListAllAsync()).Where(o => o.IsActive || o.UseCount > 0).ToList();
         await ReloadViews();
         // BUG-566: left (or rebuilt by the layout's time-zone key) while these loads ran, Dispose has already run, so

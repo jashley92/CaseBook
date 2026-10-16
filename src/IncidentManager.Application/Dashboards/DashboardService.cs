@@ -118,7 +118,13 @@ public sealed class DashboardService
     public async Task<DashboardMetrics> GetAsync(CancellationToken ct = default) => await GetAsync(false, ct);
 
     /// <param name="includeExercises">Count exercise cases too; by default drills stay out of posture metrics (PROD-43).</param>
-    public async Task<DashboardMetrics> GetAsync(bool includeExercises, CancellationToken ct = default)
+    public async Task<DashboardMetrics> GetAsync(bool includeExercises, CancellationToken ct = default) =>
+        await GetAsync(includeExercises, withSlaHistory: true, ct);
+
+    /// <param name="includeExercises">As above.</param>
+    /// <param name="withSlaHistory">BUG-612: false for a page that shows only the open-case figures (the Cases page's
+    /// counts): the all-time SLA met/missed, which loads every case's history, is left at zero.</param>
+    public async Task<DashboardMetrics> GetAsync(bool includeExercises, bool withSlaHistory, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var cases = db.Cases.AsNoTracking().ForUser(_user);
@@ -153,7 +159,7 @@ public sealed class DashboardService
         // BUG-588 (owner's decision): historical compliance judges each milestone as the program report judged it in the
         // quarter it was reached (PeriodSla): on the severity and class the case had at that quarter's end, against the
         // targets in force when it was reached, and not the detection clock from an approximate start (BUG-583).
-        var (cMet, cMissed, rMet, rMissed, dMet, dMissed) = await AllTimeSlaAsync(db, cases, slaTargets, ct);
+        var (cMet, cMissed, rMet, rMissed, dMet, dMissed) = withSlaHistory ? await AllTimeSlaAsync(db, cases, slaTargets, ct) : default;
 
         var historyScan = new OneScan<Case>();
         // Mean time-to-contain / resolve over cases that reached those milestones.
@@ -222,7 +228,9 @@ public sealed class DashboardService
     private async Task<(int CMet, int CMissed, int RMet, int RMissed, int DMet, int DMissed)> AllTimeSlaAsync(IAppDbContext db,
         IQueryable<Case> cases, Sla.SlaTargets current, CancellationToken ct)
     {
-        var reached = cases.Where(c => c.Severity != Severity.Informational && c.DetectedAtUtc != null
+        // BUG-612: today's severity doesn't pre-filter: a case downgraded to Informational since is judged on the severity
+        // it had at the quarter's end, as the report judges it (PeriodSla gives Informational no target).
+        var reached = cases.Where(c => c.DetectedAtUtc != null
                                        && (c.ContainedAtUtc != null || c.ResolvedAtUtc != null || c.OccurredAtUtc != null));
         var rows = await reached.Select(c => new
         {

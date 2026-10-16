@@ -311,6 +311,36 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_case_downgraded_to_Informational_later_counts_on_the_dashboard_as_in_its_quarter(/* BUG-612 */)
+    {
+        var now = _clock.UtcNow;
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            _clock.UtcNow = Apr(3);
+            // Q2: a High case contained in 6 h (inside 8 h), and an Informational one contained in 20 h (no target).
+            var high = Case.Open(2026, 1, "H", "High", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", Apr(2));
+            (high.DetectedAtUtc, high.ContainedAtUtc) = (Apr(2), Apr(2, 6));
+            var info = Case.Open(2026, 2, "I", "Info", Classification.Incident, Severity.Informational, CaseOrigin.InternalDetection, "ic", Apr(2));
+            (info.DetectedAtUtc, info.ContainedAtUtc) = (Apr(2), Apr(2, 20));
+            db.Cases.AddRange(high, info);
+            await db.SaveChangesAsync();
+            // Q3: the High case turns out to be nothing (Informational); the Informational one is raised to High.
+            _clock.UtcNow = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+            high.ChangeSeverity(Severity.Informational, "False positive", "ic", _clock.UtcNow);
+            info.ChangeSeverity(Severity.High, "Scope grew", "ic", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        _clock.UtcNow = now;
+        var targets = new SlaTargets(new Dictionary<(SlaClock, Severity), int> { [(SlaClock.Containment, Severity.High)] = 8 }, 80);
+
+        var q2 = (await Service(targets).BuildAsync(Q2)).Current.Sla.Single(s => s.Clock == SlaClock.Containment);
+        q2.Should().Be(new SlaAttainment(SlaClock.Containment, 1, 0), "Q2 judges the severity each case had at its end");
+        var m = await Dashboard(targets, withHistory: false).GetAsync();   // today's targets, as the report here reads them
+        (m.ContainmentMet, m.ContainmentMissed).Should().Be((q2.Met, q2.Missed), "the dashboard agrees with the program report's quarter");
+    }
+
+    [Fact]
     public async Task An_action_reopened_later_still_counts_as_completed_in_its_quarter(/* WF-80 */)
     {
         await SeedAsync();   // "MFA for finance" completed on 25 Apr (Q2)

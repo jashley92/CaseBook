@@ -324,14 +324,16 @@ public sealed class AttackHistory
     private readonly Dictionary<Guid, DateTimeOffset> _caseCreated;
     private readonly List<Step> _steps;
     private readonly Dictionary<string, List<PeriodHistory.Entry>> _stepEdits;
-    private readonly List<(Guid StepId, Guid TacticId, MitreTactic Tactic, AuditAction Action, DateTimeOffset At)> _tacticTrail;
+    // BUG-612: by step, once (each window rebuilds every step; a scan of the whole trail per step was steps x trail).
+    private readonly ILookup<Guid, (Guid StepId, Guid TacticId, MitreTactic Tactic, AuditAction Action, DateTimeOffset At)> _tacticTrail;
     private readonly List<Tag> _tags;
     private readonly Dictionary<string, List<PeriodHistory.Entry>> _tagTrail;
 
     private AttackHistory(Dictionary<Guid, DateTimeOffset> caseCreated, List<Step> steps, Dictionary<string, List<PeriodHistory.Entry>> stepEdits,
         List<(Guid, Guid, MitreTactic, AuditAction, DateTimeOffset)> tacticTrail, List<Tag> tags, Dictionary<string, List<PeriodHistory.Entry>> tagTrail)
     {
-        (_caseCreated, _steps, _stepEdits, _tacticTrail, _tags, _tagTrail) = (caseCreated, steps, stepEdits, tacticTrail, tags, tagTrail);
+        (_caseCreated, _steps, _stepEdits, _tags, _tagTrail) = (caseCreated, steps, stepEdits, tags, tagTrail);
+        _tacticTrail = tacticTrail.ToLookup(t => t.Item1);
     }
 
     /// <param name="cases">The visible cases, with when each was filed.</param>
@@ -434,7 +436,7 @@ public sealed class AttackHistory
             });
         }
         var tactics = s.Tactics.ToList();
-        foreach (var t in _tacticTrail.Where(t => t.StepId == s.Id && t.At >= asOf))
+        foreach (var t in _tacticTrail[s.Id].Where(t => t.At >= asOf))
             if (t.Action == AuditAction.Create) tactics.RemoveAll(x => x.Id == t.TacticId);
             else if (tactics.All(x => x.Id != t.TacticId)) tactics.Add((t.TacticId, t.Tactic));
         return step with { Tactics = tactics };
