@@ -6,6 +6,10 @@ namespace IncidentManager.Application.Import;
 /// <summary>The outcome of parsing an import document: the document, or a friendly error explaining why not.</summary>
 public sealed record CaseImportParse(CaseImportDocument? Document, string? Error)
 {
+    /// <summary>BUG-636: how many of the document's times had no offset, and the zone they were read in.</summary>
+    public int UnzonedTimes { get; init; }
+    public TimeZoneInfo? UnzonedZone { get; init; }
+
     public bool Ok => Document is not null && Error is null;
     public static CaseImportParse Fail(string error) => new(null, error);
     public static CaseImportParse Success(CaseImportDocument doc) => new(doc, null);

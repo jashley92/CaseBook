@@ -9,8 +9,13 @@ namespace IncidentManager.Application.Import;
 /// NOT emit a target block (the analyst selects the case in CaseBook).</param>
 /// <param name="Classification">An optional classification hint for a new case; null lists the choices.</param>
 /// <param name="ToolName">The analyst's AI tool, used only to phrase the <c>origin</c> provenance value.</param>
+/// <param name="TimeZone">BUG-636: the zone local times in the material are in when it doesn't say (an IANA id, such as
+/// the organization's America/New_York). The AI keeps such times as written and names the zone, rather than converting
+/// them to UTC itself.</param>
+/// <param name="Exercise">BUG-635: the new case is a tabletop / exercise case.</param>
 public sealed record CaseImportPromptOptions(
-    bool TargetIsExisting = false, Classification? Classification = null, string? ToolName = null);
+    bool TargetIsExisting = false, Classification? Classification = null, string? ToolName = null,
+    string? TimeZone = null, bool Exercise = false);
 
 /// <summary>
 /// PROD-32: builds a copy-paste prompt that instructs an analyst's <b>own</b> AI (e.g. Microsoft Copilot) to
@@ -50,7 +55,14 @@ public static class CaseImportPrompt
         sb.AppendLine("- Output ONLY the JSON object — no prose, no explanation, no Markdown code fences.");
         sb.AppendLine("- Use only facts present in the source material. Do NOT invent indicators, times, names, or");
         sb.AppendLine("  events. If a field is unknown, omit it.");
-        sb.AppendLine("- All timestamps must be ISO-8601 in UTC, e.g. \"2026-09-19T13:05:00Z\".");
+        // BUG-636: converting local times to UTC is where an AI slips (daylight saving), so times are kept as stated.
+        sb.AppendLine("- Write every timestamp as ISO-8601. Keep each time as the material states it: with its UTC offset when");
+        sb.AppendLine("  the material gives one (e.g. \"2026-09-19T09:05:00-04:00\"), or with Z when it's in UTC. Don't convert times.");
+        if (!string.IsNullOrWhiteSpace(o.TimeZone))
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"- Times the material gives without a time zone are in {o.TimeZone.Trim()}: write them without an offset and set \"timeZone\": \"{o.TimeZone.Trim()}\".");
+        else
+            sb.AppendLine("- Times the material gives without a time zone: write them without an offset, and set \"timeZone\" to the zone they're in (an IANA id such as America/New_York).");
         sb.AppendLine("- Create one timeline entry per distinct event, in the order events happened.");
         sb.AppendLine("- Leave indicators exactly as written, including any \"defanged\" form (hxxp://, 1.1.1[.]1,");
         sb.AppendLine("  user[at]example.com) — CaseBook normalizes them. Do not add or remove indicators.");
@@ -75,13 +87,17 @@ public static class CaseImportPrompt
             sb.AppendLine("    \"newCase\": {");
             sb.AppendLine("      \"title\": \"<a short, specific case title>\",");
             sb.AppendLine(CultureInfo.InvariantCulture, $"      \"classification\": {clsField},");
-            sb.AppendLine("      \"severity\": \"<one of the severities below>\"");
+            sb.AppendLine(o.Exercise
+                ? "      \"severity\": \"<one of the severities below>\","
+                : "      \"severity\": \"<one of the severities below>\"");
+            if (o.Exercise) sb.AppendLine("      \"exercise\": true");   // BUG-635: a tabletop case
             sb.AppendLine("    }");
             sb.AppendLine("  },");
         }
+        sb.AppendLine("  \"timeZone\": \"<the zone of times written without an offset, e.g. America/New_York; omit if none>\",");
         sb.AppendLine("  \"summary\": \"<a concise narrative summary of the matter>\",");
         sb.AppendLine("  \"timeline\": [");
-        sb.AppendLine("    { \"occurredAtUtc\": \"<ISO-8601 UTC>\", \"timePrecision\": \"<optional, Event only>\", \"occurredUntilUtc\": \"<Window only>\",");
+        sb.AppendLine("    { \"occurredAtUtc\": \"<ISO-8601 date-time>\", \"timePrecision\": \"<optional, Event only>\", \"occurredUntilUtc\": \"<Window only>\",");
         sb.AppendLine("      \"kind\": \"<kind>\", \"type\": \"<type>\",");
         sb.AppendLine("      \"description\": \"<what happened>\", \"source\": \"<optional: where this came from>\" }");
         sb.AppendLine("  ],");
@@ -90,7 +106,7 @@ public static class CaseImportPrompt
         sb.AppendLine("      \"label\": \"<optional>\", \"disposition\": \"<optional>\", \"source\": \"<optional>\" }");
         sb.AppendLine("  ],");
         sb.AppendLine("  \"actionItems\": [");
-        sb.AppendLine("    { \"title\": \"<follow-up task>\", \"owner\": \"<optional>\", \"dueAtUtc\": \"<optional ISO-8601 UTC>\" }");
+        sb.AppendLine("    { \"title\": \"<follow-up task>\", \"owner\": \"<optional>\", \"dueAtUtc\": \"<optional ISO-8601 date-time>\" }");
         sb.AppendLine("  ]");
         sb.AppendLine("}");
         sb.AppendLine();

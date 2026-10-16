@@ -39,6 +39,9 @@ public static class CaseImportSchema
                 ["origin"] = Str("Provenance recorded as the source of imported indicators and timeline entries "
                     + "(e.g. \"AI-assisted (Copilot)\", \"manual\", \"XSIAM\")."),
                 ["target"] = Ref("target"),
+                // BUG-636
+                ["timeZone"] = Str("The time zone of times written without an offset, as an IANA id such as America/New_York. "
+                    + "Omit it when every time has an offset or a Z; times without one are then UTC."),
                 ["summary"] = Str("A narrative summary of the matter, imported as an analyst note."),
                 // BUG-202: the most one import takes.
                 ["timeline"] = Array("timelineEntry", CaseImportService.MaxTimelineEntries),
@@ -79,6 +82,8 @@ public static class CaseImportSchema
                         ["impactedAssets"] = Str(null),
                         ["detectionCaseId"] = Str("The source platform's id for the event, e.g. the XSIAM incident id (the case's detection-source back-link). Up to 100 characters."),
                         ["vendorName"] = Str("The vendor that disclosed it. Required when origin is ThirdParty. Up to 300 characters."),
+                        // BUG-635
+                        ["exercise"] = new JsonObject { ["type"] = "boolean", ["description"] = "A tabletop or exercise case (a drill): badged and kept out of dashboards, reminders, the IOC feed and correlation with live cases. Can't be changed once the case is created. Defaults to false." },
                     },
                 },
                 ["timelineEntry"] = new JsonObject

@@ -101,7 +101,13 @@ Notes:
 - Set `target.newCase` to open a new case, or `target.caseId` to add to an existing one. A new case with no
   `classification` files as a **Complex Event** (intake) for a person to classify; `newCase.detectionCaseId`
   carries the source platform's id (for example the XSIAM incident id) as the case's back-link. A new case with
-  `origin: "ThirdParty"` needs `newCase.vendorName` (the vendor that disclosed it).
+  `origin: "ThirdParty"` needs `newCase.vendorName` (the vendor that disclosed it). `newCase.exercise: true` makes it a
+  **tabletop / exercise case** (a drill: badged, kept out of dashboards, reminders, the IOC feed and correlation with
+  live cases; fixed once created).
+- **Times**: ISO 8601. A time with an offset (`2026-09-18T09:05:00-04:00`) or `Z` is kept as stated. A time without one
+  is read in the document's top-level `timeZone` (an IANA id such as `America/New_York`), or as UTC when it has none.
+  (On the Import page the reviewer picks the zone for such times instead, the organization's by default; a document's
+  own `timeZone` still wins.)
 - Indicators may be **defanged** (`hxxp://`, `1.1.1[.]1`) — CaseBook refangs and auto-types them; the entity
   `type` is optional.
 - `origin` is recorded as the provenance (source) of imported indicators and timeline entries.

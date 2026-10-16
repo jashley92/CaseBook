@@ -24,6 +24,10 @@
     "target": {
       "$ref": "#/$defs/target"
     },
+    "timeZone": {
+      "type": "string",
+      "description": "The time zone of times written without an offset, as an IANA id such as America/New_York. Omit it when every time has an offset or a Z; times without one are then UTC."
+    },
     "summary": {
       "type": "string",
       "description": "A narrative summary of the matter, imported as an analyst note."
@@ -137,6 +141,10 @@
         "vendorName": {
           "type": "string",
           "description": "The vendor that disclosed it. Required when origin is ThirdParty. Up to 300 characters."
+        },
+        "exercise": {
+          "type": "boolean",
+          "description": "A tabletop or exercise case (a drill): badged and kept out of dashboards, reminders, the IOC feed and correlation with live cases. Can't be changed once the case is created. Defaults to false."
         }
       }
     },

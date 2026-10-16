@@ -69,15 +69,31 @@ public sealed class CaseImportService
 
     /// <summary>Parses import JSON, guarding format and schema version. Never throws on bad input — returns a
     /// friendly <see cref="CaseImportParse.Error"/> instead, so the UI/API can show it.</summary>
-    public static CaseImportParse Parse(string? json)
+    /// <param name="unzonedIn">BUG-636: the zone of times written without an offset when the document doesn't name one
+    /// (<c>timeZone</c>). The API leaves it null, so such times are UTC as the schema says; the import page passes the
+    /// zone the reviewer picked.</param>
+    public static CaseImportParse Parse(string? json, TimeZoneInfo? unzonedIn = null)
     {
         if (string.IsNullOrWhiteSpace(json))
             return CaseImportParse.Fail("Paste or upload a case-import document first.");
 
+        // BUG-636: the document's own zone, read first, wins over the one the caller offers.
+        var zone = unzonedIn ?? TimeZoneInfo.Utc;
+        if (StatedTimeZone(json) is { } stated)
+        {
+            if (!TimeZoneInfo.TryFindSystemTimeZoneById(stated, out var named))
+                return CaseImportParse.Fail($"Unknown \"timeZone\": \"{stated}\". Use a zone id such as America/New_York, Europe/London or UTC.");
+            zone = named;
+        }
+        var times = new CaseImportJson.UtcUnlessStated(zone);
+        var options = new JsonSerializerOptions(CaseImportJson.Options);
+        options.Converters.Clear();
+        options.Converters.Add(times);
+
         CaseImportDocument? doc;
         try
         {
-            doc = JsonSerializer.Deserialize<CaseImportDocument>(json, CaseImportJson.Options);
+            doc = JsonSerializer.Deserialize<CaseImportDocument>(json, options);
         }
         catch (JsonException ex)
         {
@@ -95,7 +111,22 @@ public sealed class CaseImportService
         // BUG-202: the same limits a reviewer can check by eye; a bigger set is split across documents.
         if (TooMany(doc) is { } tooMany) return CaseImportParse.Fail(tooMany);
 
-        return CaseImportParse.Success(doc);
+        return CaseImportParse.Success(doc) with { UnzonedTimes = times.Unzoned, UnzonedZone = zone };
+    }
+
+    // The top-level "timeZone", if the document has one (null when it doesn't, or isn't JSON; Deserialize reports that).
+    private static string? StatedTimeZone(string json)
+    {
+        try
+        {
+            using var d = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+            if (d.RootElement.ValueKind != JsonValueKind.Object) return null;
+            foreach (var p in d.RootElement.EnumerateObject())
+                if (string.Equals(p.Name, "timeZone", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.String)
+                    return string.IsNullOrWhiteSpace(p.Value.GetString()) ? null : p.Value.GetString()!.Trim();
+            return null;
+        }
+        catch (JsonException) { return null; }
     }
 
     /// <summary>
@@ -857,7 +888,8 @@ public sealed class CaseImportService
             DataTypesInvolved = Clamp(nc?.DataTypesInvolved, 4000, "Data context", warnings),   // BUG-247: the column, not a label's 300
             ImpactedAssets = Clamp(nc?.ImpactedAssets, 4000, "Impacted assets", warnings),   // BUG-105: the column
             DetectionCaseId = Clamp(nc?.DetectionCaseId, 100, "Detection case ID", warnings),
-            VendorName = Clamp(nc?.VendorName, 300, "Vendor name", warnings)   // BUG-117: a third-party case needs one
+            VendorName = Clamp(nc?.VendorName, 300, "Vendor name", warnings),   // BUG-117: a third-party case needs one
+            IsExercise = nc?.Exercise == true   // BUG-635: a tabletop case, as the New case form's switch
         };
     }
 
@@ -891,7 +923,9 @@ public sealed class CaseImportService
         return TimelineEntryType.Communication;
     }
 
-    private static string SlugSource(string? title)
+    /// <summary>The case-number slug source for a title (the first six words, at most 42 characters), as the New case
+    /// form derives it. BUG-637: also used by the import preview when the title is edited.</summary>
+    public static string SlugSource(string? title)
     {
         var t = (title ?? "").Trim();
         if (t.Length == 0) return "Imported case";

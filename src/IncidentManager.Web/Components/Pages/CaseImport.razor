@@ -93,7 +93,8 @@ else if (_pending.Count > 0)
             </div>
             <div class="col-md-3">
                 <label class="form-label small mb-1" for="imp-target">Target</label>
-                <select id="imp-target" class="form-select form-select-sm" value="@_promptExisting" @onchange="OnPromptTargetChanged">
+                @* BUG-638: Blazor renders a bool attribute as present/absent, so value="@bool" left no option selected (a blank box) once Existing case was picked. *@
+                <select id="imp-target" class="form-select form-select-sm" value="@(_promptExisting ? "True" : "False")" @onchange="OnPromptTargetChanged">
                     <option value="False">New case</option>
                     <option value="True">Existing case</option>
                 </select>
@@ -108,6 +109,16 @@ else if (_pending.Count > 0)
                         @* BUG-542: a rung this role can't file (REV-14) would only be dropped from the document. *@
                         @if (CanClassify) { @foreach (var cl in Enum.GetValues<Classification>()) { <option value="@cl">@Ui.Label(cl)</option> } }
                     </select>
+                </div>
+            }
+            @if (!_promptExisting)
+            {
+                @* BUG-635 *@
+                <div class="col-md-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="imp-ai-exercise" @bind="_promptExercise" />
+                        <label class="form-check-label small" for="imp-ai-exercise"><span class="bi bi-mortarboard me-1" aria-hidden="true"></span>Tabletop / exercise</label>
+                    </div>
                 </div>
             }
             <div class="col-md-3">
@@ -144,6 +155,14 @@ else if (_pending.Count > 0)
         <button class="btn btn-sm btn-primary" @onclick="PreviewFromBox" disabled="@_readingBox">
             <span class="bi bi-eye me-1" aria-hidden="true"></span>Preview import
         </button>
+        @* BUG-636: what a time written without a zone means (a document's own "timeZone" wins). *@
+        <label class="small text-muted ms-1" for="imp-zone">Times without a zone are in</label>
+        <select id="imp-zone" class="form-select form-select-sm w-auto" @bind="_unzonedZoneId">
+            @foreach (var (id, label) in ZoneChoices())
+            {
+                <option value="@id">@label</option>
+            }
+        </select>
         <span class="text-muted small">or upload a file:</span>
         <InputFile OnChange="OnFileSelected" accept=".json,.stix,.csv,.txt" class="form-control form-control-sm" style="max-width:20rem" />
         @if (_preview is not null)
@@ -198,7 +217,13 @@ else if (_pending.Count > 0)
             <div class="row g-2">
                 <div class="col-md-6">
                     <label class="form-label small mb-1" for="imp-nc-title">Title <span class="text-danger">*</span></label>
-                    <input id="imp-nc-title" class="form-control form-control-sm" @bind="nc.Title" />
+                    <input id="imp-nc-title" class="form-control form-control-sm" @bind="nc.Title"
+                           @bind:after="() => nc.DescriptiveName = CaseImportService.SlugSource(nc.Title)" />
+                    @* BUG-637: as the New case form: the number the case will get, from the title. *@
+                    @if (string.IsNullOrWhiteSpace(nc.CaseNumber))
+                    {
+                        <div class="form-text">Case number <code>@PreviewNumber(nc)</code> is assigned automatically.</div>
+                    }
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small mb-1" for="imp-nc-class">Classification</label>
@@ -235,6 +260,29 @@ else if (_pending.Count > 0)
                                placeholder="Who disclosed it" />
                     </div>
                 }
+                @* BUG-637: as the New case form's Advanced: choose the case number instead of the automatic one. *@
+                <div class="col-12">
+                    <details class="nc-advanced" open="@(!string.IsNullOrWhiteSpace(nc.CaseNumber))">
+                        <summary class="small">Advanced</summary>
+                        <div class="mt-2" style="max-width: 28rem">
+                            <label class="form-label small mb-1" for="imp-nc-number">Case number <span class="text-muted">(optional)</span></label>
+                            <input id="imp-nc-number" class="form-control form-control-sm" @bind="nc.CaseNumber" @bind:after="() => CheckNumberAvailable(nc)"
+                                   placeholder="@PreviewNumber(nc)" maxlength="64" />
+                            @if (_numberAvailable == false)
+                            {
+                                <div class="form-text text-danger"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@(nc.CaseNumber?.Trim())” is in use, or was used before by another case (its audit trail keeps the number). Pick another or leave it blank.</div>
+                            }
+                            else if (_numberAvailable == true)
+                            {
+                                <div class="form-text text-success"><span class="bi bi-check-circle me-1" aria-hidden="true"></span>Available.</div>
+                            }
+                            else
+                            {
+                                <div class="form-text">Leave blank to number it automatically.</div>
+                            }
+                        </div>
+                    </details>
+                </div>
                 @* WF-54: as the New case form: restricted to need-to-know from the start, and put on the team. Off by default. *@
                 <div class="col-12">
                     <div class="form-check form-check-inline">
@@ -243,12 +291,23 @@ else if (_pending.Count > 0)
                             <span class="bi bi-lock me-1" aria-hidden="true"></span>Restricted (need-to-know)
                         </label>
                     </div>
+                    @* BUG-635: a tabletop case, as the New case form: fixed once created, and kept away from live cases. *@
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="imp-nc-exercise" @bind="nc.IsExercise" @bind:after="ExerciseChanged" />
+                        <label class="form-check-label small" for="imp-nc-exercise">
+                            <span class="bi bi-mortarboard me-1" aria-hidden="true"></span>Tabletop / exercise case
+                        </label>
+                    </div>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="checkbox" id="imp-nc-assign" @bind="nc.AssignToMe" />
                         <label class="form-check-label small" for="imp-nc-assign">
                             <span class="bi bi-person-check me-1" aria-hidden="true"></span>Assign it to me
                         </label>
                     </div>
+                    @if (nc.IsExercise)
+                    {
+                        <div class="form-text">A drill: badged, and kept out of dashboards, reminders, the IOC feed and cross-case correlation. This can't be changed after the case is created.</div>
+                    }
                     @if (nc.IsRestricted)
                     {
                         <div class="form-text">Visible only to the incident commander, the case team and roles cleared for restricted cases. If your role isn't cleared, you're added to the team.</div>
@@ -579,6 +638,7 @@ else if (_pending.Count > 0)
     // case looked up, the gate's ticks) mustn't carry into the next queued review, or back out of one.
     private void ClearReviewState()
     {
+        _numberAvailable = null;   // BUG-637
         _related = [];
         _rejecting = false;
         _rejectNote = null;
@@ -632,8 +692,13 @@ else if (_pending.Count > 0)
 
     private void OnPromptTargetChanged(ChangeEventArgs e) => _promptExisting = e.Value?.ToString() == "True";
 
+    private bool _promptExercise;   // BUG-635
+
+    // BUG-636: local times in the material without a zone are in the zone picked for Step 2 (the organization's by
+    // default), and the AI is told to keep them as written and name it.
     private void GeneratePrompt() => _prompt = CaseImportPrompt.Build(
-        new CaseImportPromptOptions(_promptExisting, _promptExisting ? null : _promptClassification, _promptTool));
+        new CaseImportPromptOptions(_promptExisting, _promptExisting ? null : _promptClassification, _promptTool,
+            UnzonedZone().Id, Exercise: !_promptExisting && _promptExercise));
 
     private async Task CopyPrompt()
     {
@@ -735,12 +800,13 @@ else if (_pending.Count > 0)
         _finds.Invalidate();
         _error = null;
         _related = [];
+        _numberAvailable = null;   // BUG-637
         // BUG-446: a new document starts with no gate ticks or override, and a gate check still running for the last one
         // is dropped.
         ++_gateSeq;
         _gate.UseGate(null);
         // PROD-06: a STIX bundle or IOC CSV is converted into an entities-only import document first.
-        var converted = IocImportConverter.Convert(_text, _fileName);
+        var converted = IocImportConverter.Convert(_text, _fileName, unzonedIn: UnzonedZone());
         _parseError = null;
         if (!converted.Ok)
         {
@@ -765,9 +831,54 @@ else if (_pending.Count > 0)
     }
 
     // Open cases that already carry any of the previewed indicators (need-to-know scoped), excluding the target.
+    // BUG-636: the zone a pasted or uploaded document's times without an offset are read in, unless it names one: the
+    // organization's by default (most reports give local times), UTC, or the viewer's own display zone.
+    [Inject] private TimeDisplay TimeDisp { get; set; } = default!;
+    private string? _unzonedZoneId;
+
+    private IEnumerable<(string Id, string Label)> ZoneChoices()
+    {
+        var org = OrgZone.Current;
+        yield return (org.Id, $"{IocImportConverter.ZoneName(org)} (organization)");
+        if (org != TimeZoneInfo.Utc && org.Id is not ("UTC" or "Etc/UTC")) yield return (TimeZoneInfo.Utc.Id, "UTC");
+        var mine = TimeDisp.Zone;
+        if (mine.Id != org.Id && mine != TimeZoneInfo.Utc && mine.Id is not ("UTC" or "Etc/UTC"))
+            yield return (mine.Id, $"{IocImportConverter.ZoneName(mine)} (yours)");
+    }
+
+    private TimeZoneInfo UnzonedZone()
+    {
+        var id = _unzonedZoneId ??= OrgZone.Current.Id;
+        return TimeZoneInfo.TryFindSystemTimeZoneById(id, out var z) ? z : OrgZone.Current;
+    }
+
+    // BUG-637: the number a new case would get (as the New case form shows it), and whether a chosen one is free.
+    [Inject] private IClock Clock { get; set; } = default!;
+    [Inject] private IOrganizationTimeZone OrgZone { get; set; } = default!;
+    private bool? _numberAvailable;
+
+    private string PreviewNumber(CreateCaseRequest nc)
+    {
+        // REV-39: the organization's calendar date and year, as the number itself is given (BUG-112).
+        var now = TimeZoneInfo.ConvertTime(Clock.UtcNow, OrgZone.Current);
+        var slug = Case.Slug(string.IsNullOrWhiteSpace(nc.DescriptiveName) ? CaseImportService.SlugSource(nc.Title) : nc.DescriptiveName);
+        return nc.Classification is null ? Case.FormatComplexEventNumber(now, slug) : $"{now.Year}-NN_{slug}";
+    }
+
+    private async Task CheckNumberAvailable(CreateCaseRequest nc)
+    {
+        var v = nc.CaseNumber?.Trim();
+        _numberAvailable = string.IsNullOrEmpty(v) ? null : await Cases.IsCaseNumberAvailableAsync(v);
+    }
+
+    // BUG-635: switching to (or off) a drill changes which open cases count as related.
+    private async Task ExerciseChanged() { if (_shown is { } shown) await LoadRelated(shown); }
+
     private async Task LoadRelated(LoadSequence.Ticket t)
     {
         if (_preview is not { Entities.Count: > 0 } p) { _related = []; return; }
+        // BUG-635 (WF-48): a drill correlates with no live case, so no live case is offered as related.
+        if (p.TargetKind == CaseImportTargetKind.NewCase && p.NewCase?.IsExercise == true) { _related = []; return; }
         var matches = await Cases.FindOpenCaseMatchesForIocsAsync(p.Entities.Select(e => e.Value));
         if (!_previews.IsCurrent(t)) return;   // BUG-601: for a preview no longer shown
         _related = matches.Where(m => m.CaseId != p.ExistingCaseId).ToList();

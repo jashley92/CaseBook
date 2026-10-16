@@ -45,7 +45,10 @@ public static partial class IocImportConverter
 
     /// <summary>Sniffs the text and converts it. A CaseBook case-import document is returned as-is (via <see cref="CaseImportService.Parse"/>).</summary>
     /// <param name="nowUtc">BUG-169: to tell an expired indicator (<c>valid_until</c> passed); the current time when omitted.</param>
-    public static IocImportConversion Convert(string? text, string? fileName = null, DateTimeOffset? nowUtc = null)
+    /// <param name="unzonedIn">BUG-636: the zone of a case-import document's times written without an offset, unless the
+    /// document names one. Null: UTC.</param>
+    public static IocImportConversion Convert(string? text, string? fileName = null, DateTimeOffset? nowUtc = null,
+        TimeZoneInfo? unzonedIn = null)
     {
         if (string.IsNullOrWhiteSpace(text))
             return new(ImportSourceFormat.CaseImport, null, "Paste or upload a document first.", []);
@@ -63,8 +66,12 @@ public static partial class IocImportConverter
                 if (root.ValueKind == JsonValueKind.Object && Str(root, "type") == "bundle")
                     return FromStix(root, nowUtc ?? DateTimeOffset.UtcNow);
             }
-            var parsed = CaseImportService.Parse(trimmed);
-            return new(ImportSourceFormat.CaseImport, parsed.Document, parsed.Error, []);
+            var parsed = CaseImportService.Parse(trimmed, unzonedIn);
+            // BUG-636: say which zone times without one were read in, so a wrong guess is seen before anything is saved.
+            IReadOnlyList<string> notes = parsed.Ok && parsed.UnzonedTimes > 0 && parsed.UnzonedZone is { } z
+                ? [$"{parsed.UnzonedTimes} {(parsed.UnzonedTimes == 1 ? "time has" : "times have")} no time zone and {(parsed.UnzonedTimes == 1 ? "was" : "were")} read as {ZoneName(z)}."]
+                : [];
+            return new(ImportSourceFormat.CaseImport, parsed.Document, parsed.Error, notes);
         }
         // BUG-274: a JSON list (an indicator export from another tool) isn't a CSV; it was read as one, line by line.
         // (Only when it parses as one: a headerless CSV can start with a bracketed IPv6 address.)
@@ -74,6 +81,9 @@ public static partial class IocImportConverter
 
         return FromCsv(trimmed, fileName);
     }
+
+    /// <summary>A zone as people read it: "UTC", or its id (America/New_York).</summary>
+    public static string ZoneName(TimeZoneInfo zone) => zone == TimeZoneInfo.Utc || zone.Id is "UTC" or "Etc/UTC" ? "UTC" : zone.Id;
 
     private static bool IsJsonList(string text)
     {

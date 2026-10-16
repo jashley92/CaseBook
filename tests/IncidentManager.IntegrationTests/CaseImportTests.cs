@@ -508,6 +508,36 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task An_import_can_create_a_tabletop_case_with_a_chosen_number(/* BUG-635, BUG-637 */)
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new() { NewCase = new() { Title = "Ransomware tabletop", Classification = "Incident", Severity = "High", Exercise = true } },
+            Entities = [new CaseImportEntity { Type = "IpAddress", Value = "203.0.113.77" }],
+        };
+
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var preview = await svc.BuildPreviewAsync(doc);
+        preview.NewCase!.IsExercise.Should().BeTrue("the document asks for a tabletop case");
+        preview.NewCase.CaseNumber = "TTX-2026-Q4";   // chosen on the preview, as on the New case form
+        var result = await svc.ApplyAsync(preview);
+
+        await using var verify = NewContext();
+        var c = await verify.Cases.AsNoTracking().SingleAsync(x => x.Id == result.CaseId);
+        c.IsExercise.Should().BeTrue();
+        c.CaseNumber.Should().Be("TTX-2026-Q4");
+
+        var live = await NewImportService(db).BuildPreviewAsync(new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new() { NewCase = new() { Title = "Live one", Severity = "Low" } },
+        });
+        live.NewCase!.IsExercise.Should().BeFalse("a document that doesn't say so makes a live case");
+    }
+
+    [Fact]
     public async Task A_retried_import_places_a_not_stated_step_after_the_step_applied_last_time()
     {
         // BUG-15: the retry skipped already-applied rows without remembering them, so the next not-stated step went first.

@@ -24,6 +24,10 @@ public sealed class CaseImportDocument
 
     public CaseImportTarget? Target { get; set; }
 
+    /// <summary>BUG-636: the time zone of the document's times that have no offset (an IANA id such as America/New_York,
+    /// or a Windows id). Omitted: such times are UTC. A time with an offset or a "Z" keeps it either way.</summary>
+    public string? TimeZone { get; set; }
+
     /// <summary>A narrative summary of the matter, imported as an analyst note.</summary>
     public string? Summary { get; set; }
 
@@ -62,6 +66,10 @@ public sealed class CaseImportNewCase
 
     /// <summary>BUG-117: the vendor that disclosed it, required when <see cref="Origin"/> is ThirdParty. Up to 300 characters.</summary>
     public string? VendorName { get; set; }
+
+    /// <summary>BUG-635: a tabletop or exercise case (PROD-43): badged, kept out of dashboards, reminders, the IOC feed and
+    /// correlation with live cases. Fixed when the case is created. Optional; false when omitted.</summary>
+    public bool? Exercise { get; set; }
 }
 
 /// <summary>One timeline entry to import. <see cref="Kind"/>/<see cref="Type"/> are strings (safe fallback).</summary>
@@ -121,19 +129,36 @@ public static class CaseImportJson
     };
 
     /// <summary>
-    /// BUG-207: the document's times are UTC (the schema and the prompt say so). One written without an offset, a
-    /// producer that dropped the "Z", is read as UTC, not as the server's local time, which shifted every such time
-    /// by the server's offset. One with an offset keeps it. The format is still ISO 8601, as before.
+    /// BUG-207: a time written without an offset (a producer that dropped the "Z") is read in a stated zone, UTC unless
+    /// the document or the reviewer names another (BUG-636), never as the server's local time, which shifted every such
+    /// time by the server's offset. One with an offset keeps it. The format is still ISO 8601, as before.
     /// </summary>
-    internal sealed class UtcUnlessStated : JsonConverter<DateTimeOffset>
+    internal sealed class UtcUnlessStated(TimeZoneInfo? zone = null) : JsonConverter<DateTimeOffset>
     {
+        private readonly TimeZoneInfo _zone = zone ?? TimeZoneInfo.Utc;
+
+        /// <summary>How many times had no offset and were read in the zone.</summary>
+        public int Unzoned { get; private set; }
+
         public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             if (reader.TokenType != JsonTokenType.String || !reader.TryGetDateTimeOffset(out var stated))
-                throw new JsonException("A time must be an ISO 8601 date-time in UTC, for example 2026-09-18T13:05:00Z.");
-            return reader.TryGetDateTime(out var plain) && plain.Kind == DateTimeKind.Unspecified
-                ? new DateTimeOffset(DateTime.SpecifyKind(plain, DateTimeKind.Utc))
-                : stated;
+                throw new JsonException("A time must be an ISO 8601 date-time, for example 2026-09-18T13:05:00Z or 2026-09-18T09:05:00-04:00.");
+            if (!reader.TryGetDateTime(out var plain) || plain.Kind != DateTimeKind.Unspecified) return stated;
+            Unzoned++;
+            return InZone(plain, _zone);
+        }
+
+        /// <summary>A wall-clock time in <paramref name="zone"/>, in UTC. One in the spring-forward gap is read with the
+        /// standard offset, which lands just after the jump (02:30 becomes 03:30); one in the repeated autumn hour as the
+        /// later (standard-time) instant. Held at the calendar's ends rather than throwing (BUG-577).</summary>
+        internal static DateTimeOffset InZone(DateTime local, TimeZoneInfo zone)
+        {
+            local = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+            var offset = zone.IsInvalidTime(local) ? zone.BaseUtcOffset
+                : zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local).Min()
+                : zone.GetUtcOffset(local);
+            return Common.Instants.FromLocalClamped(local, offset);
         }
 
         public override void Write(Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options) =>
