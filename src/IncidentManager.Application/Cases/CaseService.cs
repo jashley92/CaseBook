@@ -1634,6 +1634,7 @@ public sealed class CaseService
         if (kind == TimelineKind.Event) description = Content.MarkdownService.OneLine(description);
         TimelineEntry.EnsureDecisionHasRationale(type, decision?.Rationale);
         followUps?.Validate();
+        foreach (var t in followUps?.Tasks ?? []) CheckDue(t.DueAtUtc, t.Title.Trim());   // BUG-577
         using var linkGate = await LinkGateAsync(followUps?.LinkCaseId is not null, ct);   // BUG-525
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
@@ -1773,6 +1774,7 @@ public sealed class CaseService
     {
         Require();
         followUps?.Validate();
+        foreach (var t in followUps?.Tasks ?? []) CheckDue(t.DueAtUtc, t.Title.Trim());   // BUG-577
         using var linkGate = await LinkGateAsync(followUps?.LinkCaseId is not null, ct);   // BUG-525
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
@@ -2908,6 +2910,7 @@ public sealed class CaseService
         if (title.Length > ActionItem.MaxTitleLength)
             throw new ArgumentException($"Keep the task to {ActionItem.MaxTitleLength} characters or fewer.");
         owner = CleanTaskOwner(owner);
+        CheckDue(dueAtUtc);   // BUG-577
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ActionItems.Add(new ActionItem
@@ -2925,6 +2928,8 @@ public sealed class CaseService
         Action<int> saved, CancellationToken ct = default)
     {
         Require();
+        // BUG-577: every due checked before the first batch is saved, so a bad one doesn't leave the import half done.
+        foreach (var (rawTitle, _, due) in items) CheckDue(due, (rawTitle ?? "").Trim());
         foreach (var batch in items.Chunk(EntitiesPerSave))
         {
             using var db = _factory.CreateDbContext();
@@ -3450,6 +3455,8 @@ public sealed class CaseService
             throw new StaleEditException(item.RowHash ?? "", "Someone changed this task since you opened it, so your edit " +
                 "wasn't saved. It has been reloaded with their change; make yours again.");
 
+        // BUG-577: a due being set is bounded; one stored before the bound, left as it was, doesn't stop other edits.
+        if (dueAtUtc != item.DueAtUtc) CheckDue(dueAtUtc);
         var wasStatus = item.Status;
         // BUG-304 (owner's decision): Edit follows the same rule as Complete and the status buttons (REV-23): a cancelled
         // task is reopened before it's marked done, so its result and who completed it are recorded as for any other.
@@ -3489,6 +3496,18 @@ public sealed class CaseService
         if (o is { Length: > ActionItem.MaxOwnerLength })
             throw new ArgumentException($"Keep the owner to {ActionItem.MaxOwnerLength} characters or fewer.");
         return o;
+    }
+
+    /// <summary>BUG-577: the earliest and latest due a task takes (years 2 to 9998, as BUG-475's month filter). A due
+    /// typed as 9999-12-31 sat at the end of the calendar, where the agenda, the feed and the reminders add to it.</summary>
+    public static readonly DateTimeOffset EarliestDueUtc = new(2, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset LatestDueUtc = new(9998, 12, 31, 23, 59, 59, TimeSpan.Zero);
+
+    private static void CheckDue(DateTimeOffset? dueAtUtc, string? title = null)
+    {
+        if (dueAtUtc is { } due && (due < EarliestDueUtc || due > LatestDueUtc))
+            throw new ArgumentException((title is null ? "That due date" : $"The due date of \"{title}\"")
+                + " is outside the range a task can take (the years 2 to 9998). Pick another date.");
     }
 
     /// <summary>HR-17: how a cancelled task's reason is kept (a task comment).</summary>
