@@ -82,6 +82,9 @@ jobs:
       # response (Kestrel and IIS alike), and setting it in IIS too would send the header twice.
       # csharpsquid:S5332 wants EnableSsl = true on the SmtpClient; EmailSender sets it from Email:EnableSsl, which
       # defaults to on (S4423) and is turned off only for a relay that does its own TLS. TLS is managed by that setting.
+      # csharpsquid:S3011 (reflection past accessibility) in TrailSnapshot: the integrity check rebuilds a record as its
+      # audit trail recorded it, and the domain's value setters are private by design; it only copies CaseBook's own
+      # entities in-process and never touches anything a caller supplies.
       - name: SonarQube Cloud analysis (begin)
         if: env.SONAR_TOKEN != '' && !startsWith(github.ref, 'refs/tags/')   # analysis is for main and PRs, not tags
         run: >-
@@ -92,11 +95,13 @@ jobs:
           /d:sonar.exclusions="deploy/sql/casebook-schema-sqlserver.sql"
           /d:sonar.cpd.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**"
           /d:sonar.coverage.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**,**/*.razor,src/IncidentManager.Web/Components/**,**/*.ps1,**/*.psm1,**/*.js,**/*.mjs,**/*.py"
-          /d:sonar.issue.ignore.multicriteria=hdr,smtp
+          /d:sonar.issue.ignore.multicriteria=hdr,smtp,refl
           /d:sonar.issue.ignore.multicriteria.hdr.ruleKey="xml:S5734"
           /d:sonar.issue.ignore.multicriteria.hdr.resourceKey="**/web.config"
           /d:sonar.issue.ignore.multicriteria.smtp.ruleKey="csharpsquid:S5332"
           /d:sonar.issue.ignore.multicriteria.smtp.resourceKey="**/Notifications/EmailSender.cs"
+          /d:sonar.issue.ignore.multicriteria.refl.ruleKey="csharpsquid:S3011"
+          /d:sonar.issue.ignore.multicriteria.refl.resourceKey="**/Integrity/TrailSnapshot.cs"
 
       - name: Build
         id: build
