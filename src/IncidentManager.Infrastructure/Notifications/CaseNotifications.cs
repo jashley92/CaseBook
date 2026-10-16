@@ -93,9 +93,12 @@ public sealed class CaseNotifications : ICaseNotifications
 
     private string BaseUrl => (_config["App:BaseUrl"] ?? "").TrimEnd('/');
     private string? CaseUrl(Guid id) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{id}";
-    private string? OverdueUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases?overdue=true&closed=true";
+    private string? OverdueUrl() => Application.Cases.CaseListLinks.For(BaseUrl, Application.Cases.CaseListLinks.OverdueTasks);
     private string? AgendaUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/desk";
-    private string? CasesUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases";
+    // BUG-593: the deadline list (closed cases still owing a notice included) and the quietest open cases first, not a
+    // bare /cases, which opens the default view.
+    private string? DeadlinesUrl() => Application.Cases.CaseListLinks.For(BaseUrl, Application.Cases.CaseListLinks.NotificationDeadlines);
+    private string? QuietUrl() => Application.Cases.CaseListLinks.For(BaseUrl, Application.Cases.CaseListLinks.QuietestFirst);
 
     // PROD-02: is a given notification type routed to the team chat channel? Requires both a configured
     // chat transport and the per-type in-app toggle (Notifications:Chat:*, layered from DB + appsettings).
@@ -633,7 +636,7 @@ public sealed class CaseNotifications : ICaseNotifications
                   + " Incident commanders and owners were emailed where reachable.";
             await ChatForAsync(new ChatNotification(
                 "Regulatory notification deadline", detail,
-                CasesUrl(), ChatUrgency.Alert), chatItems, DeadlineKey, r => r.CaseId.ToString(), ct);
+                DeadlinesUrl(), ChatUrgency.Alert), chatItems, DeadlineKey, r => r.CaseId.ToString(), ct);
         }
 
         // Group by recipient email, so a person on several at-risk cases gets one reminder listing them all.
@@ -662,7 +665,7 @@ public sealed class CaseNotifications : ICaseNotifications
 
             // The CTA points at the one case when this recipient's list is a single case, else the case list. BUG-232: one
             // case with two clocks is still one case.
-            var cta = ordered.Select(r => r.CaseId).Distinct().Count() == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
+            var cta = ordered.Select(r => r.CaseId).Distinct().Count() == 1 ? CaseUrl(ordered[0].CaseId) : DeadlinesUrl();
 
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -690,7 +693,7 @@ public sealed class CaseNotifications : ICaseNotifications
             await ChatForAsync(new ChatNotification(
                 $"{Plural.Of(caseCount, "case")} with no recent activity",
                 "These open cases have had no activity past their severity threshold. Incident commanders and owners were emailed where reachable.",
-                CasesUrl()), chatReminders, StaleKey, r => r.CaseId.ToString(), ct);
+                QuietUrl()), chatReminders, StaleKey, r => r.CaseId.ToString(), ct);
         }
 
         // Group by recipient, so a person on several quiet cases gets one nudge listing them all.
@@ -715,7 +718,7 @@ public sealed class CaseNotifications : ICaseNotifications
                 .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), StaleKey, to);
             if (ordered.Count == 0) continue;
 
-            var cta = ordered.Count == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
+            var cta = ordered.Count == 1 ? CaseUrl(ordered[0].CaseId) : QuietUrl();
 
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {

@@ -129,6 +129,30 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task Deadline_and_stale_links_name_their_list_rather_than_the_default_view(/* BUG-593 */)
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("ic1", "Ina", "ina@insurer.example");
+        var config = TestEmail.Config(("App:BaseUrl", "https://casebook.example/"),
+            ("Notifications:Chat:DeadlineReminders", "true"), ("Notifications:Chat:StaleReminders", "true"));
+        var n = new CaseNotifications(sender, TestEmail.Composer(), users, config,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
+        var (a, b) = (NewCase(), NewCase());
+        var ny = new DeadlineReminder(a.Id, a.CaseNumber, a.Title, a.Severity, ["ic1"],
+            IncidentManager.Application.Sla.SlaState.AtRisk, "NYDFS", Now.AddHours(10), TimeSpan.FromHours(10));
+
+        await n.OnDeadlineApproachingAsync([ny, ny with { CaseId = b.Id, CaseNumber = b.CaseNumber }]);
+        chat.Sent.Single().Url.Should().Be("https://casebook.example/cases?notify=true", "the at-risk list takes in closed cases still owing a notice");
+        sender.Sent.Single().HtmlBody.Should().Contain("https://casebook.example/cases?notify=true");
+
+        await n.OnCasesStaleAsync([new StaleCaseReminder(a.Id, a.CaseNumber, a.Title, a.Severity, ["ic1"], Now.AddDays(-9), 9, 7),
+            new StaleCaseReminder(b.Id, b.CaseNumber, b.Title, b.Severity, ["ic1"], Now.AddDays(-8), 8, 7)]);
+        chat.Sent.Last().Url.Should().Be("https://casebook.example/cases?sort=updated&dir=asc");
+        sender.Sent.Last().HtmlBody.Should().Contain("https://casebook.example/cases?sort=updated&amp;dir=asc");
+    }
+
+    [Fact]
     public async Task A_deadline_reminder_nobody_could_be_sent_is_tried_again_and_broadcast_once(/* BUG-156 */)
     {
         var sender = new CapturingEmailSender();
