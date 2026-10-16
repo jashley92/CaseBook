@@ -120,7 +120,10 @@ else
     private void ConfirmRevoke(ApiTokenView t) => _confirm.Ask(this, "Revoke token",
         $"Anything using “{t.Name}”, such as a playbook or script, is refused from now on. This can't be undone. " +
         "Create a new token if you still need access.",
-        "Revoke token", () => Revoke(t));
+        "Revoke token", () => _revoking.Run(() => Revoke(t)));
+
+    // BUG-603: a confirmed revoke runs once.
+    private readonly InFlight _revoking = new();
 
     private string[] _myRoles = Array.Empty<string>();
     private IReadOnlyList<ApiTokenView>? _tokens;
@@ -137,7 +140,15 @@ else
         await LoadAsync();
     }
 
-    private async Task LoadAsync() => _tokens = await Tokens.ListMineAsync();
+    // BUG-601: a create's reload and a revoke's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var tokens = await Tokens.ListMineAsync();
+        if (_load.IsCurrent(t)) _tokens = tokens;
+    }
 
     private void ToggleRole(string role, bool on)
     {
@@ -154,9 +165,10 @@ else
         try
         {
             var expiry = new DateTimeOffset(DateTime.SpecifyKind(_expiresDate, DateTimeKind.Utc), TimeSpan.Zero);
-            _created = await Tokens.CreatePersonalAsync(_name, _selectedRoles, expiry);
+            var name = _name;
+            _created = await Tokens.CreatePersonalAsync(name, _selectedRoles, expiry);
             _copied = false;
-            _name = "";
+            _name = DraftText.ClearIfUnchanged(_name, name);   // BUG-601: a name typed for the next one stays
             await LoadAsync();
             Toasts.Success($"Token “{_created.Token.Name}” created.");
         }

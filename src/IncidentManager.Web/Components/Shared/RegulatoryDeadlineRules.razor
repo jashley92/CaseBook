@@ -134,7 +134,15 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task LoadAsync() => _all = await Rules.ListAllAsync();
+    // BUG-601: a save's reload and an archive's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var all = await Rules.ListAllAsync();
+        if (_load.IsCurrent(t)) _all = all;
+    }
 
     // The form holds one rule: another rule's edit, or a new rule with something typed in.
     private bool FormInUse => _editId is not null || !string.IsNullOrEmpty(_code) || !string.IsNullOrEmpty(_label) || _window != 72;
@@ -187,22 +195,30 @@ else
         Toasts.Success("Deadline rule saved");
     }
 
-    private async Task Archive(Guid id) => await Lifecycle(() => Rules.SetArchivedAsync(id, true), "Rule archived");
-    private async Task Restore(Guid id) => await Lifecycle(() => Rules.SetArchivedAsync(id, false), "Rule restored");
-    private async Task Delete(Guid id) => await Lifecycle(() => Rules.DeleteAsync(id), "Rule deleted");
+    private async Task Archive(Guid id) => await Lifecycle(id, () => Rules.SetArchivedAsync(id, true), "Rule archived");
+    private async Task Restore(Guid id) => await Lifecycle(id, () => Rules.SetArchivedAsync(id, false), "Rule restored");
+    private async Task Delete(Guid id) => await Lifecycle(id, () => Rules.DeleteAsync(id), "Rule deleted");
 
-    private async Task Lifecycle(Func<Task> action, string ok)
+    // BUG-603: one change per rule at a time (a double-click on Archive, Restore or Delete ran it twice).
+    private readonly HashSet<Guid> _changing = [];
+
+    private async Task Lifecycle(Guid id, Func<Task> action, string ok)
     {
+        if (!_changing.Add(id)) return;
         try
         {
-            await action();
+            try
+            {
+                await action();
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+            {
+                Toasts.Error(ex.Message);
+                return;
+            }
+            await LoadAsync();
+            Toasts.Info(ok);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
-        {
-            Toasts.Error(ex.Message);
-            return;
-        }
-        await LoadAsync();
-        Toasts.Info(ok);
+        finally { _changing.Remove(id); }
     }
 }

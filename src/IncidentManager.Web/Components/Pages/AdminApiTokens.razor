@@ -153,7 +153,10 @@ else
     private void ConfirmRevoke(ApiTokenView t) => _confirm.Ask(this, "Revoke token",
         $"Revoke “{t.Name}”? Any playbook or script using it is refused from now on. This can't be undone; " +
         "create a new token if it's still needed.",
-        "Revoke token", () => Revoke(t));
+        "Revoke token", () => _revoking.Run(() => Revoke(t)));
+
+    // BUG-603: a confirmed revoke runs once.
+    private readonly InFlight _revoking = new();
 
     private List<Role> _roles = new();
     private IReadOnlyList<ApiTokenView>? _tokens;
@@ -167,10 +170,16 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
+    // BUG-601: a create's reload and a revoke's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
     private async Task LoadAsync()
     {
-        _roles = await Roles.ListRolesAsync();
-        _tokens = await Tokens.ListAllAsync();
+        var t = _load.Begin();
+        var roles = await Roles.ListRolesAsync();
+        var tokens = await Tokens.ListAllAsync();
+        if (!_load.IsCurrent(t)) return;
+        (_roles, _tokens) = (roles, tokens);
     }
 
     private void BeginCreate()

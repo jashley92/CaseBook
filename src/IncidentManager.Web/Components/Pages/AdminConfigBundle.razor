@@ -164,7 +164,16 @@
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task LoadAsync() => _bundle = await Config.BuildBundleAsync();
+    // BUG-601: an import applied while the first build still runs: the older bundle (from before the import) mustn't
+    // land last and be what's exported.
+    private readonly LoadSequence _load = new();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var bundle = await Config.BuildBundleAsync();
+        if (_load.IsCurrent(t)) _bundle = bundle;
+    }
 
     // BUG-440: bumped by each file chosen and by Cancel, so only the newest choice's preview is shown (and applied). One
     // that finishes after another file was chosen, or after Cancel, is dropped.

@@ -27,7 +27,7 @@
                         })
                         @if (a.CaseId is { } caseId) { <span>for <a href="@($"cases/{caseId}")"><code>@a.CaseNumber</code></a></span> }
                         to @string.Join(", ", a.Recipients), first tried @TimeDisp.Short(a.FirstFailedAtUtc).
-                        <button type="button" class="btn btn-sm btn-light py-0 ms-1" @onclick="() => Dismiss(a.Id)">Mark handled</button>
+                        <button type="button" class="btn btn-sm btn-light py-0 ms-1" disabled="@_dismissing.Busy" @onclick="() => Dismiss(a.Id)">Mark handled</button>
                     </li>
                 }
             </ul>
@@ -50,10 +50,22 @@
         _refresh = new Timer(_ => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); }), null, RefreshEvery, RefreshEvery);
     }
 
+    // BUG-601: the timer's read and a Mark handled's read can overlap; the older one landing last brought back an alert
+    // just marked handled.
+    private readonly LoadSequence _load = new();
+
     private async Task LoadAsync()
     {
-        try { _alerts = await Alerts.ListAsync(); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { _alerts = []; }   // a banner never breaks the page
+        var t = _load.Begin();
+        try
+        {
+            var alerts = await Alerts.ListAsync();
+            if (_load.IsCurrent(t)) _alerts = alerts;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (_load.IsCurrent(t)) _alerts = [];   // a banner never breaks the page
+        }
     }
 
     private bool _disposed;   // BUG-566
@@ -64,12 +76,19 @@
         _refresh?.Dispose();
     }
 
-    private async Task Dismiss(Guid id)
+    // BUG-603: one at a time (a double-click marked it handled twice).
+    private readonly InFlight _dismissing = new();
+
+    private Task Dismiss(Guid id) => _dismissing.Run(() => DismissCore(id));
+
+    private async Task DismissCore(Guid id)
     {
         try
         {
             await Alerts.DismissAsync(id);
-            _alerts = await Alerts.ListAsync();
+            var t = _load.Begin();
+            var alerts = await Alerts.ListAsync();
+            if (_load.IsCurrent(t)) _alerts = alerts;
             Toasts.Success("Marked handled");
         }
         catch (ForbiddenException ex) { Toasts.Error(ex.Message); }

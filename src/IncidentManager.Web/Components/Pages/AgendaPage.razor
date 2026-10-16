@@ -158,7 +158,8 @@
     {
         var seq = ++_loadSeq;
         var board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner, TimeDisp.Zone);
-        if (seq == _loadSeq) _board = board;
+        if (seq != _loadSeq) return;   // the newest load wins
+        _board = board;
     }
 
     private async Task OnOwnerChanged(ChangeEventArgs e) => await ChangeOwner(e.Value?.ToString() ?? "");

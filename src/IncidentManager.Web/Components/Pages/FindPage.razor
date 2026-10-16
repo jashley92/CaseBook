@@ -303,7 +303,8 @@
         try
         {
             var result = await Finder.FindAsync(Q, ct: cts.Token);
-            if (seq == _seq) _result = result;
+            if (seq != _seq) return;
+            _result = result;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }
         catch (Exception ex) when (ex is not OperationCanceledException)

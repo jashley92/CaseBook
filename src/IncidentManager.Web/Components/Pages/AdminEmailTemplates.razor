@@ -199,7 +199,7 @@ else
             string? notInEffect = null;
             try { await Templates.SaveAsync(_selectedId, _subject, _body, _stamp); }
             catch (SettingsNotInEffectException ex) { notInEffect = ex.Message; }
-            _views = await Templates.GetAllAsync();
+            if (!await ReloadViewsAsync()) return;
             if (Selected is { } saved) _stamp = saved.Stamp;
             await UpdatePreview();
             if (notInEffect is not null) _error = notInEffect;
@@ -207,6 +207,19 @@ else
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
+    }
+
+    // BUG-601: Save and Reset each read the list back. They can't overlap today (_busy), but an older read landing last
+    // would show the template as it was before the newer change, and seed its stamp; only the newest read lands.
+    private readonly LoadSequence _viewsLoad = new();
+
+    private async Task<bool> ReloadViewsAsync()
+    {
+        var t = _viewsLoad.Begin();
+        var views = await Templates.GetAllAsync();
+        if (!_viewsLoad.IsCurrent(t)) return false;
+        _views = views;
+        return true;
     }
 
     private async Task Reset()
@@ -219,7 +232,7 @@ else
             string? notInEffect = null;   // BUG-526: as for Save
             try { await Templates.ResetAsync(_selectedId); }
             catch (SettingsNotInEffectException ex) { notInEffect = ex.Message; }
-            _views = await Templates.GetAllAsync();
+            if (!await ReloadViewsAsync()) return;
             var v = Selected;
             if (v is not null) { _subject = v.EffectiveSubject; _body = v.EffectiveBody; _stamp = v.Stamp; }
             await UpdatePreview();

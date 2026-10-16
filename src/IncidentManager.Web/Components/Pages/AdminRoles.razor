@@ -73,7 +73,7 @@
             }
         </div>
         <div class="card-footer d-flex gap-2">
-            <button class="btn btn-sm btn-primary" @onclick="SaveRole" disabled="@_saving">Save</button>
+            <button class="btn btn-sm btn-primary" @onclick="SaveRole" disabled="@_saving.Busy">Save</button>
             <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editing = null">Cancel</button>
         </div>
     </div>
@@ -141,7 +141,7 @@ write <code>DOMAIN\Group</code>.</p>
             </select>
         </div>
         <div class="col-sm-2">
-            <button class="btn btn-sm btn-primary w-100" @onclick="AddMapping" disabled="@_saving">Add</button>
+            <button class="btn btn-sm btn-primary w-100" @onclick="AddMapping" disabled="@_saving.Busy">Add</button>
         </div>
     </div>
 }
@@ -273,12 +273,15 @@ else
     private void ConfirmDeleteRole(Role r) => _confirm.Ask(this, "Delete role",
         $"Delete the role “{r.Name}”? Its AD group mappings are removed too, and people who get access only " +
         "through it lose that access the next time they open CaseBook. API tokens that carry it lose its permissions.",
-        "Delete role", () => DeleteRole(r));
+        "Delete role", () => _removing.Run(() => DeleteRole(r)));
 
     private void ConfirmRemoveMapping(AdGroupRoleMapping m) => _confirm.Ask(this, "Remove mapping",
         $"Stop granting {Ui.RoleLabel(m.RoleName)} to members of {m.AdGroup}? They lose that access the next time they open CaseBook, " +
         "unless another of their groups grants it.",
-        "Remove mapping", () => RemoveMapping(m));
+        "Remove mapping", () => _removing.Run(() => RemoveMapping(m)));
+
+    // BUG-603: a confirmed delete or remove runs once (the dialog runs its action once; this holds it to that).
+    private readonly InFlight _removing = new();
 
     private List<Role>? _roles;
     private List<AdGroupRoleMapping>? _mappings;
@@ -302,11 +305,17 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
+    // BUG-601: two saves' reloads can overlap; only the newest lands (an older one showed a just-deleted role).
+    private readonly LoadSequence _load = new();
+
     private async Task LoadAsync()
     {
-        _roles = await Roles.ListRolesAsync();
-        _mappings = await Roles.ListMappingsAsync();
-        _review = await AccessReview.BuildAsync();
+        var t = _load.Begin();
+        var roles = await Roles.ListRolesAsync();
+        var mappings = await Roles.ListMappingsAsync();
+        var review = await AccessReview.BuildAsync();
+        if (!_load.IsCurrent(t)) return;
+        (_roles, _mappings, _review) = (roles, mappings, review);
         if (string.IsNullOrEmpty(_newRole) && _roles.Count > 0) _newRole = _roles[0].Name;
     }
 
@@ -328,35 +337,28 @@ else
         if (on) _editing.Permissions.Add(p); else _editing.Permissions.Remove(p);
     }
 
-    // BUG-339: a double click on Save or Add ran the insert twice; the second hit the unique index.
-    private bool _saving;
+    // BUG-339: a double click on Save or Add ran the insert twice; the second hit the unique index. BUG-603: Delete and
+    // Remove too, one change at a time.
+    private readonly InFlight _saving = new();
 
-    private async Task Saving(Func<Task> action)
-    {
-        if (_saving) return;
-        _saving = true;
-        try { await action(); }
-        finally { _saving = false; }
-    }
-
-    private Task SaveRole() => Saving(SaveRoleCore);
+    private Task SaveRole() => _saving.Run(SaveRoleCore);
 
     private async Task SaveRoleCore()
     {
-        if (_editing is null) return;
+        if (_editing is not { } editing) return;
         try
         {
-            if (_editing.IsNew)
-                await Roles.CreateRoleAsync(_editing.Name, _editing.Description, _editing.Permissions);
+            if (editing.IsNew)
+                await Roles.CreateRoleAsync(editing.Name, editing.Description, editing.Permissions);
             else
-                await Roles.UpdateRoleAsync(_editing.Id!.Value, _editing.Description, _editing.Permissions, _editing.Stamp);
+                await Roles.UpdateRoleAsync(editing.Id!.Value, editing.Description, editing.Permissions, editing.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
         }
-        _editing = null;
+        if (ReferenceEquals(_editing, editing)) _editing = null;   // BUG-601: another role's edit opened meanwhile stays
         await LoadAsync();
         Saved("Role saved");
     }
@@ -380,17 +382,18 @@ else
         Saved($"Deleted role '{r.Name}'");
     }
 
-    private Task AddMapping() => Saving(AddMappingCore);
+    private Task AddMapping() => _saving.Run(AddMappingCore);
 
     private async Task AddMappingCore()
     {
-        try { await Roles.AddMappingAsync(_newGroup, _newRole); }
+        var group = _newGroup;
+        try { await Roles.AddMappingAsync(group, _newRole); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
         }
-        _newGroup = "";
+        _newGroup = DraftText.ClearIfUnchanged(_newGroup, group);   // BUG-601: a group typed meanwhile stays
         await LoadAsync();
         Saved("Mapping added");
     }

@@ -243,7 +243,8 @@
             var k => (IndicatorTypeScope.AllTypes, EnumNames.OrNull<EntityType>(k)),
         };
         var library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises), ct);
-        if (seq == _loadSeq) _library = library;
+        if (seq != _loadSeq) return;
+        _library = library;
     }
 
     private const int CasesShown = 10;

@@ -25,6 +25,7 @@
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Administration</PageTitle>
 
@@ -250,10 +251,10 @@
                                         }
                                     </div>
                                     <div class="col-sm-7">
-                                        <InputFile class="form-control form-control-sm mb-2" accept="image/png,image/jpeg" OnChange="OnLogoSelected" />
+                                        <InputFile class="form-control form-control-sm mb-2" accept="image/png,image/jpeg" OnChange="OnLogoSelected" disabled="@_logoBusy.Busy" />
                                         @if (_logoDataUri is not null)
                                         {
-                                            <button class="btn btn-outline-danger btn-sm" @onclick="ConfirmRemoveLogo">Remove logo</button>
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="ConfirmRemoveLogo" disabled="@_logoBusy.Busy">Remove logo</button>
                                         }
                                         @if (_logoError is not null)
                                         {
@@ -405,7 +406,7 @@
                                                placeholder="you@insurer.example" />
                                     </div>
                                     <div class="col-sm-4">
-                                        <button class="btn btn-outline-primary w-100" @onclick="SendTest">Send test</button>
+                                        <button class="btn btn-outline-primary w-100" @onclick="SendTest" disabled="@_testingEmail.Busy">Send test</button>
                                     </div>
                                 </div>
                                 <div class="form-text">
@@ -425,7 +426,7 @@
 
                                 <label class="form-label mb-1 fw-semibold">Team chat</label>
                                 <div>
-                                    <button class="btn btn-outline-primary" @onclick="SendTestChat" disabled="@(!ChatConfigured)">Send a test chat message</button>
+                                    <button class="btn btn-outline-primary" @onclick="SendTestChat" disabled="@(!ChatConfigured || _testingChat.Busy)">Send a test chat message</button>
                                 </div>
                                 <div class="form-text">
                                     @(ChatConfigured
@@ -861,14 +862,19 @@
                 if (BrandDirty)
                     await JS.InvokeVoidAsync("imBrand.apply",
                         BrandPalette.BuildCss(NullIfBlank(SavedValue("Branding:AccentColor")), NullIfBlank(SavedValue("Branding:InkColor"))) ?? "");
+                if (_disposed) return;   // BUG-601: left another way meanwhile; don't move the page now shown
                 _leaveConfirmed = true;
                 Nav.NavigateTo(target);
             });
     }
 
+    private bool _disposed;
+
+    public void Dispose() => _disposed = true;
+
     private void ConfirmRemoveLogo() => _confirm.Ask(this, "Remove logo",
         "Remove the report logo? New reports won't show it. Reports already generated keep it.",
-        "Remove logo", RemoveLogo);
+        "Remove logo", () => _logoBusy.Run(RemoveLogo));
 
     // This page renders the Configuration and System sections of the admin hub; the shared AdminLayout owns
     // the index rail. The active section comes from the route: /admin is Identity & branding, and
@@ -1051,7 +1057,13 @@
     private BackupHealthReport? _backup;
     private string? _testRecipient;
 
-    private async Task SendTest()
+    // BUG-603: one test send of each kind at a time (a double-click sent two test messages).
+    private readonly InFlight _testingEmail = new();
+    private readonly InFlight _testingChat = new();
+
+    private Task SendTest() => _testingEmail.Run(SendTestCore);
+
+    private async Task SendTestCore()
     {
         var to = _testRecipient?.Trim();
         if (string.IsNullOrWhiteSpace(to)) { Toasts.Warning("Enter a recipient address."); return; }
@@ -1069,7 +1081,9 @@
     }
 
     // PROD-02: post a sample message through the configured chat webhook so an admin can verify it end to end.
-    private async Task SendTestChat()
+    private Task SendTestChat() => _testingChat.Run(SendTestChatCore);
+
+    private async Task SendTestChatCore()
     {
         if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured. Set Chat:Webhook on the host."); return; }
 
@@ -1095,6 +1109,7 @@
 
     private async Task SendSiemTest()
     {
+        if (_siemTesting) return;   // BUG-603: the button is disabled, but a double-click lands before the re-render
         _siemTesting = true;
         try { _siemResults = await SiemTest.SendTestAsync(); }
         finally { _siemTesting = false; }
@@ -1164,10 +1179,20 @@
         }
     }
 
-    private async Task LoadAsync()
+    // BUG-601: a logo change's reload and a section save's can overlap; only the newest lands (an older one put back the
+    // values from before the newer save). False when a newer load took over.
+    private readonly LoadSequence _load = new();
+
+    private async Task<bool> LoadAsync()
     {
-        _effective = await Settings.GetEffectiveAsync();
-        _ledger = await Ledger.GetAsync();
+        var t = _load.Begin();
+        var effective = await Settings.GetEffectiveAsync();
+        var ledger = await Ledger.GetAsync();
+        var logo = await Branding.GetLogoAsync();
+        if (!_load.IsCurrent(t)) return false;
+        _effective = effective;
+        _ledger = ledger;
+        _logoDataUri = logo is null ? null : $"data:{logo.ContentType};base64,{Convert.ToBase64String(logo.Bytes)}";
         _form.Clear();
         foreach (var s in _effective)
             _form[s.Definition.Key] = s.Value;
@@ -1178,9 +1203,7 @@
         var layoutSetting = _effective.FirstOrDefault(e => e.Definition.Key == "Reporting:SectionLayout");
         _layout = ReportLayout.Parse(layoutSetting?.Value).ToList();
         _layoutLoadedFrom = layoutSetting is { IsOverridden: true } ? layoutSetting.Value : null;
-
-        var logo = await Branding.GetLogoAsync();
-        _logoDataUri = logo is null ? null : $"data:{logo.ContentType};base64,{Convert.ToBase64String(logo.Bytes)}";
+        return true;
     }
 
     // --- Report section layout designer (Reporting:SectionLayout) ---
@@ -1262,7 +1285,12 @@
     private string? _logoDataUri;
     private string? _logoError;
 
-    private async Task OnLogoSelected(InputFileChangeEventArgs e)
+    // BUG-603: one logo change at a time (a second pick, or Remove during an upload, raced the first).
+    private readonly InFlight _logoBusy = new();
+
+    private Task OnLogoSelected(InputFileChangeEventArgs e) => _logoBusy.Run(() => SaveLogo(e));
+
+    private async Task SaveLogo(InputFileChangeEventArgs e)
     {
         _logoError = null;
         var file = e.File;
@@ -1438,7 +1466,7 @@
         var keepLayout = !dropLayout && LayoutDirty ? _layout.ToList() : null;
         var keepLayoutFrom = _layoutLoadedFrom;
 
-        await LoadAsync();
+        if (!await LoadAsync()) return;   // BUG-601: the newer reload keeps the edits as they are then
 
         foreach (var (k, v) in keep) _form[k] = v;
         if (keepBrand is { } b) (_accentColor, _inkColor) = b;

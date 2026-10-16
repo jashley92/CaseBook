@@ -196,7 +196,10 @@ else
     private void ConfirmDeleteGate(StageGateView g) => _confirm.Ask(this, "Delete gate",
         $"Delete the “{g.Name}” gate? Cases stop being checked against its requirements at that transition. " +
         "Past checks and overrides stay in the audit trail.",
-        "Delete gate", () => DeleteGate(g));
+        "Delete gate", () => _deleting.Run(() => DeleteGate(g)));
+
+    // BUG-603: a confirmed delete runs once.
+    private readonly InFlight _deleting = new();
 
     private List<StageGateView>? _gates;
     private GateEdit? _edit;
@@ -225,7 +228,15 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task LoadAsync() => _gates = await Gates.ListAllAsync();
+    // BUG-601: a save's reload and a delete's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var gates = await Gates.ListAllAsync();
+        if (_load.IsCurrent(t)) _gates = gates;
+    }
 
     private void BeginCreate() => _edit = new GateEdit { IsNew = true };
 
@@ -305,21 +316,21 @@ else
 
     private async Task SaveCore()
     {
-        if (_edit is null) return;
+        if (_edit is not { } edit) return;
 
-        var reqs = _edit.Requirements.Select(r => new GateRequirementInput(
+        var reqs = edit.Requirements.Select(r => new GateRequirementInput(
             r.Kind,
             r.Kind == GateRequirementKind.MachineCheck && !string.IsNullOrEmpty(r.Check) ? r.Check : null,
             r.Kind == GateRequirementKind.MachineCheck ? r.Param : null,
             r.Label,
             r.IsBlocking)).ToList();
 
-        var input = new StageGateInput(_edit.Trigger, _edit.Name, _edit.Description, _edit.IsActive, reqs, _edit.CommentaryMinLength);
+        var input = new StageGateInput(edit.Trigger, edit.Name, edit.Description, edit.IsActive, reqs, edit.CommentaryMinLength);
 
         try
         {
-            if (_edit.IsNew) await Gates.CreateAsync(input);
-            else await Gates.UpdateAsync(_edit.Id!.Value, input, _edit.Stamp);
+            if (edit.IsNew) await Gates.CreateAsync(input);
+            else await Gates.UpdateAsync(edit.Id!.Value, input, edit.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
@@ -327,7 +338,7 @@ else
             return;
         }
 
-        _edit = null;
+        if (ReferenceEquals(_edit, edit)) _edit = null;   // BUG-601: another gate's edit opened meanwhile stays
         await LoadAsync();
         Toasts.Success("Gate saved");
     }

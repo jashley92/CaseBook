@@ -22,15 +22,6 @@ public partial class InFlightGuardTests
     private static readonly Dictionary<string, int> Allowed = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/AccountApiTokens.razor"] = 1,   // Revoke (Tokens.RevokeAsync)
-        ["Pages/Admin.razor"] = 5,   // SendTest (Email.SendTestAsync); SendTestChat (Chat.SendTestAsync); SendSiemTest (SiemTest.SendTestAsync); OnLogoSelected (Branding.SaveLogoAsync); RemoveLogo (Brandi...
-        ["Pages/AdminApiTokens.razor"] = 1,   // Revoke (Tokens.RevokeAsync)
-        ["Pages/AdminGates.razor"] = 1,   // DeleteGate (Gates.DeleteAsync)
-        ["Pages/AdminRoles.razor"] = 4,   // SaveRoleCore (Roles.CreateRoleAsync, Roles.UpdateRoleAsync); DeleteRole (Roles.DeleteRoleAsync); AddMappingCore (Roles.AddMappingAsync); RemoveMapping (Roles.Re...
-        ["Pages/AdminTemplates.razor"] = 1,   // DeleteTemplate (Templates.DeleteAsync)
-        ["Shared/ReportProfilesEditor.razor"] = 1,   // Delete (Profiles.DeleteAsync)
-        ["Shared/ReportTemplateLibrary.razor"] = 3,   // Replace (Templates.ReplaceFileAsync); ShowHere (Access.RecordArtifactAsync); SaveRename (Templates.RenameAsync)
-        ["Shared/UndeliveredAlertBanner.razor"] = 1,   // Dismiss (Alerts.DismissAsync)
     };
 
     [Fact]

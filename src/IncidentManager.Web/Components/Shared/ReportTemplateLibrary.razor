@@ -155,7 +155,7 @@
                                         <div class="d-flex gap-1">
                                             <input class="form-control form-control-sm" style="max-width:16rem" aria-label="Template name"
                                                    @bind="_renameValue" @bind:event="oninput" />
-                                            <button class="btn btn-sm btn-primary py-0" @onclick="() => SaveRename(t)">Save</button>
+                                            <button class="btn btn-sm btn-primary py-0" @onclick="() => SaveRename(t)" disabled="@_savingRename.Busy">Save</button>
                                             <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => _renaming = null">Cancel</button>
                                         </div>
                                     }
@@ -175,9 +175,9 @@
                                 <td class="small text-muted">@TimeDisp.Short(t.UpdatedAtUtc) · @Users.DisplayFor(t.UpdatedBy)</td>
                                 <td class="text-end" style="min-width:16rem">
                                     <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => OpenPreview(t)">Preview</button>
-                                    <label class="btn btn-sm btn-outline-secondary py-0 mb-0" title="Upload a new version of this template">
+                                    <label class="btn btn-sm btn-outline-secondary py-0 mb-0 @(_replacing.Busy ? "disabled" : "")" title="Upload a new version of this template">
                                         Replace…
-                                        <InputFile class="d-none" accept=".docx" OnChange="e => Replace(t, e)" />
+                                        <InputFile class="d-none" accept=".docx" OnChange="e => Replace(t, e)" disabled="@_replacing.Busy" />
                                     </label>
                                     <button class="btn btn-sm btn-link py-0" @onclick="() => BeginRename(t)" aria-label="Rename @t.Name">Rename</button>
                                     @if (t.IsActive)
@@ -223,7 +223,15 @@
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task LoadAsync() => _templates = await Templates.ListAllAsync();
+    // BUG-601: a change's reload and the profiles editor's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var templates = await Templates.ListAllAsync();
+        if (_load.IsCurrent(t)) _templates = templates;
+    }
 
     /// <summary>Called by the profiles editor after a profile changes, so "Default for" stays current.</summary>
     public async Task ReloadAsync()
@@ -260,20 +268,26 @@
         _problems = null;
         try
         {
-            var name = string.IsNullOrWhiteSpace(_newName) ? Path.GetFileNameWithoutExtension(e.File.Name) : _newName!;
+            var typed = _newName;
+            var name = string.IsNullOrWhiteSpace(typed) ? Path.GetFileNameWithoutExtension(e.File.Name) : typed;
             var result = await Templates.UploadAsync(name, e.File.Name, await ReadAsync(e));
             if (!result.Check.Ok) { _problems = result.Check.Problems; return; }
-            _newName = null;
+            _newName = DraftText.ClearIfUnchanged(_newName, typed, null);   // BUG-601: a name typed for the next one stays
             await Changed();
             Toasts.Success($"Template “{name}” added ({result.Check.Placeholders.Count} fields). Preview it with a case below.");
-            if (_templates!.FirstOrDefault(t => t.Id == result.Id) is { } added) await OpenPreview(added);
+            if (_templates?.FirstOrDefault(t => t.Id == result.Id) is { } added) await OpenPreview(added);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _problems = [NotSaved]; }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _problems = [ex.Message]; }
         finally { _uploading = false; }
     }
 
-    private async Task Replace(ReportTemplateView t, InputFileChangeEventArgs e)
+    // BUG-603: one replace at a time (a second pick while one is saving is ignored, not raced).
+    private readonly InFlight _replacing = new();
+
+    private Task Replace(ReportTemplateView t, InputFileChangeEventArgs e) => _replacing.Run(() => ReplaceCore(t, e));
+
+    private async Task ReplaceCore(ReportTemplateView t, InputFileChangeEventArgs e)
     {
         _problems = null;
         try
@@ -298,11 +312,17 @@
         _previewFor = t;
         if (_cases is null)
         {
+            // BUG-601: Preview again while the case list loads: only the newest list lands (both did, and a case picked
+            // after the first landed was reset to the first case by the second).
+            var load = _casesLoad.Begin();
             var page = await Cases.ListAsync(new CaseFilter { IncludeClosed = true, IncludeExercises = true, PageSize = 100 });
+            if (!_casesLoad.IsCurrent(load)) return;
             _cases = page.Items.ToList();
             if (_cases.Count > 0) _previewCaseId = _cases[0].Id;
         }
     }
+
+    private readonly LoadSequence _casesLoad = new();
 
     private void ClosePreview()
     {
@@ -320,10 +340,16 @@
         (_shownBytes, _shownPending, _shownError) = (null, false, null);
     }
 
+    // BUG-603: the fill under way, while nothing has cleared it since; a second click then is ignored (a double-click
+    // logged the preview twice). Another case or template clears it, so Show here for that one runs.
+    private int? _showingSeq;
+
     private async Task ShowHere(ReportTemplateView t)
     {
+        if (_showingSeq == _showSeq) return;
         ClearShown();
         var seq = _showSeq;
+        _showingSeq = seq;
         var caseId = _previewCaseId;   // BUG-439: the case filled, not whichever is picked when the fill finishes
         try
         {
@@ -338,6 +364,10 @@
         catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException)
         {
             if (seq == _showSeq) Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            if (_showingSeq == seq) _showingSeq = null;
         }
     }
 
@@ -360,11 +390,16 @@
 
     private void BeginRename(ReportTemplateView t) { _renaming = t.Id; _renameValue = t.Name; }
 
-    private async Task SaveRename(ReportTemplateView t)
+    // BUG-603: one rename save at a time (a double-click saved it twice).
+    private readonly InFlight _savingRename = new();
+
+    private Task SaveRename(ReportTemplateView t) => _savingRename.Run(() => SaveRenameCore(t));
+
+    private async Task SaveRenameCore(ReportTemplateView t)
     {
         try { await Templates.RenameAsync(t.Id, _renameValue ?? ""); }   // BUG-350: the name only
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
-        _renaming = null;
+        if (_renaming == t.Id) _renaming = null;   // BUG-601: a rename opened on another row meanwhile stays open
         await Changed();
         Toasts.Success("Template renamed");
     }

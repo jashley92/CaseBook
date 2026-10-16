@@ -145,7 +145,8 @@
         try
         {
             var register = await Lessons.GetRegisterAsync(new RegisterFilter(_scope, _search, _includeExercises), ct);
-            if (seq == _loadSeq) _register = register;
+            if (seq != _loadSeq) return;
+            _register = register;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }
     }

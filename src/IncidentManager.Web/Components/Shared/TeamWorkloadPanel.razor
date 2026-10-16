@@ -258,11 +258,17 @@ else
         await LoadWorkload();
     }
 
+    // BUG-601: a reassign's reload can overtake the first load; only the newest lands.
+    private readonly LoadSequence _load = new();
+
     private async Task LoadWorkload()
     {
-        _w = await Workload.GetAsync();
-        _sumAtRisk = _w.Analysts.Sum(a => a.SlaAtRisk) + _w.Unassigned.SlaAtRisk;
-        _sumBreached = _w.Analysts.Sum(a => a.SlaBreached) + _w.Unassigned.SlaBreached;
+        var t = _load.Begin();
+        var w = await Workload.GetAsync();
+        if (!_load.IsCurrent(t)) return;
+        _w = w;
+        _sumAtRisk = w.Analysts.Sum(a => a.SlaAtRisk) + w.Unassigned.SlaAtRisk;
+        _sumBreached = w.Analysts.Sum(a => a.SlaBreached) + w.Unassigned.SlaBreached;
     }
 
     // --- PROD-23: metered reassign ------------------------------------------------------------------

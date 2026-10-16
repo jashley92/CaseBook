@@ -142,12 +142,22 @@ else
 
     private async Task LoadAsync()
     {
+        if (await ReadAsync() is { } read) (_active, _archived) = read;
+    }
+
+    // BUG-601: a save's reload and an archive's can overlap; only the newest read is used (null for an older one).
+    private readonly LoadSequence _load = new();
+
+    private async Task<(List<Row> Active, List<CaseOutcomeView> Archived)?> ReadAsync()
+    {
+        var t = _load.Begin();
         var all = await Outcomes.ListAllAsync();
-        _active = all.Where(o => o.IsActive)
+        if (!_load.IsCurrent(t)) return null;
+        return (all.Where(o => o.IsActive)
             .Select(o => new Row { Id = o.Id, Stamp = o.RowHash, IsSystem = o.IsSystem, Uses = o.UseCount, Label = o.Label, Description = o.Description,
                                    OriginalLabel = o.Label, OriginalDescription = o.Description })
-            .ToList();
-        _archived = all.Where(o => !o.IsActive).ToList();
+            .ToList(),
+            all.Where(o => !o.IsActive).ToList());
     }
 
     private void AddRow() => _active?.Add(new Row());
@@ -188,35 +198,43 @@ else
         Toasts.Success("Outcomes saved");
     }
 
-    private async Task Archive(Guid id) => await Lifecycle(() => Outcomes.SetArchivedAsync(id, true), "Outcome archived");
-    private async Task Restore(Guid id) => await Lifecycle(() => Outcomes.SetArchivedAsync(id, false), "Outcome restored");
-    private async Task Delete(Guid id) => await Lifecycle(() => Outcomes.DeleteAsync(id), "Outcome deleted");
+    private async Task Archive(Guid id) => await Lifecycle(id, () => Outcomes.SetArchivedAsync(id, true), "Outcome archived");
+    private async Task Restore(Guid id) => await Lifecycle(id, () => Outcomes.SetArchivedAsync(id, false), "Outcome restored");
+    private async Task Delete(Guid id) => await Lifecycle(id, () => Outcomes.DeleteAsync(id), "Outcome deleted");
 
-    private async Task Lifecycle(Func<Task> action, string ok)
+    // BUG-603: one change per outcome at a time (a double-click on Archive, Restore or Delete ran it twice).
+    private readonly HashSet<Guid> _changing = [];
+
+    private async Task Lifecycle(Guid id, Func<Task> action, string ok)
     {
+        if (!_changing.Add(id)) return;
         try
         {
-            await action();
+            try
+            {
+                await action();
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+            {
+                Toasts.Error(ex.Message);
+                return;
+            }
+            await ReloadKeepingEdits();
+            Toasts.Info(ok);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
-        {
-            Toasts.Error(ex.Message);
-            return;
-        }
-        await ReloadKeepingEdits();
-        Toasts.Info(ok);
+        finally { _changing.Remove(id); }
     }
 
     // REV-28: archiving, restoring or deleting one outcome reloads the list, but the rows being edited (and their order,
     // and any added) are kept as they are, with the stamps they were opened with.
     private async Task ReloadKeepingEdits()
     {
-        var before = _active ?? [];
-        await LoadAsync();
-        var fresh = (_active ?? []).ToDictionary(r => r.Id!.Value);
+        if (await ReadAsync() is not { } read) return;   // BUG-601: a newer reload lands instead
+        var before = _active ?? [];   // as it is now, with what was typed or added meanwhile
+        var fresh = read.Active.ToDictionary(r => r.Id!.Value);
         var kept = before.Where(r => r.IsNew || fresh.ContainsKey(r.Id!.Value))
             .Select(r => r.IsNew || r.Edited ? r : fresh[r.Id!.Value]).ToList();
         kept.AddRange(fresh.Values.Where(r => before.All(b => b.Id != r.Id)));   // one just restored
-        _active = kept;
+        (_active, _archived) = (kept, read.Archived);
     }
 }

@@ -181,7 +181,10 @@ else
 
     private void ConfirmDeleteTemplate(TemplateView t) => _confirm.Ask(this, "Delete template",
         $"Delete the “{t.Name}” template? It won't be offered for new cases. Cases that already used it keep their tasks.",
-        "Delete template", () => DeleteTemplate(t));
+        "Delete template", () => _deleting.Run(() => DeleteTemplate(t)));
+
+    // BUG-603: a confirmed delete runs once.
+    private readonly InFlight _deleting = new();
 
     private List<TemplateView>? _templates;
     private TemplateEdit? _edit;
@@ -213,7 +216,15 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task LoadAsync() => _templates = await Templates.ListAllAsync();
+    // BUG-601: a save's reload and a delete's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var templates = await Templates.ListAllAsync();
+        if (_load.IsCurrent(t)) _templates = templates;
+    }
 
     private void BeginCreate() => _edit = new TemplateEdit { IsNew = true, SortOrder = (_templates?.Count ?? 0) + 1 };
 
@@ -260,24 +271,24 @@ else
 
     private async Task SaveCore()
     {
-        if (_edit is null) return;
+        if (_edit is not { } edit) return;
 
         // BUG-592: the select's value by name only (a number or a list isn't one); blank is "no default".
         var input = new TemplateInput(
-            _edit.Name,
-            _edit.Description,
-            _edit.IsActive,
-            _edit.SortOrder,
-            EnumNames.OrNull<Classification>(_edit.DefaultClassification),
-            EnumNames.OrNull<Severity>(_edit.DefaultSeverity),
-            _edit.DefaultDataTypes,
-            _edit.SummaryBoilerplate,
-            _edit.Steps.Select(s => new TemplateStepInput(s.Title, s.Description, s.OwnerHint, s.DueOffsetHours, s.Kind)).ToList());
+            edit.Name,
+            edit.Description,
+            edit.IsActive,
+            edit.SortOrder,
+            EnumNames.OrNull<Classification>(edit.DefaultClassification),
+            EnumNames.OrNull<Severity>(edit.DefaultSeverity),
+            edit.DefaultDataTypes,
+            edit.SummaryBoilerplate,
+            edit.Steps.Select(s => new TemplateStepInput(s.Title, s.Description, s.OwnerHint, s.DueOffsetHours, s.Kind)).ToList());
 
         try
         {
-            if (_edit.IsNew) await Templates.CreateAsync(input);
-            else await Templates.UpdateAsync(_edit.Id!.Value, input, _edit.Stamp);
+            if (edit.IsNew) await Templates.CreateAsync(input);
+            else await Templates.UpdateAsync(edit.Id!.Value, input, edit.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
@@ -291,7 +302,7 @@ else
             return;
         }
 
-        _edit = null;
+        if (ReferenceEquals(_edit, edit)) _edit = null;   // BUG-601: another template's edit opened meanwhile stays
         await LoadAsync();
         Toasts.Success("Template saved");
     }

@@ -24,36 +24,16 @@ public partial class ComponentContinuationTests
     // Wave 2b allow-lists, by file: the count of sites still to fix, with what they are.
     private static readonly Dictionary<string, int> A_NotRechecked = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
-        ["Shared/ReportTemplateLibrary.razor"] = 1,   // OpenPreview: _cases = page.Items.ToList();
     };
 
     private static readonly Dictionary<string, int> B_Unsequenced = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/Admin.razor"] = 3,   // LoadAsync: _effective = await Settings.GetEffectiveAsync; LoadAsync: _ledger = await Ledger.GetAsync; LoadAsync: _logoDataUri = logo (Branding.GetLogoAsync)
-        ["Pages/AdminApiTokens.razor"] = 2,   // LoadAsync: _roles = await Roles.ListRolesAsync; LoadAsync: _tokens = await Tokens.ListAllAsync
-        ["Pages/AdminDataElements.razor"] = 1,   // LoadAsync: _active = all (DataElements.ListAllAsync)
-        ["Pages/AdminEmailTemplates.razor"] = 2,   // Save: _views = await Templates.GetAllAsync; Reset: _views = await Templates.GetAllAsync
-        ["Pages/AdminOutcomes.razor"] = 1,   // LoadAsync: _active = all (Outcomes.ListAllAsync)
-        ["Pages/AdminRoles.razor"] = 3,   // LoadAsync: _roles = await Roles.ListRolesAsync; LoadAsync: _mappings = await Roles.ListMappingsAsync; LoadAsync: _review = await AccessReview.BuildAsync
-        ["Pages/AgendaPage.razor"] = 1,   // Load: _board = board (Svc.GetBoardAsync)
-        ["Pages/FindPage.razor"] = 1,   // Run: _result = result (Finder.FindAsync)
-        ["Pages/ImprovementActionsPage.razor"] = 1,   // Load: _register = register (Lessons.GetRegisterAsync)
-        ["Pages/IndicatorsPage.razor"] = 1,   // Load: _library = library (Indicators.SearchAsync)
-        ["Pages/ProgramReportPage.razor"] = 1,   // Load: _report = report (Program.BuildAsync)
-        ["Shared/ReportProfilesEditor.razor"] = 2,   // LoadAsync: _profiles = await Profiles.ListAllAsync; LoadAsync: _templates = await Templates.ListActiveAsync
-        ["Shared/ReportTemplateLibrary.razor"] = 1,   // OpenPreview: _cases = page (Cases.ListAsync)
-        ["Shared/TeamWorkloadPanel.razor"] = 1,   // LoadWorkload: _w = await Workload.GetAsync
-        ["Shared/UndeliveredAlertBanner.razor"] = 2,   // LoadAsync: _alerts = await Alerts.ListAsync; Dismiss: _alerts = await Alerts.ListAsync
     };
 
     private static readonly Dictionary<string, int> C_ClearedOverTyping = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/AccountApiTokens.razor"] = 1,   // CreateToken: _name = "";
-        ["Pages/AdminRoles.razor"] = 1,   // AddMappingCore: _newGroup = "";
-        ["Shared/ReportTemplateLibrary.razor"] = 1,   // Upload: _newName = null;
     };
 
     private static readonly Dictionary<string, int> D_ClosesAnotherForm = new(StringComparer.Ordinal)
@@ -64,7 +44,6 @@ public partial class ComponentContinuationTests
     private static readonly Dictionary<string, int> E_NavigatesLate = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/Admin.razor"] = 1,   // OnBeforeLeave<lambda>: Nav.NavigateTo(
     };
 
     [Fact]

@@ -142,7 +142,10 @@
 
     private void ConfirmDelete(ReportProfileView p) => _confirm.Ask(this, "Delete report profile",
         $"Delete the “{p.Name}” report profile? Cases set to it use the default report sections from now on.",
-        "Delete profile", () => Delete(p));
+        "Delete profile", () => _deleting.Run(() => Delete(p)));
+
+    // BUG-603: one delete at a time.
+    private readonly InFlight _deleting = new();
 
     private List<ReportProfileView>? _profiles;
     private ProfileEdit? _edit;
@@ -172,10 +175,17 @@
 
     private List<ReportTemplateView>? _templates;
 
+    // BUG-601: a save's reload and the template library's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
     private async Task LoadAsync()
     {
-        _profiles = await Profiles.ListAllAsync();
-        _templates = await Templates.ListActiveAsync();
+        var t = _load.Begin();
+        var profiles = await Profiles.ListAllAsync();
+        var templates = await Templates.ListActiveAsync();
+        if (!_load.IsCurrent(t)) return;
+        _profiles = profiles;
+        _templates = templates;
     }
 
     /// <summary>Called by the template library after it changes, so names and choices stay current.</summary>
@@ -232,17 +242,17 @@
 
     private async Task SaveCore()
     {
-        if (_edit is null) return;
+        if (_edit is not { } edit) return;
 
         var input = new ReportProfileInput(
-            _edit.Name, _edit.Description, _edit.IsActive, _edit.SortOrder,
-            ReportLayout.Serialize(_edit.Layout),
-            Guid.TryParse(_edit.TemplateKey, out var tid) ? tid : null);
+            edit.Name, edit.Description, edit.IsActive, edit.SortOrder,
+            ReportLayout.Serialize(edit.Layout),
+            Guid.TryParse(edit.TemplateKey, out var tid) ? tid : null);
 
         try
         {
-            if (_edit.IsNew) await Profiles.CreateAsync(input);
-            else await Profiles.UpdateAsync(_edit.Id!.Value, input, _edit.Stamp);
+            if (edit.IsNew) await Profiles.CreateAsync(input);
+            else await Profiles.UpdateAsync(edit.Id!.Value, input, edit.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
@@ -250,7 +260,7 @@
             return;
         }
 
-        _edit = null;
+        if (ReferenceEquals(_edit, edit)) _edit = null;   // BUG-601: another profile's edit opened meanwhile stays
         await LoadAsync();
         await OnChanged.InvokeAsync();
         Toasts.Success("Report profile saved");

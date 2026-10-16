@@ -149,12 +149,22 @@ else
 
     private async Task LoadAsync()
     {
+        if (await ReadAsync() is { } read) (_active, _archived) = read;
+    }
+
+    // BUG-601: a save's reload and an archive's can overlap; only the newest read is used (null for an older one).
+    private readonly LoadSequence _load = new();
+
+    private async Task<(List<Row> Active, List<DataElementView> Archived)?> ReadAsync()
+    {
+        var t = _load.Begin();
         var all = await DataElements.ListAllAsync();
-        _active = all.Where(e => e.IsActive)
+        if (!_load.IsCurrent(t)) return null;
+        return (all.Where(e => e.IsActive)
             .Select(e => new Row { Id = e.Id, Stamp = e.RowHash, IsSystem = e.IsSystem, Label = e.Label, NotificationJurisdictions = e.NotificationJurisdictions,
                                    OriginalLabel = e.Label, OriginalJurisdictions = e.NotificationJurisdictions })
-            .ToList();
-        _archived = all.Where(e => !e.IsActive).ToList();
+            .ToList(),
+            all.Where(e => !e.IsActive).ToList());
     }
 
     private void AddRow() => _active?.Add(new Row());
@@ -201,40 +211,48 @@ else
         Toasts.Success("Data elements saved");
     }
 
-    private async Task Archive(Guid id) => await Lifecycle(() => DataElements.SetArchivedAsync(id, true), "Element archived");
-    private async Task Restore(Guid id) => await Lifecycle(() => DataElements.SetArchivedAsync(id, false), "Element restored");
-    private async Task Delete(Guid id) => await Lifecycle(() => DataElements.DeleteAsync(id), "Element deleted");
+    private async Task Archive(Guid id) => await Lifecycle(id, () => DataElements.SetArchivedAsync(id, true), "Element archived");
+    private async Task Restore(Guid id) => await Lifecycle(id, () => DataElements.SetArchivedAsync(id, false), "Element restored");
+    private async Task Delete(Guid id) => await Lifecycle(id, () => DataElements.DeleteAsync(id), "Element deleted");
 
-    private async Task Lifecycle(Func<Task> action, string ok)
+    // BUG-603: one change per element at a time (a double-click on Archive, Restore or Delete ran it twice).
+    private readonly HashSet<Guid> _changing = [];
+
+    private async Task Lifecycle(Guid id, Func<Task> action, string ok)
     {
+        if (!_changing.Add(id)) return;
         try
         {
-            await action();
+            try
+            {
+                await action();
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+            {
+                Toasts.Error(ex.Message);
+                return;
+            }
+            catch (Microsoft.EntityFrameworkCore.DbUpdateException)   // BUG-567: as on save
+            {
+                Toasts.Error("The data element couldn't be changed. Reload the page and try again.");
+                return;
+            }
+            await ReloadKeepingEdits();
+            Toasts.Info(ok);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
-        {
-            Toasts.Error(ex.Message);
-            return;
-        }
-        catch (Microsoft.EntityFrameworkCore.DbUpdateException)   // BUG-567: as on save
-        {
-            Toasts.Error("The data element couldn't be changed. Reload the page and try again.");
-            return;
-        }
-        await ReloadKeepingEdits();
-        Toasts.Info(ok);
+        finally { _changing.Remove(id); }
     }
 
     // REV-28: archiving, restoring or deleting one element reloads the list, but the rows being edited (and their order,
     // and any added) are kept as they are, with the stamps they were opened with.
     private async Task ReloadKeepingEdits()
     {
-        var before = _active ?? [];
-        await LoadAsync();
-        var fresh = (_active ?? []).ToDictionary(r => r.Id!.Value);
+        if (await ReadAsync() is not { } read) return;   // BUG-601: a newer reload lands instead
+        var before = _active ?? [];   // as it is now, with what was typed or added meanwhile
+        var fresh = read.Active.ToDictionary(r => r.Id!.Value);
         var kept = before.Where(r => r.IsNew || fresh.ContainsKey(r.Id!.Value))
             .Select(r => r.IsNew || r.Edited ? r : fresh[r.Id!.Value]).ToList();
         kept.AddRange(fresh.Values.Where(r => before.All(b => b.Id != r.Id)));   // one just restored
-        _active = kept;
+        (_active, _archived) = (kept, read.Archived);
     }
 }

@@ -233,7 +233,8 @@
         try
         {
             var report = await Program.BuildAsync(_period, _includeExercises, ct);
-            if (seq == _seq) _report = report;
+            if (seq != _seq) return;
+            _report = report;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { /* superseded */ }
     }
