@@ -40,6 +40,15 @@ public sealed class OutboundCircuit
         lock (_gate) _targets.Remove(target);
     }
 
+    /// <summary>
+    /// BUG-607: a send that was let in ended without learning whether the target answers (the caller cancelled, or it
+    /// failed before anything was sent): the probe's turn is handed back and the back-off stays as it was.
+    /// </summary>
+    public void Release(string target)
+    {
+        lock (_gate) if (_targets.TryGetValue(target, out var state)) state.ProbeUntil = null;
+    }
+
     /// <summary>The target didn't answer (timed out, couldn't be reached, or a server error): it's backed off.</summary>
     public void Failed(string target)
     {

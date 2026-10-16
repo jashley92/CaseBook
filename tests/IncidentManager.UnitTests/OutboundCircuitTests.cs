@@ -73,6 +73,27 @@ public sealed class OutboundCircuitTests
     }
 
     [Fact]
+    public void A_released_probe_hands_the_turn_back_and_leaves_the_back_off_as_it_was(/* BUG-607 */)
+    {
+        var time = new ManualTime();
+        var circuit = new OutboundCircuit(time);
+        for (var i = 0; i < 3; i++) circuit.Failed("t");
+        time.Now += OutboundCircuit.FirstBackOff;
+        circuit.TryEnter("t").Should().BeTrue("the probe");
+        circuit.TryEnter("t").Should().BeFalse();
+
+        circuit.Release("t");   // say the caller cancelled it
+        circuit.TryEnter("t").Should().BeTrue("the next send is the probe, not ten minutes later");
+        circuit.TryEnter("t").Should().BeFalse("still one at a time: the back-off didn't end");
+
+        circuit.Failed("t");
+        time.Now += OutboundCircuit.FirstBackOff;
+        circuit.TryEnter("t").Should().BeFalse("the release didn't reset the doubling");
+        time.Now += OutboundCircuit.FirstBackOff;
+        circuit.TryEnter("t").Should().BeTrue();
+    }
+
+    [Fact]
     public void A_probe_that_never_reports_doesnt_hold_the_target_shut_for_good()
     {
         var time = new ManualTime();

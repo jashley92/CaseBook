@@ -21,6 +21,12 @@ public sealed class ChatWebhookCircuitTests
         public ValueTask<string?> ResolveAsync(string? configuredValue, CancellationToken ct = default) => new(configuredValue);
     }
 
+    private sealed class ManualTime : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 10, 16, 9, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
     private sealed class Hook(Func<HttpResponseMessage> answer) : HttpMessageHandler, IHttpClientFactory
     {
         public int Posts;
@@ -32,9 +38,11 @@ public sealed class ChatWebhookCircuitTests
         }
     }
 
-    private static ChatWebhookNotifier Notifier(Hook hook) =>
-        new(hook, new TestOptionsMonitor<ChatOptions>(new ChatOptions { Enabled = true, WebhookUrl = "https://hooks.example.com/abc", MaxAttempts = 2 }),
-            new LiteralSecrets(), NullLogger<ChatWebhookNotifier>.Instance, new OutboundCircuit());
+    private const string Url = "https://hooks.example.com/abc";
+
+    private static ChatWebhookNotifier Notifier(Hook hook, OutboundCircuit? circuit = null) =>
+        new(hook, new TestOptionsMonitor<ChatOptions>(new ChatOptions { Enabled = true, WebhookUrl = Url, MaxAttempts = 2 }),
+            new LiteralSecrets(), NullLogger<ChatWebhookNotifier>.Instance, circuit ?? new OutboundCircuit());
 
     [Fact]
     public async Task After_the_webhook_stops_answering_posts_fail_fast_and_count_as_undelivered()
@@ -88,5 +96,62 @@ public sealed class ChatWebhookCircuitTests
         using var watch = DeliveryWatch.Begin();
         await chat.SendAsync(Msg);
         watch.Failed.Should().BeFalse("the test post that went through ended the back-off");
+    }
+
+    // BUG-607: backs the webhook off and lets the back-off run out, so the next post is the probe.
+    private static OutboundCircuit ExpiredBackOff()
+    {
+        var time = new ManualTime();
+        var circuit = new OutboundCircuit(time);
+        for (var i = 0; i < 10 && circuit.TryEnter("chat:" + Url); i++) circuit.Failed("chat:" + Url);
+        time.Now += OutboundCircuit.MaxBackOff;
+        return circuit;
+    }
+
+    [Fact]
+    public async Task A_probe_cancelled_before_it_posts_hands_the_turn_back(/* BUG-607 */)
+    {
+        using var hook = new Hook(() => new HttpResponseMessage(HttpStatusCode.OK));
+        var circuit = ExpiredBackOff();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Notifier(hook, circuit).SendAsync(Msg, cts.Token);
+
+        hook.Posts.Should().Be(0);
+        circuit.TryEnter("chat:" + Url).Should().BeTrue("nothing was posted, so the next post is the probe");
+    }
+
+    [Fact]
+    public async Task A_probe_cancelled_while_it_waits_to_try_again_hands_the_turn_back(/* BUG-607 */)
+    {
+        using var cts = new CancellationTokenSource();
+        using var hook = new Hook(() =>
+        {
+            cts.Cancel();   // the caller gives up during the first attempt, which then fails
+            throw new HttpRequestException("connection reset");
+        });
+        var circuit = ExpiredBackOff();
+
+        await Notifier(hook, circuit).SendAsync(Msg, cts.Token);
+
+        hook.Posts.Should().Be(1);
+        circuit.TryEnter("chat:" + Url).Should().BeTrue("a cancelled post says nothing about the webhook");
+    }
+
+    [Fact]
+    public async Task A_probe_cancelled_while_it_posts_hands_the_turn_back(/* BUG-607 */)
+    {
+        using var cts = new CancellationTokenSource();
+        using var hook = new Hook(() =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+        var circuit = ExpiredBackOff();
+
+        await Notifier(hook, circuit).SendAsync(Msg, cts.Token);
+
+        circuit.TryEnter("chat:" + Url).Should().BeTrue();
     }
 }

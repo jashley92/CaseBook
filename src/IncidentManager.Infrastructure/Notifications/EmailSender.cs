@@ -28,7 +28,7 @@ public sealed class EmailSender : IEmailSender
     }
 
     // BUG-576: the relay is backed off by host and port, so a corrected relay setting is tried at once.
-    private static string Target(EmailOptions o) => $"smtp:{o.SmtpHost}:{o.SmtpPort}";
+    internal static string Target(EmailOptions o) => $"smtp:{o.SmtpHost}:{o.SmtpPort}";
 
     public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default) =>
         SendCoreAsync(to, subject, textBody: body, htmlBody: null, ct);
@@ -119,9 +119,79 @@ public sealed class EmailSender : IEmailSender
     private async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
         string textBody, string? htmlBody, CancellationToken ct)
     {
-        // BUG-373: a subject stored with a line break (an alert queued before the composer collapsed them) is sent on
-        // retry instead of throwing again.
-        using var message = new MailMessage { From = new MailAddress(o.From), Subject = EmailComposer.SingleLine(subject) };
+        var target = Target(o);
+        using var message = NotYetSent(target, () => Compose(o, to, subject, textBody, htmlBody));
+
+        // S4423: encrypt the connection by default (Email:EnableSsl, server-side). Only a deliberately
+        // configured relay that does its own TLS turns this off.
+        using var client = NotYetSent(target, () => new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl });
+        // BUG-99: SmtpClient.Timeout covers only the synchronous Send. A relay that accepts the connection and then stalls
+        // would otherwise hold a reminder scan, or a user's assign or reclassify, until the app shut down.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(SendTimeout);
+        try
+        {
+            await client.SendMailAsync(message, timeout.Token);
+            _circuit.Succeeded(target);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _circuit.Failed(target);   // BUG-576
+            throw new SmtpException($"The mail relay didn't finish accepting the message within {SendTimeout.TotalSeconds:0} seconds.");
+        }
+        catch (OperationCanceledException)
+        {
+            _circuit.Release(target);   // BUG-607: the caller gave up, which says nothing about the relay
+            throw;
+        }
+        catch (Exception ex) when (Unreachable(ex))
+        {
+            _circuit.Failed(target);   // BUG-576: couldn't reach it, or it dropped the session
+            throw;
+        }
+        catch
+        {
+            // BUG-607: it answered (refused an address, wanted authentication, a mailbox busy), so it isn't backed off.
+            // Reported as neither, a probe's turn was held and every send failed fast for ten minutes.
+            _circuit.Succeeded(target);
+            throw;
+        }
+    }
+
+    // BUG-607: a send that fails before anything reaches the relay (no valid address, a bad From or port) hands back the
+    // probe's turn it may hold.
+    private T NotYetSent<T>(string target, Func<T> make)
+    {
+        try { return make(); }
+        catch
+        {
+            _circuit.Release(target);
+            throw;
+        }
+    }
+
+    // A MailMessage for the addresses that parse. Throws (and disposes it) when there's nothing to send to or no valid From.
+    private MailMessage Compose(EmailOptions o, IReadOnlyCollection<string> to, string subject, string textBody, string? htmlBody)
+    {
+        var message = new MailMessage();
+        try
+        {
+            // BUG-373: a subject stored with a line break (an alert queued before the composer collapsed them) is sent on
+            // retry instead of throwing again.
+            message.From = new MailAddress(o.From);
+            message.Subject = EmailComposer.SingleLine(subject);
+            AddRecipientsAndBody(message, to, textBody, htmlBody);
+            return message;
+        }
+        catch
+        {
+            message.Dispose();
+            throw;
+        }
+    }
+
+    private void AddRecipientsAndBody(MailMessage message, IReadOnlyCollection<string> to, string textBody, string? htmlBody)
+    {
         // BUG-241: one bad address (a typo in a list set in the file) mustn't stop the message reaching the rest.
         var bad = 0;
         foreach (var addr in to)
@@ -145,35 +215,6 @@ public sealed class EmailSender : IEmailSender
             message.Body = textBody;
             message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
                 htmlBody, null, MediaTypeNames.Text.Html));
-        }
-
-        // S4423: encrypt the connection by default (Email:EnableSsl, server-side). Only a deliberately
-        // configured relay that does its own TLS turns this off.
-        using var client = new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl };
-        // BUG-99: SmtpClient.Timeout covers only the synchronous Send. A relay that accepts the connection and then stalls
-        // would otherwise hold a reminder scan, or a user's assign or reclassify, until the app shut down.
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(SendTimeout);
-        var target = Target(o);
-        try
-        {
-            await client.SendMailAsync(message, timeout.Token);
-            _circuit.Succeeded(target);
-        }
-        catch (SmtpFailedRecipientException)
-        {
-            _circuit.Succeeded(target);   // the relay answered (it refused an address): it isn't backed off
-            throw;
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            _circuit.Failed(target);   // BUG-576
-            throw new SmtpException($"The mail relay didn't finish accepting the message within {SendTimeout.TotalSeconds:0} seconds.");
-        }
-        catch (Exception ex) when (Unreachable(ex))
-        {
-            _circuit.Failed(target);   // BUG-576: couldn't reach it, or it dropped the session
-            throw;
         }
     }
 

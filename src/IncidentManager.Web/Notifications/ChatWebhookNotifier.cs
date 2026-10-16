@@ -74,13 +74,13 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         // BUG-576: a webhook that just stalled or failed isn't waited on (timeout times attempts) by every assign,
         // reclassify, mention and handoff. The target is the resolved URL (kept in memory only, never logged).
         var target = "chat:" + url;
+        var payload = ChatPayload.Serialize(o.Format, message);   // BUG-607: before taking a probe's turn
         if (!test && !_circuit.TryEnter(target))
         {
             _logger.LogWarning("The chat webhook isn't answering; message not posted until it's tried again.");
             return "The webhook isn't answering; posts are paused for a few minutes.";
         }
 
-        var payload = ChatPayload.Serialize(o.Format, message);
         var attempts = Math.Max(1, o.MaxAttempts);
         string? lastError = null;
         var unreachable = false;   // the last attempt timed out, couldn't connect, or got a server error
@@ -107,7 +107,7 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                return "Canceled.";
+                return Canceled();
             }
             catch (Exception ex)
             {
@@ -119,12 +119,21 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             if (attempt < attempts)
             {
                 try { await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct).ConfigureAwait(false); }
-                catch (OperationCanceledException) { return "Canceled."; }
+                catch (OperationCanceledException) { return Canceled(); }
             }
         }
         // BUG-576: backed off only when it didn't answer; one that answered with a refusal (a 4xx) isn't hung.
         if (unreachable) _circuit.Failed(target);
         else if (lastError is not null) _circuit.Succeeded(target);
+        else return Canceled();   // cancelled before the first attempt: not posted
         return lastError;
+
+        // BUG-607: a cancelled post says nothing about the webhook; the probe's turn it may hold is handed back (held,
+        // every post failed fast for ten minutes).
+        string Canceled()
+        {
+            if (!test) _circuit.Release(target);
+            return "Canceled.";
+        }
     }
 }
