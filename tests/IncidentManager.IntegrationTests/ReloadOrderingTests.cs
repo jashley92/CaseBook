@@ -227,6 +227,76 @@ public sealed class ReloadOrderingTests : IDisposable
         after!.Roles.Should().BeEmpty();
     }
 
+    // ---- BUG-642: a newer partial answer doesn't block an older whole one ----
+
+    private const string Admins = "S-1-5-21-7-1201";
+    private const string Analysts = "S-1-5-21-7-1202";
+    private const string AnalystsMoved = "S-1-5-21-7-1203";   // the analysts group, as the older lookup read it
+    private const string Unnamed = "S-1-5-21-7-1204";         // a group the directory fails to name
+
+    private sealed class AdminsAndAnalysts : IRoleDirectory
+    {
+        public IReadOnlySet<Permission> PermissionsForRoles(IEnumerable<string> roleNames) => new HashSet<Permission>();
+        public IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups) => adGroups
+            .Select(g => g switch { @"CORP\SOC-Admins" => "Admin", @"CORP\SOC-Analysts" => "Analyst", _ => null })
+            .OfType<string>().ToHashSet();
+        public IReadOnlySet<string> RolesMappedByName => new HashSet<string> { "Admin", "Analyst" };
+        public bool IsRole(string name) => name is "Admin" or "Analyst";
+        public void Invalidate() { }
+    }
+
+    /// <summary>Names the admins and analysts groups; holds naming <see cref="AnalystsMoved"/> until released, and fails
+    /// on <see cref="Unnamed"/>.</summary>
+    private sealed class NamingLsa : IDisposable
+    {
+        public readonly ManualResetEventSlim Entered = new();
+        public readonly ManualResetEventSlim Release = new();
+        public IReadOnlyDictionary<string, string> Translate(IReadOnlyList<string> sids)
+        {
+            if (sids.Contains(Unnamed)) throw new InvalidOperationException("RPC server unavailable");
+            if (sids.Contains(AnalystsMoved))
+            {
+                Entered.Set();
+                Release.Wait(TimeSpan.FromSeconds(30));
+            }
+            return sids.ToDictionary(s => s, s => s == Admins ? @"CORP\SOC-Admins" : @"CORP\SOC-Analysts");
+        }
+        public void Dispose()
+        {
+            Release.Set();
+            Entered.Dispose();
+            Release.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task An_older_whole_answer_lands_after_a_newer_partial_one(/* BUG-642 */)
+    {
+        using var lsa = new NamingLsa();
+        IReadOnlyList<string> groups = [Admins, Analysts];
+        var check = new AdTokenOwnerCheck(new AdminsAndAnalysts(), _clock,
+            lookup: _ => new(true, Volatile.Read(ref groups)),
+            sids: new SidNames(lsa.Translate, TimeSpan.FromSeconds(30)));
+        (await check.CheckAsync(@"CORP\owner"))!.Roles.Should().BeEquivalentTo(["Admin", "Analyst"]);
+
+        // The answer is stale, and the owner has been taken out of the admins group. The older lookup reads that, then
+        // is slow naming the groups.
+        _clock.UtcNow += AdTokenOwnerCheck.Fresh;
+        Volatile.Write(ref groups, [AnalystsMoved]);
+        var older = check.CheckAsync(@"CORP\owner");
+        lsa.Entered.Wait(Within).Should().BeTrue("the older check is naming the groups");
+
+        // A newer lookup's groups aren't all named: a partial answer, stored as such.
+        Volatile.Write(ref groups, [Unnamed]);
+        await check.CheckAsync(@"CORP\owner");
+
+        lsa.Release.Set();
+        (await older)!.Roles.Should().Equal(["Analyst"], "the older lookup's whole answer is the best one there is");
+        var after = await check.CheckAsync(@"CORP\owner");
+        after!.Active.Should().BeTrue();
+        after.Roles.Should().Equal(["Analyst"], "the removed admins group takes Admin away at once, not after the retry wait");
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();

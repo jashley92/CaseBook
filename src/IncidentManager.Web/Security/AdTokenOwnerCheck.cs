@@ -116,7 +116,7 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
                     {
                         _partial[ownerUserId] = (named, now);
                         _failedAt[ownerUserId] = now;
-                    }))
+                    }, partial: true))
                     return Newest(ownerUserId, now, failOpen);
                 return Unreachable(ownerUserId, known, last, now, failOpen);
             }
@@ -189,7 +189,8 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     // BUG-628: a lookup's answer is stored only if no lookup for the account that started later has stored one. Naming
     // the groups comes after the lookup has freed its place, so a newer lookup could answer "disabled" while an older one
     // was still naming an "enabled" answer's groups, which then landed last: the disabled owner's token kept its roles
-    // for 15 minutes (a day, were AD then unreachable).
+    // for 15 minutes (a day, were AD then unreachable). BUG-642: a partial answer is ordered as one, so a newer partial
+    // answer doesn't block an older whole one (a removed Admin group kept Admin for the retry wait, or a day if AD went).
     private readonly LatestWinsByKey<string> _order = new(StringComparer.OrdinalIgnoreCase);
 
     // BUG-628: what a newer lookup stored (its whole answer, else as with AD unreachable: its partial one).
