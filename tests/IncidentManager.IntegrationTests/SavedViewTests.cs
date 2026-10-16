@@ -47,6 +47,22 @@ public sealed class SavedViewTests : IDisposable
     }
 
     [Fact]
+    public async Task A_query_too_long_to_store_is_refused_rather_than_cut_short(/* BUG-599 */)
+    {
+        // Cut at 2,000 characters, the saved view silently kept a different filter (a half search word, a lost sort).
+        var svc = NewService();
+        var longQuery = "q=" + string.Join("+", Enumerable.Repeat("ransomware", 200));
+
+        await svc.Invoking(s => s.SaveAsync("Long", longQuery, false))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*too long to save*2,000*");
+        (await svc.ListAsync()).Should().BeEmpty();
+
+        var fits = "?q=" + new string('x', 1998);   // the '?' isn't stored
+        await svc.SaveAsync("Fits", fits, false);
+        (await svc.ListAsync()).Single().Query.Should().Be(fits[1..]);
+    }
+
+    [Fact]
     public async Task A_personal_view_is_visible_only_to_its_owner()
     {
         _user.UserId = "alice";

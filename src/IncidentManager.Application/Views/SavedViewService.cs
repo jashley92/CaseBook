@@ -150,10 +150,18 @@ public sealed class SavedViewService
         await db.SaveChangesAsync(ct);
     }
 
-    // Store the query without a leading '?' and trimmed; cap to the column length.
+    /// <summary>The longest query a view holds (the <c>SavedViews.Query</c> column).</summary>
+    public const int MaxQueryLength = 2000;
+
+    // Store the query without a leading '?' and trimmed. BUG-599: one too long for the column is refused; cut short, the
+    // view silently kept a different filter (half a search word, a lost sort or page size).
     private static string NormalizeQuery(string? query)
     {
         var q = (query ?? "").Trim().TrimStart('?');
-        return q.Length > 2000 ? q[..2000] : q;
+        if (q.Length > MaxQueryLength)
+            throw new ArgumentException(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"This view's filters are too long to save ({q.Length:N0} characters; a view holds up to {MaxQueryLength:N0}). ") +
+                "Shorten the search words or clear a filter, then save again.");
+        return q;
     }
 }
