@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Common;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,10 @@ namespace IncidentManager.Infrastructure.Security;
 public sealed class UserDirectory : IUserDirectory
 {
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(30);
+
+    /// <summary>The <c>Users.DisplayName</c>, <c>.UserPrincipalName</c> and <c>.Email</c> columns.</summary>
+    public const int MaxDisplayNameLength = 200, MaxUpnLength = 200, MaxEmailLength = 300;
+
     // BUG-216: after a failed write, how long before that user's is tried again (not on every request).
     private static readonly TimeSpan RetryAfterFailure = TimeSpan.FromMinutes(5);
 
@@ -65,6 +70,12 @@ public sealed class UserDirectory : IUserDirectory
         // Cheap in-memory throttle: skip the database when we've recorded this user recently.
         if (_lastTouched.TryGetValue(userId, out var last) && DateTimeOffset.UtcNow - last < RefreshWindow)
             return;
+
+        // C12: directory values over their columns made SQL Server refuse the row, so the user's roles were never mirrored.
+        // A long display name is shortened; a UPN or address that long is left out (cut short, it would be someone else's).
+        displayName = TextFit.Cap(displayName, MaxDisplayNameLength);
+        if (upn?.Length > MaxUpnLength) upn = null;
+        if (email?.Length > MaxEmailLength) email = null;
 
         try
         {

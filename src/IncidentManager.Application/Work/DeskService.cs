@@ -270,6 +270,6 @@ public sealed class DeskService
     private static string Excerpt(string body)
     {
         var t = body.Replace('\n', ' ').Trim();
-        return t.Length <= 140 ? t : t[..137] + "…";
+        return Common.TextFit.Cap(t, 140);
     }
 }

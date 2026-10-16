@@ -902,6 +902,27 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_reject_reason_longer_than_its_column_is_refused_and_the_import_stays_waiting(/* C12 */)
+    {
+        // The reject is one ExecuteUpdate; on SQL Server a note over 2,000 characters failed it with a raw exception.
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        }
+        await using var ctx = NewContext();
+        var svc = NewImportService(ctx);
+
+        await svc.Invoking(s => s.RejectPendingAsync(pid, new string('n', 2001)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*2,000 characters*");
+        (await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid)).Status.Should().Be(PendingImportStatus.Pending);
+
+        (await svc.RejectPendingAsync(pid, new string('n', 2000))).Should().BeTrue();
+        GeneratedTextFitsColumnTests.AssertFits(ctx, await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid));
+    }
+
+    [Fact]
     public async Task A_pending_import_can_be_claimed_by_one_reviewer_only()
     {
         // BUG-13: two reviewers (or two tabs) used to both apply it, creating two cases.

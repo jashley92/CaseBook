@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Common;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,27 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
 
     public void Dispose() => _retrying.Dispose();
 
+    /// <summary>The <c>AlertDeliveries.Recipients</c> and <c>.Subject</c> columns.</summary>
+    public const int MaxRecipientsLength = 4000, MaxSubjectLength = 1000;
+
+    // The recipients as ';'-joined lists that each fit the column, in order. An address longer than the column on its
+    // own can't be any real mailbox (RFC 5321 allows 254) and is left out.
+    private static IEnumerable<string> RecipientLists(IEnumerable<string> to)
+    {
+        var current = new System.Text.StringBuilder();
+        foreach (var address in to.Where(a => a.Length <= MaxRecipientsLength))
+        {
+            if (current.Length > 0 && current.Length + 1 + address.Length > MaxRecipientsLength)
+            {
+                yield return current.ToString();
+                current.Clear();
+            }
+            if (current.Length > 0) current.Append(';');
+            current.Append(address);
+        }
+        if (current.Length > 0) yield return current.ToString();
+    }
+
     public async Task SendAsync(string kind, Guid? caseId, string? caseNumber, EmailMessage message, CancellationToken ct = default)
     {
         if (message.To.Count == 0) return;
@@ -27,18 +49,26 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
         try
         {
             var now = clock.UtcNow;
-            var row = new AlertDelivery
-            {
-                Kind = kind, CaseId = caseId, CaseNumber = caseNumber,
-                Recipients = string.Join(";", message.To), Subject = message.Subject,
-                HtmlBody = message.HtmlBody, TextBody = message.TextBody, FirstFailedAtUtc = now,
-            };
-            row.Failed(now);
+            // C12: over their columns the row was refused, so the alert wasn't kept, retried or reported. A recipient list
+            // longer than the column is kept as several rows (none dropped); the subject is shortened.
+            var subject = TextFit.Cap(message.Subject, MaxSubjectLength);
+            DateTimeOffset? next = null;
             await using var scope = scopes.CreateAsyncScope();
             await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct);
-            db.AlertDeliveries.Add(row);
+            foreach (var recipients in RecipientLists(message.To))
+            {
+                var row = new AlertDelivery
+                {
+                    Kind = kind, CaseId = caseId, CaseNumber = caseNumber,
+                    Recipients = recipients, Subject = subject,
+                    HtmlBody = message.HtmlBody, TextBody = message.TextBody, FirstFailedAtUtc = now,
+                };
+                row.Failed(now);
+                next = row.NextAttemptAtUtc;
+                db.AlertDeliveries.Add(row);
+            }
             await db.SaveChangesAsync(ct);
-            log.LogWarning("A {Kind} email wasn't delivered; it will be tried again at {NextAttempt:u}.", kind, row.NextAttemptAtUtc);
+            log.LogWarning("A {Kind} email wasn't delivered; it will be tried again at {NextAttempt:u}.", kind, next);
         }
         catch (Exception ex)
         {

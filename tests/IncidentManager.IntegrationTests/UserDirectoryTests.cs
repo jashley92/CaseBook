@@ -50,6 +50,28 @@ public sealed class UserDirectoryTests : IDisposable
     private IUserDirectory NewDirectory() => new UserDirectory(_sp.GetRequiredService<IServiceScopeFactory>());
 
     [Fact]
+    public async Task Directory_values_longer_than_their_columns_still_mirror_the_user(/* C12 */)
+    {
+        // A directory display name over 200 characters (or a UPN or email over its column) made SQL Server refuse the
+        // row, so the user's mirrored roles, which restricted cases' notifications follow, were never refreshed.
+        var dir = NewDirectory();
+        var longName = new string('N', 250);
+        var longUpn = new string('u', 240) + "@insurer.example";
+        var longEmail = new string('e', 320) + "@insurer.example";
+
+        await dir.TouchAsync("S-1-5-21-77", longName, longUpn, longEmail, "Analyst");
+
+        using var scope = _sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var row = await db.Users.AsNoTracking().SingleAsync(u => u.Sid == "S-1-5-21-77");
+        GeneratedTextFitsColumnTests.AssertFits(db, row);
+        row.DisplayName.Should().StartWith("NNNN").And.EndWith("…");
+        row.RolesCsv.Should().Be("Analyst");
+        row.Email.Should().BeNull("a cut-short address would be someone else's");
+        dir.Resolve("S-1-5-21-77")!.DisplayName.Should().Be(row.DisplayName);
+    }
+
+    [Fact]
     public async Task Touch_inserts_a_user_and_resolves_name_and_email()
     {
         var dir = NewDirectory();

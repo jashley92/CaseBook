@@ -18,8 +18,8 @@ public static class LogSanitizer
     /// <summary>
     /// Returns <paramref name="value"/> flattened to a single, control-character-free line: CR/LF, tabs,
     /// other C0/C1 control characters, and the Unicode line/paragraph separators become spaces, adjacent
-    /// whitespace is collapsed, the result is trimmed, and it is truncated (with an ellipsis) to
-    /// <paramref name="maxLength"/>. Null or whitespace-only input returns <c>null</c>, so an optional
+    /// whitespace is collapsed, the result is trimmed, and it is truncated to <paramref name="maxLength"/> characters,
+    /// ellipsis included. Null or whitespace-only input returns <c>null</c>, so an optional
     /// field stays absent rather than becoming an empty string.
     /// </summary>
     public static string? Clean(string? value, int maxLength = DefaultMaxLength)
@@ -46,8 +46,7 @@ public static class LogSanitizer
 
         var cleaned = sb.ToString().Trim();
         if (cleaned.Length == 0) return null;
-        if (maxLength > 0 && cleaned.Length > maxLength)
-            cleaned = string.Concat(cleaned.AsSpan(0, maxLength), "…");
-        return cleaned;
+        // C12: the ellipsis counts toward maxLength, so a label cleaned to a column's length fits it.
+        return maxLength > 0 ? TextFit.Cap(cleaned, maxLength) : cleaned;
     }
 }

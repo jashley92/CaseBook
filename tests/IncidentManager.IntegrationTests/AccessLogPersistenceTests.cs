@@ -83,6 +83,21 @@ public sealed class AccessLogPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_long_file_name_is_recorded_within_the_target_label_column(/* C12 */)
+    {
+        // The sanitiser's 512 characters plus its ellipsis didn't fit the 500-character column: on SQL Server the access
+        // row was refused, and the failure only logged.
+        NewContext();
+        var caseId = SeedCase();
+        await NewService().RecordArtifactAsync(AccessType.EvidenceDownload, caseId, new string('f', 700) + ".pdf");
+
+        using var db = NewContext();
+        var row = await db.CaseAccessEvents.AsNoTracking().SingleAsync();
+        row.TargetLabel.Should().EndWith("…");
+        GeneratedTextFitsColumnTests.AssertFits(db, row);
+    }
+
+    [Fact]
     public async Task A_case_restricted_since_the_last_open_starts_a_new_row(/* BUG-289 */)
     {
         NewContext();

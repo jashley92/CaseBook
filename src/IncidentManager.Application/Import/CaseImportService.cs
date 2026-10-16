@@ -64,6 +64,9 @@ public sealed class CaseImportService
     private const int MaxLabel = 300;
     private const int MaxOwner = 200;
 
+    /// <summary>The longest reject reason (<c>PendingImports.DecisionNote</c>) and queue summary (<c>.Summary</c>).</summary>
+    public const int MaxDecisionNoteLength = 2000, MaxQueueSummaryLength = 300;
+
     /// <summary>Parses import JSON, guarding format and schema version. Never throws on bad input — returns a
     /// friendly <see cref="CaseImportParse.Error"/> instead, so the UI/API can show it.</summary>
     public static CaseImportParse Parse(string? json)
@@ -600,6 +603,10 @@ public sealed class CaseImportService
         var me = _user.UserId;
         var now = _clock.UtcNow;
         var why = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        // C12: the update is one statement, so a reason over the column failed it on SQL Server with a raw exception.
+        if (why?.Length > MaxDecisionNoteLength)
+            throw new ArgumentException(string.Create(CultureInfo.InvariantCulture,
+                $"Keep the reason to {MaxDecisionNoteLength:N0} characters (this one has {why.Length:N0}). The import is still waiting."));
         var rejected = await VisiblePending(db)
             .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending)
             .ExecuteUpdateAsync(s => s
@@ -622,7 +629,7 @@ public sealed class CaseImportService
             ? $"Into {p.ExistingCaseNumber ?? "an existing case"}"
             : $"New case: {(string.IsNullOrWhiteSpace(p.NewCase?.Title) ? "(untitled)" : p.NewCase!.Title)}";
         var s = $"{target} ({Plural.Of(p.IncludedItemCount, "item")})";
-        return s.Length <= 300 ? s : s[..300];
+        return TextFit.Cap(s, MaxQueueSummaryLength, "");
     }
 
     // ── Pure preview construction (no I/O) ───────────────────────────────────────────────────────
@@ -741,7 +748,7 @@ public sealed class CaseImportService
             // so one longer than the column is left out, after refanging, and named.
             if (value.Length > MaxValue)
             {
-                p.Warnings.Add($"An entity value of {value.Length:N0} characters (starting \"{value[..60]}…\") is longer than " +
+                p.Warnings.Add($"An entity value of {value.Length:N0} characters (starting \"{TextFit.Cap(value, 60)}\") is longer than " +
                                $"{MaxValue:N0}, the most an indicator holds, so it wasn't imported (a shortened one would be a different indicator).");
                 continue;
             }
@@ -864,7 +871,7 @@ public sealed class CaseImportService
         if (string.IsNullOrEmpty(v)) return null;
         if (v.Length <= max) return v;
         warnings.Add($"{field} was longer than {max} characters and was truncated.");
-        return v[..max];
+        return TextFit.Cap(v, max, "");   // C12: never half a surrogate pair
     }
 
     private static TEnum ParseEnum<TEnum>(string? raw, TEnum fallback, string field, List<string> warnings)
@@ -889,6 +896,6 @@ public sealed class CaseImportService
         var t = (title ?? "").Trim();
         if (t.Length == 0) return "Imported case";
         var s = string.Join(' ', t.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6));
-        return s.Length <= 42 ? s : s[..42].TrimEnd();
+        return TextFit.Cap(s, 42, "").TrimEnd();
     }
 }

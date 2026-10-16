@@ -67,6 +67,9 @@ public sealed class AccessLogService : IAccessLogService
         return false;
     }
 
+    /// <summary>The longest stored label (<c>CaseAccessEvents.TargetLabel</c>).</summary>
+    public const int MaxTargetLabelLength = 500;
+
     public async Task RecordArtifactAsync(AccessType type, Guid? caseId, string? label, Guid? targetId = null,
         CancellationToken ct = default)
     {
@@ -74,7 +77,8 @@ public sealed class AccessLogService : IAccessLogService
         // flows into the SIEM field, the stored C-05 row, and any diagnostic log below). Flatten it to a
         // single control-char-free line up front so it can never forge a second log line (CWE-117) or
         // corrupt a record — legitimate file names pass through unchanged.
-        label = LogSanitizer.Clean(label);
+        // C12: to the stored column; the sanitiser's default (512 and an ellipsis) didn't fit it, and SQL Server refused the row.
+        label = LogSanitizer.Clean(label, MaxTargetLabelLength);
         try
         {
             string? caseNumber = null;

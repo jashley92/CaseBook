@@ -58,6 +58,24 @@ public sealed class CriticalAlertOutboxTests : IDisposable
     }
 
     [Fact]
+    public async Task A_failed_alert_to_many_recipients_is_kept_for_every_one_of_them(/* C12 */)
+    {
+        // Recipients and the subject over their columns (4,000 and 1,000) made SQL Server refuse the row: the alert wasn't
+        // queued, so it was never retried and nobody was told it hadn't gone.
+        var to = Enumerable.Range(1, 160).Select(i => $"person.number{i:D3}@insurer-with-a-long-domain.example").ToList();
+        var subject = "Case escalated to Breach: " + new string('S', 1200);
+        _sender.Failing = true;
+        await Outbox().SendAsync(AlertDelivery.BreachEscalation, Guid.NewGuid(), "2026-04_Vendor", new EmailMessage(to, subject, "<p>x</p>", "x"));
+
+        using var db = Factory().CreateAppDbContext();
+        var rows = await db.AlertDeliveries.AsNoTracking().ToListAsync();
+        rows.Should().NotBeEmpty();
+        foreach (var row in rows) GeneratedTextFitsColumnTests.AssertFits(db, row);
+        rows.SelectMany(r => r.RecipientList).Should().BeEquivalentTo(to, "no recipient is dropped");
+        rows.Should().OnlyContain(r => r.Subject.StartsWith("Case escalated to Breach: SSS", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_retry_pass_that_stops_part_way_keeps_what_it_delivered(/* BUG-159 */)
     {
         var outbox = Outbox();
