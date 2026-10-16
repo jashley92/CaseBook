@@ -17,6 +17,9 @@ public static class GuardGate
         return new Releaser();
     }
 
+    /// <summary>Test hook: whether someone holds the gate now.</summary>
+    internal static bool IsTaken => Gate.CurrentCount == 0;
+
     private sealed class Releaser : IDisposable
     {
         private int _released;

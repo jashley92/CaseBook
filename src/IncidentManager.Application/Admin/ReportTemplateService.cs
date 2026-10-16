@@ -138,6 +138,9 @@ public sealed class ReportTemplateService
         return new FileGateReleaser();
     }
 
+    /// <summary>Test hook: whether someone holds the file gate now.</summary>
+    internal static bool FileGateTaken => FileGate.CurrentCount == 0;
+
     private sealed class FileGateReleaser : IDisposable
     {
         private int _released;

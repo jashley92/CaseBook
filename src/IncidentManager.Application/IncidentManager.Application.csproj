@@ -9,6 +9,11 @@
     <EmbeddedResource Include="Mitre\attack-techniques.json" />
   </ItemGroup>
 
+  <!-- C1: the import-writer gate tests check a save runs with the gate taken (GuardGate.IsTaken, FileGateTaken). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="IncidentManager.IntegrationTests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="Markdig" Version="1.4.0" />
