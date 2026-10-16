@@ -35,7 +35,8 @@ public sealed class UserMirrorMiddleware
 
                 // Keep only CaseBook role names — built-in or custom (S-14); Windows group SIDs are dropped.
                 // De-duped since a principal can carry the same role claim more than once.
-                var roles = string.Join(',', principal.FindAll(ClaimTypes.Role)
+                // BUG-591: written as every role list is, so a legacy name with a comma reads back as one role.
+                var roles = IncidentManager.Domain.Common.RoleList.Join(principal.FindAll(ClaimTypes.Role)
                     .Select(c => c.Value)
                     .Where(v => RoleDefinitions.TryParseRole(v, out _) || roleDirectory.IsRole(v))
                     .Distinct(StringComparer.OrdinalIgnoreCase));

@@ -100,12 +100,13 @@ public sealed class AccessReviewService
 
         var now = _clock.UtcNow;
         var users = await db.Users.AsNoTracking().ToListAsync(ct);
+        var roleNames = roles.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var known = users
             .Where(u => !string.Equals(u.Sid, "system", StringComparison.OrdinalIgnoreCase))
             .Select(u => new KnownUserRow(
                 string.IsNullOrWhiteSpace(u.DisplayName) ? u.Sid : u.DisplayName,
                 string.IsNullOrWhiteSpace(u.UserPrincipalName) ? null : u.UserPrincipalName,
-                u.RolesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                Domain.Common.RoleList.Split(u.RolesCsv, roleNames.Contains),   // BUG-591: a legacy name with a comma is one role
                 u.LastSeenUtc,
                 now - u.LastSeenUtc > DormantAfter))
             .OrderByDescending(u => u.IsDormant)

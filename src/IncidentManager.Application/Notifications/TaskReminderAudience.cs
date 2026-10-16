@@ -50,7 +50,7 @@ public sealed class ReminderAudience(IUserDirectory? users, IRoleDirectory? role
     }
 
     public static bool GrantsViewCases(string? rolesCsv, IRoleDirectory? roles) =>
-        GrantsViewCases(Split(rolesCsv), roles);
+        GrantsViewCases(IncidentManager.Domain.Common.RoleList.Split(rolesCsv, roles is null ? null : roles.IsRole), roles);   // BUG-591
 
     /// <summary>Active and holding a role that grants ViewCases.</summary>
     public async Task<bool> EntitledAsync(string? userId, CancellationToken ct = default)
@@ -120,14 +120,11 @@ public sealed class ReminderAudience(IUserDirectory? users, IRoleDirectory? role
         if (_rolesNow.TryGetValue(userId, out var known)) return known;
         string? csv;
         if (owners is not null && await owners.CheckRecipientAsync(userId, ct) is { } access)
-            csv = access.Active ? string.Join(',', access.Roles) : null;
+            csv = access.Active ? IncidentManager.Domain.Common.RoleList.Join(access.Roles) : null;
         else if (users is not null)
             csv = users.Resolve(userId)?.RolesCsv;
         else
             csv = Unjudged;
         return _rolesNow[userId] = csv;
     }
-
-    private static string[] Split(string? csv) =>
-        (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }

@@ -58,6 +58,7 @@ public class ApiToken : Entity, IHashableEntity
     /// <summary>Usable right now: not revoked and not past its expiry.</summary>
     public bool IsActive(DateTimeOffset now) => RevokedAtUtc is null && ExpiresAtUtc > now;
 
-    public IReadOnlyList<string> GetRoles() =>
-        RolesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    /// <summary>The granted role names. BUG-591: a legacy name with a comma is one name (see <see cref="RoleList"/>).</summary>
+    /// <param name="isRole">The role directory's names, when the caller has it.</param>
+    public IReadOnlyList<string> GetRoles(Func<string, bool>? isRole = null) => RoleList.Split(RolesCsv, isRole);
 }

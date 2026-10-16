@@ -14,8 +14,7 @@ public static class CaseAudience
         UserSummary? user, IRoleDirectory roles)
     {
         if (user is null) return false;
-        var perms = roles.PermissionsForRoles(
-            user.RolesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var perms = roles.PermissionsForRoles(Domain.Common.RoleList.Split(user.RolesCsv, roles.IsRole));   // BUG-591
         if (!perms.Contains(Permission.ViewCases)) return false;
         if (!isRestricted) return true;
         return perms.Contains(Permission.ViewAllCases) || perms.Contains(Permission.ViewRestricted)

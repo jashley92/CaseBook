@@ -74,8 +74,8 @@ public sealed class CaseNotifications : ICaseNotifications
     private async Task<List<string>> ManagersAsync(CancellationToken ct)
     {
         var mirrored = _users.All()
-            .Where(u => u.RolesCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase))
+            // BUG-591: a legacy role named "Readers,Manager" isn't Manager (the names start-up found with a comma).
+            .Where(u => IncidentManager.Domain.Common.RoleList.Split(u.RolesCsv).Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase))
             .Select(u => u.UserId)
             .ToList();
         if (_owners is null) return mirrored;

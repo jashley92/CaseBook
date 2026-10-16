@@ -24,6 +24,9 @@ public static class DependencyInjection
         services.AddScoped<Admin.ReportTemplateService>();   // PROD-47: the Word template library
         services.AddScoped<Admin.StageGateService>();
         services.AddScoped<Admin.AccessReviewService>();
+        // BUG-591: finds role names with a comma at start-up, so every role list reads them whole.
+        services.AddSingleton<Admin.LegacyRoleNameCheck>();
+        services.AddHostedService(sp => sp.GetRequiredService<Admin.LegacyRoleNameCheck>());
         services.AddScoped<Admin.TaxonomyAdminService>();
         services.AddScoped<Admin.EmailTemplateAdminService>();
         services.AddScoped<Admin.DataElementService>();

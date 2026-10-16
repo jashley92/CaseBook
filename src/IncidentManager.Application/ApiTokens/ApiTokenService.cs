@@ -72,7 +72,7 @@ public sealed class ApiTokenService
         // S-11: a personal token acts as its owner, so it carries only the roles the owner still holds (as of their
         // latest sign-in, per the user mirror). An owner who has lost a role loses it on their tokens too; an owner
         // the directory no longer knows can't authenticate by token at all.
-        var roles = row.GetRoles();
+        var roles = row.GetRoles(_directory.IsRole);   // BUG-591: a legacy role name with a comma is one role
         // BUG-20: ask the directory of record when it can answer, since the mirror only moves when the owner signs in.
         if (row.Kind == ApiTokenKind.Personal && _owners is not null
             && await _owners.CheckAsync(row.OwnerUserId, ct) is { } access)
@@ -85,7 +85,7 @@ public sealed class ApiTokenService
         {
             var owner = _users.Resolve(row.OwnerUserId);
             if (owner is null) return null;
-            var current = owner.RolesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            var current = IncidentManager.Domain.Common.RoleList.Split(owner.RolesCsv, _directory.IsRole)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             roles = roles.Where(current.Contains).ToList();
             if (roles.Count == 0) return null;
@@ -146,7 +146,7 @@ public sealed class ApiTokenService
         var row = new ApiToken
         {
             Name = name, Kind = kind, OwnerUserId = ownerUserId, OwnerDisplayName = ownerDisplay,
-            RolesCsv = string.Join(",", roles), TokenHash = hash, Prefix = prefix,
+            RolesCsv = IncidentManager.Domain.Common.RoleList.Join(roles), TokenHash = hash, Prefix = prefix,
             CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow, ExpiresAtUtc = expiresAtUtc
         };
 
