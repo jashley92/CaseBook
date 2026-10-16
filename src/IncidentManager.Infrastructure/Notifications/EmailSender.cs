@@ -18,12 +18,17 @@ public sealed class EmailSender : IEmailSender
 {
     private readonly IOptionsMonitor<EmailOptions> _options;
     private readonly ILogger<EmailSender> _log;
+    private readonly OutboundCircuit _circuit;
 
-    public EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<EmailSender> log)
+    public EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<EmailSender> log, OutboundCircuit? circuit = null)
     {
         _options = options;
         _log = log;
+        _circuit = circuit ?? new OutboundCircuit();
     }
+
+    // BUG-576: the relay is backed off by host and port, so a corrected relay setting is tried at once.
+    private static string Target(EmailOptions o) => $"smtp:{o.SmtpHost}:{o.SmtpPort}";
 
     public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default) =>
         SendCoreAsync(to, subject, textBody: body, htmlBody: null, ct);
@@ -74,6 +79,15 @@ public sealed class EmailSender : IEmailSender
         // REV-47: only the addresses that parse are sent to (BUG-241 skips the rest), so "some got it" is judged against
         // those. Against the whole list, a relay refusing every address it was actually given read as a partial delivery:
         // never retried, no undelivered banner, and a breach email to Legal lost.
+        // BUG-576: a relay that just stalled or refused the connection isn't waited on again by every assign, mention and
+        // handoff. Not sent, so reported as a failure: a scan retries it and a critical alert goes to its outbox.
+        if (!_circuit.TryEnter(Target(o)))
+        {
+            _log.LogWarning("The mail relay isn't answering; not sending to {RecipientCount} recipient(s) until it's tried again.", to.Count);
+            DeliveryWatch.ReportFailure();
+            return;
+        }
+
         var sent = to.Count(a => MailAddress.TryCreate(a, out _));
         try
         {
@@ -140,15 +154,36 @@ public sealed class EmailSender : IEmailSender
         // would otherwise hold a reminder scan, or a user's assign or reclassify, until the app shut down.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(SendTimeout);
+        var target = Target(o);
         try
         {
             await client.SendMailAsync(message, timeout.Token);
+            _circuit.Succeeded(target);
+        }
+        catch (SmtpFailedRecipientException)
+        {
+            _circuit.Succeeded(target);   // the relay answered (it refused an address): it isn't backed off
+            throw;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            _circuit.Failed(target);   // BUG-576
             throw new SmtpException($"The mail relay didn't finish accepting the message within {SendTimeout.TotalSeconds:0} seconds.");
         }
+        catch (Exception ex) when (Unreachable(ex))
+        {
+            _circuit.Failed(target);   // BUG-576: couldn't reach it, or it dropped the session
+            throw;
+        }
     }
+
+    // A relay that answered with a refusal (auth required, sender refused) isn't hung, so it isn't backed off.
+    private static bool Unreachable(Exception ex) => ex switch
+    {
+        SmtpException s => s.StatusCode is SmtpStatusCode.GeneralFailure or SmtpStatusCode.ServiceNotAvailable
+            || s.InnerException is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException,
+        _ => ex is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException,
+    };
 
     internal static TimeSpan SendTimeout { get; set; } = TimeSpan.FromSeconds(30);   // settable for a test
 }

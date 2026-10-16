@@ -30,6 +30,8 @@ public static class DependencyInjection
         // One sender that decides log-vs-send per message from the live options, so an administered
         // change to Email:Enabled / From / relay takes effect at runtime (A-08) without a restart.
         services.AddSingleton<IEmailSender, Notifications.EmailSender>();
+        // BUG-576: backs off a mail relay or chat webhook that isn't answering, per target (shared by both senders).
+        services.AddSingleton(_ => new Notifications.OutboundCircuit());
         // E-03b: renders branded HTML emails from admin-editable templates + the console theme.
         services.AddSingleton<IEmailComposer, Notifications.EmailComposer>();
         // PROD-16: per-user notification opt-downs, read by the singleton notifier (scope-per-lookup, like UserDirectory).

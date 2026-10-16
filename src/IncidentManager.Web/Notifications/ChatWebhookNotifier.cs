@@ -19,14 +19,16 @@ public sealed class ChatWebhookNotifier : IChatNotifier
     private readonly IOptionsMonitor<ChatOptions> _options;
     private readonly ISecretProvider _secrets;
     private readonly ILogger<ChatWebhookNotifier> _logger;
+    private readonly OutboundCircuit _circuit;
 
     public ChatWebhookNotifier(IHttpClientFactory httpFactory, IOptionsMonitor<ChatOptions> options,
-        ISecretProvider secrets, ILogger<ChatWebhookNotifier> logger)
+        ISecretProvider secrets, ILogger<ChatWebhookNotifier> logger, OutboundCircuit? circuit = null)
     {
         _httpFactory = httpFactory;
         _options = options;
         _secrets = secrets;
         _logger = logger;
+        _circuit = circuit ?? new OutboundCircuit();
     }
 
     public bool Enabled
@@ -41,13 +43,14 @@ public sealed class ChatWebhookNotifier : IChatNotifier
     // WF-20: a post that didn't go is a delivery failure, as an email's is, so a scan's broadcast is tried again.
     public async Task SendAsync(ChatNotification message, CancellationToken ct = default)
     {
-        if (await PostAsync(message, ct).ConfigureAwait(false) is not null) DeliveryWatch.ReportFailure();
+        if (await PostAsync(message, test: false, ct).ConfigureAwait(false) is not null) DeliveryWatch.ReportFailure();
     }
 
-    public Task<string?> SendTestAsync(ChatNotification message, CancellationToken ct = default) => PostAsync(message, ct);
+    // BUG-576: the admin's test always posts (and a good one ends a back-off).
+    public Task<string?> SendTestAsync(ChatNotification message, CancellationToken ct = default) => PostAsync(message, test: true, ct);
 
     // Returns null when the message posted (or chat is off), else a short reason for the admin test button.
-    private async Task<string?> PostAsync(ChatNotification message, CancellationToken ct)
+    private async Task<string?> PostAsync(ChatNotification message, bool test, CancellationToken ct)
     {
         var o = _options.CurrentValue;
         if (!o.Enabled || string.IsNullOrWhiteSpace(o.WebhookUrl)) return null;
@@ -68,9 +71,19 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             return $"The webhook URL was refused ({reason}). Use an https URL.";
         }
 
+        // BUG-576: a webhook that just stalled or failed isn't waited on (timeout times attempts) by every assign,
+        // reclassify, mention and handoff. The target is the resolved URL (kept in memory only, never logged).
+        var target = "chat:" + url;
+        if (!test && !_circuit.TryEnter(target))
+        {
+            _logger.LogWarning("The chat webhook isn't answering; message not posted until it's tried again.");
+            return "The webhook isn't answering; posts are paused for a few minutes.";
+        }
+
         var payload = ChatPayload.Serialize(o.Format, message);
         var attempts = Math.Max(1, o.MaxAttempts);
         string? lastError = null;
+        var unreachable = false;   // the last attempt timed out, couldn't connect, or got a server error
 
         for (var attempt = 1; attempt <= attempts && !ct.IsCancellationRequested; attempt++)
         {
@@ -81,8 +94,13 @@ public sealed class ChatWebhookNotifier : IChatNotifier
 
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
                 using var resp = await client.PostAsync(url, content, ct).ConfigureAwait(false);
-                if (resp.IsSuccessStatusCode) return null;
+                if (resp.IsSuccessStatusCode)
+                {
+                    _circuit.Succeeded(target);
+                    return null;
+                }
                 lastError = $"The webhook answered {(int)resp.StatusCode} {resp.ReasonPhrase}.";
+                unreachable = (int)resp.StatusCode >= 500 || resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
 
                 _logger.LogWarning("Chat webhook returned {Status} (attempt {Attempt}/{Max}).",
                     (int)resp.StatusCode, attempt, attempts);
@@ -94,6 +112,7 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             catch (Exception ex)
             {
                 lastError = ex is TaskCanceledException ? "The webhook didn't answer in time." : ex.GetBaseException().Message;
+                unreachable = true;
                 _logger.LogWarning(ex, "Chat webhook POST failed (attempt {Attempt}/{Max}).", attempt, attempts);
             }
 
@@ -103,6 +122,9 @@ public sealed class ChatWebhookNotifier : IChatNotifier
                 catch (OperationCanceledException) { return "Canceled."; }
             }
         }
+        // BUG-576: backed off only when it didn't answer; one that answered with a refusal (a 4xx) isn't hung.
+        if (unreachable) _circuit.Failed(target);
+        else if (lastError is not null) _circuit.Succeeded(target);
         return lastError;
     }
 }
