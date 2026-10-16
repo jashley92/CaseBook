@@ -43,7 +43,9 @@ strict: a record with no hash (in any table, planted or with its hash cleared, B
 records no hash (rewritten with its hash recomputed, BUG-629), one holding a value its hash's format doesn't cover, and
 a note or timeline entry marked not current that no later version replaced and that wasn't retracted (hidden,
 BUG-634) are all flagged. If the upgrade fails part way nothing is marked, the check stays as it was, and the next start
-carries on. The marker is audited and hashed like any setting, so removing it is flagged; the settings provider skips it.
+carries on. A batch whose save fails is saved one record at a time, so one record that won't save doesn't hold up the
+rest (BUG-641); it's logged, and nothing is marked while there is one, since it agrees with its trail and the strict
+check would report it as changed outside CaseBook. The marker is audited and hashed like any setting, so removing it is flagged; the settings provider skips it.
 
 **CaseBook's upkeep.** A change CaseBook makes to keep its own records (a derived value filled in at start-up, a hash
 recorded by the upgrade) is an audited update with the reason "CaseBook upkeep: not a change to the record"

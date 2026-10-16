@@ -463,6 +463,63 @@ public sealed class RowHashUpgradeTests
         (await VerifyRecordsAsync(database))?.Detail.Should().BeNull();
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_record_whose_save_fails_doesnt_stop_the_others_being_recorded(string provider /* BUG-641 */)
+    {
+        var hasher = new SaveFailsFor(_hasher);
+        var database = TestDatabase.Open(provider, new AuditChainInterceptor(hasher, _user, _clock, new CaseChangeNotifier()));
+        using var _ = database;
+        await using (var db = database.NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            await DevDataSeeder.SeedHistoricalDemoAsync(db, _clock);
+        }
+        List<Guid> rows;
+        await using (var db = database.NewContext()) rows = await db.ActionItems.OrderBy(a => a.Id).Select(a => a.Id).Take(3).ToListAsync();
+        rows.Should().HaveCount(3);
+        // Three records from before row hashes were recorded, in one table (one batch); the save of the middle one fails.
+        foreach (var id in rows) await UnrecordHashAsync(database, nameof(ActionItem), id, createToo: true);
+        hasher.FailId = rows[1];
+
+        var result = await UpgradeAsync(database);
+        result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(ActionItem)} {rows[1]}").And.Contain("couldn't be saved");
+        result.Recorded.Should().BeGreaterThanOrEqualTo(2, "the others in its batch are still recorded");
+        result.Marked.Should().BeFalse("the check isn't strict while a record that agrees with its trail is unrecorded");
+        await using (var db = database.NewContext())
+        {
+            (await RowIntegrityVerifier.UpgradedAsync(db)).Should().BeFalse();
+            foreach (var id in new[] { rows[0], rows[2] })
+            {
+                var key = id.ToString();
+                (await db.AuditLog.AsNoTracking().Where(a => a.EntityType == nameof(ActionItem) && a.EntityId == key)
+                    .OrderByDescending(a => a.Sequence).FirstAsync()).AfterJson.Should().Contain(nameof(IHashableEntity.RowHash));
+            }
+        }
+        (await VerifyRecordsAsync(database))?.Detail.Should().BeNull("the check stays as it was");
+
+        // Once it saves, the next start records it and marks the check strict.
+        hasher.FailId = null;
+        result = await UpgradeAsync(database);
+        result.Left.Should().BeEmpty();
+        result.Marked.Should().BeTrue();
+        (await VerifyRecordsAsync(database))?.Detail.Should().BeNull();
+    }
+
+    // A hasher whose row hash for one record throws, as a save that keeps failing on that record would.
+    private sealed class SaveFailsFor(HashChainService inner) : Application.Abstractions.IHashChainService
+    {
+        public Guid? FailId { get; set; }
+        public string Hash(string content) => inner.Hash(content);
+        public string ComputeRowHash(IHashableEntity entity) =>
+            entity is Entity e && e.Id == FailId ? throw new InvalidOperationException("this record's save fails") : inner.ComputeRowHash(entity);
+        public bool RowHashMatches(IHashableEntity entity, string stored) => inner.RowHashMatches(entity, stored);
+        public void ChainAppend(AuditLogEntry entry, AuditLogEntry? previous) => inner.ChainAppend(entry, previous);
+        public Application.Abstractions.ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries, long? keyedFrom = null) =>
+            inner.VerifyChain(orderedEntries, keyedFrom);
+        public Application.Abstractions.IChainVerifier BeginVerify(long? keyedFrom = null) => inner.BeginVerify(keyedFrom);
+    }
+
     // A hasher that fails when it reaches a table (the timeline comes after the cases), as a database error part way would.
     private sealed class FailingHasher(HashChainService inner, Type failOn) : Application.Abstractions.IHashChainService
     {

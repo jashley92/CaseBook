@@ -355,8 +355,13 @@ using (var scope = app.Services.CreateScope())
     // WF-11: reported cases record the jurisdictions in play when they were reported (a no-op once all do).
     // BUG-288: a failure here (a timeout on a large database) is retried at the next start; until then a case without
     // its frozen set is judged against today's jurisdictions, as before the back-fill existed.
+    // BUG-641: its writes are audited saves now, which can also fail as a lost race, a value too long for its column, or
+    // a refused change (InvalidOperationException): each a warning, never a start-up that fails.
+    static bool UpkeepFailed(Exception ex) =>
+        ex is Microsoft.EntityFrameworkCore.DbUpdateException or System.Data.Common.DbException or TimeoutException
+            or IncidentManager.Application.Cases.ConcurrentEditException or ArgumentException or InvalidOperationException;
     try { await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db); }
-    catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or System.Data.Common.DbException or TimeoutException)
+    catch (Exception ex) when (UpkeepFailed(ex))
     {
         app.Logger.LogWarning(ex, "Couldn't record the jurisdictions in play on earlier reported cases; it's tried again at the next start.");
     }
@@ -368,8 +373,7 @@ using (var scope = app.Services.CreateScope())
     }
     // BUG-288: ExecuteUpdate throws the provider's own DbException (a timeout, a lock), not DbUpdateException; the
     // back-fill is worth a warning, not a start-up that fails and an upgrade that rolls back after its migrations.
-    catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException
-                                   or System.Data.Common.DbException or TimeoutException)
+    catch (Exception ex) when (UpkeepFailed(ex))
     {
         app.Logger.LogWarning(ex, "Couldn't record the deadlines of earlier regulator notices; past quarters' notice figures use today's rules.");
     }
@@ -384,12 +388,14 @@ using (var scope = app.Services.CreateScope())
         if (upgrade.Marked)
             app.Logger.LogInformation("Integrity upgrade: recorded the hash of {Recorded} record(s); the record check is now strict.", upgrade.Recorded);
         foreach (var row in upgrade.Left.Take(50))
-            app.Logger.LogWarning("Integrity upgrade left {Record} unrecorded; the integrity check reports it.", row);
+            app.Logger.LogWarning("Integrity upgrade left {Record} unrecorded.", row);
         if (upgrade.Left.Count > 50)
-            app.Logger.LogWarning("Integrity upgrade left {More} more record(s) unrecorded; the integrity check reports them.", upgrade.Left.Count - 50);
+            app.Logger.LogWarning("Integrity upgrade left {More} more record(s) unrecorded.", upgrade.Left.Count - 50);
+        // BUG-641: one it couldn't save keeps the check as it was until a later start records it.
+        if (!upgrade.Marked && upgrade.Left.Count > 0)
+            app.Logger.LogWarning("The integrity upgrade couldn't record every record; the record check stays as before and the upgrade runs again at the next start.");
     }
-    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or Microsoft.EntityFrameworkCore.DbUpdateException
-                                   or System.Data.Common.DbException or TimeoutException)
+    catch (Exception ex) when (UpkeepFailed(ex))
     {
         app.Logger.LogWarning(ex, "The integrity upgrade didn't finish; the record check stays as before and the upgrade runs again at the next start.");
     }

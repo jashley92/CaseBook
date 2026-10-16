@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
@@ -23,7 +24,8 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// </list>
 /// Then it writes the marker (<see cref="RowIntegrityVerifier.UpgradeMarkerKey"/>) that makes the check strict. If any
 /// step fails, nothing is marked and the check stays as it was; what was recorded stays recorded (each is an ordinary
-/// audited change), and the next start carries on. Once marked it does nothing.
+/// audited change), and the next start carries on. BUG-641: a row whose hash won't save is named in the result and the
+/// others are still recorded, but nothing is marked while there's one. Once marked it does nothing.
 /// </summary>
 public static class RowHashUpgrade
 {
@@ -47,6 +49,7 @@ public static class RowHashUpgrade
 
         var recorded = 0;
         var left = new List<string>();
+        var unsaved = new List<string>();
         foreach (var table in RowIntegrityVerifier.Tables(db))
         {
             var type = table.ElementType.Name;
@@ -76,8 +79,14 @@ public static class RowHashUpgrade
                 if (why is null) ok.Add(id);
                 else left.Add($"{type} {id}: {why}");
             }
-            recorded += await RecordAsync(db, table, ok, ct);
+            recorded += await RecordAsync(db, table, type, ok, unsaved, ct);
         }
+
+        // BUG-641: a row that agrees with its trail but whose hash couldn't be saved would be reported as changed outside
+        // CaseBook once the check is strict, and the upgrade wouldn't run again to record it. So nothing is marked while
+        // there's one: what was recorded stays recorded, and the next start tries the rest.
+        left.AddRange(unsaved);
+        if (unsaved.Count > 0) return new Result(recorded, left, false);
 
         db.ChangeTracker.Clear();
         db.AppSettings.Add(new AppSetting
@@ -126,20 +135,44 @@ public static class RowHashUpgrade
 
     // Records each row's hash as an audited update (CaseBook's upkeep): the interceptor computes it in format 4 and the
     // entry carries it. The hash is marked changed, so the entry is written even when it was already the format-4 one.
-    private static async Task<int> RecordAsync(AppDbContext db, IQueryable<IHashableEntity> table, List<Guid> ids, CancellationToken ct)
+    // BUG-641: a batch whose save fails is saved one row at a time, so one row that won't save doesn't stop every other
+    // being recorded; each that still fails is named in <paramref name="unsaved"/>.
+    private static async Task<int> RecordAsync(AppDbContext db, IQueryable<IHashableEntity> table, string type, List<Guid> ids,
+        List<string> unsaved, CancellationToken ct)
     {
         var done = 0;
         foreach (var chunk in ids.Chunk(Batch))
         {
-            db.ChangeTracker.Clear();
-            var rows = await table.AsTracking().Where(r => chunk.Contains(((Entity)(object)r).Id)).ToListAsync(ct);
-            foreach (var row in rows) db.Entry(row).Property(nameof(IHashableEntity.RowHash)).IsModified = true;
-            db.PendingUpkeep = true;
-            try { await db.SaveChangesAsync(ct); }
-            finally { db.PendingUpkeep = false; }
-            done += rows.Count;
+            try { done += await SaveAsync(db, table, chunk, ct); }
+            catch (Exception e) when (IsRowFailure(e))
+            {
+                foreach (var id in chunk)
+                {
+                    try { done += await SaveAsync(db, table, [id], ct); }
+                    catch (Exception one) when (IsRowFailure(one))
+                    {
+                        unsaved.Add($"{type} {id}: its hash couldn't be saved ({one.Message}); it's tried again at the next start, "
+                                    + "and the check isn't made strict until it is");
+                    }
+                }
+            }
         }
         db.ChangeTracker.Clear();
         return done;
+    }
+
+    // What a save of some rows can fail with because of a row (as the start-up back-fills catch); cancellation isn't one.
+    private static bool IsRowFailure(Exception e) =>
+        e is DbUpdateException or ConcurrentEditException or ArgumentException or InvalidOperationException;
+
+    private static async Task<int> SaveAsync(AppDbContext db, IQueryable<IHashableEntity> table, Guid[] ids, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        var rows = await table.AsTracking().Where(r => ids.Contains(((Entity)(object)r).Id)).ToListAsync(ct);
+        foreach (var row in rows) db.Entry(row).Property(nameof(IHashableEntity.RowHash)).IsModified = true;
+        db.PendingUpkeep = true;
+        try { await db.SaveChangesAsync(ct); }
+        finally { db.PendingUpkeep = false; }
+        return rows.Count;
     }
 }
