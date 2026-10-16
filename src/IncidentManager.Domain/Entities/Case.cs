@@ -579,7 +579,8 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public static void EnsurePlausibleDwell(DateTimeOffset? occurredAtUtc, DateTimeOffset detectedAtUtc)
     {
-        if (occurredAtUtc is { } occurred && occurred < detectedAtUtc.AddYears(-MaxDwellYears))
+        // C12: a detection in the first ten years of the calendar has no earlier limit (AddYears would throw).
+        if (occurredAtUtc is { } occurred && detectedAtUtc.Year > MaxDwellYears && occurred < detectedAtUtc.AddYears(-MaxDwellYears))
             throw new ArgumentException($"Initial activity can't be more than {MaxDwellYears} years before detection. Check the year.");
     }
 

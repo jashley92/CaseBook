@@ -1,5 +1,7 @@
+using System.Text.Json;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Domain.Entities;
+using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace IncidentManager.Infrastructure.Persistence;
@@ -12,6 +14,7 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// not as an audited change: an audited one counted as "1 change after closure by system" on every closed reported case.
 /// BUG-563: with the data elements the case has (BUG-284); and a kept value written before the elements were recorded gets
 /// them too, so wherever what's in play is read, an element added since is told apart from one the case had.
+/// BUG-589: a kept value damaged by a code that held ";" before BUG-404 ("NY;CA", "NY;CA;SSN") is repaired first.
 /// </summary>
 public static class ReportedJurisdictionsBackfill
 {
@@ -31,7 +34,73 @@ public static class ReportedJurisdictionsBackfill
             await db.Cases.Where(x => x.Id == c.Id && x.ReportedJurisdictions == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.ReportedJurisdictions, frozen), ct);
         }
-        return cases.Count + await KeepElementsAsync(db, ct);
+        return cases.Count + await RepairDamagedAsync(db, ct) + await KeepElementsAsync(db, ct);
+    }
+
+    // BUG-589: before BUG-404 a code could hold ";", so a codes-only value "NY;CA" read as code NY and element CA, and one
+    // written with its elements read "NY;CA;SSN" as code NY and element "CA;SSN". The elements part of a sound value is
+    // empty or names a data element; one naming none (no current, retired or case-held key) is damaged. Its last part is
+    // the elements when it names one (or is empty), and everything before it is codes; otherwise all of it is codes, and
+    // the elements are added below as for any codes-only value.
+    private static async Task<int> RepairDamagedAsync(AppDbContext db, CancellationToken ct)
+    {
+        var cases = await db.Cases.AsNoTracking()
+            .Where(c => c.ReportedJurisdictions != null && EF.Functions.Like(c.ReportedJurisdictions, "%;%"))
+            .Select(c => new { c.Id, Kept = c.ReportedJurisdictions! })
+            .ToListAsync(ct);
+        if (cases.Count == 0) return 0;
+        var known = await KnownElementKeysAsync(db, ct);
+        var written = 0;
+        foreach (var c in cases)
+        {
+            if (Repaired(c.Kept, known) is not { } fixedValue || fixedValue == c.Kept) continue;
+            var (id, kept) = (c.Id, c.Kept);
+            written += await db.Cases.Where(x => x.Id == id && x.ReportedJurisdictions == kept)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.ReportedJurisdictions, fixedValue), ct);
+        }
+        return written;
+    }
+
+    /// <summary>BUG-589: <paramref name="kept"/> as a sound value, or null when it already is one.</summary>
+    public static string? Repaired(string kept, IReadOnlySet<string> knownElementKeys)
+    {
+        var parts = kept.Split(';');
+        bool NamesElements(string part) => part.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(knownElementKeys.Contains);
+        if (parts.Length == 1) return null;   // codes only: given its elements in KeepElementsAsync
+        var last = parts[^1];
+        if (parts.Length == 2 && (string.IsNullOrWhiteSpace(last) || NamesElements(last))) return null;
+
+        var elementsKnown = string.IsNullOrWhiteSpace(last) || NamesElements(last);
+        var codeParts = elementsKnown ? parts[..^1] : parts;
+        var codes = string.Join(',', codeParts.SelectMany(p => p.Split(',')).Select(j => j.Trim().ToUpperInvariant())
+            .Where(j => j.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
+        if (!elementsKnown) return codes;
+        var elements = last.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return Case.WithElements(codes, elements) ?? codes;
+    }
+
+    // Every data element key there is or was: the catalogue's, those deleted from it (BUG-569: kept in the audit trail),
+    // and any a case holds.
+    private static async Task<IReadOnlySet<string>> KnownElementKeysAsync(AppDbContext db, CancellationToken ct)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        keys.UnionWith(await db.DataElements.AsNoTracking().Select(e => e.Key).ToListAsync(ct));
+        keys.UnionWith(await db.Cases.AsNoTracking().SelectMany(c => c.DataElements).Select(d => d.ElementKey).Distinct().ToListAsync(ct));
+        foreach (var json in await db.AuditLog.AsNoTracking()
+                     .Where(a => a.EntityType == nameof(DataElement) && a.Action == AuditAction.Delete && a.BeforeJson != null)
+                     .Select(a => a.BeforeJson!).ToListAsync(ct))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty(nameof(DataElement.Key), out var k)
+                    && k.ValueKind == JsonValueKind.String && k.GetString() is { } key)
+                    keys.Add(key);
+            }
+            catch (JsonException) { /* an entry it can't read names no key */ }
+        }
+        return keys;
     }
 
     // BUG-563: a kept value holding only the codes (written before BUG-284) gets the elements the case had. Still reported,
