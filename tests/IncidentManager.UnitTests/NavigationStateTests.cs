@@ -22,7 +22,7 @@ public partial class NavigationStateTests
         ["CaseListMemory.cs"] = "BUG-474: the back link with nothing remembered is the default view",
         // wave 2: a cancel / way back to the list; decide whether it should name a view.
         ["CaseImport.razor"] = "wave 2", ["CreateCase.razor"] = "wave 2", ["Error.razor"] = "wave 2",
-        ["NotFoundPage.razor"] = "wave 2", ["ErrorFallback.razor"] = "wave 2", ["CaseAccessNotice.razor"] = "wave 2",
+        ["NotFoundPage.razor"] = "wave 2", ["ErrorFallback.razor"] = "wave 2",
         ["StyleGuide.razor"] = "wave 2 (a design sample)",
     };
 

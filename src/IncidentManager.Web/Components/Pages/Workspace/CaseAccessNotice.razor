@@ -2,6 +2,7 @@
    everything. REL-07: the case was archived or restricted out from under a viewer holding unsaved text, so the
    workspace is held for a copy-out. REL-08: their permission changed since it loaded. S-21: a view-only role. *@
 @inject NavigationManager Nav
+@inject IncidentManager.Web.Services.CaseListMemory ListMemory
 @inject IJSRuntime JS
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 
@@ -11,7 +12,7 @@
         <span class="bi bi-exclamation-triangle-fill mt-1" aria-hidden="true"></span>
         <div>
             <div class="fw-semibold">This case was archived or your access to it changed while you had it open.</div>
-            <div class="small mb-0">Your unsaved text is still on screen. Copy anything you need now, because changes can no longer be saved to this case. <a href="cases">Back to cases</a>.</div>
+            <div class="small mb-0">Your unsaved text is still on screen. Copy anything you need now, because changes can no longer be saved to this case. <a href="@ListMemory.BackHref">Back to cases</a>.</div>
         </div>
     </div>
 }
@@ -41,7 +42,7 @@ else if (!Access.CanEdit)
     private async Task ReloadPage()
     {
         try { await JS.InvokeVoidAsync("location.reload"); }
-        catch (JSException) { Nav.NavigateTo(Nav.Uri, forceLoad: true); }
+        catch (JSException) { Nav.Refresh(forceReload: true); }
     }
 
     [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;

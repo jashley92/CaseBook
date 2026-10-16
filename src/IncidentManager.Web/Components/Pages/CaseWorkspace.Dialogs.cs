@@ -359,7 +359,7 @@ public partial class CaseWorkspace
     private string OneLine(string markdown)
     {
         var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
-        return text.Length <= 140 ? text : text[..137] + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(text, 140);   // C12: never longer than the line, nor half an emoji
     }
 
 

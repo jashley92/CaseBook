@@ -101,7 +101,6 @@ public sealed partial class GeneratedTextFitsColumnTests
         ("CaseTimelineTab.razor", "t[..87]"),
         ("EntityPanel.razor", "text[..117]"),
         ("EvidencePanel.razor", "text[..107]"),
-        ("CaseWorkspace.Dialogs.cs", "text[..137]"),
         ("CreateCase.razor", "s[..42]"),
         ("Integrity.razor", "h[..12]"),
         ("StoredReportTable.razor", "h[..16]"),
