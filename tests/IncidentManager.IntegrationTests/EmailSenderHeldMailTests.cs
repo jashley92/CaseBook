@@ -21,6 +21,7 @@ namespace IncidentManager.IntegrationTests;
 /// was given up after its tries; and held too when a send that was tried didn't reach the relay or was turned away for
 /// now (BUG-626: a 4xx), not only while the relay is backed off.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001", Justification = "The listener and token source are disposed in DisposeAsync (IAsyncLifetime).")]
 public sealed class EmailSenderHeldMailTests : IAsyncLifetime
 {
     private sealed class ManualTime : TimeProvider
