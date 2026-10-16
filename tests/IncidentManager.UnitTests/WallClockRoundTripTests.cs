@@ -22,7 +22,6 @@ public partial class WallClockRoundTripTests
     // WallClock / DayValues and takes its entry off).
     private static readonly Dictionary<string, int> Copies = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     // Wave 2b: fields seeded from a stored instant and also converted straight back somewhere.

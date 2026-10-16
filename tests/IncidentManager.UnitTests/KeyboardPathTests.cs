@@ -20,7 +20,6 @@ public partial class KeyboardPathTests
     // Wave 2b: key handlers acting on Enter without a repeat check.
     private static readonly Dictionary<string, int> NoRepeatCheck = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     // Wave 2b: fields a plain Enter saves that bind on change (the save reads the value from before the typing).

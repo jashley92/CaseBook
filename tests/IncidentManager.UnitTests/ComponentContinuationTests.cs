@@ -28,22 +28,18 @@ public partial class ComponentContinuationTests
 
     private static readonly Dictionary<string, int> B_Unsequenced = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     private static readonly Dictionary<string, int> C_ClearedOverTyping = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     private static readonly Dictionary<string, int> D_ClosesAnotherForm = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     private static readonly Dictionary<string, int> E_NavigatesLate = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     [Fact]

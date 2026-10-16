@@ -21,7 +21,6 @@ public partial class InFlightGuardTests
     // guard) and takes the entry off; a fixed site left listed fails the stale check below.
     private static readonly Dictionary<string, int> Allowed = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     [Fact]

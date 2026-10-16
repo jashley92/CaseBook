@@ -22,13 +22,11 @@ public partial class EditPreservationTests
     // time-display redraw then loses them without asking).
     private static readonly Dictionary<string, int> Untracked = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     // Wave 2b: "Edit" / "Done" on a row that replaces another row's open edit instead of refusing (EditSlot.TryOpen).
     private static readonly Dictionary<string, int> Replacing = new(StringComparer.Ordinal)
     {
-        // wave 2b, U4 (pages, admin, other shared)
     };
 
     // The case workspace's own forms: their text is the workspace's (CaseActionDraft, CloseOutDraft, the header's
