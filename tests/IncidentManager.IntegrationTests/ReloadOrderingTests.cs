@@ -93,7 +93,8 @@ public sealed class ReloadOrderingTests : IDisposable
         });
 
         var error = brokenReloader.ReloadAndReport();
-        await other!;
+        other.Should().NotBeNull("the failing reload raised its change");
+        if (other is not null) await other;
 
         error.Should().NotBeNull("its own load failed, whatever the other reload did meanwhile");
         healthyError.Should().BeNull();
