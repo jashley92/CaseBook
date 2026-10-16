@@ -33,8 +33,6 @@ public partial class ComponentContinuationTests
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseNotesTab.razor"] = 1,   // OnParametersSetAsync: _mentionable = await Cases.MentionableAsync
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // ReconcileEditor: _mentionable = await Cases.MentionableAsync; SearchFuLink: _fuLinkResults = found (Cases.SearchLinkableCasesAsync)
-        // wave 2b, U3 (entities, overview, panels, evidence)
-        ["Pages/CaseTabs/CaseOverviewTab.razor"] = 5,   // SaveNotice: _deadlines = await Deadlines.EvaluateAsync; MarkReported: _deadlines = await Deadlines.EvaluateAsync; OnParametersSetAsync: _lessons =...
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/Admin.razor"] = 3,   // LoadAsync: _effective = await Settings.GetEffectiveAsync; LoadAsync: _ledger = await Ledger.GetAsync; LoadAsync: _logoDataUri = logo (Branding.GetLogoAsync)
         ["Pages/AdminApiTokens.razor"] = 2,   // LoadAsync: _roles = await Roles.ListRolesAsync; LoadAsync: _tokens = await Tokens.ListAllAsync
@@ -63,8 +61,6 @@ public partial class ComponentContinuationTests
     {
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 7,   // AddQuestion: _question = null;; AddTimelineCore: _tlDesc = "";; AddTimelineCore: _tlSource = null;; AddEventStepCore: _tlDesc = "";; AddEventStepC...
-        // wave 2b, U3 (entities, overview, panels, evidence)
-        ["Pages/CaseTabs/CaseOverviewTab.razor"] = 1,   // AddLink: _linkDesc = null;
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/AccountApiTokens.razor"] = 1,   // CreateToken: _name = "";
         ["Pages/AdminRoles.razor"] = 1,   // AddMappingCore: _newGroup = "";
@@ -74,7 +70,6 @@ public partial class ComponentContinuationTests
 
     private static readonly Dictionary<string, int> D_ClosesAnotherForm = new(StringComparer.Ordinal)
     {
-        // wave 2b, U3 (entities, overview, panels, evidence)
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/CaseImport.razor"] = 2,   // OnParametersSetAsync: _reviewingPendingId = null;; Reject: _reviewingPendingId = null;
         ["Pages/CaseTabs/CaseReviewTab.razor"] = 2,   // SaveEdit: _editingId = null;; SaveEdit: _editingId = null;

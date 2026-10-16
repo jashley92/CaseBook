@@ -24,8 +24,6 @@ public partial class WallClockRoundTripTests
     {
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 3,   // KeptOrTypedUtc (line 2497); WallToUtc (line 3061); UtcToWall (line 3066)
-        // wave 2b, U3 (entities, overview, panels, evidence)
-        ["Pages/CaseTabs/CaseOverviewTab.razor"] = 2,   // WallToUtc (line 1115); UtcToWall (line 1120)
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/CreateCase.razor"] = 2,   // WallToUtc (line 533); UtcToWall (line 538)
         ["Shared/PromoteToTimeline.razor"] = 2,   // ToWall (line 106); WallToUtc (line 109)

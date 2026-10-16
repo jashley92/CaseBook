@@ -23,6 +23,7 @@
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
 @inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
 @inject IncidentManager.Application.Lessons.LessonsService Lessons
+@inject UnsavedEdits Edits
 @using IncidentManager.Application.Compliance
 
 @if (RetentionMessage is not null)
@@ -178,7 +179,7 @@
                     {
                         <div class="alert alert-warning py-1 px-2 small mb-2">@ierr</div>
                     }
-                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(SaveImpact)">Save</button>
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveImpact">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editingImpact = false">Cancel</button>
                     </div>
                 }
@@ -282,21 +283,21 @@
                                                             title="Remove this notice (a mis-entry)" @onclick="() => RemoveNotice(s.JurisdictionCode, s.JurisdictionLabel)">×</button>
                                                 }
                                             }
-                                            else if (CanEdit && _noticeFor == s.JurisdictionCode)
+                                            else if (CanEdit && _notice.IsOpenFor(s.JurisdictionCode))
                                             {
                                                 @* BUG-425: Ctrl/Cmd+Enter records this notice, not the case record's details. *@
                                                 <div class="d-flex align-items-center gap-1 flex-wrap im-own-keys"
-                                                     @onkeydown="e => SaveOnKey(e, () => SaveNotice(s.JurisdictionCode))">
+                                                     @onkeydown="e => SaveOnKey(e, SaveNotice)">
                                                     <DateTimeInput Past="true" class="form-control form-control-sm" style="max-width: 13rem" @bind-Value="_noticeAt"
                                                            aria-label="@($"When {s.JurisdictionLabel} was notified ({TimeDisp.Label})")" />
-                                                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(() => SaveNotice(s.JurisdictionCode))">Save</button>
-                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _noticeFor = null">Cancel</button>
+                                                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveNotice">Save</button>
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="_notice.Close">Cancel</button>
                                                 </div>
                                                 @if (_noticeError is not null) { <div class="text-danger small">@_noticeError</div> }
                                             }
                                             else if (CanEdit)
                                             {
-                                                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => BeginNotice(s.JurisdictionCode)">Record notice</button>
+                                                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => BeginNotice(s.JurisdictionCode, s.NotifiedAtUtc)">Record notice</button>
                                             }
                                             else
                                             {
@@ -322,7 +323,7 @@
                                         <DateTimeInput Past="true" id="ov-reported-at" class="form-control form-control-sm" @bind-Value="_reportedAt"
                                                title="When regulators were notified. Saving this stops the notification countdown." />
                                     </div>
-                                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(MarkReported)">Save</button>
+                                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="MarkReported">Save</button>
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _markingReported = false">Cancel</button>
                                 </div>
                                 @if (_reportedError is not null) { <p class="text-danger small mt-1 mb-0">@_reportedError</p> }
@@ -418,7 +419,7 @@
                     {
                         <div class="alert alert-warning py-1 px-2 small mb-2" role="alert">@derr</div>
                     }
-                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(SaveDetails)" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
                 }
                 else
@@ -602,9 +603,9 @@
                 </div>
                 <div class="mb-2">
                     <label class="form-label small mb-0" for="ov-link-note">Note (optional)</label>
-                    <input id="ov-link-note" class="form-control form-control-sm" @bind="_linkDesc" @bind:event="oninput" placeholder="Why are these related?" />
+                    <input id="ov-link-note" class="form-control form-control-sm" @bind="_linkDesc" @bind:event="oninput" placeholder="Why are these related?" disabled="@_saving.Busy" />
                 </div>
-                <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="() => Once(AddLink)" disabled="@(_linkTargetId is null)">Add link</button>
+                <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddLink" disabled="@(_linkTargetId is null)">Add link</button>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="CancelAddLink">Cancel</button>
                 </div>
             }
@@ -713,47 +714,79 @@
     // Regulatory notification deadlines (PROD-07)
     private CaseNotificationDeadlines? _deadlines;
     private bool _markingReported;
+    // BUG-601: each evaluation takes a ticket, so an older one (a parameter set, a save) landing last doesn't show stale
+    // deadlines.
+    private readonly LoadSequence _deadlineLoad = new();
 
-    // BUG-09: recording one regulator's notice.
-    private string? _noticeFor;
-    private DateTime? _noticeAt;
-    private string? _noticeError;
-
-    private void BeginNotice(string code)
+    private async Task LoadDeadlines()
     {
-        _noticeFor = code;
-        _noticeError = null;
-        _noticeAt = UtcToWall(Clock.UtcNow);
+        var t = _deadlineLoad.Begin();
+        var deadlines = await Deadlines.EvaluateAsync(CaseId);
+        if (!_deadlineLoad.IsCurrent(t)) return;
+        _deadlines = deadlines;
+        // A notice a colleague recorded meanwhile hides its form; the slot is let go so another row's can open.
+        if (_notice.Current is { } open && !deadlines.Statuses.Any(s => s.JurisdictionCode == open.Key && s.NotifiedAtUtc is null))
+            _notice.Close();
     }
 
-    private async Task SaveNotice(string code)
+    // BUG-09: recording one regulator's notice. BUG-578/601: one notice form at a time (a second is refused, not
+    // replaced), and a save closes only its own.
+    private readonly EditSlot<string> _notice = new();
+    private DateTime? _noticeAt, _noticeSeed;
+    private DateTimeOffset? _noticeShown;   // BUG-594: that regulator's notice as the page showed it when the form opened
+    private string? _noticeError;
+
+    private void BeginNotice(string code, DateTimeOffset? shown)
     {
+        if (!_notice.TryOpen(code, Toasts, "notice")) return;
+        _noticeError = null;
+        _noticeAt = _noticeSeed = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
+        _noticeShown = shown;
+    }
+
+    private Task SaveNotice() => _saving.Run(SaveNoticeCore);
+
+    private async Task SaveNoticeCore()
+    {
+        if (_notice.Current is not { } open) return;
         _noticeError = null;
         if (_noticeAt is not { } at) { _noticeError = "Enter when they were notified."; return; }
         try
         {
-            await Cases.RecordNoticeAsync(CaseId, code, WallToUtc(at));
-            _noticeFor = null;
-            _deadlines = await Deadlines.EvaluateAsync(CaseId);
+            // BUG-594: refused when someone recorded this regulator's notice after the form opened.
+            await Cases.RecordNoticeAsync(CaseId, open.Key, WallClock.ToUtc(at, TimeDisp.Zone), Shown.Of(_noticeShown));
+            _notice.CloseIf(open);
+            await LoadDeadlines();
             await OnChanged.InvokeAsync();
             Toasts.Success("Notice recorded");
         }
+        catch (StaleEditException ex)
+        {
+            _notice.CloseIf(open);
+            Toasts.Error(ex.Message);
+            await LoadDeadlines();
+            await OnChanged.InvokeAsync();
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
-            _noticeError = ex.Message;
+            if (_notice.IsCurrent(open)) _noticeError = ex.Message;
         }
     }
 
-    private async Task RemoveNotice(string code, string label) =>
-        await RequestConfirm.InvokeAsync(($"Remove the notice to {label}? Its countdown resumes.", "Remove",
-            async () =>
-            {
-                await Cases.RemoveNoticeAsync(CaseId, code);
-                _deadlines = await Deadlines.EvaluateAsync(CaseId);
-                await OnChanged.InvokeAsync();
-                Toasts.Success("Notice removed");
-            }));
-    private DateTime? _reportedAt;
+    private Task RemoveNotice(string code, string label) =>
+        RequestConfirm.InvokeAsync(($"Remove the notice to {label}? Its countdown resumes.", "Remove",
+            () => _removing.Run(() => RemoveNoticeCore(code))));
+
+    private async Task RemoveNoticeCore(string code)
+    {
+        await Cases.RemoveNoticeAsync(CaseId, code);
+        await LoadDeadlines();
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Notice removed");
+    }
+
+    private DateTime? _reportedAt, _reportedSeed;
+    private DateTimeOffset? _reportedShown;   // BUG-594: the reported time the page showed when the form opened
     private string? _reportedError;
 
     // Related cases (E-14)
@@ -797,8 +830,15 @@
     private int ReadinessMachineOutstanding => ReadinessEval?.Requirements
         .Count(r => r.Kind == GateRequirementKind.MachineCheck && r.IsBlocking && !r.MachineSatisfied) ?? 0;
 
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        // BUG-578: what's typed here is asked about before a tab switch, leaving the case or the time-display redraw hides it.
+        Edits.Track(this, "the case details you're editing", () => DetailsDirty, Region);
+        Edits.Track(this, "the impact assessment you're editing", () => ImpactDirty, Region);
+        Edits.Track(this, "the case link you're adding", () => LinkDirty, Region);
+        Edits.Track(this, "the notice time you're recording", () => NoticeDirty, Region);
         // X-03: the data-element reference set — active options for editing, plus a key→label map (incl.
         // inactive) so already-recorded elements always render with their current label.
         _dataElements = await Cases.ListActiveDataElementsAsync();
@@ -830,23 +870,34 @@
         _reportedError = null;
         // FR-09: seed + accept the reported time as wall-clock in the viewer's display zone (like Detected /
         // Initial-activity), not raw UTC — so an analyst who types local everywhere can't mis-stop the
-        // highest-stakes regulatory clock by their zone offset. WallToUtc converts on save.
-        _reportedAt = UtcToWall(Clock.UtcNow);
+        // highest-stakes regulatory clock by their zone offset. WallClock.ToUtc converts on save.
+        _reportedAt = _reportedSeed = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
+        _reportedShown = _deadlines?.ReportedAtUtc;
         _markingReported = true;
     }
 
-    private async Task MarkReported()
+    private Task MarkReported() => _saving.Run(MarkReportedCore);
+
+    private async Task MarkReportedCore()
     {
         _reportedError = null;
         if (_reportedAt is not { } dt) { _reportedError = "Enter the reported time."; return; }
         try
         {
-            var utc = WallToUtc(dt); // FR-09: wall-clock (display zone) → UTC, matching every other datetime field
-            await Cases.MarkReportedAsync(CaseId, utc);
+            var utc = WallClock.ToUtc(dt, TimeDisp.Zone); // FR-09: wall-clock (display zone) → UTC, matching every other datetime field
+            // BUG-594: refused when someone recorded a reported time after the form opened.
+            await Cases.MarkReportedAsync(CaseId, utc, Shown.Of(_reportedShown));
             _markingReported = false;
-            _deadlines = await Deadlines.EvaluateAsync(CaseId);
+            await LoadDeadlines();
             await OnChanged.InvokeAsync();
             Toasts.Success("Reported milestone recorded");
+        }
+        catch (StaleEditException ex)
+        {
+            _markingReported = false;
+            Toasts.Error(ex.Message);
+            await LoadDeadlines();
+            await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
@@ -854,15 +905,17 @@
         }
     }
 
-    private async Task ClearReported() =>
-        await RequestConfirm.InvokeAsync(("Clear the reported milestone? The notification countdown will resume.", "Clear",
-            async () =>
-            {
-                await Cases.ClearReportedAsync(CaseId);
-                _deadlines = await Deadlines.EvaluateAsync(CaseId);
-                await OnChanged.InvokeAsync();
-                Toasts.Success("Reported milestone cleared");
-            }));
+    private Task ClearReported() =>
+        RequestConfirm.InvokeAsync(("Clear the reported milestone? The notification countdown will resume.", "Clear",
+            () => _removing.Run(ClearReportedCore)));
+
+    private async Task ClearReportedCore()
+    {
+        await Cases.ClearReportedAsync(CaseId);
+        await LoadDeadlines();
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Reported milestone cleared");
+    }
 
     private static string RemainingLabel(TimeSpan rem)
     {
@@ -886,13 +939,17 @@
         if (Case.Phase == CasePhase.Closed && _lessonsFor != (Case.Id, RefreshToken))
         {
             _lessonsFor = (Case.Id, RefreshToken);
-            try { _lessons = await Lessons.GetForCaseAsync(Case.Id); }
-            catch (ForbiddenException) { _lessons = null; }
+            // BUG-601: an older load (the token before) landing last doesn't replace the newer one's.
+            var t = _lessonsLoad.Begin();
+            IncidentManager.Application.Lessons.CaseLessonsView? lessons;
+            try { lessons = await Lessons.GetForCaseAsync(Case.Id); }
+            catch (ForbiddenException) { lessons = null; }
+            if (_lessonsLoad.IsCurrent(t)) _lessons = lessons;
         }
         // Re-evaluate the notification deadlines whenever the parent passes an updated case (e.g. after a
         // materiality determination or reported milestone recorded from the header Actions), so the card and
         // the header badge stay in sync (PROD-07).
-        _deadlines = await Deadlines.EvaluateAsync(CaseId);
+        await LoadDeadlines();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -967,23 +1024,30 @@
     {
         // BUG-425: only on the Briefing, where the details editor is; the Impact, ATT&CK and Connections parts share this
         // component (and _editingDetails) but don't show it. Forms with their own Save take their own keys (SaveOnKey).
-        if (CanEdit && _editingDetails && Section == "Briefing") await Once(SaveDetails);
+        if (CanEdit && _editingDetails && Section == "Briefing") await SaveDetails();
     }
 
     // BUG-425: one of this tab's saves at a time, by click or Ctrl/Cmd+Enter; a form marked .im-own-keys (keymap.js leaves
-    // it alone) saves itself on Ctrl/Cmd+Enter, not the details editor. A held key doesn't repeat it.
-    private bool _formSaving;
-
-    private async Task Once(Func<Task> save)
-    {
-        if (_formSaving) return;
-        _formSaving = true;
-        try { await save(); }
-        finally { _formSaving = false; }
-    }
+    // it alone) saves itself on Ctrl/Cmd+Enter, not the details editor. A held key doesn't repeat it. BUG-603: each save
+    // runs through _saving itself (the confirmed removals through _removing, the techniques through _tagging), so a
+    // double-click, Enter and a click, or two confirms don't write twice.
+    private readonly InFlight _saving = new();
+    private readonly InFlight _removing = new();
+    private readonly InFlight _tagging = new();
 
     private Task SaveOnKey(KeyboardEventArgs e, Func<Task> save) =>
-        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : Once(save);
+        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : save();
+
+    // BUG-578: unsaved input in this tab's forms (compared with what each opened with, so an untouched one holds nothing up).
+    private bool DetailsDirty => _editingDetails && DetailsInput() != _detailsSeed;
+    private bool ImpactDirty => _editingImpact && ImpactInput() != _impactSeed;
+    private bool LinkDirty => _addingLink && (_linkTargetId is not null || !string.IsNullOrWhiteSpace(_linkQuery) || !string.IsNullOrWhiteSpace(_linkDesc));
+    private bool NoticeDirty => (_notice.IsOpen && Moved(_noticeAt, _noticeSeed)) || (_markingReported && Moved(_reportedAt, _reportedSeed));
+    private static bool Moved(DateTime? now, DateTime? seed) =>
+        (now is { } n ? WallClock.ToMinute(n) : (DateTime?)null) != (seed is { } s ? WallClock.ToMinute(s) : null);
+    private string? _detailsSeed, _impactSeed;
+    private string DetailsInput() => string.Join("\u001f", _edTitle, _edDetection, _edDataTypes, _edImpacted, _edDetected?.Ticks, _edOccurred?.Ticks);
+    private string ImpactInput() => string.Join("\u001f", _impCount, string.Join(",", _impElementKeys.Order(StringComparer.Ordinal)), _impStates);
 
     private Task Confirm(string message, Func<Task> action, string verb = "Remove") => RequestConfirm.InvokeAsync((message, verb, action));
 
@@ -1025,6 +1089,7 @@
     private int _storyHidden;
     private IncidentManager.Application.Lessons.CaseLessonsView? _lessons;
     private (Guid Case, int Token)? _lessonsFor;
+    private readonly LoadSequence _lessonsLoad = new();
 
     // When recovery began: the (effective) time of the latest move into Recovery.
     private DateTimeOffset? RecoveryStarted => Case.StatusChanges
@@ -1053,7 +1118,7 @@
     private string OneLine(string markdown)
     {
         var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
-        return text.Length <= 160 ? text : text[..157] + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(text, 160);
     }
 
     // --- Details ---
@@ -1064,22 +1129,25 @@
         _edDetection = Case.DetectionCaseId;
         _edDataTypes = Case.DataTypesInvolved;
         _edImpacted = Case.ImpactedAssets;
-        _edDetected = Case.DetectedAtUtc is { } d ? UtcToWall(d) : null;
-        _edOccurred = Case.OccurredAtUtc is { } o ? UtcToWall(o) : null;
+        _edDetected = Case.DetectedAtUtc is { } d ? WallClock.ToWall(d, TimeDisp.Zone) : null;
+        _edOccurred = Case.OccurredAtUtc is { } o ? WallClock.ToWall(o, TimeDisp.Zone) : null;
         (_edDetectedShown, _edOccurredShown) = (_edDetected, _edOccurred);
         (_edDetectedAt, _edOccurredAt) = (Case.DetectedAtUtc, Case.OccurredAtUtc);
         _detailsError = null;
         _detailsBaseline = Case.DetailsConcurrencyStamp(); // FR-06: baseline for the optimistic-concurrency check
         _editingDetails = true;
+        _detailsSeed = DetailsInput();
     }
 
     // WF-68: a time left as shown keeps its recorded instant; converting it back would read a time in the repeated autumn
     // hour as standard time and move it an hour (and every deadline that runs from it). BUG-503 follow-up: compared at the
     // minute the field shows, so a time typed back to it (which comes back without its seconds) is kept too.
     private DateTimeOffset? Kept(DateTime? edited, DateTime? shown, DateTimeOffset? recorded) =>
-        edited is null ? null : CaseTimelineTab.KeptOrTypedUtc(edited.Value, shown, recorded, TimeDisp.Zone);
+        edited is null ? null : WallClock.Kept(edited.Value, shown, recorded, TimeDisp.Zone);
 
-    private async Task SaveDetails()
+    private Task SaveDetails() => _saving.Run(SaveDetailsCore);
+
+    private async Task SaveDetailsCore()
     {
         if (string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null) return;
         // INV-36: the summary isn't edited here; send the one on record so this save never changes it. If it
@@ -1111,15 +1179,6 @@
         Toasts.Success("Details saved");
     }
 
-    // --- Wall-clock ⇄ UTC in the viewer's active display zone (U-29) ---
-    private DateTimeOffset WallToUtc(DateTime wall)
-    {
-        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
-    }
-
-    private DateTime UtcToWall(DateTimeOffset utc)
-        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
-
     // --- Structured impact assessment (E-12) ---
     private string DataElementLabel(string key) =>
         _dataElementLabels.TryGetValue(key, out var label) ? label : key;
@@ -1143,6 +1202,7 @@
         _impactError = null;
         _impactBaseline = Case.ImpactConcurrencyStamp(); // FR-06: baseline for the optimistic-concurrency check
         _editingImpact = true;
+        _impactSeed = ImpactInput();
     }
 
     private void ToggleElement(string key, bool on)
@@ -1150,7 +1210,9 @@
         if (on) _impElementKeys.Add(key); else _impElementKeys.Remove(key);
     }
 
-    private async Task SaveImpact()
+    private Task SaveImpact() => _saving.Run(SaveImpactCore);
+
+    private async Task SaveImpactCore()
     {
         try
         {
@@ -1175,7 +1237,9 @@
     }
 
     // --- Assignments / techniques ---
-    private async Task RemoveTechnique(Guid techniqueId)
+    private Task RemoveTechnique(Guid techniqueId) => _tagging.Run(() => RemoveTechniqueCore(techniqueId));
+
+    private async Task RemoveTechniqueCore(Guid techniqueId)
     {
         await Cases.RemoveTechniqueAsync(CaseId, techniqueId);
         await OnChanged.InvokeAsync();
@@ -1194,7 +1258,9 @@
 
     // Sync the case's techniques to the matrix's chosen set: remove dropped tags, add new ones, and
     // re-tag any whose tactic (column) changed. AddTechniqueAsync upserts, so a tactic change is a re-add.
-    private async Task ApplyTechMatrix(IReadOnlyDictionary<string, MitreTactic> desired)
+    private Task ApplyTechMatrix(IReadOnlyDictionary<string, MitreTactic> desired) => _tagging.Run(() => ApplyTechMatrixCore(desired));
+
+    private async Task ApplyTechMatrixCore(IReadOnlyDictionary<string, MitreTactic> desired)
     {
         _techMatrixOpen = false;
         var current = Case.Techniques.ToList();   // as the live refresh has it now
@@ -1229,7 +1295,15 @@
     }
 
     // --- Related cases (E-14) ---
-    private async Task LoadLinks() => _links = await Cases.GetCaseLinksAsync(CaseId);
+    // BUG-601: the first load, a live refresh's and a save's run side by side; only the newest one's list is shown.
+    private readonly LoadSequence _linksLoad = new();
+
+    private async Task LoadLinks()
+    {
+        var t = _linksLoad.Begin();
+        var links = await Cases.GetCaseLinksAsync(CaseId);
+        if (_linksLoad.IsCurrent(t)) _links = links;
+    }
 
     private void BeginAddLink()
     {
@@ -1251,35 +1325,38 @@
         _linkTargetLabel = null;
         _linkQuery = "";
         _linkResults = Array.Empty<LinkableCase>();
-        _linkSeq++;   // BUG-482: a search still running doesn't land in the cleared picker
+        _linkSearch.Invalidate();   // BUG-482: a search still running doesn't land in the cleared picker
     }
 
-    // BUG-482 (as BUG-454): each search takes a number and only the latest one's results land, so an older (slower)
+    // BUG-482 (as BUG-454): each search takes a ticket and only the latest one's results land, so an older (slower)
     // query's, or one for a box since cleared, doesn't replace them.
-    private int _linkSeq;
+    private readonly LoadSequence _linkSearch = new();
 
     private async Task SearchLinkTargets()
     {
-        var seq = ++_linkSeq;
+        var t = _linkSearch.Begin();
         if (string.IsNullOrWhiteSpace(_linkQuery)) { _linkResults = Array.Empty<LinkableCase>(); return; }
         var found = await Cases.SearchLinkableCasesAsync(CaseId, _linkQuery);
-        if (seq == _linkSeq) _linkResults = found;
+        if (_linkSearch.IsCurrent(t)) _linkResults = found;
     }
 
     private void SelectLinkTarget(LinkableCase c)
     {
-        _linkSeq++;
+        _linkSearch.Invalidate();
         _linkTargetId = c.Id;
         _linkTargetLabel = $"{c.CaseNumber} — {c.Title}";
         _linkResults = Array.Empty<LinkableCase>();
     }
 
-    private async Task AddLink()
+    private Task AddLink() => _saving.Run(AddLinkCore);
+
+    private async Task AddLinkCore()
     {
         if (_linkTargetId is not { } target) return;
+        var sentNote = _linkDesc;
         try
         {
-            var created = await Cases.LinkCaseAsync(CaseId, target, _linkType, _linkDesc);
+            var created = await Cases.LinkCaseAsync(CaseId, target, _linkType, sentNote);
             if (created is null) { Toasts.Warning("Those cases are already linked."); }
             else { Toasts.Success("Case linked."); }
         }
@@ -1296,11 +1373,13 @@
         }
         _addingLink = false;
         ClearLinkTarget();
-        _linkDesc = null;
+        _linkDesc = DraftText.ClearIfUnchanged(_linkDesc, sentNote, null);   // BUG-601 (the note is disabled while it saves)
         await LoadLinks();
     }
 
-    private async Task RemoveLink(Guid linkId)
+    private Task RemoveLink(Guid linkId) => _removing.Run(() => RemoveLinkCore(linkId));
+
+    private async Task RemoveLinkCore(Guid linkId)
     {
         await Cases.RemoveCaseLinkAsync(CaseId, linkId);
         Toasts.Success("Link removed.");
@@ -1314,6 +1393,7 @@
     public async ValueTask DisposeAsync()
     {
         Disposed = true;
+        Edits.Forget(this);
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
