@@ -13,6 +13,7 @@ public interface ICurrentUser
     bool IsAuthenticated { get; }
     /// <summary>The built-in roles the user holds. Custom roles aren't here — see <see cref="RoleNames"/>.</summary>
     IReadOnlySet<AppRole> Roles { get; }
+    /// <summary>Whether <see cref="Roles"/> holds <paramref name="role"/> (BUG-574: from the claims, never a directory lookup).</summary>
     bool IsInRole(AppRole role);
 
     /// <summary>

@@ -80,7 +80,8 @@ public sealed class CurrentUser : ICurrentUser
             .Select(r => r!.Value)
             .ToHashSet();
 
-    public bool IsInRole(AppRole role) => Principal.IsInRole(role.ToString());
+    // BUG-574: from the role claims, as Roles is. A WindowsPrincipal's IsInRole asks AD to translate the name, unbounded.
+    public bool IsInRole(AppRole role) => Roles.Contains(role);
 
     // S-14: role claims that name a CaseBook role — built-in or custom. Windows can also carry group SIDs as role
     // claims; those aren't roles here, so anything the directory doesn't know (and isn't built-in) is dropped.

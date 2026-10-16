@@ -60,7 +60,7 @@ public sealed class SessionPermissionRefresher
                 i.Claims.Where(c => c.Type != AppClaimTypes.Permission && !IsAppRoleClaim(c)).Select(c => c.Clone()),
                 i.AuthenticationType, i.NameClaimType, i.RoleClaimType))
             .ToList();
-        var granted = new ClaimsIdentity();
+        var granted = new ClaimsIdentity { Label = RoleClaimsTransformer.GrantsLabel };
         foreach (var r in roles) granted.AddClaim(new Claim(ClaimTypes.Role, r));
         foreach (var p in permNames) granted.AddClaim(new Claim(AppClaimTypes.Permission, p));
         identities.Add(granted);

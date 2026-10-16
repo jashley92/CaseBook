@@ -26,17 +26,22 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
     public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
-        if (principal.Identity?.IsAuthenticated != true)
+        // BUG-574: run again on the same principal (each AuthenticateAsync in a request transforms it), it added another
+        // identity each time; the grants are made once.
+        if (principal.Identity?.IsAuthenticated != true || principal.Identities.Any(i => i.Label == GrantsLabel))
             return Task.FromResult(principal);
 
         var roleNames = _directory.RolesForGroups(GroupCandidates(principal));
         if (roleNames.Count == 0)
             return Task.FromResult(principal);
 
-        var identity = new ClaimsIdentity();
+        // Unauthenticated (no authentication type), so it's never read as the sign-in's groups (WF-42).
+        var identity = new ClaimsIdentity { Label = GrantsLabel };
         foreach (var role in roleNames)
         {
-            if (!principal.IsInRole(role))
+            // BUG-574: from the claims. A WindowsPrincipal's IsInRole translated the name in AD (unbounded, on every
+            // request) and said yes for an AD group named like the role, whose claim was then never added.
+            if (!principal.HasClaim(c => c.Type == ClaimTypes.Role && string.Equals(c.Value, role, StringComparison.OrdinalIgnoreCase)))
                 identity.AddClaim(new Claim(ClaimTypes.Role, role));
         }
 
@@ -50,6 +55,9 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         principal.AddIdentity(identity);
         return Task.FromResult(principal);
     }
+
+    /// <summary>BUG-574: marks the identity carrying CaseBook's grants.</summary>
+    internal const string GrantsLabel = "CaseBook grants";
 
     /// <summary>
     /// The AD group identifiers on a Windows principal to match against the group→role mappings. Windows groups arrive
