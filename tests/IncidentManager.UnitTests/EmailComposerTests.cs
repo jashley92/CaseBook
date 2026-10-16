@@ -161,6 +161,20 @@ public class EmailComposerSubjectLineTests
     }
 
     [Fact]
+    public async Task A_blank_draft_previews_what_a_test_send_sends(/* C2 */)
+    {
+        var composer = TestEmail.Composer(
+            (IncidentManager.Application.Admin.EmailTemplateCatalog.SubjectKey("mention"), "Saved {{CaseNumber}}"),
+            (IncidentManager.Application.Admin.EmailTemplateCatalog.BodyKey("mention"), "<p>Saved body</p>"));
+
+        var (subject, html) = await composer.PreviewAsync("mention", "", "");
+        var sample = await composer.ComposeSampleAsync("mention", ["a@example.com"], "", "");
+
+        subject.Should().Be("Saved 2026-01_Phishing_Wave").And.Be(sample.Subject);
+        html.Should().Contain("Saved body");
+    }
+
+    [Fact]
     public async Task Unicode_line_and_paragraph_separators_collapse_too()
     {
         var (subject, _) = await TestEmail.Composer().PreviewAsync("mention", "Hi" + (char)0x2028 + "there" + (char)0x2029 + "{{CaseNumber}}", "<p>x</p>");

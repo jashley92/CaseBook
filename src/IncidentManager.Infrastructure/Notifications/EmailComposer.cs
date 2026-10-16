@@ -38,11 +38,7 @@ public sealed partial class EmailComposer : IEmailComposer
         var def = EmailTemplateCatalog.ById(templateId)
                   ?? throw new ArgumentException($"Unknown email template '{templateId}'.", nameof(templateId));
 
-        var subjectTemplate = draftSubject is { Length: > 0 } ds ? ds
-            : _config[EmailTemplateCatalog.SubjectKey(templateId)] is { Length: > 0 } s ? s : def.DefaultSubject;
-        var bodyTemplate = draftBody is { Length: > 0 } db ? db
-            : _config[EmailTemplateCatalog.BodyKey(templateId)] is { Length: > 0 } b ? b : def.DefaultBodyHtml;
-
+        var (subjectTemplate, bodyTemplate) = Templates(def, draftSubject, draftBody);
         var subject = SingleLine(SubstitutePlain(subjectTemplate, tokens));
         var contentHtml = SubstituteHtml(bodyTemplate, tokens, htmlTokens);
         var contentText = SubstituteText(bodyTemplate, tokens, htmlTokens);
@@ -61,8 +57,10 @@ public sealed partial class EmailComposer : IEmailComposer
                   ?? throw new ArgumentException($"Unknown email template '{templateId}'.", nameof(templateId));
 
         var (tokens, htmlTokens, ctaUrl) = SampleTokens(def);
-        var subj = SingleLine(SubstitutePlain(subject, tokens));
-        var content = SubstituteHtml(bodyHtml, tokens, htmlTokens);
+        // C2: a blank draft previews what a send and a test send use (the saved template, else the default), not nothing.
+        var (subjectTemplate, bodyTemplate) = Templates(def, subject, bodyHtml);
+        var subj = SingleLine(SubstitutePlain(subjectTemplate, tokens));
+        var content = SubstituteHtml(bodyTemplate, tokens, htmlTokens);
         var palette = BrandPalette.EmailColors(_config["Branding:AccentColor"], _config["Branding:InkColor"]);
         var (html, _) = await RenderShellAsync(content, "", palette, def.CtaLabel, ctaUrl, subj, ct);
         return (subj, html);
@@ -76,6 +74,14 @@ public sealed partial class EmailComposer : IEmailComposer
         var (tokens, htmlTokens, ctaUrl) = SampleTokens(def);
         return ComposeCoreAsync(templateId, to, tokens, ctaUrl, htmlTokens, draftSubject, draftBody, ct);
     }
+
+    // The subject and body a message is built from: the draft when one is given, else the saved override, else the default.
+    // One function for the preview, the test send and a send (C2).
+    private (string Subject, string Body) Templates(EmailTemplateDefinition def, string? draftSubject, string? draftBody) =>
+        (draftSubject is { Length: > 0 } ds ? ds
+            : _config[EmailTemplateCatalog.SubjectKey(def.Id)] is { Length: > 0 } s ? s : def.DefaultSubject,
+         draftBody is { Length: > 0 } db ? db
+            : _config[EmailTemplateCatalog.BodyKey(def.Id)] is { Length: > 0 } b ? b : def.DefaultBodyHtml);
 
     // --- token substitution ----------------------------------------------------
 
