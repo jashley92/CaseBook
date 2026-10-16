@@ -105,7 +105,7 @@ A single page, not a wizard.
 5. **Indicators**: one per line, defanged input accepted. **Check now** looks for open cases you can see
    that already carry them, and lists closed ones as **Seen before**, with each one's outcome, closing line and the
    verdict the indicator reached there. You can mark matches as related, duplicate or same campaign. A match pauses the
-   first *Create* but never blocks it.
+   first *Create* but never blocks it: **Create anyway** on the pause files the case (a second *Create* doesn't).
 
 ## The case workspace
 
