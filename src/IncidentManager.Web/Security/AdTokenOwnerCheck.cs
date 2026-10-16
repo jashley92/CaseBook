@@ -79,7 +79,7 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         var known = _answers.TryGetValue(ownerUserId, out var last);
         if (known && now - last.At < Fresh) return Access(last.Account);
         if (_failedAt.TryGetValue(ownerUserId, out var failed) && now - failed < RetryAfterFailure)
-            return Unreachable(known, last, now, failOpen);
+            return Unreachable(ownerUserId, known, last, now, failOpen);
         Pending pending;
         lock (_gate)
         {
@@ -89,30 +89,34 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
                 if (running.Hung)
                 {
                     _failedAt[ownerUserId] = now;
-                    return Unreachable(known, last, now, failOpen);
+                    return Unreachable(ownerUserId, known, last, now, failOpen);
                 }
                 pending = running;
             }
             else
             {
                 // BUG-469: with MaxHung blocked in its domain, that domain is taken to be down rather than given another thread.
-                if (_hung.GetValueOrDefault(DomainOf(ownerUserId)) >= MaxHung) return Unreachable(known, last, now, failOpen);
+                if (_hung.GetValueOrDefault(DomainOf(ownerUserId)) >= MaxHung) return Unreachable(ownerUserId, known, last, now, failOpen);
                 pending = Start(ownerUserId);
             }
         }
         try
         {
             var account = await pending.Lookup.WaitAsync(Timeout, _time, ct);
-            if (await NamedAsync(account) is not { } named)
+            var (named, whole) = await NamedAsync(account);
+            if (!whole)
             {
                 // BUG-575: some of its groups weren't named in time (or the directory failed naming them). Read as the
                 // whole answer, a Manager mapped by group name lost the role: dropped from escalations and the executive
                 // report, a reminder rerouted and marked sent, a token refused. It's AD being unreachable instead.
+                // BUG-609: kept as a partial answer, which a token falls back on when there's no whole one.
                 _log?.LogWarning("Active Directory didn't name all of an account's groups in time when checking an API token's owner.");
+                _partial[ownerUserId] = (named, now);
                 _failedAt[ownerUserId] = now;
-                return Unreachable(known, last, now, failOpen);
+                return Unreachable(ownerUserId, known, last, now, failOpen);
             }
             _answers[ownerUserId] = (named, now);
+            _partial.TryRemove(ownerUserId, out _);
             _failedAt.TryRemove(ownerUserId, out _);
             return Access(named);
         }
@@ -128,13 +132,13 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
                 }
             }
             _failedAt[ownerUserId] = now;
-            return Unreachable(known, last, now, failOpen);
+            return Unreachable(ownerUserId, known, last, now, failOpen);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _log?.LogWarning(ex, "Couldn't check an API token's owner in Active Directory.");
             _failedAt[ownerUserId] = now;
-            return Unreachable(known, last, now, failOpen);
+            return Unreachable(ownerUserId, known, last, now, failOpen);
         }
     }
 
@@ -184,16 +188,28 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         : new OwnerAccess(false, NoRoles);
 
     // The directory can't be asked: the last answer for up to a day, then refused (or, for a feed recipient, not known).
-    private OwnerAccess? Unreachable(bool known, (Known Account, DateTimeOffset At) last, DateTimeOffset now, bool failOpen) =>
-        known && now - last.At < LastKnownLimit ? Access(last.Account) : failOpen ? null : new OwnerAccess(false, NoRoles);
+    // BUG-609: with no whole answer, a token gets what the last partial one's named groups grant. Refusing it outright
+    // was a regression (before BUG-575 it kept those roles), and a partial answer can only grant fewer roles than the
+    // whole one, never more. A feed recipient stays "not known": fewer roles would drop a Manager from escalations.
+    private OwnerAccess? Unreachable(string ownerUserId, bool known, (Known Account, DateTimeOffset At) last, DateTimeOffset now, bool failOpen) =>
+        known && now - last.At < LastKnownLimit ? Access(last.Account)
+        : failOpen ? null
+        : _partial.TryGetValue(ownerUserId, out var partial) && now - partial.At < LastKnownLimit ? Access(partial.Account)
+        : new OwnerAccess(false, NoRoles);
+
+    // BUG-609: the last answer whose groups weren't all named, per account; used only while there's no whole one.
+    private readonly ConcurrentDictionary<string, (Known Account, DateTimeOffset At)> _partial = new(StringComparer.OrdinalIgnoreCase);
 
     // The same names a sign-in matches mappings against: the SID, and "DOMAIN\Group" and "Group" (BUG-565: translated
-    // together, bounded). Null when some weren't named (BUG-575).
-    private async Task<Known?> NamedAsync(AccountGroups? account)
+    // together, bounded). Not whole when some weren't named (BUG-575). BUG-609: a missing or disabled account is a whole
+    // answer whatever its groups' names: before, a disabled owner whose groups weren't named in time kept the last
+    // answer's access for up to a day.
+    private async Task<(Known Account, bool Whole)> NamedAsync(AccountGroups? account)
     {
-        if (account is null) return new Known(false, false, NoRoles);
+        if (account is null) return (new Known(false, false, NoRoles), true);
+        if (!account.Enabled) return (new Known(true, false, NoRoles), true);
         var groups = await RoleClaimsTransformer.CandidatesForAsync(account.GroupSids, _sids);
-        return groups.Complete ? new Known(true, account.Enabled, groups.Names) : null;
+        return (new Known(true, true, groups.Names), groups.Complete);
     }
 
     // BUG-127: an owner id is however the user signed in: DOMAIN\sam under Windows sign-in (WindowsIdentity carries no

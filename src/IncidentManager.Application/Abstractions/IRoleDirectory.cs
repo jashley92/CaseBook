@@ -19,6 +19,10 @@ public interface IRoleDirectory
     /// <summary>The role names granted to a user in the given AD security groups.</summary>
     IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups);
 
+    /// <summary>BUG-609: the roles some mapping by group name (not by SID) grants: those a group whose name didn't come
+    /// back in time could still be giving a user. Null when the directory can't say.</summary>
+    IReadOnlySet<string>? RolesMappedByName => null;
+
     /// <summary>Rebuilds the cached snapshot from the database (call after any role/mapping change).</summary>
     void Invalidate();
 

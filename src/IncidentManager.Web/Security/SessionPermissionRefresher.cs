@@ -52,14 +52,15 @@ public sealed class SessionPermissionRefresher
 
     private ClaimsPrincipal? Apply(ClaimsPrincipal principal, RoleClaimsTransformer.GroupNames? groups)
     {
-        // BUG-575: a group whose name didn't come back in time would drop its name-mapped roles from an open session
-        // until the next re-check; the session keeps what it has until the answer is whole.
-        if (groups is { Complete: false }) return null;
-
         var heldRoles = AppRoleClaims(principal).Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var heldPerms = principal.FindAll(AppClaimTypes.Permission).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
 
-        IReadOnlySet<string> roles = groups is not null ? Directory.RolesForGroups(groups.Names) : heldRoles;
+        IReadOnlySet<string> roles = groups switch
+        {
+            null => heldRoles,
+            { Complete: true } => Directory.RolesForGroups(groups.Names),
+            _ => KeptOnPartialAnswer(heldRoles, groups.Names),
+        };
         var perms = Directory.PermissionsForRoles(roles);
         if (!_windowsMode && perms.Count == 0) perms = RoleDefinitions.PermissionsForRoleNames(roles); // dev fallback
         var permNames = perms.Select(p => p.ToString()).ToHashSet(StringComparer.Ordinal);
@@ -78,6 +79,17 @@ public sealed class SessionPermissionRefresher
         foreach (var p in permNames) granted.AddClaim(new Claim(AppClaimTypes.Permission, p));
         identities.Add(granted);
         return new ClaimsPrincipal(identities);
+    }
+
+    // BUG-575: a group whose name didn't come back in time would drop its name-mapped roles from an open session until
+    // the next re-check, so a partial answer takes away only what it can rule out. BUG-609: skipping the refresh instead
+    // left an admin's revocation unapplied for the whole AD outage. A held role stays while the groups that were named
+    // still map to it, or any mapping by name does (an unnamed group may be that one); it's never added on a partial answer.
+    private HashSet<string> KeptOnPartialAnswer(HashSet<string> held, IReadOnlySet<string> names)
+    {
+        var granted = Directory.RolesForGroups(names);
+        var byName = Directory.RolesMappedByName;
+        return held.Where(r => granted.Contains(r) || byName is null || byName.Contains(r)).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private IEnumerable<Claim> AppRoleClaims(ClaimsPrincipal p) => p.FindAll(ClaimTypes.Role).Where(IsAppRoleClaim);

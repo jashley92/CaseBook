@@ -142,6 +142,11 @@ public sealed class RoleDirectory : IRoleDirectory
 
     public bool IsRole(string name) => _snapshot.RolePermissions.ContainsKey(name);
 
+    /// <inheritdoc />
+    public IReadOnlySet<string> RolesMappedByName =>
+        _snapshot.GroupRoles.Where(g => !g.Key.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(g => g.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups)
     {
         var snap = _snapshot;

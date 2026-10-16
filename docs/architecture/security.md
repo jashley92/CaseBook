@@ -67,7 +67,11 @@ Used only by `POST /api/import/cases` (bearer header).
 - **With Windows sign-in, a personal token's owner is checked in Active Directory** on use (`AdTokenOwnerCheck`): a
   missing or disabled account is refused, and the token keeps only the roles the owner's current groups map to. Each
   answer is reused for 15 minutes; if AD can't be reached (or takes longer than 10 seconds, BUG-469), the last answer
-  stands for up to 24 hours, then the token is refused. The calendar feed link follows the same check. Without Windows sign-in the user mirror is used (it updates
+  stands for up to 24 hours, then the token is refused. An answer whose groups weren't all named in time counts as AD
+  unreachable (BUG-575), except that a disabled account is refused at once and, with no whole answer yet, the token
+  keeps only the roles its named groups map to (BUG-609). An open session's re-check on such an answer still applies
+  removed mappings and permission changes, keeps a role while any mapping by name still grants it, and never adds a
+  role (BUG-609). The calendar feed link follows the same check. Without Windows sign-in the user mirror is used (it updates
   at each sign-in).
 - **Account entities are looked up only in domains the server already trusts** (BUG-419, `AdAccountDirectory`): an
   account indicator is attacker-supplied text, so `DOMAIN\sam` is asked about only when DOMAIN is in the server's
