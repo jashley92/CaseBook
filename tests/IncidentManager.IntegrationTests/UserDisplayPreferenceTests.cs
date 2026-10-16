@@ -132,24 +132,6 @@ public sealed class UserDisplayPreferenceTests : IDisposable
     }
 
     /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
-    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
-    {
-        private bool _done;
-
-        public void Reset() => _done = false;
-
-        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
-            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
-            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
-        {
-            if (!_done)
-            {
-                _done = true;
-                await during();
-            }
-            return result;
-        }
-    }
 
     public void Dispose() => _connection.Dispose();
 }

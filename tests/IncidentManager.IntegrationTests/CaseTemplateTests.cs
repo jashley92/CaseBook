@@ -294,6 +294,27 @@ public sealed class CaseTemplateTests : IDisposable
             catch (InvalidOperationException ex) { failures.Add(ex); }
 
         failures.Should().ContainSingle().Which.Message.Should().Contain("already exists");
+        await OneTemplatePerNameAsync();
+
+        // C17: in each order, the first gets the name and the second is refused.
+        await RaceOrders.ForEveryOrderAsync(2, async _ =>
+        {
+            await using var db = NewContext();
+            var svc = NewTemplateService(db);
+            foreach (var t in await svc.ListAllAsync()) await svc.DeleteAsync(t.Id);
+            var renamed = await svc.CreateAsync(Phishing() with { Name = "Ransomware" });
+            return [() => svc.CreateAsync(Phishing()), () => svc.UpdateAsync(renamed, Phishing() with { Name = "PHISHING wave" })];
+        }, async run =>
+        {
+            run.Outcomes[run.First].Should().BeNull(run.ToString());
+            run.Outcomes[run.Order[1]].Should().BeOfType<InvalidOperationException>(run.ToString())
+                .Which.Message.Should().Contain("already exists");
+            await OneTemplatePerNameAsync();
+        });
+    }
+
+    private async Task OneTemplatePerNameAsync()
+    {
         await using var check = NewContext();
         (await NewTemplateService(check).ListAllAsync()).GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .Should().OnlyContain(g => g.Count() == 1);
@@ -369,22 +390,6 @@ public sealed class CaseTemplateTests : IDisposable
             .Options);
 
     /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
-    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
-    {
-        private bool _done;
-
-        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
-            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
-            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
-        {
-            if (!_done)
-            {
-                _done = true;
-                await during();
-            }
-            return result;
-        }
-    }
 
     public void Dispose() => _connection.Dispose();
 }

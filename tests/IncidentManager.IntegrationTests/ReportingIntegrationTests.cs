@@ -1248,6 +1248,22 @@ public sealed class ReportingIntegrationTests : IDisposable
 
         failures.Should().HaveCount(2).And.AllSatisfy(e => e.Message.Should().Contain("already exists"));
         (await templates.ListAllAsync()).Count(t => t.Name.Equals("House style", StringComparison.OrdinalIgnoreCase)).Should().Be(1);
+
+        // C17: in each order, the first gets the name and both others are refused.
+        await RaceOrders.ForEveryOrderAsync(3, async _ =>
+        {
+            foreach (var t in await templates.ListAllAsync()) await templates.DeleteAsync(t.Id);
+            var renamed = (await templates.UploadAsync("Other", "other.docx", engine.Starter())).Id!.Value;
+            return [() => templates.UploadAsync("House style", "house.docx", engine.Starter()),
+                    () => templates.UploadAsync("house STYLE", "house.docx", engine.Starter()),
+                    () => templates.RenameAsync(renamed, "House Style")];
+        }, async run =>
+        {
+            run.Outcomes[run.First].Should().BeNull(run.ToString());
+            run.Order.Skip(1).Select(i => run.Outcomes[i]).Should().AllSatisfy(e =>
+                e.Should().BeOfType<InvalidOperationException>(run.ToString()).Which.Message.Should().Contain("already exists"));
+            (await templates.ListAllAsync()).Count(t => t.Name.Equals("House style", StringComparison.OrdinalIgnoreCase)).Should().Be(1);
+        });
     }
 
     [Fact]
@@ -1275,8 +1291,19 @@ public sealed class ReportingIntegrationTests : IDisposable
         }
         await Task.WhenAll(a, b);
 
+        (await templates.ListAllAsync()).Where(t => t.IsLessonsDefault).Should().ContainSingle();
+
+        // C17: in each order both land, and the one that ran last is the default.
+        var ids = new[] { first, second };
+        await RaceOrders.ForEveryOrderAsync(2, _ => Task.FromResult<IReadOnlyList<Func<Task>>>(
+            [() => templates.SetLessonsDefaultAsync(first, true), () => templates.SetLessonsDefaultAsync(second, true)]),
+            async run =>
+            {
+                run.Failed.Should().BeEmpty(run.ToString());
+                (await templates.ListAllAsync()).Where(t => t.IsLessonsDefault).Select(t => t.Id)
+                    .Should().Equal(new[] { ids[run.Order[^1]] }, $"the later click clears the earlier ({run})");
+            });
         var defaults = (await templates.ListAllAsync()).Where(t => t.IsLessonsDefault).ToList();
-        defaults.Should().ContainSingle();
 
         // Archiving waits too, so it can't pass its "not the default" check while that template is being made the default.
         Task archive;

@@ -244,10 +244,12 @@ public sealed class AdAccountDirectoryTests
         using var release = new ManualResetEventSlim();
         var time = new ManualTime { FastTimers = true };
         var corp = 0;
+        var entered = new Entered(AdAccountDirectory.MaxHungPerDomain);
         var directory = new AdAccountDirectory(time: time, trustedDomains: _ => ["CORP", "PARTNER"], query: n =>
         {
             if (!n.StartsWith("CORP", StringComparison.Ordinal)) return DirectoryLookup.NotFound;
             Interlocked.Increment(ref corp);
+            entered.Signal();
             release.Wait(TimeSpan.FromSeconds(30));   // CORP's DC hangs
             return DirectoryLookup.NotFound;
         });
@@ -258,6 +260,7 @@ public sealed class AdAccountDirectoryTests
             (await directory.LookupAsync($"CORP\\u{i}")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable);
             time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
         }
+        await entered.WaitAsync();   // C17: each blocked lookup's thread has started, so the count is settled
         corp.Should().Be(AdAccountDirectory.MaxHungPerDomain, "a domain whose lookups are still blocked isn't given more threads");
         (await directory.LookupAsync("PARTNER\\jdoe")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound);
         (await directory.LookupAsync("jdoe")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound, "nor is the server's own");
@@ -277,9 +280,11 @@ public sealed class AdAccountDirectoryTests
         using var release = new ManualResetEventSlim();
         var time = new ManualTime { FastTimers = true };
         var listings = 0;
+        var entered = new Entered(AdAccountDirectory.MaxHungPerDomain);
         var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: _ =>
         {
             Interlocked.Increment(ref listings);
+            entered.Signal();
             release.Wait(TimeSpan.FromSeconds(30));
             return ["CORP"];
         });
@@ -289,6 +294,7 @@ public sealed class AdAccountDirectoryTests
             (await directory.LookupAsync($"CORP\\u{i}")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable);
             time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
         }
+        await entered.WaitAsync();   // C17: as above
         listings.Should().Be(AdAccountDirectory.MaxHungPerDomain);
         release.Set();
     }

@@ -336,6 +336,20 @@ public sealed class ReportProfileTests : IDisposable
         await create.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*archived*");
         (await svc.GetAsync(id))!.TemplateId.Should().BeNull();
         (await svc.ListAllAsync()).Should().NotContain(p => p.Name == "Full pack");
+
+        // C17: the archive holds the gate first; after it, the two run in either order, and each order refuses both.
+        await RaceOrders.ForEveryOrderAsync(2, async _ =>
+        {
+            var stamp = (await svc.GetAsync(id))!.Stamp;
+            return [() => svc.UpdateAsync(id, new ReportProfileInput("Executive summary", null, true, 1, ExecLayout, templateId), stamp),
+                    () => svc.CreateAsync(new ReportProfileInput("Full pack", null, true, 2, ExecLayout, templateId))];
+        }, async run =>
+        {
+            run.Outcomes.Should().AllSatisfy(e => e.Should().BeOfType<InvalidOperationException>(run.ToString())
+                .Which.Message.Should().Contain("archived"));
+            (await svc.GetAsync(id))!.TemplateId.Should().BeNull();
+            (await svc.ListAllAsync()).Should().NotContain(p => p.Name == "Full pack");
+        });
     }
 
     [Fact]
@@ -412,22 +426,6 @@ public sealed class ReportProfileTests : IDisposable
     }
 
     /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
-    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
-    {
-        private bool _done;
-
-        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
-            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
-            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
-        {
-            if (!_done)
-            {
-                _done = true;
-                await during();
-            }
-            return result;
-        }
-    }
 
     private static async Task<string> ReadWordXmlAsync(ReportService svc, Guid reportId)
     {

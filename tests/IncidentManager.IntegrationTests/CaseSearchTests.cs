@@ -505,22 +505,6 @@ public sealed class CaseSearchTests : IDisposable
     }
 
     /// <summary>Runs another save once, in the middle of the first save made through these options.</summary>
-    private sealed class BeforeFirstSave(Func<Task> during) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
-    {
-        private bool _done;
-
-        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
-            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
-            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
-        {
-            if (!_done)
-            {
-                _done = true;
-                await during();
-            }
-            return result;
-        }
-    }
 
     [Fact]
     public async Task Search_covers_the_record_and_says_where_it_matched()

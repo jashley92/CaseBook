@@ -232,10 +232,30 @@ public sealed class StageGateServiceTests : IDisposable
         foreach (var t in new[] { a, b, rename })
             try { await t; }
             catch (InvalidOperationException ex) { failures.Add(ex); }
-
-        // The three queue in no fixed order, so which ones are refused varies (b first refuses a, and the rename then has no
-        // name to clash with); what holds every time is that no save slipped past another's check.
         failures.Should().NotBeEmpty().And.HaveCountLessThan(3);
+        await NoSaveSlippedPastAnotherAsync(svc);
+
+        // C17: the three queue in no fixed order, so each order is run in turn: the first always lands, and which of the
+        // others are refused follows (b first refuses a, and the rename then has no name to clash with).
+        await RaceOrders.ForEveryOrderAsync(3, async _ =>
+        {
+            foreach (var g in await svc.ListAllAsync()) await svc.DeleteAsync(g.Id);
+            var renamed = await svc.CreateAsync(BreachGate(active: false) with { Name = "Other" });
+            return [() => svc.CreateAsync(BreachGate()),
+                    () => svc.CreateAsync(BreachGate() with { Name = "Breach readiness v2" }),
+                    () => svc.UpdateAsync(renamed, BreachGate(active: false) with { Name = "breach READINESS" })];
+        }, async run =>
+        {
+            run.Outcomes[run.First].Should().BeNull($"the first to get the gate passes its checks ({run})");
+            run.Outcomes.Should().OnlyContain(e => e == null || e is InvalidOperationException, run.ToString());
+            var aLandedFirst = run.Outcomes[0] == null && run.Order.ToList().IndexOf(0) < run.Order.ToList().IndexOf(1);
+            (run.Outcomes[1] != null).Should().Be(aLandedFirst, $"b is refused exactly when a landed before it ({run})");
+            await NoSaveSlippedPastAnotherAsync(svc);
+        });
+    }
+
+    private static async Task NoSaveSlippedPastAnotherAsync(StageGateService svc)
+    {
         var gates = await svc.ListAllAsync();
         gates.Count(g => g.IsActive && g.Trigger == StageGateTrigger.EscalateToBreach).Should().Be(1);
         gates.GroupBy(g => g.Name, StringComparer.OrdinalIgnoreCase).Should().OnlyContain(g => g.Count() == 1);

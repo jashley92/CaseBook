@@ -414,9 +414,11 @@ public sealed class ApiTokenTests : IDisposable
     {
         using var release = new ManualResetEventSlim();
         var lookups = 0;
+        var entered = new Entered();
         var ad = new AdTokenOwnerCheck(new GroupRoleDirectory(), _clock, time: new FastTimers(), lookup: _ =>
         {
             Interlocked.Increment(ref lookups);
+            entered.Signal();
             release.Wait(TimeSpan.FromSeconds(30));   // the DC hangs
             return new(true, ["S-1-5-21-COMMANDERS"]);
         });
@@ -425,6 +427,8 @@ public sealed class ApiTokenTests : IDisposable
         var recipient = ad.CheckRecipientAsync("analyst1");
         (await token)!.Active.Should().BeFalse("a token fails closed");
         (await recipient).Should().BeNull("choosing a recipient fails open");
+        // C17: the (fast) timeout can fire before the lookup's thread starts; read the count once it has.
+        await entered.WaitAsync();
         lookups.Should().Be(1, "callers for the same account share one lookup");
 
         _clock.UtcNow += AdTokenOwnerCheck.RetryAfterFailure;
@@ -446,9 +450,11 @@ public sealed class ApiTokenTests : IDisposable
     {
         using var release = new ManualResetEventSlim();
         var lookups = 0;
+        var entered = new Entered(AdTokenOwnerCheck.MaxHung);
         var ad = new AdTokenOwnerCheck(new GroupRoleDirectory(), _clock, time: new FastTimers(), lookup: _ =>
         {
             Interlocked.Increment(ref lookups);
+            entered.Signal();
             release.Wait(TimeSpan.FromSeconds(30));
             return new(true, []);
         });
@@ -456,6 +462,7 @@ public sealed class ApiTokenTests : IDisposable
             (await ad.CheckRecipientAsync($"user{i}")).Should().BeNull();
 
         (await ad.CheckAsync("another"))!.Active.Should().BeFalse();
+        await entered.WaitAsync();   // C17: each blocked lookup's thread has started, so the count is settled
         lookups.Should().Be(AdTokenOwnerCheck.MaxHung, "no thread more is given to a directory that isn't answering");
         release.Set();
     }
