@@ -279,11 +279,17 @@ public sealed class CaseTemplateTests : IDisposable
 
         // A create and a rename onto the same name while another writer (an import) holds GuardGate: each check runs with
         // its save, after the other's, so whichever goes second is refused, in either order.
+        // C17: the services are built here, not inside Task.Run: NewContext's EnsureCreated on the one shared in-memory
+        // connection from two threads at once isn't safe, and the loser threw before reaching the gate (1 run in ~15).
+        await using var dbCreate = NewContext();
+        await using var dbRename = NewContext();
+        var creating = NewTemplateService(dbCreate);
+        var renaming = NewTemplateService(dbRename);
         Task create, rename;
         using (await GuardGate.EnterAsync())
         {
-            create = Task.Run(async () => { await using var db = NewContext(); await NewTemplateService(db).CreateAsync(Phishing()); });
-            rename = Task.Run(async () => { await using var db = NewContext(); await NewTemplateService(db).UpdateAsync(other, Phishing() with { Name = "PHISHING wave" }); });
+            create = Task.Run(() => creating.CreateAsync(Phishing()));
+            rename = Task.Run(() => renaming.UpdateAsync(other, Phishing() with { Name = "PHISHING wave" }));
             await Task.Delay(200);
             create.IsCompleted.Should().BeFalse("the name check and the save wait for GuardGate");
             rename.IsCompleted.Should().BeFalse();
