@@ -25,7 +25,11 @@ builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 // --- Blazor Server ---
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    // BUG-605: a message from the browser over SignalR's 32 KB default drops the circuit. An entry or note at its 16,000
+    // character limit, read back from the Markdown editor, can pass that (non-ASCII text, escaped line breaks). 128 KB
+    // covers it; anything bigger (the import box) is streamed rather than sent in one message.
+    .AddHubOptions(o => o.MaximumReceiveMessageSize = 128 * 1024);
 
 // --- Data Protection ---
 // The keyring protects antiforgery tokens and Blazor Server circuit state. By default it is ephemeral

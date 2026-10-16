@@ -151,3 +151,16 @@ window.imTagBox = (function () {
         setEntities: function (list) { entities = Array.isArray(list) ? list : []; close(); }
     };
 })();
+
+// BUG-605: a large text box's value, read as a stream (IJSStreamReference) rather than sent in a Blazor event, which is
+// capped at the hub's 32 KB message size; and set from the server for display.
+window.imTextValue = {
+    read: function (id) {
+        const el = document.getElementById(id);
+        return new TextEncoder().encode(el ? el.value : '');
+    },
+    set: function (id, value) {
+        const el = document.getElementById(id);
+        if (el && el.value !== value) el.value = value || '';
+    }
+};

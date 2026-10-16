@@ -131,11 +131,14 @@ else if (_pending.Count > 0)
     </p>
 
     <label class="form-label" for="imp-json">Import JSON, STIX bundle or CSV</label>
-    <textarea id="imp-json" class="form-control font-monospace" rows="6" @bind="_text" @bind:event="oninput"
+    @* BUG-605: not bound. A pasted document went to the server whole in one input event, and one over the hub's 32 KB
+       message limit dropped the connection, so the paste never arrived (an upload streams, so it worked). Preview streams
+       the box's text instead, as an upload does. *@
+    <textarea id="imp-json" class="form-control font-monospace" rows="6"
               placeholder='{ "format": "casebook-case-import", "schemaVersion": 1, ... }'></textarea>
 
     <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
-        <button class="btn btn-sm btn-primary" @onclick="Preview" disabled="@(string.IsNullOrWhiteSpace(_text))">
+        <button class="btn btn-sm btn-primary" @onclick="PreviewFromBox" disabled="@_readingBox">
             <span class="bi bi-eye me-1" aria-hidden="true"></span>Preview import
         </button>
         <span class="text-muted small">or upload a file:</span>
@@ -522,6 +525,7 @@ else if (_pending.Count > 0)
                 _preview = preview;
                 await RefreshGates();
                 _text = null;
+                await ShowInBox(null);
                 _error = null;
             }
         }
@@ -611,6 +615,7 @@ else if (_pending.Count > 0)
             _fileName = e.File.Name;
             using var reader = new StreamReader(e.File.OpenReadStream(maxAllowedSize: 4 * 1024 * 1024));
             _text = await reader.ReadToEndAsync();
+            await ShowInBox(_text);   // BUG-605: the box isn't bound, so it's shown there explicitly
             await Preview();
         }
         catch (Exception ex)
@@ -618,6 +623,43 @@ else if (_pending.Count > 0)
             _error = "Couldn't read the file. Check that it's a JSON, STIX or CSV file under 4 MB.";
             Logger.LogWarning(ex, "Case-import file read failed");
         }
+    }
+
+    // BUG-605: the pasted or typed document, read from the box as a stream (no 32 KB hub message limit), up to the size an
+    // upload takes.
+    private const long MaxDocumentBytes = 4 * 1024 * 1024;
+    private bool _readingBox;
+
+    private async Task PreviewFromBox()
+    {
+        if (_readingBox) return;
+        _readingBox = true;
+        try
+        {
+            var stream = await JS.InvokeAsync<IJSStreamReference>("imTextValue.read", "imp-json");
+            await using (stream)
+            {
+                await using var s = await stream.OpenReadStreamAsync(MaxDocumentBytes);
+                using var reader = new StreamReader(s, System.Text.Encoding.UTF8);
+                _text = await reader.ReadToEndAsync();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JSException)
+        {
+            Logger.LogInformation(ex, "Case-import paste read failed");
+            _preview = null;
+            _parseError = "That's more than 4 MB of text. Upload it as a file instead, or split it.";
+            return;
+        }
+        finally { _readingBox = false; }
+        await Preview();
+    }
+
+    private async Task ShowInBox(string? text)
+    {
+        try { await JS.InvokeVoidAsync("imTextValue.set", "imp-json", text ?? ""); }
+        catch (JSException) { /* the box shows what it showed */ }
+        catch (JSDisconnectedException) { }
     }
 
     private async Task Preview()
@@ -657,11 +699,12 @@ else if (_pending.Count > 0)
         _related = matches.Where(m => m.CaseId != p.ExistingCaseId).ToList();
     }
 
-    private void Reset()
+    private async Task Reset()
     {
         _parseError = null;
         _preview = null;
         _text = null;
+        await ShowInBox(null);
         _error = null;
         _existingNumber = null;
         _existingError = null;
