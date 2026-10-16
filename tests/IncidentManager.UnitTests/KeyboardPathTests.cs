@@ -21,7 +21,6 @@ public partial class KeyboardPathTests
     private static readonly Dictionary<string, int> NoRepeatCheck = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/Cases.razor"] = 1,   // OnListKey
         ["Shared/AttackMatrixPicker.razor"] = 1,   // IsActivate
         ["Shared/CommandPalette.razor"] = 1,   // OnKeyDown
     };

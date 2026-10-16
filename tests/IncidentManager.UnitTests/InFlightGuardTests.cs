@@ -30,7 +30,6 @@ public partial class InFlightGuardTests
         ["Pages/AdminGates.razor"] = 1,   // DeleteGate (Gates.DeleteAsync)
         ["Pages/AdminRoles.razor"] = 4,   // SaveRoleCore (Roles.CreateRoleAsync, Roles.UpdateRoleAsync); DeleteRole (Roles.DeleteRoleAsync); AddMappingCore (Roles.AddMappingAsync); RemoveMapping (Roles.Re...
         ["Pages/AdminTemplates.razor"] = 1,   // DeleteTemplate (Templates.DeleteAsync)
-        ["Pages/Cases.razor"] = 1,   // DeleteView (Views.DeleteAsync)
         ["Shared/ReportProfilesEditor.razor"] = 1,   // Delete (Profiles.DeleteAsync)
         ["Shared/ReportTemplateLibrary.razor"] = 3,   // Replace (Templates.ReplaceFileAsync); ShowHere (Access.RecordArtifactAsync); SaveRename (Templates.RenameAsync)
         ["Shared/UndeliveredAlertBanner.razor"] = 1,   // Dismiss (Alerts.DismissAsync)

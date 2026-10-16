@@ -1,6 +1,7 @@
 @page "/cases"
 @page "/cases/mine"
 @using IncidentManager.Application.Views
+@using EnumNames = IncidentManager.Domain.Common.EnumNames
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @implements IDisposable
 @inject IncidentManager.Application.Abstractions.ICaseChangeNotifier Changes
@@ -207,7 +208,7 @@
                         <span class="bi @(v.IsDefault ? "bi-star-fill" : "bi-star")" aria-hidden="true"></span>
                     </button>
                     <button type="button" class="btn btn-outline-secondary" title="Delete this view"
-                            aria-label="@($"Delete view {v.Name}")" @onclick="() => DeleteView(v)">
+                            aria-label="@($"Delete view {v.Name}")" disabled="@_deletingView.Busy" @onclick="() => DeleteView(v)">
                         <span class="bi bi-x" aria-hidden="true"></span>
                     </button>
                 }
@@ -229,7 +230,8 @@
         <div class="card-body">
             <label class="form-label small mb-1 fw-semibold" for="view-name">Save these filters as a view</label>
             <div class="d-flex flex-wrap align-items-center gap-2">
-                <input id="view-name" class="form-control form-control-sm" style="max-width:16rem" placeholder="e.g. My triage queue"
+                @* BUG-599: SavedViewService refuses a name over 120 characters; the box stops there. *@
+                <input id="view-name" class="form-control form-control-sm" style="max-width:16rem" placeholder="e.g. My triage queue" maxlength="120"
                        @bind="_newViewName" @bind:event="oninput" @bind:after="() => _confirmOverwrite = false" @onkeydown="OnSaveKeyDown" />
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="view-share" @bind="_newViewShared" />
@@ -243,7 +245,7 @@
             {
                 <div class="alert alert-warning small mt-2 mb-0 py-2 d-flex flex-wrap align-items-center gap-2">
                     <span><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>You already have a view named “<strong>@_newViewName.Trim()</strong>”. Overwrite it?</span>
-                    <button class="btn btn-sm btn-warning py-0" @onclick="SaveView" disabled="@_viewSaveBusy">Overwrite</button>
+                    <button class="btn btn-sm btn-warning py-0" @onclick="OverwriteView" disabled="@_viewSaveBusy">Overwrite</button>
                     <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => _confirmOverwrite = false">Cancel</button>
                 </div>
             }
@@ -748,15 +750,16 @@ else
             case "k" or "ArrowUp":
                 _cursor = _cursor <= 0 ? 0 : _cursor - 1;
                 break;
-            case "Enter" or "o":
+            // C6 (BUG-536's class): a held Enter / o / p / x acts once; a held j / k still moves row by row.
+            case "Enter" or "o" when !e.Repeat:
                 if (_cursor >= 0 && _cursor < n) Nav.NavigateTo($"cases/{p.Items[_cursor].Id}");
                 break;
             // Design review P3/P8: p previews the cursor row; while a preview is open it follows the cursor.
-            case "p" when _cursor >= 0 && _cursor < n:
+            case "p" when !e.Repeat && _cursor >= 0 && _cursor < n:
                 TogglePeek(p.Items[_cursor].Id);
                 break;
             // PROD-25 + E-18: x toggles the cursor row into the bulk selection (editors, cohort only).
-            case "x" when BulkEligible && _cursor >= 0 && _cursor < n:
+            case "x" when !e.Repeat && BulkEligible && _cursor >= 0 && _cursor < n:
                 var id = p.Items[_cursor].Id;
                 ToggleSelect(id, !_selected.Contains(id));
                 break;
@@ -943,11 +946,11 @@ else
     // opened-month drill-ins, which already have their own context badges below.
     private IEnumerable<(string Label, Action Clear)> ActiveFilterChips()
     {
-        if (Enum.TryParse<Classification>(_classification, out var c))
+        if (EnumNames.TryParse<Classification>(_classification, out var c))
             yield return ($"Classification: {Ui.Label(c)}", () => _classification = "");
-        if (Enum.TryParse<CasePhase>(_phase, out var p))
+        if (EnumNames.TryParse<CasePhase>(_phase, out var p))
             yield return ($"Phase: {Ui.Label(p)}", () => _phase = "");
-        if (Enum.TryParse<Severity>(_minSeverity, out var sev))
+        if (EnumNames.TryParse<Severity>(_minSeverity, out var sev))
             yield return ($"Severity ≥ {SevLabels.For(sev)}", () => _minSeverity = "");
         if (_origin == nameof(CaseOrigin.InternalDetection))
             yield return ("Origin: Internal", () => _origin = "");
@@ -1008,19 +1011,24 @@ else
     }
 
     // FR-15: a save whose name matches one of the user's own views overwrites it, so pause for a one-click
-    // confirm the first time (unless they already confirmed via the Overwrite button).
+    // confirm. BUG-602: only the Overwrite button confirms; Save (or Enter) again while paused used to overwrite too, so a
+    // double-click on Save replaced the existing view without the question being seen.
     private bool _confirmOverwrite;
     private bool _viewSaveBusy;
 
     private bool NameCollidesWithMine(string name) =>
         _views?.Any(v => v.IsMine && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)) ?? false;
 
-    private async Task SaveView()
+    private Task SaveView() => SaveViewCore(overwrite: false);
+
+    private Task OverwriteView() => SaveViewCore(overwrite: true);
+
+    private async Task SaveViewCore(bool overwrite)
     {
         var name = _newViewName.Trim();
         if (string.IsNullOrWhiteSpace(name)) return;
         if (_viewSaveBusy) return; // BUG-452: an Enter or a second click while the save runs would save it again
-        if (!_confirmOverwrite && NameCollidesWithMine(name)) { _confirmOverwrite = true; return; }
+        if (!overwrite && NameCollidesWithMine(name)) { _confirmOverwrite = true; return; }
         _viewSaveBusy = true;
         try
         {
@@ -1038,7 +1046,12 @@ else
         finally { _viewSaveBusy = false; }
     }
 
-    private async Task DeleteView(SavedViewItem v)
+    // BUG-603: a double-click on × deletes once (the second came back as a refusal or a second toast).
+    private readonly InFlight _deletingView = new();
+
+    private Task DeleteView(SavedViewItem v) => _deletingView.Run(() => DeleteViewCore(v));
+
+    private async Task DeleteViewCore(SavedViewItem v)
     {
         try
         {
@@ -1106,10 +1119,11 @@ else
 
     private async Task Reload()
     {
-        _filter.Classification = Enum.TryParse<Classification>(_classification, out var c) ? c : null;
-        _filter.Phase = Enum.TryParse<CasePhase>(_phase, out var p) ? p : null;
-        _filter.MinSeverity = Enum.TryParse<Severity>(_minSeverity, out var sev) ? sev : null;
-        _filter.Origin = Enum.TryParse<CaseOrigin>(_origin, out var o) ? o : null;
+        // C16: by name only; ?sev=9 (or "1,2") isn't a severity, and is ignored like any unknown value.
+        _filter.Classification = EnumNames.OrNull<Classification>(_classification);
+        _filter.Phase = EnumNames.OrNull<CasePhase>(_phase);
+        _filter.MinSeverity = EnumNames.OrNull<Severity>(_minSeverity);
+        _filter.Origin = EnumNames.OrNull<CaseOrigin>(_origin);
         _filter.OutcomeKey = string.IsNullOrEmpty(_outcome) ? null : _outcome;
         _filter.Search = _search;
         _filter.IncludeClosed = _includeClosed;

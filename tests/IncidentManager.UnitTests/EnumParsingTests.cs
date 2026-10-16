@@ -27,7 +27,6 @@ public partial class EnumParsingTests
         ["IncidentManager.Web/Components/Pages/AccessLogPage.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/Admin.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/AdminTemplates.razor"] = 2,
-        ["IncidentManager.Web/Components/Pages/Cases.razor"] = 7,              // ?sev=9 and the like
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseAuditTab.razor"] = 1,
         ["IncidentManager.Web/Components/Pages/CaseTabs/CaseTimelineTab.razor"] = 2,
         ["IncidentManager.Web/Components/Pages/ImprovementActionsPage.razor"] = 1,
