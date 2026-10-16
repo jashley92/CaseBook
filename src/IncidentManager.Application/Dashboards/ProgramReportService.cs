@@ -166,133 +166,26 @@ public sealed class ProgramReportService
         return windows.Select(w => Snapshot(w.StartUtc, w.EndUtc, data)).ToList();
     }
 
-    private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
-        List<ActionRow> Actions, SlaTargets Targets, List<(Guid CaseId, DateTimeOffset At, SlaState State)> Notices, History History,
-        DateTimeOffset NowUtc, Func<DateTimeOffset, SlaTargets> TargetsAt,
-        Dictionary<Guid, List<(DateTimeOffset At, Stamps Before)>>? StampEdits = null)
-    {
-        /// <summary>
-        /// BUG-374: the reported time as the record stood at <paramref name="end"/> (every later change undone, from the
-        /// value its audit entry records as before), so a case made unreported again later (a new jurisdiction) or
-        /// reported again doesn't move a quarter already reported. Unreported then, a report recorded afterwards but
-        /// dated before the end (Legal often reports before it is entered) is that quarter's: the time it settled on.
-        /// BUG-499: likewise every milestone stamp the window reads, so moving a case back into Containment later (which
-        /// clears its resolved time and its "not needed", BUG-229) doesn't move a quarter already reported. Whether
-        /// containment was needed goes with the contained time it was recorded with.
-        /// </summary>
-        public Stamps StampsAt(CaseRow r, DateTimeOffset end)
-        {
-            var now = r.Stamps;
-            // A case filed after the end had no record at the end to rebuild; its times today place it, as before BUG-499
-            // (a detected time filed as "now" and corrected back into the window still counts there).
-            if (r.CreatedAtUtc >= end) return now;
-            if (StampEdits?.GetValueOrDefault(r.Id) is not { Count: > 0 } edits) return now;
-            var i = edits.FindIndex(e => e.At >= end);
-            if (i < 0) return now;
-            var s = edits[i].Before;
-            if (s.ReportedAtUtc is null && Settled(x => x.ReportedAtUtc) is { } rep) s = s with { ReportedAtUtc = rep.ReportedAtUtc };
-            if (s.ContainedAtUtc is null && Settled(x => x.ContainedAtUtc) is { } con)
-                s = s with { ContainedAtUtc = con.ContainedAtUtc, ContainmentNotNeeded = con.ContainmentNotNeeded };
-            if (s.ResolvedAtUtc is null && Settled(x => x.ResolvedAtUtc) is { } res) s = s with { ResolvedAtUtc = res.ResolvedAtUtc };
-            if (s.DetectedAtUtc is null && Settled(x => x.DetectedAtUtc) is { } det) s = s with { DetectedAtUtc = det.DetectedAtUtc };
-            if (s.OccurredAtUtc is null && Settled(x => x.OccurredAtUtc) is { } occ) s = s with { OccurredAtUtc = occ.OccurredAtUtc };
-            return s;
-
-            // Empty at the end: the record as it stood once the stamp was set afterwards (until it was next cleared), when
-            // the time it settled on is before the end.
-            Stamps? Settled(Func<Stamps, DateTimeOffset?> field)
-            {
-                Stamps? settled = null;
-                for (var j = i; j < edits.Count; j++)
-                {
-                    var after = j + 1 < edits.Count ? edits[j + 1].Before : now;
-                    if (field(after) == field(edits[j].Before)) continue;   // an edit to another stamp
-                    if (field(after) is null) break;
-                    settled = after;
-                }
-                return settled is { } st && field(st) < end ? st : null;
-            }
-        }
-    }
-
-    /// <summary>BUG-499: the milestone stamps a window reads, rebuilt together as the record stood at its end.</summary>
-    private sealed record Stamps(DateTimeOffset? OccurredAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc,
-        bool ContainmentNotNeeded, DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc)
-    {
-        /// <summary>BUG-165: a case that didn't need containment has no time to contain and no containment target outcome.</summary>
-        public DateTimeOffset? ContainedIfNeeded => ContainmentNotNeeded ? null : ContainedAtUtc;
-
-        /// <summary>The stamps just before an edit: the fields its audit entry records as before take those values.</summary>
-        public Stamps Before(JsonElement before)
-        {
-            var s = this;
-            if (before.TryGetProperty(nameof(Case.OccurredAtUtc), out var v)) s = s with { OccurredAtUtc = Instant(v) };
-            if (before.TryGetProperty(nameof(Case.DetectedAtUtc), out v)) s = s with { DetectedAtUtc = Instant(v) };
-            if (before.TryGetProperty(nameof(Case.ContainedAtUtc), out v)) s = s with { ContainedAtUtc = Instant(v) };
-            if (before.TryGetProperty(nameof(Case.ContainmentNotNeededReason), out v))
-                s = s with { ContainmentNotNeeded = v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString()) };
-            if (before.TryGetProperty(nameof(Case.ResolvedAtUtc), out v)) s = s with { ResolvedAtUtc = Instant(v) };
-            if (before.TryGetProperty(nameof(Case.ReportedAtUtc), out v)) s = s with { ReportedAtUtc = Instant(v) };
-            return s;
-
-            static DateTimeOffset? Instant(JsonElement e) =>
-                e.ValueKind == JsonValueKind.String && e.TryGetDateTimeOffset(out var t) ? t : null;
-        }
-    }
-
     /// <summary>
-    /// WF-38: each case's phase, classification and severity changes, in order, so a quarter is figured as the record stood
-    /// then (owner's decision: past quarters are frozen). A case reopened and closed again later, or reclassified later,
-    /// no longer changes a quarter the board has already seen.
+    /// Everything a window is figured from, read once. C11: each part reads as it stood at the window's end
+    /// (PeriodHistory): the milestone stamps (BUG-374, BUG-499), the phase / class / severity history with its
+    /// transition-time corrections undone (WF-38, BUG-584), the notices (BUG-585), the reviews (BUG-347, BUG-586), the
+    /// actions (WF-80), the targets (BUG-322) and the attack steps an approximate start is judged by (BUG-583).
     /// </summary>
-    private sealed record History(
-        Dictionary<Guid, List<(CasePhase? From, CasePhase To, DateTimeOffset At)>> Phases,
-        Dictionary<Guid, List<(Classification? From, Classification? To, DateTimeOffset At)>> Classes,
-        Dictionary<Guid, List<(Severity? From, Severity To, DateTimeOffset At)>> Severities)
-    {
-        // A case's closures and reopenings, when the record has them; one closed without a phase change (data from before
-        // phase changes were recorded) is judged by its closed time, as before.
-        private List<(CasePhase? From, CasePhase To, DateTimeOffset At)>? Closures(Guid id) =>
-            Phases.TryGetValue(id, out var ph) && ph.Any(x => x.To == CasePhase.Closed || x.From == CasePhase.Closed) ? ph : null;
-
-        public bool ClosedAt(Guid id, DateTimeOffset t, DateTimeOffset? closedNow) =>
-            Closures(id) is { } ph
-                ? ph.Where(x => x.At < t).Select(x => (CasePhase?)x.To).LastOrDefault() == CasePhase.Closed
-                : closedNow is { } c && c < t;
-
-        public bool ClosedIn(Guid id, DateTimeOffset start, DateTimeOffset end, DateTimeOffset? closedNow) =>
-            Closures(id) is { } ph
-                ? ph.Any(x => x.To == CasePhase.Closed && x.At >= start && x.At < end)
-                : closedNow is { } c && c >= start && c < end;
-
-        public bool EverClosed(Guid id, DateTimeOffset? closedNow) => closedNow is not null || Closures(id) is not null;
-
-        public Classification? ClassAt(Guid id, DateTimeOffset t, Classification? now) =>
-            Classes.TryGetValue(id, out var ch) && ch.Count > 0
-                ? (ch.Any(x => x.At < t) ? ch.Last(x => x.At < t).To : ch[0].From)
-                : now;
-
-        public Severity SevAt(Guid id, DateTimeOffset t, Severity now) =>
-            Severities.TryGetValue(id, out var ch) && ch.Count > 0
-                ? (ch.Any(x => x.At < t) ? ch.Last(x => x.At < t).To : ch[0].From ?? now)
-                : now;
-    }
+    private sealed record Loaded(List<CaseRow> Rows, List<ReviewRow> Reviews, List<ActionRow> Actions, NoticeOutcomeHistory Notices,
+        TransitionHistory History, StampHistory Stamps, AttackHistory Attack, DateTimeOffset NowUtc, Func<DateTimeOffset, SlaTargets> TargetsAt);
 
     private async Task<Loaded> LoadAsync(IAppDbContext db, bool includeExercises, CancellationToken ct)
     {
         var cases = db.Cases.AsNoTracking().ForUser(_user);
         if (!includeExercises) cases = cases.ExcludingExercises();
 
-        var rows = await cases.Select(c => new CaseRow(c.Id, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
+        var rows = await cases.Select(c => new CaseRow(c.Id, c.Classification, c.Severity, c.Phase, c.Origin, c.CreatedAtUtc,
             c.OccurredAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ContainmentNotNeededReason != null, c.ResolvedAtUtc,
             c.ReportedAtUtc, c.ClosedAtUtc, c.IsArchived)).ToListAsync(ct);
         // The child tables filter by a subquery over the same visible cases rather than a list of every id.
         var ids = cases.Select(c => c.Id);
 
-        var breachFirstAt = (await db.ClassificationChanges.AsNoTracking()
-                .Where(x => ids.Contains(x.CaseId) && x.To == Classification.Breach)
-                .Select(x => new { x.CaseId, x.ChangedAtUtc, x.EffectiveAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.Min(x => x.EffectiveAtUtc ?? x.ChangedAtUtc));
         // BUG-324: a review counts once it says what happened (PostIncidentReview.IsRecorded, as the close gate reads it);
         // a stub saved with nothing in it, or only what worked well, isn't a review recorded. BUG-347: dated by when it did.
         var reviews = await ReviewsRecordedAsync(db, ids, ct);
@@ -313,26 +206,11 @@ public sealed class ProgramReportService
             edits.GetValueOrDefault(a.Id.ToString()) ?? [])).ToList();
 
         // BUG-287: each notice given, when it was given and whether inside its window (its kept deadline, WF-77, so a later
-        // change to a rule's window or to the materiality decision doesn't move a past quarter), when deadlines are tracked.
-        var notices = new List<(Guid CaseId, DateTimeOffset At, SlaState State)>();
-        if (_notify?.Current is { Enabled: true } nd && _rules is not null)
-        {
-            var ruleSet = await _rules.LoadRuleSetAsync(nd.DefaultWindowHours, ct);
-            notices = await NotificationDeadlineService.NoticeOutcomesAsync(db, cases, nd, ruleSet, _clock.UtcNow, ct);
-        }
-
-        // WF-38: the history each quarter is figured from (effective times, as the record dates them). WF-97: in the order
-        // it was recorded, which is the order the states followed each other: a change dated before the case was filed
-        // (allowed) sorted by its date put the opening row after it, and the case read as never closed.
-        var phases = (await db.StatusChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
-                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => ((CasePhase?)x.From, x.To, x.At)).ToList());
-        var classes = (await db.ClassificationChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
-                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => (x.From, (Classification?)x.To, x.At)).ToList());
-        var severities = (await db.SeverityChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
-                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc, x.ChangedAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.ChangedAtUtc).Select(x => ((Severity?)x.From, x.To, x.At)).ToList());
+        // change to a rule's window or to the materiality decision doesn't move a past quarter). BUG-585: as each stood at a
+        // window's end, and whether or not deadlines are tracked today; only notices without a kept deadline need the rules.
+        var nd = _notify?.Current;
+        var ruleSet = nd is { Enabled: true } && _rules is not null ? await _rules.LoadRuleSetAsync(nd.DefaultWindowHours, ct) : null;
+        var notices = await NotificationDeadlineService.NoticeHistoryAsync(db, cases, nd, ruleSet, _clock.UtcNow, ct);
 
         // BUG-322: each milestone is judged against the targets in force when it was reached (rebuilt from the audited
         // setting changes; the server's own values where the app overrode none). Without the server's values to fall back
@@ -344,49 +222,22 @@ public sealed class ProgramReportService
             var history = await SlaTargetHistory.LoadAsync(db, server.ValueOf, ct);
             targetsAt = history.At;
         }
-        return new Loaded(rows, breachFirstAt, reviews, actions, current, notices, new History(phases, classes, severities), _clock.UtcNow,
-            targetsAt, await StampEditsAsync(db, rows, ct));
+        return new Loaded(rows, reviews, actions, notices, await TransitionHistory.LoadAsync(db, ids, ct),
+            await StampHistory.LoadAsync(db, rows.Select(r => (r.Id, r.CreatedAtUtc, r.Stamps)).ToList(), ct),
+            await AttackHistory.LoadAsync(db, cases, withTrails: true, ct), _clock.UtcNow, targetsAt);
     }
 
-    /// <summary>BUG-374, BUG-499: each case's changes to its milestone stamps, oldest first, each with the stamps as they
-    /// stood just before it (rebuilt from today's, undoing the edits newest first). One read for every case.</summary>
-    private static async Task<Dictionary<Guid, List<(DateTimeOffset At, Stamps Before)>>> StampEditsAsync(IAppDbContext db,
-        List<CaseRow> rows, CancellationToken ct)
+    /// <summary>
+    /// BUG-586: a review as its trail records it: when "What happened" was first filled in, and whether it said what happened
+    /// at any instant, so one cleared later still counts in the quarters it was recorded in.
+    /// </summary>
+    private sealed record ReviewRow(Guid CaseId, DateTimeOffset At, bool FilledBefore, List<(DateTimeOffset At, bool Filled)> Changes)
     {
-        var keys = rows.Select(r => r.Id.ToString()).ToList();
-        static string F(string name) => "\"" + name + "\"";
-        var (occurred, detected, contained) = (F(nameof(Case.OccurredAtUtc)), F(nameof(Case.DetectedAtUtc)), F(nameof(Case.ContainedAtUtc)));
-        var (notNeeded, resolved, reported) = (F(nameof(Case.ContainmentNotNeededReason)), F(nameof(Case.ResolvedAtUtc)), F(nameof(Case.ReportedAtUtc)));
-        var edits = await db.AuditLog.AsNoTracking()
-            .Where(x => x.EntityType == nameof(Case) && x.Action == AuditAction.Update && x.BeforeJson != null
-                        && (x.BeforeJson.Contains(occurred) || x.BeforeJson.Contains(detected) || x.BeforeJson.Contains(contained)
-                            || x.BeforeJson.Contains(notNeeded) || x.BeforeJson.Contains(resolved) || x.BeforeJson.Contains(reported))
-                        && x.EntityId != null && keys.Contains(x.EntityId))
-            .Select(x => new { x.EntityId, x.AtUtc, x.Sequence, x.BeforeJson })
-            .ToListAsync(ct);
-        var byId = rows.ToDictionary(r => r.Id);
-        var map = new Dictionary<Guid, List<(DateTimeOffset At, Stamps Before)>>();
-        foreach (var g in edits.GroupBy(x => x.EntityId!, StringComparer.OrdinalIgnoreCase))
+        public bool FilledAt(DateTimeOffset t)
         {
-            if (!Guid.TryParse(g.Key, out var id) || !byId.TryGetValue(id, out var row)) continue;
-            var list = new List<(DateTimeOffset At, Stamps Before)>();
-            var stamps = row.Stamps;
-            foreach (var x in g.OrderByDescending(x => x.Sequence))
-            {
-                try
-                {
-                    using var doc = JsonDocument.Parse(x.BeforeJson!);
-                    if (doc.RootElement.ValueKind != JsonValueKind.Object) continue;
-                    var before = stamps.Before(doc.RootElement);
-                    if (before == stamps) continue;   // none of the stamps moved (another field, or a new "not needed" reason)
-                    list.Add((x.AtUtc, stamps = before));
-                }
-                catch (JsonException) { /* an entry it can't read is skipped */ }
-            }
-            list.Reverse();
-            if (list.Count > 0) map[id] = list;
+            var i = Changes.FindLastIndex(c => c.At < t);
+            return i >= 0 ? Changes[i].Filled : FilledBefore;
         }
-        return map;
     }
 
     /// <summary>
@@ -396,8 +247,7 @@ public sealed class ProgramReportService
     /// and what seeded rows are dated by. A review from before the trail is dated by CreatedAtUtc when it was already
     /// filled in then, or by the edit that filled it. One never filled in isn't counted.
     /// </summary>
-    private static async Task<List<(Guid CaseId, DateTimeOffset At)>> ReviewsRecordedAsync(IAppDbContext db,
-        IQueryable<Guid> caseIds, CancellationToken ct)
+    private static async Task<List<ReviewRow>> ReviewsRecordedAsync(IAppDbContext db, IQueryable<Guid> caseIds, CancellationToken ct)
     {
         var rows = await db.PostIncidentReviews.AsNoTracking().Where(r => caseIds.Contains(r.CaseId))
             .Select(r => new { r.Id, r.CaseId, r.CreatedAtUtc, Recorded = r.WhatHappened != null && r.WhatHappened.Trim() != "" })
@@ -416,18 +266,20 @@ public sealed class ProgramReportService
             .GroupBy(a => a.EntityId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.OrderBy(a => a.Sequence).ToList(), StringComparer.OrdinalIgnoreCase);
 
-        var list = new List<(Guid CaseId, DateTimeOffset At)>();
+        var list = new List<ReviewRow>();
         foreach (var r in rows)
         {
-            if (!r.Recorded) continue;   // filled in once and cleared since: not a review recorded (BUG-324)
-            DateTimeOffset? at;
-            if (!trails.TryGetValue(r.Id.ToString(), out var trail)) at = r.Recorded ? r.CreatedAtUtc : null;
-            else if (trail[0].Action == AuditAction.Create || !Filled(trail[0].BeforeJson))
-                at = trail.FirstOrDefault(a => Filled(a.AfterJson)) is { } first
-                    ? (first.Action == AuditAction.Create ? r.CreatedAtUtc : first.AtUtc)
-                    : null;
-            else at = r.CreatedAtUtc;   // filled in before the trail began
-            if (at is { } t) list.Add((r.CaseId, t));
+            // Before the trail, a review from before it held what it holds now; with one, what its first entry found.
+            if (!trails.TryGetValue(r.Id.ToString(), out var trail))
+            {
+                if (r.Recorded) list.Add(new ReviewRow(r.CaseId, r.CreatedAtUtc, true, []));
+                continue;
+            }
+            var before = trail[0].Action != AuditAction.Create && Filled(trail[0].BeforeJson);
+            var changes = trail.Select(a => (a.Action == AuditAction.Create ? r.CreatedAtUtc : a.AtUtc, Filled(a.AfterJson))).ToList();
+            DateTimeOffset? at = before ? r.CreatedAtUtc   // filled in before the trail began
+                : changes.FindIndex(c => c.Item2) is var i and >= 0 ? changes[i].Item1 : null;
+            if (at is { } t) list.Add(new ReviewRow(r.CaseId, t, before, changes));
         }
         return list;
     }
@@ -446,12 +298,12 @@ public sealed class ProgramReportService
         catch (JsonException) { return false; }
     }
 
-    private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
+    private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase, CaseOrigin Origin,
         DateTimeOffset CreatedAtUtc, DateTimeOffset? OccurredAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc,
         bool ContainmentNotNeeded, DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc, DateTimeOffset? ClosedAtUtc, bool IsArchived)
     {
         /// <summary>The milestone stamps as they are today.</summary>
-        public Stamps Stamps => new(OccurredAtUtc, DetectedAtUtc, ContainedAtUtc, ContainmentNotNeeded, ResolvedAtUtc, ReportedAtUtc);
+        public CaseStamps Stamps => new(OccurredAtUtc, DetectedAtUtc, ContainedAtUtc, ContainmentNotNeeded, ResolvedAtUtc, ReportedAtUtc);
     }
 
     private sealed record ActionRow(DateTimeOffset CreatedAtUtc, DateTimeOffset? ClosedAtUtc, ImprovementActionStatus Status,
@@ -486,12 +338,14 @@ public sealed class ProgramReportService
     // Everything is computed in memory: DateTimeOffset comparison and arithmetic stay off SQLite (F-08).
     private static ProgramSnapshot Snapshot(DateTimeOffset start, DateTimeOffset end, Loaded data)
     {
-        var (rows, breachAt, reviews, actions, targets) = (data.Rows, data.BreachAt, data.Reviews, data.Actions, data.Targets);
+        var (rows, reviews, actions) = (data.Rows, data.Reviews, data.Actions);
         var history = data.History;
         bool In(DateTimeOffset? t) => t is { } v && v >= start && v < end;
         // BUG-374, BUG-499: the milestone stamps as the record stood at the window's end.
-        var stamps = rows.ToDictionary(r => r.Id, r => data.StampsAt(r, end));
+        var stamps = rows.ToDictionary(r => r.Id, r => data.Stamps.At(r.Id, end));
         var reportedAt = stamps.Values.Select(s => (s.DetectedAtUtc, Reported: s.ReportedAtUtc)).ToList();
+        // ST-04 / BUG-583: nothing is measured from an approximate start (as the case's steps stood at the end).
+        var approximate = data.Attack.ApproximateStarts(end, rows.ToDictionary(r => r.Id, r => r.Origin), id => stamps[id].OccurredAtUtc);
         // WF-38: as the record stood at the quarter's end.
         bool ClosedInQuarter(CaseRow r) => history.ClosedIn(r.Id, start, end, r.ClosedAtUtc);
         Classification? ClassAtEnd(CaseRow r) => history.ClassAt(r.Id, end, r.Classification);
@@ -515,38 +369,32 @@ public sealed class ProgramReportService
         foreach (var r in rows)
         {
             var s = stamps[r.Id];
-            var contained = s.ContainedIfNeeded;
             // WF-76: judged on the severity and classification the case had at the quarter's end, as it's bucketed, so a
-            // later raise doesn't turn a past quarter's Met into Missed.
-            // BUG-322: and against the target in force when it was contained, resolved or detected.
-            var cont = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, s.DetectedAtUtc, contained, s.ResolvedAtUtc,
-                data.TargetsAt(contained ?? end), end, ClassAtEnd(r)).Containment;
-            var res = SlaPolicy.Breakdown(SevAtEnd(r), r.Phase, s.DetectedAtUtc, contained, s.ResolvedAtUtc,
-                data.TargetsAt(s.ResolvedAtUtc ?? end), end, ClassAtEnd(r)).Resolution;
-            if (In(contained) && cont.State is SlaState.Met or SlaState.Missed)
+            // later raise doesn't turn a past quarter's Met into Missed. BUG-322: against the target in force when it was
+            // reached. BUG-583: detection not from an approximate start.
+            var sev = SevAtEnd(r);
+            var (cont, res, det) = PeriodSla.Judge(sev, ClassAtEnd(r), r.Phase, s, data.TargetsAt, end, approximate.Contains(r.Id));
+            if (In(s.ContainedIfNeeded) && cont.State is SlaState.Met or SlaState.Missed)
             {
                 var met = cont.State == SlaState.Met;
                 if (met) cMet++; else cMiss++;
-                var sev = SevAtEnd(r);
                 var (sm, sx) = bySeverity.GetValueOrDefault(sev);
                 bySeverity[sev] = met ? (sm + 1, sx) : (sm, sx + 1);
             }
             if (In(s.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
-            if (In(s.DetectedAtUtc))
-            {
-                var det = SlaPolicy.EvaluateDetection(SevAtEnd(r), s.OccurredAtUtc, s.DetectedAtUtc, data.TargetsAt(s.DetectedAtUtc ?? end));
-                if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMiss++;
-            }
+            if (In(s.DetectedAtUtc)) { if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMiss++; }
         }
 
-        // BUG-287: the notices given in the quarter, each judged on its own.
-        foreach (var n in data.Notices.Where(n => In(n.At)))
+        // BUG-287: the notices given in the quarter, each judged on its own; BUG-585: as they stood at its end.
+        foreach (var n in data.Notices.At(end).Where(n => In(n.NotifiedAtUtc)))
             if (n.State == SlaState.Met) nMet++; else nMiss++;
 
         actions = actions.Where(a => a.CreatedAtUtc < end).Select(a => a.At(end)).ToList();   // WF-80: as they stood at the end
         var openAtEnd = actions.Where(a => a.CreatedAtUtc < end && (a.ClosedAtUtc is null || a.ClosedAtUtc >= end)).ToList();
         // REV-59: a review recorded by the end of the quarter, so one recorded later doesn't change a quarter already reported.
-        var reviewed = reviews.Where(r => r.At < end).Select(r => r.CaseId).ToHashSet();
+        // BUG-586: and still saying what happened then, so one cleared later doesn't either.
+        var standing = reviews.Where(r => r.FilledAt(end)).ToList();
+        var reviewed = standing.Where(r => r.At < end).Select(r => r.CaseId).ToHashSet();
 
         static List<CountBy<string>> Areas(IEnumerable<ActionRow> list) => list
             .GroupBy(a => string.IsNullOrWhiteSpace(a.RelatedArea) ? "Unspecified" : a.RelatedArea.Trim(), StringComparer.OrdinalIgnoreCase)
@@ -564,14 +412,14 @@ public sealed class ProgramReportService
                 .Select(g => new CountBy<Classification?>(g.Key, g.Count())).OrderBy(x => x.Key is null ? -1 : (int)x.Key).ToList(),
             OpenedBySeverity: opened.GroupBy(SevAtEnd)
                 .Select(g => new CountBy<Severity>(g.Key, g.Count())).OrderByDescending(x => x.Key).ToList(),
-            TimeToDetect: Span(stamps.Values.Select(s => (s.OccurredAtUtc, s.DetectedAtUtc))),
+            TimeToDetect: Span(stamps.Where(kv => !approximate.Contains(kv.Key)).Select(kv => (kv.Value.OccurredAtUtc, kv.Value.DetectedAtUtc))),
             TimeToContain: Span(stamps.Values.Select(s => (s.DetectedAtUtc, s.ContainedIfNeeded))),
             TimeToResolve: Span(stamps.Values.Select(s => (s.DetectedAtUtc, s.ResolvedAtUtc))),
             Sla: [new(SlaClock.Detection, dMet, dMiss), new(SlaClock.Containment, cMet, cMiss), new(SlaClock.Resolution, rMet, rMiss)],
-            BreachesOpened: breachAt.Values.Count(t => In(t)),
+            BreachesOpened: history.EverBreach.Count(id => In(history.BreachAt(id, end))),
             ReportedToRegulators: reportedAt.Count(r => In(r.Reported)),
             DetectToReport: Span(reportedAt),
-            ReviewsRecorded: reviews.Count(r => In(r.At)),
+            ReviewsRecorded: standing.Count(r => In(r.At)),
             ActionsOpened: actions.Count(a => In(a.CreatedAtUtc)),
             ActionsCompleted: actions.Count(a => a.Status == ImprovementActionStatus.Completed && In(a.ClosedAtUtc)),
             ActionsNotPursued: actions.Count(a => a.Status == ImprovementActionStatus.NotPursued && In(a.ClosedAtUtc)),

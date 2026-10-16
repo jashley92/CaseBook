@@ -69,22 +69,27 @@ public sealed class AttackCoverageService
 
         var caseRows = await q.Select(c => new { c.Id, c.CaseNumber, c.Title, c.DetectedAtUtc, c.CreatedAtUtc, c.Origin }).ToListAsync(ct);
         var thirdParty = caseRows.Where(c => c.Origin == CaseOrigin.ThirdParty).Select(c => c.Id).ToHashSet();
+        // BUG-587 (owner's decision): a window that has ended freezes at its end: the detected time, the steps and the tags
+        // as they stood then (Dashboards.AttackHistory), so a past quarter's top techniques don't follow later edits. A
+        // window still running reads as today.
+        var asOf = until ?? DateTimeOffset.MaxValue;
+        var frozen = until is { } u && u <= _clock.UtcNow;
+        var history = await Dashboards.AttackHistory.LoadAsync(db, q, withTrails: frozen, ct);
+        var detected = frozen
+            ? await Dashboards.StampHistory.LoadAsync(db, caseRows.Select(c => (c.Id, c.CreatedAtUtc,
+                new Dashboards.CaseStamps(null, c.DetectedAtUtc, null, false, null, null))).ToList(), ct)
+            : null;
+        DateTimeOffset? DetectedAt(Guid id, DateTimeOffset? today) => detected is null ? today : detected.At(id, asOf).DetectedAtUtc;
         // Window filter in memory: DateTimeOffset comparison stays off SQLite (F-08).
         var inPeriod = caseRows
-            .Where(c => (since is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) >= since)
-                        && (until is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) < until))
+            .Where(c => (since is null || (DetectedAt(c.Id, c.DetectedAtUtc) ?? c.CreatedAtUtc) >= since)
+                        && (until is null || (DetectedAt(c.Id, c.DetectedAtUtc) ?? c.CreatedAtUtc) < until))
             .ToDictionary(c => c.Id, c => new CoverageCase(c.Id, c.CaseNumber, c.Title));
-        // Tags come back for every visible case (a subquery, not a list of ids) and are narrowed to the window here.
-        var ids = q.Select(c => c.Id);
 
-        var tags = (await db.CaseTechniques.AsNoTracking()
-            .Where(t => ids.Contains(t.CaseId))
-            .Select(t => new { t.CaseId, t.TechniqueId, t.Tactic })
-            .ToListAsync(ct)).Where(t => inPeriod.ContainsKey(t.CaseId)).ToList();
-        var steps = (await db.TimelineEntries.AsNoTracking()
-            .Where(e => ids.Contains(e.CaseId) && e.Kind == TimelineKind.Event && e.IsCurrent)   // BUG-413: not retracted
+        var tags = history.TagsAt(asOf).Where(t => inPeriod.ContainsKey(t.CaseId)).ToList();
+        var steps = history.StepsAt(asOf).Where(g => inPeriod.ContainsKey(g.Key)).SelectMany(g => g)   // BUG-413: not retracted
             .Select(e => new { e.CaseId, e.TechniqueId, e.Environment, Tactics = e.Tactics.Select(x => x.Tactic).ToList() })
-            .ToListAsync(ct)).Where(e => inPeriod.ContainsKey(e.CaseId)).ToList();
+            .ToList();
 
         // Flatten every observation to (case, tactic, technique?, at a vendor?) — a tactic-only step still lights its
         // column. On a third-party case a tag, or a step not marked as in our environment, was seen at the vendor.

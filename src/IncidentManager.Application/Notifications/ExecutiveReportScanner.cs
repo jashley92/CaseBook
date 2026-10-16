@@ -45,7 +45,9 @@ public sealed class ExecutiveReportScanner(
     IExecutiveReportTracker tracker,
     IClock clock,
     IOrganizationTimeZone? zone = null,
-    IServerSettingValues? server = null)
+    IServerSettingValues? server = null,
+    Compliance.INotificationDeadlineSettingsProvider? notify = null,
+    Admin.NotificationRuleService? rules = null)
 {
     /// <summary>How many days into a new quarter the previous quarter's report may still go out.</summary>
     public const int SendWindowDays = 7;
@@ -69,7 +71,7 @@ public sealed class ExecutiveReportScanner(
         {
             var viewer = new ReportViewer();
             var program = new ProgramReportService(factory, viewer, clock, sla, new AttackCoverageService(factory, viewer, clock), zone,
-                server: server);   // BUG-322: the email's SLA figures as the program report's
+                notify, rules, server);   // BUG-322, BUG-585: the email's SLA and notice figures as the program report's
             var report = await program.BuildAsync(period, includeExercises: false, ct);
             await notifications.OnExecutiveReportAsync(report, ct);
         }

@@ -99,12 +99,14 @@ public sealed class DashboardService
     private readonly Compliance.INotificationDeadlineSettingsProvider _notify;
     private readonly Admin.NotificationRuleService _rules;
     private readonly IOrganizationTimeZone? _zone;
+    private readonly IServerSettingValues? _server;
 
     public DashboardService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
         Sla.ISlaTargetsProvider sla, Compliance.INotificationDeadlineSettingsProvider notify,
-        Admin.NotificationRuleService rules, IOrganizationTimeZone? zone = null)
+        Admin.NotificationRuleService rules, IOrganizationTimeZone? zone = null, IServerSettingValues? server = null)
     {
         _zone = zone;
+        _server = server;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -148,17 +150,12 @@ public sealed class DashboardService
             .Select(p => (Phase: p, Count: openScan.Count(c => c.Phase == p))).ToList();
         await openScan.RunAsync(open, ct);
 
+        // BUG-588 (owner's decision): historical compliance judges each milestone as the program report judged it in the
+        // quarter it was reached (PeriodSla): on the severity and class the case had at that quarter's end, against the
+        // targets in force when it was reached, and not the detection clock from an approximate start (BUG-583).
+        var (cMet, cMissed, rMet, rMissed, dMet, dMissed) = await AllTimeSlaAsync(db, cases, slaTargets, ct);
+
         var historyScan = new OneScan<Case>();
-        // Missed = judged (reached, with a target) − met: one elapsed-time calculation per clock per row, not two.
-        (Func<int> Met, Func<int> Missed) MetMissed(Sla.SlaClock clock)
-        {
-            var met = historyScan.Count(Sla.SlaQueries.Reached(clock, met: true, slaTargets));
-            var judged = historyScan.Count(Sla.SlaQueries.Judged(clock, slaTargets));
-            return (met, () => judged() - met());
-        }
-        var (cMet, cMissed) = MetMissed(Sla.SlaClock.Containment);
-        var (rMet, rMissed) = MetMissed(Sla.SlaClock.Resolution);
-        var (dMet, dMissed) = MetMissed(Sla.SlaClock.Detection);
         // Mean time-to-contain / resolve over cases that reached those milestones.
         // BUG-165: a case that didn't need containment isn't in time-to-contain.
         var meanToContainTicks = historyScan.Average(c => c.ContainedAtUtc != null && c.DetectedAtUtc != null && c.ContainmentNotNeededReason == null
@@ -208,13 +205,60 @@ public sealed class DashboardService
         return new DashboardMetrics(
             openCount(), breaches(), incidents(), adverse(), internalOrigin(), thirdParty(), legalReferred, overdue,
             slaAtRisk(), slaBreached(),
-            cMet(), cMissed(), rMet(), rMissed(), dMet(), dMissed(),
+            cMet, cMissed, rMet, rMissed, dMet, dMissed,
             meanToContain, meanToResolve,
             ndSettings.Enabled, notifyAwaiting, notifyAtRisk, notifyBreached, meanHoursToReport,
             byPhase.OrderBy(p => p.Phase).ToList(),
             trend,
             Admin.SettingsCatalog.TimeZoneLabel(_zone?.Current ?? TimeZoneInfo.Utc),
             breachesAtVendor());
+    }
+
+    /// <summary>
+    /// BUG-588: met and missed per clock over every visible case that reached a milestone, each judged as the program
+    /// report's quarter it was reached in judges it (PeriodSla, PeriodHistory.QuarterEnd), so the two agree. Loads only the
+    /// cases with a milestone; the judging is in memory (DateTimeOffset arithmetic stays off SQLite, F-08).
+    /// </summary>
+    private async Task<(int CMet, int CMissed, int RMet, int RMissed, int DMet, int DMissed)> AllTimeSlaAsync(IAppDbContext db,
+        IQueryable<Case> cases, Sla.SlaTargets current, CancellationToken ct)
+    {
+        var reached = cases.Where(c => c.Severity != Severity.Informational && c.DetectedAtUtc != null
+                                       && (c.ContainedAtUtc != null || c.ResolvedAtUtc != null || c.OccurredAtUtc != null));
+        var rows = await reached.Select(c => new
+        {
+            c.Id, c.Severity, c.Classification, c.Phase, c.Origin,
+            c.OccurredAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, NotNeeded = c.ContainmentNotNeededReason != null, c.ResolvedAtUtc
+        }).ToListAsync(ct);
+        if (rows.Count == 0) return default;
+        var history = await TransitionHistory.LoadAsync(db, reached.Select(c => c.Id), ct);
+        Func<DateTimeOffset, Sla.SlaTargets> targetsAt = _ => current;
+        if (_server is { } server) targetsAt = (await Sla.SlaTargetHistory.LoadAsync(db, server.ValueOf, ct)).At;
+        var occurred = rows.ToDictionary(r => r.Id, r => r.OccurredAtUtc);
+        var approximate = (await AttackHistory.LoadAsync(db, reached.Where(c => c.OccurredAtUtc != null), withTrails: false, ct))
+            .ApproximateStarts(DateTimeOffset.MaxValue, rows.ToDictionary(r => r.Id, r => r.Origin), id => occurred.GetValueOrDefault(id));
+        var zone = _zone?.Current ?? TimeZoneInfo.Utc;
+
+        int cMet = 0, cMissed = 0, rMet = 0, rMissed = 0, dMet = 0, dMissed = 0;
+        foreach (var r in rows)
+        {
+            var stamps = new CaseStamps(r.OccurredAtUtc, r.DetectedAtUtc, r.ContainedAtUtc, r.NotNeeded, r.ResolvedAtUtc, null);
+            (Sla.SlaStatus C, Sla.SlaStatus R, Sla.SlaStatus D) JudgedIn(DateTimeOffset reachedAt)
+            {
+                var end = PeriodHistory.QuarterEnd(reachedAt, zone);
+                return PeriodSla.Judge(history.SevAt(r.Id, end, r.Severity), history.ClassAt(r.Id, end, r.Classification), r.Phase,
+                    stamps, targetsAt, end, approximate.Contains(r.Id));
+            }
+            if (stamps.ContainedIfNeeded is { } contained) Count(JudgedIn(contained).C.State, ref cMet, ref cMissed);
+            if (stamps.ResolvedAtUtc is { } resolved) Count(JudgedIn(resolved).R.State, ref rMet, ref rMissed);
+            if (stamps.DetectedAtUtc is { } detected) Count(JudgedIn(detected).D.State, ref dMet, ref dMissed);
+        }
+        return (cMet, cMissed, rMet, rMissed, dMet, dMissed);
+
+        static void Count(Sla.SlaState state, ref int met, ref int missed)
+        {
+            if (state == Sla.SlaState.Met) met++;
+            else if (state == Sla.SlaState.Missed) missed++;
+        }
     }
 
     /// <summary>
@@ -270,14 +314,16 @@ public sealed class DashboardService
         // be lowered, BUG-107). So a case touched by a closure in the window comes with its closure and class history.
         var spans = await cases
             .Where(c => c.CreatedAtUtc >= windowStart || c.ClosedAtUtc >= windowStart
-                        || c.StatusChanges.Any(s => (s.To == CasePhase.Closed || s.From == CasePhase.Closed) && s.ChangedAtUtc >= windowStart))
+                        || c.StatusChanges.Any(s => (s.To == CasePhase.Closed || s.From == CasePhase.Closed) && s.ChangedAtUtc >= windowStart)
+                        || c.TimeCorrections.Any(x => x.CreatedAtUtc >= windowStart))   // BUG-584: a close re-dated since
             .Select(c => new
             {
                 c.Id, c.CreatedAtUtc, c.ClosedAtUtc, c.Classification, c.IsArchived,
                 Closures = c.StatusChanges.Where(s => s.To == CasePhase.Closed || s.From == CasePhase.Closed)
-                    .Select(s => new { s.To, At = s.EffectiveAtUtc ?? s.ChangedAtUtc, s.ChangedAtUtc }).ToList(),
+                    .Select(s => new PhaseChangeRow(s.Id, s.CaseId, s.From, s.To, s.EffectiveAtUtc ?? s.ChangedAtUtc, s.ChangedAtUtc)).ToList(),
                 Classes = c.ClassificationChanges
-                    .Select(s => new { s.From, s.To, At = s.EffectiveAtUtc ?? s.ChangedAtUtc, s.ChangedAtUtc }).ToList(),
+                    .Select(s => new ClassChangeRow(s.Id, s.CaseId, s.From, s.To, s.EffectiveAtUtc ?? s.ChangedAtUtc, s.ChangedAtUtc)).ToList(),
+                Corrections = c.TimeCorrections.Select(x => new CorrectionRow(x.ChangeId, x.FromEffectiveUtc, x.CreatedAtUtc)).ToList(),
             })
             .ToListAsync(ct);
         var inSpans = spans.Select(s => s.Id).ToList();
@@ -286,20 +332,10 @@ public sealed class DashboardService
                                                       && !inSpans.Contains(c.Id), ct);
 
         // In recording order (WF-97): the order the states followed each other, whatever dates they carry.
-        var history = spans.ToDictionary(s => s.Id, s => (
-            Closures: s.Closures.OrderBy(x => x.ChangedAtUtc).Select(x => (Closed: x.To == CasePhase.Closed, x.At)).ToList(),
-            Classes: s.Classes.OrderBy(x => x.ChangedAtUtc).Select(x => (x.From, To: (Classification?)x.To, x.At)).ToList()));
-        bool ClosedAt(Guid id, DateTimeOffset? closedNow, DateTimeOffset t) =>
-            history[id].Closures is { Count: > 0 } h
-                ? h.Where(x => x.At < t).Select(x => (bool?)x.Closed).LastOrDefault() == true
-                : closedNow is { } c && c < t;
-        List<DateTimeOffset> ClosedTimes(Guid id, DateTimeOffset? closedNow) =>
-            history[id].Closures is { Count: > 0 } h ? h.Where(x => x.Closed).Select(x => x.At).ToList()
-            : closedNow is { } c ? [c] : [];
-        Classification? ClassAt(Guid id, Classification? now, DateTimeOffset t) =>
-            history[id].Classes is { Count: > 0 } h
-                ? (h.Any(x => x.At <= t) ? h.Last(x => x.At <= t).To : h[0].From)
-                : now;
+        // BUG-584: each month as the record stood at its end, with the transition-time corrections made since undone.
+        var history = new TransitionHistory(spans.SelectMany(s => s.Closures), spans.SelectMany(s => s.Classes), [],
+            spans.SelectMany(s => s.Corrections));
+        bool ClosedAt(Guid id, DateTimeOffset? closedNow, DateTimeOffset t) => history.ClosedAt(id, t, closedNow);
 
         int OpenAt(DateTimeOffset t) => carriedOpen
             + spans.Count(s => s.CreatedAtUtc < t && !ClosedAt(s.Id, s.ClosedAtUtc, t) && !(s.ClosedAtUtc is null && s.IsArchived));
@@ -308,11 +344,11 @@ public sealed class DashboardService
         {
             var (start, end) = (bounds[i], bounds[i + 1]);
             var opened = spans.Where(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end).ToList();
-            var closed = spans.SelectMany(s => ClosedTimes(s.Id, s.ClosedAtUtc).Where(c => c >= start && c < end)
-                    .Take(1).Select(c => ClassAt(s.Id, s.Classification, c)))
+            var closed = spans.SelectMany(s => history.ClosedTimes(s.Id, end, s.ClosedAtUtc).Where(c => c >= start && c < end)
+                    .Take(1).Select(c => history.ClassAt(s.Id, c, s.Classification, inclusive: true, asOf: end)))
                 .ToList();
             return new TrendPoint(monthStarts[i].Year, monthStarts[i].Month, opened.Count, closed.Count, OpenAt(end),
-                OpenAt(start), ClassificationCounts.Of(opened.Select(s => ClassAt(s.Id, s.Classification, end))),
+                OpenAt(start), ClassificationCounts.Of(opened.Select(s => history.ClassAt(s.Id, end, s.Classification, inclusive: true))),
                 ClassificationCounts.Of(closed));
         }).ToList();
     }

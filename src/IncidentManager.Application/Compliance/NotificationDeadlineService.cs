@@ -316,32 +316,86 @@ public sealed class NotificationDeadlineService
     /// play later doesn't move them. BUG-375: a notice with a kept deadline is judged on its own, so one given in a past
     /// quarter stays counted when the trigger is later withdrawn (materiality taken back, the Breach reclassified) or its
     /// jurisdiction leaves play; only a notice from before deadlines were kept is judged through today's clock.
+    /// Today's notices; <see cref="NoticeHistoryAsync"/> gives them as they stood at any instant.
     /// </summary>
     public static async Task<List<(Guid CaseId, DateTimeOffset NotifiedAtUtc, SlaState State)>> NoticeOutcomesAsync(
         IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings, NotificationRuleSet ruleSet,
-        DateTimeOffset now, CancellationToken ct = default)
-    {
-        var result = new List<(Guid, DateTimeOffset, SlaState)>();
-        // Compared in memory: DateTimeOffset comparison stays off SQLite (F-08).
-        var kept = await cases.SelectMany(c => c.JurisdictionNotices).Where(n => n.DueAtUtc != null)
-            .Select(n => new { n.CaseId, n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc }).ToListAsync(ct);
-        // BUG-456: a legacy "NY;CA" notice now keeps a deadline too; it counts once for each code it names, as it did through
-        // today's clock before it had one, and a code's own notice wins over it (BUG-428).
-        var judged = new HashSet<(Guid, string)>();
-        foreach (var g in kept.GroupBy(n => n.CaseId))
-            foreach (var (code, (at, due)) in Case.ByNoticeCode(g.Select(n => (n.Jurisdiction, (n.NotifiedAtUtc, n.DueAtUtc!.Value)))))
-            {
-                result.Add((g.Key, at, at <= due ? SlaState.Met : SlaState.Missed));
-                judged.Add((g.Key, code.ToUpperInvariant()));
-            }
+        DateTimeOffset now, CancellationToken ct = default) =>
+        (await NoticeHistoryAsync(db, cases, settings, ruleSet, now, ct)).At(DateTimeOffset.MaxValue);
 
-        foreach (var reported in new[] { true, false })
-            foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
-                foreach (var s in statuses)
-                    if (s.State is SlaState.Met or SlaState.Missed && s.NotifiedAtUtc is { } at
-                        && !judged.Contains((id, s.JurisdictionCode.ToUpperInvariant())))
-                        result.Add((id, at, s.State));
-        return result;
+    /// <summary>
+    /// BUG-585: the notice outcomes of <see cref="NoticeOutcomesAsync"/> as they stood at any instant, so a past quarter
+    /// doesn't follow today's notices: a notice removed later (a mis-entry, or every notice cleared) still counts in the
+    /// quarter it was given, and one re-dated later keeps the time it had. A notice entered afterwards but dated before
+    /// the instant counts there by its date, as a report does (BUG-374). Kept-deadline notices are judged whether or not
+    /// deadlines are tracked today (they were judged when they were given); only the few without a kept deadline need
+    /// today's clock, so they're judged only when <paramref name="settings"/> is on and the rules are given.
+    /// </summary>
+    public static async Task<NoticeOutcomeHistory> NoticeHistoryAsync(IAppDbContext db, IQueryable<Case> cases,
+        NotificationDeadlineSettings? settings, NotificationRuleSet? ruleSet, DateTimeOffset now, CancellationToken ct = default)
+    {
+        // Compared in memory: DateTimeOffset comparison stays off SQLite (F-08).
+        var today = await cases.SelectMany(c => c.JurisdictionNotices)
+            .Select(n => new NoticeOutcomeHistory.Notice(n.Id, n.CaseId, n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc, n.CreatedAtUtc, null))
+            .ToListAsync(ct);
+        var todayIds = today.Select(n => n.Id).ToHashSet();
+        var visible = (await cases.Select(c => c.Id).ToListAsync(ct)).ToHashSet();
+        var trails = await Dashboards.PeriodHistory.TrailsAsync(db, nameof(JurisdictionNotice), today.Select(n => n.Id.ToString()).ToList(),
+            deletes: true, ct);
+        // A notice deleted since: its delete's before-image, when it was on a visible case.
+        var deleted = new List<NoticeOutcomeHistory.Notice>();
+        foreach (var (key, trail) in trails)
+            if (trail.FirstOrDefault(x => x.Action == AuditAction.Delete) is { } del && Guid.TryParse(key, out var id)
+                && !todayIds.Contains(id) && DeletedNotice(id, del) is { } n && visible.Contains(n.CaseId))
+                deleted.Add(n);
+        var notices = today.Concat(deleted).ToList();
+        foreach (var (key, trail) in await Dashboards.PeriodHistory.TrailsAsync(db, nameof(JurisdictionNotice),
+                     deleted.Select(n => n.Id.ToString()).ToList(), deletes: false, ct))
+            trails[key] = [.. (trails.GetValueOrDefault(key) ?? []).Concat(trail).DistinctBy(e => e.Sequence).OrderByDescending(e => e.Sequence)];
+
+        // Each notice's re-datings, newest first: the time it held before each.
+        var edits = new Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset Before)>>();
+        foreach (var n in notices)
+            foreach (var e in (trails.GetValueOrDefault(n.Id.ToString()) ?? []).Where(e => e.Action == AuditAction.Update))
+                Dashboards.PeriodHistory.Fields(e.BeforeJson, (name, v) =>
+                {
+                    if (name != nameof(JurisdictionNotice.NotifiedAtUtc) || Dashboards.PeriodHistory.Instant(v) is not { } before) return;
+                    if (!edits.TryGetValue(n.Id, out var list)) edits[n.Id] = list = [];
+                    list.Add((e.AtUtc, before));
+                });
+
+        // The few notices from before deadlines were kept, through today's clock; a code with a kept notice standing at the
+        // instant is judged by that notice instead (NoticeOutcomeHistory.At).
+        var fallback = new List<(Guid, string, DateTimeOffset, SlaState)>();
+        if (settings is { Enabled: true } live && ruleSet is not null)
+            foreach (var reported in new[] { true, false })
+                foreach (var (id, statuses) in await StatusesAsync(db, cases, live, ruleSet, now, reported, ct))
+                    foreach (var s in statuses)
+                        if (s.State is SlaState.Met or SlaState.Missed && s.NotifiedAtUtc is { } at)
+                            fallback.Add((id, s.JurisdictionCode.ToUpperInvariant(), at, s.State));
+        return new NoticeOutcomeHistory(notices, edits, fallback);
+    }
+
+    // A deleted notice as its delete's before-image records it; null when it can't be read.
+    private static NoticeOutcomeHistory.Notice? DeletedNotice(Guid id, Dashboards.PeriodHistory.Entry del)
+    {
+        Guid? caseId = null;
+        string? code = null;
+        DateTimeOffset? at = null, due = null, created = null;
+        Dashboards.PeriodHistory.Fields(del.BeforeJson, (name, v) =>
+        {
+            switch (name)
+            {
+                case nameof(JurisdictionNotice.CaseId): caseId = Dashboards.PeriodHistory.Id(v); break;
+                case nameof(JurisdictionNotice.Jurisdiction): code = Dashboards.PeriodHistory.Text(v); break;
+                case nameof(JurisdictionNotice.NotifiedAtUtc): at = Dashboards.PeriodHistory.Instant(v); break;
+                case nameof(JurisdictionNotice.DueAtUtc): due = Dashboards.PeriodHistory.Instant(v); break;
+                case nameof(JurisdictionNotice.CreatedAtUtc): created = Dashboards.PeriodHistory.Instant(v); break;
+            }
+        });
+        return caseId is { } cid && code is not null && at is { } notified && created is { } c
+            ? new NoticeOutcomeHistory.Notice(id, cid, code, notified, due, c, del.AtUtc)
+            : null;
     }
 
     // Each case's per-jurisdiction statuses, for cases with a triggered obligation and a jurisdiction in play.
@@ -394,4 +448,53 @@ public sealed class NotificationDeadlineService
         NotificationStartBasis.Detection => classification == Classification.Breach ? detectedAtUtc : null,
         _ => null
     };
+}
+
+/// <summary>BUG-585: the notice outcomes as they stood at any instant (see NotificationDeadlineService.NoticeHistoryAsync).</summary>
+public sealed class NoticeOutcomeHistory
+{
+    /// <summary>A notice today, or one deleted since (<see cref="DeletedAtUtc"/>).</summary>
+    public sealed record Notice(Guid Id, Guid CaseId, string Jurisdiction, DateTimeOffset NotifiedAtUtc, DateTimeOffset? DueAtUtc,
+        DateTimeOffset CreatedAtUtc, DateTimeOffset? DeletedAtUtc);
+
+    private readonly List<Notice> _notices;
+    private readonly Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset Before)>> _edits;
+    private readonly List<(Guid CaseId, string Code, DateTimeOffset NotifiedAtUtc, SlaState State)> _fallback;
+
+    internal NoticeOutcomeHistory(List<Notice> notices, Dictionary<Guid, List<(DateTimeOffset At, DateTimeOffset Before)>> edits,
+        List<(Guid, string, DateTimeOffset, SlaState)> fallback)
+    {
+        _notices = notices;
+        _edits = edits;
+        _fallback = fallback;
+    }
+
+    /// <summary>Each kept-deadline notice given, judged as it stood at <paramref name="asOf"/>, and those through today's clock.</summary>
+    public List<(Guid CaseId, DateTimeOffset NotifiedAtUtc, SlaState State)> At(DateTimeOffset asOf)
+    {
+        var result = new List<(Guid, DateTimeOffset, SlaState)>();
+        var standing = _notices.Where(n => n.DueAtUtc is not null
+                && (n.DeletedAtUtc is not { } deleted || (n.CreatedAtUtc < asOf && deleted >= asOf)))
+            .Select(n => n with { NotifiedAtUtc = NotifiedAt(n, asOf) });
+        // BUG-456: a legacy "NY;CA" notice counts once for each code it names, and a code's own notice wins over it (BUG-428).
+        var judged = new HashSet<(Guid, string)>();
+        foreach (var g in standing.GroupBy(n => n.CaseId))
+            foreach (var (code, (at, due)) in Case.ByNoticeCode(g.Select(n => (n.Jurisdiction, (n.NotifiedAtUtc, n.DueAtUtc.GetValueOrDefault())))))
+            {
+                result.Add((g.Key, at, at <= due ? SlaState.Met : SlaState.Missed));
+                judged.Add((g.Key, code.ToUpperInvariant()));
+            }
+        result.AddRange(_fallback.Where(f => !judged.Contains((f.CaseId, f.Code))).Select(f => (f.CaseId, f.NotifiedAtUtc, f.State)));
+        return result;
+    }
+
+    // When it was given, as it stood then: every re-dating made at or after the instant undone, newest first.
+    private DateTimeOffset NotifiedAt(Notice n, DateTimeOffset asOf)
+    {
+        if (n.CreatedAtUtc >= asOf || !_edits.TryGetValue(n.Id, out var edits)) return n.NotifiedAtUtc;
+        var at = n.NotifiedAtUtc;
+        foreach (var (when, before) in edits)
+            if (when >= asOf) at = before;
+        return at;
+    }
 }

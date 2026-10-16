@@ -228,6 +228,88 @@ public sealed class ProgramReportTests : IDisposable
         public string? ValueOf(string key) => null;
     }
 
+    private sealed class NotifyOff : IncidentManager.Application.Compliance.INotificationDeadlineSettingsProvider
+    {
+        public IncidentManager.Application.Compliance.NotificationDeadlineSettings Current =>
+            IncidentManager.Application.Compliance.NotificationDeadlineSettings.Off;
+    }
+
+    private DashboardService Dashboard(SlaTargets targets, bool withHistory = true)
+    {
+        var f = new TestDbContextFactory(Options());
+        return new DashboardService(f, _user, _clock, new TestSlaTargets(targets), new NotifyOff(),
+            new IncidentManager.Application.Admin.NotificationRuleService(f, _user, _clock), server: withHistory ? new NoServerValues() : null);
+    }
+
+    [Fact]
+    public async Task Nothing_is_measured_from_an_approximate_start_in_the_report_or_on_the_dashboard(/* BUG-583, ST-04 */)
+    {
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            // Began "on 1 April, time not stated" (its first attack step), recorded as 1 April 18:00; detected 2 April.
+            var approx = Case.Open(2026, 1, "A", "Approximate", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", Apr(2));
+            approx.DetectedAtUtc = Apr(2);
+            approx.OccurredAtUtc = Apr(1, 18);
+            approx.AddEventStep(Apr(1, 18), [MitreTactic.InitialAccess], "T1566", null, null, "Phish", null, "ic", Apr(2),
+                timing: new StepTiming(TimePrecision.Day));
+            // The same, with the step's time stated exactly: measured.
+            var exact = Case.Open(2026, 2, "B", "Exact", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", Apr(2));
+            exact.DetectedAtUtc = Apr(2);
+            exact.OccurredAtUtc = Apr(1, 18);
+            exact.AddEventStep(Apr(1, 18), [MitreTactic.InitialAccess], "T1566", null, null, "Phish", null, "ic", Apr(2));
+            db.Cases.AddRange(approx, exact);
+            await db.SaveChangesAsync();
+            IncidentManager.Application.Cases.StepTime.ActivityBeganCaveat(approx).Should().NotBeNull("the case's own views call it approximate");
+        }
+        var targets = new SlaTargets(new Dictionary<(SlaClock, Severity), int> { [(SlaClock.Detection, Severity.High)] = 24 }, 80);
+
+        var q2 = (await Service(targets).BuildAsync(Q2)).Current;
+        q2.TimeToDetect.Should().Be(new Interval(6, 6, 1), "only the exact start is measured");
+        q2.Sla.Single(s => s.Clock == SlaClock.Detection).Should().Be(new SlaAttainment(SlaClock.Detection, 1, 0));
+        var m = await Dashboard(targets, withHistory: false).GetAsync();
+        (m.DetectionMet, m.DetectionMissed).Should().Be((1, 0));
+    }
+
+    [Fact]
+    public async Task All_time_compliance_uses_the_targets_severity_and_class_in_force_at_the_time(/* BUG-588 */)
+    {
+        var now = _clock.UtcNow;
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            _clock.UtcNow = Feb(1);
+            db.AppSettings.Add(new AppSetting { Key = "Sla:Containment:Medium", Value = "24", UpdatedAtUtc = Feb(1), UpdatedBy = "admin" });
+            db.AppSettings.Add(new AppSetting { Key = "Sla:Containment:High", Value = "8", UpdatedAtUtc = Feb(1), UpdatedBy = "admin" });
+            await db.SaveChangesAsync();
+            _clock.UtcNow = Apr(3);
+            // Q2: a Medium case contained in 20 h (inside 24 h); a High one contained in 6 h (inside 8 h).
+            var medium = Case.Open(2026, 1, "M", "Medium", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", Apr(2));
+            (medium.DetectedAtUtc, medium.ContainedAtUtc) = (Apr(2), Apr(2, 20));
+            var high = Case.Open(2026, 2, "H", "High", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", Apr(2));
+            (high.DetectedAtUtc, high.ContainedAtUtc) = (Apr(2), Apr(2, 6));
+            db.Cases.AddRange(medium, high);
+            await db.SaveChangesAsync();
+            // Q3: the Medium case is raised to High, and the High target tightened to 4 h.
+            _clock.UtcNow = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+            medium.ChangeSeverity(Severity.High, "Scope grew", "ic", _clock.UtcNow);
+            (await db.AppSettings.SingleAsync(s => s.Key == "Sla:Containment:High")).Value = "4";
+            await db.SaveChangesAsync();
+        }
+        _clock.UtcNow = now;
+        var today = new SlaTargets(new Dictionary<(SlaClock, Severity), int>
+            { [(SlaClock.Containment, Severity.Medium)] = 24, [(SlaClock.Containment, Severity.High)] = 4 }, 80);
+
+        var m = await Dashboard(today).GetAsync();
+        (m.ContainmentMet, m.ContainmentMissed).Should().Be((2, 0), "both met the targets in force, on the severity they had, in Q2");
+        var q2 = (await Service(today).BuildAsync(Q2)).Current.Sla.Single(s => s.Clock == SlaClock.Containment);
+        (await new ProgramReportService(new TestDbContextFactory(Options()), _user, _clock, new TestSlaTargets(today),
+                new AttackCoverageService(new TestDbContextFactory(Options()), _user, _clock), server: new NoServerValues()).BuildAsync(Q2))
+            .Current.Sla.Single(s => s.Clock == SlaClock.Containment).Should().Be(new SlaAttainment(SlaClock.Containment, m.ContainmentMet,
+                m.ContainmentMissed), "the dashboard agrees with the program report's quarter");
+        q2.Missed.Should().BeGreaterThan(0, "without the history (today's targets) the same quarter reads as missed");
+    }
+
     [Fact]
     public async Task An_action_reopened_later_still_counts_as_completed_in_its_quarter(/* WF-80 */)
     {

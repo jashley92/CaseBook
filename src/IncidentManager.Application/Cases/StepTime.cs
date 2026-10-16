@@ -46,12 +46,16 @@ public static class StepTime
     /// approximate and the recorded start falls on (or a day either side of) its stated dates, or isn't recorded.
     /// E.g. "the first attack step is between 2026-09-02 and 2026-09-05".
     /// </summary>
-    public static string? ActivityBeganCaveat(Case c)
+    public static string? ActivityBeganCaveat(Case c) => ActivityBeganCaveat(c.Origin, c.OccurredAtUtc, c.TimelineEntries);
+
+    /// <summary>BUG-583: the same rule from a case's origin, recorded start and timeline entries, so the aggregates (the
+    /// program report, the dashboard) leave out exactly the starts the case's own views call approximate.</summary>
+    public static string? ActivityBeganCaveat(CaseOrigin origin, DateTimeOffset? occurredAtUtc, IEnumerable<TimelineEntry> entries)
     {
-        var first = c.TimelineEntries.Where(e => e.IsCurrent && EventSteps.IsAttack(c, e)).InTimelineOrder().FirstOrDefault();
+        var first = entries.Where(e => e.IsCurrent && EventSteps.IsAttack(origin, e)).InTimelineOrder().FirstOrDefault();
         if (first is null || !first.IsApproximate) return null;
         if (first.OccurredPrecision == TimePrecision.NotStated) return "the first attack step's time wasn't stated";
-        if (c.OccurredAtUtc is { } began)
+        if (occurredAtUtc is { } began)
         {
             var day = DateOnly.FromDateTime(began.UtcDateTime);
             var from = DateOnly.FromDateTime(first.OccurredAtUtc.UtcDateTime);
