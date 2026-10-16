@@ -43,8 +43,6 @@ public partial class ComponentContinuationTests
         ["Pages/AgendaPage.razor"] = 1,   // Load: _board = board (Svc.GetBoardAsync)
         ["Pages/CampaignPage.razor"] = 1,   // OnParametersSetAsync: _rollup = await Svc.GetRollupAsync
         ["Pages/CaseImport.razor"] = 5,   // ReopenStuck: _pending = await Import.ListPendingAsync; OnParametersSetAsync: _pending = await Import.ListPendingAsync; OnParametersSetAsync: _preview = preview ...
-        ["Pages/CaseTabs/CaseReportTab.razor"] = 1,   // LoadReports: _reports = await Reports.ListAsync
-        ["Pages/CaseTabs/CaseReviewTab.razor"] = 4,   // Load: _view = await Lessons.GetForCaseAsync; Load: _reports = await Reports.ListAsync; OnGenerated: _reports = await Reports.ListAsync; ApproveRepor...
         ["Pages/CreateCase.razor"] = 1,   // CheckOverlapsCore: _outcomeLabels = await Outcomes.LabelsAsync
         ["Pages/FindPage.razor"] = 1,   // Run: _result = result (Finder.FindAsync)
         ["Pages/ImprovementActionsPage.razor"] = 1,   // Load: _register = register (Lessons.GetRegisterAsync)
@@ -72,7 +70,6 @@ public partial class ComponentContinuationTests
     {
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/CaseImport.razor"] = 2,   // OnParametersSetAsync: _reviewingPendingId = null;; Reject: _reviewingPendingId = null;
-        ["Pages/CaseTabs/CaseReviewTab.razor"] = 2,   // SaveEdit: _editingId = null;; SaveEdit: _editingId = null;
     };
 
     private static readonly Dictionary<string, int> E_NavigatesLate = new(StringComparer.Ordinal)

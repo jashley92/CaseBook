@@ -174,7 +174,7 @@
 
     private async Task OnTlpChanged(ChangeEventArgs e)
     {
-        if (Enum.TryParse<TlpLevel>(e.Value?.ToString(), out var t)) _tlpChoice = t;
+        if (IncidentManager.Domain.Common.EnumNames.TryParse<TlpLevel>(e.Value?.ToString(), out var t)) _tlpChoice = t;
         if (State.ShowPreview) await RefreshPreview();
     }
 
@@ -190,11 +190,17 @@
         }
     }
 
+    // BUG-601: a list that finishes after a newer one (a live refresh, an approve, a generated draft) is dropped.
+    private readonly LoadSequence _reportLoads = new();
+
     private async Task LoadReports()
     {
-        _reports = await Reports.ListAsync(CaseId);
+        var t = _reportLoads.Begin();
+        var reports = await Reports.ListAsync(CaseId);
         State.Profiles ??= await ReportProfiles.ListActiveAsync();
         _templates ??= await ReportTemplates.ListActiveAsync();
+        if (!_reportLoads.IsCurrent(t)) return;
+        _reports = reports;
         // REV-30: a live change from a colleague reloads the reports, but a profile picked and not yet saved stays picked
         // (and previewed). Only the saved choice moving, or nothing picked, re-seeds it.
         if (!_profileDirty || _seededFrom != CaseProfileId)
@@ -304,7 +310,11 @@
         await OnCaseChanged.InvokeAsync();
     }
 
-    private async Task ApproveReport(Guid reportId)
+    // BUG-603: a double-click approves once (the second came back refused, as if someone else had).
+    private readonly InFlight _approving = new();
+    private Task ApproveReport(Guid reportId) => _approving.Run(() => ApproveReportCore(reportId));
+
+    private async Task ApproveReportCore(Guid reportId)
     {
         try
         {

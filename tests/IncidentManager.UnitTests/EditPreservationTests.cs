@@ -25,7 +25,6 @@ public partial class EditPreservationTests
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 1,   // 15 text field(s), no Edits.Track
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/CaseTabs/CaseReviewTab.razor"] = 1,   // 4 text field(s), no Edits.Track
         ["Shared/PromoteToTimeline.razor"] = 1,   // 1 text field(s), no Edits.Track
     };
 
@@ -36,7 +35,6 @@ public partial class EditPreservationTests
         ["Pages/CaseTabs/CaseNotesTab.razor"] = 1,   // StartNoteEdit
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // StartEventEdit; StartInvestigationEdit
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/CaseTabs/CaseReviewTab.razor"] = 1,   // BeginEdit
         ["Shared/RegulatoryDeadlineRules.razor"] = 1,   // BeginEdit
     };
 

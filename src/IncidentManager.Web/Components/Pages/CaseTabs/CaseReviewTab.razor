@@ -17,6 +17,7 @@
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject UnsavedEdits Edits
 @inject ISeverityLabels SevLabels
 @inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Application.Reporting.ReportingOptions> ReportingOpts
 
@@ -203,7 +204,7 @@ else
                     </td>
                     <td class="text-nowrap"><ImprovementActionStatusBadge Status="a.Status" /></td>
                     <td class="text-end">
-                        @if (CanEdit && _editingId != a.Id)
+                        @if (CanEdit && !_editing.IsOpenFor(a.Id))
                         {
                             <button class="btn btn-sm btn-outline-secondary" title="Edit this improvement action"
                                     aria-label="@($"Edit improvement action: {a.Title}")" @onclick="() => BeginEdit(a)">
@@ -212,7 +213,7 @@ else
                         }
                     </td>
                 </tr>
-                @if (_editingId == a.Id)
+                @if (_editing.IsOpenFor(a.Id))
                 {
                     @* BUG-425: Ctrl/Cmd+Enter in the edit row saves it, not the open review. *@
                     <tr class="im-own-keys" @key="@($"edit-{a.Id}")" @onkeydown="e => SaveOnKey(e, SaveEdit)">
@@ -301,7 +302,7 @@ else
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
         <label class="form-label small mb-0" for="lessons-tlp">Sharing (TLP)</label>
         <select id="lessons-tlp" class="form-select form-select-sm w-auto" value="@_tlp"
-                @onchange="e => _tlpChoice = Enum.TryParse<TlpLevel>(e.Value?.ToString(), out var t) ? t : null">
+                @onchange="e => _tlpChoice = IncidentManager.Domain.Common.EnumNames.OrNull<TlpLevel>(e.Value?.ToString())">
             @foreach (var t in Enum.GetValues<TlpLevel>())
             {
                 <option value="@t">@Tlp.Label(t)</option>
@@ -337,6 +338,8 @@ else
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Bumped by the parent on a live-collab change so a collaborator's edit shows here.</summary>
     [Parameter] public int RefreshToken { get; set; }
+    /// <summary>BUG-578: the part of the workspace this tab is in, so a tab switch asks about its typed text.</summary>
+    [CascadingParameter] public EditRegion? Region { get; set; }
 
     private sealed record Field(string Key, string Label, string Hint, Func<PostIncidentReviewView, string?> Get);
     private static readonly Field[] Fields =
@@ -383,8 +386,25 @@ else
 
     private ActionForm _new = new();
     private ActionForm _edit = new();
-    private Guid? _editingId;
+    // BUG-578: one action's edit at a time; Edit on another row while one is open is refused, so its text is kept.
+    private readonly EditSlot<Guid> _editing = new();
+    private (string Title, string? Area, string? Owner, string? OwnerExternal, DateTime? Target, ImprovementActionStatus Status) _editSeed;
     private string? _editStamp;   // BUG-196: the action's stamp when its edit opened
+
+    // BUG-601: a load that finishes after a newer one (a live refresh, a save's reload) doesn't put the older one back.
+    private readonly LoadSequence _loads = new();
+    private readonly LoadSequence _reportLoads = new();
+    private readonly InFlight _approving = new();   // BUG-603
+
+    // BUG-578: what's typed in the action fields is asked about before a tab switch, leaving the case or the time-display
+    // redraw would lose it (the review's and the details' markdown editors are asked through the browser).
+    protected override void OnInitialized()
+    {
+        Edits.Track(this, "the improvement action you're adding",
+            () => !string.IsNullOrWhiteSpace(_new.Title) || !string.IsNullOrWhiteSpace(_new.Area), Region);
+        Edits.Track(this, "the improvement action you're editing",
+            () => _editing.IsOpen && (_edit.Title, _edit.Area, _edit.Owner, _edit.OwnerExternal, _edit.Target, _edit.Status) != _editSeed, Region);
+    }
 
     private bool NeedsReview => Classification is Domain.Enums.Classification.Incident or Domain.Enums.Classification.Breach;
     private int ActiveActionCount => _view?.Actions.Count(a => a.Status != ImprovementActionStatus.NotPursued) ?? 0;
@@ -403,10 +423,20 @@ else
 
     private async Task Load()
     {
-        _view = await Lessons.GetForCaseAsync(CaseId);
-        _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
-        _templates ??= await ReportTemplates.ListActiveAsync();
+        var t = _loads.Begin();
+        var view = await Lessons.GetForCaseAsync(CaseId);
+        if (!_loads.IsCurrent(t)) return;   // BUG-601: a newer load (or the tab's teardown) took over
+        _view = view;
         RebaseReviewStamp();
+        await LoadReports();
+        _templates ??= await ReportTemplates.ListActiveAsync();
+    }
+
+    private async Task LoadReports()
+    {
+        var t = _reportLoads.Begin();
+        var reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+        if (_reportLoads.IsCurrent(t)) _reports = reports;   // BUG-601
     }
 
     // BUG-376: logging or reopening an action (this user's or a collaborator's) clears "no improvement actions identified"
@@ -436,7 +466,7 @@ else
             desired[NewDetailsEditorId] = "";
             if (_editingReview)
                 foreach (var f in Fields) desired[FieldEditorId(f.Key)] = _reviewSeed.GetValueOrDefault(f.Key, "");
-            if (_editingId is { } id)
+            if (_editing.Current is { Key: var id })
             {
                 desired[EditDetailsEditorId(id)] = _edit.DetailsSeed ?? "";
                 desired[EditOutcomeEditorId(id)] = _edit.OutcomeSeed ?? "";
@@ -589,7 +619,7 @@ else
 
     private void BeginEdit(ImprovementActionView a)
     {
-        _editingId = a.Id;
+        if (!_editing.TryOpen(a.Id, Toasts, "improvement action")) return;   // BUG-578
         _editStamp = a.Stamp;   // BUG-196
         var inDirectory = a.OwnerId is not null
             && Users.All().Any(u => string.Equals(u.UserId, a.OwnerId, StringComparison.OrdinalIgnoreCase));
@@ -602,29 +632,32 @@ else
             Status = a.Status, DetailsSeed = a.Details, OutcomeSeed = a.OutcomeNote
         };
         (_edit.TargetShown, _edit.TargetStored) = (_edit.Target, a.TargetDateUtc);
+        _editSeed = (_edit.Title, _edit.Area, _edit.Owner, _edit.OwnerExternal, _edit.Target, _edit.Status);
     }
 
-    private void CancelEdit() => _editingId = null;
+    private void CancelEdit() => _editing.Close();
 
     private async Task SaveEdit()
     {
-        if (_editingId is not { } id) return;
+        if (_editing.Current is not { } session) return;
         if (_saving) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
         _saving = true;
+        var id = session.Key;
         try
         {
             var details = await EditorValue(EditDetailsEditorId(id));
             var outcome = await EditorValue(EditOutcomeEditorId(id));
-            await Lessons.UpdateActionAsync(CaseId, id, ToInput(_edit, details, outcome), _editStamp);
-            if (_edit.Status != ImprovementActionStatus.NotPursued) _noActions = false;   // BUG-331: cleared server-side too
-            _editingId = null;
+            var input = ToInput(_edit, details, outcome);
+            await Lessons.UpdateActionAsync(CaseId, id, input, _editStamp);
+            if (input.Status != ImprovementActionStatus.NotPursued) _noActions = false;   // BUG-331: cleared server-side too
+            _editing.CloseIf(session);   // BUG-601: an edit opened since (after a Cancel) stays open
             await Load();
             Toasts.Success("Improvement action updated");
             await OnChanged.InvokeAsync();
         }
         catch (StaleEditException ex)
         {
-            _editingId = null;
+            _editing.CloseIf(session);
             Toasts.Error(ex.Message);
             await Load();
         }
@@ -674,11 +707,14 @@ else
 
     private async Task OnGenerated(IncidentManager.Web.BackgroundJobs.ReportJob j)
     {
-        _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+        await LoadReports();
         await OnChanged.InvokeAsync();
     }
 
-    private async Task ApproveReport(Guid reportId)
+    // BUG-603: a double-click approves once (the second came back refused, as if someone else had).
+    private Task ApproveReport(Guid reportId) => _approving.Run(() => ApproveReportCore(reportId));
+
+    private async Task ApproveReportCore(Guid reportId)
     {
         try
         {
@@ -689,7 +725,7 @@ else
         {
             Toasts.Error(ex.Message);
         }
-        _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+        await LoadReports();
     }
 
     /// <summary>BUG-425: removed from the page (a tab switch, the phone's Now/Next view, the error fallback); the
@@ -699,6 +735,9 @@ else
     public async ValueTask DisposeAsync()
     {
         Disposed = true;
+        Edits.Forget(this);   // BUG-578
+        _loads.Invalidate();
+        _reportLoads.Invalidate();
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
