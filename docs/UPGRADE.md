@@ -206,6 +206,44 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.13
+
+A fix release with two migrations (`HeldEmails` table, `Reports.RowHash` column). The first start after upgrading
+runs a one-time integrity upgrade; read **Integrity upgrade** below before deploying. Things to check:
+
+- **Integrity upgrade (tamper detection).** The record check now catches a row planted in the database without a
+  hash or trail entry in any table, a record last saved before v1.5.1 rewritten with its hash recomputed, a moved
+  notice deadline, a changed list of a reported case's jurisdictions, a planted legal-hold release request, a note
+  edit unlinked to restore earlier wording, a stage-gate requirement weakened in the database, and a note or
+  timeline entry hidden without a successor or retraction. Reports are now hashed records: renaming who generated
+  one, marking a draft final, renumbering or deleting one is caught.
+  - On first start, CaseBook records every honest row against its audit trail (one audited "CaseBook upkeep" entry
+    per row, not counted as activity or changes after closure), logs any row it couldn't record, and only then sets
+    `Integrity:RowHashFormat=4` and makes the check strict. If any step fails it logs a warning and the check stays
+    as it was; the next start tries again. A row that disagrees with its trail is left unrecorded and reported.
+  - Start-up fills of a reported case's jurisdictions and a notice's deadline no longer sign off a row changed in
+    the database. A start-up fill that fails is a warning, not a stopped service.
+  - Tested upgrading from v1.0.0, v1.4.0, v1.5.0, v1.5.9 and v1.6.12 on SQL Server 2022: no false alarms, and
+    tampering after the upgrade is caught.
+- **Regulator deadlines.** A second regulator on the same deadline gets its own at-risk and breached reminders
+  (reminders already sent aren't repeated). An element added to a reported case counts as one it already had, so a
+  later admin mapping no longer shows a clock that reminders and the close gate ignore. The close gate's
+  notifications check judges the case the way the case page does.
+- **Held email.** Assignment, mention and handoff emails the relay didn't take are kept in the database (they
+  survive a restart) and sent when it answers; a temporary refusal (450-452) is retried. Held mail is given up only
+  after 12 temporary refusals or 24 hours with the relay unreachable. A breach or integrity alarm cut off by
+  shutdown is still kept for retry.
+- **Settings and AD.** A saved setting, label, template or import can't be undone by a slower reload that read
+  earlier, and "saved but not in effect" reflects that save's own reload. A disabled API-token owner, or one removed
+  from an AD group, loses the access at once even when AD answers slowly or partially.
+- **Import case (from user testing):** a tabletop / exercise case can be imported (`newCase.exercise`, or the
+  preview's switch), and the case number can be chosen on the preview.
+- **Imported times:** a time without a time zone is read in the organization's zone on the Import page (switchable
+  there), or in the document's own `timeZone`; the API still treats such times as UTC unless the document names a
+  zone. The preview says which zone was used.
+- **AI prompt:** keeps times as the material states them instead of converting to UTC; its Target select no longer
+  goes blank.
+
 ### v1.6.12
 
 A fix release with no migration. It closes whole classes of bug at once, each with a test that fails if the class
