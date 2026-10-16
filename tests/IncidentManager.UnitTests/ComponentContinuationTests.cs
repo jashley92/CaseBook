@@ -42,7 +42,6 @@ public partial class ComponentContinuationTests
         ["Pages/AdminRoles.razor"] = 3,   // LoadAsync: _roles = await Roles.ListRolesAsync; LoadAsync: _mappings = await Roles.ListMappingsAsync; LoadAsync: _review = await AccessReview.BuildAsync
         ["Pages/AgendaPage.razor"] = 1,   // Load: _board = board (Svc.GetBoardAsync)
         ["Pages/CampaignPage.razor"] = 1,   // OnParametersSetAsync: _rollup = await Svc.GetRollupAsync
-        ["Pages/CaseImport.razor"] = 5,   // ReopenStuck: _pending = await Import.ListPendingAsync; OnParametersSetAsync: _pending = await Import.ListPendingAsync; OnParametersSetAsync: _preview = preview ...
         ["Pages/CreateCase.razor"] = 1,   // CheckOverlapsCore: _outcomeLabels = await Outcomes.LabelsAsync
         ["Pages/FindPage.razor"] = 1,   // Run: _result = result (Finder.FindAsync)
         ["Pages/ImprovementActionsPage.razor"] = 1,   // Load: _register = register (Lessons.GetRegisterAsync)
@@ -62,14 +61,12 @@ public partial class ComponentContinuationTests
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/AccountApiTokens.razor"] = 1,   // CreateToken: _name = "";
         ["Pages/AdminRoles.razor"] = 1,   // AddMappingCore: _newGroup = "";
-        ["Pages/CaseImport.razor"] = 1,   // Reject: _rejectNote = null;
         ["Shared/ReportTemplateLibrary.razor"] = 1,   // Upload: _newName = null;
     };
 
     private static readonly Dictionary<string, int> D_ClosesAnotherForm = new(StringComparer.Ordinal)
     {
         // wave 2b, U4 (pages, admin, other shared)
-        ["Pages/CaseImport.razor"] = 2,   // OnParametersSetAsync: _reviewingPendingId = null;; Reject: _reviewingPendingId = null;
     };
 
     private static readonly Dictionary<string, int> E_NavigatesLate = new(StringComparer.Ordinal)
@@ -77,7 +74,6 @@ public partial class ComponentContinuationTests
         // wave 2b, U4 (pages, admin, other shared)
         ["Pages/Admin.razor"] = 1,   // OnBeforeLeave<lambda>: Nav.NavigateTo(
         ["Pages/CaseByNumber.razor"] = 1,   // OnParametersSetAsync: Nav.NavigateTo(
-        ["Pages/CaseImport.razor"] = 4,   // ReopenStuck: Nav.NavigateTo(; OnParametersSetAsync: Nav.NavigateTo(; Reject: Nav.NavigateTo(; Apply: Nav.NavigateTo(
         ["Pages/CreateCase.razor"] = 1,   // SubmitCore: Nav.NavigateTo(
         ["Pages/Home.razor"] = 1,   // OnInitializedAsync: Nav.NavigateTo(
         ["Shared/CaseTabStrip.razor"] = 1,   // Close: Nav.NavigateTo(

@@ -2,6 +2,7 @@
 @using IncidentManager.Application.Import
 @using Microsoft.Extensions.Logging
 @attribute [Authorize(Policy = Policies.EditCases)]
+@implements IDisposable
 @inject CaseImportService Import
 @inject ToastService Toasts
 @inject NavigationManager Nav
@@ -10,6 +11,7 @@
 @inject CaseService Cases
 @inject ISeverityLabels SevLabels
 @inject ICurrentUser CurrentUser
+@inject CaseListMemory ListMemory
 
 <PageTitle>Import case</PageTitle>
 
@@ -24,6 +26,7 @@
         <span>Reviewing a <strong>submitted</strong> import. Nothing has been written yet. Confirm to write it into a case, or reject it.</span>
         <a class="btn btn-sm btn-outline-secondary ms-auto" href="cases/import">Back to queue</a>
     </div>
+    @if (_preview is null) { <LoadingBlock /> }
 }
 else if (_pending.Count > 0)
 {
@@ -57,7 +60,7 @@ else if (_pending.Count > 0)
                                 }
                                 else
                                 {
-                                    <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => ReopenStuck(pi.Id)">Reopen</button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => ReopenStuck(pi.Id)" disabled="@_reopening.Busy">Reopen</button>
                                 }
                             </td>
                         </tr>
@@ -100,7 +103,7 @@ else if (_pending.Count > 0)
                 <div class="col-md-3">
                     <label class="form-label small mb-1" for="imp-class-hint">Classification hint</label>
                     <select id="imp-class-hint" class="form-select form-select-sm" value="@(_promptClassification?.ToString() ?? "")"
-                            @onchange="e => _promptClassification = Enum.TryParse<Classification>(e.Value?.ToString(), out var c) ? c : null">
+                            @onchange="e => _promptClassification = IncidentManager.Domain.Common.EnumNames.OrNull<Classification>(e.Value?.ToString())">
                         <option value="">Let the AI choose</option>
                         @* BUG-542: a rung this role can't file (REV-14) would only be dropped from the document. *@
                         @if (CanClassify) { @foreach (var cl in Enum.GetValues<Classification>()) { <option value="@cl">@Ui.Label(cl)</option> } }
@@ -462,14 +465,14 @@ else if (_pending.Count > 0)
     }
 
     <div class="nc-actions">
-        <button class="btn btn-primary" @onclick="Apply" disabled="@(_applying || !CanApply(p) || GateUnresolved)">
+        <button class="btn btn-primary" @onclick="Apply" disabled="@(_applying || !CanApply(p) || GateUnresolved || !PreviewIsCurrent)">
             <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>@(_reviewingPendingId is null ? "Apply import" : "Confirm & apply") (@IncidentManager.Application.Common.Plural.Of(p.IncludedItemCount, "item"))
         </button>
         @if (_reviewingPendingId is not null)
         {
             <button class="btn btn-outline-danger" @onclick="() => _rejecting = true" disabled="@(_applying || _rejecting)">Reject…</button>
         }
-        <a class="btn btn-outline-secondary" href="cases">Cancel</a>
+        <a class="btn btn-outline-secondary" href="@ListMemory.BackHref">Cancel</a>   @* BUG-593: the list as it was left *@
     </div>
 }
 
@@ -487,18 +490,42 @@ else if (_pending.Count > 0)
     private Guid? _reviewingPendingId;
     private List<PendingImportSummary> _pending = new();
 
+    // BUG-601 (C5): what's shown comes from awaited reads, and the page moves on while they run (another Review link,
+    // Back to queue, a newer Preview, Clear, leaving). Each read takes a ticket and lands only while it is current:
+    // _navigations for each visit to the page's address, _previews for the preview shown (a pasted, uploaded or queued
+    // one; Apply and Reject act only on the current one), _reads for a file or the box being read, _queue for the pending
+    // list, _finds for the case lookup.
+    private readonly LoadSequence _navigations = new();
+    private readonly LoadSequence _reads = new();
+    private readonly LoadSequence _previews = new();
+    private readonly LoadSequence _queue = new();
+    private readonly LoadSequence _finds = new();
+    private LoadSequence.Ticket? _shown;   // the _previews ticket of the preview on screen
+    private bool PreviewIsCurrent => _shown is { } s && _previews.IsCurrent(s);
+    private readonly InFlight _reopening = new();   // BUG-603
+
+    private async Task LoadQueue()
+    {
+        var t = _queue.Begin();
+        var pending = await Import.ListPendingAsync();
+        if (_queue.IsCurrent(t)) _pending = pending.ToList();
+    }
+
     // WF-18: puts a stuck import back in the queue (audited) and opens it for review.
-    private async Task ReopenStuck(Guid id)
+    private Task ReopenStuck(Guid id) => _reopening.Run(() => ReopenStuckCore(id));
+
+    private async Task ReopenStuckCore(Guid id)
     {
         try
         {
             if (!await Import.ReopenStuckAsync(id))
             {
                 Toasts.Error("That import isn't stuck any more. Reload to see where it is.");
-                _pending = (await Import.ListPendingAsync()).ToList();
+                await LoadQueue();
                 return;
             }
-            Nav.NavigateTo($"cases/import?pending={id}");
+            // BUG-601: not if the page was left, or a Review opened, while it ran.
+            if (!_disposed && PendingId is null) Nav.NavigateTo($"cases/import?pending={id}");
         }
         catch (Exception ex) when (ex is ForbiddenException or InvalidOperationException) { Toasts.Error(ex.Message); }
     }
@@ -507,34 +534,45 @@ else if (_pending.Count > 0)
 
     protected override async Task OnParametersSetAsync()
     {
-        _pending = (await Import.ListPendingAsync()).ToList();
+        var nav = _navigations.Begin();
+        if (PendingId is null) LeaveReview();   // Back to queue, or the plain address: no queued review open
+        await LoadQueue();
+        if (PendingId is not { } pid || (pid == _reviewingPendingId && _preview is not null) || !_navigations.IsCurrent(nav)) return;
 
-        if (PendingId is { } pid)
+        // BUG-601: the review in the address is the one open from here on; the last one (and a file or paste still being
+        // read, which would preview over it) is let go while it loads.
+        _reads.Invalidate();
+        ClearReviewState();
+        _reviewingPendingId = pid;
+        (_preview, _shown) = (null, null);
+        var shown = _previews.Begin();
+        var preview = await Import.BuildPreviewForPendingAsync(pid);
+        // BUG-601: a later visit (another Review link, Back to queue) or leaving took over while it loaded; shown, Apply /
+        // Reject would have acted on a submission other than the one in the address.
+        if (!_navigations.IsCurrent(nav) || !_previews.IsCurrent(shown)) return;
+        if (preview is null)
         {
-            if (pid != _reviewingPendingId)
-            {
-                var preview = await Import.BuildPreviewForPendingAsync(pid);
-                if (preview is null)
-                {
-                    Toasts.Error("That submitted import is no longer available. It may already have been reviewed.");
-                    Nav.NavigateTo("cases/import");
-                    return;
-                }
-                ClearReviewState();
-                _reviewingPendingId = pid;
-                _preview = preview;
-                await RefreshGates();
-                _text = null;
-                await ShowInBox(null);
-                _error = null;
-            }
+            Toasts.Error("That submitted import is no longer available. It may already have been reviewed.");
+            Nav.NavigateTo("cases/import");
+            return;
         }
-        else if (_reviewingPendingId is not null)
-        {
-            _reviewingPendingId = null;
-            _preview = null;
-            ClearReviewState();
-        }
+        (_preview, _shown) = (preview, shown);
+        _text = null;
+        _error = null;
+        await ShowInBox(null);
+        await RefreshGates();
+    }
+
+    // The queued review shown is closed (Back to queue, a reject): the plain import page shows. A pasted preview isn't a
+    // review and stays; a review still loading is dropped by its _navigations ticket.
+    private void LeaveReview()
+    {
+        if (_reviewingPendingId is null) return;
+        _previews.Invalidate();
+        _finds.Invalidate();
+        _reviewingPendingId = null;
+        (_preview, _shown) = (null, null);
+        ClearReviewState();
     }
 
     // BUG-386: what belonged to the last preview or review (its related cases, a half-written rejection, a parse error, the
@@ -553,22 +591,27 @@ else if (_pending.Count > 0)
 
     private async Task Reject()
     {
-        if (_reviewingPendingId is not { } pid) return;
-        bool rejected;
-        try { rejected = await Import.RejectPendingAsync(pid, string.IsNullOrWhiteSpace(_rejectNote) ? null : _rejectNote.Trim()); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        // BUG-603: one decision at a time: a double-click, or Reject while an Apply runs (the buttons share _applying).
+        if (_applying || _reviewingPendingId is not { } pid || _shown is not { } shown || !_previews.IsCurrent(shown)) return;
+        _applying = true;
+        try
         {
-            Toasts.Error($"Couldn't reject the import. {ex.Message}");
-            return;
+            bool rejected;
+            try { rejected = await Import.RejectPendingAsync(pid, string.IsNullOrWhiteSpace(_rejectNote) ? null : _rejectNote.Trim()); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+            {
+                Toasts.Error($"Couldn't reject the import. {ex.Message}");
+                return;
+            }
+            // BUG-92: say so when someone else got to it first; it may have been applied to a case.
+            if (rejected) Toasts.Success("Import rejected. Nothing was written.");
+            else Toasts.Error("This import was no longer waiting: someone else applied or rejected it first.");
+            // BUG-601: the page moved to another review (or was left) while this ran: that one stays as it is.
+            if (!_previews.IsCurrent(shown)) return;
+            LeaveReview();
+            Nav.NavigateTo("cases/import");
         }
-        _preview = null;
-        _reviewingPendingId = null;
-        _rejectNote = null;
-        _rejecting = false;
-        // BUG-92: say so when someone else got to it first; it may have been applied to a case.
-        if (rejected) Toasts.Success("Import rejected. Nothing was written.");
-        else Toasts.Error("This import was no longer waiting: someone else applied or rejected it first.");
-        Nav.NavigateTo("cases/import");
+        finally { _applying = false; }
     }
 
     private string? _text;
@@ -610,17 +653,20 @@ else if (_pending.Count > 0)
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
+        var r = _reads.Begin();   // BUG-601: a later file or paste, a Clear or a queued review supersedes this one
         try
         {
-            _fileName = e.File.Name;
+            var name = e.File.Name;
             using var reader = new StreamReader(e.File.OpenReadStream(maxAllowedSize: 4 * 1024 * 1024));
-            _text = await reader.ReadToEndAsync();
+            var text = await reader.ReadToEndAsync();
+            if (!_reads.IsCurrent(r)) return;
+            (_text, _fileName) = (text, name);
             await ShowInBox(_text);   // BUG-605: the box isn't bound, so it's shown there explicitly
-            await Preview();
+            if (_reads.IsCurrent(r)) await Preview();
         }
         catch (Exception ex)
         {
-            _error = "Couldn't read the file. Check that it's a JSON, STIX or CSV file under 4 MB.";
+            if (_reads.IsCurrent(r)) _error = "Couldn't read the file. Check that it's a JSON, STIX or CSV file under 4 MB.";
             Logger.LogWarning(ex, "Case-import file read failed");
         }
     }
@@ -634,6 +680,8 @@ else if (_pending.Count > 0)
     {
         if (_readingBox) return;
         _readingBox = true;
+        var r = _reads.Begin();   // BUG-601: as OnFileSelected
+        string text;
         try
         {
             var stream = await JS.InvokeAsync<IJSStreamReference>("imTextValue.read", "imp-json");
@@ -641,17 +689,20 @@ else if (_pending.Count > 0)
             {
                 await using var s = await stream.OpenReadStreamAsync(MaxDocumentBytes);
                 using var reader = new StreamReader(s, System.Text.Encoding.UTF8);
-                _text = await reader.ReadToEndAsync();
+                text = await reader.ReadToEndAsync();
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or JSException)
         {
             Logger.LogInformation(ex, "Case-import paste read failed");
-            _preview = null;
+            if (!_reads.IsCurrent(r)) return;
+            (_preview, _shown) = (null, null);
             _parseError = "That's more than 4 MB of text. Upload it as a file instead, or split it.";
             return;
         }
         finally { _readingBox = false; }
+        if (!_reads.IsCurrent(r)) return;
+        _text = text;
         await Preview();
     }
 
@@ -664,6 +715,11 @@ else if (_pending.Count > 0)
 
     private async Task Preview()
     {
+        // BUG-601: the preview shown from now on is this one's, once it lands; the last one goes now, so Apply can't import
+        // it while the new document is read.
+        var t = _previews.Begin();
+        (_preview, _shown) = (null, null);
+        _finds.Invalidate();
         _error = null;
         _related = [];
         // BUG-446: a new document starts with no gate ticks or override, and a gate check still running for the last one
@@ -675,36 +731,44 @@ else if (_pending.Count > 0)
         _parseError = null;
         if (!converted.Ok)
         {
-            _preview = null;
+            (_preview, _shown) = (null, null);
             _parseError = converted.Error;
             return;
         }
-        _preview = await Import.BuildPreviewAsync(converted.Document!, IntoCaseId);
-        _preview.Warnings.InsertRange(0, converted.Notes);
-        if (converted.Format != ImportSourceFormat.CaseImport && _preview.TargetKind == CaseImportTargetKind.NewCase)
+        var preview = await Import.BuildPreviewAsync(converted.Document!, IntoCaseId);
+        // BUG-601: a newer preview, a Clear or a queued review took over while this one was built; showing it would let
+        // Apply import a document that is no longer the one in the box.
+        if (!_previews.IsCurrent(t)) return;
+        preview.Warnings.InsertRange(0, converted.Notes);
+        if (converted.Format != ImportSourceFormat.CaseImport && preview.TargetKind == CaseImportTargetKind.NewCase)
         {
             // Indicator shares land in an investigation someone chose; ask for the case rather than inventing one.
-            _preview.TargetKind = CaseImportTargetKind.ExistingCase;
-            _preview.Warnings.Insert(0, "Choose the case to add these indicators to, or switch to creating a new case.");
+            preview.TargetKind = CaseImportTargetKind.ExistingCase;
+            preview.Warnings.Insert(0, "Choose the case to add these indicators to, or switch to creating a new case.");
         }
-        await LoadRelated();
+        (_preview, _shown) = (preview, t);
+        await LoadRelated(t);
         await RefreshGates();
     }
 
     // Open cases that already carry any of the previewed indicators (need-to-know scoped), excluding the target.
-    private async Task LoadRelated()
+    private async Task LoadRelated(LoadSequence.Ticket t)
     {
         if (_preview is not { Entities.Count: > 0 } p) { _related = []; return; }
         var matches = await Cases.FindOpenCaseMatchesForIocsAsync(p.Entities.Select(e => e.Value));
+        if (!_previews.IsCurrent(t)) return;   // BUG-601: for a preview no longer shown
         _related = matches.Where(m => m.CaseId != p.ExistingCaseId).ToList();
     }
 
     private async Task Reset()
     {
+        // BUG-601: a read, preview or lookup still running is for what's being cleared.
+        _reads.Invalidate();
+        _previews.Invalidate();
+        _finds.Invalidate();
         _parseError = null;
-        _preview = null;
+        (_preview, _shown) = (null, null);
         _text = null;
-        await ShowInBox(null);
         _error = null;
         _existingNumber = null;
         _existingError = null;
@@ -712,6 +776,7 @@ else if (_pending.Count > 0)
         _related = [];
         ++_gateSeq;   // BUG-446: as Preview
         _gate.UseGate(null);
+        await ShowInBox(null);
     }
 
     // BUG-61: the gates a new case created by this import passes, judged from the case details and the indicators it adds.
@@ -758,7 +823,7 @@ else if (_pending.Count > 0)
     private bool CanClassify => CurrentUser.Has(Permission.ChangeClassification);   // BUG-542: REV-14
 
     private void SetClassification(CreateCaseRequest nc, string? raw)
-        => nc.Classification = Enum.TryParse<Classification>(raw, out var c) ? c : null;
+        => nc.Classification = IncidentManager.Domain.Common.EnumNames.OrNull<Classification>(raw);
 
     private void SetOccurred(ImportTimelineRow t, DateTime dt)
     {
@@ -773,12 +838,17 @@ else if (_pending.Count > 0)
         p.ExistingTitle = null;
         _existingNumber = null;
         _existingError = null;
+        _finds.Invalidate();   // BUG-601: a Find still running is for the target just cleared
     }
 
     private async Task ResolveExisting(CaseImportPreview p)
     {
         _existingError = null;
+        var t = _finds.Begin();
         var found = await Import.ResolveCaseByNumberAsync(_existingNumber ?? "");
+        // BUG-601: an earlier Find landing after a later one (or after "change", a new preview, a Clear) set the target to
+        // the case it found, and Apply imported into it.
+        if (!_finds.IsCurrent(t) || !ReferenceEquals(_preview, p)) return;
         if (found is { } c)
         {
             p.ExistingCaseId = c.Id;
@@ -794,8 +864,13 @@ else if (_pending.Count > 0)
     private async Task Apply()
     {
         if (_applying || _preview is not { } p || !CanApply(p)) return;   // BUG-14: one apply at a time
+        // BUG-601: the preview shown is superseded (a newer one is loading): apply that one, once it's shown.
+        if (_shown is not { } shown || !PreviewIsCurrent) return;
         _applying = true;
         _error = null;
+        // BUG-601: the queued submission under review now; a Review link followed while this runs mustn't make it mark
+        // (or put back) another one.
+        var pendingId = _reviewingPendingId;
         Guid? claimed = null;
         DateTimeOffset? claim = null;
         try
@@ -809,25 +884,28 @@ else if (_pending.Count > 0)
                 nc.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
             }
             // BUG-13: a queued import is claimed first, so it can't be applied twice.
-            if (_reviewingPendingId is { } pending && (claim = await Import.ClaimPendingAsync(pending)) is null)
+            if (pendingId is { } pending && (claim = await Import.ClaimPendingAsync(pending)) is null)
             {
-                _error = "This import is being applied (perhaps in another tab), or was already applied or rejected. " +
-                         "Reload the queue to see it.";
+                if (_previews.IsCurrent(shown))
+                    _error = "This import is being applied (perhaps in another tab), or was already applied or rejected. " +
+                             "Reload the queue to see it.";
                 return;
             }
-            claimed = _reviewingPendingId;
+            claimed = pendingId;
             var result = await Import.ApplyAsync(p);
-            if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result, claim);
+            if (pendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result, claim);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
             Toasts.Success($"{what}. {IncidentManager.Application.Common.Plural.Of(result.Total, "item")} imported.");
-            Nav.NavigateTo($"cases/{result.CaseId}");
+            if (_previews.IsCurrent(shown)) Nav.NavigateTo($"cases/{result.CaseId}");   // BUG-601: not once the page moved on
         }
         catch (Exception ex)
         {
             // Domain/validation messages show verbatim; internal errors are replaced and logged. A retry
             // resumes (already-applied items are skipped) rather than duplicating.
-            _error = UserFacingError.Describe(ex, Logger, "importing a case",
+            var message = UserFacingError.Describe(ex, Logger, "importing a case",
                 "Couldn't complete the import. Try again; items already imported won't be duplicated.");
+            if (_previews.IsCurrent(shown)) _error = message;
+            else Toasts.Error(message);
             // BUG-116: back in the queue, so it isn't stranded if this page is left.
             if (claimed is { } c)
             {
@@ -839,6 +917,19 @@ else if (_pending.Count > 0)
         {
             _applying = false;
         }
+    }
+
+    // BUG-601: left while a read, preview or lookup ran: none of them lands, and nothing navigates the page now showing.
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _navigations.Invalidate();
+        _reads.Invalidate();
+        _previews.Invalidate();
+        _queue.Invalidate();
+        _finds.Invalidate();
     }
 
     private const string SampleJson = @"{
