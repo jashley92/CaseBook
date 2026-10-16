@@ -180,7 +180,7 @@
                                             </div>
                                         </div>
                                         <AuthorizeView Policy="@Policies.EditCases">
-                                            <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => MarkDone(t)" title="Mark done (record a result from the case's Tasks)">
+                                            <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => MarkDone(t)" disabled="@_marking.Contains(t.Id)" title="Mark done (record a result from the case's Tasks)">
                                                 <span class="bi bi-check2" aria-hidden="true"></span> Done
                                             </button>
                                         </AuthorizeView>
@@ -290,12 +290,21 @@
         await Reload();
     }
 
+    // BUG-601: an add, a Done and an unpin each reload; an older reload landing last showed the desk without the newest
+    // change (a task marked done still listed). Only the newest shows, and all of its parts together.
+    private readonly LoadSequence _loads = new();
+
     private async Task Reload()
     {
-        _desk = await Svc.GetAsync();
-        _pinned = await Shortcuts.PinnedAsync();
-        var mine = _desk.Cases.Select(c => c.Id).ToHashSet();
-        _quiet = (await Feed.RecentAsync(60, othersOnly: true)).Where(a => a.CaseId is { } id && mine.Contains(id)).Take(6).ToList();
+        var load = _loads.Begin();
+        var desk = await Svc.GetAsync();
+        var pinned = await Shortcuts.PinnedAsync();
+        var mine = desk.Cases.Select(c => c.Id).ToHashSet();
+        var quiet = (await Feed.RecentAsync(60, othersOnly: true)).Where(a => a.CaseId is { } id && mine.Contains(id)).Take(6).ToList();
+        if (!_loads.IsCurrent(load)) return;
+        _desk = desk;
+        _pinned = pinned;
+        _quiet = quiet;
         if (_desk.Cases.All(c => c.Id != _newTaskCaseId))
             _newTaskCaseId = _desk.Cases.FirstOrDefault()?.Id ?? Guid.Empty;
     }
@@ -324,7 +333,7 @@
     private RenderFragment NeedDetail(DeskNeed n, DateTimeOffset now) => n.Kind switch
     {
         DeskNeedKind.Notify => @<text> · @n.Detail@if (n.AtUtc is { } d) { <span class="@(d < now ? "im-desk-late" : "")"> · @(d < now ? "overdue, was due" : "due") @TimeDisp.Brief(d, now)</span> }</text>,
-        DeskNeedKind.Assigned => @<text> · as @(Enum.TryParse<CaseAssignmentRole>(n.Detail, out var r) ? Ui.Label(r) : n.Detail)@if (n.AtUtc is { } a) { <text> · @TimeDisp.Brief(a, now)</text> }</text>,
+        DeskNeedKind.Assigned => @<text> · as @(IncidentManager.Domain.Common.EnumNames.TryParse<CaseAssignmentRole>(n.Detail, out var r) ? Ui.Label(r) : n.Detail)@if (n.AtUtc is { } a) { <text> · @TimeDisp.Brief(a, now)</text> }</text>,
         DeskNeedKind.Mention => @<text> · @n.Detail@if (n.AtUtc is { } m) { <text> · @TimeDisp.Brief(m, now)</text> }</text>,
         _ => @<text> · @n.Detail@if (n.AtUtc is { } due) { <span class="@(due < now ? "im-desk-late" : "")"> · @(due < now ? "was due" : "due") @TimeDisp.Brief(due, now)</span> }</text>,
     };
@@ -389,13 +398,14 @@
 
     private async Task AddQuickTask()
     {
-        var title = _newTaskTitle.Trim();
+        var sent = _newTaskTitle;
+        var title = sent.Trim();
         if (string.IsNullOrWhiteSpace(title) || _newTaskCaseId == Guid.Empty || _adding) return;
         _adding = true;
         try
         {
             await Cases.AddActionItemAsync(_newTaskCaseId, title, CurrentUser.UserId, null);
-            _newTaskTitle = "";
+            _newTaskTitle = DraftText.ClearIfUnchanged(_newTaskTitle, sent);   // BUG-601: keep what was typed meanwhile
             Toasts.Success("Task added");
             await Reload();
         }
@@ -407,8 +417,12 @@
         finally { _adding = false; }
     }
 
+    // BUG-603: one Done per task at a time (a double click marked it done and then said it already was).
+    private readonly HashSet<Guid> _marking = [];
+
     private async Task MarkDone(DeskTask t)
     {
+        if (!_marking.Add(t.Id)) return;
         try
         {
             await Cases.SetActionItemStatusAsync(t.CaseId, t.Id, ActionItemStatus.Done);
@@ -420,5 +434,6 @@
         {
             Toasts.Error(ex.Message);
         }
+        finally { _marking.Remove(t.Id); }
     }
 }

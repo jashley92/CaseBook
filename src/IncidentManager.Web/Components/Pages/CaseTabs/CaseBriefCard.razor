@@ -7,7 +7,9 @@
    records them as they stood, and an open question can be followed up as a task from here.
    INV-27: says how far the record has moved on since the current version, and suggests an update after a decision,
    handoff, phase, classification or materiality change. Never forced. *@
+@implements IDisposable
 @inject CaseService Cases
+@inject UnsavedEdits Edits
 @inject IClock Clock
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
@@ -210,10 +212,22 @@
     private void CiteInKnown(string? evidenceId)
     {
         if (!Guid.TryParse(evidenceId, out var id) || Case.Evidence.FirstOrDefault(e => e.Id == id) is not { } ev) return;
-        var name = ev.OriginalFileName.Replace("[", "(").Replace("]", ")");
         var current = (_draft.GetValueOrDefault(KnownKey) ?? "").TrimEnd();
-        IncidentManager.Application.Content.TagText.Remember(RefsOf(KnownKey), name, $"evidence:{id}");   // BUG-121: after any earlier [[name]]
-        _draft[KnownKey] = (current.Length == 0 ? "- " : current + " ") + $"[[{name}]]";
+        _draft[KnownKey] = (current.Length == 0 ? "- " : current + " ") + Citation(ev.OriginalFileName, id, RefsOf(KnownKey));
+    }
+
+    /// <summary>
+    /// What a citation of a file puts in the box. C13: a name a [[tag]] can hold goes in as one (linked on save, its label
+    /// escaped there); one with a bracket goes in as the link itself, its label escaped (MarkdownText.LinkLabel), which a
+    /// save keeps as it is. The brackets used to become parentheses, so the brief named a file the case doesn't have.
+    /// </summary>
+    public static string Citation(string fileName, Guid evidenceId, IDictionary<string, string> refs)
+    {
+        var name = fileName.ReplaceLineEndings(" ");   // a line break ends a link
+        if (name.IndexOfAny(['[', ']']) >= 0)
+            return $"[{IncidentManager.Application.Content.MarkdownText.LinkLabel(name)}](evidence:{evidenceId})";
+        IncidentManager.Application.Content.TagText.Remember(refs, name, $"evidence:{evidenceId}");   // BUG-121: after any earlier [[name]]
+        return $"[[{name}]]";
     }
     private const string NextKey = "next";
     private const int NextShown = 5;
@@ -231,6 +245,20 @@
     private bool _adding;
     private Guid? _openedFrom;
     private readonly Dictionary<string, string?> _draft = new();
+    private Dictionary<string, string?> _seeded = new();   // BUG-578: the parts as the editor opened, so an untouched one isn't "unsaved"
+
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // BUG-578: the brief being revised, or a task being typed under Next steps, is asked about before a tab switch, the
+    // pane stepping aside, leaving the case or the time-display redraw hides it.
+    protected override void OnInitialized()
+    {
+        Edits.Track(this, "the brief you're revising", () => _editing
+            && _draft.Any(d => !string.Equals(d.Value ?? "", _seeded.GetValueOrDefault(d.Key) ?? "", StringComparison.Ordinal)), Region);
+        Edits.Track(this, "the task you're adding", () => _adding && !string.IsNullOrWhiteSpace(_newTask), Region);
+    }
+
+    public void Dispose() => Edits.Forget(this);
     // WF-28: each part's link targets on their own. FromEditable counts a label's tags per text, so one list shared by every
     // part (with the summary read twice) gave the n-th tag in Open questions the n-th target of the whole brief: saving
     // unchanged could turn an entity tag into an evidence link.
@@ -265,6 +293,7 @@
             _draft[p.Key] = cur is null ? null : IncidentManager.Application.Content.TagText.ToEditable(p.Get(cur), RefsOf(p.Key));
         // The case's own summary is the current one (a version recorded before INV-36 may hold other text).
         _draft[SummaryKey] = IncidentManager.Application.Content.TagText.ToEditable(Case.Summary, RefsOf(SummaryKey));
+        _seeded = new Dictionary<string, string?>(_draft);
         _error = null;
         _editing = true;
         StateHasChanged();
@@ -273,7 +302,7 @@
     // Says the current version still stands, without a new one; the "changes since" count starts again.
     private async Task ConfirmStillAccurate()
     {
-        if (Current is not { } cur) return;
+        if (_saving || Current is not { } cur) return;   // BUG-603: a second click came back refused over the first one
         _saving = true;
         try
         {
@@ -481,7 +510,11 @@
 
     private static string QuestionTitle(string markdown) => IncidentManager.Application.Content.MarkdownService.PlainLine(markdown);
 
-    private async Task RaiseTask(string question)
+    // BUG-603: one at a time (a double click raised the follow-up task twice, or came back refused).
+    private readonly InFlight _raising = new();
+    private Task RaiseTask(string question) => _raising.Run(() => RaiseTaskCore(question));
+
+    private async Task RaiseTaskCore(string question)
     {
         _taskError = null;
         try
@@ -510,9 +543,11 @@
         _taskError = null;
         try
         {
-            await Cases.AddActionItemAsync(Case.Id, _newTask.Trim(), null, null);
-            _newTask = null;
-            _adding = false;
+            var sent = _newTask;
+            await Cases.AddActionItemAsync(Case.Id, sent.Trim(), null, null);
+            // BUG-601: what was typed during the save stays, in the open form, for the next task.
+            _newTask = DraftText.ClearIfUnchanged(_newTask, sent, null);
+            if (_newTask is null) _adding = false;
             Toasts.Success("Task added");
             await OnChanged.InvokeAsync();
         }

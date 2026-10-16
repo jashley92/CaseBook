@@ -12,6 +12,7 @@
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject ToastService Toasts
+@inject UnsavedEdits Edits
 
 <AuthorizeView Policy="@Policies.EditCases">
     @if (_applyTemplates is { Count: > 0 })
@@ -276,7 +277,7 @@ else
                                 @(t.DueAtUtc is null ? "Undated;" : "After") the @notice.JurisdictionCode deadline, @TimeDisp.Brief(notice.DueAtUtc!.Value, Clock.UtcNow)
                                 @if (CanEdit)
                                 {
-                                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @onclick="() => DueByNotice(t)">Due by then</button>
+                                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" disabled="@_inFlight" @onclick="() => DueByNotice(t)">Due by then</button>
                                 }
                             </div>
                         }
@@ -305,7 +306,7 @@ else
                         </button>
                     </td>
                 </tr>
-                @if (_completingId == t.Id)
+                @if (_done.IsOpenFor(t.Id))
                 {
                     @* INV-08: complete the task and, optionally, put its result on the timeline — written once. *@
                     <tr class="im-task-edit im-own-keys" @key="@($"done-{t.Id}")" @onkeydown="e => CompleteKey(e, t)">
@@ -344,7 +345,7 @@ else
                                     <DateTimeInput Past="true" id="task-done-when" class="form-control form-control-sm" @bind-Value="_doneWhen" />
                                     @* BUG-480 sibling: Shifted stops at year 1 and 9999 instead of throwing. *@
                                     <div class="tl-nudges" role="group" aria-label="Adjust the time">
-                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = ToWall(Clock.UtcNow)">Now</button>
+                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone)">Now</button>
                                         <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = TimeNudges.Shifted(_doneWhen, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
                                         <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = TimeNudges.Shifted(_doneWhen, TimeSpan.FromMinutes(-15))" aria-label="15 minutes earlier">&minus;15 min</button>
                                         <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = TimeNudges.Shifted(_doneWhen, TimeSpan.FromMinutes(15))" aria-label="15 minutes later">+15 min</button>
@@ -385,7 +386,7 @@ else
                         </td>
                     </tr>
                 }
-                @if (_editingTaskId == t.Id)
+                @if (_edit.IsOpenFor(t.Id))
                 {
                     <tr class="im-task-edit im-own-keys" @key="@($"edit-{t.Id}")" @onkeydown="EditKey">
                         <td colspan="@colCount" class="bg-body-tertiary">
@@ -548,13 +549,13 @@ else
     private static string NoteExcerpt(AnalystNote n)
     {
         var text = IncidentManager.Application.Content.RichText.ToText(n.Body).ReplaceLineEndings(" ").Trim();
-        return text.Length <= 60 ? text : text[..57].TrimEnd() + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(text, 60);
     }
 
     private static string EntryExcerpt(TimelineEntry e)
     {
         var text = IncidentManager.Application.Content.RichText.ToText(e.Description).ReplaceLineEndings(" ").Trim();
-        return text.Length <= 60 ? text : text[..57].TrimEnd() + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(text, 60);
     }
 
     private RenderFragment AboutChip(ActionItem t) => @<text>
@@ -593,8 +594,17 @@ else
         t.IsOpen && t.Kind == TaskKind.Notify && NoticeDeadline is { IsActive: true, DueAtUtc: { } deadline } n
         && (t.DueAtUtc is null || t.DueAtUtc > deadline) ? n : null;
 
-    // One click: due by the deadline, everything else unchanged.
+    // One click: due by the deadline, everything else unchanged. BUG-603: one write at a time, with the task edits (a
+    // second click came back refused over the first one's save).
     private async Task DueByNotice(ActionItem t)
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await DueByNoticeCore(t); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task DueByNoticeCore(ActionItem t)
     {
         if (NoticeDeadline?.DueAtUtc is not { } deadline) return;
         try
@@ -646,6 +656,19 @@ else
         Array.Empty<ActionItemCommentView>().ToLookup(c => c.ActionItemId);
     private int _seenRefresh = -1;
 
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // BUG-578: what's typed here and not saved is asked about before a tab switch, leaving the case or the time-display
+    // redraw hides it.
+    protected override void OnInitialized()
+    {
+        Edits.Track(this, "the task you're adding", () => !string.IsNullOrWhiteSpace(_taskTitle) || !string.IsNullOrWhiteSpace(_taskOwnerExternal), Region);
+        Edits.Track(this, "the task you're editing", () => _edit.IsOpen && !Equals(_editSeed, EditValues()), Region);
+        Edits.Track(this, "the result you're recording", () => _done.IsOpen
+            && (!string.IsNullOrWhiteSpace(_doneResult) || (_doneKnown && !string.IsNullOrWhiteSpace(_doneKnownLine)) || !string.IsNullOrWhiteSpace(_doneByExternal)), Region);
+        Edits.Track(this, "a task comment you're writing", () => _commentDrafts.Values.Any(d => !string.IsNullOrWhiteSpace(d)), Region);
+    }
+
     protected override async Task OnInitializedAsync()
         => _applyTemplates ??= await Templates.ListActiveAsync();
 
@@ -660,9 +683,14 @@ else
         }
     }
 
+    // BUG-601: a live refresh and a post each reload; an older load landing last showed the comments without the newest.
+    private readonly LoadSequence _commentLoads = new();
+
     private async Task ReloadComments()
     {
+        var load = _commentLoads.Begin();
         var all = await Comments.ListForCaseAsync(CaseId);
+        if (!_commentLoads.IsCurrent(load)) return;
         _commentsByTask = all.ToLookup(c => c.ActionItemId);
     }
 
@@ -694,7 +722,7 @@ else
         try
         {
             await Comments.AddAsync(CaseId, taskId, body);
-            _commentDrafts[taskId] = "";
+            _commentDrafts[taskId] = DraftText.ClearIfUnchanged(CommentDraft(taskId), body);   // BUG-601: keep what was typed meanwhile
             await ReloadComments();
             _openThreads.Add(taskId);
             Toasts.Success("Comment added");
@@ -715,7 +743,10 @@ else
 
     // --- Edit a task (all fields, behind the Edit button) — consistent with how IOCs/entities are edited;
     // each save is one audited change (before → after) rather than a separate version chain. ---
-    private Guid? _editingTaskId;
+    // BUG-578: Edit on a second task while one is open is refused, not re-seeded over what was typed; BUG-601: a save
+    // closes only its own task's form.
+    private readonly EditSlot<Guid> _edit = new();
+    private object? _editSeed;   // the form's values as seeded, so an untouched edit doesn't count as unsaved
     private string? _editStamp;   // BUG-196: the task's row hash when its edit opened
     private string _editTitle = "";
     private string? _editOwner;
@@ -768,7 +799,7 @@ else
 
     private void BeginEdit(ActionItem t)
     {
-        _editingTaskId = t.Id;
+        if (!_edit.TryOpen(t.Id, Toasts, "task")) return;
         _editStamp = t.RowHash ?? "";   // BUG-196
         _editTitle = t.Title;
         _editStatus = t.Status;
@@ -783,15 +814,19 @@ else
         // Seed the due date/time in the viewer's active display zone (what they see is what they picked).
         if (t.DueAtUtc is { } due)
         {
-            var shown = IncidentManager.Web.Components.Pages.Workspace.DayValues.FromUtc(due, TimeDisp.Zone, OrgZone.Current);   // WF-64
+            var shown = DayValues.FromUtc(due, TimeDisp.Zone, OrgZone.Current);   // WF-64
             (_editDueDate, _editDueTime) = shown;
             _editDueShown = shown;   // BUG-571
         }
         else { _editDueDate = null; _editDueTime = null; _editDueShown = null; }
         _editDueStored = t.DueAtUtc;
+        _editSeed = EditValues();
     }
 
-    private void CancelEdit() => _editingTaskId = null;
+    private object EditValues() => (_editTitle, _editOwner, _editOwnerExternal, _editStatus, _editCancelReason, _editKind,
+        _editDescription, (_editDueDate, _editDueTime));
+
+    private void CancelEdit() => _edit.Close();
 
     // BUG-93: the same one-at-a-time guard for editing, completing and the bulk "mark done".
     private async Task SaveEdit()
@@ -804,7 +839,8 @@ else
 
     private async Task SaveEditCore()
     {
-        if (_editingTaskId is not { } id || string.IsNullOrWhiteSpace(_editTitle)) return;
+        if (_edit.Current is not { } session || string.IsNullOrWhiteSpace(_editTitle)) return;
+        var id = session.Key;
         var owner = _editOwner switch
         {
             ExternalOwnerSentinel => string.IsNullOrWhiteSpace(_editOwnerExternal) ? null : _editOwnerExternal.Trim(),
@@ -814,16 +850,16 @@ else
         try
         {
             await Cases.UpdateActionItemAsync(CaseId, id, _editTitle, owner,
-                KeptOrTypedDueUtc(_editDueDate, _editDueTime, _editDueShown, _editDueStored, TimeDisp.Zone, OrgZone.Current), _editStatus, _editDescription, _editKind, cancelReason: _editCancelReason,
+                DayValues.Kept(_editDueDate, _editDueTime, _editDueShown, _editDueStored, TimeDisp.Zone, OrgZone.Current), _editStatus, _editDescription, _editKind, cancelReason: _editCancelReason,
                 expectedStamp: _editStamp);
-            _editingTaskId = null;
+            _edit.CloseIf(session);
             await OnChanged.InvokeAsync();
             Toasts.Success("Task updated");
         }
         catch (StaleEditException ex)
         {
             // Their change wins; the editor closes on the reloaded task rather than re-saving over it.
-            _editingTaskId = null;
+            _edit.CloseIf(session);
             Toasts.Error(ex.Message);
             await OnChanged.InvokeAsync();
         }
@@ -857,7 +893,12 @@ else
 
     /// <summary>BUG-425: removed from the page; the workspace's @ref still points here (see CaseWorkspace.Keyboard).</summary>
     internal bool Disposed { get; private set; }
-    public void Dispose() => Disposed = true;
+    public void Dispose()
+    {
+        Disposed = true;
+        _commentLoads.Invalidate();
+        Edits.Forget(this);   // BUG-578
+    }
 
     private async Task CompleteKey(KeyboardEventArgs e, ActionItem t)
     {
@@ -896,9 +937,15 @@ else
             var u => u
         };
         // A failed save keeps what was typed so the analyst can fix it and retry.
-        try { await Cases.AddActionItemAsync(CaseId, _taskTitle, owner, ResolveDueUtc(), _taskKind); }
+        var (title, pick, external, dueDate, dueTime) = (_taskTitle, _taskOwner, _taskOwnerExternal, _taskDueDate, _taskDueTime);
+        try { await Cases.AddActionItemAsync(CaseId, title, owner, ToDueUtc(dueDate, dueTime), _taskKind); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't add the task. {ex.Message}"); return; }
-        _taskTitle = ""; _taskOwner = null; _taskOwnerExternal = null; _taskDueDate = null; _taskDueTime = null;
+        // BUG-601: cleared only if still as sent; what was typed during the save is the next task's.
+        _taskTitle = DraftText.ClearIfUnchanged(_taskTitle, title);
+        _taskOwner = DraftText.ClearIfUnchanged(_taskOwner, pick, null);
+        _taskOwnerExternal = DraftText.ClearIfUnchanged(_taskOwnerExternal, external, null);
+        if (_taskDueDate == dueDate) _taskDueDate = null;
+        if (_taskDueTime == dueTime) _taskDueTime = null;
         await OnChanged.InvokeAsync();
         Toasts.Success("Task added");
     }
@@ -906,30 +953,13 @@ else
     // A due deadline is entered in the viewer's active display zone (U-29) — so "what you pick is what you
     // see" round-trips through the UTC/Local toggle without shifting a day. Time is optional: a bare date
     // means "by end of that day" (23:59 local). Stored as a UTC instant like every other timestamp (F-20).
-    private DateTimeOffset? ResolveDueUtc() => ToDueUtc(_taskDueDate, _taskDueTime);
-
-    // Shared by the add and edit forms: convert a picked wall date/time (viewer zone) to a stored UTC instant.
+    // The edit form saves through DayValues.Kept instead (BUG-571), which keeps an untouched stored due.
     private DateTimeOffset? ToDueUtc(DateTime? date, TimeOnly? time)
     {
         if (date is not { } d) return null;
         // WF-64: a bare date is the end of that day on the organization's calendar; a time is the viewer's.
-        return IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, time, TimeDisp.Zone, OrgZone.Current);
+        return DayValues.ToUtc(d, time, TimeDisp.Zone, OrgZone.Current);
     }
-
-    /// <summary>
-    /// BUG-571 (WF-68/WF-82 sibling): the due to save from the edit form. A date and time left as shown keep the stored
-    /// instant; converting them back read a due in the repeated autumn hour as standard time, so editing only the title
-    /// moved the due an hour. Compared at the minute the field shows (BUG-503), since a time typed back has no seconds.
-    /// </summary>
-    public static DateTimeOffset? KeptOrTypedDueUtc(DateTime? date, TimeOnly? time, (DateTime Date, TimeOnly? Time)? shown,
-        DateTimeOffset? stored, TimeZoneInfo viewer, TimeZoneInfo organization)
-    {
-        if (date is not { } d) return null;
-        if (stored is { } kept && shown is { } s && d.Date == s.Date.Date && ToMinute(time) == ToMinute(s.Time)) return kept;
-        return IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, time, viewer, organization);
-    }
-
-    private static TimeOnly? ToMinute(TimeOnly? t) => t is { } v ? new TimeOnly(v.Hour, v.Minute) : null;
 
     // PROD-21: multi-select complete.
     private readonly HashSet<Guid> _selected = new();
@@ -953,7 +983,8 @@ else
     private async Task CommentPromoted() { _promotingComment = null; await OnChanged.InvokeAsync(); }
 
     // --- INV-08: complete one task, optionally recording its result on the timeline ---
-    private Guid? _completingId;
+    // BUG-578: Mark done on a second task while one's result is open is refused; BUG-601: its save closes only its own.
+    private readonly EditSlot<Guid> _done = new();
     private string? _doneResult;
     private bool _doneKnown;
     private string? _doneKnownLine;
@@ -990,28 +1021,33 @@ else
 
     private void BeginComplete(ActionItem t)
     {
-        _completingId = t.Id;
+        if (!_done.TryOpen(t.Id, Toasts, "result")) return;
         _doneType = ResultTypeFor(t);
         _doneResult = null; _doneKnown = false; _doneKnownLine = null;
-        _doneWhen = _doneWhenDefault = ToWall(Clock.UtcNow);
+        _doneWhen = _doneWhenDefault = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
         _doneLog = true;
         _doneBy = CurrentUser.UserId;
         _doneByExternal = null;
     }
 
-    private void CancelComplete() => _completingId = null;
+    private void CancelComplete() => _done.Close();
 
     private async Task CompleteTask(Guid id)
     {
-        if (_completing) return;
+        if (_completing || _done.Current is not { } session || session.Key != id) return;
         _completing = true;
+        // BUG-601: what this form held, read once. The form can be cancelled and another task's opened while the save
+        // runs; the toast and the phase offer were built from that other task's text.
+        var result = string.IsNullOrWhiteSpace(_doneResult) ? null : _doneResult;
+        var logged = _doneLog && result is not null;
+        var known = _doneKnown && !string.IsNullOrWhiteSpace(_doneKnownLine);
+        // C3: left at the minute the form opened with, it's "now" (the server's); a time typed back has no seconds.
+        DateTimeOffset? at = WallClock.ToMinute(_doneWhen) == WallClock.ToMinute(_doneWhenDefault) ? null : WallClock.ToUtc(_doneWhen, TimeDisp.Zone);
         try
         {
-            var result = string.IsNullOrWhiteSpace(_doneResult) ? null : _doneResult;
             var doneBy = _doneBy == ExternalOwnerSentinel ? _doneByExternal : _doneBy;
-            await Cases.CompleteActionItemAsync(CaseId, id,
-                _doneWhen == _doneWhenDefault ? null : WallToUtc(_doneWhen),
-                result, _doneLog && result is not null ? _doneType : null, doneBy: doneBy,
+            await Cases.CompleteActionItemAsync(CaseId, id, at,
+                result, logged ? _doneType : null, doneBy: doneBy,
                 knownLine: _doneKnown   // WF-104: [[tags]] as in the brief
                     ? IncidentManager.Application.Content.TagText.FromEditable(_doneKnownLine, new Dictionary<string, string>(),
                         Case.Entities.Select(x => (x.Id, x.Label, x.Value)))
@@ -1019,17 +1055,13 @@ else
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         finally { _completing = false; }
-        _completingId = null;
+        _done.CloseIf(session);
         _selected.Remove(id);
-        Toasts.Success((_doneLog && !string.IsNullOrWhiteSpace(_doneResult) ? "Task done and result added to the timeline" : "Task done")
-            + (_doneKnown && !string.IsNullOrWhiteSpace(_doneKnownLine) ? "; Known updated" : ""));
-        _doneKnown = false;
-        _doneKnownLine = null;
+        Toasts.Success((logged ? "Task done and result added to the timeline" : "Task done") + (known ? "; Known updated" : ""));
         // HR-10: containment, eradication or recovery work finished ahead of the case's phase.
         _advanceOffer = Case.ActionItems.FirstOrDefault(x => x.Id == id) is { Kind: TaskKind.Contain or TaskKind.Eradicate or TaskKind.Recover } done
                         && done.Kind.Phase() is { } phase && Case.Phase < phase && Case.Phase != CasePhase.Closed
-            ? (phase, string.IsNullOrWhiteSpace(_doneResult) ? done.Title : _doneResult.Trim(),
-               _doneWhen == _doneWhenDefault ? null : WallToUtc(_doneWhen))
+            ? (phase, result is null ? done.Title : result.Trim(), at)
             : null;
         await OnChanged.InvokeAsync();
     }
@@ -1043,14 +1075,6 @@ else
         if (_advanceOffer is not { } offer) return;
         _advanceOffer = null;
         await OnAdvancePhase.InvokeAsync(offer);
-    }
-
-    private DateTime ToWall(DateTimeOffset utc)
-        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
-
-    private DateTimeOffset WallToUtc(DateTime wall)
-    {
-        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
     }
 
     private async Task MarkSelectedDone()

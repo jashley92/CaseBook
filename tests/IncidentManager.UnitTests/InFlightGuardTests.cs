@@ -23,11 +23,6 @@ public partial class InFlightGuardTests
     {
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // SaveCite (Cases.CiteEvidenceAsync); MoveStep (Cases.MoveEventStepAsync)
-        // wave 2b, U2 (tasks, Now/Next, brief, desk, quick task)
-        ["Pages/CaseTabs/CaseBriefCard.razor"] = 2,   // ConfirmStillAccurate (Cases.ConfirmBriefAsync); RaiseTask (Cases.RaiseTaskFromQuestionAsync)
-        ["Pages/CaseTabs/CaseNowNext.razor"] = 1,   // MarkReported (Cases.MarkReportedAsync)
-        ["Pages/CaseTabs/CaseTasksTab.razor"] = 1,   // DueByNotice (Cases.UpdateActionItemAsync)
-        ["Pages/DeskPage.razor"] = 1,   // MarkDone (Cases.SetActionItemStatusAsync)
         // wave 2b, U3 (entities, overview, panels, evidence)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 6,   // LinkRelated (Cases.LinkCaseAsync); RemoveEntity (Cases.RemoveEntityAsync); AddRelationship (Cases.LinkEntitiesAsync); SaveRelationship (Cases.Edit...
         ["Pages/CaseTabs/CaseEvidenceTab.razor"] = 1,   // OnDropped (Evidence.UploadAsync)

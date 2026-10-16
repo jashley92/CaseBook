@@ -3,10 +3,12 @@
    Next is what must happen, in order of consequence: running obligations (notification deadlines, then the SLA
    clocks), the open tasks with why each exists, and how ready the case is for its next gate. The team and the key
    entities follow. Replaces the context rail (INV-12); on narrower screens the Overview keeps the brief and the strip. *@
+@implements IDisposable
 @inject CaseService Cases
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject UnsavedEdits Edits
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
 
@@ -101,7 +103,7 @@
                     <li>
                         <div class="im-nn-task-row">
                             <button type="button" class="im-nn-task" @onclick='() => OnFocusTask.InvokeAsync(task.Id)'>@t.Title</button>
-                            @if (CanEdit && _doneFor != t.Id)
+                            @if (CanEdit && !_done.IsOpenFor(t.Id))
                             {
                                 @* RD-25: record a result from here, without going to the Tasks part. *@
                                 <button type="button" class="btn btn-link btn-sm p-0 im-nn-done" @onclick="() => BeginDone(task)"
@@ -117,7 +119,7 @@
                                 <span class="@(late ? "im-nn-late" : "")" title="@TimeDisp.Long(due)">@(late ? "overdue · " : "")@TimeDisp.Brief(due, now)</span>
                             }
                         </div>
-                        @if (_doneFor == t.Id)
+                        @if (_done.IsOpenFor(t.Id))
                         {
                             <div class="im-nn-doneform" @onkeydown="e => DoneKey(e, task)">
                                 @if (t.FollowsUpQuestion)
@@ -136,7 +138,7 @@
                                 </div>
                                 <div class="d-flex gap-2 mt-1">
                                     <button type="button" class="btn btn-sm btn-primary" disabled="@(_saving || (t.FollowsUpQuestion && string.IsNullOrWhiteSpace(_result)))" @onclick="() => Done(task)">Mark done</button>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _doneFor = null">Cancel</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _done.Close()">Cancel</button>
                                 </div>
                                 @if (_doneError is not null) { <div class="text-danger small mt-1" role="alert">@_doneError</div> }
                             </div>
@@ -270,14 +272,23 @@
     /// <summary>RD-25: on a phone the case's Now and Next are separate tabs: "now", "next", or both (the pane).</summary>
     [Parameter] public string Show { get; set; } = "both";
 
-    // RD-25: completing a task, with its result, from Next.
-    private Guid? _doneFor;
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // BUG-578: a result being written is asked about before the pane steps aside, the case is left or the page redrawn.
+    protected override void OnInitialized() =>
+        Edits.Track(this, "the result you're recording", () => _done.IsOpen && !string.IsNullOrWhiteSpace(_result), Region);
+
+    public void Dispose() => Edits.Forget(this);
+
+    // RD-25: completing a task, with its result, from Next. BUG-578: Done… on a second task while one is open is refused
+    // (it re-seeded over the typed result); BUG-601: a save closes only its own task's form.
+    private readonly EditSlot<Guid> _done = new();
     private string? _result, _doneError;
     private bool _logIt;
 
     private void BeginDone(ActionItem t)
     {
-        _doneFor = t.Id;
+        if (!_done.TryOpen(t.Id, Toasts, "result")) return;
         _result = null;
         _logIt = false;
         _doneError = null;
@@ -295,14 +306,14 @@
 
     private async Task Done(ActionItem t)
     {
-        if (_saving) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
+        if (_saving || _done.Current is not { } session || session.Key != t.Id) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
         _saving = true;
         _doneError = null;
         try
         {
             var logAs = _logIt && !string.IsNullOrWhiteSpace(_result) ? CaseTasksTab.ResultTypeFor(t) : (TimelineEntryType?)null;   // BUG-508
             await Cases.CompleteActionItemAsync(Case.Id, t.Id, null, _result, logAs);
-            _doneFor = null;
+            _done.CloseIf(session);
             Toasts.Success(logAs is null ? "Task done" : "Task done; the result is on the record");
             await OnChanged.InvokeAsync();
         }
@@ -373,27 +384,39 @@
     private static string OneLine(string? text)
     {
         var t = (text ?? "").Replace('\n', ' ').Trim();
-        return t.Length <= 120 ? t : t[..117] + "…";
+        return IncidentManager.Application.Common.TextFit.Cap(t, 120);
     }
+
+    // BUG-594: the reported time the pane showed when the form opened (none: Mark reported shows only while it's open).
+    private DateTimeOffset? _reportedShown;
 
     private void BeginMarkReported()
     {
         _error = null;
-        _reportedAt = DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(Clock.UtcNow, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+        _reportedAt = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
+        _reportedShown = Case.ReportedAtUtc;
         _marking = true;
     }
 
     private async Task MarkReported()
     {
+        if (_saving) return;   // BUG-603: a double click came back refused over the first one's save
         _error = null;
         if (_reportedAt is not { } wall) { _error = "Enter when regulators were notified."; return; }
         _saving = true;
         try
         {
-            var utc = IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
-            await Cases.MarkReportedAsync(Case.Id, utc);
+            var utc = WallClock.ToUtc(wall, TimeDisp.Zone);
+            // BUG-594: refused if a colleague recorded it meanwhile, instead of overwriting their time.
+            await Cases.MarkReportedAsync(Case.Id, utc, Shown.Of(_reportedShown));
             _marking = false;
             Toasts.Success("Reported milestone recorded");
+            await OnChanged.InvokeAsync();
+        }
+        catch (StaleEditException ex)
+        {
+            _marking = false;
+            Toasts.Error(ex.Message);
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)

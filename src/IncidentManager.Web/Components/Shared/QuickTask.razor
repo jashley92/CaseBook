@@ -1,7 +1,9 @@
 @* INV-28: start a task where the work is (an entity, an evidence file, a timeline entry). Only the title is asked
    for; the task records what it's about, and the owner, due date and kind are set on the Tasks tab. *@
+@implements IDisposable
 @inject CaseService Cases
 @inject ToastService Toasts
+@inject UnsavedEdits Edits
 
 @* BUG-425: im-own-keys: Ctrl/Cmd+Enter here adds this task (keymap.js leaves it to KeyDown), not the tab's composer. *@
 <form class="im-quicktask im-own-keys" @onsubmit="Add" @onsubmit:preventDefault @onkeydown="KeyDown">
@@ -32,7 +34,18 @@
     private string? _error;
     private bool _saving;
 
-    protected override void OnInitialized() => _title = InitialTitle;
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    protected override void OnInitialized()
+    {
+        _title = InitialTitle;
+        // BUG-578: a title being typed is asked about before whatever holds this form hides it (a tab switch, a panel
+        // moving on, leaving the case). The decision's own text, untouched, isn't unsaved input.
+        Edits.Track(this, "the task you're adding",
+            () => !string.IsNullOrWhiteSpace(_title) && !string.Equals(_title, InitialTitle, StringComparison.Ordinal), Region);
+    }
+
+    public void Dispose() => Edits.Forget(this);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -55,10 +68,12 @@
         _error = null;
         try
         {
-            await Cases.AddActionItemAsync(CaseId, _title, null, null, about: About);
+            var sent = _title;
+            await Cases.AddActionItemAsync(CaseId, sent, null, null, about: About);
             Toasts.Success("Task added");
-            _title = null;
-            await OnDone.InvokeAsync();
+            // BUG-601: what was typed during the save is kept, and the form with it; unchanged, the form is done.
+            _title = DraftText.ClearIfUnchanged(_title, sent, null);
+            if (_title is null) await OnDone.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

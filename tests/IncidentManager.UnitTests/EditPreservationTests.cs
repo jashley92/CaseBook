@@ -24,11 +24,6 @@ public partial class EditPreservationTests
     {
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 1,   // 15 text field(s), no Edits.Track
-        // wave 2b, U2 (tasks, Now/Next, brief, desk, quick task)
-        ["Pages/CaseTabs/CaseBriefCard.razor"] = 1,   // 1 text field(s), no Edits.Track
-        ["Pages/CaseTabs/CaseNowNext.razor"] = 1,   // 1 text field(s), no Edits.Track
-        ["Pages/CaseTabs/CaseTasksTab.razor"] = 1,   // 10 text field(s), no Edits.Track
-        ["Shared/QuickTask.razor"] = 1,   // 1 text field(s), no Edits.Track
         // wave 2b, U3 (entities, overview, panels, evidence)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 1,   // 8 text field(s), no Edits.Track
         ["Pages/CaseTabs/CaseEvidenceTab.razor"] = 1,   // 4 text field(s), no Edits.Track
@@ -46,9 +41,6 @@ public partial class EditPreservationTests
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseNotesTab.razor"] = 1,   // StartNoteEdit
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // StartEventEdit; StartInvestigationEdit
-        // wave 2b, U2 (tasks, Now/Next, brief, desk, quick task)
-        ["Pages/CaseTabs/CaseNowNext.razor"] = 1,   // BeginDone
-        ["Pages/CaseTabs/CaseTasksTab.razor"] = 2,   // BeginEdit; BeginComplete
         // wave 2b, U3 (entities, overview, panels, evidence)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 2,   // StartEntityEdit; BeginEditRelationship
         // wave 2b, U4 (pages, admin, other shared)

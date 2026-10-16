@@ -33,9 +33,6 @@ public partial class ComponentContinuationTests
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseNotesTab.razor"] = 1,   // OnParametersSetAsync: _mentionable = await Cases.MentionableAsync
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 2,   // ReconcileEditor: _mentionable = await Cases.MentionableAsync; SearchFuLink: _fuLinkResults = found (Cases.SearchLinkableCasesAsync)
-        // wave 2b, U2 (tasks, Now/Next, brief, desk, quick task)
-        ["Pages/CaseTabs/CaseTasksTab.razor"] = 1,   // ReloadComments: _commentsByTask = all (Comments.ListForCaseAsync)
-        ["Pages/DeskPage.razor"] = 1,   // Reload: _desk = await Svc.GetAsync
         // wave 2b, U3 (entities, overview, panels, evidence)
         ["Pages/CaseTabs/AccountDirectoryPanel.razor"] = 1,   // LookUp: _live = result (Directory.LookupAsync)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 3,   // OnParametersSetAsync: _links = await Cases.GetCaseLinksAsync; LoadOverlaps: _overlaps = await Cases.FindEntityOverlapsAsync; LoadRelated: _related...
@@ -70,11 +67,6 @@ public partial class ComponentContinuationTests
     {
         // wave 2b, U1 (timeline, notes)
         ["Pages/CaseTabs/CaseTimelineTab.razor"] = 7,   // AddQuestion: _question = null;; AddTimelineCore: _tlDesc = "";; AddTimelineCore: _tlSource = null;; AddEventStepCore: _tlDesc = "";; AddEventStepC...
-        // wave 2b, U2 (tasks, Now/Next, brief, desk, quick task)
-        ["Pages/CaseTabs/CaseBriefCard.razor"] = 1,   // AddTask: _newTask = null;
-        ["Pages/CaseTabs/CaseTasksTab.razor"] = 4,   // AddTaskCore: _taskTitle = "";; AddTaskCore: _taskOwner = null;; AddTaskCore: _taskOwnerExternal = null;; CompleteTask: _doneKnownLine = null;
-        ["Pages/DeskPage.razor"] = 1,   // AddQuickTask: _newTaskTitle = "";
-        ["Shared/QuickTask.razor"] = 1,   // Add: _title = null;
         // wave 2b, U3 (entities, overview, panels, evidence)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 6,   // AddEntity: _enValue = "";; AddEntity: _enLabel = null;; AddEntity: _enDescription = null;; AddEntity: _enSource = null;; AddRelationship: _relSour...
         ["Pages/CaseTabs/CaseEvidenceTab.razor"] = 1,   // Upload: _evDesc = null;
@@ -89,8 +81,6 @@ public partial class ComponentContinuationTests
 
     private static readonly Dictionary<string, int> D_ClosesAnotherForm = new(StringComparer.Ordinal)
     {
-        // wave 2b, U2 (tasks, Now/Next, brief, desk, quick task)
-        ["Pages/CaseTabs/CaseTasksTab.razor"] = 2,   // SaveEditCore: _editingTaskId = null;; SaveEditCore: _editingTaskId = null;
         // wave 2b, U3 (entities, overview, panels, evidence)
         ["Pages/CaseTabs/CaseEntitiesTab.razor"] = 2,   // SaveRelationship: _relEditId = null;; SaveRelationship: _relEditId = null;
         // wave 2b, U4 (pages, admin, other shared)
