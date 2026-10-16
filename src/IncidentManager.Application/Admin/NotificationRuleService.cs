@@ -99,7 +99,11 @@ public sealed class NotificationRuleService
         }
         else
         {
-            if (await db.NotificationRules.AnyAsync(r => r.Code == code, ct))
+            // Codes match ignoring case, as the rule set does (LoadRuleSetAsync): a lower-case "ny" saved before REV-49 is NY,
+            // and SQLite's "=" let an "NY" in beside it, which then made the rule set throw on the duplicate.
+#pragma warning disable CA1304, CA1311, CA1862 // EF translates ToUpper() to SQL UPPER(); the culture overloads don't translate.
+            if (await db.NotificationRules.AnyAsync(r => r.Code.ToUpper() == code, ct))
+#pragma warning restore CA1304, CA1311, CA1862
                 throw new InvalidOperationException($"A rule for '{code}' already exists. Edit that rule instead.");
             db.NotificationRules.Add(new NotificationRule
             {
@@ -113,7 +117,9 @@ public sealed class NotificationRuleService
         {
             // BUG-339: a rule for the same code was added between the check above and this insert.
             using var check = _factory.CreateDbContext();
-            if (await check.NotificationRules.AnyAsync(r => r.Code == code, ct))
+#pragma warning disable CA1304, CA1311, CA1862 // as above: translated to SQL UPPER()
+            if (await check.NotificationRules.AnyAsync(r => r.Code.ToUpper() == code, ct))
+#pragma warning restore CA1304, CA1311, CA1862
                 throw new InvalidOperationException($"A rule for '{code}' already exists. Edit that rule instead.", ex);
             throw;
         }
