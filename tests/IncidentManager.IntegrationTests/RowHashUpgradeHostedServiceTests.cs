@@ -122,6 +122,10 @@ public sealed partial class RowHashUpgradeHostedServiceTests
         RowHashUpgradeHostedService.IsDefect(new ConcurrentEditException(new InvalidOperationException())).Should().BeFalse();
         RowHashUpgradeHostedService.IsDefect(new DbUpdateException("deadlock")).Should().BeFalse();
         RowHashUpgradeHostedService.IsDefect(new TimeoutException()).Should().BeFalse();
+        // EF on SQL Server wraps a transient fault: judged by what it wraps, so a timeout stays a warning and a wrapped
+        // defect stays an error.
+        RowHashUpgradeHostedService.IsDefect(new InvalidOperationException("transient failure", new TimeoutException())).Should().BeFalse();
+        RowHashUpgradeHostedService.IsDefect(new InvalidOperationException("transient failure", new ArgumentException("x"))).Should().BeTrue();
     }
 
     [Fact]

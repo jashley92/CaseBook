@@ -97,7 +97,12 @@ public sealed class RowHashUpgradeHostedService(
     /// BUG-657: whether a start-up fill or the upgrade failed for a reason a later start won't clear (a defect: a query EF
     /// can't translate, a refused change), rather than a database that timed out, was locked or lost a race.
     /// </summary>
+    /// EF on SQL Server wraps a transient fault (a timeout, a dropped connection) in an InvalidOperationException whose
+    /// inner exception is the real one, so that wrapper is judged by what it wraps (BUG-660 follow-up).
     public static bool IsDefect(Exception ex) =>
-        ex is not (Microsoft.EntityFrameworkCore.DbUpdateException or System.Data.Common.DbException or TimeoutException
-            or ConcurrentEditException);
+        ex is InvalidOperationException { InnerException: { } inner } && !Transient(ex) ? IsDefect(inner) : !Transient(ex);
+
+    private static bool Transient(Exception ex) =>
+        ex is Microsoft.EntityFrameworkCore.DbUpdateException or System.Data.Common.DbException or TimeoutException
+            or ConcurrentEditException;
 }
