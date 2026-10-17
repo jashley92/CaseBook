@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<Import.CaseImportService>();    // PROD-31: structured case import (schema + importer)
         services.AddScoped<ApiTokens.ApiTokenService>();   // PROD-34: API-token auth (personal + system tokens)
         services.AddScoped<EvidenceService>();
+        services.AddSingleton<EvidenceUploadSessions>();   // PROD-56: large uploads in progress (one instance)
         services.AddScoped<DashboardService>();
         services.AddScoped<Work.MyWorkService>();
         services.AddScoped<Work.DeskService>();   // RD-16

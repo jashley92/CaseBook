@@ -105,8 +105,10 @@ public sealed class CaseService
         Notifications.IDeadlineReminderTracker? deadlineReminders = null,
         IEvidenceStore? evidenceStore = null,
         Accounts.AccountDirectoryService? accounts = null,
-        Notifications.ReminderAudience? audience = null)
+        Notifications.ReminderAudience? audience = null,
+        Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? evidenceLimits = null)
     {
+        _evidenceLimits = evidenceLimits;
         _audience = audience;
         _accounts = accounts;
         _evidenceStore = evidenceStore;
@@ -130,6 +132,7 @@ public sealed class CaseService
     }
 
     private readonly IEvidenceStore? _evidenceStore;   // WF-31
+    private readonly Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? _evidenceLimits;   // PROD-55
     private readonly Accounts.AccountDirectoryService? _accounts;   // BUG-416
     private readonly Notifications.ReminderAudience? _audience;   // BUG-596/597
 
@@ -158,6 +161,8 @@ public sealed class CaseService
         if (_evidenceStore is null) throw new InvalidOperationException("Screenshots can't be stored on this server.");
         if (shot.FileName.Length > Evidence.EvidenceService.MaxFileNameLength)
             throw new ArgumentException($"That file name is longer than {Evidence.EvidenceService.MaxFileNameLength} characters.");
+        // PROD-55: a pasted screenshot is evidence, so it counts against the same limits as an upload.
+        await Evidence.EvidenceRoom.CheckAsync(db, _evidenceStore, _evidenceLimits?.CurrentValue ?? new(), shot.Bytes.LongLength, ct);
         await using var content = new MemoryStream(shot.Bytes, writable: false);
         var stored = await _evidenceStore.SaveAsync(caseId, content, ct);
         var now = _clock.UtcNow;

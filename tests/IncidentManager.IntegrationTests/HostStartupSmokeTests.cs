@@ -102,6 +102,37 @@ public sealed class HostStartupSmokeTests : IDisposable
     }
 
     [Fact]
+    public async Task Large_upload_parts_need_the_pages_token_and_refuse_passive_or_cross_site_loads(/* PROD-56 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            const string begin = """{"caseId":"00000000-0000-0000-0000-000000000001","name":"a.bin","size":100}""";
+
+            // Signed in, but no antiforgery token: another site's page can't start or feed an upload.
+            using var noToken = new HttpRequestMessage(HttpMethod.Post, "/evidence/uploads/")
+            {
+                Content = new StringContent(begin, System.Text.Encoding.UTF8, "application/json"),
+            };
+            var refused = await client.SendAsync(noToken);
+            refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await refused.Content.ReadAsStringAsync()).Should().Contain("security token");
+
+            using var forged = new HttpRequestMessage(HttpMethod.Post, "/evidence/uploads/")
+            {
+                Content = new StringContent(begin, System.Text.Encoding.UTF8, "application/json"),
+            };
+            forged.Headers.Add("RequestVerificationToken", "not-a-token");
+            (await client.SendAsync(forged)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            using var crossSite = new HttpRequestMessage(HttpMethod.Put, "/evidence/uploads/abc/0") { Content = new ByteArrayContent([1, 2, 3]) };
+            crossSite.Headers.Add("Sec-Fetch-Site", "cross-site");
+            (await client.SendAsync(crossSite)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        });
+    }
+
+    [Fact]
     public async Task Refused_passive_loads_dont_spend_the_download_budget(/* REV-61 */)
     {
         await RunWithin(Limit, async () =>

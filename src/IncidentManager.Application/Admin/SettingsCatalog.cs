@@ -185,6 +185,19 @@ public static class SettingsCatalog
         new SettingDefinition("Integrity:AutoSeal:IntervalHours", "Auto-seal interval (hours)", "Integrity", SettingKind.Int,
             "Hours between signed seals. Tamper checks still run about every 10 minutes (the whole audit chain re-hashed every 6 hours). This only limits " +
             "how much recent history waits for a seal. Default 6 (0 also means 6). Applies within a few minutes.", "6", Max: MaxIntervalHours),
+        // PROD-55: how large a file, and how much evidence in all, the store takes (EvidenceRoom).
+        new SettingDefinition("Evidence:MaxUploadMB", "Largest evidence file (MB)", "Evidence storage", SettingKind.Int,
+            "The largest single file that can be uploaded as evidence, in MB. Files over 100 MB upload in parts with a progress " +
+            "bar. Up to 65,536 (64 GB). Default 500.", "500", Min: 1, Max: 65_536),
+        new SettingDefinition("Evidence:StorageQuotaGB", "Evidence storage limit (GB)", "Evidence storage", SettingKind.Int,
+            "The most all stored evidence may take, in GB. An upload that would go past it is refused, and uploaders are warned " +
+            "at 90 %. 0 is no limit. Two uploads at once may together go slightly over.", "0", Max: 1_000_000),
+        new SettingDefinition("Evidence:MinFreeSpaceGB", "Free space to keep on the evidence store (GB)", "Evidence storage", SettingKind.Int,
+            "An upload is refused if it would leave less than this free on the evidence store's disk or share. Default 10.",
+            "10", Max: 1_000_000),
+        new SettingDefinition("Evidence:ReadBackCheck", "Re-check large uploads before recording them", "Evidence storage", SettingKind.Bool,
+            "Reads a file uploaded in parts back from the store and checks its SHA-256 before recording it, so a write damaged " +
+            "on its way to a network share is caught at once. Doubles the reads for large files. Default on.", "true"),
         new SettingDefinition("Integrity:EvidenceVerify:Enabled", "Evidence re-verification enabled", "Integrity", SettingKind.Bool,
             "Periodically re-hashes stored evidence and alerts if a file no longer matches its recorded SHA-256. " +
             "Off by default because a full pass is I/O-heavy. Alerts go to the integrity-alert distribution.", "false"),

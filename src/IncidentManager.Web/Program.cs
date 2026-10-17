@@ -86,6 +86,9 @@ builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
 // PROD-52: deletes access-log entries older than Retention:AccessLogYears (default 3), keeping legal-hold cases' entries.
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 builder.Services.AddHostedService<AccessLogRetentionHostedService>();
+// PROD-56: clears parts of large uploads a restart cut off, and probes the evidence store (a share especially).
+builder.Services.AddSingleton<EvidenceStoreStatus>();
+builder.Services.AddHostedService<EvidenceStoreHostedService>();
 
 // --- BUG-101: retries the breach-escalation and integrity-alarm emails whose send failed ---
 builder.Services.AddHostedService<CriticalAlertRetryHostedService>();
@@ -156,6 +159,8 @@ var downloadLimits = builder.Configuration.GetSection("RateLimiting:Downloads").
     ?? new DownloadRateLimitOptions();
 // REV-62: evidence thumbnails (the timeline's inline images) aren't logged as downloads (S-03), but they're still evidence
 // bytes, so they're capped per user too, on a budget a page full of screenshots doesn't reach.
+var uploadLimits = builder.Configuration.GetSection("RateLimiting:Uploads").Get<DownloadRateLimitOptions>()
+    ?? new DownloadRateLimitOptions { TokenLimit = 240, TokensPerPeriod = 240, PeriodSeconds = 60 };   // PROD-56
 var thumbnailLimits = builder.Configuration.GetSection("RateLimiting:Thumbnails").Get<DownloadRateLimitOptions>()
     ?? new DownloadRateLimitOptions { TokenLimit = 300, TokensPerPeriod = 300, PeriodSeconds = 60 };
 builder.Services.AddRateLimiter(options =>
@@ -195,6 +200,23 @@ builder.Services.AddRateLimiter(options =>
             TokensPerPeriod = downloadLimits.TokensPerPeriod,
             ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, downloadLimits.PeriodSeconds)),
             QueueLimit = 0,                          // reject over-budget requests immediately (429), don't delay
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true
+        });
+    });
+
+    // PROD-56: the large-upload parts, per person (8 MB a part: the default is about 32 MB/s, well over a share's speed).
+    options.AddPolicy("uploads", httpContext =>
+    {
+        if (IncidentManager.Web.Security.PassiveLoadGuard.WillBeRefused(httpContext))
+            return RateLimitPartition.GetNoLimiter("refused-passive");
+        var key = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? httpContext.User.Identity?.Name ?? "anon";
+        return RateLimitPartition.GetTokenBucketLimiter(key, _ => new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = uploadLimits.TokenLimit,
+            TokensPerPeriod = uploadLimits.TokensPerPeriod,
+            ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, uploadLimits.PeriodSeconds)),
+            QueueLimit = 0,
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             AutoReplenishment = true
         });
@@ -248,6 +270,8 @@ builder.Services.Configure<DevAuthOptions>(builder.Configuration.GetSection("Dev
 builder.Services.Configure<IncidentManager.Web.Security.IdleTimeoutOptions>(
     builder.Configuration.GetSection("Security"));
 // F-12: optional two-person control for releasing a legal hold (admin setting, live).
+// PROD-55: the evidence store's limits (Administration › Governance & security › Evidence storage).
+builder.Services.Configure<IncidentManager.Application.Evidence.EvidenceStorageOptions>(builder.Configuration.GetSection("Evidence"));
 builder.Services.Configure<IncidentManager.Application.Cases.LegalHoldOptions>(builder.Configuration.GetSection("Governance:LegalHoldRelease"));
 builder.Services.Configure<IncidentManager.Application.Reporting.ReportingOptions>(
     builder.Configuration.GetSection("Reporting"));
@@ -575,6 +599,8 @@ app.MapGet("/agenda/feed.ics", async (string? token, IncidentManager.Application
 }).AllowAnonymous().RequireRateLimiting("downloads");
 
 // --- Evidence download (streamed, records a chain-of-custody event) ---
+IncidentManager.Web.Security.EvidenceUploadEndpoints.MapEvidenceUploads(app);   // PROD-56: large uploads in parts
+
 app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
     IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>
 {
@@ -587,6 +613,13 @@ app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
         // BUG-197: the record is there but its file isn't (the evidence check reports it as missing).
         return Results.Problem("This evidence file is missing from the evidence store. Nothing was downloaded; " +
             "ask an administrator to restore it.", statusCode: StatusCodes.Status404NotFound);
+    }
+    catch (IOException)
+    {
+        // PROD-56: the store itself couldn't be read (a share that's down, permissions): nothing was downloaded or recorded.
+        return Results.Problem("The evidence store couldn't be read just now. Nothing was downloaded. Try again; if it keeps " +
+            "failing, ask an administrator to check the evidence store (Administration › Diagnostics).",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
     }
     // C-05: record the sensitive-artifact access (best-effort, out of the tamper-evident chain).
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.EvidenceDownload,

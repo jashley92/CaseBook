@@ -19,10 +19,15 @@ public sealed class EvidenceService
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
     private readonly IAuditWriter _audit;
+    private readonly Microsoft.Extensions.Options.IOptionsMonitor<EvidenceStorageOptions>? _limits;   // PROD-55
+    private readonly EvidenceUploadSessions? _uploads;   // PROD-56
 
     public EvidenceService(IAppDbContextFactory factory, IEvidenceStore store, ICurrentUser user, IClock clock,
-        IAuditWriter audit)
+        IAuditWriter audit, Microsoft.Extensions.Options.IOptionsMonitor<EvidenceStorageOptions>? limits = null,
+        EvidenceUploadSessions? uploads = null)
     {
+        _limits = limits;
+        _uploads = uploads;
         _factory = factory;
         _store = store;
         _user = user;
@@ -30,21 +35,61 @@ public sealed class EvidenceService
         _audit = audit;
     }
 
-    public async Task<Domain.Entities.Evidence> UploadAsync(Guid caseId, string fileName, string contentType,
-        Stream content, string? description, CancellationToken ct = default)
+    /// <summary>The administrator's storage limits in force (PROD-55).</summary>
+    public EvidenceStorageOptions Limits => _limits?.CurrentValue ?? new();
+
+    /// <summary>PROD-55: what evidence takes against its limits (Diagnostics, and the uploader's 90 % warning).</summary>
+    public async Task<EvidenceStorageUse> StorageUseAsync(CancellationToken ct = default)
     {
-        // S-09: uploading is a case edit, and only onto a case the caller can see (checked before any bytes are stored).
-        if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, nameof(UploadAsync));
         using var db = _factory.CreateDbContext();
+        return await EvidenceRoom.UseAsync(db, _store, Limits, ct);
+    }
+
+    /// <summary>
+    /// PROD-55: <paramref name="size"/> is the size the browser declared, checked against the limits before any byte is
+    /// stored; the bytes actually read are held to the largest file allowed, and checked again once stored.
+    /// </summary>
+    public async Task<Domain.Entities.Evidence> UploadAsync(Guid caseId, string fileName, string contentType,
+        Stream content, string? description, long? size = null, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        await CheckCanUploadAsync(db, caseId, fileName, description, ct);
+        var limits = Limits;
+        await EvidenceRoom.CheckAsync(db, _store, limits, size ?? 0, ct);
+        await using var held = new LimitedReadStream(content, limits.MaxUploadBytes,
+            () => new ArgumentException($"That file is larger than {EvidenceRoom.Size(limits.MaxUploadBytes)}, the largest file CaseBook takes."));
+        var stored = await _store.SaveAsync(caseId, held, ct);
+        if (stored.SizeBytes != size)
+        {
+            // The size wasn't declared, or the bytes differ from it: the stored size decides.
+            try { await EvidenceRoom.CheckAsync(db, _store, limits, stored.SizeBytes, ct); }
+            catch
+            {
+                await _store.DiscardUnrecordedAsync(stored.StoragePath);
+                throw;
+            }
+        }
+        return await RecordAsync(db, caseId, fileName, contentType, description, stored, ct);
+    }
+
+    // S-09: uploading is a case edit, and only onto a case the caller can see (checked before any bytes are stored, and
+    // again when a large upload completes). BUG-206: what the record can't hold is refused before any bytes are stored.
+    private async Task CheckCanUploadAsync(IAppDbContext db, Guid caseId, string fileName, string? description, CancellationToken ct)
+    {
+        if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, nameof(UploadAsync));
         if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct))
             throw new InvalidOperationException("Case not found or not accessible.");
-        // BUG-206: what the record can't hold is refused before any bytes are stored.
         if (description is { Length: > MaxDescriptionLength })
             throw new ArgumentException($"Keep the description to {MaxDescriptionLength:N0} characters or fewer.");
         if (fileName is { Length: > MaxFileNameLength })
             throw new ArgumentException($"That file name is longer than {MaxFileNameLength} characters. Rename the file and upload it again.");
-        var stored = await _store.SaveAsync(caseId, content, ct);
+    }
 
+    // The record, its "Uploaded" custody event and (through the save) its audit entry, for a file already in the store;
+    // the same for both upload paths. BUG-206: a file whose record can't be saved is removed, so no bytes sit unrecorded.
+    private async Task<Domain.Entities.Evidence> RecordAsync(IAppDbContext db, Guid caseId, string fileName, string contentType,
+        string? description, StoredEvidence stored, CancellationToken ct)
+    {
         var evidence = new Domain.Entities.Evidence
         {
             CaseId = caseId,
@@ -75,6 +120,164 @@ public sealed class EvidenceService
 
     /// <summary>BUG-206: the record's limits (its columns), checked before a file is stored.</summary>
     public const int MaxDescriptionLength = 2000, MaxFileNameLength = 500;
+
+    /// <summary>PROD-56: a large upload started: its id, the size of each part, and how many parts to send.</summary>
+    public sealed record UploadStarted(string Id, int PartBytes, int Parts);
+
+    private EvidenceUploadSessions Uploads =>
+        _uploads ?? throw new InvalidOperationException("Large uploads aren't available on this server.");
+
+    private EvidenceUploadSessions.Session Owned(string id) =>
+        Uploads.Find(id, _user.UserId) ?? throw new Common.NotFoundException("That upload isn't in progress. Start it again.");
+
+    /// <summary>
+    /// PROD-56: starts a large upload, sent in parts. The same checks as an in-page upload (permission, the case, the
+    /// record's limits, the size and room) are made before anything is written.
+    /// </summary>
+    public async Task<UploadStarted> BeginUploadAsync(Guid caseId, string fileName, string contentType, long size,
+        string? description, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        await CheckCanUploadAsync(db, caseId, fileName, description, ct);
+        if (size <= 0) throw new ArgumentException("That file is empty.");
+        await EvidenceRoom.CheckAsync(db, _store, Limits, size, ct);
+        var incoming = await _store.BeginIncomingAsync(ct);
+        try
+        {
+            var s = Uploads.Create(_user.UserId, caseId, fileName,
+                string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, description, size, incoming,
+                _clock.UtcNow);
+            return new UploadStarted(s.Id, EvidenceUploadSessions.PartBytes, s.Parts);
+        }
+        catch
+        {
+            await _store.DiscardIncomingAsync(incoming);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// PROD-56: writes part <paramref name="part"/> (from 0) of an upload and returns the bytes received so far. A part
+    /// already written is acknowledged and ignored (a retry whose answer was lost); one out of order is refused. Every part
+    /// re-checks the person may still edit the case.
+    /// </summary>
+    public async Task<long> AppendPartAsync(string id, int part, ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
+    {
+        var s = Owned(id);
+        await s.Gate.WaitAsync(ct);
+        try
+        {
+            if (s.Ended) throw new InvalidOperationException("That upload has already finished.");
+            await StillAllowedAsync(s.CaseId, ct);
+            if (part < s.NextPart) return s.Committed;
+            if (part > s.NextPart || part >= s.Parts)
+                throw new InvalidOperationException($"Part {part + 1} arrived before part {s.NextPart + 1}. Start the upload again.");
+            var expected = part == s.Parts - 1 ? s.Size - s.Committed : EvidenceUploadSessions.PartBytes;
+            if (bytes.Length != expected)
+                throw new ArgumentException($"Part {part + 1} should be {expected:N0} bytes, but {bytes.Length:N0} arrived.");
+            await _store.AppendIncomingAsync(s.Incoming, s.Committed, bytes, ct);
+            s.Hash.AppendData(bytes.Span);
+            s.Committed += bytes.Length;
+            s.NextPart++;
+            s.LastActivity = _clock.UtcNow;
+            return s.Committed;
+        }
+        finally { s.Gate.Release(); }
+    }
+
+    /// <summary>
+    /// PROD-56: finishes an upload once every part is in: the checks again (the permission may have been withdrawn, the
+    /// limits changed), the read-back check when it's on, then the file moves into place and is recorded as an in-page
+    /// upload is. Finishing twice answers with the same record.
+    /// </summary>
+    public async Task<Domain.Entities.Evidence> CompleteUploadAsync(string id, CancellationToken ct = default)
+    {
+        var s = Owned(id);
+        await s.Gate.WaitAsync(ct);
+        try
+        {
+            using var db = _factory.CreateDbContext();
+            if (s.EvidenceId is { } done)
+                return await db.Evidence.AsNoTracking().FirstAsync(e => e.Id == done, ct);
+            if (s.Ended) throw new InvalidOperationException("That upload was cancelled. Start it again.");
+            if (s.Committed != s.Size)
+                throw new InvalidOperationException($"The upload is missing parts: {s.Committed:N0} of {s.Size:N0} bytes arrived.");
+            await CheckCanUploadAsync(db, s.CaseId, s.FileName, s.Description, ct);
+            await EvidenceRoom.CheckAsync(db, _store, Limits, s.Size, ct);
+            var sha = Convert.ToHexString(s.Hash.GetCurrentHash()).ToLowerInvariant();
+            if (Limits.ReadBackCheck && !await ReadsBackAsync(s, sha, ct))
+            {
+                await EndAsync(s);
+                throw new ArgumentException("The file was damaged on its way to the evidence store, so it wasn't kept. Upload it again.");
+            }
+            var stored = await _store.CommitIncomingAsync(s.Incoming, s.CaseId, sha, s.Size, ct);
+            s.Ended = true;   // the parts are now the stored file: abandoning must not touch them
+            var evidence = await RecordAsync(db, s.CaseId, s.FileName, s.ContentType, s.Description, stored, ct);
+            s.EvidenceId = evidence.Id;
+            s.LastActivity = _clock.UtcNow;
+            return evidence;
+        }
+        finally { s.Gate.Release(); }
+    }
+
+    // PROD-56: the parts as stored hash to what arrived, so a write damaged on its way to a share isn't recorded.
+    private async Task<bool> ReadsBackAsync(EvidenceUploadSessions.Session s, string sha, CancellationToken ct)
+    {
+        await using var read = await _store.OpenIncomingAsync(s.Incoming, ct);
+        var again = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(read, ct)).ToLowerInvariant();
+        return string.Equals(again, sha, StringComparison.Ordinal);
+    }
+
+    /// <summary>PROD-56: cancels an upload in progress and deletes its parts. Cancelling a finished upload does nothing.</summary>
+    public async Task AbandonUploadAsync(string id, CancellationToken ct = default)
+    {
+        var s = Owned(id);
+        await s.Gate.WaitAsync(ct);
+        try
+        {
+            if (!s.Ended) await EndAsync(s);
+        }
+        finally { s.Gate.Release(); }
+    }
+
+    private async Task EndAsync(EvidenceUploadSessions.Session s)
+    {
+        s.Ended = true;
+        s.LastActivity = _clock.UtcNow;
+        await _store.DiscardIncomingAsync(s.Incoming);
+    }
+
+    /// <summary>
+    /// PROD-56: drops uploads idle past <see cref="EvidenceUploadSessions.IdleLimit"/> (deleting their parts) and finished
+    /// ones past <see cref="EvidenceUploadSessions.DoneKept"/>, then any parts older than <paramref name="orphansOlderThan"/>
+    /// left by an upload no longer held (a restart). Returns how many it removed.
+    /// </summary>
+    public static async Task<int> SweepUploadsAsync(EvidenceUploadSessions uploads, IEvidenceStore store, DateTimeOffset now,
+        TimeSpan orphansOlderThan, CancellationToken ct = default)
+    {
+        var dropped = 0;
+        foreach (var s in uploads.Stale(now))
+        {
+            await s.Gate.WaitAsync(ct);
+            try
+            {
+                if (!s.Ended) await store.DiscardIncomingAsync(s.Incoming);
+                s.Ended = true;
+                uploads.Forget(s);
+                dropped++;
+            }
+            finally { s.Gate.Release(); }
+        }
+        return dropped + await store.ClearIncomingAsync(orphansOlderThan, ct);
+    }
+
+    private async Task StillAllowedAsync(Guid caseId, CancellationToken ct)
+    {
+        if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, nameof(AppendPartAsync));
+        using var db = _factory.CreateDbContext();
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct))
+            throw new InvalidOperationException("Case not found or not accessible.");
+    }
 
     /// <summary>
     /// Opens evidence for reading. Need-to-know on the parent case is enforced either way (a restricted

@@ -21,7 +21,70 @@ public sealed class FileEvidenceStore : IEvidenceStore
     public FileEvidenceStore(IOptions<EvidenceStoreOptions> options)
     {
         _root = Path.GetFullPath(options.Value.RootPath);
-        Directory.CreateDirectory(_root);
+        // PROD-56: a store on a share that's down at start-up mustn't stop the app; the start-up probe reports it.
+        try { Directory.CreateDirectory(_root); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* reported by ProbeAsync */ }
+    }
+
+    /// <summary>PROD-56: where files arriving in parts are written until they're complete (never a recorded path).</summary>
+    private string Incoming => Path.Combine(_root, ".incoming");
+
+    private string IncomingPath(string incoming)
+    {
+        // A name this store made: hex only, so nothing from a client can point elsewhere.
+        if (incoming.Length != 32 || !incoming.All(char.IsAsciiHexDigitLower))
+            throw new ArgumentException("Not an upload in progress.", nameof(incoming));
+        return Path.Combine(Incoming, incoming + ".part");
+    }
+
+    public Task<string> BeginIncomingAsync(CancellationToken ct = default)
+    {
+        Directory.CreateDirectory(Incoming);
+        var name = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        using (new FileStream(IncomingPath(name), FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+        return Task.FromResult(name);
+    }
+
+    public async Task AppendIncomingAsync(string incoming, long offset, ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
+    {
+        await using var fs = new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.Write, FileShare.None);
+        // A part retried after a write that failed half-way starts again where the last whole part ended.
+        fs.SetLength(offset);
+        fs.Seek(offset, SeekOrigin.Begin);
+        await fs.WriteAsync(bytes, ct);
+        fs.Flush(flushToDisk: true);
+    }
+
+    public Task<Stream> OpenIncomingAsync(string incoming, CancellationToken ct = default) =>
+        Task.FromResult<Stream>(new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 1 << 16, useAsync: true));
+
+    public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default)
+    {
+        var relDir = caseId.ToString("N");
+        Directory.CreateDirectory(Path.Combine(_root, relDir));
+        var fileName = Guid.NewGuid().ToString("N") + ".bin";
+        File.Move(IncomingPath(incoming), Path.Combine(_root, relDir, fileName), overwrite: false);
+        return Task.FromResult(new StoredEvidence($"{relDir}/{fileName}", sha256, size));
+    }
+
+    public Task DiscardIncomingAsync(string incoming)
+    {
+        File.Delete(IncomingPath(incoming));
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ClearIncomingAsync(TimeSpan olderThan, CancellationToken ct = default)
+    {
+        if (!Directory.Exists(Incoming)) return Task.FromResult(0);
+        var cleared = 0;
+        foreach (var f in Directory.EnumerateFiles(Incoming, "*.part"))
+        {
+            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(f) < olderThan) continue;
+            try { File.Delete(f); cleared++; }
+            catch (IOException) { /* in use; the next sweep */ }
+        }
+        return Task.FromResult(cleared);
     }
 
     public async Task<StoredEvidence> SaveAsync(Guid caseId, Stream content, CancellationToken ct = default)
@@ -62,6 +125,12 @@ public sealed class FileEvidenceStore : IEvidenceStore
         if (abs.StartsWith(rootPrefix, StringComparison.Ordinal)) File.Delete(abs);
         return Task.CompletedTask;
     }
+
+    public Task<long?> FreeBytesAsync(CancellationToken ct = default) => StoreVolume.FreeBytesAsync(_root, ct);
+
+    public Task<string?> ProbeAsync(CancellationToken ct = default) => StoreVolume.ProbeAsync(_root, ct);
+
+    public string Location => _root;
 
     public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
     {

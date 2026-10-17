@@ -22,6 +22,10 @@
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
 @inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor EvidenceIntegrity
 @inject IncidentManager.Application.Integrity.IntegrityCheckState IntegrityCheck
+@inject IncidentManager.Application.Evidence.EvidenceService EvidenceStorage
+@inject IncidentManager.Application.Evidence.EvidenceUploadSessions EvidenceUploads
+@inject IncidentManager.Web.BackgroundJobs.EvidenceStoreStatus EvidenceStoreProbe
+@inject IncidentManager.Application.Abstractions.IEvidenceStore EvidenceStoreFiles
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
@@ -751,6 +755,57 @@
                 </tbody>
             </table>
 
+            <h6 class="text-uppercase small text-muted mt-3">Evidence storage</h6>
+            <p class="small text-muted mb-2">
+                Where evidence is stored, whether CaseBook can write and read there, and how much it takes against the limits
+                set under <strong>Governance &amp; security › Evidence storage</strong>.
+            </p>
+            <table class="table table-sm">
+                <tbody>
+                    <tr>
+                        <td style="width:32%">Store</td>
+                        <td>
+                            @if (EvidenceStoreProbe.CheckedAtUtc is null)
+                            {
+                                <span class="im-badge im-b-neutral">Not checked yet</span>
+                            }
+                            else
+                            {
+                                @StatusBadge(EvidenceStoreProbe.Problem is null, "Writable", "Problem")
+                            }
+                            <code class="small ms-2">@EvidenceStoreFiles.Location</code>
+                            @if (EvidenceStoreProbe.Problem is { } why) { <div class="small text-danger">@why</div> }
+                        </td>
+                    </tr>
+                    @if (_evidenceUse is { } use)
+                    {
+                        <tr>
+                            <td>Used</td>
+                            <td class="small">
+                                @IncidentManager.Application.Evidence.EvidenceRoom.Size(use.UsedBytes)
+                                @(use.QuotaBytes is { } q ? $" of {IncidentManager.Application.Evidence.EvidenceRoom.Size(q)} ({use.UsedBytes * 100 / Math.Max(1, q)} %)" : " (no limit set)")
+                                @if (use.NearQuota) { <span class="im-badge im-b-warn ms-2">Near the limit</span> }
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Free on the store</td>
+                            <td class="small">
+                                @(use.FreeBytes is { } free ? IncidentManager.Application.Evidence.EvidenceRoom.Size(free) : "Couldn't be read")
+                                <span class="text-muted">· uploads keep @IncidentManager.Application.Evidence.EvidenceRoom.Size(use.ReserveBytes) free</span>
+                            </td>
+                        </tr>
+                    }
+                    else if (_evidenceUseError is not null)
+                    {
+                        <tr><td>Used</td><td class="small text-danger">Couldn't be read: @_evidenceUseError</td></tr>
+                    }
+                    <tr>
+                        <td>Large uploads in progress</td>
+                        <td class="small">@EvidenceUploads.InProgress</td>
+                    </tr>
+                </tbody>
+            </table>
+
             <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
             <p class="small text-muted mb-2">
                 A background job re-hashes stored evidence and compares it to the SHA-256 recorded in the
@@ -804,7 +859,7 @@
                         @foreach (var d in ev.Drifts)
                         {
                             <tr>
-                                <td>@(d.CaseNumber ?? d.CaseId.ToString())</td>
+                                <td>@(d.Kind == IncidentManager.Application.Integrity.EvidenceDriftKind.StoreUnreachable ? "Evidence store" : d.CaseNumber ?? d.CaseId.ToString())</td>
                                 <td>
                                     <span class="im-badge im-b-danger">@d.Kind</span>
                                     <span class="small text-muted ms-2">@d.OriginalFileName: @d.Detail</span>
@@ -965,7 +1020,7 @@
         new("sla", "Response & SLA", ["Response SLA", "Breach SLA overrides", "Severity labels"]),
         new("regulatory-deadlines", "Regulatory deadlines", ["Deadline clock"]),
         new("reporting", "Reports", ["Report defaults"]),
-        new("governance", "Governance & security", ["Retention", "Integrity", "Access logging", "Security"]),
+        new("governance", "Governance & security", ["Retention", "Evidence storage", "Integrity", "Access logging", "Security"]),
         new("updates", "Updates", ["Updates"]),   // PROD-49
     ];
 
@@ -1205,7 +1260,13 @@
         }
         _health = await RunHealthChecksAsync();
         _backup = Backup.Read();
+        try { _evidenceUse = await EvidenceStorage.StorageUseAsync(); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _evidenceUseError = ex.Message; }
     }
+
+    // PROD-55/56: what evidence takes against its limits, read when Diagnostics opens.
+    private IncidentManager.Application.Evidence.EvidenceStorageUse? _evidenceUse;
+    private string? _evidenceUseError;
 
     private async Task<List<HealthCheck>> RunHealthChecksAsync()
     {

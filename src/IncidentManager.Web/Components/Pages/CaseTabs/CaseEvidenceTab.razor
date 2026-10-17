@@ -10,6 +10,8 @@
 @inject ToastService Toasts
 @inject ILogger<CaseEvidenceTab> Logger
 @inject UnsavedEdits Edits
+@inject IJSRuntime JS
+@inject AntiforgeryStateProvider Antiforgery
 @implements IDisposable
 
 <div id="evidence-dropzone">
@@ -47,6 +49,21 @@
                     Dropped files upload straight away, without a description; the box above is for the file you pick.
                     @if (_file is not null) { <span class="ms-1">Ready: <strong>@_file.Name</strong>. Add a description and click Upload.</span> }
                 </div>
+                @if (_parts is { } up)
+                {
+                    @* PROD-56: a large upload, sent in parts. *@
+                    var done = up.Size == 0 ? 0 : (int)(up.Sent * 100 / up.Size);
+                    <div class="mt-2" role="status" aria-live="polite">
+                        <div class="d-flex justify-content-between small">
+                            <span>Uploading <strong>@up.Name</strong>: @EvidenceRoom.Size(up.Sent) of @EvidenceRoom.Size(up.Size)</span>
+                            <button type="button" class="btn btn-link btn-sm p-0" @onclick="CancelParts">Cancel</button>
+                        </div>
+                        <div class="progress" style="height:.5rem" aria-hidden="true">
+                            <div class="progress-bar" style="width:@(done)%"></div>
+                        </div>
+                        <div class="small text-muted">Keep this page open until it finishes.</div>
+                    </div>
+                }
                 @if (_uploadError is not null) { <div class="text-danger small mt-2">@_uploadError</div> }
 
                 @* Hidden sinks the paste-drop shim (wwwroot/js/paste-drop.js) feeds: paste stages one
@@ -261,20 +278,31 @@
     {
         Edits.Track(this, "the evidence description you're writing", () => !string.IsNullOrWhiteSpace(_evDesc), Region);
         Edits.Track(this, "the transfer you're recording", () => TransferDirty, Region);
+        // PROD-56: leaving mid-way through a large upload stops it, so it asks first.
+        Edits.Track(this, "the upload in progress", () => _parts is not null, Region);
     }
 
-    public void Dispose() => Edits.Forget(this);
+    public void Dispose()
+    {
+        _disposed = true;
+        Edits.Forget(this);
+        if (_parts is { } u)
+        {
+            // Leaving stops the upload (and deletes its parts on the server); the page's own call may be gone with it.
+            _ = JS.InvokeVoidAsync("imChunkedUpload.cancel", u.Key).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
+            u.Ended.TrySetResult("");
+        }
+        _self?.Dispose();
+    }
     // BUG-578: the rows with a quick task open. Opening one on another row used to close (and empty) the first.
     private readonly HashSet<Guid> _taskFor = [];
     private void ToggleTask(Guid id) { if (!_taskFor.Add(id)) _taskFor.Remove(id); }
-
-    private const long MaxEvidenceBytes = 50 * 1024 * 1024;
 
     private IBrowserFile? _file;
     private string? _evDesc;
     private string? _uploadError;
     // REL-03: true while an upload is streaming, so a second click / drop can't fire a duplicate upload and
-    // the UI can show progress on a slow or large (≤50MB) file.
+    // the UI can show progress on a slow or large file.
     private bool _busy;
 
     // U-26: per-evidence chain-of-custody, lazily loaded when a row is expanded.
@@ -298,18 +326,18 @@
         _uploadError = null;
         // REL-06: catch the common, expected failure (over the size cap) up front with a clear message,
         // rather than letting the stream throw a generic IOException that reads as an internal error.
-        if (_file.Size > MaxEvidenceBytes) { _uploadError = TooLargeMessage(_file.Name); return; }
+        if (_file.Size > Evidence.Limits.MaxUploadBytes) { _uploadError = TooLargeMessage(_file.Name); return; }
         _busy = true;
         try
         {
-            await using var stream = _file.OpenReadStream(MaxEvidenceBytes);
             var name = _file.Name;
             var sentDesc = _evDesc;
-            await Evidence.UploadAsync(CaseId, _file.Name, _file.ContentType, stream, sentDesc);
+            if (!await SendAsync(_file, "evidence-file-input", 0, sentDesc)) return;
             _file = null;
             _evDesc = DraftText.ClearIfUnchanged(_evDesc, sentDesc, null);   // BUG-601 (the box is disabled while it uploads)
             await OnChanged.InvokeAsync();
             Toasts.Success($"Uploaded {name}");
+            await WarnIfNearLimitAsync();
         }
         catch (Exception ex)
         {
@@ -320,6 +348,92 @@
         finally
         {
             _busy = false;
+        }
+    }
+
+    // PROD-56: a file up to 100 MB goes through the page as before; a larger one in parts (chunked-upload.js), with
+    // progress. False when the person cancelled a large upload (nothing was recorded); a failure throws with its reason.
+    private async Task<bool> SendAsync(IBrowserFile file, string inputId, int index, string? description)
+    {
+        if (file.Size <= EvidenceUploadSessions.InPageMaxBytes)
+        {
+            await using var stream = file.OpenReadStream(EvidenceUploadSessions.InPageMaxBytes);
+            await Evidence.UploadAsync(CaseId, file.Name, file.ContentType, stream, description, file.Size);
+            return true;
+        }
+        return await SendInPartsAsync(file, inputId, index, description);
+    }
+
+    // PROD-56: the large upload in progress (one at a time from this tab), its progress, and how it ended.
+    private sealed class PartsUpload(string key, string name, long size)
+    {
+        public string Key { get; } = key;
+        public string Name { get; } = name;
+        public long Size { get; } = size;
+        public long Sent { get; set; }
+        public TaskCompletionSource<string?> Ended { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);   // null: done; "": cancelled
+    }
+
+    private PartsUpload? _parts;
+    private DotNetObjectReference<CaseEvidenceTab>? _self;
+    private bool _disposed;
+
+    private async Task<bool> SendInPartsAsync(IBrowserFile file, string inputId, int index, string? description)
+    {
+        var token = Antiforgery.GetAntiforgeryToken()?.Value
+                    ?? throw new InvalidOperationException("The page's security token is missing. Reload the page and try again.");
+        _self ??= DotNetObjectReference.Create(this);
+        var upload = _parts = new PartsUpload(Guid.NewGuid().ToString("N"), file.Name, file.Size);
+        StateHasChanged();
+        try
+        {
+            await JS.InvokeVoidAsync("imChunkedUpload.start", _self, upload.Key, inputId, index, CaseId, description, token);
+            var failed = await upload.Ended.Task;
+            if (failed is null) return true;
+            if (failed.Length == 0) { Toasts.Info($"Upload of {upload.Name} cancelled. Nothing was recorded."); return false; }
+            throw new ArgumentException(failed);
+        }
+        finally
+        {
+            if (ReferenceEquals(_parts, upload)) _parts = null;
+        }
+    }
+
+    [JSInvokable]
+    public Task OnChunkedProgress(string key, long sent, long size) => Report(key, u => u.Sent = sent);
+
+    [JSInvokable]
+    public Task OnChunkedDone(string key, string id) => Report(key, u => u.Ended.TrySetResult(null));
+
+    [JSInvokable]
+    public Task OnChunkedFailed(string key, string reason) => Report(key, u => u.Ended.TrySetResult(reason));
+
+    // C5: a callback for an upload this tab no longer shows (or after it's gone) changes nothing.
+    private Task Report(string key, Action<PartsUpload> apply) => InvokeAsync(() =>
+    {
+        if (_disposed || _parts is not { } u || u.Key != key) return;
+        apply(u);
+        StateHasChanged();
+    });
+
+    private async Task CancelParts()
+    {
+        if (_parts is { } u) await JS.InvokeVoidAsync("imChunkedUpload.cancel", u.Key);
+    }
+
+    // PROD-55: past 90 % of the evidence storage limit, the uploader hears it (and so does the log, from the service).
+    private async Task WarnIfNearLimitAsync()
+    {
+        try
+        {
+            var use = await Evidence.StorageUseAsync();
+            if (use.NearQuota)
+                Toasts.Warning($"Evidence now takes {EvidenceRoom.Size(use.UsedBytes)} of its {EvidenceRoom.Size(use.QuotaBytes!.Value)} limit. " +
+                               "Tell an administrator before it fills up.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Couldn't read evidence storage use after an upload.");
         }
     }
 
@@ -345,15 +459,14 @@
         var uploaded = 0;
         try
         {
-            foreach (var f in files)
+            for (var i = 0; i < files.Count; i++)
             {
-                if (f.Size > MaxEvidenceBytes) { _uploadError = TooLargeMessage(f.Name); continue; } // REL-06
+                var f = files[i];
+                if (f.Size > Evidence.Limits.MaxUploadBytes) { _uploadError = TooLargeMessage(f.Name); continue; } // REL-06
                 try
                 {
-                    await using var stream = f.OpenReadStream(MaxEvidenceBytes);
                     // REV-34: the description box belongs to the file staged in the picker, not to these.
-                    await Evidence.UploadAsync(CaseId, f.Name, f.ContentType, stream, description: null);
-                    uploaded++;
+                    if (await SendAsync(f, "evidence-file-drop", i, description: null)) uploaded++;
                 }
                 catch (Exception ex)
                 {
@@ -454,9 +567,10 @@
     private static bool IsImageEvidence(Evidence ev) =>
         ev.ContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
 
-    // REL-06: friendly, consistent message for a file over the 50 MB cap (used by the picker and drop paths).
-    private static string TooLargeMessage(string name) =>
-        $"“{name}” is larger than the {MaxEvidenceBytes / (1024 * 1024)} MB limit and wasn't uploaded.";
+    // REL-06: friendly, consistent message for a file over the size limit (used by the picker and drop paths). PROD-55:
+    // the limit is the administrator's.
+    private string TooLargeMessage(string name) =>
+        $"“{name}” is larger than the {EvidenceRoom.Size(Evidence.Limits.MaxUploadBytes)} limit and wasn't uploaded.";
 
     private static string FormatSize(long bytes) => bytes switch
     {

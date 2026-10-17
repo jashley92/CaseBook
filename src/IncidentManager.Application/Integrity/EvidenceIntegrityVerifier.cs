@@ -91,6 +91,14 @@ public sealed class EvidenceIntegrityVerifier
                     e.Sha256, e.StoragePath)).ToListAsync(ct);
         }
 
+        // PROD-56: a store that can't be reached (a share that's down) is one finding, not every file missing. Nothing was
+        // checked, so what earlier runs found stands.
+        if (rows.Count > 0 && await _store.ProbeAsync(ct) is { } problem)
+            return new EvidenceVerificationResult(0,
+                [new EvidenceDrift(Guid.Empty, Guid.Empty, null, "(the evidence store)", "", null, EvidenceDriftKind.StoreUnreachable,
+                    $"the evidence store at {_store.Location} can't be written and read: {problem}")],
+                _clock.UtcNow, new HashSet<Guid>(), rows.Select(r => r.Id).ToHashSet());
+
         var all = shares <= 1;
         var known = all ? null : rows.Select(r => r.Id).ToHashSet();
         if (!all) rows = rows.Where(r => ShareOf(r.Id, shares) == share).ToList();

@@ -11,7 +11,11 @@ public enum EvidenceDriftKind
     Missing,
 
     /// <summary>The file exists but could not be read/hashed (permissions, IO error, path rejected).</summary>
-    Unreadable
+    Unreadable,
+
+    /// <summary>PROD-56: the evidence store itself can't be written and read (a share that's down, permissions changed),
+    /// so no file was checked. Reported once, as one drift for the store, instead of every file as missing.</summary>
+    StoreUnreachable
 }
 
 /// <summary>
