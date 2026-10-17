@@ -206,6 +206,25 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.14
+
+A small release with no migration. Things to check:
+
+- **Integrity check cost.** Each run of the integrity check now logs what it cost (time for the audit trail and for
+  the records, how many it read, how many records it holds in memory), and **Administration › Diagnostics › Integrity
+  check cost** shows the latest. The record check reads every record every 10 minutes, so this is how you see it grow
+  with your data. Measured on SQL Server 2022: a 10-minute run takes about 7.5 s per million records and a full run
+  (every 6 hours, at start-up and on *Verify now*) about 50 s (`docs/architecture/integrity.md`, *Check cost*).
+  - The check holds about a third of the memory it did between runs (114 MB per million records, from 305 MB).
+  - A run slower than 60 s is logged as a warning, and the next waits ten times as long (up to 30 minutes), so the
+    check never takes most of the database's time. Detection takes that long meanwhile; the log and Diagnostics say
+    so. At CaseBook's intended size this doesn't happen.
+- **Import schema:** date fields accept a time without an offset (read in the document's `timeZone`, else UTC), so a
+  document using `timeZone` passes schema validation.
+- **Import fields:** times now use `detectedAt`, `occurredAt`, `occurredUntil` and `dueAt`. The old `...Utc` names
+  still work (deprecated), but don't give both. This keeps an AI from converting local times to UTC itself.
+- **Import preview** shows times in your own time setting rather than UTC.
+
 ### v1.6.13
 
 A fix release with three migrations (`HeldEmails` table and its retry/audience columns, `Reports.RowHash`). The first start after upgrading
