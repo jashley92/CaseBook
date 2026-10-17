@@ -76,8 +76,11 @@ public static class CaseImportSchema
                         ["severity"] = EnumOf<Severity>(),
                         ["origin"] = EnumOf<CaseOrigin>(),
                         ["summary"] = Str("The case's own summary field (distinct from the top-level summary note)."),
-                        ["detectedAtUtc"] = DateTime("When the matter was detected (defaults to now; not in the future)."),
-                        ["occurredAtUtc"] = DateTime("When activity began (must not be after detection)."),
+                        // BUG-663: the preferred names; the "...Utc" ones are their deprecated v1 names.
+                        ["detectedAt"] = DateTime("When the matter was detected (defaults to now; not in the future)."),
+                        ["occurredAt"] = DateTime("When activity began (must not be after detection)."),
+                        ["detectedAtUtc"] = Deprecated("detectedAt"),
+                        ["occurredAtUtc"] = Deprecated("occurredAt"),
                         ["dataTypesInvolved"] = Str("Free-text data context (notes). Regulated data elements are recorded in the impact assessment, not here."),
                         ["impactedAssets"] = Str(null),
                         ["detectionCaseId"] = Str("The source platform's id for the event, e.g. the XSIAM incident id (the case's detection-source back-link). Up to 100 characters."),
@@ -93,10 +96,12 @@ public static class CaseImportSchema
                     ["required"] = new JsonArray { "description" },
                     ["properties"] = new JsonObject
                     {
-                        ["occurredAtUtc"] = DateTime("When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date."),
+                        ["occurredAt"] = DateTime("When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date."),
+                        ["occurredAtUtc"] = Deprecated("occurredAt"),
                         // ST-03: an event step's time as it was stated, never a guessed time.
-                        ["timePrecision"] = EnumOf<TimePrecision>("For kind Event: how precisely the time was stated. Exact (default), Day (date only), Window (between occurredAtUtc and occurredUntilUtc), OnOrBefore (on or before occurredAtUtc's date), NotStated (no time; placed after the step before it)."),
-                        ["occurredUntilUtc"] = DateTime("For timePrecision Window: the last date."),
+                        ["timePrecision"] = EnumOf<TimePrecision>("For kind Event: how precisely the time was stated. Exact (default), Day (date only), Window (between occurredAt and occurredUntil), OnOrBefore (on or before occurredAt's date), NotStated (no time; placed after the step before it)."),
+                        ["occurredUntil"] = DateTime("For timePrecision Window: the last date."),
+                        ["occurredUntilUtc"] = Deprecated("occurredUntil"),
                         ["kind"] = EnumOf<TimelineKind>(),
                         ["type"] = EnumProp(ImportableTimelineTypes(), null),
                         ["description"] = Str("What happened."),
@@ -132,7 +137,8 @@ public static class CaseImportSchema
                     {
                         ["title"] = Str("The follow-up task."),
                         ["owner"] = Str(null),
-                        ["dueAtUtc"] = DateTime(null),
+                        ["dueAt"] = DateTime("When the task is due."),
+                        ["dueAtUtc"] = Deprecated("dueAt"),
                     },
                 },
             },
@@ -154,6 +160,15 @@ public static class CaseImportSchema
     internal const string DateTimePattern = @"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,7})?)?)?(Z|[+-]\d{2}:\d{2})?$";
 
     private const string ZoneNote = " An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none).";
+
+    /// <summary>BUG-663: a time's old v1 name, still read; a document gives this or the new name, never both.</summary>
+    private static JsonObject Deprecated(string preferred) => new()
+    {
+        ["type"] = "string",
+        ["pattern"] = DateTimePattern,
+        ["deprecated"] = true,
+        ["description"] = $"The old name for {preferred}, still read. Use {preferred}; don't give both.",
+    };
 
     private static JsonObject DateTime(string? description) => new()
     {

@@ -35,7 +35,7 @@ else if (_pending.Count > 0)
         <p class="text-muted small mb-2">Submitted through the import API (for example, by a SOAR playbook). Nothing is written until you confirm.</p>
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-                <thead><tr><th>Submission</th><th style="width:11rem">Origin</th><th style="width:11rem">Submitted by</th><th style="width:12rem">When (UTC)</th><th style="width:6rem"></th></tr></thead>
+                <thead><tr><th>Submission</th><th style="width:11rem">Origin</th><th style="width:11rem">Submitted by</th><th style="width:12rem">When (@TimeDisp.Label)</th><th style="width:6rem"></th></tr></thead>
                 <tbody>
                     @foreach (var pi in _pending)
                     {
@@ -46,13 +46,13 @@ else if (_pending.Count > 0)
                                     @* WF-18: an apply that stopped part-way; any reviewer can put it back in the queue. *@
                                     <div class="small text-warning-emphasis">
                                         <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>An apply by @who stopped without finishing
-                                        @(pi.StuckSinceUtc is { } since ? $"({since.UtcDateTime:yyyy-MM-dd HH:mm} UTC)" : "").
+                                        @(pi.StuckSinceUtc is { } since ? $"({TimeDisp.Long(since)})" : "").
                                     </div>
                                 }
                             </td>
                             <td class="small text-muted">@(pi.Origin ?? "—")</td>
                             <td class="small">@pi.SubmittedBy</td>
-                            <td class="small text-muted">@pi.SubmittedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="small text-muted">@TimeDisp.Short(pi.SubmittedAtUtc)</td>
                             <td>
                                 @if (pi.StuckClaimedBy is null)
                                 {
@@ -388,7 +388,7 @@ else if (_pending.Count > 0)
             <div class="fw-semibold mb-2">Timeline <span class="text-muted small">(@p.Timeline.Count(r => r.Include) of @p.Timeline.Count)</span></div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle">
-                    <thead><tr><th style="width:2rem"></th><th style="width:12rem">When (UTC)</th><th style="width:8rem">Kind</th><th style="width:9rem">Type</th><th>Description</th><th style="width:10rem">Source</th></tr></thead>
+                    <thead><tr><th style="width:2rem"></th><th style="width:12rem">When (@TimeDisp.Label)</th><th style="width:8rem">Kind</th><th style="width:9rem">Type</th><th>Description</th><th style="width:10rem">Source</th></tr></thead>
                     <tbody>
                         @foreach (var t in p.Timeline)
                         {
@@ -403,8 +403,9 @@ else if (_pending.Count > 0)
                                     }
                                     else
                                     {
-                                        <DateTimeInput Past="true" TValue="DateTime" class="form-control form-control-sm" aria-label="When (UTC)"
-                                                       Value="@t.OccurredAtUtc.UtcDateTime" ValueChanged="v => SetOccurred(t, v)" />
+                                        @* BUG-664: in the viewer's own time display, as everywhere else, not UTC. *@
+                                        <DateTimeInput Past="true" TValue="DateTime" class="form-control form-control-sm" aria-label="@($"When ({TimeDisp.Label})")"
+                                                       Value="@WallClock.ToWall(t.OccurredAtUtc, TimeDisp.Zone)" ValueChanged="v => SetOccurred(t, v)" />
                                     }
                                     @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }
                                 </td>
@@ -492,7 +493,7 @@ else if (_pending.Count > 0)
             <div class="fw-semibold mb-2">Tasks <span class="text-muted small">(@p.ActionItems.Count(r => r.Include) of @p.ActionItems.Count)</span></div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle">
-                    <thead><tr><th style="width:2rem"></th><th>Title</th><th style="width:12rem">Owner</th><th style="width:12rem">Due (UTC)</th></tr></thead>
+                    <thead><tr><th style="width:2rem"></th><th>Title</th><th style="width:12rem">Owner</th><th style="width:12rem">Due (@TimeDisp.Label)</th></tr></thead>
                     <tbody>
                         @foreach (var a in p.ActionItems)
                         {
@@ -500,7 +501,7 @@ else if (_pending.Count > 0)
                                 <td><input class="form-check-input" type="checkbox" aria-label="Include task @(p.ActionItems.IndexOf(a) + 1)" @bind="a.Include" /></td>
                                 <td><input class="form-control form-control-sm" aria-label="Title" @bind="a.Title" /></td>
                                 <td><input class="form-control form-control-sm" aria-label="Owner" @bind="a.Owner" /></td>
-                                <td class="small text-muted">@(a.DueAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                                <td class="small text-muted">@(a.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
                             </tr>
                         }
                     </tbody>
@@ -1000,7 +1001,7 @@ else if (_pending.Count > 0)
 
     private void SetOccurred(ImportTimelineRow t, DateTime dt)
     {
-        t.OccurredAtUtc = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc), TimeSpan.Zero);
+        t.OccurredAtUtc = WallClock.ToUtc(dt, TimeDisp.Zone, Clock.UtcNow);   // BUG-664: typed in the viewer's zone
         t.Warning = null; // a manual correction clears the auto-note (e.g. future/no-timestamp)
     }
 
@@ -1112,7 +1113,7 @@ else if (_pending.Count > 0)
   ""target"": { ""newCase"": { ""title"": ""Phishing wave targeting Finance"", ""classification"": ""Incident"", ""severity"": ""High"" } },
   ""summary"": ""Summary of the incident assembled from the email thread…"",
   ""timeline"": [
-    { ""occurredAtUtc"": ""2026-09-18T13:05:00Z"", ""kind"": ""Investigation"", ""type"": ""Communication"", ""description"": ""User reported a suspicious email to the SOC."" }
+    { ""occurredAt"": ""2026-09-18T13:05:00Z"", ""kind"": ""Investigation"", ""type"": ""Communication"", ""description"": ""User reported a suspicious email to the SOC."" }
   ],
   ""entities"": [
     { ""value"": ""hxxp://evil[.]example[.]com/login"" },

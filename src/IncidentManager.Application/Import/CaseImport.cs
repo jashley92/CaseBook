@@ -55,7 +55,13 @@ public sealed class CaseImportNewCase
     public string? Severity { get; set; }
     public string? Origin { get; set; }
     public string? Summary { get; set; }
+    /// <summary>BUG-663: the preferred name. The old "...Utc" name is still read (the v1 contract), but it suggested the value had to be UTC, so an AI converted local times itself and they shifted when the document also named its timeZone.</summary>
+    public DateTimeOffset? DetectedAt { get; set; }
+    /// <summary>BUG-663: the preferred name; see <see cref="DetectedAt"/>.</summary>
+    public DateTimeOffset? OccurredAt { get; set; }
+    /// <summary>Deprecated name for <see cref="DetectedAt"/>; the one the importer reads after <c>CaseImportService.Parse</c>.</summary>
     public DateTimeOffset? DetectedAtUtc { get; set; }
+    /// <summary>Deprecated name for <see cref="OccurredAt"/>; the one the importer reads after <c>CaseImportService.Parse</c>.</summary>
     public DateTimeOffset? OccurredAtUtc { get; set; }
     public string? DataTypesInvolved { get; set; }
     public string? ImpactedAssets { get; set; }
@@ -75,6 +81,11 @@ public sealed class CaseImportNewCase
 /// <summary>One timeline entry to import. <see cref="Kind"/>/<see cref="Type"/> are strings (safe fallback).</summary>
 public sealed class CaseImportTimelineEntry
 {
+    /// <summary>BUG-663: the preferred name; see <see cref="CaseImportNewCase.DetectedAt"/>.</summary>
+    public DateTimeOffset? OccurredAt { get; set; }
+    /// <summary>BUG-663: the preferred name for <see cref="OccurredUntilUtc"/>.</summary>
+    public DateTimeOffset? OccurredUntil { get; set; }
+    /// <summary>Deprecated name for <see cref="OccurredAt"/>; the one the importer reads after <c>CaseImportService.Parse</c>.</summary>
     public DateTimeOffset? OccurredAtUtc { get; set; }
 
     // ST-03: an event step's time as stated (Exact, Day, Window, OnOrBefore, NotStated) and a window's last date.
@@ -109,6 +120,9 @@ public sealed class CaseImportActionItem
 {
     public string? Title { get; set; }
     public string? Owner { get; set; }
+    /// <summary>BUG-663: the preferred name; see <see cref="CaseImportNewCase.DetectedAt"/>.</summary>
+    public DateTimeOffset? DueAt { get; set; }
+    /// <summary>Deprecated name for <see cref="DueAt"/>; the one the importer reads after <c>CaseImportService.Parse</c>.</summary>
     public DateTimeOffset? DueAtUtc { get; set; }
 }
 

@@ -19,7 +19,7 @@
     },
     "origin": {
       "type": "string",
-      "description": "Provenance recorded as the source of imported indicators and timeline entries (e.g. \"AI-assisted (Copilot)\", \"manual\", \"XSIAM\")."
+      "description": "Provenance recorded as the source of imported indicators and timeline entries (e.g. \u0022AI-assisted (Copilot)\u0022, \u0022manual\u0022, \u0022XSIAM\u0022)."
     },
     "target": {
       "$ref": "#/$defs/target"
@@ -94,7 +94,7 @@
             "Incident",
             "Breach"
           ],
-          "description": "Omit or \"ComplexEvent\" files an intake Complex Event."
+          "description": "Omit or \u0022ComplexEvent\u0022 files an intake Complex Event."
         },
         "severity": {
           "type": "string",
@@ -115,17 +115,29 @@
         },
         "summary": {
           "type": "string",
-          "description": "The case's own summary field (distinct from the top-level summary note)."
+          "description": "The case\u0027s own summary field (distinct from the top-level summary note)."
+        },
+        "detectedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "When the matter was detected (defaults to now; not in the future). An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
+        },
+        "occurredAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "When activity began (must not be after detection). An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
         },
         "detectedAtUtc": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
-          "description": "When the matter was detected (defaults to now; not in the future). An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "deprecated": true,
+          "description": "The old name for detectedAt, still read. Use detectedAt; don\u0027t give both."
         },
         "occurredAtUtc": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
-          "description": "When activity began (must not be after detection). An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "deprecated": true,
+          "description": "The old name for occurredAt, still read. Use occurredAt; don\u0027t give both."
         },
         "dataTypesInvolved": {
           "type": "string",
@@ -136,7 +148,7 @@
         },
         "detectionCaseId": {
           "type": "string",
-          "description": "The source platform's id for the event, e.g. the XSIAM incident id (the case's detection-source back-link). Up to 100 characters."
+          "description": "The source platform\u0027s id for the event, e.g. the XSIAM incident id (the case\u0027s detection-source back-link). Up to 100 characters."
         },
         "vendorName": {
           "type": "string",
@@ -144,7 +156,7 @@
         },
         "exercise": {
           "type": "boolean",
-          "description": "A tabletop or exercise case (a drill): badged and kept out of dashboards, reminders, the IOC feed and correlation with live cases. Can't be changed once the case is created. Defaults to false."
+          "description": "A tabletop or exercise case (a drill): badged and kept out of dashboards, reminders, the IOC feed and correlation with live cases. Can\u0027t be changed once the case is created. Defaults to false."
         }
       }
     },
@@ -155,10 +167,16 @@
         "description"
       ],
       "properties": {
+        "occurredAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date. An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
+        },
         "occurredAtUtc": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
-          "description": "When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date. An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "deprecated": true,
+          "description": "The old name for occurredAt, still read. Use occurredAt; don\u0027t give both."
         },
         "timePrecision": {
           "type": "string",
@@ -169,12 +187,18 @@
             "OnOrBefore",
             "NotStated"
           ],
-          "description": "For kind Event: how precisely the time was stated. Exact (default), Day (date only), Window (between occurredAtUtc and occurredUntilUtc), OnOrBefore (on or before occurredAtUtc's date), NotStated (no time; placed after the step before it)."
+          "description": "For kind Event: how precisely the time was stated. Exact (default), Day (date only), Window (between occurredAt and occurredUntil), OnOrBefore (on or before occurredAt\u0027s date), NotStated (no time; placed after the step before it)."
+        },
+        "occurredUntil": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "For timePrecision Window: the last date. An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
         },
         "occurredUntilUtc": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
-          "description": "For timePrecision Window: the last date. An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "deprecated": true,
+          "description": "The old name for occurredUntil, still read. Use occurredUntil; don\u0027t give both."
         },
         "kind": {
           "type": "string",
@@ -222,7 +246,7 @@
         },
         "decidedBy": {
           "type": "string",
-          "description": "For type Decision: who made the decision, e.g. \"Incident Commander with Legal\". Optional."
+          "description": "For type Decision: who made the decision, e.g. \u0022Incident Commander with Legal\u0022. Optional."
         }
       }
     },
@@ -249,7 +273,7 @@
             "Other",
             "CommandLine"
           ],
-          "description": "Optional — auto-detected from the value when omitted."
+          "description": "Optional \u2014 auto-detected from the value when omitted."
         },
         "value": {
           "type": "string",
@@ -302,10 +326,16 @@
         "owner": {
           "type": "string"
         },
+        "dueAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "When the task is due. An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
+        },
         "dueAtUtc": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
-          "description": "An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "deprecated": true,
+          "description": "The old name for dueAt, still read. Use dueAt; don\u0027t give both."
         }
       }
     }

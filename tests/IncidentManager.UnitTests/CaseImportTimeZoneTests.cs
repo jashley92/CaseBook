@@ -104,6 +104,43 @@ public sealed class CaseImportTimeZoneTests
             CaseImportService.Parse(Doc(value)).Ok.Should().BeTrue($"the importer reads {value}");
     }
 
+    // BUG-663: the preferred names, the old "...Utc" ones still read, and a document can't give both.
+    [Fact]
+    public void Times_can_use_the_preferred_names_or_the_old_ones_but_not_both()
+    {
+        const string preferred = """
+            { "format": "casebook-case-import", "schemaVersion": 1, "timeZone": "America/New_York",
+              "target": { "newCase": { "title": "t", "detectedAt": "2026-07-14T09:00:00", "occurredAt": "2026-07-14T08:00:00" } },
+              "timeline": [ { "occurredAt": "2026-07-14T09:05:00", "timePrecision": "Window", "occurredUntil": "2026-07-16T00:00:00", "kind": "Event", "description": "x" } ],
+              "actionItems": [ { "title": "y", "dueAt": "2026-07-20T17:00:00" } ] }
+            """;
+        var d = CaseImportService.Parse(preferred).Document!;
+        d.Target!.NewCase!.DetectedAtUtc!.Value.UtcDateTime.Should().Be(new DateTime(2026, 7, 14, 13, 0, 0));
+        d.Target.NewCase.OccurredAtUtc!.Value.UtcDateTime.Should().Be(new DateTime(2026, 7, 14, 12, 0, 0));
+        d.Timeline![0].OccurredAtUtc!.Value.UtcDateTime.Should().Be(new DateTime(2026, 7, 14, 13, 5, 0));
+        d.Timeline[0].OccurredUntilUtc!.Value.UtcDateTime.Should().Be(new DateTime(2026, 7, 16, 4, 0, 0));
+        d.ActionItems![0].DueAtUtc!.Value.UtcDateTime.Should().Be(new DateTime(2026, 7, 20, 21, 0, 0));
+
+        Occurred(CaseImportService.Parse(Doc("2026-07-14T09:05:00Z"))).UtcDateTime
+            .Should().Be(new DateTime(2026, 7, 14, 9, 5, 0), "the old name is still read");
+
+        var both = CaseImportService.Parse("""
+            { "format": "casebook-case-import", "schemaVersion": 1,
+              "timeline": [ { "occurredAt": "2026-07-14T09:05:00Z", "occurredAtUtc": "2026-07-14T13:05:00Z", "description": "x" } ] }
+            """);
+        both.Ok.Should().BeFalse();
+        both.Error.Should().Contain("Timeline entry 1").And.Contain("\"occurredAt\"").And.Contain("\"occurredAtUtc\"");
+    }
+
+    [Fact]
+    public void The_ai_prompt_uses_only_the_preferred_names()
+    {
+        var prompt = CaseImportPrompt.Build(new CaseImportPromptOptions(TimeZone: "America/New_York"));
+
+        prompt.Should().NotContain("AtUtc").And.NotContain("UntilUtc");
+        prompt.Should().Contain("\"occurredAt\"").And.Contain("\"dueAt\"").And.Contain("America/New_York");
+    }
+
     [Fact]
     public void Exercise_in_the_document_is_read()
     {

@@ -115,7 +115,44 @@ public sealed class CaseImportService
         // BUG-202: the same limits a reviewer can check by eye; a bigger set is split across documents.
         if (TooMany(doc) is { } tooMany) return CaseImportParse.Fail(tooMany);
 
+        if (FoldTimeNames(doc) is { } clash) return CaseImportParse.Fail(clash);   // BUG-663
         return CaseImportParse.Success(doc) with { UnzonedTimes = times.Unzoned, UnzonedZone = zone };
+    }
+
+    /// <summary>
+    /// BUG-663: each time may be written under its preferred name (occurredAt, occurredUntil, detectedAt, dueAt) or the
+    /// v1 one ending in "Utc". The preferred one is copied onto the old property, which the rest of the import reads. A
+    /// document that gives both for the same time is refused, so there's no doubt which counts.
+    /// </summary>
+    private static string? FoldTimeNames(CaseImportDocument doc)
+    {
+        static string? Fold(DateTimeOffset? preferred, DateTimeOffset? legacy, string name, string where, Action<DateTimeOffset?> set)
+        {
+            if (preferred is null) return null;
+            if (legacy is not null)
+                return $"{where} gives both \"{name}\" and \"{name}Utc\". Give one: \"{name}\" (\"{name}Utc\" is its old name).";
+            set(preferred);
+            return null;
+        }
+
+        if (doc.Target?.NewCase is { } nc)
+        {
+            if (Fold(nc.DetectedAt, nc.DetectedAtUtc, "detectedAt", "The new case", v => nc.DetectedAtUtc = v) is { } e1) return e1;
+            if (Fold(nc.OccurredAt, nc.OccurredAtUtc, "occurredAt", "The new case", v => nc.OccurredAtUtc = v) is { } e2) return e2;
+        }
+        for (var i = 0; i < (doc.Timeline?.Count ?? 0); i++)
+        {
+            if (doc.Timeline![i] is not { } t) continue;   // a null row is skipped (and counted) later
+            var where = $"Timeline entry {i + 1}";
+            if (Fold(t.OccurredAt, t.OccurredAtUtc, "occurredAt", where, v => t.OccurredAtUtc = v) is { } e3) return e3;
+            if (Fold(t.OccurredUntil, t.OccurredUntilUtc, "occurredUntil", where, v => t.OccurredUntilUtc = v) is { } e4) return e4;
+        }
+        for (var i = 0; i < (doc.ActionItems?.Count ?? 0); i++)
+        {
+            if (doc.ActionItems![i] is not { } a) continue;
+            if (Fold(a.DueAt, a.DueAtUtc, "dueAt", $"Task {i + 1}", v => a.DueAtUtc = v) is { } e5) return e5;
+        }
+        return null;
     }
 
     // The top-level "timeZone", if the document has one (null when it doesn't, or isn't JSON; Deserialize reports that).

@@ -97,7 +97,7 @@ public static class CaseImportPrompt
         sb.AppendLine("  \"timeZone\": \"<the zone of times written without an offset, e.g. America/New_York; omit if none>\",");
         sb.AppendLine("  \"summary\": \"<a concise narrative summary of the matter>\",");
         sb.AppendLine("  \"timeline\": [");
-        sb.AppendLine("    { \"occurredAtUtc\": \"<ISO-8601 date-time>\", \"timePrecision\": \"<optional, Event only>\", \"occurredUntilUtc\": \"<Window only>\",");
+        sb.AppendLine("    { \"occurredAt\": \"<ISO-8601 date-time>\", \"timePrecision\": \"<optional, Event only>\", \"occurredUntil\": \"<Window only>\",");
         sb.AppendLine("      \"kind\": \"<kind>\", \"type\": \"<type>\",");
         sb.AppendLine("      \"description\": \"<what happened>\", \"source\": \"<optional: where this came from>\" }");
         sb.AppendLine("  ],");
@@ -106,14 +106,14 @@ public static class CaseImportPrompt
         sb.AppendLine("      \"label\": \"<optional>\", \"disposition\": \"<optional>\", \"source\": \"<optional>\" }");
         sb.AppendLine("  ],");
         sb.AppendLine("  \"actionItems\": [");
-        sb.AppendLine("    { \"title\": \"<follow-up task>\", \"owner\": \"<optional>\", \"dueAtUtc\": \"<optional ISO-8601 date-time>\" }");
+        sb.AppendLine("    { \"title\": \"<follow-up task>\", \"owner\": \"<optional>\", \"dueAt\": \"<optional ISO-8601 date-time>\" }");
         sb.AppendLine("  ]");
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("ALLOWED VALUES");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.kind: {kinds}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.type: {timelineTypes}");
-        sb.AppendLine("- timeline.timePrecision (kind Event only): Exact, Day, Window, OnOrBefore, NotStated. Never invent a time the material doesn't give. A date without a time is Day; \"between March 2 and 5\" is Window with occurredUntilUtc; \"on or before\" is OnOrBefore; a step the material puts in order but gives no date for is NotStated, listed right after the step it follows. List event steps in the order the material gives them.");
+        sb.AppendLine("- timeline.timePrecision (kind Event only): Exact, Day, Window, OnOrBefore, NotStated. Never invent a time the material doesn't give. A date without a time is Day; \"between March 2 and 5\" is Window with occurredUntil; \"on or before\" is OnOrBefore; a step the material puts in order but gives no date for is NotStated, listed right after the step it follows. List event steps in the order the material gives them.");
         sb.AppendLine("- A timeline entry of type Decision records something the team decided: put the decision in description, why in rationale (required), and optionally optionsConsidered and decidedBy.");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.type: {entityTypes}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.disposition: {dispositions}");
