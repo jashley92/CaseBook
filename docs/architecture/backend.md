@@ -60,6 +60,8 @@ user by the `downloads` policy.
 | `GET /agenda/feed.ics?token=` | anonymous; the signed token is the credential | Personal ICS subscription feed; 404 if `Agenda:FeedKey` is blank or the token is invalid, reset or expired | — |
 | `GET /evidence/{id}` | ViewCases | The file, as an attachment | Custody "Downloaded"; access log; SIEM 5302 |
 | `GET /evidence/{id}/inline` | ViewCases (not rate-limited) | Image thumbnail, only if the bytes are PNG, JPEG, GIF or WebP; else 404 | none (deliberately) |
+| `GET /evidence/{id}/safe` | ViewCases | The file inside a zip with the password `infected` (PROD-58; ZipCrypto, streamed) | Custody "Downloaded (in a password-protected zip)"; access log; SIEM 5302 |
+| `POST /evidence/uploads`, `PUT /evidence/uploads/{id}/{part}`, `POST /evidence/uploads/{id}/complete`, `DELETE /evidence/uploads/{id}` | EditCases + antiforgery header; `uploads` rate limit | A large upload in 8 MB parts (PROD-56): begin (size, limits and room checked), each part, complete (read back, recorded as an in-page upload is), abandon | Evidence created and custody on completion, as an in-page upload |
 | `GET /reports/{id}` | ViewCases | The stored report | Access log; SIEM 5303 |
 | `GET /cases/{id}/graph.stix.json` | ViewCases | The case graph as a STIX 2.1 bundle | Access log; SIEM 5304 |
 | `GET /campaigns/{id}/rollup.json` | ViewCases | Campaign rollup | Access log; SIEM 5304 |
@@ -155,6 +157,8 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 |---|---|---|---|---|
 | `IntegritySealHostedService` | Verify the chain and latest seal; alarm on a break; seal when due | verify every 10 min (new entries and every record; the whole chain every 6 h); seal every 6 h (24 h in the production template) | `Integrity:AutoSeal:*` | verify always on; sealing on |
 | `EvidenceIntegrityHostedService` | Re-hash stored evidence; alarm 5003 on drift | 5 min poll; 24 h | `Integrity:EvidenceVerify:*` | off |
+| `EvidenceStoreHostedService` | Probe the evidence store (write, read, delete a file); drop abandoned large uploads (PROD-56) | at start-up; hourly | none | on |
+| `EvidenceKeyHostedService` | Check the evidence key and its envelope copies and backups, alarm while it's unavailable; convert files stored before encryption (PROD-57) | every 5 min while the key isn't ready, daily when it is; conversion 15 min after start-up, then daily or on **Convert now** | `Storage:Encryption:*` | on (idle while encryption is off) |
 | `OverdueActionItemHostedService` | Overdue task reminders and escalation | 5 min poll; 24 h | `Notifications:OverdueScan:*` | off |
 | `DueSoonActionItemHostedService` | Due-soon reminders | 5 min poll; 6 h | `Notifications:DueSoonScan:*` | off |
 | `NotificationDeadlineHostedService` | Regulatory deadline reminders | 5 min poll; 1 h | `Notifications:DeadlineScan:*` (+ deadline clock on) | off |
@@ -164,7 +168,7 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 | `SecurityEventDispatcher` | Drain the SIEM queue to each enabled transport | continuous | `Siem:*` | idle unless a transport is enabled |
 | `ReportJobs` (RD-23) | Generate a case or lessons-learned report someone asked for, in its own scope with that person's identity (their permissions, need-to-know and audit attribution); one at a time, progress in memory for an hour | on request | none | on |
 
-**No job changes case state** (verified: no scanner saves; the only scheduled write is the integrity seal). `ReportJobs` writes only the report a person asked for, as that person; generating never approves.
+**No job changes case state** (verified: no scanner saves; the only scheduled writes are the integrity seal and, with evidence encryption on, the evidence key's envelope and the one-time encryption of files stored before, which leaves every record as it was). `ReportJobs` writes only the report a person asked for, as that person; generating never approves.
 
 Caveats:
 

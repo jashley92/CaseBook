@@ -25,4 +25,11 @@
     <InternalsVisibleTo Include="IncidentManager.IntegrationTests" />
   </ItemGroup>
 
+  <!-- The tool never draws (SkiaSharp comes with Infrastructure); its native symbols alone are ~90 MB of the bundle. -->
+  <Target Name="DropNativeSymbols" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'libSkiaSharp.pdb'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

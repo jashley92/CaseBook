@@ -92,7 +92,7 @@ jobs:
 
       # PROD-57: casebook-keytool (key shares, recovery drills, recovery, decrypted export), shipped under deploy/keytool.
       - name: Publish keytool
-        run: dotnet publish src/IncidentManager.KeyTool -c Release -o publish/keytool --nologo -p:Version="${GITHUB_REF_NAME#v}"
+        run: dotnet publish src/IncidentManager.KeyTool -c Release -r win-x64 --self-contained false -o publish/keytool --nologo -p:Version="${GITHUB_REF_NAME#v}"
 
       - name: Assemble release bundle
         run: |

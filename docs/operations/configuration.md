@@ -157,6 +157,10 @@ process's working directory, which under IIS is the site folder.
 | `Integrity:EvidenceVerify:Enabled` | Periodically re-hash stored evidence files (a run also at startup); alarm 5003 on drift | `false` | App |
 | `Integrity:EvidenceVerify:IntervalHours` | Hours between runs, counted from midnight UTC (`≤0` means 24) | `24` | App |
 | `Integrity:EvidenceVerify:PassDays` | Every file is re-hashed at least once in this many days: each run checks its share of the files. `1` checks every file every run. | `7` | App |
+| `Storage:Encryption:Enabled` | Encrypt evidence and reports at rest (PROD-57; [OPERATIONS.md §2, Evidence key](../OPERATIONS.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)). Starts only once a recovery certificate is listed or shares have been issued; files stored before are converted in the background, one-way. | `false` | Server |
+| `Storage:Encryption:RecoveryCertificates` | Paths to recovery certificates (`.cer`, public part only); the key is also encrypted to each. | empty | Server |
+| `Storage:Encryption:CertificateThumbprint` / `StoreLocation` | Optional certificate of its own to protect the key; blank uses the chain key's certificate, else the seal-signing certificate, else the CyberArk chain key. | blank / `LocalMachine` | Server |
+| `Storage:Encryption:EnvelopePath` | The key's envelope file; blank is `evidence-key.json` beside the seal-signing key. | blank | Server |
 
 ### 3.5 Reporting
 

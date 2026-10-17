@@ -274,6 +274,10 @@ public static class ComplianceBundlePack
         Line();
         Line("The SignatureValid / ChainMatches columns in seals.csv record the result of the same two");
         Line("checks performed by CaseBook at the moment this bundle was generated.");
+        Line();
+        Line("Evidence file hashes (Sha256 in the audit entries for evidence) are of the original files");
+        Line("as uploaded. CaseBook may store evidence encrypted at rest; that doesn't change them. Compare");
+        Line("them with the files as downloaded from CaseBook or exported with casebook-keytool export.");
         return sb.ToString();
     }
 

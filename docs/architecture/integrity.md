@@ -263,6 +263,38 @@ and nothing is checked or cleared until it's back. A mismatched, missing or unre
 event (counts only), plus an email to the alert distribution listing the case, evidence id and file name. A
 banner appears for administrators. The status is shown under Administration → Diagnostics. The job only reads.
 
+### Evidence encryption at rest
+
+PROD-57 ([0017](../decisions/0017-evidence-encryption-and-key-recovery.md)): with `Storage:Encryption:Enabled` on and
+a backup in place, evidence and reports are stored in the CBE1 format: a header naming the key, then 64 KiB chunks
+sealed with AES-256-GCM, each bound to its file, its position and whether it's the last. The rules for this page:
+
+- **The hashes are the original file's.** `Evidence.Sha256`, `SizeBytes` and a report's hash are computed over the
+  bytes as uploaded or generated, so the re-check decrypts and hashes those, and custody, reports and the compliance
+  bundle mean what they did. A file whose plain bytes don't match reports as today's mismatch.
+- **No hash of the encrypted file is kept.** GCM's tags detect any change to it: an altered byte, a cut, a reordered
+  or borrowed chunk all fail to decrypt, and the re-check reports the file as unreadable. A swapped or downgraded
+  file (another CBE1 file, or a plain one) fails the original's SHA-256.
+- **A key that can't be opened** is one finding ("evidence key unavailable"), not every file unreadable: the re-check
+  pauses, as it does for an unreachable store, and nothing is cleared until the key is back.
+- **Conversion and the re-check never overlap.** They share one gate per file, and conversion checks each plain
+  file's hash before encrypting it and again after, before it replaces the original.
+
+**What it costs.** Measured on a 2 GB file held in the OS cache (one core, .NET 10, the CBE1 reader):
+
+| Pass over 2 GB | Time | Rate |
+|---|---|---|
+| Read only | 0.2 s | 10 GB/s |
+| Read + SHA-256 (today's re-check, 4 KB reads) | 1.9 s | 1.1 GB/s |
+| Read + decrypt | 0.5 s | 3.9 GB/s |
+| Read + decrypt + SHA-256 (the re-check on an encrypted file) | 1.4 s | 1.5 GB/s |
+| Encrypt and write (an upload, a conversion) | 1.0 s | 2.0 GB/s |
+
+Decryption costs less than the hash the re-check already computes; the encrypted re-check is faster here only
+because the reader hands SHA-256 64 KiB blocks. A real disk (a few hundred MB/s) or a share (around 100 MB/s on
+1 GbE) is the limit either way, so encryption doesn't change how long a pass takes. The read-back check on a large
+upload (`Evidence:ReadBackCheck`) is one more read + decrypt + SHA-256 of the file.
+
 ## The compliance evidence bundle
 
 `GET /export/compliance-bundle.zip?from=&to=` (administrators; also on the Integrity page) produces, for a date

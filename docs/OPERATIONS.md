@@ -19,6 +19,7 @@ Three data sets must be backed up **in lockstep** so they stay mutually consiste
 | Evidence blobs | `EvidenceStore:RootPath` (outside webroot) | File backup of the whole tree |
 | Integrity seals | `Integrity:ExportPath` (out-of-band seal exports) | File backup (append-only) |
 | Generated reports | `ReportOutput:RootPath` | File backup |
+| Keys folder | `<DataRoot>\keys` (the seal-signing key, `chain-key.json`, `evidence-key.json`) | File backup with tighter access; the evidence key's envelope is useless without a certificate or the shares, but keep it with the rest ([§2, Evidence key](#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)) |
 | Report branding logo | `ReportBranding:RootPath` (`DataRoot\branding`, H-07) | File backup (single small image; low churn) |
 | Word report templates | `ReportTemplates:RootPath` (`DataRoot\report-templates`, PROD-47; when unset, a `report-templates` folder beside `ReportBranding:RootPath`, so upgraded servers need no config change) | File backup (one .docx per library template, named by its id; low churn) |
 
@@ -48,7 +49,8 @@ BACKUP LOG [IncidentManager]
 
 - Back up the evidence store **with** each DB backup window so blob references never dangle.
 - The evidence store is immutable by design (files are content-hashed and never rewritten), so an
-  incremental/file-level backup is sufficient and cheap.
+  incremental/file-level backup is sufficient and cheap. The one exception: when evidence encryption is turned on,
+  each file stored before is rewritten once, encrypted (§2, Evidence key). Expect one full backup's worth of change.
 - Seal exports (`Integrity:ExportPath`) are append-only; include them in every backup — they are the
   out-of-band tamper-evidence anchor and must survive a DB compromise.
 
@@ -99,13 +101,19 @@ evidence download is sent as plain bytes (never the type its uploader's browser 
 `Content-Security-Policy`.
 
 **Disk encryption.** Turn on BitLocker (or the storage's own encryption) for the data root's volume and the evidence
-store's: until evidence is encrypted by CaseBook itself, a copied disk or backup exposes it.
+store's. With CaseBook's own evidence encryption on (§2, Evidence key) a copied disk or backup no longer exposes
+evidence or reports, but the database and the logs are still on those volumes.
 
 ### 1.3 Restore verification (do not skip)
 
 A backup that has never been restored is a hypothesis, not a control.
 
 - **Monthly**: restore the latest full + logs to an isolated recovery instance.
+- **Restore as a set.** The database, the evidence store and the data root's `keys` folder must come from the same
+  point. With evidence encryption on, run `casebook-keytool verify --site <site folder> --cert <thumbprint>` (or a
+  recovery certificate, or `--shares`) on the restored server before it serves anyone: it proves the key the files
+  need opens there. A database restored from before encryption still finds the key id in the envelope kept beside
+  the evidence (`<store>\.key\evidence-key.json`).
 - After restore, run the app's **chain verification** (Integrity page → *Verify now*, or the
   hosted auto-verify job) and confirm the chain is intact end-to-end.
 - **Verify a prior seal** against the restored DB: pick a seal whose `UpToSequence` predates the
@@ -327,6 +335,98 @@ change, like the rest of the data root.
 - Back up the key material under the same immutable/offsite regime as the database, but with tighter
   access control.
 
+### Evidence key: encryption at rest, backups and recovery (PROD-57)
+
+With this on, evidence files and generated reports are stored encrypted (AES-256-GCM), so a copied disk or backup
+doesn't expose them and the server's antivirus can't delete a malware sample. Why it's built this way:
+[ADR 0017](decisions/0017-evidence-encryption-and-key-recovery.md). Off by default.
+
+**Losing the key loses every encrypted file.** Set up the backups below before turning it on, and run a drill.
+
+`Storage:Encryption` (server configuration only, never the in-app settings):
+
+| Setting | Meaning |
+|---|---|
+| `Enabled` | `false` by default. |
+| `RecoveryCertificates` | Paths to `.cer` files (public part only). The key is also encrypted to each; their private keys stay offline. |
+| `CertificateThumbprint`, `StoreLocation` | Optional: a certificate of its own to protect the key, kept apart from the audit chain's. Blank uses the integrity keys already configured (below). |
+| `EnvelopePath` | Optional: where the key's envelope is kept; blank is `evidence-key.json` beside the seal-signing key (`<DataRoot>\keys`). |
+
+**What protects the key on the server.** CaseBook makes the key once and keeps it only encrypted, in an envelope.
+The server's copy is protected by, in this order: `CertificateThumbprint` if set, else the chain key's certificate,
+else the seal-signing certificate (`Integrity:SigningKey:Source = CertificateStore`), else a key derived from the chain
+key in CyberArk. With none of these, Diagnostics says encryption can't start; configure one (this section, above).
+When that certificate is renewed and the old one is still in the store, the key is re-encrypted to the new one at
+the next check (daily, and at start-up). Leave the old certificate in the store until Diagnostics shows the new one.
+
+**Its backups.** Encryption doesn't start until there's at least one of the first two; until then evidence is stored
+as before and Diagnostics says why.
+
+1. **Recovery certificates.** Make two, each with its own custodian, on a machine other than the CaseBook server
+   (or issue them from your certificate authority with key-encipherment usage):
+
+   ```powershell
+   $c = New-SelfSignedCertificate -Subject "CN=CaseBook evidence recovery (custodian A)" -CertStoreLocation Cert:\CurrentUser\My `
+        -KeyAlgorithm RSA -KeyLength 3072 -KeyExportPolicy Exportable -KeyUsage KeyEncipherment -NotAfter (Get-Date).AddYears(10)
+   Export-Certificate -Cert $c -FilePath .\casebook-recovery-a.cer
+   Export-PfxCertificate -Cert $c -FilePath .\casebook-recovery-a.pfx -Password (Read-Host -AsSecureString "PFX password")
+   Remove-Item "Cert:\CurrentUser\My\$($c.Thumbprint)" -DeleteKey
+   ```
+
+   Copy the `.cer` to the server (for example `<DataRoot>\keys\recovery\`) and list it in `RecoveryCertificates`. Put
+   the `.pfx` and its password in the safe (or keep the key on a smartcard). Any one of them recovers the key, and the
+   chain key when it's on, without the server. Expiry doesn't matter for recovery; Diagnostics notes it.
+2. **Shares.** On the server, as an administrator: `deploy\keytool\casebook-keytool split --site <site folder>
+   [--threshold 3] [--shares 5] [--out <folder>]`. Give each share (one line, `CBS1-…`) to a different person or safe,
+   on paper or USB, and delete the output folder. Any 3 rebuild the key; 2 reveal nothing. CaseBook records that
+   shares were issued, never the shares. A holder checks theirs, on any machine, with `casebook-keytool check-share`.
+3. **The envelope**, kept by CaseBook in three places: the keys folder, the database (`KeyEnvelopes`) and beside the
+   evidence (`<store>\.key\evidence-key.json`). A missing or damaged copy is rewritten from a good one at the next
+   check. Back them up with everything else (section 1); they're useless without a certificate or the shares.
+4. **CyberArk**, when the chain key comes from there: its vault backup covers the server's copy.
+
+**Checks and drills.** Every day, CaseBook checks each envelope copy, the recovery copies and the server's protection,
+and alerts the integrity distribution once per problem. Diagnostics shows the state, the copies, the backups and the
+last drill. The offline backups can't be tested by the server alone (that would let anyone who took over the server
+open them), so drill them at least yearly; Diagnostics reminds after 12 months:
+
+```powershell
+casebook-keytool verify --site C:\inetpub\casebook --pfx E:\casebook-recovery-a.pfx   # asks for the password
+casebook-keytool verify --site C:\inetpub\casebook --shares                           # asks for the shares
+```
+
+**Turning it on.** Configure the backups, set `Enabled` to `true`, restart the app pool, and check Diagnostics shows
+**On**. New files are encrypted from then on. Files stored before are converted in the background, starting 15
+minutes after start-up (after `Upgrade-CaseBook.ps1`'s warm-up), or at once with **Convert now** on Diagnostics. Each
+is checked against its recorded hash before and after, and only then replaces the original; one that doesn't match
+is left as it is and reported. Conversion needs free space for the largest file. **It's one-way:** an earlier
+CaseBook version can't read converted files, so a rollback after it also needs the evidence store restored from
+before it (or the files exported, below).
+
+**When the key can't be opened** (a certificate removed or its rights changed, CyberArk down, a restore without the
+keys folder): CaseBook keeps running. Evidence and report downloads, uploads and report generation answer that the
+evidence key isn't available, and nothing is stored unencrypted. One alarm goes out (a Critical log line, the
+integrity email, the administrators' banner) and Diagnostics names the cause. The key is retried every 5 minutes,
+so fixing the cause clears it without a restart. CaseBook never makes a new key while files or an envelope need one
+it can't open.
+
+**Recovering the key onto a new certificate** (the server certificate is lost, or a new server):
+
+1. Install the new certificate (with its private key, not exportable) in `LocalMachine\My` on the server, and give
+   the app-pool account read on its private key.
+2. As an administrator: `casebook-keytool recover --site <site folder> --pfx <recovery .pfx>` (or `--cert
+   <thumbprint>` for one on a smartcard, or `--shares`) `--to-cert <new thumbprint>`. Add `--chain-key` to rebuild
+   `chain-key.json` onto the same certificate when the chain key was lost with it.
+3. Set `Storage:Encryption:CertificateThumbprint` (or the chain key's or signing certificate's, whichever protected
+   it) to the new thumbprint, and restart the app pool. Diagnostics shows **On**; run a drill.
+
+**Getting the files out.** `casebook-keytool export --site <site folder> (--case <number> | --all) --out <folder>`
+writes each file under its original name, per case, with `manifest.csv` listing each file's recorded and actual
+SHA-256 (exit code 2 if any differ). It's for eDiscovery, moving to another product or a disaster. It opens the key
+with the server's certificate by default, or `--pfx`, `--cert` or `--shares`. It doesn't write to CaseBook's audit
+trail: keep the manifest with the change record. The exported files are live: export malware only to a quarantined
+location.
+
 ---
 
 ## 3. Host Controls
@@ -334,11 +434,13 @@ change, like the rest of the data root.
 - **Endpoint EDR/AV**: run a host **endpoint EDR/AV** agent whose sensor scans the evidence-store
   path on access/write at the host level. Ensure the evidence, seal, and report
   directories are **included** in the EDR monitoring policy and not inadvertently excluded.
-  **Caution for malware samples:** evidence is stored as uploaded, so a real-time scanner that *quarantines or deletes*
-  will remove a malware sample uploaded as evidence, on upload or when the evidence re-check reads it; the case then
-  shows it missing and its chain of custody ends there. Until CaseBook encrypts evidence at rest (planned), set the
-  agent to **detect and alert only** on the evidence store, or keep live samples zipped with a password before
-  uploading. Don't exclude the folder from monitoring altogether.
+  **Malware samples:** with evidence encryption on (§2, Evidence key), samples are encrypted from the first byte
+  written, including uploads in progress under `<store>\.incoming`, so the scanner never sees one and no exclusion
+  is needed. Without it, or until the files stored before are converted, evidence is stored as uploaded: a
+  real-time scanner that *quarantines or deletes* will remove a sample on upload or when the evidence re-check reads
+  it, and the case then shows it missing and its chain of custody ends there. In that state set the agent to
+  **detect and alert only** on the evidence store, and press **Convert now** on Diagnostics after turning
+  encryption on. Don't exclude the folder from monitoring altogether.
 - **IIS / app-pool hardening**: least-privilege app-pool identity; HTTPS/TLS only (HSTS enabled in
   non-dev); security headers via `SecurityHeadersMiddleware`; server header suppressed.
 - **Authentication**: production requires `Auth:Mode=Windows`; the app refuses to start in Production

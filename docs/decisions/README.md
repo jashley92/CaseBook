@@ -22,6 +22,7 @@ later reversed gets a new record that supersedes the old one (the old one stays,
 | [0014](0014-no-discussion-thread.md) | No chat thread in the record; @mentions live on notes | Accepted |
 | [0015](0015-entity-tags-double-bracket.md) | Entity tags in Markdown start with `[[`, not `#` | Accepted |
 | [0016](0016-key-custody-and-seal-copies.md) | Integrity keys from a file, the certificate store or CyberArk; seal copies to the SIEM | Accepted |
+| [0017](0017-evidence-encryption-and-key-recovery.md) | Evidence and reports encrypted at rest, with a key that can't be lost | Accepted |
 
 ## Template
 

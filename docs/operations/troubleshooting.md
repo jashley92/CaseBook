@@ -228,6 +228,21 @@ The email lists case, evidence id and file name. Preserve the store and database
 evidence backups (the recorded hash tells you what it must hash to); check EDR and file-system logs for who
 touched it.
 
+### Evidence key unavailable
+
+**Symptom:** evidence and report downloads, uploads and report generation answer "the evidence key isn't
+available"; an integrity email and the administrators' banner say the same; the rest of CaseBook works.
+**Cause:** evidence encryption is on and the key's envelope can't be opened: the certificate protecting it was
+removed, replaced without the old one left in the store, or the app-pool account lost read on its private key; the
+chain key's CyberArk object can't be fetched; or a restore left out the keys folder.
+**Where to look:** Administration → Diagnostics → Evidence encryption names the certificate or source and what's
+wrong with each envelope copy; the Critical log line at start-up says the same.
+**Fix:** put the certificate back (or its rights), or bring CyberArk back; CaseBook retries every 5 minutes, no
+restart needed. If the certificate is gone for good, recover the key onto a new one with a recovery certificate or
+the shares ([OPERATIONS.md §2, Evidence key](../OPERATIONS.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)).
+Never delete `evidence-key.json` or the `KeyEnvelopes` row to "reset" it: CaseBook won't make a new key while files
+need the old one, and the files can't be read without it.
+
 ### Rejected setting override (5002) at startup
 
 An `AppSettings` row whose key isn't an in-app setting exists in the database. The app ignored it. It can only
