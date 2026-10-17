@@ -224,6 +224,26 @@ until that seal, a restart is the only gap in which every keyed entry could be d
 (event 5004) cover the other side: a seal deleted or re-signed later shows up there
 ([ADR 0016](../decisions/0016-key-custody-and-seal-copies.md)).
 
+### Check cost
+
+Each check logs what it cost, as a warning past 60 s (`IntegrityCheckState.SlowCycle`), and Administration ›
+Diagnostics shows the latest (*Integrity check cost*). The record check reads every hashed record every cycle, so its
+time grows with all the data stored, not with recent activity.
+
+Measured with `IntegrityCheckThroughputTests` (`CASEBOOK_CHECK_ROWS`) on local SQL Server 2022: notes and timeline
+entries, each with three audit entries. Allow a few times longer with a remote server.
+
+| Records (audit entries) | 10-minute check | Full check (6-hourly, start-up, *Verify now*) | Held in memory between checks |
+|---|---|---|---|
+| 50,000 (150,000) | 0.4 s | 1.8 s | 7 MB |
+| 1,000,000 (3,000,000) | 8.1 s | 49.6 s | 305 MB |
+| 3,000,000 (9,000,000) | 23.1 s | 145.2 s | 1,021 MB |
+
+The time is linear: about 125,000 records and 75,000 audit entries a second. CaseBook's target (a small SOC, low
+hundreds of cases a year, [INSTALL.md §1.1](../INSTALL.md#11-server-specifications)) reaches about a million records
+over a decade. The memory held is the record check's map of each record's last recorded hash (`ChainRecords`), about
+300 bytes a record.
+
 ## Evidence at rest
 
 When `Integrity:EvidenceVerify:Enabled` is on, a job re-hashes every stored evidence file on its interval (and
