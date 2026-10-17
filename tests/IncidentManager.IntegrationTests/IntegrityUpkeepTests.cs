@@ -272,4 +272,130 @@ public sealed class IntegrityUpkeepTests
         await using (var db = database.NewContext()) (await RowHashUpgrade.RunAsync(db, _hasher, _clock)).Left.Should().BeEmpty();
         (await VerifyAsync(database))?.Detail.Should().BeNull();
     }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_kept_jurisdiction_dropped_before_the_upgrade_isnt_signed_off_by_the_back_fill(string provider /* BUG-646 */)
+    {
+        using var database = Seeded(provider);
+        Guid id;
+        await using (var db = database.NewContext())
+        {
+            // As a case reported before BUG-284 kept its elements: the codes only, recorded in its trail.
+            var c = await db.Cases.Include(x => x.DataElements)
+                .Where(x => x.ReportedAtUtc == null && x.Phase != CasePhase.Closed).OrderBy(x => x.CaseNumber).FirstAsync();
+            if (c.DataElements.Count == 0) c.DataElements.Add(new CaseDataElement { CaseId = c.Id, ElementKey = "SSN" });
+            c.MarkReported(_clock.UtcNow, "alice", _clock.UtcNow);
+            c.ReportedJurisdictions = "NY,TX";
+            await db.SaveChangesAsync();
+            id = c.Id;
+        }
+        await AsFormat3Async(database, id);   // as v1.6.12 left it: its hash doesn't cover the kept value
+        // TX dropped in the database: the format-3 hash can't show it.
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+            await raw.Cases.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.ReportedJurisdictions, "NY"));
+        (await VerifyAsync(database))?.Detail.Should().BeNull("before the upgrade nothing can tell");
+
+        await using (var db = database.NewContext()) await ReportedJurisdictionsBackfill.RunAsync(db);
+        (await KeptAsync(database, id)).Should().Be("NY", "a case that disagrees with its trail isn't filled in and re-hashed");
+        RowHashUpgrade.Result result;
+        await using (var db = database.NewContext()) result = await RowHashUpgrade.RunAsync(db, _hasher, _clock);
+        result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(Case)} {id}");
+        var bad = await VerifyAsync(database);
+        bad!.Id.Should().Be(id, "the dropped code is still reported after the upgrade");
+        bad.Detail.Should().Contain("doesn't cover");
+    }
+
+    public static TheoryData<string, bool> ProvidersAndUpkeep()
+    {
+        var rows = new TheoryData<string, bool>();
+        foreach (var provider in ((IEnumerable<object[]>)TestDatabase.Providers).Select(r => (string)r[0]))
+            foreach (var hashOnly in new[] { false, true }) rows.Add(provider, hashOnly);
+        return rows;
+    }
+
+    [Theory]
+    [MemberData(nameof(ProvidersAndUpkeep))]
+    public async Task Upkeep_doesnt_overwrite_a_change_saved_while_it_waited_for_the_chain(string provider, bool hashOnly /* BUG-657 */)
+    {
+        using var database = Seeded(provider);
+        Guid id;
+        await using (var db = database.NewContext())
+        {
+            var caseId = await db.Cases.Select(c => c.Id).FirstAsync();
+            var n = new JurisdictionNotice
+            {
+                CaseId = caseId, Jurisdiction = "NY", NotifiedAtUtc = _clock.UtcNow.AddHours(-2), CreatedBy = "alice", CreatedAtUtc = _clock.UtcNow,
+            };
+            db.JurisdictionNotices.Add(n);
+            await db.SaveChangesAsync();
+            id = n.Id;
+        }
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
+
+        var userHolds = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var upkeepRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // The upkeep reads the notice, then someone's change to it is under way (holding the chain) as the upkeep saves.
+        await using var upkeep = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>(database.Options)
+            .AddInterceptors(new SignalOnTrailRead(upkeepRead)).Options);
+        var stale = await upkeep.JurisdictionNotices.SingleAsync(n => n.Id == id);
+        // A start-up fill, or (hashOnly) the upgrade recording a hash, as RowHashUpgrade and RowHashBackfill do.
+        if (hashOnly) upkeep.Entry(stale).Property(x => x.RowHash).IsModified = true;
+        else stale.DueAtUtc = _clock.UtcNow.AddDays(1);
+        upkeep.PendingUpkeep = true;
+        await using var user = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>(database.Options)
+            .AddInterceptors(new HoldSave(userHolds, release.Task)).Options);
+        var edited = await user.JurisdictionNotices.SingleAsync(n => n.Id == id);
+        edited.NotifiedAtUtc = _clock.UtcNow.AddHours(-3);
+        var userSave = user.SaveChangesAsync();
+        await userHolds.Task;
+        var upkeepSave = upkeep.SaveChangesAsync();
+        // Before the fix the upkeep vouched for the notice here, before the chain was free; after it, it waits first.
+        await Task.WhenAny(upkeepRead.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+        release.SetResult();
+        await userSave;
+        await upkeepSave;
+
+        (await VerifyAsync(database))?.Detail.Should().BeNull("the upkeep doesn't save a hash of the notice as it read it over the change");
+        await using (var db = database.NewContext())
+        {
+            var now = await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.Id == id);
+            now.NotifiedAtUtc.Should().Be(_clock.UtcNow.AddHours(-3));
+            now.DueAtUtc.Should().BeNull("the upkeep skips a row changed since it read it; the next start fills it");
+        }
+    }
+
+    // Holds a save once the audit chain is held (it runs after AuditChainInterceptor), until released.
+    private sealed class HoldSave(TaskCompletionSource holding, Task release) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            holding.TrySetResult();
+            await release;
+            return result;
+        }
+    }
+
+    // Signals when the context reads the audit trail (the upkeep guard's vouch).
+    private sealed class SignalOnTrailRead(TaskCompletionSource read) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> ReaderExecuting(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result)
+        {
+            if (command.CommandText.Contains("AuditLog", StringComparison.Ordinal)) read.TrySetResult();
+            return result;
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("AuditLog", StringComparison.Ordinal)) read.TrySetResult();
+            return ValueTask.FromResult(result);
+        }
+    }
 }

@@ -197,16 +197,17 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
-        if (eventData.Context is not null)
+        if (eventData.Context is { } ctx)
         {
-            var prepared = Prepare(eventData.Context);
+            // BUG-657: an upkeep save is vouched for under the gate (see PrepareUnderGateOrRelease).
+            if (IsUpkeep(ctx)) HoldGate(ctx);
+            var prepared = PrepareUnderGateOrRelease(ctx);
             if (prepared is not null)
             {
                 // REL-05: hold the gate from the head read through commit (released in the completion
                 // callbacks) so a concurrent append can't read the same head and fork the chain.
-                AuditChainGate.Enter();
-                StateOf(eventData.Context).GateHeld = true;
-                AppendOrRelease(eventData.Context, prepared);
+                if (!StateOf(ctx).GateHeld) HoldGate(ctx);
+                AppendOrRelease(ctx, prepared);
             }
         }
         return result;
@@ -215,17 +216,48 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData, InterceptionResult<int> result, CancellationToken ct = default)
     {
-        if (eventData.Context is not null)
+        if (eventData.Context is { } ctx)
         {
-            var prepared = Prepare(eventData.Context);
+            if (IsUpkeep(ctx)) await HoldGateAsync(ctx, ct);
+            var prepared = PrepareUnderGateOrRelease(ctx);
             if (prepared is not null)
             {
-                await AuditChainGate.EnterAsync(ct);
-                StateOf(eventData.Context).GateHeld = true;
-                AppendOrRelease(eventData.Context, prepared);
+                if (!StateOf(ctx).GateHeld) await HoldGateAsync(ctx, ct);
+                AppendOrRelease(ctx, prepared);
             }
         }
         return result;
+    }
+
+    private static bool IsUpkeep(DbContext ctx) => ctx is AppDbContext { PendingUpkeep: true };
+
+    private void HoldGate(DbContext ctx)
+    {
+        AuditChainGate.Enter();
+        StateOf(ctx).GateHeld = true;
+    }
+
+    private async Task HoldGateAsync(DbContext ctx, CancellationToken ct)
+    {
+        await AuditChainGate.EnterAsync(ct);
+        StateOf(ctx).GateHeld = true;
+    }
+
+    // BUG-657: an upkeep save reads its rows, then vouches for them as read. Vouched for before the gate, a change to one
+    // that another save was committing meanwhile was overwritten by a hash of the row as the upkeep read it: a false
+    // tamper alarm (rows other than a case have no concurrency token). Under the gate, every audited save that started
+    // before has committed, and none can commit until this one has. A save with nothing to append lets the gate go.
+    private PreparedAudit? PrepareUnderGateOrRelease(DbContext ctx)
+    {
+        PreparedAudit? prepared;
+        try { prepared = Prepare(ctx); }
+        catch
+        {
+            ReleaseGate(ctx);
+            throw;
+        }
+        if (prepared is null) ReleaseGate(ctx);
+        return prepared;
     }
 
     /// <summary>
@@ -324,6 +356,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     /// </summary>
     private void RefuseUnvouchedUpkeep(AppDbContext ctx)
     {
+        PutBackChangedSinceRead(ctx);
         var changed = ctx.ChangeTracker.Entries()
             .Where(e => e.State == EntityState.Modified && e.Entity is IHashableEntity && !e.Metadata.IsOwned() && ChangesContent(e))
             .ToList();
@@ -348,6 +381,45 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         }
     }
 
+    /// <summary>
+    /// BUG-657: a row an upkeep save changes (its hash alone, as the upgrade and the hash back-fill do, or a value) whose
+    /// stored hash isn't the one it was read with was saved by someone since: its hash, computed from the row as read,
+    /// would overwrite theirs. It's put back as read and left for the next start. Run under the gate, so no audited save
+    /// can land between this read and the commit (as an UPDATE guarded by WHERE RowHash = the hash read).
+    /// </summary>
+    private static void PutBackChangedSinceRead(AppDbContext ctx)
+    {
+        var rows = ctx.ChangeTracker.Entries()
+            .Where(e => e.State == EntityState.Modified && e.Entity is IHashableEntity && !e.Metadata.IsOwned())
+            .ToList();
+        foreach (var group in rows.GroupBy(e => e.Metadata.ClrType))
+        {
+            var ids = group.Select(e => ((Entity)e.Entity).Id).ToArray();
+            var now = StoredHashesOf.MakeGenericMethod(group.Key).Invoke(null, [ctx, ids]) as Dictionary<Guid, string?> ?? [];
+            foreach (var e in group)
+            {
+                var read = e.Property(nameof(IHashableEntity.RowHash)).OriginalValue as string;
+                if (now.TryGetValue(((Entity)e.Entity).Id, out var stored) && string.Equals(stored, read, StringComparison.Ordinal)) continue;
+                foreach (var r in e.References)
+                    if (r.TargetEntry is { State: EntityState.Modified } t && t.Metadata.IsOwned()) PutBackAsRead(t);
+                PutBackAsRead(e);
+            }
+        }
+    }
+
+    private static readonly System.Reflection.MethodInfo StoredHashesOf =
+        typeof(AuditChainInterceptor).GetMethod(nameof(StoredHashes), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    private static Dictionary<Guid, string?> StoredHashes<T>(DbContext ctx, Guid[] ids) where T : Entity, IHashableEntity
+    {
+        var result = new Dictionary<Guid, string?>();
+        foreach (var chunk in ids.Chunk(500))
+            foreach (var row in ctx.Set<T>().AsNoTracking().IgnoreQueryFilters().Where(r => chunk.Contains(r.Id))
+                         .Select(r => new { r.Id, RowHash = EF.Property<string?>(r, nameof(IHashableEntity.RowHash)) }).ToList())
+                result[row.Id] = row.RowHash;
+        return result;
+    }
+
     private bool Vouched(AppDbContext ctx, EntityEntry e, IHashableEntity asRead, RowIntegrityVerifier.ChainRecords records,
         Dictionary<string, TrailSnapshot> trails, Lazy<bool> strict)
     {
@@ -355,8 +427,13 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         var stored = e.Property(nameof(IHashableEntity.RowHash)).OriginalValue as string;
         if (!records.TryGet((e.Entity.GetType().Name, id), out var last) || last.Deleted) return false;
         if (stored is { Length: > 0 } && !_hasher.RowHashMatches(asRead, stored)) return false;
-        if (last.Hash is not null) return string.Equals(last.Hash, stored, StringComparison.OrdinalIgnoreCase);
-        if (strict.Value || !trails.TryGetValue(id, out var trail) || !trail.Agrees(asRead)) return false;
+        trails.TryGetValue(id, out var trail);
+        if (last.Hash is not null)
+            // BUG-646: a hash in an older format leaves out values format 4 brought in (a case's kept jurisdictions), so a
+            // row matching it may still have been changed there; it must agree with its trail too, as the upgrade asks.
+            return stored is { Length: > 0 } && string.Equals(last.Hash, stored, StringComparison.OrdinalIgnoreCase)
+                   && (Canonical.FormatOf(stored) >= Canonical.CurrentFormat || trail?.Agrees(asRead) == true);
+        if (strict.Value || trail is null || !trail.Agrees(asRead)) return false;
         var children = RowHashUpgrade.HashedChildren(asRead).ToList();
         if (children.Count == 0) return true;
         var childRecords = new RowIntegrityVerifier.ChainRecords();
