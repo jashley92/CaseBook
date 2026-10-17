@@ -128,6 +128,23 @@ public sealed class EvidenceStorageTests : IDisposable
         new EvidenceStorageOptions { MaxUploadMB = 65_536 }.MaxUploadBytes.Should().Be(64L << 30, "no overflow at the largest setting");
         new EvidenceStorageOptions { StorageQuotaGB = 1_000_000 }.QuotaBytes.Should().Be(1_000_000L << 30);
         new EvidenceStorageOptions { StorageQuotaGB = 0 }.QuotaBytes.Should().BeNull();
+
+        // Diagnostics' meter: the share of the limit used, the 90 % warning, and no share without a limit.
+        new EvidenceStorageUse(150, 1000, null, 0).QuotaShare.Should().BeApproximately(0.15, 1e-9);
+        new EvidenceStorageUse(900, 1000, null, 0).NearQuota.Should().BeTrue();
+        new EvidenceStorageUse(899, 1000, null, 0).NearQuota.Should().BeFalse();
+        new EvidenceStorageUse(1200, 1000, null, 0).QuotaShare.Should().BeGreaterThan(1, "over the limit reads as over, not capped");
+        new EvidenceStorageUse(150, null, null, 0).QuotaShare.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_store_reports_its_volume_size_with_its_free_space()
+    {
+        var store = Files();
+        var total = await store.TotalBytesAsync();
+        var free = await store.FreeBytesAsync();
+        total.Should().BeGreaterThan(0);
+        free.Should().BeLessThanOrEqualTo(total!.Value);
     }
 
     // ---- PROD-56: uploading in parts ----

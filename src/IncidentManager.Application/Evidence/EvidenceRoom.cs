@@ -29,8 +29,11 @@ public sealed class EvidenceStorageOptions
 }
 
 /// <summary>How much the evidence store holds, against its limits, for Diagnostics and the uploader's warning.</summary>
-public sealed record EvidenceStorageUse(long UsedBytes, long? QuotaBytes, long? FreeBytes, long ReserveBytes)
+public sealed record EvidenceStorageUse(long UsedBytes, long? QuotaBytes, long? FreeBytes, long ReserveBytes, long? TotalBytes = null)
 {
+    /// <summary>The share of the quota used, 0 to 1 (past 1 when over), or null with no quota.</summary>
+    public double? QuotaShare => QuotaBytes is { } q and > 0 ? (double)UsedBytes / q : null;
+
     /// <summary>At or past 90 % of the quota.</summary>
     public bool NearQuota => QuotaBytes is { } q && UsedBytes >= q / 10 * 9;
 }
@@ -42,11 +45,14 @@ public sealed record EvidenceStorageUse(long UsedBytes, long? QuotaBytes, long? 
 /// </summary>
 public static class EvidenceRoom
 {
+    /// <summary>What evidence takes against the limits; with <paramref name=withVolume/>, the store's volume size too
+    /// (for Diagnostics' graphic; an upload's check doesn't need it).</summary>
     public static async Task<EvidenceStorageUse> UseAsync(IAppDbContext db, IEvidenceStore store, EvidenceStorageOptions o,
-        CancellationToken ct = default)
+        bool withVolume = false, CancellationToken ct = default)
     {
         var used = await db.Evidence.AsNoTracking().SumAsync(e => (long?)e.SizeBytes, ct) ?? 0;
-        return new EvidenceStorageUse(used, o.QuotaBytes, await store.FreeBytesAsync(ct), o.ReserveBytes);
+        return new EvidenceStorageUse(used, o.QuotaBytes, await store.FreeBytesAsync(ct), o.ReserveBytes,
+            withVolume ? await store.TotalBytesAsync(ct) : null);
     }
 
     /// <summary>Refuses (with a message for the uploader) a file of <paramref name="size"/> bytes that doesn't fit.</summary>
@@ -57,7 +63,7 @@ public static class EvidenceRoom
         if (size > o.MaxUploadBytes)
             throw new ArgumentException($"That file is {Size(size)}; the largest file CaseBook takes is {Size(o.MaxUploadBytes)}. " +
                                         "An administrator can raise the limit (Administration › Governance & security).");
-        var use = await UseAsync(db, store, o, ct);
+        var use = await UseAsync(db, store, o, ct: ct);
         if (use.QuotaBytes is { } quota && use.UsedBytes > quota - size)
             throw new ArgumentException($"Storing it would take evidence past its {Size(quota)} limit ({Size(use.UsedBytes)} is used). " +
                                         "Ask an administrator to raise the limit.");

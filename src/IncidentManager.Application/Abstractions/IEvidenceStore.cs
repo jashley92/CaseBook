@@ -21,6 +21,9 @@ public interface IEvidenceStore
     /// <summary>PROD-55: free bytes on the store's volume (a share included), or null when it can't be told in time.</summary>
     Task<long?> FreeBytesAsync(CancellationToken ct = default) => Task.FromResult<long?>(null);
 
+    /// <summary>The size of the store's volume (or share), for Diagnostics' storage graphic; null when it can't be told.</summary>
+    Task<long?> TotalBytesAsync(CancellationToken ct = default) => Task.FromResult<long?>(null);
+
     /// <summary>PROD-56: null when the store can be written and read as the app's account, else why not (in time, so an
     /// unreachable share answers rather than hangs).</summary>
     Task<string?> ProbeAsync(CancellationToken ct = default) => Task.FromResult<string?>(null);

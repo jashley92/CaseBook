@@ -773,29 +773,11 @@
                             {
                                 @StatusBadge(EvidenceStoreProbe.Problem is null, "Writable", "Problem")
                             }
-                            <code class="small ms-2">@EvidenceStoreFiles.Location</code>
+                            <code class="small ms-2" style="word-break:break-all">@EvidenceStoreFiles.Location</code>
                             @if (EvidenceStoreProbe.Problem is { } why) { <div class="small text-danger">@why</div> }
                         </td>
                     </tr>
-                    @if (_evidenceUse is { } use)
-                    {
-                        <tr>
-                            <td>Used</td>
-                            <td class="small">
-                                @IncidentManager.Application.Evidence.EvidenceRoom.Size(use.UsedBytes)
-                                @(use.QuotaBytes is { } q ? $" of {IncidentManager.Application.Evidence.EvidenceRoom.Size(q)} ({use.UsedBytes * 100 / Math.Max(1, q)} %)" : " (no limit set)")
-                                @if (use.NearQuota) { <span class="im-badge im-b-warn ms-2">Near the limit</span> }
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Free on the store</td>
-                            <td class="small">
-                                @(use.FreeBytes is { } free ? IncidentManager.Application.Evidence.EvidenceRoom.Size(free) : "Couldn't be read")
-                                <span class="text-muted">· uploads keep @IncidentManager.Application.Evidence.EvidenceRoom.Size(use.ReserveBytes) free</span>
-                            </td>
-                        </tr>
-                    }
-                    else if (_evidenceUseError is not null)
+                    @if (_evidenceUseError is not null)
                     {
                         <tr><td>Used</td><td class="small text-danger">Couldn't be read: @_evidenceUseError</td></tr>
                     }
@@ -805,6 +787,10 @@
                     </tr>
                 </tbody>
             </table>
+            @if (_evidenceUse is { } use)
+            {
+                <div class="mb-3"><IncidentManager.Web.Components.Shared.StorageMeter Use="use" /></div>
+            }
 
             <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
             <p class="small text-muted mb-2">

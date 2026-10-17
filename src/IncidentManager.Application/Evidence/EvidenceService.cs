@@ -42,7 +42,7 @@ public sealed class EvidenceService
     public async Task<EvidenceStorageUse> StorageUseAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return await EvidenceRoom.UseAsync(db, _store, Limits, ct);
+        return await EvidenceRoom.UseAsync(db, _store, Limits, withVolume: true, ct: ct);
     }
 
     /// <summary>

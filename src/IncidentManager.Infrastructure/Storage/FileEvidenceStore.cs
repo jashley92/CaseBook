@@ -128,6 +128,8 @@ public sealed class FileEvidenceStore : IEvidenceStore
 
     public Task<long?> FreeBytesAsync(CancellationToken ct = default) => StoreVolume.FreeBytesAsync(_root, ct);
 
+    public async Task<long?> TotalBytesAsync(CancellationToken ct = default) => (await StoreVolume.SpaceAsync(_root, ct))?.Total;
+
     public Task<string?> ProbeAsync(CancellationToken ct = default) => StoreVolume.ProbeAsync(_root, ct);
 
     public string Location => _root;

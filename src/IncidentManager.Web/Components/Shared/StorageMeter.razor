@@ -1,0 +1,85 @@
+@* PROD-55: evidence storage at a glance on Diagnostics. The first meter is evidence against its limit (when one is set),
+   with the 90 % mark where uploaders start being warned; the second is the store's disk or share: evidence, everything
+   else on it, the free space evidence can still use, and the free space every upload must leave. *@
+@using IncidentManager.Application.Evidence
+
+<div class="sm">
+    <div class="sm-head">
+        <div>
+            <span class="sm-big">@EvidenceRoom.Size(Use.UsedBytes)</span>
+            <span class="sm-of">@(Use.QuotaBytes is { } q ? $"of {EvidenceRoom.Size(q)} limit" : "of evidence (no limit set)")</span>
+        </div>
+        @if (Use.QuotaShare is { } share)
+        {
+            <span class="sm-pct @Tone(share)">@Percent(share)</span>
+        }
+    </div>
+
+    @if (Use.QuotaShare is { } s)
+    {
+        <div class="sm-track" role="meter" aria-label="Evidence against its storage limit"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Math.Round(Math.Min(s, 1) * 100)"
+             aria-valuetext="@($"{EvidenceRoom.Size(Use.UsedBytes)} of {EvidenceRoom.Size(Use.QuotaBytes!.Value)}")">
+            <div class="sm-fill @Tone(s)" style="width:@Css(Math.Min(s, 1))"></div>
+            <span class="sm-tick" style="left:90%" title="Uploaders are warned from here (90 %)"></span>
+        </div>
+        @if (s >= 1)
+        {
+            <div class="sm-note sm-danger-text">The limit is reached: uploads are refused until it's raised or space is freed.</div>
+        }
+        else if (s >= 0.9)
+        {
+            <div class="sm-note sm-warn-text">Past 90 %: uploaders are being warned.</div>
+        }
+    }
+
+    @if (Use.TotalBytes is { } total && total > 0 && Use.FreeBytes is { } free)
+    {
+        var other = Math.Max(0, total - free - Use.UsedBytes);
+        var reserve = Math.Min(Use.ReserveBytes, free);
+        var usable = Math.Max(0, free - reserve);
+        <div class="sm-sub">
+            <span>The store's disk</span>
+            <span class="sm-of">@EvidenceRoom.Size(total) in all</span>
+        </div>
+        <div class="sm-track sm-stack" role="img"
+             aria-label="@($"The store's disk: {EvidenceRoom.Size(Use.UsedBytes)} evidence, {EvidenceRoom.Size(other)} other files, {EvidenceRoom.Size(usable)} free for evidence, {EvidenceRoom.Size(reserve)} kept free")">
+            <div class="sm-seg sm-evidence" style="width:@Css(Fraction(Use.UsedBytes, total))"></div>
+            <div class="sm-seg sm-other" style="width:@Css(Fraction(other, total))"></div>
+            <div class="sm-seg sm-free" style="width:@Css(Fraction(usable, total))"></div>
+            <div class="sm-seg sm-reserve" style="width:@Css(Fraction(reserve, total))"></div>
+        </div>
+        <ul class="sm-legend">
+            <li><i class="sm-swatch sm-evidence"></i>Evidence <b>@EvidenceRoom.Size(Use.UsedBytes)</b></li>
+            <li><i class="sm-swatch sm-other"></i>Other files <b>@EvidenceRoom.Size(other)</b></li>
+            <li><i class="sm-swatch sm-free"></i>Free for evidence <b>@EvidenceRoom.Size(usable)</b></li>
+            <li><i class="sm-swatch sm-reserve"></i>Kept free <b>@EvidenceRoom.Size(reserve)</b></li>
+        </ul>
+        @if (free <= Use.ReserveBytes)
+        {
+            <div class="sm-note sm-danger-text">Less than @EvidenceRoom.Size(Use.ReserveBytes) is free: uploads are refused.</div>
+        }
+    }
+    else
+    {
+        <div class="sm-note">The store's free space couldn't be read (a share that isn't answering, or no access).</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EvidenceStorageUse Use { get; set; } = default!;
+
+    private static string Tone(double share) => share >= 1 ? "sm-danger" : share >= 0.9 ? "sm-warn" : "sm-ok";
+
+    private static string Percent(double share) => share switch
+    {
+        < 0.001 when share > 0 => "<0.1 %",
+        < 0.1 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{share * 100:0.#} %"),
+        _ => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{share * 100:0} %"),
+    };
+
+    private static double Fraction(long part, long whole) => whole <= 0 ? 0 : Math.Clamp((double)part / whole, 0, 1);
+
+    private static string Css(double fraction) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{fraction * 100:0.###}%");
+}

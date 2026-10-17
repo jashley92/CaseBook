@@ -1,0 +1,132 @@
+/* PROD-55: the Diagnostics storage meters. Theme tokens only, so light and dark both follow. */
+.sm {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    padding: .85rem 1rem .9rem;
+    border: 1px solid var(--im-border);
+    border-radius: var(--im-radius);
+    background: var(--im-surface-2);
+    max-width: 44rem;
+}
+
+.sm-head, .sm-sub {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.sm-big {
+    font-size: 1.35rem;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    color: var(--im-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.sm-of {
+    margin-left: .35rem;
+    font-size: .82rem;
+    color: var(--im-text-muted);
+}
+
+.sm-sub {
+    margin-top: .55rem;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--im-text);
+}
+
+.sm-sub .sm-of { margin-left: 0; font-weight: 400; }
+
+.sm-pct {
+    font-size: .8rem;
+    font-weight: 650;
+    padding: .1rem .55rem;
+    border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+}
+
+.sm-pct.sm-ok { color: var(--im-ok); background: var(--im-ok-bg); }
+.sm-pct.sm-warn { color: var(--im-warn); background: var(--im-warn-bg); }
+.sm-pct.sm-danger { color: var(--im-danger); background: var(--im-danger-bg); }
+
+.sm-track {
+    position: relative;
+    display: flex;
+    height: .7rem;
+    border-radius: 999px;
+    background: var(--im-surface);
+    box-shadow: inset 0 0 0 1px var(--im-border), inset 0 1px 2px rgba(0, 0, 0, .06);
+    overflow: hidden;
+}
+
+.sm-fill {
+    height: 100%;
+    min-width: .3rem;
+    border-radius: 999px;
+    transition: width .5s cubic-bezier(.2, .7, .2, 1);
+}
+
+.sm-fill.sm-ok { background: linear-gradient(90deg, var(--im-ok), color-mix(in srgb, var(--im-ok) 70%, white)); }
+.sm-fill.sm-warn { background: linear-gradient(90deg, var(--im-warn), color-mix(in srgb, var(--im-warn) 70%, white)); }
+.sm-fill.sm-danger { background: linear-gradient(90deg, var(--im-danger), color-mix(in srgb, var(--im-danger) 75%, white)); }
+
+.sm-tick {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--im-text-muted);
+    opacity: .55;
+}
+
+.sm-seg {
+    height: 100%;
+    transition: width .5s cubic-bezier(.2, .7, .2, 1);
+}
+
+/* A sliver of evidence on a large disk still shows. */
+.sm-seg.sm-evidence { min-width: .3rem; }
+.sm-evidence { background: var(--im-accent-strong); }
+.sm-other { background: var(--im-border-strong); }
+.sm-free { background: transparent; }
+.sm-reserve {
+    background: repeating-linear-gradient(135deg, var(--im-warn-bg) 0 4px, transparent 4px 8px);
+    box-shadow: inset 1px 0 0 var(--im-warn);
+}
+
+.sm-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3rem 1.1rem;
+    margin: .1rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: .78rem;
+    color: var(--im-text-muted);
+}
+
+.sm-legend li { display: inline-flex; align-items: center; gap: .35rem; }
+.sm-legend b { color: var(--im-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.sm-swatch {
+    display: inline-block;
+    width: .65rem;
+    height: .65rem;
+    border-radius: 3px;
+}
+
+.sm-swatch.sm-free { box-shadow: inset 0 0 0 1px var(--im-border-strong); background: var(--im-surface); }
+.sm-swatch.sm-reserve { box-shadow: inset 0 0 0 1px var(--im-warn); }
+
+.sm-note { font-size: .78rem; color: var(--im-text-muted); }
+.sm-warn-text { color: var(--im-warn); }
+.sm-danger-text { color: var(--im-danger); }
+
+@media (prefers-reduced-motion: reduce) {
+    .sm-fill, .sm-seg { transition: none; }
+}

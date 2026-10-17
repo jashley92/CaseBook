@@ -14,18 +14,24 @@ public static class StoreVolume
 
     /// <summary>The free bytes available to this account on the volume holding <paramref name="folder"/>, or null when it
     /// can't be told in time.</summary>
-    public static async Task<long?> FreeBytesAsync(string folder, CancellationToken ct = default)
+    public static async Task<long?> FreeBytesAsync(string folder, CancellationToken ct = default) =>
+        (await SpaceAsync(folder, ct))?.Free;
+
+    /// <summary>The bytes free to this account and the volume's (or share's) size, or null when it can't be told in time.</summary>
+    public static async Task<(long Free, long Total)?> SpaceAsync(string folder, CancellationToken ct = default)
     {
-        try { return await Task.Run(() => FreeBytes(folder), ct).WaitAsync(TimeLimit, ct); }
+        try { return await Task.Run(() => Space(folder), ct).WaitAsync(TimeLimit, ct); }
         catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException or ArgumentException) { return null; }
     }
 
-    private static long? FreeBytes(string folder)
+    private static (long Free, long Total)? Space(string folder)
     {
-        if (OperatingSystem.IsWindows())
-            return GetDiskFreeSpaceEx(folder, out var available, out _, out _) ? (long)available : null;   // works on UNC paths
+        if (OperatingSystem.IsWindows())   // works on UNC paths
+            return GetDiskFreeSpaceEx(folder, out var available, out var total, out _) ? ((long)available, (long)total) : null;
         var root = Path.GetPathRoot(Path.GetFullPath(folder));
-        return string.IsNullOrEmpty(root) ? null : new DriveInfo(root).AvailableFreeSpace;
+        if (string.IsNullOrEmpty(root)) return null;
+        var drive = new DriveInfo(root);
+        return (drive.AvailableFreeSpace, drive.TotalSize);
     }
 
     // Classic interop: LibraryImport would need unsafe code switched on for the whole project, for one call.
