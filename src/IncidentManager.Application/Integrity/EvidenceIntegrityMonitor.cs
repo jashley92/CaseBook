@@ -33,6 +33,13 @@ public interface IEvidenceIntegrityMonitor
     /// </summary>
     bool RecordResult(EvidenceVerificationResult result, DateTimeOffset whenUtc);
 
+    /// <summary>
+    /// PROD-57: raises (with <paramref name="detail"/>) or clears (null) a finding about the whole store, such as the
+    /// evidence key being unavailable, without touching what's known about each file. True when it's newly raised, so the
+    /// caller sends the alarm once per episode.
+    /// </summary>
+    bool RecordCondition(EvidenceDriftKind kind, string? detail, DateTimeOffset whenUtc) => false;
+
     /// <summary>BUG-332: raised after each recorded result, so an open banner shows new drift, or hides cleared drift,
     /// without a reload. Raised outside the monitor's lock; a listener that throws is ignored.</summary>
     event Action? Changed;
@@ -44,6 +51,7 @@ public sealed class EvidenceIntegrityMonitor : IEvidenceIntegrityMonitor
     private readonly object _gate = new();
     private EvidenceIntegrityStatus? _current;
     private HashSet<(Guid EvidenceId, EvidenceDriftKind Kind)> _alerted = [];
+    private readonly Dictionary<EvidenceDriftKind, EvidenceDrift> _conditions = [];   // PROD-57: raised by RecordCondition until cleared
 
     public EvidenceIntegrityStatus? Current
     {
@@ -51,6 +59,26 @@ public sealed class EvidenceIntegrityMonitor : IEvidenceIntegrityMonitor
     }
 
     public event Action? Changed;
+
+    public bool RecordCondition(EvidenceDriftKind kind, string? detail, DateTimeOffset whenUtc)
+    {
+        bool fresh;
+        lock (_gate)
+        {
+            if (detail is null) _conditions.Remove(kind);
+            else _conditions[kind] = new EvidenceDrift(Guid.Empty, Guid.Empty, null,
+                kind == EvidenceDriftKind.KeyUnavailable ? "(the evidence key)" : "(the evidence store)", "", null, kind, detail);
+            var others = (_current?.Drifts ?? []).Where(d => !(d.EvidenceId == Guid.Empty && d.Kind == kind)).ToList();
+            var drifts = detail is null ? others : [.. others, _conditions[kind]];
+            _current = new EvidenceIntegrityStatus(drifts.Count == 0, _current?.CheckedCount ?? 0, drifts.Count, drifts,
+                _current?.CheckedAtUtc ?? whenUtc, _current?.TotalCount ?? 0);
+            var key = (Guid.Empty, kind);
+            fresh = detail is not null && !_alerted.Contains(key);
+            if (detail is null) _alerted.Remove(key); else _alerted.Add(key);
+        }
+        MonitorEvents.Raise(Changed);
+        return fresh;
+    }
 
     public bool RecordResult(EvidenceVerificationResult result, DateTimeOffset whenUtc)
     {
@@ -64,10 +92,12 @@ public sealed class EvidenceIntegrityMonitor : IEvidenceIntegrityMonitor
         lock (_gate)
         {
             // PROD-53: a run over one share of the files leaves the others as their latest check found them.
-            var drifts = result.CoversEveryFile || _current is null
+            var merged = result.CoversEveryFile || _current is null
                 ? result.Drifts
                 : _current.Drifts.Where(d => !result.CheckedIds!.Contains(d.EvidenceId) && result.KnownIds!.Contains(d.EvidenceId))
                     .Concat(result.Drifts).ToList();
+            // PROD-57: a store-wide condition stays until it's cleared, whatever a run found.
+            var drifts = merged.Concat(_conditions.Values.Where(c => !merged.Any(d => d.EvidenceId == Guid.Empty && d.Kind == c.Kind))).ToList();
             _current = new EvidenceIntegrityStatus(
                 drifts.Count == 0, result.CheckedCount, drifts.Count, drifts, whenUtc, result.TotalCount);
 

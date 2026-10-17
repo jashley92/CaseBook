@@ -59,6 +59,7 @@ public static class DependencyInjection
         // F-17: re-hashes evidence at rest and alarms on drift. Scoped (creates a DbContext per pass);
         // driven by the EvidenceIntegrityHostedService and reusable by a future "verify now" action.
         services.AddScoped<Integrity.EvidenceIntegrityVerifier>();
+        services.AddSingleton<Integrity.EvidenceFileGate>();   // PROD-57: the re-check and the conversion take turns
         services.AddScoped<Compliance.ComplianceBundleService>();
         services.AddScoped<Export.IocFeedService>();
         services.AddScoped<Intel.IndicatorService>();        // PROD-10: cross-case indicator pivot

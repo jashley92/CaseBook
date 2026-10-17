@@ -89,6 +89,8 @@ builder.Services.AddHostedService<AccessLogRetentionHostedService>();
 // PROD-56: clears parts of large uploads a restart cut off, and probes the evidence store (a share especially).
 builder.Services.AddSingleton<EvidenceStoreStatus>();
 builder.Services.AddHostedService<EvidenceStoreHostedService>();
+// PROD-57: re-checks the evidence key (every 5 minutes until it's ready, then daily) and encrypts files stored before.
+builder.Services.AddHostedService<EvidenceKeyHostedService>();
 
 // --- BUG-101: retries the breach-escalation and integrity-alarm emails whose send failed ---
 builder.Services.AddHostedService<CriticalAlertRetryHostedService>();

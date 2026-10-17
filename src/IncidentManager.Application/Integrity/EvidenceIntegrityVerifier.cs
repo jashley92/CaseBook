@@ -22,10 +22,12 @@ public sealed class EvidenceIntegrityVerifier
     private readonly IClock _clock;
     private readonly IEvidenceIntegrityMonitor _monitor;
     private readonly IEvidenceIntegrityAlertNotifier _alerts;
+    private readonly EvidenceFileGate? _gate;   // PROD-57
 
     public EvidenceIntegrityVerifier(IAppDbContextFactory factory, IEvidenceStore store, IClock clock,
-        IEvidenceIntegrityMonitor monitor, IEvidenceIntegrityAlertNotifier alerts)
+        IEvidenceIntegrityMonitor monitor, IEvidenceIntegrityAlertNotifier alerts, EvidenceFileGate? gate = null)
     {
+        _gate = gate;
         _factory = factory;
         _store = store;
         _clock = clock;
@@ -137,7 +139,8 @@ public sealed class EvidenceIntegrityVerifier
     /// <summary>PROD-53: as <see cref="VerifyAndTrackAsync(CancellationToken)"/>, over one share of the files.</summary>
     public async Task<EvidenceVerificationResult> VerifyAndTrackAsync(int share, int shares, CancellationToken ct = default)
     {
-        var result = await VerifyShareAsync(share, shares, ct);
+        EvidenceVerificationResult result;
+        using (_gate is null ? null : await _gate.EnterAsync(ct)) result = await VerifyShareAsync(share, shares, ct);   // PROD-57
         if (_monitor.RecordResult(result, _clock.UtcNow))
             await _alerts.OnDriftDetectedAsync(result, ct);
         return result;

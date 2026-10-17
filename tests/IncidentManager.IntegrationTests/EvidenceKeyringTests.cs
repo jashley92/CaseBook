@@ -338,6 +338,80 @@ public sealed class EvidenceKeyringTests : IDisposable
         (await Ring(options, integrity, new OneChainKey()).LoadAsync()).Should().Be(EvidenceKeyState.Unavailable, "another chain key opens nothing");
     }
 
+    [Fact]
+    public async Task Files_stored_before_are_converted_only_if_they_match_their_record_and_a_busy_one_waits()
+    {
+        await using (var ctx = _database.NewContext()) await DevDataSeeder.SeedAsync(ctx, _clock);
+        Guid caseId;
+        await using (var ctx = _database.NewContext()) caseId = (await ctx.Cases.FirstAsync()).Id;
+        var plainStore = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }));
+        var plainReports = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = Reports }));
+        var good = await plainStore.SaveAsync(caseId, new MemoryStream("intact sample"u8.ToArray()));
+        var tampered = await plainStore.SaveAsync(caseId, new MemoryStream("original"u8.ToArray()));
+        var busy = await plainStore.SaveAsync(caseId, new MemoryStream("in use"u8.ToArray()));
+        var report = await plainReports.SaveAsync(caseId, "report.docx", "report"u8.ToArray());
+        await using (var raw = new AppDbContext(_database.OptionsWithoutInterceptors))
+        {
+            foreach (var (s, name) in new[] { (good, "good.exe"), (tampered, "tampered.bin"), (busy, "busy.bin") })
+                raw.Evidence.Add(new IncidentManager.Domain.Entities.Evidence
+                {
+                    CaseId = caseId, OriginalFileName = name, ContentType = "", SizeBytes = s.SizeBytes, Sha256 = s.Sha256,
+                    StoragePath = s.StoragePath, CreatedBy = "seed", CreatedAtUtc = _clock.UtcNow,
+                });
+            raw.Reports.Add(new IncidentManager.Domain.Entities.Report
+            {
+                CaseId = caseId, Version = 1, FileName = "report.docx", StoragePath = report.StoragePath, ContentSha256 = report.Sha256,
+                CreatedBy = "seed", CreatedAtUtc = _clock.UtcNow,
+            });
+            await raw.SaveChangesAsync();
+        }
+        await File.WriteAllTextAsync(Path.Combine(Evidence, tampered.StoragePath), "changed!");
+
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var ring = Ring(On(server, RecoveryCer(recovery)));
+        await ring.LoadAsync();
+        var status = new EvidenceConversionStatus();
+        var conversion = new EvidenceConversion(Scopes(), ring, Options.Create(new EvidenceStoreOptions { RootPath = Evidence }),
+            Options.Create(new ReportOutputOptions { RootPath = Reports }), new IncidentManager.Application.Integrity.EvidenceFileGate(), status);
+
+        int converted;
+        await using (new FileStream(Path.Combine(Evidence, busy.StoragePath), FileMode.Open, FileAccess.Read, FileShare.None))
+            converted = await conversion.RunAsync(100);
+        converted.Should().Be(2, "the intact file and the report");
+        status.Mismatched.Should().Be(1);
+        status.Busy.Should().Be(1);
+        status.Remaining.Should().Be(1, "the busy file waits for the next run");
+        Cbe1.IsCbe1(await File.ReadAllBytesAsync(Path.Combine(Evidence, good.StoragePath))).Should().BeTrue();
+        Cbe1.IsCbe1(await File.ReadAllBytesAsync(Path.Combine(Reports, report.StoragePath))).Should().BeTrue();
+        (await File.ReadAllTextAsync(Path.Combine(Evidence, tampered.StoragePath))).Should().Be("changed!", "never vouched for by encryption");
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+        await using (var read = await store.OpenReadAsync(good.StoragePath)) new StreamReader(read).ReadToEnd().Should().Be("intact sample");
+        _audit.Entries.Should().Contain(e => e.Contains("2 stored evidence file(s) and report(s) encrypted at rest", StringComparison.Ordinal));
+
+        (await conversion.RunAsync(100)).Should().Be(1, "the file no longer in use");
+        status.Remaining.Should().Be(0);
+        Directory.GetFiles(_dir, "*.cbe1", SearchOption.AllDirectories).Should().BeEmpty("no temporary copies are left");
+    }
+
+    [Fact]
+    public void A_store_wide_finding_stays_through_re_check_runs_until_cleared_and_alarms_once()
+    {
+        var monitor = new IncidentManager.Application.Integrity.EvidenceIntegrityMonitor();
+        monitor.RecordCondition(IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable, "certificate missing", _clock.UtcNow)
+            .Should().BeTrue();
+        monitor.RecordCondition(IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable, "certificate missing", _clock.UtcNow)
+            .Should().BeFalse("once per episode");
+        monitor.RecordResult(new IncidentManager.Application.Integrity.EvidenceVerificationResult(3, [], _clock.UtcNow), _clock.UtcNow)
+            .Should().BeFalse();
+        monitor.Current!.Drifts.Should().ContainSingle(d => d.Kind == IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable,
+            "a clean re-check of plain files doesn't clear it");
+        monitor.RecordCondition(IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable, null, _clock.UtcNow).Should().BeFalse();
+        monitor.Current.IsClean.Should().BeTrue();
+        monitor.RecordCondition(IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable, "again", _clock.UtcNow)
+            .Should().BeTrue("a new episode alarms again");
+    }
+
     private sealed class OneChainKey : IChainKeyring
     {
         private readonly byte[] _key = RandomNumberGenerator.GetBytes(32);

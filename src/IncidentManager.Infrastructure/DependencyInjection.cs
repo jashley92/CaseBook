@@ -103,6 +103,8 @@ public static class DependencyInjection
         services.Configure<EvidenceEncryptionOptions>(config.GetSection("Storage:Encryption"));
         services.AddSingleton<EvidenceKeyring>();
         services.AddSingleton<IEvidenceKeyring>(sp => sp.GetRequiredService<EvidenceKeyring>());
+        services.AddSingleton<EvidenceConversionStatus>();
+        services.AddSingleton<EvidenceConversion>();   // PROD-57: plain files stored before encryption, encrypted in batches
         services.AddSingleton<IEvidenceStore, FileEvidenceStore>();
         services.AddSingleton<IReportStore, FileReportStore>();
         services.AddSingleton<IReportBrandingStore, FileReportBrandingStore>();
