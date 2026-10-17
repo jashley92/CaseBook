@@ -976,6 +976,24 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task A_user_actions_email_names_its_case_and_recipient_so_held_mail_is_checked_again(/* BUG-654 */)
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("alice", "Alice", "alice@insurer.example").Add("bob", "Bob", "bob@insurer.example")
+            .Add("author", "Author", "author@insurer.example");
+        var n = Build(sender, new EmailOptions { AssignmentNotifications = true }, users);
+        var c = NewCase();
+
+        await n.OnMentionedAsync(c, "author", ["alice", "bob"], "look", Guid.NewGuid());
+        await n.OnHandedOffAsync(c, "author", "bob", "over to you");
+        await n.OnAssignedAsync(c, "alice", "Alice", CaseAssignmentRole.Analyst, "author");
+
+        sender.Sent.Should().HaveCount(4);
+        sender.About.Should().HaveCount(4).And.OnlyContain(a => a.HasValue && a.Value.CaseId == c.Id);
+        sender.About.Select(a => string.Join(",", a!.Value.UserIds)).Should().Equal("alice", "bob", "bob", "alice");
+    }
+
+    [Fact]
     public async Task Mention_skips_a_user_with_no_email()
     {
         var sender = new CapturingEmailSender();

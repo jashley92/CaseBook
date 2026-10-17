@@ -4198,3 +4198,40 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261017003452_HeldEmailRetryAndAudience'
+)
+BEGIN
+    ALTER TABLE [HeldEmails] ADD [CaseId] uniqueidentifier NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261017003452_HeldEmailRetryAndAudience'
+)
+BEGIN
+    ALTER TABLE [HeldEmails] ADD [NextAttemptAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261017003452_HeldEmailRetryAndAudience'
+)
+BEGIN
+    ALTER TABLE [HeldEmails] ADD [RecipientUserIds] nvarchar(max) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261017003452_HeldEmailRetryAndAudience'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261017003452_HeldEmailRetryAndAudience'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

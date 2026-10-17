@@ -89,6 +89,11 @@ public partial class CaseAudienceGateTests
         ["StaleCaseScanner.cs:ScanAndNotifyAsync"] = (1, "a background scan of every case; who is told goes through ReminderAudience"),
         ["AgendaService.cs:GetFeedItemsAsync"] = (2, "one user's feed (a calendar feed token's owner, the digest): restricted cases are filtered inline for that user (BUG-401)"),
         ["CriticalAlertOutbox.cs:RetryDueAsync"] = (1, "the alert outbox retrying its own rows (a background job)"),
+        // BUG-654: HeldEmails has a CaseId, so it's a case table; the sender keeps and drains its own rows (BUG-617)
+        ["EmailSender.cs:HeldCountAsync"] = (1, "a count of the held mail, for the sender's own tests"),
+        ["EmailSender.cs:HoldAsync"] = (1, "the count before holding one more (MaxHeld)"),
+        ["EmailSender.cs:DrainHeldAsync"] = (4, "the drain reading, putting back and removing its own rows; a case's email is re-checked against its audience first"),
+        ["EmailSender.cs:StillEntitledAsync"] = (1, "the case's restriction and team, to check a held email's recipients against its audience (BUG-654)"),
         ["EvidenceIntegrityVerifier.cs:VerifyAllAsync"] = (2, "the evidence integrity sweep over every file; its result is counts and alerts, not case content"),
         ["RowIntegrityVerifier.cs:Tables"] = (26, "the list of hashed tables the integrity check verifies, every row"),
         ["RowIntegrityVerifier.cs:ReplacedButCurrentAsync"] = (7, "the integrity check's version-lineage test over every row"),

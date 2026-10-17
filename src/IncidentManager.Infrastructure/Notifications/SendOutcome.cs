@@ -15,6 +15,8 @@ internal enum SendOutcome
     Transient,
     Refused,
     Blocked,
+    /// <summary>BUG-654: a held email nobody it was for may still receive (the case is gone, or they lost access): not sent.</summary>
+    Withdrawn,
 }
 
 internal static class SendOutcomes

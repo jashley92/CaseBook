@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.ApiTokens;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Notifications;
 using IncidentManager.Infrastructure.Persistence;
@@ -81,6 +82,17 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
 
     // What the relay does: take mail, drop the connection at once, or answer every RCPT (except to fine@) with a code.
     private volatile string _mode = "ok";
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _rcpts = new();   // the addresses it took
+
+    // The directory of record: who is active, with which roles. Anyone not named is active as an Analyst.
+    private sealed class Directory : ITokenOwnerCheck
+    {
+        public readonly System.Collections.Concurrent.ConcurrentDictionary<string, OwnerAccess> Answers = new();
+        public Task<OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default) =>
+            Task.FromResult<OwnerAccess?>(Answers.GetValueOrDefault(ownerUserId, new OwnerAccess(true, new HashSet<string> { "Analyst" })));
+    }
+
+    private readonly Directory _directory = new();
 
     public EmailSenderHeldMailTests()
     {
@@ -94,6 +106,7 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         // A file, not :memory:, so the drain (on its timer) and the test each get their own connection.
         _services = new ServiceCollection()
             .AddDbContextFactory<AppDbContext>(o => o.UseSqlite($"Data Source={_dbPath};Pooling=False"))
+            .AddSingleton<ITokenOwnerCheck>(_directory)   // BUG-654: who may see a case now
             .BuildServiceProvider();
         using (var db = _services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext()) db.Database.EnsureCreated();
         _monitor = new TestOptionsMonitor<EmailOptions>(_options);
@@ -281,6 +294,7 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         await _sender.SendAsync(["leaver@example.test"], "Mentioned", "b");
         (await Held).Should().Be(1, "a 5xx would only be refused again");
 
+        _time.Now += OutboundCircuit.MaxBackOff;   // BUG-653: the held one's next try is due
         await _sender.DrainHeldAsync();
         (await Held).Should().Be(0, "refused for good, so it's given up");
         _log.Has(LogLevel.Error, "refused a held email").Should().BeTrue("a given-up email leaves a record");
@@ -411,6 +425,123 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task One_recipients_not_now_doesnt_hold_back_the_rest(/* BUG-653 */)
+    {
+        _mode = "452";
+        await _sender.SendAsync(["full@example.test"], "Assigned", "b");    // tried: mailbox full, held
+        BackOff();
+        await _sender.SendAsync(["fine@example.test"], "Mentioned", "b");   // held behind it, untried
+        _circuit.Succeeded(_target);
+
+        await _sender.DrainHeldAsync();
+        Delivered.Should().Be(1, "the one behind went; a recipient's 4xx is about that email only");
+        var left = (await HeldRowsAsync()).Should().ContainSingle().Subject;
+        left.RecipientList.Should().Equal("full@example.test");
+        left.Attempts.Should().Be(2);
+        left.NextAttemptAtUtc.Should().Be(_time.Now + EmailSender.DrainFloor * 2, "put back for its own back-off");
+        _time.Timer!.Due.Should().Be(EmailSender.DrainFloor * 2, "the drain comes back when it's due");
+
+        await _sender.DrainHeldAsync();
+        (await HeldRowsAsync()).Single().Attempts.Should().Be(2, "not due yet, so not tried");
+
+        _mode = "ok";
+        _time.Now = left.NextAttemptAtUtc!.Value;
+        await _sender.DrainHeldAsync();
+        Delivered.Should().Be(2);
+        (await Held).Should().Be(0);
+    }
+
+    private async Task<Guid> AddRestrictedCaseAsync(params string[] team)
+    {
+        await using var db = await _services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync();
+        var c = Case.Open(2026, 1, "Held Mail", "Held mail", IncidentManager.Domain.Enums.Classification.Incident,
+            IncidentManager.Domain.Enums.Severity.High, IncidentManager.Domain.Enums.CaseOrigin.InternalDetection, "system", _time.Now);
+        c.IsRestricted = true;
+        foreach (var u in team) c.Assign(u, u, IncidentManager.Domain.Enums.CaseAssignmentRole.Analyst, "system", _time.Now);
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+        return c.Id;
+    }
+
+    [Fact]
+    public async Task A_held_case_email_goes_only_to_those_who_may_still_see_the_case(/* BUG-654 */)
+    {
+        var caseId = await AddRestrictedCaseAsync("ann", "bob");
+        BackOff();
+        await _sender.SendAsync(new EmailMessage(["ann@example.test", "bob@example.test"], "Mentioned", "<p>b</p>", "b"), caseId, ["ann", "bob"]);
+        await _sender.SendAsync(new EmailMessage(["bob@example.test"], "Handed over", "<p>b</p>", "b"), caseId, ["bob"]);
+        await _sender.SendAsync(new EmailMessage(["ann@example.test"], "Assigned", "<p>b</p>", "b"), Guid.NewGuid(), ["ann"]);
+        await _sender.SendAsync(["ops@example.test"], "Not about a case", "b");
+        var rows = await HeldRowsAsync();
+        rows.Should().HaveCount(4);
+        rows[0].CaseId.Should().Be(caseId);
+        rows[0].RecipientUserIds.Should().Be("ann;bob");
+        rows[3].CaseId.Should().BeNull();
+
+        // While they're held, Bob's account is disabled.
+        _directory.Answers["bob"] = new OwnerAccess(false, new HashSet<string> { "Analyst" });
+        _time.Now += OutboundCircuit.FirstBackOff;
+        await _sender.DrainHeldAsync();
+
+        (await Held).Should().Be(0);
+        Delivered.Should().Be(2, "Ann's copy of the first, and the one not about a case; Bob's handoff and the gone case's aren't sent");
+        _rcpts.Should().BeEquivalentTo(["ann@example.test", "ops@example.test"]);
+        _log.Has(LogLevel.Information, "goes to 1 of its 2 recipient(s)").Should().BeTrue();
+        _log.Has(LogLevel.Information, "none of its 1 recipient(s) may still see the case").Should().BeTrue();
+        _log.Has(LogLevel.Information, "no longer exists").Should().BeTrue();
+        _circuit.TryEnter(_target).Should().BeTrue("the probe's turn isn't kept by an email that wasn't sent");
+    }
+
+    private sealed class OptionsFactory(DbContextOptions<AppDbContext> options) : IDbContextFactory<AppDbContext>
+    {
+        public AppDbContext CreateDbContext() => new(options);
+    }
+
+    [SqlServerFact]
+    public async Task On_SqlServer_a_row_put_back_waits_its_turn_and_a_case_email_is_checked_again(/* BUG-653, BUG-654 */)
+    {
+        using var sql = TestDatabase.Open(TestDatabase.SqlServer);
+        await using var services = new ServiceCollection()
+            .AddSingleton<IDbContextFactory<AppDbContext>>(new OptionsFactory(sql.Options))
+            .AddSingleton<ITokenOwnerCheck>(_directory)
+            .BuildServiceProvider();
+        Guid caseId;
+        await using (var db = sql.NewContext())
+        {
+            var c = Case.Open(2026, 1, "Held Mail", "Held mail", IncidentManager.Domain.Enums.Classification.Incident,
+                IncidentManager.Domain.Enums.Severity.High, IncidentManager.Domain.Enums.CaseOrigin.InternalDetection, "system", _time.Now);
+            c.Assign("ann", "Ann", IncidentManager.Domain.Enums.CaseAssignmentRole.Analyst, "system", _time.Now);
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+            caseId = c.Id;
+        }
+        var circuit = new OutboundCircuit(_time);
+        using var sender = new EmailSender(_monitor, _log, circuit, services.GetRequiredService<IServiceScopeFactory>());
+
+        _mode = "452";
+        await sender.SendAsync(["full@example.test"], "Assigned", "b");
+        for (var i = 0; i < OutboundCircuit.FailuresToOpen; i++) circuit.Failed(_target);
+        await sender.SendAsync(new EmailMessage(["fine@example.test", "fine.bob@example.test"], "Mentioned", "<p>b</p>", "b"), caseId, ["ann", "bob"]);
+        _directory.Answers["bob"] = new OwnerAccess(false, new HashSet<string> { "Analyst" });
+        circuit.Succeeded(_target);
+
+        await sender.DrainHeldAsync();
+        Delivered.Should().Be(1);
+        _rcpts.Should().Equal("fine@example.test");
+        await using (var db = sql.NewContext())
+        {
+            var left = await db.HeldEmails.AsNoTracking().SingleAsync();
+            left.Attempts.Should().Be(2);
+            left.NextAttemptAtUtc.Should().Be(_time.Now + EmailSender.DrainFloor * 2);
+        }
+        _mode = "ok";
+        _time.Now += EmailSender.DrainFloor * 2;
+        await sender.DrainHeldAsync();
+        Delivered.Should().Be(2);
+        (await sender.HeldCountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_partial_delivery_counts_as_delivered_and_isnt_held(/* BUG-94 */)
     {
         _mode = "452";
@@ -428,15 +559,14 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         for (var i = 1; i < HeldEmail.MaxAttempts; i++)
         {
             (await HeldRowsAsync()).Should().HaveCount(2);
+            _time.Now += OutboundCircuit.MaxBackOff;   // BUG-653: each waits out its own back-off
             await _sender.DrainHeldAsync();
         }
-        var left = (await HeldRowsAsync()).Should().ContainSingle("the first was given up after its last try").Subject;
-        left.RecipientList.Should().Equal("other@example.test");
-        _log.Has(LogLevel.Error, $"after {HeldEmail.MaxAttempts} tries").Should().BeTrue();
-
-        _mode = "ok";
-        await _sender.DrainHeldAsync();
-        Delivered.Should().Be(1, "the one behind it isn't held back for ever");
+        (await Held).Should().Be(0, "each was given up after its last try");
+        lock (_log.Entries)
+            _log.Entries.Count(e => e.Level == LogLevel.Error && e.Message.Contains($"after {HeldEmail.MaxAttempts} tries", StringComparison.Ordinal))
+                .Should().Be(2);
+        Delivered.Should().Be(0);
 
         lock (_log.Entries)
             _log.Entries.Should().NotContain(e => e.Message.Contains("@example.test", StringComparison.Ordinal)
@@ -532,6 +662,11 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
                     // Echoing the address, as relays do (BUG-657).
                     else if (cmd.StartsWith("RCPT TO:", StringComparison.Ordinal) && _mode != "ok" && !line.Contains("fine@", StringComparison.Ordinal))
                         await writer.WriteLineAsync($"{_mode} {line["RCPT TO:".Length..].Trim()} Not this one");
+                    else if (cmd.StartsWith("RCPT TO:", StringComparison.Ordinal))
+                    {
+                        _rcpts.Enqueue(line["RCPT TO:".Length..].Trim().Trim('<', '>'));
+                        await writer.WriteLineAsync("250 OK");
+                    }
                     else if (cmd == "QUIT") { await writer.WriteLineAsync("221 Bye"); break; }
                     else await writer.WriteLineAsync("250 relay.test");
                 }

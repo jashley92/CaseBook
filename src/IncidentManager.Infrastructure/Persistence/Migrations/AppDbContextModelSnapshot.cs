@@ -1752,10 +1752,19 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<int>("Attempts")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("CaseId")
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("HeldAtUtc")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("HtmlBody")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("NextAttemptAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecipientUserIds")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Recipients")

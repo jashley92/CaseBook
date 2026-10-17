@@ -129,7 +129,10 @@ schema, for use in the organization's own approved AI tool.
   refusal of its addresses (5xx) isn't. Refused addresses are an answer, so they never back the relay off (BUG-650).
   A refusal that isn't about the addresses (530 "authentication required", a refused sender) or an email setting
   that stops every send (a From that isn't an address) keeps the held mail and logs an error until it's fixed
-  (BUG-652). Held mail is kept in the `HeldEmails` table, so it survives a restart. It's removed once
+  (BUG-652). While email is turned off, held mail waits and goes once it's on again (BUG-651). One recipient's
+  "not now" puts only that email back for its own retry; the others go on (BUG-653). Before an email about a case
+  goes, its recipients are checked against the case again: someone who lost access while it was held isn't sent
+  it, and it's dropped if the case is gone (BUG-654). Held mail is kept in the `HeldEmails` table, so it survives a restart. It's removed once
   it's sent, refused for good, or given up after 12 temporary refusals or after 24 hours with the relay unreachable
   or refusing every email (a relay outage doesn't use up the tries; each give-up is logged as an error); past 500
   the newest is dropped and logged (BUG-576, BUG-608, BUG-617, BUG-626, BUG-640). The log names SMTP failures by

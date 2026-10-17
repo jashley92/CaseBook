@@ -27,7 +27,7 @@ public sealed partial class QueueRemovalTests
 
     private static readonly Site[] Sites =
     [
-        new("Infrastructure/Notifications/EmailSender.cs", "DrainHeldAsync", "DeliverLoggedAsync(", null),
+        new("Infrastructure/Notifications/EmailSender.cs", "DrainHeldAsync", "DeliverHeldAsync(", null),
         new("Infrastructure/Notifications/OutboundCircuit.cs", "Failed", null,
             "failure times aging out of the back-off window, not queued work"),
         new("Web/BackgroundJobs/SecurityEventDispatcher.cs", "Add", null,

@@ -27,6 +27,15 @@ public interface IEmailSender
     Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default);
 
     /// <summary>
+    /// BUG-654: sends <paramref name="message"/>, about case <paramref name="caseId"/>, to the directory users
+    /// <paramref name="recipientUserIds"/> (one for each address in <see cref="EmailMessage.To"/>, in the same order). An
+    /// email kept to send later is checked against the case's audience again before it goes, so someone who lost access
+    /// meanwhile isn't sent it. The default sends as <see cref="SendAsync(EmailMessage, CancellationToken)"/>.
+    /// </summary>
+    Task SendAsync(EmailMessage message, Guid caseId, IReadOnlyList<string> recipientUserIds, CancellationToken ct = default) =>
+        SendAsync(message, ct);
+
+    /// <summary>
     /// For the admin "send test" buttons only: sends like <see cref="SendAsync(EmailMessage, CancellationToken)"/>
     /// but reports the outcome instead of swallowing a relay failure, so the problem shows where the relay is
     /// being configured. Notification triggers keep using SendAsync.

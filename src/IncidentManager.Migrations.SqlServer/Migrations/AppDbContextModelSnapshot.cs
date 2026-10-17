@@ -1760,10 +1760,19 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<int>("Attempts")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("HeldAtUtc")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("HtmlBody")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecipientUserIds")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Recipients")

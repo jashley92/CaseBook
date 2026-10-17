@@ -1,6 +1,8 @@
 using System.Net.Mail;
 using System.Net.Mime;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.ApiTokens;
+using IncidentManager.Application.Notifications;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -58,6 +60,13 @@ public sealed class EmailSender : IEmailSender, IDisposable
     public Task SendAsync(EmailMessage message, CancellationToken ct = default) =>
         SendCoreAsync(message.To, message.Subject, textBody: message.TextBody, htmlBody: message.HtmlBody, ct);
 
+    public Task SendAsync(EmailMessage message, Guid caseId, IReadOnlyList<string> recipientUserIds, CancellationToken ct = default) =>
+        SendCoreAsync(message.To, message.Subject, textBody: message.TextBody, htmlBody: message.HtmlBody, ct,
+            new CaseAddressees(caseId, recipientUserIds));
+
+    /// <summary>BUG-654: who a case's email is for, so held mail is checked against the case's audience before it goes.</summary>
+    private sealed record CaseAddressees(Guid CaseId, IReadOnlyList<string> UserIds);
+
     public async Task<EmailSendOutcome> SendTestAsync(EmailMessage message, CancellationToken ct = default)
     {
         if (message.To.Count == 0) return new EmailSendOutcome(EmailSendStatus.Failed, "No recipient.");
@@ -83,7 +92,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
     }
 
     private async Task SendCoreAsync(IReadOnlyCollection<string> to, string subject,
-        string textBody, string? htmlBody, CancellationToken ct)
+        string textBody, string? htmlBody, CancellationToken ct, CaseAddressees? about = null)
     {
         if (to.Count == 0) return;
 
@@ -112,7 +121,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                 _log.LogWarning("The mail relay isn't answering; not sending to {RecipientCount} recipient(s) until it's tried again.", to.Count);
                 DeliveryWatch.ReportDeferred();   // BUG-608: not tried, so an outbox retry isn't spent on it
             }
-            else await HoldAsync(to, subject, textBody, htmlBody, attempts: 0, target);   // BUG-608: nobody would try it again
+            else await HoldAsync(to, subject, textBody, htmlBody, attempts: 0, target, about);   // BUG-608: nobody would try it again
             return;
         }
 
@@ -122,7 +131,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
         // BUG-617: nor would anyone try one the relay didn't take, or turned away only for now (BUG-626). A watched send
         // is tried again by its caller, and a refusal would only be refused again.
         else if ((outcome is SendOutcome.NotReached or SendOutcome.Transient or SendOutcome.Blocked) && !DeliveryWatch.Watching)   // BUG-652
-            await HoldAsync(to, subject, textBody, htmlBody, attempts: outcome == SendOutcome.Transient ? 1 : 0, target);   // BUG-640
+            await HoldAsync(to, subject, textBody, htmlBody, attempts: outcome == SendOutcome.Transient ? 1 : 0, target, about);   // BUG-640
     }
 
     // Delivered when the relay took it (for some recipients at least); a failure is logged and reported to the watch.
@@ -202,7 +211,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
     internal async Task<int> HeldCountAsync() => _scopes is null ? 0 : await WithDbAsync(db => db.HeldEmails.CountAsync());
 
     private async Task HoldAsync(IReadOnlyCollection<string> to, string subject, string textBody, string? htmlBody,
-        int attempts, string target)
+        int attempts, string target, CaseAddressees? about)
     {
         int held;
         try
@@ -216,6 +225,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                 {
                     Recipients = string.Join(';', to), Subject = subject, TextBody = textBody, HtmlBody = htmlBody,
                     HeldAtUtc = _circuit.Time.GetUtcNow(), Attempts = attempts,
+                    CaseId = about?.CaseId, RecipientUserIds = about is null ? null : string.Join(';', about.UserIds),   // BUG-654
                 });
                 await db.SaveChangesAsync(CancellationToken.None);
                 return count + 1;
@@ -292,8 +302,18 @@ public sealed class EmailSender : IEmailSender, IDisposable
             {
                 long seen;
                 lock (_gate) seen = _heldGeneration;
-                var next = await WithDbAsync(db => db.HeldEmails.AsNoTracking().OrderBy(h => h.Id).FirstOrDefaultAsync());
+                // BUG-653: the oldest that's due; one put back after a 4xx waits its turn without holding the rest.
+                var now = _circuit.Time.GetUtcNow();
+                var next = await WithDbAsync(db => db.HeldEmails.AsNoTracking()
+                    .Where(h => h.NextAttemptAtUtc == null || h.NextAttemptAtUtc <= now).OrderBy(h => h.Id).FirstOrDefaultAsync());
                 lock (_gate) _drainFailures = 0;
+                if (next is null
+                    && await WithDbAsync(db => db.HeldEmails.MinAsync(h => h.NextAttemptAtUtc)) is { } due)
+                {
+                    lock (_gate) if (_heldGeneration != seen) continue;   // one held meanwhile is due now
+                    ScheduleDrain(due - now);
+                    return;
+                }
                 if (next is null)
                 {
                     // Under the lock, so an email held from now on finds no drain running and schedules its own; one held
@@ -323,7 +343,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                     ScheduleDrain(_circuit.RetryIn(target));
                     return;
                 }
-                var outcome = await DeliverLoggedAsync(o, next.RecipientList, next.Subject, next.TextBody, next.HtmlBody, CancellationToken.None);
+                var outcome = await DeliverHeldAsync(o, target, next);
                 if (outcome != SendOutcome.Blocked) lock (_gate) _blockedDrains = 0;
                 // BUG-617: it stays first until that's final, so it isn't lost to a relay still down and the order holds.
                 // BUG-640: a relay that's down says nothing about the email, so it isn't a try; only age gives it up.
@@ -357,18 +377,21 @@ public sealed class EmailSender : IEmailSender, IDisposable
                     var attempts = next.Attempts + 1;
                     if (attempts < HeldEmail.MaxAttempts)
                     {
+                        // BUG-653: that recipient's "not now" is about this email only: it's put back for later, and the
+                        // ones behind it go on (strict order is kept only while the relay can't be reached).
                         var id = next.Id;
+                        var retryAt = _circuit.Time.GetUtcNow() + BackOff(attempts);
                         await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == id)
-                            .ExecuteUpdateAsync(s => s.SetProperty(h => h.Attempts, attempts)));
-                        ScheduleDrain(BackOff(attempts));
-                        return;
+                            .ExecuteUpdateAsync(s => s.SetProperty(h => h.Attempts, attempts).SetProperty(h => h.NextAttemptAtUtc, retryAt)));
+                        continue;
                     }
                     // One that never goes mustn't hold the rest back for ever.
                     _log.LogError("A held email to {RecipientCount} recipient(s) still wasn't sent after {Attempts} tries; it's given up.",
                         next.RecipientList.Count, attempts);
                 }
                 else if (outcome == SendOutcome.Refused)
-                    _log.LogError("The mail relay refused a held email to {RecipientCount} recipient(s); it isn't tried again.", next.RecipientList.Count);                var done = next.Id;
+                    _log.LogError("The mail relay refused a held email to {RecipientCount} recipient(s); it isn't tried again.", next.RecipientList.Count);
+                var done = next.Id;
                 await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == done).ExecuteDeleteAsync());
             }
         }
@@ -383,6 +406,61 @@ public sealed class EmailSender : IEmailSender, IDisposable
         {
             if (!emptied) Volatile.Write(ref _draining, 0);
         }
+    }
+
+    /// <summary>
+    /// Sends a held email. BUG-654: one about a case goes only to those of its recipients who may still see the case, by
+    /// the rule its user's action was judged by (<see cref="ReminderAudience.RecipientsAsync"/>): held up to a day, it
+    /// reached someone taken off a restricted case or disabled meanwhile. Withdrawn when nobody is left or the case is gone.
+    /// </summary>
+    private async Task<SendOutcome> DeliverHeldAsync(EmailOptions o, string target, HeldEmail held)
+    {
+        IReadOnlyCollection<string> to = held.RecipientList;
+        if (held.CaseId is { } caseId)
+        {
+            List<string>? kept;
+            try { kept = await StillEntitledAsync(caseId, held.RecipientList, held.RecipientUserIdList); }
+            catch
+            {
+                _circuit.Release(target);   // nothing was sent (BUG-607)
+                throw;
+            }
+            if (kept is null || kept.Count == 0)
+            {
+                _circuit.Release(target);
+                if (kept is null)
+                    _log.LogInformation("A held email about a case that no longer exists wasn't sent ({RecipientCount} recipient(s)).",
+                        held.RecipientList.Count);
+                else
+                    _log.LogInformation("A held email wasn't sent: none of its {RecipientCount} recipient(s) may still see the case.",
+                        held.RecipientList.Count);
+                return SendOutcome.Withdrawn;
+            }
+            if (kept.Count < held.RecipientList.Count)
+                _log.LogInformation("A held email goes to {Kept} of its {RecipientCount} recipient(s); the others may no longer see the case.",
+                    kept.Count, held.RecipientList.Count);
+            to = kept;
+        }
+        return await DeliverLoggedAsync(o, to, held.Subject, held.TextBody, held.HtmlBody, CancellationToken.None);
+    }
+
+    // BUG-654: the addresses (paired in order with their users) whose users may still see the case; null when it's gone.
+    private async Task<List<string>?> StillEntitledAsync(Guid caseId, IReadOnlyList<string> addresses, IReadOnlyList<string> userIds)
+    {
+        var scopes = _scopes ?? throw new InvalidOperationException("No database to hold email in.");
+        await using var scope = scopes.CreateAsyncScope();
+        var sp = scope.ServiceProvider;
+        await using var db = await sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(CancellationToken.None);
+        var c = await db.Cases.AsNoTracking().Where(x => x.Id == caseId)
+            .Select(x => new { x.IsRestricted, x.IncidentCommander, Team = x.Assignments.Select(a => a.UserId).ToList() })
+            .FirstOrDefaultAsync(CancellationToken.None);
+        if (c is null) return null;
+        var audience = sp.GetService<ReminderAudience>()
+            ?? new ReminderAudience(sp.GetService<IUserDirectory>(), sp.GetService<IRoleDirectory>(), sp.GetService<ITokenOwnerCheck>());
+        var entitled = (await audience.RecipientsAsync(userIds, c.IsRestricted, c.IncidentCommander, c.Team, CancellationToken.None))
+            .ToHashSet(StringComparer.Ordinal);
+        // An address with no user beside it (a list stored short) isn't sent to: who it's for can't be checked.
+        return addresses.Where((_, i) => i < userIds.Count && entitled.Contains(userIds[i])).ToList();
     }
 
     // The wait after the n-th try in a row that didn't go: DrainFloor, doubling, up to the circuit's longest back-off.

@@ -5,7 +5,8 @@ namespace IncidentManager.Domain.Entities;
 /// answers. Nothing else tries these again (a scan retries its reminders, a critical alert has its outbox), and held in
 /// memory they were lost on a restart. A row is removed once it's sent, refused for good, given up after
 /// <see cref="MaxAttempts"/> temporary refusals, or given up when the relay still can't be reached
-/// <see cref="GiveUpUnreachedAfter"/> after it was held. Operational state, deliberately NOT audited or hash-chained (see
+/// <see cref="GiveUpUnreachedAfter"/> after it was held, or withdrawn when nobody it was for may still see its case
+/// (BUG-654). Operational state, deliberately NOT audited or hash-chained (see
 /// the interceptor's NotAudited set), like <see cref="AlertDelivery"/>: the drain updates and deletes it, and it isn't
 /// case data.
 /// </summary>
@@ -32,5 +33,22 @@ public class HeldEmail
     public DateTimeOffset HeldAtUtc { get; set; }
     public int Attempts { get; set; }
 
+    /// <summary>
+    /// BUG-653: when a temporary refusal (a 4xx) is next tried; null, at once. One recipient's "mailbox full" no longer
+    /// holds back every email behind it; only a relay that can't be reached keeps them strictly in order.
+    /// </summary>
+    public DateTimeOffset? NextAttemptAtUtc { get; set; }
+
+    /// <summary>
+    /// BUG-654: the case the email is about, and the directory user each recipient address is for (in the same order,
+    /// separated by ';'). Before it goes, the case's audience is checked again, so someone who lost access while it was
+    /// held isn't sent it, and it's dropped when the case is gone. Null for an email that isn't about one case.
+    /// </summary>
+    public Guid? CaseId { get; set; }
+    public string? RecipientUserIds { get; set; }
+
     public IReadOnlyList<string> RecipientList => Recipients.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    public IReadOnlyList<string> RecipientUserIdList =>
+        (RecipientUserIds ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }

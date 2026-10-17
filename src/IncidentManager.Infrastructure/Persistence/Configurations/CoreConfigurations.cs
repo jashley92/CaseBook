@@ -770,6 +770,7 @@ public sealed class HeldEmailConfiguration : IEntityTypeConfiguration<HeldEmail>
         b.Property(x => x.Subject).IsRequired();
         b.Property(x => x.TextBody).IsRequired();
         b.Ignore(x => x.RecipientList);
+        b.Ignore(x => x.RecipientUserIdList);   // BUG-654
     }
 }
 

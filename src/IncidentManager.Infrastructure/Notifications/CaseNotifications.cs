@@ -248,7 +248,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("mention", [to], tokens, url, null, ct);
-            await _email.SendAsync(message, ct);
+            await _email.SendAsync(message, c.Id, [id], ct);   // BUG-654: held mail is checked against the case again
         }
     }
 
@@ -268,7 +268,7 @@ public sealed class CaseNotifications : ICaseNotifications
             ["CaseUrl"] = CaseUrl(c.Id) ?? "",
         };
         var message = await _composer.ComposeAsync("handoff", [to], tokens, CaseUrl(c.Id), null, ct);
-        await _email.SendAsync(message, ct);
+        await _email.SendAsync(message, c.Id, [toUserId], ct);   // BUG-654
     }
 
     public async Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName,
@@ -308,7 +308,7 @@ public sealed class CaseNotifications : ICaseNotifications
         };
 
         var message = await _composer.ComposeAsync("assignment", [to], tokens, CaseUrl(c.Id), null, ct);
-        await _email.SendAsync(message, ct);
+        await _email.SendAsync(message, c.Id, [assigneeUserId], ct);   // BUG-654
     }
 
     private readonly IOrganizationTimeZone? _zone;

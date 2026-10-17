@@ -23,6 +23,16 @@ public sealed class CapturingEmailSender : IEmailSender
         Sent.Add(new EmailMessage(to, subject, body, body));
         return Task.CompletedTask;
     }
+
+    /// <summary>BUG-654: the case and users each case-addressed message was sent for (null for one that isn't).</summary>
+    public List<(Guid CaseId, IReadOnlyList<string> UserIds)?> About { get; } = new();
+
+    public async Task SendAsync(EmailMessage message, Guid caseId, IReadOnlyList<string> recipientUserIds, CancellationToken ct = default)
+    {
+        await SendAsync(message, ct);
+        while (About.Count < Sent.Count - 1) About.Add(null);
+        About.Add((caseId, recipientUserIds));
+    }
 }
 
 /// <summary>An empty branding store (no logo) for composing test emails.</summary>
