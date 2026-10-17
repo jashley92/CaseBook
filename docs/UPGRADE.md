@@ -206,6 +206,28 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.15
+
+A small release with no migration. Things to check:
+
+- **Access log retention: read before upgrading.** The access log (who opened which case, downloaded which evidence
+  or report, exported what) was never pruned. It's now kept for **Retention › Access log retention (years)**,
+  `Retention:AccessLogYears`, default **3**. **On the first night after upgrading, and at the first start, entries last
+  seen more than 3 years ago are deleted.** If your record-keeping rules need them longer (some apply six years to
+  access logs), raise the setting, or set it to 0 to keep everything, **before** upgrading: put
+  `"Retention": { "AccessLogYears": 6 }` (or 0) in `appsettings.Production.json`, or change it in Administration
+  straight after the first start.
+  - Entries for a case under a legal hold are never deleted, including while a release of the hold is pending.
+  - Each prune that deletes anything is recorded in the audit trail (how many, and the cutoff date).
+- **Evidence re-verification is spread over a week.** When it's on (`Integrity:EvidenceVerify:Enabled`), each run now
+  re-hashes a share of the stored files instead of all of them, so every file is checked at least once in
+  **`Integrity:EvidenceVerify:PassDays`** days (default **7**) and a large store isn't read end to end every day.
+  - A damaged or swapped file is now found within a week rather than a day (up to two weeks after an outage or a
+    settings change). Set `PassDays` to 1 to keep the daily full pass.
+  - Runs now happen once per interval counted from midnight UTC (and once at startup), not 24 hours after the app
+    started. A problem found stays listed, and isn't alerted again, until that file's turn comes round.
+  - Diagnostics shows how many files the latest run checked out of the total.
+
 ### v1.6.14
 
 A small release with no migration. Things to check:
