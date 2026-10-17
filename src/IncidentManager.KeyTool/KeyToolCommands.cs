@@ -289,7 +289,7 @@ internal static class KeyToolCommands
     {
         var clean = new string(name.Select(c => c < 32 || Path.GetInvalidFileNameChars().Contains(c) || "<>:\"/\\|?*".Contains(c) ? '_' : c).ToArray())
             .Trim(' ', '.');
-        return clean.Length == 0 ? "file" : clean.Length > 150 ? clean[..150] : clean;
+        return clean.Length == 0 ? "file" : IncidentManager.Application.Common.TextFit.Cap(clean, 150, marker: "")!;
     }
 
     // C13: a CSV cell, quoted, with a leading formula character neutralised.
