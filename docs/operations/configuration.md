@@ -112,6 +112,7 @@ Columns:
 | `AllowedHosts` | Host header allow-list | `*`; prod template: the site hostname | Server | ⚠ |
 | `Logging:LogLevel:*` | Standard ASP.NET Core log levels | json: `Information`; prod template: `Warning` | Server | |
 | `Security:IdleTimeoutMinutes` | Lock an idle session after N minutes, up to 1,440 (a day; a larger value is held to it); `0` disables. The warning appears 60 seconds before (or at half the timeout if that's shorter). | `15` | App | |
+| `RateLimiting:Uploads:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on the 8 MB parts of large evidence uploads (PROD-56). The default allows about 32 MB/s per person. | `240` / `240` / `60` | Server | |
 | `RateLimiting:Downloads:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on downloads, exports, the import API and the agenda feed. Over budget gets **429** with `Retry-After` and SIEM event 5306. | `40` / `40` / `60` | Server | |
 | `RateLimiting:Thumbnails:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on evidence thumbnails (the timeline's inline images), which aren't logged as downloads but are still evidence (REV-62). Over budget gets **429**. | `300` / `300` / `60` | Server | |
 
@@ -132,7 +133,7 @@ process's working directory, which under IIS is the site folder.
 
 | Key | Holds | Code default | Edit | Sens |
 |---|---|---|---|---|
-| `EvidenceStore:RootPath` | Evidence files (per-case folders, random names) | `App_Data/evidence-store` | Server | ⚠ |
+| `EvidenceStore:RootPath` | Evidence files (per-case folders, random names). May be a UNC share path (PROD-56; installer `-EvidencePath`; [OPERATIONS.md §1.2.1](../OPERATIONS.md#121-evidence-storage-limits-large-uploads-and-network-shares)). | `App_Data/evidence-store` | Server | ⚠ |
 | `ReportOutput:RootPath` | Generated reports | `App_Data/report-output` | Server | ⚠ |
 | `ReportBranding:RootPath` | The report and email logo | `App_Data/branding` (not in `appsettings.json`) | Server | ⚠ |
 | `ReportTemplates:RootPath` | Uploaded Word templates (`{id}.docx`) | unset: a `report-templates` folder beside the branding folder | Server | ⚠ |
@@ -189,6 +190,10 @@ process's working directory, which under IIS is the site folder.
 |---|---|---|---|
 | `Governance:LegalHoldRelease:RequireSecondApprover` | Two-person control for releasing a legal hold | `false` | App |
 | `Retention:CaseYears` | Described as "years before a closed case can be archived". **Nothing reads it** ([known issues](../reference/known-issues.md)). | `7` | App |
+| `Evidence:MaxUploadMB` | The largest single evidence file, in MB (1 to 65,536). Files over 100 MB upload in 8 MB parts with a progress bar (PROD-56). | `500` | App |
+| `Evidence:StorageQuotaGB` | The most all stored evidence may take, in GB; an upload that would pass it is refused and uploaders are warned at 90 %. `0` is no limit. Two uploads at once may together go slightly over. | `0` | App |
+| `Evidence:MinFreeSpaceGB` | An upload is refused if it would leave less than this free on the evidence store's volume or share. | `10` | App |
+| `Evidence:ReadBackCheck` | A file uploaded in parts is read back and its SHA-256 checked before it's recorded (catches a write damaged on its way to a share; doubles the reads for large files). | `true` | App |
 | `Retention:AccessLogYears` | Years the access log is kept. Older entries are deleted nightly (and after a restart), except a legal-hold case's; each prune is an audit-trail entry. `0` keeps it forever. | `3` | App |
 
 ### 3.8 Response SLAs

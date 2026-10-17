@@ -257,7 +257,9 @@ from midnight UTC) and once at startup. PROD-53: each run checks one share of th
 the shares come round in turn, so every file is re-hashed at least once in `Integrity:EvidenceVerify:PassDays` days
 (default 7; 1 checks every file every run) and the disk reads spread out. The order follows from the time alone, so
 nothing is stored and a restart doesn't disturb it; a run missed during an outage, or a settings change, can leave a
-file for up to twice the pass. A drift stays reported until its file is checked again. A mismatched, missing or unreadable file raises event 5003: a Critical log entry and a SIEM
+file for up to twice the pass. A drift stays reported until its file is checked again. PROD-56: each run first probes
+the store; one that can't be written and read (a share that's down) is reported once as "evidence store unreachable",
+and nothing is checked or cleared until it's back. A mismatched, missing or unreadable file raises event 5003: a Critical log entry and a SIEM
 event (counts only), plus an email to the alert distribution listing the case, evidence id and file name. A
 banner appears for administrators. The status is shown under Administration → Diagnostics. The job only reads.
 

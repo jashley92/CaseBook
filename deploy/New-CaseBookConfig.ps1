@@ -96,6 +96,8 @@ Write-Host ""
 Write-Host "Web host / IIS" -ForegroundColor Cyan
 $SitePath = Ask -Prompt 'Web root (site path)' -Default 'D:\inetpub\casebook' -Required
 $DataRoot = Ask -Prompt 'Data root (evidence/keys/reports - OUTSIDE the web root)' -Default 'E:\CaseBookData' -Required
+# PROD-56: evidence may go elsewhere, a UNC share included; blank keeps it under the data root.
+$EvidencePath = Ask -Prompt 'Evidence store, if not <data root>\evidence-store (a folder or \\server\share path)'
 # REV-80: inside means the same folder or under it, as Verify-Install judges it (BUG-140): D:\inetpub\casebookdata isn't
 # inside D:\inetpub\casebook.
 $sp = $SitePath.TrimEnd('\'); $dr = $DataRoot.TrimEnd('\')
@@ -195,6 +197,7 @@ $body = @"
 
     SitePath    = $(Q $SitePath)
     DataRoot    = $(Q $DataRoot)
+    EvidencePath = $(Q $EvidencePath)
     Hostname    = $(Q $Hostname)
     CertificateThumbprint = $(Q $CertificateThumbprint)
     SiteName    = $(Q $SiteName)

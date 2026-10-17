@@ -44,6 +44,12 @@
 .PARAMETER DataRoot
     Root for evidence/reports/keys/seals/ops, OUTSIDE the web root, e.g. "E:\CaseBookData".
 
+.PARAMETER EvidencePath
+    PROD-56: where evidence is stored, if not <DataRoot>\evidence-store. A local folder or a UNC share path, e.g.
+    "\\files01\casebook$\evidence". On a share, the app-pool account needs Modify on the folder and Change on the
+    share; the script sets the folder's rights when it can and says exactly what to grant when it can't. With the
+    built-in ApplicationPoolIdentity the share sees this server's computer account (DOMAIN\HOST$); a gMSA is clearer.
+
 .PARAMETER Hostname
     Public host header, e.g. "casebook.contoso.com".
 
@@ -95,6 +101,7 @@ param(
 
     [string] $SitePath,
     [string] $DataRoot,
+    [string] $EvidencePath = '',
     [string] $Hostname,
     [string] $SqlInstance,
     [string] $DbName = 'CaseBook',
@@ -151,6 +158,7 @@ if ($ConfigFile) {
         AppAccount            = 'AppPoolIdentity'
         SitePath              = 'SitePath'
         DataRoot              = 'DataRoot'
+        EvidencePath          = 'EvidencePath'
         Hostname              = 'Hostname'
         SqlInstance           = 'SqlInstance'
         DbName                = 'DbName'
@@ -304,8 +312,18 @@ if ($SkipPublish) {
 
 # --- 2. Data root (outside web root) + subfolders -----------------------------
 Write-Step "Creating ACL-restricted data root at $DataRoot"
-$dataDirs = @('evidence-store','report-output','branding','report-templates','keys','seals','ops','dp-keys') | ForEach-Object { Join-Path $DataRoot $_ }
+# PROD-56: evidence may live elsewhere (another volume, a UNC share); the data root keeps everything else.
+$separateEvidence = -not [string]::IsNullOrWhiteSpace($EvidencePath)
+if (-not $separateEvidence) { $EvidencePath = Join-Path $DataRoot 'evidence-store' }
+$dataSubdirs = @('report-output','branding','report-templates','keys','seals','ops','dp-keys')
+if (-not $separateEvidence) { $dataSubdirs = @('evidence-store') + $dataSubdirs }
+$dataDirs = $dataSubdirs | ForEach-Object { Join-Path $DataRoot $_ }
 foreach ($d in @($DataRoot) + $dataDirs) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+if ($separateEvidence) {
+    Write-Step "Creating the evidence store at $EvidencePath"
+    try { New-Item -ItemType Directory -Force -Path $EvidencePath | Out-Null }
+    catch { throw "The evidence store '$EvidencePath' couldn't be created as $([Environment]::UserDomainName)\$([Environment]::UserName): $($_.Exception.Message). Create it (and grant the rights below), then re-run." }
+}
 
 # --- 2b. AD role groups as DOMAIN\Group ---------------------------------------
 # BUG-224: a bare group name maps only that group in this server's own domain (BUG-188). Groups in another domain
@@ -327,6 +345,7 @@ $map = @{
     '__SQL_INSTANCE__'         = $SqlInstance
     '__DB_NAME__'              = $DbName
     '__DATA_ROOT__'            = $DataRoot
+    '__EVIDENCE_PATH__'        = $EvidencePath
     '__SMTP_HOST__'            = $SmtpHost
     '__MAIL_DOMAIN__'          = $MailDomain
     '__AD_GROUP_ANALYSTS__'    = $AdGroupAnalysts
@@ -398,6 +417,21 @@ function Protect-DataRoot($path) {
 Protect-DataRoot $DataRoot
 Grant-Ntfs $SitePath 'ReadAndExecute'                       # app binaries: read/execute only
 foreach ($d in $dataDirs) { Grant-Ntfs $d 'Modify' }        # stores the app reads/writes
+if ($separateEvidence) {
+    # PROD-56: the evidence store gets the data root's rights: nothing inherited, SYSTEM and Administrators, and Modify
+    # for the app. On a share the folder's owner may not be this account, and the share's own permissions are set on the
+    # file server, so a failure here says what to grant instead of stopping the install.
+    try {
+        Protect-DataRoot $EvidencePath
+        Grant-Ntfs $EvidencePath 'Modify'
+    } catch {
+        $shareAccount = if ($AppPoolIdentity -like 'IIS AppPool\*') { "$([Environment]::UserDomainName)\$([Environment]::MachineName)`$ (this server's computer account)" } else { $AppPoolIdentity }
+        Write-Warning ("Couldn't set the rights on the evidence store '$EvidencePath': $($_.Exception.Message)`n" +
+            "  Ask the file server's administrator to give $shareAccount Modify on that folder (NTFS) and Change on the share,`n" +
+            "  remove inherited access for everyone else, and keep SYSTEM and Administrators. CaseBook checks it can write`n" +
+            "  and read there at every start (Administration > Diagnostics > Evidence storage).")
+    }
+}
 # H-07: on SQL Server (production) every file store - DB, evidence, reports, branding, keys, seals,
 # data-protection ring, ops status - lives under the ACL'd DataRoot, and the app no longer creates an
 # App_Data folder under its content root. The web root therefore stays fully read/execute-only above;

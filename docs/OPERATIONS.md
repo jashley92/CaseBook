@@ -52,6 +52,44 @@ BACKUP LOG [IncidentManager]
 - Seal exports (`Integrity:ExportPath`) are append-only; include them in every backup — they are the
   out-of-band tamper-evidence anchor and must survive a DB compromise.
 
+### 1.2.1 Evidence storage: limits, large uploads and network shares
+
+**Limits (PROD-55).** Administration › Governance & security › Evidence storage sets the largest file
+(`Evidence:MaxUploadMB`, default 500 MB, up to 64 GB), the most all evidence may take (`Evidence:StorageQuotaGB`, no
+limit by default) and the free space an upload must leave on the store (`Evidence:MinFreeSpaceGB`, default 10 GB).
+Every way evidence arrives (picked, dropped, sent in parts, a pasted screenshot) is checked before a byte is stored
+and again once its real size is known. Uploaders are warned at 90 % of the limit. Administration › Diagnostics ›
+Evidence storage shows where the store is, whether CaseBook can write and read there, what it holds and what's free.
+
+**Large files (PROD-56).** A file over 100 MB, such as a memory dump, uploads in 8 MB parts with a progress bar, so no
+request comes near IIS's 30 MB limit and nothing in IIS needs changing. A part lost on the network is sent again. The
+file is read back and its SHA-256 checked before it's recorded (`Evidence:ReadBackCheck`). The person must keep the
+page open until it finishes; leaving asks first. An upload abandoned for a day, or cut off by a restart, is deleted
+from `<store>\.incoming`.
+
+**A store on a network share.** `EvidenceStore:RootPath` (installer `-EvidencePath`) may be a UNC path such as
+`\\files01\casebook$\evidence`.
+- The app-pool account needs **Modify** on the folder (NTFS) and **Change** on the share. With a gMSA that's the gMSA;
+  with the built-in ApplicationPoolIdentity, the share sees the web server's computer account (`DOMAIN\WEB01$`).
+  Remove inherited access for everyone else; keep SYSTEM and Administrators. The installer sets the folder's rights
+  when it can and prints what to grant when it can't.
+- CaseBook probes the store (writes, reads back and deletes a small file) at every start and hourly, with a time limit
+  so a share that's down can't hang it. A failure is logged with the account and the reason and shown on Diagnostics.
+- While the share is down, uploads are refused, downloads answer that the store can't be read, and the evidence
+  re-check reports **one** finding, "evidence store unreachable", instead of every file missing. Earlier findings
+  stand until their files are checked again.
+- Put the share on storage that is backed up with the database (section 1.2), and keep the data root's `keys` folder
+  off the share.
+
+**Moving an existing store** to another folder or a share: stop the app pool; copy with
+`robocopy <old> <new> /E /COPY:DAT /DCOPY:DAT`; grant the rights above; set `EvidenceStore:RootPath` to the new path in
+`appsettings.Production.json`; start the app pool; then run **Verify now** on the Integrity page and check the
+evidence re-check on Diagnostics. Stored paths are relative to the store, so the database doesn't change. Keep the
+old copy until the re-check is clean.
+
+**Disk encryption.** Turn on BitLocker (or the storage's own encryption) for the data root's volume and the evidence
+store's: until evidence is encrypted by CaseBook itself, a copied disk or backup exposes it.
+
 ### 1.3 Restore verification (do not skip)
 
 A backup that has never been restored is a hypothesis, not a control.
@@ -285,6 +323,11 @@ change, like the rest of the data root.
 - **Endpoint EDR/AV**: run a host **endpoint EDR/AV** agent whose sensor scans the evidence-store
   path on access/write at the host level. Ensure the evidence, seal, and report
   directories are **included** in the EDR monitoring policy and not inadvertently excluded.
+  **Caution for malware samples:** evidence is stored as uploaded, so a real-time scanner that *quarantines or deletes*
+  will remove a malware sample uploaded as evidence, on upload or when the evidence re-check reads it; the case then
+  shows it missing and its chain of custody ends there. Until CaseBook encrypts evidence at rest (planned), set the
+  agent to **detect and alert only** on the evidence store, or keep live samples zipped with a password before
+  uploading. Don't exclude the folder from monitoring altogether.
 - **IIS / app-pool hardening**: least-privilege app-pool identity; HTTPS/TLS only (HSTS enabled in
   non-dev); security headers via `SecurityHeadersMiddleware`; server header suppressed.
 - **Authentication**: production requires `Auth:Mode=Windows`; the app refuses to start in Production

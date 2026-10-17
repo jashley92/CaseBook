@@ -39,6 +39,8 @@
     # --- Web host / IIS (used by Install-CaseBook.ps1) ---
     SitePath    = 'D:\inetpub\casebook'   # web root the app publishes to
     DataRoot    = 'E:\CaseBookData'       # evidence/reports/keys/seals/ops - OUTSIDE the web root
+    # PROD-56: optional; evidence elsewhere, e.g. a UNC share '\\files01\casebook$\evidence'. Blank = <DataRoot>\evidence-store.
+    EvidencePath = ''
     Hostname    = 'casebook.contoso.com'  # public host header
 
     # Thumbprint of an installed TLS cert in LocalMachine\My for an HTTPS (443) binding.
