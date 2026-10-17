@@ -21,6 +21,7 @@
 @inject IncidentManager.Application.Abstractions.IChatNotifier Chat
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
 @inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor EvidenceIntegrity
+@inject IncidentManager.Application.Integrity.IntegrityCheckState IntegrityCheck
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
@@ -689,6 +690,52 @@
                     </tbody>
                 </table>
             }
+
+            <h6 class="text-uppercase small text-muted mt-3">Integrity check cost</h6>
+            <p class="small text-muted mb-2">
+                The integrity check runs every 10 minutes. Each run checks every record and the audit entries written
+                since the last run, and re-hashes the whole audit trail every 6 hours. These figures show how long the
+                latest run took, so you can see the check's cost grow with your data. They're held in memory since the
+                last restart.
+            </p>
+            <table class="table table-sm">
+                <tbody>
+                    @if (IntegrityCheck.LastCycle is not { } cycle)
+                    {
+                        <tr><td style="width:32%">Latest run</td><td><span class="im-badge im-b-neutral">Not run yet</span></td></tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <td style="width:32%">Latest run</td>
+                            <td>
+                                @StatusBadge(cycle.Total < IncidentManager.Application.Integrity.IntegrityCheckState.SlowCycle, "Quick", "Slow")
+                                <span class="small text-muted ms-2">
+                                    @(cycle.Full ? "Full" : "Incremental") · @cycle.Total.TotalSeconds.ToString("N1") s ·
+                                    @(cycle.Intact ? "intact" : "found a problem") · @cycle.FinishedAtUtc.ToString("u")
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Audit trail</td>
+                            <td class="small">@cycle.EntriesHashed.ToString("N0") entries hashed in @cycle.Chain.TotalSeconds.ToString("N1") s</td>
+                        </tr>
+                        <tr>
+                            <td>Records</td>
+                            <td class="small">
+                                @cycle.RecordsChecked.ToString("N0") checked in @cycle.Records.TotalSeconds.ToString("N1") s ·
+                                @cycle.RecordsKept.ToString("N0") held in memory between runs
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Largest tables</td>
+                            <td class="small text-muted">
+                                @string.Join(" · ", cycle.RecordsByTable.OrderByDescending(t => t.Value).Take(5).Select(t => $"{t.Key} {t.Value:N0}"))
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
 
             <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
             <p class="small text-muted mb-2">

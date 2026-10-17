@@ -1,3 +1,4 @@
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
@@ -359,6 +360,40 @@ public sealed class IntegritySealIntegrationTests : IDisposable
         (await svc.VerifyAndTrackAsync()).IsValid.Should().BeFalse("Verify now re-hashes the whole chain");
         _clock.UtcNow = _clock.UtcNow.Add(IntegrityCheckState.FullEvery);
         (await svc.MonitorAndTrackAsync()).IsValid.Should().BeFalse("and so does the monitor, every FullEvery");
+    }
+
+    [Fact]
+    public async Task Each_check_records_what_it_cost()
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var state = new IntegrityCheckState();
+        var svc = new IntegrityService(NewFactory(), _hasher, _signer, _store, _user, _clock, _monitor, _alerts, state: state);
+        state.LastCycle.Should().BeNull();
+
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeTrue();
+        var full = state.LastCycle!;
+        var entries = await db.AuditLog.CountAsync();
+        full.Full.Should().BeTrue();
+        full.Intact.Should().BeTrue();
+        full.EntriesHashed.Should().Be(entries, "the first check hashes the whole chain");
+        full.RecordsByTable[nameof(AnalystNote)].Should().Be(await db.Notes.CountAsync());
+        full.RecordsChecked.Should().Be(full.RecordsByTable.Values.Sum());
+        full.RecordsKept.Should().BeGreaterThan(0);
+
+        db.Notes.Add(new AnalystNote { CaseId = (await db.Cases.FirstAsync()).Id, Body = "One more", CreatedBy = "alice", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(10);
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeTrue();
+        var incremental = state.LastCycle!;
+        incremental.Full.Should().BeFalse();
+        incremental.EntriesHashed.Should().Be(await db.AuditLog.CountAsync() - entries, "a cycle hashes only the entries written since");
+        incremental.RecordsByTable[nameof(AnalystNote)].Should().Be(full.RecordsByTable[nameof(AnalystNote)] + 1, "every record is still checked");
+
+        await db.Database.ExecuteSqlRawAsync("UPDATE AnalystNotes SET Body = 'rewritten' WHERE Body = 'One more'");
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(10);
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeFalse();
+        state.LastCycle!.Intact.Should().BeFalse("a check that finds a problem records its cost too");
     }
 
     [Fact]

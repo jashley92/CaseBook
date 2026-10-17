@@ -14,6 +14,12 @@ public sealed class IntegrityCheckState
     /// <summary>How often the whole chain is re-hashed from the start: an edit to an old audit entry is found within this.</summary>
     public static readonly TimeSpan FullEvery = TimeSpan.FromHours(6);
 
+    /// <summary>A check taking longer than this (a tenth of the monitor's 10-minute cycle) is logged as a warning.</summary>
+    public static readonly TimeSpan SlowCycle = TimeSpan.FromSeconds(60);
+
+    /// <summary>What the latest check cost (the monitor's or Verify now), or null before the first since start-up.</summary>
+    public IntegrityCycleStats? LastCycle { get; internal set; }
+
     internal SemaphoreSlim Gate { get; } = new(1, 1);
     internal IChainVerifier? Verifier { get; private set; }
     internal RowIntegrityVerifier.ChainRecords? Records { get; private set; }

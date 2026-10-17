@@ -96,7 +96,7 @@ public static class RowIntegrityVerifier
     /// against the entries written since (BUG-194), and reported only if it still fails.
     /// </summary>
     public static async Task<RowMismatch?> VerifyAsync(IAppDbContext db, IHashChainService hasher,
-        ChainRecords recorded, Recheck? recheck = null, CancellationToken ct = default)
+        ChainRecords recorded, Recheck? recheck = null, IntegrityCycleCounts? counts = null, CancellationToken ct = default)
     {
         var tables = Tables(db).ToList();
         var tableOf = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -109,6 +109,7 @@ public static class RowIntegrityVerifier
             await foreach (var row in tables[i].AsAsyncEnumerable().WithCancellation(ct))
             {
                 var entity = (Entity)row;
+                counts?.RecordRead(tables[i].ElementType.Name);
                 present.Add((row.GetType().Name, entity.Id.ToString()));
                 if (Check(row, recorded, hasher, strict) is not { } bad) continue;
                 if (recheck is null) return bad;
@@ -362,6 +363,9 @@ public static class RowIntegrityVerifier
             }
             _last[(type, id)] = (hash, e.Sequence, false);
         }
+
+        /// <summary>How many records are kept (one per record the trail has mentioned).</summary>
+        public int Count => _last.Count;
 
         public bool TryGet((string Type, string Id) key, out (string? Hash, long Sequence, bool Deleted) last) =>
             _last.TryGetValue(key, out last);

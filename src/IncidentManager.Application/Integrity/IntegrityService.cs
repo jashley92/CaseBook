@@ -79,12 +79,13 @@ public sealed class IntegrityService
 
     // The chain's entries after a sequence (all of them for null), checked and collected as they're read.
     private static async Task ReadOnAsync(IAppDbContext db, IChainVerifier verifier, RowIntegrityVerifier.ChainRecords? records,
-        long? after, CancellationToken ct)
+        long? after, CancellationToken ct, IntegrityCycleCounts? counts = null)
     {
         var q = db.AuditLog.AsNoTracking();
         if (after is { } from) q = q.Where(a => a.Sequence > from);
         await foreach (var e in q.OrderBy(a => a.Sequence).AsAsyncEnumerable().WithCancellation(ct))
         {
+            if (counts is not null) counts.EntriesHashed++;
             if (!verifier.Add(e)) break;
             records?.Add(e);
         }
@@ -124,7 +125,29 @@ public sealed class IntegrityService
         finally { _state.Gate.Release(); }
     }
 
+    // What the check cost: kept for Diagnostics and logged, as a warning when it's slow (see IntegrityCycleStats).
     private async Task<ChainVerificationResult> CheckCoreAsync(bool full, CancellationToken ct)
+    {
+        var counts = new IntegrityCycleCounts();
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var (result, ranFull, chainTime, kept) = await CheckCoreAsync(full, counts, timer, ct);
+        var stats = new IntegrityCycleStats(_clock.UtcNow, ranFull, result.IsValid, chainTime, timer.Elapsed - chainTime,
+            counts.EntriesHashed, counts.RecordsByTable.Values.Sum(), kept, counts.RecordsByTable);
+        if (_state is null) return result;
+        _state.LastCycle = stats;
+        _logger?.Log(stats.Total >= IntegrityCheckState.SlowCycle ? LogLevel.Warning : LogLevel.Information,
+            "Integrity check ({Kind}) took {Seconds:N1} s: {Entries:N0} audit entries hashed in {ChainSeconds:N1} s, " +
+            "{Records:N0} records checked in {RecordSeconds:N1} s, {Kept:N0} records held in memory.{Slow}",
+            ranFull ? "full" : "incremental", stats.Total.TotalSeconds, stats.EntriesHashed, stats.Chain.TotalSeconds,
+            stats.RecordsChecked, stats.Records.TotalSeconds, stats.RecordsKept,
+            stats.Total >= IntegrityCheckState.SlowCycle
+                ? $" That's over {IntegrityCheckState.SlowCycle.TotalSeconds:N0} s of every 10-minute cycle; see docs/architecture/integrity.md (Check cost)."
+                : "");
+        return result;
+    }
+
+    private async Task<(ChainVerificationResult Result, bool Full, TimeSpan Chain, int Kept)> CheckCoreAsync(bool full,
+        IntegrityCycleCounts counts, System.Diagnostics.Stopwatch timer, CancellationToken ct)
     {
         // BUG-66/BUG-194: the chain is read before the tables, so a save landing in between makes a record look added,
         // changed or removed outside CaseBook. A record that fails is checked again after reading the entries written
@@ -141,19 +164,24 @@ public sealed class IntegrityService
                 is { } stillThere && string.Equals(stillThere, _state.Records.HeadHash, StringComparison.Ordinal);
         var records = carryOn ? _state!.Records! : new RowIntegrityVerifier.ChainRecords();
         var verifier = carryOn ? _state!.Verifier! : _hasher.BeginVerify(keyedFrom);
-        await ReadOnAsync(db, verifier, records, after: carryOn ? records.Head ?? 0 : null, ct);
-        if (!verifier.Result.IsValid) { _state?.Forget(); return verifier.Result; }
+        await ReadOnAsync(db, verifier, records, after: carryOn ? records.Head ?? 0 : null, ct, counts);
+        var chainTime = timer.Elapsed;
+        if (!verifier.Result.IsValid) { _state?.Forget(); return (verifier.Result, !carryOn, chainTime, records.Count); }
 
         var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, records,
-            new RowIntegrityVerifier.Recheck(t => ReadOnAsync(db, verifier, records, records.Head ?? 0, t)), ct);
-        if (!verifier.Result.IsValid) { _state?.Forget(); return verifier.Result; }   // an entry written since broke the chain
+            new RowIntegrityVerifier.Recheck(t => ReadOnAsync(db, verifier, records, records.Head ?? 0, t, counts)), counts, ct);
+        if (!verifier.Result.IsValid)   // an entry written since broke the chain
+        {
+            _state?.Forget();
+            return (verifier.Result, !carryOn, chainTime, records.Count);
+        }
         if (bad is not null)
         {
             _state?.Forget();
-            return ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail);
+            return (ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail), !carryOn, chainTime, records.Count);
         }
         _state?.Keep(verifier, records, keyedFrom, carryOn ? null : now);
-        return verifier.Result;
+        return (verifier.Result, !carryOn, chainTime, records.Count);
     }
 
     /// <summary>
