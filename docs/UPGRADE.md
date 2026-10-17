@@ -208,7 +208,7 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### v1.6.13
 
-A fix release with two migrations (`HeldEmails` table, `Reports.RowHash` column). The first start after upgrading
+A fix release with three migrations (`HeldEmails` table and its retry/audience columns, `Reports.RowHash`). The first start after upgrading
 runs a one-time integrity upgrade; read **Integrity upgrade** below before deploying. Things to check:
 
 - **Integrity upgrade (tamper detection).** The record check now catches a row planted in the database without a
@@ -235,13 +235,20 @@ runs a one-time integrity upgrade; read **Integrity upgrade** below before deplo
   - Tested upgrading from v1.0.0, v1.4.0, v1.5.0, v1.5.9 and v1.6.12 on SQL Server 2022: no false alarms, and
     tampering after the upgrade is caught.
 - **Regulator deadlines.** A second regulator on the same deadline gets its own at-risk and breached reminders
-  (reminders already sent aren't repeated). An element added to a reported case counts as one it already had, so a
+  (reminders already sent aren't repeated, and a regulator that joins a clock reminded before the upgrade is
+  emailed and posted). An element added to a reported case counts as one it already had, so a
   later admin mapping no longer shows a clock that reminders and the close gate ignore. The close gate's
   notifications check judges the case the way the case page does.
 - **Held email.** Assignment, mention and handoff emails the relay didn't take are kept in the database (they
   survive a restart) and sent when it answers; a temporary refusal (450-452) is retried. Held mail is given up only
   after 12 temporary refusals or 24 hours with the relay unreachable. A breach or integrity alarm cut off by
   shutdown is still kept for retry.
+  - Before a held case email goes, it is checked against who may still see the case; anyone who lost access is
+    dropped, and it isn't sent if the case is gone.
+  - It waits while email is turned off, and when the relay refuses the session (for example 530 authentication) or
+    the From address, with an error logged until it's fixed, instead of being deleted. Refused recipients no longer
+    back the relay off, and one recipient's "mailbox full" no longer holds back the rest.
+  - The email log shows the error type and SMTP code, not the relay's reply text (which can echo addresses).
 - **Settings and AD.** A saved setting, label, template or import can't be undone by a slower reload that read
   earlier, and "saved but not in effect" reflects that save's own reload. A disabled API-token owner, or one removed
   from an AD group, loses the access at once even when AD answers slowly or partially.
@@ -249,9 +256,14 @@ runs a one-time integrity upgrade; read **Integrity upgrade** below before deplo
   preview's switch), and the case number can be chosen on the preview.
 - **Imported times:** a time without a time zone is read in the organization's zone on the Import page (switchable
   there), or in the document's own `timeZone`; the API still treats such times as UTC unless the document names a
-  zone. The preview says which zone was used.
+  zone. The preview says which zone was used. Changing the zone after Preview reads the document again in that zone
+  (and says so, since edits to the preview are undone), so Apply imports what the picker shows; the picker is locked
+  once part of an import is applied.
 - **AI prompt:** keeps times as the material states them instead of converting to UTC; its Target select no longer
   goes blank.
+- **Smaller fixes:** a sign-in that lands while the user directory reloads keeps its new roles; a report download
+  hands over exactly the bytes it checked, and a report whose stored path was edited to lead outside the store is
+  refused as altered.
 
 ### v1.6.12
 
