@@ -395,7 +395,9 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         foreach (var group in rows.GroupBy(e => e.Metadata.ClrType))
         {
             var ids = group.Select(e => ((Entity)e.Entity).Id).ToArray();
-            var now = StoredHashesOf.MakeGenericMethod(group.Key).Invoke(null, [ctx, ids]) as Dictionary<Guid, string?> ?? [];
+            // BUG-660: unwrapped, so a database timeout surfaces as itself (the start-up fills and the upgrade catch it).
+            var now = StoredHashesOf.MakeGenericMethod(group.Key)
+                .Invoke(null, System.Reflection.BindingFlags.DoNotWrapExceptions, null, [ctx, ids], null) as Dictionary<Guid, string?> ?? [];
             foreach (var e in group)
             {
                 var read = e.Property(nameof(IHashableEntity.RowHash)).OriginalValue as string;

@@ -366,6 +366,59 @@ public sealed class IntegrityUpkeepTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_database_timeout_in_the_upkeep_recheck_surfaces_as_itself(string provider /* BUG-660 */)
+    {
+        using var database = Seeded(provider);
+        var fail = new FailNextRead();
+        await using (var upkeep = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>(database.Options).AddInterceptors(fail).Options))
+        {
+            var note = await upkeep.Notes.FirstAsync();
+            upkeep.Entry(note).Property(x => x.RowHash).IsModified = true;
+            upkeep.PendingUpkeep = true;
+            fail.Armed = true;   // the save's first read is the re-check of the rows' stored hashes
+            var ex = (await FluentActions.Awaiting(() => upkeep.SaveChangesAsync()).Should().ThrowExactlyAsync<TimeoutException>()).Which;
+            Web.BackgroundJobs.RowHashUpgradeHostedService.IsDefect(ex).Should().BeFalse("a timeout is tried again at the next start");
+        }
+        // The chain is free again: an ordinary save goes through.
+        await using (var db = database.NewContext())
+        {
+            var c = await db.Cases.Include(x => x.DataElements).FirstAsync();
+            c.Title += " (renamed)";
+            await db.SaveChangesAsync();
+        }
+    }
+
+    // Once armed, the next query times out (as a busy database's would).
+    private sealed class FailNextRead : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public volatile bool Armed;
+
+        private void Check()
+        {
+            if (!Armed) return;
+            Armed = false;
+            throw new TimeoutException("The database didn't answer in time.");
+        }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> ReaderExecuting(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result)
+        {
+            Check();
+            return result;
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Check();
+            return ValueTask.FromResult(result);
+        }
+    }
+
     // Holds a save once the audit chain is held (it runs after AuditChainInterceptor), until released.
     private sealed class HoldSave(TaskCompletionSource holding, Task release) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
     {
