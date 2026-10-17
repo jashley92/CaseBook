@@ -792,6 +792,14 @@
                 <div class="mb-3"><IncidentManager.Web.Components.Shared.StorageMeter Use="use" /></div>
             }
 
+            <h6 class="text-uppercase small text-muted mt-3">Evidence encryption</h6>
+            <p class="small text-muted mb-2">
+                Evidence and reports encrypted at rest with a key protected by the server's integrity certificate, kept in three
+                places and backed up offline. Set in the server's configuration (OPERATIONS.md, Evidence key); the keys never show
+                here.
+            </p>
+            <IncidentManager.Web.Components.Shared.EvidenceKeyPanel />
+
             <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
             <p class="small text-muted mb-2">
                 A background job re-hashes stored evidence and compares it to the SHA-256 recorded in the

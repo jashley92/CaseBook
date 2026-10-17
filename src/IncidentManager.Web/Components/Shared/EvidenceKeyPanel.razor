@@ -1,0 +1,120 @@
+@* PROD-57: the evidence key on Diagnostics: whether evidence is encrypted, what protects the key, where its envelope is
+   kept and whether each copy is good, its backups (recovery certificates, shares issued, the last drill), what the daily
+   check warned about, and how the conversion of files stored before is going. Key ids and places only; never a key. *@
+@using IncidentManager.Application.Abstractions
+@using IncidentManager.Infrastructure.Security
+@using IncidentManager.Infrastructure.Storage
+@inject EvidenceKeyring Keyring
+@inject EvidenceConversionStatus Conversion
+
+<table class="table table-sm">
+    <tbody>
+        <tr>
+            <td style="width:32%">Encryption at rest</td>
+            <td>
+                <span class="im-badge @Badge">@Label</span>
+                @if (Keyring.CurrentKeyId is { } id) { <span class="small text-muted ms-2">key <code>@id</code></span> }
+                @if (Keyring.Problem is { } problem) { <div class="small @(Keyring.State == EvidenceKeyState.Unavailable ? "text-danger" : "text-muted") mt-1">@problem</div> }
+            </td>
+        </tr>
+        @if (Keyring.Health is { } h && h.State != EvidenceKeyState.Off)
+        {
+            @if (h.Protection is not null)
+            {
+                <tr><td>Protected by</td><td class="small">@h.Protection</td></tr>
+            }
+            <tr>
+                <td>Envelope copies</td>
+                <td class="small">
+                    @foreach (var c in h.Copies.OrderBy(c => c.Copy))
+                    {
+                        <div class="mb-1">
+                            @if (c.Good) { <span class="im-badge im-b-ok">Good</span> } else { <span class="im-badge im-b-warn">@(c.Problem ?? "Problem")</span> }
+                            <span class="ms-1">@c.Copy</span>
+                            <div class="text-muted" style="word-break:break-all"><code>@c.Where</code></div>
+                        </div>
+                    }
+                </td>
+            </tr>
+            <tr>
+                <td>Backups</td>
+                <td class="small">
+                    @if (h.Recovery.Count == 0 && h.Shares is null)
+                    {
+                        <span class="im-badge im-b-warn">None yet</span>
+                        <span class="text-muted ms-1">Add a recovery certificate or issue shares; nothing is encrypted until then.</span>
+                    }
+                    @foreach (var r in h.Recovery)
+                    {
+                        <div>Recovery certificate <code>@r.Thumbprint</code> <span class="text-muted">@r.Subject · expires @r.NotAfter.ToString("yyyy-MM-dd")</span></div>
+                    }
+                    @if (h.Shares is { } s)
+                    {
+                        <div>Shares: any @s.Threshold of @s.Count, issued @s.IssuedUtc.ToString("yyyy-MM-dd")</div>
+                    }
+                    <div class="text-muted">
+                        Last recovery drill: @(h.LastDrillUtc is { } d ? d.ToString("yyyy-MM-dd") : "never") (casebook-keytool verify)
+                    </div>
+                </td>
+            </tr>
+            @if (h.Warnings.Count > 0)
+            {
+                <tr>
+                    <td>From the daily check</td>
+                    <td class="small">@foreach (var w in h.Warnings) { <div class="text-warning-emphasis">@w</div> }</td>
+                </tr>
+            }
+            <tr>
+                <td>Checked</td>
+                <td class="small text-muted">@h.CheckedUtc.ToString("u")</td>
+            </tr>
+        }
+        @if (Keyring.State == EvidenceKeyState.Ready)
+        {
+            <tr>
+                <td>Files stored before</td>
+                <td class="small">
+                    @if (Conversion.LastRunUtc is null)
+                    {
+                        <span class="text-muted">Not checked since start-up: the first run is 15 minutes after it.</span>
+                    }
+                    else
+                    {
+                        <span>@Conversion.Converted encrypted so far · @Conversion.Remaining left</span>
+                        @if (Conversion.Busy > 0) { <span class="text-muted"> · @Conversion.Busy in use (next run)</span> }
+                        @if (Conversion.Mismatched > 0) { <span class="text-danger"> · @Conversion.Mismatched don't match their record (left as they are; see the evidence re-check)</span> }
+                        <span class="text-muted"> · last run @Conversion.LastRunUtc.Value.ToString("u")</span>
+                    }
+                    @if (Conversion.LastProblem is { } p) { <div class="text-danger">@p</div> }
+                    <div class="mt-1">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ConvertNow" disabled="@(Conversion.NowRequested || Conversion.Running)">
+                            @(Conversion.Running ? "Converting…" : Conversion.NowRequested ? "Starting within a minute…" : "Convert now")
+                        </button>
+                        <span class="text-muted ms-2">Shortens the time plain samples sit where antivirus can see them.</span>
+                    </div>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private string Label => Keyring.State switch
+    {
+        EvidenceKeyState.Off => "Off",
+        EvidenceKeyState.NotConfigured => "Not configured",
+        EvidenceKeyState.NeedsBackup => "Waiting for a backup",
+        EvidenceKeyState.Ready => "On",
+        _ => "Key unavailable",
+    };
+
+    private string Badge => Keyring.State switch
+    {
+        EvidenceKeyState.Ready => "im-b-ok",
+        EvidenceKeyState.Unavailable => "im-b-danger",
+        EvidenceKeyState.Off => "im-b-neutral",
+        _ => "im-b-warn",
+    };
+
+    private void ConvertNow() => Conversion.NowRequested = true;
+}
