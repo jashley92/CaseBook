@@ -226,7 +226,8 @@ runs a one-time integrity upgrade; read **Integrity upgrade** below before deplo
     (most of a v1.6.12 database), under a minute per 100,000 it records (records last saved before v1.5.1); allow
     several times that on a remote server. A shutdown part way, or a failure, leaves what it recorded and the next
     start carries on; a failure that won't clear on its own is logged as an error. A row that disagrees with its
-    trail is left unrecorded and reported.
+    trail is left unrecorded and reported. Recording a case's hash doesn't count as a change, so someone editing the
+    case meanwhile isn't told it was changed.
   - Start-up fills (a reported case's jurisdictions, a notice's deadline, the hash of an older status, assignment or
     citation record) no longer sign off a row changed in the database, including one whose older-format hash didn't
     cover the changed value or whose hash was cleared, and never overwrite a save made at the same moment. A start-up
@@ -247,7 +248,8 @@ runs a one-time integrity upgrade; read **Integrity upgrade** below before deplo
     dropped, and it isn't sent if the case is gone.
   - It waits while email is turned off, and when the relay refuses the session (for example 530 authentication) or
     the From address, with an error logged until it's fixed, instead of being deleted. Refused recipients no longer
-    back the relay off, and one recipient's "mailbox full" no longer holds back the rest.
+    back the relay off, and one recipient's "mailbox full", or one email the relay refuses for its content (a DLP or
+    transport rule), no longer holds back the rest; an email too large for the relay (552) is refused at once.
   - The email log shows the error type and SMTP code, not the relay's reply text (which can echo addresses).
 - **Settings and AD.** A saved setting, label, template or import can't be undone by a slower reload that read
   earlier, and "saved but not in effect" reflects that save's own reload. A disabled API-token owner, or one removed
