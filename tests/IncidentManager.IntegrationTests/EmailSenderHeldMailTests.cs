@@ -57,7 +57,8 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         public bool IsEnabled(LogLevel logLevel) => true;
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
-            lock (Entries) Entries.Add((logLevel, formatter(state, exception)));
+            // With the exception, as a log sink writes it (BUG-657).
+            lock (Entries) Entries.Add((logLevel, formatter(state, exception) + (exception is null ? "" : "\n" + exception)));
         }
         public bool Has(LogLevel level, string text)
         {
@@ -316,6 +317,70 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         SendOutcomes.Of(many).ToString().Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("530")]        // the relay wants authentication: every email is refused at MAIL FROM
+    [InlineData("bad From")]   // our own setting: no email can be composed
+    public async Task A_session_or_settings_refusal_keeps_the_whole_queue(string fault /* BUG-652 */)
+    {
+        BackOff();
+        await _sender.SendAsync(["a@example.test"], "Mentioned", "b");
+        await _sender.SendAsync(["b@example.test"], "Assigned", "b");
+        if (fault == "530") _mode = "530";
+        else _options.From = "not an address";
+        await _sender.SendAsync(["c@example.test"], "Handed over", "b");
+        _time.Now += OutboundCircuit.FirstBackOff;
+        await _sender.DrainHeldAsync();
+        await _sender.DrainHeldAsync();
+        var rows = await HeldRowsAsync();
+        rows.Should().HaveCount(3, "a refusal that isn't about the addresses says nothing about the email: it's kept");
+        rows.Should().OnlyContain(h => h.Attempts == 0);
+        _log.Has(LogLevel.Error, "refused a held email").Should().BeFalse();
+        _log.Has(LogLevel.Error, "can't be sent until").Should().BeTrue("someone must fix the relay or the settings");
+        _time.Timer!.Due.Should().BeGreaterThan(TimeSpan.Zero, "tried again later");
+
+        // Fixed in time: all go, in order.
+        _mode = "ok";
+        _options.From = "casebook@example.test";
+        _time.Now += OutboundCircuit.MaxBackOff;
+        await _sender.DrainHeldAsync();
+        Delivered.Should().Be(3);
+        (await Held).Should().Be(0);
+
+        // Never fixed: the age limit ends it, as for a relay that can't be reached.
+        if (fault == "530") _mode = "530";
+        else _options.From = "not an address";
+        await _sender.SendAsync(["d@example.test"], "Assigned", "b");
+        (await Held).Should().Be(1, "a user's action's email is held under the refusal too");
+        var dHeldAt = _time.Now;
+        _time.Now = dHeldAt + HeldEmail.GiveUpUnreachedAfter - TimeSpan.FromHours(1);
+        await _sender.DrainHeldAsync();
+        (await Held).Should().Be(1, "only 24 hours after it was held");
+        _log.Has(LogLevel.Error, "given up").Should().BeFalse();
+        _time.Now = dHeldAt + HeldEmail.GiveUpUnreachedAfter + TimeSpan.FromMinutes(1);
+        await _sender.DrainHeldAsync();
+        (await Held).Should().Be(0);
+        _log.Has(LogLevel.Error, "given up").Should().BeTrue();
+        _options.From = "casebook@example.test";
+    }
+
+    [Fact]
+    public async Task The_log_doesnt_carry_the_addresses_a_relay_echoes(/* BUG-657, CWE-359 */)
+    {
+        _mode = "550";
+        await _sender.SendAsync(["gone@example.test"], "Assigned", "b");
+        await _sender.SendAsync(["gone1@example.test", "gone2@example.test"], "Assigned", "b");
+        await _sender.SendAsync(["fine@example.test", "gone3@example.test"], "Assigned", "b");
+        await _sender.SendAsync(["fine@example.test", "gone4@example.test", "gone5@example.test"], "Assigned", "b");
+        (await _sender.SendTestAsync(new EmailMessage(["gone6@example.test"], "Test", "<p>t</p>", "t"))).Status.Should().Be(EmailSendStatus.Failed);
+        lock (_log.Entries)
+        {
+            _log.Entries.Should().NotBeEmpty();
+            _log.Entries.Should().NotContain(e => e.Message.Contains("@example.test", StringComparison.Ordinal),
+                "the relay's reply names the address, so only the exception's type and SMTP status are logged");
+            _log.Entries.Should().Contain(e => e.Message.Contains("550", StringComparison.Ordinal), "the status is still there");
+        }
+    }
+
     [Fact]
     public async Task A_partial_delivery_counts_as_delivered_and_isnt_held(/* BUG-94 */)
     {
@@ -433,8 +498,11 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
                         Interlocked.Increment(ref _delivered);
                         await writer.WriteLineAsync("250 Queued");
                     }
+                    else if (cmd.StartsWith("MAIL FROM:", StringComparison.Ordinal) && _mode == "530")
+                        await writer.WriteLineAsync("530 5.7.0 Authentication required");
+                    // Echoing the address, as relays do (BUG-657).
                     else if (cmd.StartsWith("RCPT TO:", StringComparison.Ordinal) && _mode != "ok" && !line.Contains("fine@", StringComparison.Ordinal))
-                        await writer.WriteLineAsync($"{_mode} Not this one");
+                        await writer.WriteLineAsync($"{_mode} {line["RCPT TO:".Length..].Trim()} Not this one");
                     else if (cmd == "QUIT") { await writer.WriteLineAsync("221 Bye"); break; }
                     else await writer.WriteLineAsync("250 relay.test");
                 }

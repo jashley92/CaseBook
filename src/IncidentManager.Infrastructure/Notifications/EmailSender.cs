@@ -68,7 +68,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
         // reason instead of an error page.
         catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException or IOException or ArgumentException)
         {
-            _log.LogError(ex, "Test email to {RecipientCount} recipient(s) failed.", message.To.Count);
+            _log.LogError("Test email to {RecipientCount} recipient(s) failed: {Failure}.", message.To.Count, Failure(ex));   // BUG-657
             // The innermost message names the actual cause (connection refused, auth required, bad address).
             return new EmailSendOutcome(EmailSendStatus.Failed, ex.GetBaseException().Message);
         }
@@ -113,7 +113,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
         if (outcome == SendOutcome.Delivered) DrainHeldSoon();
         // BUG-617: nor would anyone try one the relay didn't take, or turned away only for now (BUG-626). A watched send
         // is tried again by its caller, and a refusal would only be refused again.
-        else if ((outcome is SendOutcome.NotReached or SendOutcome.Transient) && !DeliveryWatch.Watching)
+        else if ((outcome is SendOutcome.NotReached or SendOutcome.Transient or SendOutcome.Blocked) && !DeliveryWatch.Watching)   // BUG-652
             await HoldAsync(to, subject, textBody, htmlBody, attempts: outcome == SendOutcome.Transient ? 1 : 0, target);   // BUG-640
     }
 
@@ -131,26 +131,44 @@ public sealed class EmailSender : IEmailSender, IDisposable
         {
             // BUG-94: the relay took the message for the other recipients. Sending it again would repeat it to all of
             // them (the executive report went out every hour for a week over one closed mailbox), so it isn't retried.
-            _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); {Failed} address(es) were refused.",
-                sent - ex.InnerExceptions.Length, sent, ex.InnerExceptions.Length);
+            _log.LogWarning("Notification email reached {Delivered} of {RecipientCount} recipient(s); {Failed} address(es) were refused ({Failure}).",
+                sent - ex.InnerExceptions.Length, sent, ex.InnerExceptions.Length, Failure(ex));
             return SendOutcome.Delivered;
         }
         catch (SmtpFailedRecipientException ex) when (ex is not SmtpFailedRecipientsException && sent > 1)
         {
             // BUG-149: when exactly one of several addresses is refused, SmtpClient throws the singular exception (after
             // the others got the message), so it's the same partial delivery as above.
-            _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); 1 address was refused.",
-                sent - 1, sent);
+            _log.LogWarning("Notification email reached {Delivered} of {RecipientCount} recipient(s); 1 address was refused ({Failure}).",
+                sent - 1, sent, Failure(ex));
             return SendOutcome.Delivered;
         }
         catch (Exception ex)
         {
-            // As above (CWE-359): the exception is the actionable signal for an SMTP problem; the subject and
-            // recipient addresses would only leak personal/case data into the log, so log a count instead.
-            _log.LogError(ex, "Failed to send notification email to {RecipientCount} recipient(s).", to.Count);
+            // As above (CWE-359): the subject and recipient addresses would only leak personal/case data into the log, so
+            // log a count instead; and the exception by its type and SMTP status (BUG-657).
+            _log.LogError("Failed to send notification email to {RecipientCount} recipient(s): {Failure}.", to.Count, Failure(ex));
             DeliveryWatch.ReportFailure();   // BUG-08: a scheduled reminder is retried on the next scan
-            return SendOutcomes.Of(ex);
+            // BUG-652: no address that parses is this email's own fault, not the settings', so it's final.
+            return sent == 0 ? SendOutcome.Refused : SendOutcomes.Of(ex);
         }
+    }
+
+    /// <summary>
+    /// BUG-657 (CWE-359): a relay's reply often echoes the address it refused ("550 &lt;x@y&gt; no such user"), and the
+    /// exception's message carries that reply, so the log gets the exception's type and SMTP status, never its message.
+    /// </summary>
+    internal static string Failure(Exception ex)
+    {
+        var text = ex switch
+        {
+            SmtpFailedRecipientsException many => $"{ex.GetType().Name} {string.Join("/", many.InnerExceptions.Select(r => (int)r.StatusCode).Distinct())}",
+            SmtpException s => $"{ex.GetType().Name} {(int)s.StatusCode} {s.StatusCode}",
+            _ => ex.GetType().Name,
+        };
+        var root = ex.GetBaseException();
+        if (ReferenceEquals(root, ex) || ex is SmtpFailedRecipientsException) return text;
+        return root is System.Net.Sockets.SocketException so ? $"{text}, from {root.GetType().Name} {so.SocketErrorCode}" : $"{text}, from {root.GetType().Name}";
     }
 
     // BUG-608: an email from a user's action (assign, mention, handoff) that the relay didn't take. Nothing else would try
@@ -169,6 +187,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
     private bool _maybeHeld;          // false only once a drain found the table empty, and nothing was held since
     private long _heldGeneration;     // counts holds, so a drain that found nothing knows whether one came meanwhile
     private int _drainFailures;       // drains in a row that threw (the database unreachable, say), for their back-off
+    private int _blockedDrains;       // BUG-652: tries in a row the relay or the settings refused outright, for theirs
     private bool _disposed;
     private int _draining;
 
@@ -291,17 +310,33 @@ public sealed class EmailSender : IEmailSender, IDisposable
                 SendOutcome? outcome = o.Enabled
                     ? await DeliverLoggedAsync(o, next.RecipientList, next.Subject, next.TextBody, next.HtmlBody, CancellationToken.None)
                     : null;
+                if (outcome != SendOutcome.Blocked) lock (_gate) _blockedDrains = 0;
                 // BUG-617: it stays first until that's final, so it isn't lost to a relay still down and the order holds.
                 // BUG-640: a relay that's down says nothing about the email, so it isn't a try; only age gives it up.
-                if (outcome == SendOutcome.NotReached)
+                // BUG-652: nor does a refusal of the session or a setting that stops every send; it's waited out the same way,
+                // with its own back-off, as the relay answers and isn't backed off.
+                if (outcome is SendOutcome.NotReached or SendOutcome.Blocked)
                 {
                     if (_circuit.Time.GetUtcNow() - next.HeldAtUtc < HeldEmail.GiveUpUnreachedAfter)
                     {
-                        ScheduleDrain(_circuit.RetryIn(target));
+                        if (outcome == SendOutcome.Blocked)
+                        {
+                            int blocked;
+                            lock (_gate) blocked = ++_blockedDrains;
+                            _log.LogError("The held notification emails can't be sent until the mail relay's sign-in or the email " +
+                                "settings are fixed; they're kept and tried again.");
+                            ScheduleDrain(BackOff(blocked));
+                        }
+                        else ScheduleDrain(_circuit.RetryIn(target));
                         return;
                     }
-                    _log.LogError("A held email to {RecipientCount} recipient(s) still wasn't sent after {Hours} hours with the mail relay " +
-                        "unreachable; it's given up.", next.RecipientList.Count, HeldEmail.GiveUpUnreachedAfter.TotalHours);
+                    if (outcome == SendOutcome.Blocked)
+                        _log.LogError("A held email to {RecipientCount} recipient(s) still wasn't sent after {Hours} hours with the mail " +
+                            "relay refusing it or the email settings stopping it; it's given up.", next.RecipientList.Count,
+                            HeldEmail.GiveUpUnreachedAfter.TotalHours);
+                    else
+                        _log.LogError("A held email to {RecipientCount} recipient(s) still wasn't sent after {Hours} hours with the mail " +
+                            "relay unreachable; it's given up.", next.RecipientList.Count, HeldEmail.GiveUpUnreachedAfter.TotalHours);
                 }
                 else if (outcome == SendOutcome.Transient)
                 {

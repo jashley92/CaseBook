@@ -6,6 +6,7 @@ namespace IncidentManager.Infrastructure.Notifications;
 /// C20 (BUG-617, BUG-626): what became of one send, so queued mail is removed only when that's final. Delivered
 /// (to some recipients at least, BUG-94) and Refused (the relay said no for good) end it; NotReached (the relay didn't
 /// answer, or the send was cut off) and Transient (a 4xx: mailbox busy, local error, out of storage) keep it to try again.
+/// Blocked (BUG-652: the relay refused the session, or the settings stop every send) keeps it too, like NotReached.
 /// </summary>
 internal enum SendOutcome
 {
@@ -13,6 +14,7 @@ internal enum SendOutcome
     NotReached,
     Transient,
     Refused,
+    Blocked,
 }
 
 internal static class SendOutcomes
@@ -26,7 +28,11 @@ internal static class SendOutcomes
         // several addresses were refused, one refused only for now is worth the retry (the rest were refused, not sent).
         SmtpFailedRecipientsException many => many.InnerExceptions.Any(r => IsTransient(r.StatusCode)) ? SendOutcome.Transient : SendOutcome.Refused,
         SmtpException s when IsTransient(s.StatusCode) => SendOutcome.Transient,
-        _ => SendOutcome.Refused,
+        // BUG-652: only the addresses' own refusal is final for the email. A 5xx to the session (530 authentication, 553
+        // the sender) or our own setting (a From that doesn't parse) refuses every email alike, and read as Refused a
+        // drain deleted the whole held queue in seconds.
+        SmtpFailedRecipientException => SendOutcome.Refused,
+        _ => SendOutcome.Blocked,
     };
 
     private static bool IsTransient(SmtpStatusCode code) => (int)code is >= 400 and < 500;
