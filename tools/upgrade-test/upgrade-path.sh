@@ -7,7 +7,9 @@
 #      database (Development mode, so it migrates AND seeds demo cases + a populated audit chain).
 #   2. Stop it, then start the <to> build against the SAME database. Its startup applies the pending
 #      migrations and runs every startup seeder against existing data — exactly what an IIS upgrade does.
-#   3. Assert: the new build came up (live + ready), every one of its migrations is recorded, and the
+#   3. Wait for the new build's background integrity upgrade (BUG-644: it starts once the app serves, at once
+#      here) to write its marker, failing if it logs that it didn't finish.
+#   4. Assert: the new build came up (live + ready), every one of its migrations is recorded, and the
 #      case / audit rows written by the old release are still there.
 #
 # Usage:  tools/upgrade-test/upgrade-path.sh <from-ref> [<to-ref>]
@@ -72,7 +74,7 @@ start_app() {
   log "Starting $label against [$db]"
   ( cd "$dir/src/IncidentManager.Web" && \
     ASPNETCORE_ENVIRONMENT=Development Database__Provider=SqlServer ConnectionStrings__Default="$conn" \
-    EvidenceStore__RootPath="$evidence" \
+    EvidenceStore__RootPath="$evidence" Integrity__Upgrade__DelayMinutes=0 \
     exec dotnet "$dll" --urls "http://127.0.0.1:$port" ) >"$applog" 2>&1 &
   app_pid=$!
   for _ in $(seq 1 120); do
@@ -124,7 +126,20 @@ fi
 build "$to_dir" "$to_label"
 start_app "$to_dir" "$to_label"
 ready="$(curl -sS "http://127.0.0.1:$port/health" || true)"
+# BUG-644: the integrity upgrade runs in the background once the app serves (Integrity:Upgrade:DelayMinutes, 0 here).
+# Wait for its marker; a run that logs it didn't finish, or no marker in time, fails the test.
+log "Waiting for the background integrity upgrade"
+marked=""
+for _ in $(seq 1 300); do
+  marked="$(sql "SELECT COUNT(*) FROM [$db].dbo.AppSettings WHERE [Key] = 'Integrity:RowHashFormat' AND [Value] = '4'" || true)"
+  [[ "$marked" = "1" ]] && break
+  grep -qE "integrity upgrade (didn't finish|failed|couldn't record)" "$work/app-$to_label.log" && break
+  kill -0 "$app_pid" 2>/dev/null || break
+  sleep 2
+done
+grep -iE "integrity upgrade" "$work/app-$to_label.log" | tail -5 || true
 stop_app
+[[ "$marked" = "1" ]] || { tail -40 "$work/app-$to_label.log"; fail "$to_label's background integrity upgrade didn't write its marker"; }
 [[ "$ready" = "Healthy" ]] || { grep -iE "health|unhealthy|fail" "$work/app-$to_label.log" | tail -20; \
   fail "$to_label started but /health reported '$ready'"; }
 

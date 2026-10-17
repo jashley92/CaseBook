@@ -217,12 +217,21 @@ runs a one-time integrity upgrade; read **Integrity upgrade** below before deplo
   edit unlinked to restore earlier wording, a stage-gate requirement weakened in the database, and a note or
   timeline entry hidden without a successor or retraction. Reports are now hashed records: renaming who generated
   one, marking a draft final, renumbering or deleting one is caught.
-  - On first start, CaseBook records every honest row against its audit trail (one audited "CaseBook upkeep" entry
-    per row, not counted as activity or changes after closure), logs any row it couldn't record, and only then sets
-    `Integrity:RowHashFormat=4` and makes the check strict. If any step fails it logs a warning and the check stays
-    as it was; the next start tries again. A row that disagrees with its trail is left unrecorded and reported.
-  - Start-up fills of a reported case's jurisdictions and a notice's deadline no longer sign off a row changed in
-    the database. A start-up fill that fails is a warning, not a stopped service.
+  - After the first start, CaseBook records every honest row against its audit trail (one audited "CaseBook upkeep"
+    entry per row, not counted as activity or changes after closure), logs any row it couldn't record, and only then
+    sets `Integrity:RowHashFormat=4` and makes the check strict. It runs in the background, starting once the app has
+    been up for 15 minutes (`Integrity:Upgrade:DelayMinutes`; keep it above the upgrade script's 11-minute warm-up, so
+    a build that fails its warm-up is rolled back before any row is rewritten), and logs its progress. Until it
+    finishes the check is as before. Measured on SQL Server 2022: a few seconds per 100,000 records already recorded
+    (most of a v1.6.12 database), under a minute per 100,000 it records (records last saved before v1.5.1); allow
+    several times that on a remote server. A shutdown part way, or a failure, leaves what it recorded and the next
+    start carries on; a failure that won't clear on its own is logged as an error. A row that disagrees with its
+    trail is left unrecorded and reported.
+  - Start-up fills (a reported case's jurisdictions, a notice's deadline, the hash of an older status, assignment or
+    citation record) no longer sign off a row changed in the database, including one whose older-format hash didn't
+    cover the changed value or whose hash was cleared, and never overwrite a save made at the same moment. A start-up
+    fill that fails is logged, not a stopped service.
+  - Once strict, a record deleted in the database is reported however old its last trail entry.
   - Tested upgrading from v1.0.0, v1.4.0, v1.5.0, v1.5.9 and v1.6.12 on SQL Server 2022: no false alarms, and
     tampering after the upgrade is caught.
 - **Regulator deadlines.** A second regulator on the same deadline gets its own at-risk and breached reminders

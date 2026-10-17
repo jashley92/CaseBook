@@ -31,17 +31,26 @@ whether a hash in an older format falls short of a record (it holds a value that
 change; `CanonicalCoverageTests` changes every stored value of every record and requires the hash to change, or the
 value to be listed with the reason it's left out.
 
-**The upgrade and the strict check (C18).** At the first start of this release, after the back-fills,
-`RowHashUpgrade` looks at every record in every hashed table. One with no hash, or whose latest entry records none (last
+**The upgrade and the strict check (C18).** After the first start of this release, `RowHashUpgrade` looks at every
+record in every hashed table. BUG-644: it runs in the background (`RowHashUpgradeHostedService`), once the app has
+been up and serving for `Integrity:Upgrade:DelayMinutes` (default 15), not during start-up: on a large database it
+held the first start past IIS's 600 s start-up limit. The delay is longer than the upgrade script's warm-up (660 s), so
+a build that fails its warm-up is rolled back before the upgrade has rewritten a row (BUG-645). It works one table at a
+time in batches of 200, logs its progress, stops cleanly at a shutdown, and runs once at a time; what it recorded stays
+recorded and the next start carries on. Measured on SQL Server 2022 (local, `RowHashUpgradeThroughputTests`): about
+48,000 records a second it only reads (a few seconds per 100,000 records whose trail already records their hash, as
+v1.6.12 leaves most) and about 2,700 a second it records (under a minute per 100,000 from an older release); allow
+several times that with a remote server or larger records. One with no hash, or whose latest entry records none (last
 updated before v1.5.1), gets its hash recorded as an audited change when it agrees with what its trail last recorded
 (`TrailSnapshot`: everything its hash covers that the trail recorded is still as recorded; a case's data elements and a
 step's tactics must be in the trail too) or, with no trail, when it still holds what a released migration wrote
 (`MigrationSeededRows`: the close gate's requirements, the report templates the library migration made). One whose hash
-doesn't cover what it holds is re-hashed in format 4 the same way. Anything else is left, logged at start-up, and
-reported by the check. Then it writes the AppSetting `Integrity:RowHashFormat` = `4`, and from then on the record check is
+doesn't cover what it holds is re-hashed in format 4 the same way. Anything else is left, logged, and reported by the
+check. Then it writes the AppSetting `Integrity:RowHashFormat` = `4`, and from then on the record check is
 strict: a record with no hash (in any table, planted or with its hash cleared, BUG-620/621), one whose latest entry
-records no hash (rewritten with its hash recomputed, BUG-629), one holding a value its hash's format doesn't cover, and
-a note or timeline entry marked not current that no later version replaced and that wasn't retracted (hidden,
+records no hash (rewritten with its hash recomputed, BUG-629), one holding a value its hash's format doesn't cover, a
+record the trail records that is no longer there whatever its latest entry (BUG-648: CaseBook records every removal),
+and a note or timeline entry marked not current that no later version replaced and that wasn't retracted (hidden,
 BUG-634) are all flagged. If the upgrade fails part way nothing is marked, the check stays as it was, and the next start
 carries on. A batch whose save fails is saved one record at a time, so one record that won't save doesn't hold up the
 rest (BUG-641); it's logged, and nothing is marked while there is one, since it agrees with its trail and the strict
@@ -54,9 +63,12 @@ refused). Changes after closure, the activity feed, the Desk, team workload, the
 sort leave those entries out. Upkeep re-hashes what it fills in, so it never signs off a row changed outside CaseBook
 (BUG-639): before an upkeep save, `AuditChainInterceptor` checks each row it changes as it was read. It must match its
 stored hash, and that hash must be the one its trail last recorded; where the trail records none, the row must agree
-with its trail as the upgrade requires, and the check must not be strict yet. A row that fails is put back unchanged,
-so the back-fill skips it and the check keeps reporting it. The upgrade's own saves change only the hash, and the
-upgrade has already checked those rows.
+with its trail as the upgrade requires, and the check must not be strict yet; where its hash is in an older format
+(which leaves out values format 4 brought in, such as a case's kept jurisdictions), it must agree with its trail too
+(BUG-646). A row that fails is put back unchanged, so the back-fill skips it and the check keeps reporting it. The
+upgrade's own saves change only the hash, and the upgrade has already checked those rows. BUG-657: an upkeep save waits
+for the chain's gate before it checks its rows, and a row whose stored hash isn't the one it was read with (someone saved
+it meanwhile) is put back too, so the upkeep never overwrites a newer save with a hash of the row as it read it.
 | Hash chain | Every change appends an `AuditLog` row whose hash covers the previous row's hash | Inserted, deleted, reordered or edited history | `AuditChainInterceptor`, `HashChainService` |
 | Signed seals | Periodic RSA signature over the chain head, stored in the database and as files out of band | A competent rewrite that recomputes every hash | `IntegrityService`, `RsaSealSigner`, `FileSealStore` |
 | Ledger (optional) | SQL Server append-only ledger tables plus external digests | Any UPDATE or DELETE, even by `sysadmin`; page-level tampering | `deploy/sql/02-Enable-Ledger.sql` |
@@ -186,7 +198,8 @@ flowchart TB
   on that table isn't flagged until the upgrade has run (see *The upgrade and the strict check* above). The
   transition, assignment and citation tables (status, classification, materiality, severity, assignment and verdict
   changes, case assignments, evidence citations) became hashable later (BUG-70): at startup `RowHashBackfill` gives
-  their rows the trail records a hash, without an audit entry, and in those tables a row the trail never recorded is
+  their rows the trail records a hash, as CaseBook's upkeep, when the row agrees with its trail (BUG-647: one changed
+  with its hash cleared isn't re-hashed; once the check is strict it doesn't run), and in those tables a row the trail never recorded is
   flagged whether or not it has a hash (so an assignment inserted to gain access to a restricted case shows). The upgrade
   test runs this check on a database upgraded from a release. A new `IHashableEntity`
   must be added to `RowIntegrityVerifier.Tables` (a test fails until it is).

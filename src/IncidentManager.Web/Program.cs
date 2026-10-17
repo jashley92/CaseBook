@@ -76,6 +76,10 @@ builder.Services.AddApplication();
 builder.Services.Configure<AutoSealOptions>(builder.Configuration.GetSection("Integrity:AutoSeal"));
 builder.Services.AddHostedService<IntegritySealHostedService>();
 
+// --- C18 / BUG-644: the one-time integrity upgrade, in the background once the app has served a while ---
+builder.Services.Configure<RowHashUpgradeOptions>(builder.Configuration.GetSection("Integrity:Upgrade"));
+builder.Services.AddHostedService<RowHashUpgradeHostedService>();
+
 // --- F-17: periodic evidence-at-rest re-verification (re-hash stored bytes, alarm on drift) ---
 builder.Services.Configure<EvidenceVerifyOptions>(builder.Configuration.GetSection("Integrity:EvidenceVerify"));
 builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
@@ -349,21 +353,36 @@ using (var scope = app.Services.CreateScope())
         app.Services.GetRequiredService<IChainKeyring>(), db);
     await DevDataSeeder.InitializeAsync(db, clock, seedDemoData: app.Environment.IsDevelopment(),
         evidence: scope.ServiceProvider.GetService<IEvidenceStore>());
-    // BUG-70: rows of the tables that became hashable get their row hash (a no-op once they all have one).
-    await IncidentManager.Infrastructure.Persistence.RowHashBackfill.RunAsync(db,
-        scope.ServiceProvider.GetRequiredService<IHashChainService>());
-    // WF-11: reported cases record the jurisdictions in play when they were reported (a no-op once all do).
-    // BUG-288: a failure here (a timeout on a large database) is retried at the next start; until then a case without
-    // its frozen set is judged against today's jurisdictions, as before the back-fill existed.
-    // BUG-641: its writes are audited saves now, which can also fail as a lost race, a value too long for its column, or
-    // a refused change (InvalidOperationException): each a warning, never a start-up that fails.
+    // BUG-288: a start-up fill that fails (a timeout on a large database) is retried at the next start. BUG-641: their
+    // writes are audited saves now, which can also fail as a lost race, a value too long for its column, or a refused
+    // change (InvalidOperationException): never a start-up that fails.
     static bool UpkeepFailed(Exception ex) =>
         ex is Microsoft.EntityFrameworkCore.DbUpdateException or System.Data.Common.DbException or TimeoutException
             or IncidentManager.Application.Cases.ConcurrentEditException or ArgumentException or InvalidOperationException;
+    // BUG-657: a warning when a later start may get through (a timeout, a lock, a lost race); an error when it won't (a
+    // query the database can't run, a refused change), which only a fix clears.
+    void LogUpkeepFailure(Exception ex, string message)
+    {
+        if (RowHashUpgradeHostedService.IsDefect(ex)) app.Logger.LogError(ex, "{Message} It won't clear on its own: report it.", message);
+        else app.Logger.LogWarning(ex, "{Message}", message);
+    }
+    // BUG-70: rows of the tables that became hashable get their row hash (a no-op once they all have one, or once the
+    // integrity upgrade has run). BUG-647: a failure is logged like the fills below, not a start-up that fails.
+    try
+    {
+        await IncidentManager.Infrastructure.Persistence.RowHashBackfill.RunAsync(db,
+            scope.ServiceProvider.GetRequiredService<IHashChainService>());
+    }
+    catch (Exception ex) when (UpkeepFailed(ex))
+    {
+        LogUpkeepFailure(ex, "Couldn't record the hashes of earlier status, assignment and citation records; it's tried again at the next start.");
+    }
+    // WF-11: reported cases record the jurisdictions in play when they were reported (a no-op once all do). Until then
+    // a case without its frozen set is judged against today's jurisdictions, as before the back-fill existed.
     try { await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db); }
     catch (Exception ex) when (UpkeepFailed(ex))
     {
-        app.Logger.LogWarning(ex, "Couldn't record the jurisdictions in play on earlier reported cases; it's tried again at the next start.");
+        LogUpkeepFailure(ex, "Couldn't record the jurisdictions in play on earlier reported cases; it's tried again at the next start.");
     }
     // WF-77: notices recorded before their deadline was kept get it now (today's rules are the best record there is).
     try
@@ -375,30 +394,12 @@ using (var scope = app.Services.CreateScope())
     // back-fill is worth a warning, not a start-up that fails and an upgrade that rolls back after its migrations.
     catch (Exception ex) when (UpkeepFailed(ex))
     {
-        app.Logger.LogWarning(ex, "Couldn't record the deadlines of earlier regulator notices; past quarters' notice figures use today's rules.");
+        LogUpkeepFailure(ex, "Couldn't record the deadlines of earlier regulator notices; past quarters' notice figures use today's rules.");
     }
 
-    // C18: once, after the back-fills above (their writes are audited): record the hash of every record that matches its
-    // trail (or holds what a migration wrote), re-hash those a hash didn't cover, then make the record check strict. A
-    // failure leaves the check as it was and is tried again at the next start.
-    try
-    {
-        var upgrade = await IncidentManager.Infrastructure.Persistence.RowHashUpgrade.RunAsync(db,
-            scope.ServiceProvider.GetRequiredService<IHashChainService>(), clock);
-        if (upgrade.Marked)
-            app.Logger.LogInformation("Integrity upgrade: recorded the hash of {Recorded} record(s); the record check is now strict.", upgrade.Recorded);
-        foreach (var row in upgrade.Left.Take(50))
-            app.Logger.LogWarning("Integrity upgrade left {Record} unrecorded.", row);
-        if (upgrade.Left.Count > 50)
-            app.Logger.LogWarning("Integrity upgrade left {More} more record(s) unrecorded.", upgrade.Left.Count - 50);
-        // BUG-641: one it couldn't save keeps the check as it was until a later start records it.
-        if (!upgrade.Marked && upgrade.Left.Count > 0)
-            app.Logger.LogWarning("The integrity upgrade couldn't record every record; the record check stays as before and the upgrade runs again at the next start.");
-    }
-    catch (Exception ex) when (UpkeepFailed(ex))
-    {
-        app.Logger.LogWarning(ex, "The integrity upgrade didn't finish; the record check stays as before and the upgrade runs again at the next start.");
-    }
+    // C18: after the back-fills above (their writes are audited), RowHashUpgradeHostedService records the hash of every
+    // record that matches its trail and makes the record check strict. BUG-644: not here, before the app serves: on a
+    // large database it held the first start past IIS's start-up limit.
 
     // Seed system roles (from code) and migrate the file-based AD mapping into the DB on first run,
     // then prime the in-memory role directory so authentication resolves permissions immediately.

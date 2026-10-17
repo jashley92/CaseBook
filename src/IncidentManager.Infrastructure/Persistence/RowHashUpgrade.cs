@@ -4,6 +4,7 @@ using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace IncidentManager.Infrastructure.Persistence;
 
@@ -26,23 +27,41 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// step fails, nothing is marked and the check stays as it was; what was recorded stays recorded (each is an ordinary
 /// audited change), and the next start carries on. BUG-641: a row whose hash won't save is named in the result and the
 /// others are still recorded, but nothing is marked while there's one. Once marked it does nothing.
+/// BUG-644: it runs in the background once the app has been serving a while (RowHashUpgradeHostedService), not before
+/// start-up finishes, so a large database can't hold the first start past its time limit. It works in batches, one
+/// table at a time, so a stop (a shutdown) part way leaves what's recorded recorded and the next start carries on; one
+/// run at a time.
 /// </summary>
 public static class RowHashUpgrade
 {
     private const int Batch = 200;
 
+    // BUG-644: one run at a time in the process; a second waits, then finds the marker written.
+    private static readonly SemaphoreSlim Running = new(1, 1);
+
     /// <summary>What the upgrade did: how many records it recorded, the ones it left (each "Type id: why"), and whether it
     /// marked the check strict (false when it had already).</summary>
     public sealed record Result(int Recorded, IReadOnlyList<string> Left, bool Marked);
 
-    public static async Task<Result> RunAsync(AppDbContext db, IHashChainService hasher, IClock clock, CancellationToken ct = default)
+    public static async Task<Result> RunAsync(AppDbContext db, IHashChainService hasher, IClock clock, ILogger? log = null,
+        CancellationToken ct = default)
+    {
+        await Running.WaitAsync(ct);
+        try { return await RunOnceAsync(db, hasher, clock, log, ct); }
+        finally { Running.Release(); }
+    }
+
+    private static async Task<Result> RunOnceAsync(AppDbContext db, IHashChainService hasher, IClock clock, ILogger? log, CancellationToken ct)
     {
         if (await RowIntegrityVerifier.UpgradedAsync(db, ct)) return new Result(0, [], false);
 
-        // Each record's latest entry, as the check reads them.
+        // Each record's latest entry, as the check reads them. BUG-644: only what that needs (not the before-values).
         var records = new RowIntegrityVerifier.ChainRecords();
-        await foreach (var e in db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).AsAsyncEnumerable().WithCancellation(ct))
+        await foreach (var e in db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence)
+                           .Select(a => new AuditLogEntry { Sequence = a.Sequence, Action = a.Action, EntityType = a.EntityType, EntityId = a.EntityId, AfterJson = a.AfterJson })
+                           .AsAsyncEnumerable().WithCancellation(ct))
             records.Add(e);
+        log?.LogInformation("Integrity upgrade: read the audit trail (to entry {Head}).", records.Head);
         var gates = await db.StageGates.AsNoTracking().ToDictionaryAsync(g => g.Id, g => (int)g.Trigger, ct);
         var lookup = new MigrationSeededRows.Lookup(
             async (type, id) => (await TrailSnapshot.ForAsync(db, type, [id.ToString()], ct)).GetValueOrDefault(id.ToString()), gates);
@@ -54,32 +73,45 @@ public static class RowHashUpgrade
         {
             var type = table.ElementType.Name;
             var tableName = db.Model.FindEntityType(table.ElementType)?.GetTableName() ?? type;
-            var todo = new List<(IHashableEntity Row, Need Need)>();
+            // BUG-644: which records need anything, then those in batches: each batch read again, so a batch is all that's
+            // held, and a record changed by someone since is judged as it is now.
+            var todo = new List<Guid>();
             await foreach (var row in table.AsAsyncEnumerable().WithCancellation(ct))
-                if (Assess(row, records, hasher) is { } need) todo.Add((row, need));
+                if (Assess(row, records, hasher) is not null) todo.Add(((Entity)row).Id);
             if (todo.Count == 0) continue;
+            log?.LogInformation("Integrity upgrade: {Count} {Type} record(s) to record.", todo.Count, type);
 
-            var trails = await TrailSnapshot.ForAsync(db, type, todo.Select(t => ((Entity)t.Row).Id.ToString()).ToList(), ct);
-            var ok = new List<Guid>();
-            foreach (var (row, need) in todo)
+            var done = 0;
+            foreach (var chunk in todo.Chunk(Batch))
             {
-                var id = ((Entity)row).Id;
-                var trail = trails.GetValueOrDefault(id.ToString());
-                var why = need switch
+                var rows = await table.Where(r => chunk.Contains(((Entity)(object)r).Id)).ToListAsync(ct);
+                var trails = await TrailSnapshot.ForAsync(db, type, rows.Select(r => ((Entity)r).Id.ToString()).ToList(), ct);
+                var ok = new List<Guid>();
+                foreach (var row in rows)
                 {
-                    Need.Seeded or Need.ClearedByMigration =>
-                        await MigrationSeededRows.HoldsWhatAMigrationWroteAsync(tableName, row, need == Need.Seeded ? null : trail, lookup)
-                            ? null
-                            : need == Need.Seeded ? "in no audit entry, and not as a released migration wrote it"
-                            : "its hash was cleared, and it isn't as the migration that cleared it wrote it",
-                    _ when trail is null || !trail.Agrees(row) => "it doesn't agree with its audit trail",
-                    _ => null,
-                };
-                why ??= ChildOutsideTheTrail(row, records);
-                if (why is null) ok.Add(id);
-                else left.Add($"{type} {id}: {why}");
+                    if (Assess(row, records, hasher) is not { } need) continue;
+                    var id = ((Entity)row).Id;
+                    var trail = trails.GetValueOrDefault(id.ToString());
+                    var why = need switch
+                    {
+                        Need.Seeded or Need.ClearedByMigration =>
+                            await MigrationSeededRows.HoldsWhatAMigrationWroteAsync(tableName, row, need == Need.Seeded ? null : trail, lookup)
+                                ? null
+                                : need == Need.Seeded ? "in no audit entry, and not as a released migration wrote it"
+                                : "its hash was cleared, and it isn't as the migration that cleared it wrote it",
+                        _ when trail is null || !trail.Agrees(row) => "it doesn't agree with its audit trail",
+                        _ => null,
+                    };
+                    why ??= ChildOutsideTheTrail(row, records);
+                    if (why is null) ok.Add(id);
+                    else left.Add($"{type} {id}: {why}");
+                }
+                recorded += await RecordAsync(db, table, type, ok, unsaved, ct);
+                done += chunk.Length;
+                if (done % (Batch * 25) == 0 || done == todo.Count)
+                    log?.LogInformation("Integrity upgrade: {Type}: {Done} of {Count} looked at; {Recorded} record(s) recorded so far.",
+                        type, done, todo.Count, recorded);
             }
-            recorded += await RecordAsync(db, table, type, ok, unsaved, ct);
         }
 
         // BUG-641: a row that agrees with its trail but whose hash couldn't be saved would be reported as changed outside
