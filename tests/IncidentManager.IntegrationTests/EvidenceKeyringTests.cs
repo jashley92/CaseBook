@@ -212,6 +212,45 @@ public sealed class EvidenceKeyringTests : IDisposable
     }
 
     [Fact]
+    public async Task A_malware_stand_in_is_never_readable_on_disk_and_comes_back_whole_and_zipped()
+    {
+        // The EICAR anti-malware test file, assembled here so this source file never holds it whole (antivirus would
+        // quarantine the source or the build). Every antivirus product treats it as malware.
+        var eicar = System.Text.Encoding.ASCII.GetBytes(string.Concat(@"X5O!P%@AP[4\PZX54(P^)7CC)7}$", "EICAR-STANDARD-ANTIVIRUS", "-TEST-FILE!$H+H*"));
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("CaseBook recovery");
+        var ring = Ring(On(server, RecoveryCer(recovery)));
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+
+        var stored = await store.SaveAsync(Guid.NewGuid(), new MemoryStream(eicar));
+        var onDisk = await File.ReadAllBytesAsync(Path.Combine(Evidence, stored.StoragePath));
+        onDisk.AsSpan().IndexOf("EICAR"u8).Should().Be(-1, "the sample is encrypted from the first byte, so antivirus on the server never sees it");
+        Directory.GetFiles(Evidence, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith("evidence-key.json", StringComparison.Ordinal))
+            .Should().ContainSingle("no plain temporary copy is left (beside the stored file, only the key envelope)");
+        EvidenceRisk.IsRisky("eicar.com", "application/octet-stream", eicar).Should().BeTrue("a .com is offered as a safe zip first");
+
+        // Zipped as the safe download does it (EvidenceDownloadEndpoints): ZipCrypto, "infected", streamed from the store.
+        using var zipped = new MemoryStream();
+        await using (var content = await store.OpenReadAsync(stored.StoragePath))
+        using (var zip = new ICSharpCode.SharpZipLib.Zip.ZipOutputStream(zipped) { IsStreamOwner = false, Password = EvidenceRisk.ZipPassword })
+        {
+            zip.SetLevel(1);
+            zip.PutNextEntry(new ICSharpCode.SharpZipLib.Zip.ZipEntry(EvidenceRisk.EntryName("eicar.com")) { Size = eicar.Length, AESKeySize = 0 });
+            await content.CopyToAsync(zip);
+            zip.CloseEntry();
+            zip.Finish();
+        }
+        zipped.ToArray().AsSpan().IndexOf("EICAR"u8).Should().Be(-1, "the zip doesn't carry the sample readable either");
+        zipped.Position = 0;
+        using var reader = new ICSharpCode.SharpZipLib.Zip.ZipFile(zipped) { Password = EvidenceRisk.ZipPassword };
+        using var unzipped = new MemoryStream();
+        using (var entry = reader.GetInputStream(reader[0])) await entry.CopyToAsync(unzipped);
+        unzipped.ToArray().Should().Equal(eicar, "the analyst gets the sample exactly as recorded");
+        Convert.ToHexString(SHA256.HashData(unzipped.ToArray())).ToLowerInvariant().Should().Be(stored.Sha256);
+    }
+
+    [Fact]
     public async Task Each_envelope_copy_restores_the_others_and_a_damaged_one_is_rewritten()
     {
         var server = Installed("CaseBook evidence server");
