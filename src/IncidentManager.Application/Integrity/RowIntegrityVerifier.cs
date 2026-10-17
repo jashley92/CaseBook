@@ -118,7 +118,7 @@ public static class RowIntegrityVerifier
 
         // A record the chain last recorded as created or changed (with a row hash, so after row hashes existed) that is
         // no longer in its table was deleted outside CaseBook: the app records every removal.
-        var missing = recorded.All.Where(r => IsMissing(r.Key, r.Value, tableOf, present)).Select(r => r.Key).ToList();
+        var missing = recorded.All.Where(r => IsMissing(r.Key, r.Value, tableOf, present, strict)).Select(r => r.Key).ToList();
         var lineage = await LineageAsync(db, strict, ct);
         if (recheck is null)
             return missing.Select(k => Missing(k, recorded)).FirstOrDefault() ?? lineage;
@@ -135,7 +135,7 @@ public static class RowIntegrityVerifier
             suspects = still;
             var gone = new List<(string Type, string Id)>();
             foreach (var key in missing)
-                if (recorded.TryGet(key, out var last) && IsMissing(key, last, tableOf, present)
+                if (recorded.TryGet(key, out var last) && IsMissing(key, last, tableOf, present, strict)
                     && (!Guid.TryParse(key.Id, out var gid) || await Reread(db, tableOf[key.Type], gid, ct) is null))
                     gone.Add(key);
             missing = gone;
@@ -229,10 +229,12 @@ public static class RowIntegrityVerifier
     }
 
     // BUG-153: in the tables made hashable later, every row is in the trail, so a missing one counts even when its latest
-    // entry predates row hashes.
+    // entry predates row hashes. BUG-648: and in every table once the check is strict: CaseBook records every removal
+    // (each delete of a hashed row, and of the rows under it, is a tracked one), so a record whose latest entry predates
+    // row hashes and that is gone was deleted outside it.
     private static bool IsMissing((string Type, string Id) key, (string? Hash, long Sequence, bool Deleted) last,
-        Dictionary<string, int> tableOf, HashSet<(string, string)> present) =>
-        !last.Deleted && (last.Hash is not null || HashedFromUpgrade.Contains(key.Type)) && tableOf.ContainsKey(key.Type)
+        Dictionary<string, int> tableOf, HashSet<(string, string)> present, bool strict) =>
+        !last.Deleted && (strict || last.Hash is not null || HashedFromUpgrade.Contains(key.Type)) && tableOf.ContainsKey(key.Type)
         && !present.Contains(key);
 
     // One record re-read by id from its table (index into Tables), with what its hash covers.

@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -13,13 +14,17 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// be recomputed by whoever edited the row, and a row deleted outright left nothing to miss. v1.5.2 wrote the hashes
 /// directly, so a row it filled whose latest entry holds no hash is recorded too, as long as it still matches its hash
 /// (one that doesn't is left for the check to report). Once every row is recorded this does nothing.
+/// BUG-647: a row is recorded only when it agrees with its trail (<see cref="TrailSnapshot.Agrees"/>), as the upgrade
+/// asks, so a row changed in the database with its hash cleared isn't re-hashed from what it holds now; the hash is saved
+/// as CaseBook's upkeep; and once the upgrade has made the check strict (every row recorded), it doesn't run at all.
 /// </summary>
 public static partial class RowHashBackfill
 {
     private const int Batch = 500;
 
     public static async Task<int> RunAsync(AppDbContext db, IHashChainService hasher, CancellationToken ct = default) =>
-        await FillAsync(db, db.ClassificationChanges, hasher, ct)
+        await RowIntegrityVerifier.UpgradedAsync(db, ct) ? 0   // BUG-647: a hashless row now is one the check reports
+        : await FillAsync(db, db.ClassificationChanges, hasher, ct)
         + await FillAsync(db, db.StatusChanges, hasher, ct)
         + await FillAsync(db, db.MaterialityChanges, hasher, ct)
         + await FillAsync(db, db.SeverityChanges, hasher, ct)
@@ -82,17 +87,22 @@ public static partial class RowHashBackfill
         {
             db.ChangeTracker.Clear();
             var rows = await set.Where(x => chunk.Contains(x.Id)).ToListAsync(ct);
+            var trails = await TrailSnapshot.ForAsync(db, type, rows.Select(r => r.Id.ToString()).ToList(), ct);
             foreach (var row in rows)
             {
                 if (row.RowHash is { } stored && !hasher.RowHashMatches(row, stored)) continue;   // changed since: reported
                 if (matchesTrail is not null && !matchesTrail(row, entries.Where(e => string.Equals(e.EntityId, row.Id.ToString(), StringComparison.OrdinalIgnoreCase))
                         .OrderBy(e => e.Sequence).Select(e => (e.Action, e.Summary)).ToList()))
                     continue;   // WF-43: disagrees with its trail: left for the check to report
+                // BUG-647: nor when what it holds isn't what its trail records (its hash cleared to hide a change).
+                if (!trails.TryGetValue(row.Id.ToString(), out var trail) || !trail.Agrees(row)) continue;
                 row.RowHash = hasher.ComputeRowHash(row);
                 db.Entry(row).Property(x => x.RowHash).IsModified = true;   // an audited update that records the hash
                 recorded++;
             }
-            await db.SaveChangesAsync(ct);
+            db.PendingUpkeep = true;   // BUG-647: CaseBook's upkeep, not a change to the record
+            try { await db.SaveChangesAsync(ct); }
+            finally { db.PendingUpkeep = false; }
         }
         db.ChangeTracker.Clear();
         return recorded;

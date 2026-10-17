@@ -464,6 +464,61 @@ public sealed class RowHashUpgradeTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task The_hash_back_fill_doesnt_re_hash_a_row_changed_with_its_hash_cleared(string provider /* BUG-647 */)
+    {
+        using var database = Seeded(provider);
+        List<Guid> ids;
+        await using (var db = database.NewContext()) ids = await db.StatusChanges.OrderBy(s => s.Id).Select(s => s.Id).Take(2).ToListAsync();
+        var (honest, changed) = (ids[0], ids[1]);
+        // As before BUG-70: neither hashed, nor in a trail that records a hash. Then one changed in the database.
+        foreach (var id in ids) await UnrecordHashAsync(database, nameof(StatusChange), id, createToo: true);
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            await raw.StatusChanges.Where(s => ids.Contains(s.Id)).ExecuteUpdateAsync(s => s.SetProperty(x => x.RowHash, (string?)null));
+            await raw.StatusChanges.Where(s => s.Id == changed).ExecuteUpdateAsync(s => s.SetProperty(x => x.ChangedBy, "mallory"));
+        }
+
+        await using (var db = database.NewContext()) await RowHashBackfill.RunAsync(db, _hasher);
+        await using (var db = database.NewContext())
+        {
+            (await db.StatusChanges.AsNoTracking().SingleAsync(s => s.Id == honest)).RowHash.Should().NotBeNull("a row that agrees with its trail is recorded");
+            (await db.StatusChanges.AsNoTracking().SingleAsync(s => s.Id == changed)).RowHash.Should().BeNull("a row that doesn't isn't re-hashed");
+            var key = honest.ToString();
+            (await db.AuditLog.AsNoTracking().Where(a => a.EntityType == nameof(StatusChange) && a.EntityId == key)
+                .OrderByDescending(a => a.Sequence).FirstAsync()).Reason.Should().Be(IntegrityUpkeep.Reason);
+        }
+        var bad = await VerifyRecordsAsync(database);
+        bad!.Id.Should().Be(changed, "the change is still reported");
+
+        (await UpgradeAsync(database)).Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(StatusChange)} {changed}");
+        await using (var db = database.NewContext()) (await RowHashBackfill.RunAsync(db, _hasher)).Should().Be(0, "once strict it does nothing");
+        bad = await VerifyRecordsAsync(database);
+        bad!.Id.Should().Be(changed);
+        bad.Detail.Should().Contain("has no hash");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_row_from_before_row_hashes_deleted_in_the_database_is_caught_once_strict(string provider /* BUG-648 */)
+    {
+        using var database = Seeded(provider);
+        Guid id;
+        await using (var db = database.NewContext())
+            id = await db.ActionItems.Where(a => !db.ActionItemComments.Any(c => c.ActionItemId == a.Id)).Select(a => a.Id).FirstAsync();
+        await UnrecordHashAsync(database, nameof(ActionItem), id, createToo: true);   // its trail from before row hashes
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+            await raw.ActionItems.Where(a => a.Id == id).ExecuteDeleteAsync();
+        (await VerifyRecordsAsync(database))?.Detail.Should().BeNull("before the upgrade a removal it can't date isn't flagged");
+
+        (await UpgradeAsync(database)).Marked.Should().BeTrue();
+        var bad = await VerifyRecordsAsync(database);
+        bad.Should().NotBeNull("a task the trail records, deleted outside CaseBook, is caught once every record's hash is recorded");
+        bad!.Id.Should().Be(id);
+        bad.Detail.Should().Contain("is missing");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_failed_upgrade_marks_nothing_and_the_check_stays_as_it_was(string provider)
     {
         using var database = Seeded(provider);
