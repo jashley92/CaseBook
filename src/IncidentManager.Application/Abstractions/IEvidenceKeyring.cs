@@ -5,7 +5,9 @@ public enum EvidenceKeyState
 {
     /// <summary>Not turned on (Storage:Encryption:Enabled is false): files are stored as they arrive.</summary>
     Off,
-    /// <summary>Turned on, but there's no integrity certificate or chain key to protect the key with.</summary>
+    /// <summary>Turned on, but there's no integrity certificate or chain key to protect the key with, and no key exists yet:
+    /// files are stored as they arrive and Diagnostics says what to configure. (Once a key exists, losing its protection is
+    /// <see cref="Unavailable"/>: nothing is stored unencrypted beside files that are.)</summary>
     NotConfigured,
     /// <summary>The key exists, but no backup does yet (no recovery certificate, no shares issued): files are stored as
     /// they arrive until one does, so one lost certificate can't lose everything.</summary>

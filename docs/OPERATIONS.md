@@ -384,7 +384,7 @@ as before and Diagnostics says why.
    chain key when it's on, without the server. Expiry doesn't matter for recovery; Diagnostics notes it.
 2. **Shares.** On the server, as an administrator: `deploy\keytool\casebook-keytool split --site <site folder>
    [--threshold 3] [--shares 5] [--out <folder>]`. Give each share (one line, `CBS1-…`) to a different person or safe,
-   on paper or USB, and delete the output folder. Any 3 rebuild the key; 2 reveal nothing. CaseBook records that
+   on paper or USB, and delete the output folder (`--out` makes it readable by administrators only). Any 3 rebuild the key; 2 reveal nothing. CaseBook records that
    shares were issued, never the shares. A holder checks theirs, on any machine, with `casebook-keytool check-share`.
 3. **The envelope**, kept by CaseBook in three places: the keys folder, the database (`KeyEnvelopes`) and beside the
    evidence (`<store>\.key\evidence-key.json`). A missing or damaged copy is rewritten from a good one at the next
@@ -421,8 +421,11 @@ it can't open.
 1. Install the new certificate (with its private key, not exportable) in `LocalMachine\My` on the server, and give
    the app-pool account read on its private key.
 2. As an administrator: `casebook-keytool recover --site <site folder> --pfx <recovery .pfx>` (or `--cert
-   <thumbprint>` for one on a smartcard, or `--shares`) `--to-cert <new thumbprint>`. Add `--chain-key` to rebuild
-   `chain-key.json` onto the same certificate when the chain key was lost with it.
+   <thumbprint>` for one on a smartcard, or `--shares`) `--to-cert <new thumbprint>`. The new certificate's private key
+   must be usable there, or nothing is changed. Add `--chain-key` to rebuild `chain-key.json` onto the same certificate
+   when the chain key was lost with it. It's refused if `chain-key.json` still opens on that server, or if the backup
+   carries a chain key the audit log has since stopped using (a rotation after the backup was made); an existing file
+   that doesn't open is kept beside the new one as `chain-key.json.replaced-<time>`.
 3. Set `Storage:Encryption:CertificateThumbprint` (or the chain key's or signing certificate's, whichever protected
    it) to the new thumbprint, and restart the app pool. Diagnostics shows **On**; run a drill.
 

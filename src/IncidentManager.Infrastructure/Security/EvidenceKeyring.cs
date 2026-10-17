@@ -110,6 +110,14 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         {
             var before = _now.State;
             var (loaded, health) = await CheckAsync(ct);
+            // Review finding 7: the daily check opens the same key again. Keep the array writers already hold (zeroing it
+            // under a save in progress would wrap that file's key under zeros) and drop the new copy instead.
+            if (_now.Key is { } held && loaded.Key is { } fresh && !ReferenceEquals(held, fresh)
+                && CryptographicOperations.FixedTimeEquals(held, fresh))
+            {
+                CryptographicOperations.ZeroMemory(fresh);
+                loaded = loaded with { Key = held };
+            }
             Replace(loaded);
             Health = health;
             // Before the first load the state reads Unavailable ("not loaded yet"), so the first load always logs: a key
@@ -150,7 +158,8 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
 
     // ---- the check ----
 
-    private sealed record Protection(string Describe, string Kind, string Ref, Func<byte[], string> Wrap, Func<WrappedKey, byte[]?> Unwrap);
+    private sealed record Protection(string Describe, string Kind, string Ref, Func<byte[], string> Wrap, Func<WrappedKey, byte[]?> Unwrap,
+        bool CanWrap = true);
 
     private async Task<(Loaded, EvidenceKeyHealth)> CheckAsync(CancellationToken ct)
     {
@@ -159,38 +168,54 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         if (!_options.Enabled)
             return (new Loaded(EvidenceKeyState.Off, null, null, null), Report(EvidenceKeyState.Off, null, null, copies, [], null, warnings));
 
+        // The copies: the keys folder first (it's authoritative), then the database's (every row, newest first: review
+        // finding 5, a row for another key mustn't hide this one's), then the one beside the evidence.
+        var fileJson = ReadFile(EnvelopePath, "keys folder", copies, ct);
+        var (dbRows, dbReadable) = await ReadDatabaseAsync(copies, ct);
+        var rootJson = ReadFile(EvidenceRootEnvelopePath, "beside the evidence", copies, ct);
+        var all = new[] { fileJson }.Concat(dbRows).Append(rootJson).ToList();
+        var named = all.Select(KeyEnvelope.Parse).OfType<KeyEnvelope>().Select(e => e.KeyId).Distinct().ToList();
+
         var protection = ResolveProtection(warnings);
         if (protection is null)
         {
+            // Review finding 10: with no envelope anywhere, encryption simply can't start yet (files are stored as before).
+            // With one, encryption was on and its protection was taken away: the key is unavailable, and nothing new is
+            // stored unencrypted beside files that are.
+            if (named.Count > 0)
+                return (new Loaded(EvidenceKeyState.Unavailable, null, null,
+                        $"Evidence is encrypted (key {string.Join(", ", named)}), but no certificate or chain key is configured to open " +
+                        "its key. Put back the setting that protected it (Storage:Encryption:CertificateThumbprint, Integrity:ChainKey or " +
+                        "Integrity:SigningKey), or recover the key onto a new certificate with casebook-keytool recover."),
+                    Report(EvidenceKeyState.Unavailable, null, null, copies, [], null, warnings));
             const string why = "There's no integrity certificate or chain key to protect the evidence key with. Set " +
                                "Integrity:ChainKey (Certificate) or Integrity:SigningKey (CertificateStore), or " +
                                "Storage:Encryption:CertificateThumbprint (OPERATIONS.md section 2).";
             return (new Loaded(EvidenceKeyState.NotConfigured, null, null, why), Report(EvidenceKeyState.NotConfigured, null, null, copies, [], null, warnings));
         }
 
-        // The copies: the keys folder first (it's authoritative), then the database's, then the one beside the evidence.
-        var fileJson = ReadFile(EnvelopePath, "keys folder", copies, ct);
-        var (dbJson, dbReadable) = await ReadDatabaseAsync(copies, ct);
-        var rootJson = ReadFile(EvidenceRootEnvelopePath, "beside the evidence", copies, ct);
-
         byte[]? key = null;
         KeyEnvelope? envelope = null;
-        foreach (var json in new[] { fileJson, dbJson, rootJson })
+        foreach (var json in all)
         {
             if (KeyEnvelope.Parse(json) is not { } e || Open(e, protection) is not { } k) continue;
             if (KeyWrap.KeyIdOf(k) != e.KeyId) { CryptographicOperations.ZeroMemory(k); continue; }
             (key, envelope) = (k, e);
             break;
         }
+        // The database copy compared and rewritten is this key's row (null when there's none yet).
+        var dbJson = envelope is null ? null : dbRows.FirstOrDefault(j => KeyEnvelope.Parse(j)?.KeyId == envelope.KeyId);
 
         if (key is null || envelope is null)
         {
-            var named = new[] { fileJson, dbJson, rootJson }.Select(KeyEnvelope.Parse).OfType<KeyEnvelope>().Select(e => e.KeyId).Distinct().ToList();
             if (named.Count > 0)
                 return Unavailable($"The evidence key envelope (key {string.Join(", ", named)}) can't be opened with {protection.Describe}. " +
                                    "Restore the certificate, or recover the key with casebook-keytool recover (a recovery certificate or the shares).");
             if (!dbReadable)
                 return Unavailable("The database couldn't be read to check whether an evidence key already exists, so no new key was made.");
+            // Review finding 6: a certificate that isn't in the store can't protect a new key; say so, don't throw.
+            if (!protection.CanWrap)
+                return Unavailable($"No evidence key exists yet, and {protection.Describe}, so none was made.");
             if (await EncryptedFileKeyIdAsync(ct) is { } inUse)
                 return Unavailable($"Files are encrypted with evidence key {inUse}, but no envelope for it was found in the keys folder, " +
                                    "the database or beside the evidence. Restore evidence-key.json from a backup, or recover the key with " +
@@ -201,7 +226,9 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         }
         else
         {
-            envelope = await UpkeepAsync(envelope, key, protection, fileJson, dbJson, rootJson, copies, warnings, ct);
+            var keyId = envelope.KeyId;
+            envelope = await UpkeepAsync(envelope, key, protection, fileJson, dbJson, rootJson,
+                all.Select(KeyEnvelope.Parse).OfType<KeyEnvelope>().Where(e => e.KeyId == keyId).ToList(), copies, warnings, ct);
         }
 
         var recovery = RecoveryStatus(envelope, warnings);
@@ -242,7 +269,8 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
                 warnings.Add(ex.Message);
                 // Still a protection: an envelope made under it names it, and opening it fails with the reason.
                 return new Protection($"certificate {CertificateLookup.Normalize(thumbprint)} ({whose}), which isn't in the store",
-                    WrappedKey.Certificate, CertificateLookup.Normalize(thumbprint), _ => throw new InvalidOperationException(ex.Message), _ => null);
+                    WrappedKey.Certificate, CertificateLookup.Normalize(thumbprint), _ => throw new InvalidOperationException(ex.Message), _ => null,
+                    CanWrap: false);
             }
             var normalized = CertificateLookup.Normalize(cert.Thumbprint);
             var location = store!;
@@ -299,22 +327,22 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         }
     }
 
-    private async Task<(string? Json, bool Readable)> ReadDatabaseAsync(List<EnvelopeCopyStatus> copies, CancellationToken ct)
+    private async Task<(List<string> Rows, bool Readable)> ReadDatabaseAsync(List<EnvelopeCopyStatus> copies, CancellationToken ct)
     {
-        if (_scopes is null) return (null, true);
+        if (_scopes is null) return ([], true);
         try
         {
             using var scope = _scopes.CreateScope();
             await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct);
-            var row = await db.KeyEnvelopes.AsNoTracking().OrderByDescending(r => r.UpdatedAtUtc).FirstOrDefaultAsync(ct);
-            copies.Add(new EnvelopeCopyStatus("database", "KeyEnvelopes", row is not null && KeyEnvelope.Parse(row.EnvelopeJson) is not null,
-                row is null ? "missing" : KeyEnvelope.Parse(row.EnvelopeJson) is null ? "damaged" : null));
-            return (row?.EnvelopeJson, true);
+            var rows = await db.KeyEnvelopes.AsNoTracking().OrderByDescending(r => r.UpdatedAtUtc).Select(r => r.EnvelopeJson).ToListAsync(ct);
+            var good = rows.Any(r => KeyEnvelope.Parse(r) is not null);
+            copies.Add(new EnvelopeCopyStatus("database", "KeyEnvelopes", good, rows.Count == 0 ? "missing" : good ? null : "damaged"));
+            return (rows, true);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             copies.Add(new EnvelopeCopyStatus("database", "KeyEnvelopes", false, ex.GetBaseException().Message));
-            return (null, false);
+            return ([], false);
         }
     }
 
@@ -409,20 +437,40 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
     }
 
     private async Task<KeyEnvelope> UpkeepAsync(KeyEnvelope envelope, byte[] key, Protection p, string? fileJson, string? dbJson, string? rootJson,
-        List<EnvelopeCopyStatus> copies, List<string> warnings, CancellationToken ct)
+        List<KeyEnvelope> sameKey, List<EnvelopeCopyStatus> copies, List<string> warnings, CancellationToken ct)
     {
         var changes = new List<string>();
-        // A renewed certificate (or a new choice of protection): the key is re-encrypted to the current one.
+        // Review finding 1: the copy that opened first may be older than another copy of the same key (a keys folder
+        // restored from before shares were issued or a drill was run). The newest of those records is kept, so a stale
+        // copy can't erase the only record of a backup and drop the store back to storing files unencrypted.
+        foreach (var other in sameKey)
+        {
+            if (other.Shares is { } shares && (envelope.Shares is null || shares.IssuedUtc > envelope.Shares.IssuedUtc))
+            {
+                envelope.Shares = shares;
+                changes.Add("kept the record of shares issued from another copy");
+            }
+            if (other.LastDrillUtc is { } drill && (envelope.LastDrillUtc is null || drill > envelope.LastDrillUtc))
+            {
+                (envelope.LastDrillUtc, envelope.LastDrillBy) = (drill, other.LastDrillBy);
+                changes.Add("kept the last recovery drill from another copy");
+            }
+        }
+        // A renewed certificate (or a new choice of protection): the key is re-encrypted to the current one. Review finding
+        // 6: not to a certificate that isn't in the store (the envelope still opens with the one it names).
         if (envelope.Server.Kind != p.Kind || !string.Equals(envelope.Server.Ref, p.Ref, StringComparison.OrdinalIgnoreCase))
         {
-            envelope.Server = new WrappedKey { Kind = p.Kind, Ref = p.Ref, Data = p.Wrap(key) };
-            changes.Add($"re-encrypted to {p.Describe}");
+            if (p.CanWrap)
+            {
+                envelope.Server = new WrappedKey { Kind = p.Kind, Ref = p.Ref, Data = p.Wrap(key) };
+                changes.Add($"re-encrypted to {p.Describe}");
+            }
+            else warnings.Add($"The evidence key is still protected by {envelope.Server.Ref}: {p.Describe}, so it wasn't re-encrypted to it.");
         }
         if (SyncRecovery(envelope, key, warnings) is { Length: > 0 } recoveryChange) changes.Add(recoveryChange);
         // Copies naming another key aren't used or overwritten silently: they're reported.
-        foreach (var (json, copy) in new[] { (dbJson, "database"), (rootJson, "beside the evidence") })
-            if (KeyEnvelope.Parse(json) is { } other && other.KeyId != envelope.KeyId)
-                warnings.Add($"The envelope {copy} names key {other.KeyId}, not {envelope.KeyId}: it was replaced by the keys folder's.");
+        if (KeyEnvelope.Parse(rootJson) is { } otherRoot && otherRoot.KeyId != envelope.KeyId)
+            warnings.Add($"The envelope beside the evidence names key {otherRoot.KeyId}, not {envelope.KeyId}: it was replaced by this key's.");
         if (changes.Count > 0) envelope.UpdatedUtc = DateTimeOffset.UtcNow;
         await WriteCopiesAsync(envelope, changes.Count > 0 ? null : fileJson, changes.Count > 0 ? null : dbJson,
             changes.Count > 0 ? null : rootJson, copies, warnings, ct);
@@ -496,36 +544,76 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
     }
 
     // The key id named by any encrypted file found quickly (C10: bounded), or null.
+    /// <summary>
+    /// Before a new key is made: a key id that stored files are already encrypted under, or a reason it can't be told, or
+    /// null when no file is encrypted. Review finding 3: this fails closed. A store that isn't there, a file that can't be
+    /// read, or a check that doesn't finish in time all count as "can't tell", so no new key is made over files that may
+    /// need an old one. To keep that affordable on a large store being encrypted for the first time, a file whose length
+    /// is its recorded size is plain without being opened (CBE1 always adds a header and a tag per chunk); only the
+    /// others' headers are read.
+    /// </summary>
     private async Task<string?> EncryptedFileKeyIdAsync(CancellationToken ct)
     {
+        var recorded = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        if (_scopes is not null)
+        {
+            try
+            {
+                using var scope = _scopes.CreateScope();
+                await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct);
+                foreach (var e in await db.Evidence.AsNoTracking().IgnoreQueryFilters().Select(e => new { e.StoragePath, e.SizeBytes }).ToListAsync(ct))
+                    recorded.TryAdd(e.StoragePath.Replace('\\', '/'), e.SizeBytes);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return "(unknown: the database couldn't be read to check the stored files)";
+            }
+        }
         try
         {
-            return await Task.Run(() =>
-            {
-                var seen = 0;
-                foreach (var root in new[] { _evidenceRoot, _reportRoot })
-                {
-                    if (!Directory.Exists(root)) continue;
-                    foreach (var f in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
-                    {
-                        if (f.Contains($"{Path.DirectorySeparatorChar}.key{Path.DirectorySeparatorChar}", StringComparison.Ordinal)) continue;
-                        if (++seen > 500) return null;
-                        var head = new byte[Cbe1.HeaderSize];
-                        try
-                        {
-                            using var s = File.OpenRead(f);
-                            if (s.Read(head) == head.Length && Cbe1.KeyIdOf(head) is { } id) return id;
-                        }
-                        catch (IOException) { /* in use: the next */ }
-                    }
-                }
-                return null;
-            }, ct).WaitAsync(StoreVolume.TimeLimit, ct);
+            return await Task.Run(() => ScanForKeyId(recorded, ct), ct).WaitAsync(ScanTimeLimit, ct);
         }
         catch (TimeoutException)
         {
-            return "(unknown: the store didn't answer in time)";   // can't tell, so no new key
+            return $"(unknown: the stored files couldn't all be checked within {ScanTimeLimit.TotalMinutes:0} minutes)";
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"(unknown: the stored files couldn't be listed: {ex.Message})";
+        }
+    }
+
+    /// <summary>How long the check before a new key may take: it runs only when no envelope exists anywhere (encryption
+    /// turned on for the first time, or a disaster), so it can afford to be thorough.</summary>
+    internal static TimeSpan ScanTimeLimit { get; set; } = TimeSpan.FromMinutes(2);
+
+    private string? ScanForKeyId(Dictionary<string, long> recorded, CancellationToken ct)
+    {
+        if (!Directory.Exists(_evidenceRoot)) return "(unknown: the evidence store's folder isn't there)";
+        foreach (var (root, sizes) in new[] { (_evidenceRoot, recorded), (_reportRoot, null) })
+        {
+            if (!Directory.Exists(root)) continue;   // reports: none generated yet
+            foreach (var f in new DirectoryInfo(root).EnumerateFiles("*", SearchOption.AllDirectories))
+            {
+                ct.ThrowIfCancellationRequested();
+                var rel = Path.GetRelativePath(root, f.FullName).Replace('\\', '/');
+                if (rel.StartsWith(".key/", StringComparison.Ordinal) || f.Name.StartsWith(".probe-", StringComparison.Ordinal)) continue;
+                if (sizes is not null && sizes.TryGetValue(rel, out var size) && f.Length == size) continue;   // plain
+                if (f.Length < Cbe1.HeaderSize) continue;   // too short to be encrypted
+                var head = new byte[Cbe1.HeaderSize];
+                try
+                {
+                    using var s = f.OpenRead();
+                    if (s.ReadAtLeast(head, head.Length, throwOnEndOfStream: false) == head.Length && Cbe1.IsCbe1(head))
+                        return Cbe1.KeyIdOf(head) ?? "(unknown: a stored file's encryption header is damaged)";
+                }
+                catch (IOException ex)
+                {
+                    return $"(unknown: {rel} couldn't be read: {ex.Message})";
+                }
+            }
+        }
+        return null;
     }
 
     private async Task AuditAsync(AuditAction action, string keyId, string summary, CancellationToken ct)

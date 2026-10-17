@@ -108,7 +108,7 @@ internal static class KeyToolCommands
         for (var i = 0; i < shares.Count; i++) output.WriteLine($"Share {i + 1} of {count}:  {shares[i]}");
         if (outFolder is not null)
         {
-            Directory.CreateDirectory(outFolder);
+            AdminOnlyFolder(outFolder);
             for (var i = 0; i < shares.Count; i++)
                 File.WriteAllText(Path.Combine(outFolder, $"casebook-key-{e.KeyId}-share-{i + 1}-of-{count}.txt"),
                     $"CaseBook evidence key {e.KeyId}, share {i + 1} of {count} (any {threshold} rebuild it).\r\n{shares[i]}\r\n");
@@ -153,23 +153,35 @@ internal static class KeyToolCommands
     public static void Recover(Site site, Opening how, string toThumbprint, string toStore, bool writeChainKey, TextWriter output)
     {
         var e = ReadEnvelope(site);
-        var opened = Open(e, how);
         using var target = CertificateLookup.FindRsa(toThumbprint, toStore, "--to-cert");
+        // Review finding 8: the new protection must be able to open what it protects, before anything is written.
+        if (!target.HasPrivateKey)
+            throw new InvalidOperationException($"Certificate {target.Thumbprint} has no private key on this machine (or this account can't " +
+                                                "use it), so it couldn't open the key again. Install it with its private key first.");
+        var opened = Open(e, how);
         var normalized = CertificateLookup.Normalize(target.Thumbprint);
+        string? chainPath = null;
+        if (writeChainKey && opened.ChainKey is { } chainToCheck) chainPath = ChainKeyTarget(site, chainToCheck, output);
         e.Server = new WrappedKey { Kind = WrappedKey.Certificate, Ref = normalized, Data = KeyWrap.ToCertificate(target, opened.EvidenceKey) };
-        e.UpdatedUtc = DateTimeOffset.UtcNow;
         CryptographicOperations.ZeroMemory(opened.EvidenceKey);
         Save(site, e, output);
-        TryWrite(site.RootEnvelopePath, e.ToJson(), output);
+        // PROD-56: the copy beside the evidence only into a store that's there (never recreating one that vanished).
+        if (Directory.Exists(site.EvidenceRoot)) TryWrite(site.RootEnvelopePath, e.ToJson(), output);
+        else output.WriteLine($"The evidence store's folder ({site.EvidenceRoot}) isn't here; CaseBook writes the copy beside the evidence once it is.");
         output.WriteLine($"Evidence key {e.KeyId} is now protected by certificate {normalized} ({toStore}).");
-        if (opened.ChainKey is { } chainKey && writeChainKey)
+        if (writeChainKey && opened.ChainKey is null)
+            output.WriteLine("The backup used doesn't carry the audit chain key, so chain-key.json wasn't written.");
+        if (chainPath is not null && opened.ChainKey is { } chainKey)
         {
-            var path = string.IsNullOrWhiteSpace(site.Integrity.ChainKey.WrappedKeyPath)
-                ? Path.Combine(Path.GetDirectoryName(site.EnvelopePath)!, "chain-key.json")
-                : site.Integrity.ChainKey.WrappedKeyPath;
+            if (File.Exists(chainPath))
+            {
+                var aside = $"{chainPath}.replaced-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                File.Move(chainPath, aside);
+                output.WriteLine($"The chain key file that couldn't be opened is kept as {aside}.");
+            }
             var record = JsonSerializer.Serialize(new { Thumbprint = normalized, Wrapped = KeyWrap.ToCertificate(target, chainKey) });
-            File.WriteAllText(path, record);
-            output.WriteLine($"The audit chain key ({ChainKeyring.KeyIdOf(chainKey)}) is written to {path}, protected by the same certificate.");
+            File.WriteAllText(chainPath, record);
+            output.WriteLine($"The audit chain key ({ChainKeyring.KeyIdOf(chainKey)}) is written to {chainPath}, protected by the same certificate.");
         }
         output.WriteLine("Next: set Storage:Encryption:CertificateThumbprint (or the chain key's / signing certificate) to it in " +
                          "appsettings.Production.json, and restart the app pool. CaseBook re-checks the key every 5 minutes.");
@@ -184,11 +196,7 @@ internal static class KeyToolCommands
     {
         var e = ReadEnvelope(site);
         var opened = Open(e, how ?? new Opening());
-        var options = new DbContextOptionsBuilder<AppDbContext>();
-        if (site.Provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-            options.UseSqlServer(site.ConnectionString ?? throw new InvalidOperationException("No database connection string in the site's settings."));
-        else options.UseSqlite(site.ConnectionString!);
-        using var db = new AppDbContext(options.Options);
+        using var db = new AppDbContext(DbOptions(site));
         var rows = (from ev in db.Evidence.AsNoTracking().IgnoreQueryFilters()
                     join c in db.Cases.AsNoTracking().IgnoreQueryFilters() on ev.CaseId equals c.Id
                     where caseNumber == null || c.CaseNumber == caseNumber
@@ -203,6 +211,8 @@ internal static class KeyToolCommands
         foreach (var r in rows)
         {
             var source = Path.GetFullPath(Path.Combine(site.EvidenceRoot, r.StoragePath));
+            // Review finding 11: a stored path leads inside the store, or the file isn't copied (as the app refuses it, S-07).
+            var inside = source.StartsWith(Path.TrimEndingDirectorySeparator(site.EvidenceRoot) + Path.DirectorySeparatorChar, StringComparison.Ordinal);
             var folder = Path.Combine(outFolder, Safe(r.CaseNumber));
             Directory.CreateDirectory(folder);
             var name = Safe(r.OriginalFileName);
@@ -210,7 +220,8 @@ internal static class KeyToolCommands
             for (var n = 2; !taken.Add(target) || File.Exists(target); n++)
                 target = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(name)} ({n}){Path.GetExtension(name)}");
             string actual;
-            try
+            if (!inside) actual = "(refused: its stored path leads outside the evidence store)";
+            else try
             {
                 using var content = OpenContent(source, e.KeyId, opened.EvidenceKey);
                 using var file = File.Create(target);
@@ -263,8 +274,80 @@ internal static class KeyToolCommands
         }
     }
 
+    /// <summary>
+    /// Review finding 8: where to write the recovered chain key, or a refusal. An existing chain-key.json that opens is left
+    /// as it is; and the key must be the one the audit log's newest keyed entries name (the shares or a recovery copy may
+    /// carry one retired since), checked against the database, so a working chain is never broken by a recovery.
+    /// </summary>
+    private static string ChainKeyTarget(Site site, byte[] chainKey, TextWriter output)
+    {
+        var path = string.IsNullOrWhiteSpace(site.Integrity.ChainKey.WrappedKeyPath)
+            ? Path.Combine(Path.GetDirectoryName(site.EnvelopePath)!, "chain-key.json")
+            : site.Integrity.ChainKey.WrappedKeyPath;
+        if (File.Exists(path) && OpensHere(site))
+            throw new InvalidOperationException($"{path} opens on this server, so it was left as it is. Leave out --chain-key.");
+        var recovered = ChainKeyring.KeyIdOf(chainKey);
+        string? newest;
+        try
+        {
+            using var db = new AppDbContext(DbOptions(site));
+            newest = db.AuditLog.AsNoTracking().Where(a => a.HashKeyId != null).OrderByDescending(a => a.Sequence)
+                .Select(a => a.HashKeyId).FirstOrDefault();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException("The database couldn't be read to check which chain key the audit log uses " +
+                                                $"({ex.GetBaseException().Message}), so chain-key.json wasn't written. Run it where the database is reachable.");
+        }
+        if (newest is not null && !string.Equals(newest, recovered, StringComparison.Ordinal))
+            throw new InvalidOperationException($"This backup carries chain key {recovered}, but the audit log's newest entries are keyed with " +
+                                                $"{newest}: it was replaced since. chain-key.json wasn't written; restore it from a backup of the keys folder.");
+        output.WriteLine(newest is null
+            ? $"No audit entry is keyed yet; chain key {recovered} will be written."
+            : $"Chain key {recovered} is the one the audit log uses.");
+        return path;
+    }
+
+    // Whether the site's chain key file opens here (its certificate present, with a usable private key).
+    private static bool OpensHere(Site site)
+    {
+        try { return new ChainKeyring(Options.Create(site.Integrity)).CurrentKeyId is not null; }
+        catch (Exception ex) when (ex is CryptographicException or InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            return false;   // it doesn't open: the case recovery is for
+        }
+    }
+
+    private static DbContextOptions<AppDbContext> DbOptions(Site site)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>();
+        if (site.Provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+            options.UseSqlServer(site.ConnectionString ?? throw new InvalidOperationException("No database connection string in the site's settings."));
+        else options.UseSqlite(site.ConnectionString!);
+        return options.Options;
+    }
+
+    /// <summary>Review finding 11: shares written to a folder only administrators (and SYSTEM) can read.</summary>
+    private static void AdminOnlyFolder(string folder)
+    {
+        var dir = Directory.CreateDirectory(folder);
+        if (!OperatingSystem.IsWindows()) return;
+        var acl = new System.Security.AccessControl.DirectorySecurity();
+        acl.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        var inherit = System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit;
+        foreach (var sid in new[] { System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, System.Security.Principal.WellKnownSidType.LocalSystemSid })
+            acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(new System.Security.Principal.SecurityIdentifier(sid, null),
+                System.Security.AccessControl.FileSystemRights.FullControl, inherit, System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+        if (System.Security.Principal.WindowsIdentity.GetCurrent().User is { } me)
+            acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(me, System.Security.AccessControl.FileSystemRights.FullControl,
+                inherit, System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
+        dir.SetAccessControl(acl);
+    }
+
     private static void Save(Site site, KeyEnvelope e, TextWriter output)
     {
+        e.UpdatedUtc = DateTimeOffset.UtcNow;   // review finding 1: every change the tool makes is the newest copy
         if (!TryWrite(site.EnvelopePath, e.ToJson(), output))
             output.WriteLine("The envelope couldn't be updated here; CaseBook doesn't know about this yet. Run the tool on the server.");
     }

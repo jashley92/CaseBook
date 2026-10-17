@@ -60,9 +60,15 @@ public static class Cbe1
         return (header, fileKey, fileId);
     }
 
-    /// <summary>The key id a header names (so the right master key can be found), or null if it isn't a CBE1 header.</summary>
-    public static string? KeyIdOf(ReadOnlySpan<byte> header) =>
-        header.Length >= HeaderSize && IsCbe1(header) ? Encoding.ASCII.GetString(header.Slice(5, KeyIdLength)) : null;
+    /// <summary>The key id a header names (so the right master key can be found), or null if it isn't a CBE1 header or
+    /// its key id isn't one (16 lower-case hex digits): a damaged header's bytes never reach a message or a log.</summary>
+    public static string? KeyIdOf(ReadOnlySpan<byte> header)
+    {
+        if (header.Length < HeaderSize || !IsCbe1(header)) return null;
+        var id = header.Slice(5, KeyIdLength);
+        foreach (var b in id) if (b is not ((>= (byte)'0' and <= (byte)'9') or (>= (byte)'a' and <= (byte)'f'))) return null;
+        return Encoding.ASCII.GetString(id);
+    }
 
     /// <summary>Opens a header with its master key: the file key and id. Throws <see cref="CryptographicException"/> when the
     /// key is wrong or the header was changed.</summary>

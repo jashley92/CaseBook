@@ -64,7 +64,7 @@ public static class EvidenceRoom
 
     /// <summary>Refuses (with a message for the uploader) a file of <paramref name="size"/> bytes that doesn't fit.</summary>
     public static async Task CheckAsync(IAppDbContext db, IEvidenceStore store, EvidenceStorageOptions o, long size,
-        CancellationToken ct = default)
+        bool alreadyStored = false, CancellationToken ct = default)
     {
         if (size < 0) throw new ArgumentException("That file's size couldn't be read. Try again.");
         if (size > o.MaxUploadBytes)
@@ -74,7 +74,9 @@ public static class EvidenceRoom
         if (use.QuotaBytes is { } quota && use.UsedBytes > quota - size)
             throw new ArgumentException($"Storing it would take evidence past its {Size(quota)} limit ({Size(use.UsedBytes)} is used). " +
                                         "Ask an administrator to raise the limit.");
-        if (use.FreeBytes is { } free && free - size < use.ReserveBytes)
+        // Review finding 2: once the bytes are on the store (the re-check after storing, a large upload's completion), the
+        // free space already reflects them; taking the size off again refused a file that fits and deleted its parts.
+        if (use.FreeBytes is { } free && free - (alreadyStored ? 0 : size) < use.ReserveBytes)
             throw new ArgumentException($"The evidence store doesn't have room for it: storing it would leave less than " +
                                         $"{Size(use.ReserveBytes)} free. Ask an administrator to free space or move the store.");
     }

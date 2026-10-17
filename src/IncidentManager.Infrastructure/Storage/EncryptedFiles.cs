@@ -31,8 +31,12 @@ public static class EncryptedFiles
         {
             var head = new byte[Cbe1.HeaderSize];
             var read = file.Read(head);
-            if (read == head.Length && Cbe1.KeyIdOf(head) is { } keyId)
+            if (read == head.Length && Cbe1.IsCbe1(head))
+            {
+                // Review finding 11: a header that isn't whole names no key; the file is damaged, not plain (never served raw).
+                var keyId = Cbe1.KeyIdOf(head) ?? throw new CryptographicException("The encrypted file's header is damaged.");
                 return new Cbe1ReadStream(file, keys.Key(keyId) ?? throw new EvidenceKeyUnavailableException(keyId));
+            }
             file.Position = 0;
             return file;
         }

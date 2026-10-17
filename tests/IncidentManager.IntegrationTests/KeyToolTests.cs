@@ -109,6 +109,19 @@ public sealed class KeyToolTests : IDisposable
         shares.Should().HaveCount(5);
         output.ToString().Should().Contain("any 3 of which rebuild it");
         Directory.GetFiles(Path.Combine(_site, "shares-out")).Should().HaveCount(5);
+        if (OperatingSystem.IsWindows())
+        {
+            // Review finding 11: the share files are readable by administrators (and SYSTEM, and whoever ran it) only.
+            var acl = new DirectoryInfo(Path.Combine(_site, "shares-out")).GetAccessControl();
+            acl.AreAccessRulesProtected.Should().BeTrue("nothing inherited from the parent folder");
+            acl.GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier)).Cast<System.Security.AccessControl.FileSystemAccessRule>()
+                .Select(r => r.IdentityReference.Value).Should().NotContain(new[]
+                {
+                    new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinUsersSid, null).Value,
+                    new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.WorldSid, null).Value,
+                    new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.AuthenticatedUserSid, null).Value,
+                });
+        }
         KeyEnvelope.Parse(File.ReadAllText(site.EnvelopePath))!.Shares.Should().Match<SharesIssued>(s => s.Threshold == 3 && s.Count == 5);
         File.ReadAllText(site.EnvelopePath).Should().NotContain(shares[0], "the envelope records that shares were issued, never a share");
 
@@ -149,6 +162,20 @@ public sealed class KeyToolTests : IDisposable
         drill.ToString().Should().Contain("recovery certificate").And.Contain("opens with recovery certificate");
         var wrong = () => KeyToolCommands.Verify(site, new Opening(PfxPath: pfx, PfxPassword: "nope"), new StringWriter());
         wrong.Should().Throw<CryptographicException>();
+
+        // Review finding 8: a target without its private key here couldn't open the key again: refused, nothing changed.
+        var publicOnly = X509CertificateLoader.LoadCertificate(Installed("CaseBook keytool public only").Export(X509ContentType.Cert));
+        using (var s = new X509Store(StoreName.My, StoreLocation.CurrentUser))
+        {
+            s.Open(OpenFlags.ReadWrite);
+            s.Remove(publicOnly);
+            s.Add(publicOnly);   // the certificate alone, its key not on this machine
+        }
+        var envelopeBefore = File.ReadAllText(site.EnvelopePath);
+        var keyless = () => KeyToolCommands.Recover(site, new Opening(PfxPath: pfx, PfxPassword: "safe-password"), publicOnly.Thumbprint,
+            "CurrentUser", false, new StringWriter());
+        keyless.Should().Throw<Exception>().Where(e => e is InvalidOperationException || e is CryptographicException);
+        File.ReadAllText(site.EnvelopePath).Should().Be(envelopeBefore);
 
         // The old server is gone: a new certificate on a new server, the key recovered onto it from the recovery PFX.
         var renewed = Installed("CaseBook keytool server (new)");
@@ -199,6 +226,13 @@ public sealed class KeyToolTests : IDisposable
         var encrypted = await store.SaveAsync(caseId, new MemoryStream(bytes));
         await using (var db = new AppDbContext(options))
         {
+            // Review finding 11: a row whose stored path leads outside the store (a tampered row) isn't copied out.
+            await File.WriteAllTextAsync(Path.Combine(_site, "outside.txt"), "not evidence");
+            db.Evidence.Add(new IncidentManager.Domain.Entities.Evidence
+            {
+                CaseId = caseId, OriginalFileName = "outside.txt", ContentType = "", SizeBytes = 12, Sha256 = new string('0', 64),
+                StoragePath = "../../outside.txt", CreatedBy = "seed", CreatedAtUtc = clock.UtcNow,
+            });
             foreach (var (s, name) in new[] { (plain, "notes.txt"), (encrypted, "=cmd|' /C calc'!A0.exe") })
                 db.Evidence.Add(new IncidentManager.Domain.Entities.Evidence
                 {
@@ -211,14 +245,15 @@ public sealed class KeyToolTests : IDisposable
         var envelopeBefore = File.ReadAllText(site.EnvelopePath);
         var outFolder = Path.Combine(_site, "export");
         var (exported, mismatched) = KeyToolCommands.Export(site, caseNumber, outFolder, null, new StringWriter());
-        exported.Should().BeGreaterThanOrEqualTo(2);
-        mismatched.Should().Be(0);
+        exported.Should().BeGreaterThanOrEqualTo(3);
+        mismatched.Should().Be(1, "the row leading outside the store");
         var files = Directory.GetFiles(Path.Combine(outFolder, caseNumber));
         files.Select(File.ReadAllBytes).Should().Contain(b => b.SequenceEqual(bytes), "the encrypted file comes out as the original");
         files.Select(File.ReadAllText).Should().Contain("stored before encryption");
         var manifest = File.ReadAllText(Path.Combine(outFolder, "manifest.csv"));
         manifest.Should().Contain(encrypted.Sha256).And.Contain("\"'=cmd", "a name starting like a formula is neutralised (C13)");
-        manifest.Should().NotContain(",NO\r\n");
+        manifest.Should().Contain("refused: its stored path leads outside the evidence store");
+        Directory.GetFiles(Path.Combine(outFolder, caseNumber)).Select(File.ReadAllText).Should().NotContain("not evidence");
         File.ReadAllText(site.EnvelopePath).Should().Be(envelopeBefore, "export changes nothing");
 
         File.Delete(site.EnvelopePath);

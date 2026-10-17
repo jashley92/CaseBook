@@ -26,11 +26,15 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
     private static readonly TimeSpan Tick = TimeSpan.FromMinutes(1);
     private const int Batch = 200;
 
+    /// <summary>How long files left over wait after a run that converted none of them.</summary>
+    public static readonly TimeSpan RetryIdle = TimeSpan.FromHours(1);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var started = DateTimeOffset.UtcNow;
         var lastLoad = DateTimeOffset.UtcNow;   // Program.cs loaded it at start-up
         DateTimeOffset? lastConversion = null;
+        var lastRunConverted = false;
         await ReportAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -46,13 +50,22 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
                     lastLoad = now;
                     await ReportAsync(stoppingToken);
                 }
+                // Review finding 9: files left over (in use, no room) are tried again at once while runs are converting, but
+                // after a run that converted nothing only hourly, so a store that can't make progress isn't re-listed and
+                // re-opened every minute (holding the gate the evidence re-check shares).
+                var retry = lastRunConverted ? TimeSpan.Zero : RetryIdle;
                 var due = status.NowRequested
-                          || (now - started >= StartDelay && (lastConversion is null || status.Remaining > 0 || now - lastConversion >= TimeSpan.FromDays(1)));
+                          || (now - started >= StartDelay && (lastConversion is null
+                                                              || (status.Remaining > 0 && now - lastConversion >= retry)
+                                                              || now - lastConversion >= TimeSpan.FromDays(1)));
                 if (keyring.State == EvidenceKeyState.Ready && due)
                 {
                     status.NowRequested = false;
-                    while (await conversion.RunAsync(Batch, stoppingToken) > 0 && !stoppingToken.IsCancellationRequested) { }
+                    var converted = 0;
+                    int batch;
+                    while ((batch = await conversion.RunAsync(Batch, stoppingToken)) > 0 && !stoppingToken.IsCancellationRequested) converted += batch;
                     lastConversion = now;
+                    lastRunConverted = converted > 0;
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }

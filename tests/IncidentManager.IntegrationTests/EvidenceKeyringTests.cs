@@ -321,6 +321,146 @@ public sealed class EvidenceKeyringTests : IDisposable
         new StreamReader(again).ReadToEnd().Should().Be("sample");
     }
 
+    // ---- review findings (2026-10-17) ----
+
+    [Fact]
+    public async Task A_stale_copy_doesnt_erase_the_record_of_a_backup(/* review finding 1 */)
+    {
+        var server = Installed("CaseBook evidence server");
+        var options = On(server);   // no recovery certificate: the shares are the only backup
+        (await Ring(options).LoadAsync()).Should().Be(EvidenceKeyState.NeedsBackup);
+        var stale = await File.ReadAllTextAsync(KeysFile);
+
+        // casebook-keytool split recorded the shares (and a drill) in the keys folder; CaseBook copied that everywhere.
+        var issued = KeyEnvelope.Parse(stale)!;
+        issued.Shares = new SharesIssued { IssuedUtc = DateTimeOffset.UtcNow, Threshold = 3, Count = 5 };
+        (issued.LastDrillUtc, issued.LastDrillBy) = (DateTimeOffset.UtcNow, "custodian");
+        await File.WriteAllTextAsync(KeysFile, issued.ToJson());
+        (await Ring(options).LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        KeyEnvelope.Parse(DbEnvelope())!.Shares.Should().NotBeNull();
+
+        // The keys folder is restored from a backup made before that.
+        await File.WriteAllTextAsync(KeysFile, stale);
+        var ring = Ring(options);
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready, "the other copies' record of the shares is kept: files stay encrypted");
+        KeyEnvelope.Parse(await File.ReadAllTextAsync(KeysFile))!.Shares.Should().NotBeNull("and written back over the stale copy");
+        ring.Health!.LastDrillUtc.Should().NotBeNull();
+        _audit.Entries.Should().Contain(e => e.Contains("kept the record of shares issued", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_database_row_for_another_key_doesnt_hide_this_ones_and_a_reload_keeps_the_same_key(/* findings 5 and 7 */)
+    {
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var options = On(server, RecoveryCer(recovery));
+        var ring = Ring(options);
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var keyId = ring.CurrentKeyId!;
+        var held = ring.Key(keyId)!;
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        ring.Key(keyId).Should().BeSameAs(held, "the daily check keeps the array a save in progress may hold");
+        held.Should().Contain(b => b != 0, "and doesn't zero it");
+
+        // A newer row for some other key (a restore merged in, say), and the two file copies gone.
+        var foreign = KeyEnvelope.Parse(await File.ReadAllTextAsync(KeysFile))!;
+        foreign.KeyId = "0123456789abcdef";
+        await using (var db = new AppDbContext(_database.OptionsWithoutInterceptors))
+        {
+            db.KeyEnvelopes.Add(new IncidentManager.Domain.Entities.KeyEnvelopeRecord { KeyId = foreign.KeyId, EnvelopeJson = foreign.ToJson(), UpdatedAtUtc = DateTimeOffset.UtcNow.AddDays(1) });
+            await db.SaveChangesAsync();
+        }
+        File.Delete(KeysFile);
+        File.Delete(RootFile);
+        var again = Ring(options);
+        (await again.LoadAsync()).Should().Be(EvidenceKeyState.Ready, "this key's own row still opens");
+        again.CurrentKeyId.Should().Be(keyId);
+    }
+
+    [Fact]
+    public async Task The_check_before_a_new_key_reads_past_hundreds_of_plain_files_and_fails_closed(/* review finding 3 */)
+    {
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var options = On(server, RecoveryCer(recovery));
+        var ring = Ring(options);
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var keyId = ring.CurrentKeyId!;
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+        var encrypted = await store.SaveAsync(Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"), new MemoryStream(new byte[5000]));
+        // 600 plain files ahead of it (a store part-way through conversion): the old check gave up after 500 and said none.
+        var plain = Path.Combine(Evidence, "00000000000000000000000000000000");
+        Directory.CreateDirectory(plain);
+        for (var i = 0; i < 600; i++) await File.WriteAllBytesAsync(Path.Combine(plain, $"{i:D4}.bin"), new byte[300]);
+
+        // Every envelope copy is lost.
+        File.Delete(KeysFile);
+        File.Delete(RootFile);
+        await using (var db = _database.NewContext()) { db.KeyEnvelopes.RemoveRange(db.KeyEnvelopes); await db.SaveChangesAsync(); }
+        var after = Ring(options);
+        (await after.LoadAsync()).Should().Be(EvidenceKeyState.Unavailable);
+        after.Problem.Should().Contain(keyId).And.Contain("No new key was made");
+
+        // A check that can't finish isn't "no encrypted files" either.
+        File.Delete(Path.Combine(Evidence, encrypted.StoragePath));
+        var limit = EvidenceKeyring.ScanTimeLimit;
+        try
+        {
+            EvidenceKeyring.ScanTimeLimit = TimeSpan.FromTicks(1);
+            var slow = Ring(options);
+            (await slow.LoadAsync()).Should().Be(EvidenceKeyState.Unavailable);
+            slow.Problem.Should().Contain("unknown").And.Contain("No new key was made");
+        }
+        finally { EvidenceKeyring.ScanTimeLimit = limit; }
+        File.Exists(KeysFile).Should().BeFalse();
+
+        // Nor is a store whose folder isn't there.
+        Directory.Delete(Evidence, recursive: true);
+        var gone = Ring(options);
+        (await gone.LoadAsync()).Should().Be(EvidenceKeyState.Unavailable);
+        gone.Problem.Should().Contain("isn't there");
+    }
+
+    [Fact]
+    public async Task A_missing_or_removed_protection_reports_rather_than_stopping_start_up_or_storing_plain(/* findings 6 and 10 */)
+    {
+        using var recovery = NewCertificate("r");
+        var typo = new EvidenceEncryptionOptions
+        {
+            Enabled = true, CertificateThumbprint = "00112233445566778899AABBCCDDEEFF00112233", StoreLocation = "CurrentUser",
+            RecoveryCertificates = [RecoveryCer(recovery)],
+        };
+        var first = Ring(typo);
+        (await first.LoadAsync()).Should().Be(EvidenceKeyState.Unavailable, "a mistyped thumbprint at first enablement doesn't throw");
+        first.Problem.Should().Contain("none was made");
+        File.Exists(KeysFile).Should().BeFalse();
+
+        // Encryption was on; then the setting that protected the key is taken away.
+        var server = Installed("CaseBook evidence server");
+        (await Ring(On(server, RecoveryCer(recovery))).LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var removed = Ring(new EvidenceEncryptionOptions { Enabled = true, RecoveryCertificates = [RecoveryCer(recovery)] });
+        (await removed.LoadAsync()).Should().Be(EvidenceKeyState.Unavailable, "not NotConfigured: nothing new is stored unencrypted");
+        removed.Problem.Should().Contain("no certificate or chain key is configured");
+    }
+
+    [Fact]
+    public async Task A_header_naming_no_proper_key_is_a_damaged_file_never_served_raw(/* review finding 11 */)
+    {
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var ring = Ring(On(server, RecoveryCer(recovery)));
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+        var stored = await store.SaveAsync(Guid.NewGuid(), new MemoryStream("sample"u8.ToArray()));
+        var path = Path.Combine(Evidence, stored.StoragePath);
+        var bytes = await File.ReadAllBytesAsync(path);
+        bytes[5] = (byte)'\n';   // the key id's first character
+        await File.WriteAllBytesAsync(path, bytes);
+        Cbe1.KeyIdOf(bytes).Should().BeNull();
+        var read = () => store.OpenReadAsync(stored.StoragePath);
+        await read.Should().ThrowAsync<CryptographicException>();
+    }
+
     [Fact]
     public async Task A_key_that_cant_be_opened_at_start_up_logs_its_alarm_on_the_first_load()
     {

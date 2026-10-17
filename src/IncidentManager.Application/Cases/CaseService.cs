@@ -162,7 +162,7 @@ public sealed class CaseService
         if (shot.FileName.Length > Evidence.EvidenceService.MaxFileNameLength)
             throw new ArgumentException($"That file name is longer than {Evidence.EvidenceService.MaxFileNameLength} characters.");
         // PROD-55: a pasted screenshot is evidence, so it counts against the same limits as an upload.
-        await Evidence.EvidenceRoom.CheckAsync(db, _evidenceStore, _evidenceLimits?.CurrentValue ?? new(), shot.Bytes.LongLength, ct);
+        await Evidence.EvidenceRoom.CheckAsync(db, _evidenceStore, _evidenceLimits?.CurrentValue ?? new(), shot.Bytes.LongLength, ct: ct);
         await using var content = new MemoryStream(shot.Bytes, writable: false);
         var stored = await _evidenceStore.SaveAsync(caseId, content, ct);
         var now = _clock.UtcNow;

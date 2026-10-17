@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
@@ -55,14 +56,14 @@ public sealed class EvidenceService
         using var db = _factory.CreateDbContext();
         await CheckCanUploadAsync(db, caseId, fileName, description, ct);
         var limits = Limits;
-        await EvidenceRoom.CheckAsync(db, _store, limits, size ?? 0, ct);
+        await EvidenceRoom.CheckAsync(db, _store, limits, size ?? 0, ct: ct);
         await using var held = new LimitedReadStream(content, limits.MaxUploadBytes,
             () => new ArgumentException($"That file is larger than {EvidenceRoom.Size(limits.MaxUploadBytes)}, the largest file CaseBook takes."));
         var stored = await _store.SaveAsync(caseId, held, ct);
         if (stored.SizeBytes != size)
         {
             // The size wasn't declared, or the bytes differ from it: the stored size decides.
-            try { await EvidenceRoom.CheckAsync(db, _store, limits, stored.SizeBytes, ct); }
+            try { await EvidenceRoom.CheckAsync(db, _store, limits, stored.SizeBytes, alreadyStored: true, ct: ct); }
             catch
             {
                 await _store.DiscardUnrecordedAsync(stored.StoragePath);
@@ -140,7 +141,7 @@ public sealed class EvidenceService
         using var db = _factory.CreateDbContext();
         await CheckCanUploadAsync(db, caseId, fileName, description, ct);
         if (size <= 0) throw new ArgumentException("That file is empty.");
-        await EvidenceRoom.CheckAsync(db, _store, Limits, size, ct);
+        await EvidenceRoom.CheckAsync(db, _store, Limits, size, ct: ct);
         var incoming = await _store.BeginIncomingAsync(ct);
         try
         {
@@ -175,10 +176,18 @@ public sealed class EvidenceService
             var expected = part == s.Parts - 1 ? s.Size - s.Committed : EvidenceUploadSessions.PartBytes;
             if (bytes.Length != expected)
                 throw new ArgumentException($"Part {part + 1} should be {expected:N0} bytes, but {bytes.Length:N0} arrived.");
+            var partHash = SHA256.HashData(bytes.Span);
+            if (s.PendingPart == part && s.PendingHash is { } tried && !CryptographicOperations.FixedTimeEquals(tried, partHash))
+            {
+                await EndAsync(s);
+                throw new InvalidOperationException("The file changed while it was uploading, so the upload was stopped. Upload it again.");
+            }
+            (s.PendingPart, s.PendingHash) = (part, partHash);
             await _store.AppendIncomingAsync(s.Incoming, s.Committed, bytes, ct);
             s.Hash.AppendData(bytes.Span);
             s.Committed += bytes.Length;
             s.NextPart++;
+            (s.PendingPart, s.PendingHash) = (-1, null);
             s.LastActivity = _clock.UtcNow;
             return s.Committed;
         }
@@ -203,7 +212,7 @@ public sealed class EvidenceService
             if (s.Committed != s.Size)
                 throw new InvalidOperationException($"The upload is missing parts: {s.Committed:N0} of {s.Size:N0} bytes arrived.");
             await CheckCanUploadAsync(db, s.CaseId, s.FileName, s.Description, ct);
-            await EvidenceRoom.CheckAsync(db, _store, Limits, s.Size, ct);
+            await EvidenceRoom.CheckAsync(db, _store, Limits, s.Size, alreadyStored: true, ct: ct);
             var sha = Convert.ToHexString(s.Hash.GetCurrentHash()).ToLowerInvariant();
             await _store.FinishIncomingAsync(s.Incoming, s.Size, ct);   // PROD-57: an encrypted file's final chunk
             if (Limits.ReadBackCheck && !await ReadsBackAsync(s, sha, ct))
@@ -213,6 +222,7 @@ public sealed class EvidenceService
             }
             var stored = await _store.CommitIncomingAsync(s.Incoming, s.CaseId, sha, s.Size, ct);
             s.Ended = true;   // the parts are now the stored file: abandoning must not touch them
+            s.Release();
             var evidence = await RecordAsync(db, s.CaseId, s.FileName, s.ContentType, s.Description, stored, ct);
             s.EvidenceId = evidence.Id;
             s.LastActivity = _clock.UtcNow;
@@ -245,6 +255,7 @@ public sealed class EvidenceService
     {
         s.Ended = true;
         s.LastActivity = _clock.UtcNow;
+        s.Release();
         await _store.DiscardIncomingAsync(s.Incoming);
     }
 

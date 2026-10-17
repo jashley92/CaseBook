@@ -137,6 +137,98 @@ public sealed class EvidenceStorageTests : IDisposable
         new EvidenceStorageUse(150, null, null, 0).QuotaShare.Should().BeNull();
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_file_that_fits_isnt_refused_once_its_bytes_are_on_the_store(string provider)
+    {
+        // Review finding 2: the checks after storing (and at a large upload's completion) took the file's size off a free
+        // space that already reflected it, so a file that fitted was refused and its parts deleted.
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        const long gib = 1024L * 1024 * 1024;
+        _limits.CurrentValue = new EvidenceStorageOptions { MinFreeSpaceGB = 10 };
+        var bytes = Random(2 * Part + 77);
+
+        var inPage = Service(database, new FreeSpaceStore(Files(), 10 * gib + bytes.Length, shrinks: true));
+        (await inPage.UploadAsync(caseId, "edge.bin", "", new MemoryStream(bytes), null, bytes.Length)).SizeBytes.Should().Be(bytes.Length,
+            "exactly the reserve is left: it fits");
+        var undeclared = Service(database, new FreeSpaceStore(Files(), 10 * gib + bytes.Length, shrinks: true));
+        (await undeclared.UploadAsync(caseId, "edge2.bin", "", new MemoryStream(bytes), null)).SizeBytes.Should().Be(bytes.Length,
+            "its size known only once stored");
+
+        var parts = Service(database, new FreeSpaceStore(Files(), 10 * gib + bytes.Length, shrinks: true));
+        var started = await parts.BeginUploadAsync(caseId, "edge.dmp", "", bytes.Length, null);
+        await SendAllAsync(parts, started, bytes);
+        (await parts.CompleteUploadAsync(started.Id)).Sha256.Should().Be(Sha(bytes));
+
+        var tooBig = Service(database, new FreeSpaceStore(Files(), 10 * gib + bytes.Length - 1, shrinks: true));
+        var refused = () => tooBig.BeginUploadAsync(caseId, "over.dmp", "", bytes.Length, null);
+        await refused.Should().ThrowAsync<ArgumentException>("one byte short is still refused up front");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_part_retried_after_a_failed_write_must_be_the_same_bytes(string provider)
+    {
+        // Review finding 4: a retry is written again at the same offset, so its chunks are sealed again under the same file
+        // key and nonces. With the same bytes that's harmless; with different ones (the file changed under the browser) it
+        // would leak them, so the upload is stopped instead.
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var flaky = new FlakyStore(Files());
+        var svc = Service(database, flaky);
+        var bytes = Random(2 * Part + 10);
+
+        var same = await svc.BeginUploadAsync(caseId, "same.bin", "", bytes.Length, null);
+        await svc.AppendPartAsync(same.Id, 0, bytes.AsMemory(0, Part));
+        flaky.FailNext = true;
+        var cut = () => svc.AppendPartAsync(same.Id, 1, bytes.AsMemory(Part, Part));
+        await cut.Should().ThrowAsync<IOException>();
+        await svc.AppendPartAsync(same.Id, 1, bytes.AsMemory(Part, Part));   // the same bytes again: fine
+        await svc.AppendPartAsync(same.Id, 2, bytes.AsMemory(2 * Part, 10));
+        (await svc.CompleteUploadAsync(same.Id)).Sha256.Should().Be(Sha(bytes));
+
+        var changed = await svc.BeginUploadAsync(caseId, "changed.bin", "", bytes.Length, null);
+        await svc.AppendPartAsync(changed.Id, 0, bytes.AsMemory(0, Part));
+        flaky.FailNext = true;
+        await ((Func<Task>)(() => svc.AppendPartAsync(changed.Id, 1, bytes.AsMemory(Part, Part)))).Should().ThrowAsync<IOException>();
+        var edited = bytes.AsSpan(Part, Part).ToArray();
+        edited[0] ^= 0xFF;
+        var retry = () => svc.AppendPartAsync(changed.Id, 1, edited);
+        (await retry.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("changed while it was uploading");
+        var later = () => svc.AppendPartAsync(changed.Id, 1, bytes.AsMemory(Part, Part));
+        await later.Should().ThrowAsync<InvalidOperationException>("the upload is over");
+        Directory.GetFiles(Path.Combine(_dir, "store", ".incoming")).Should().BeEmpty("its parts are deleted");
+    }
+
+    /// <summary>A store whose next part write fails half-way (the request cut off mid-write).</summary>
+    private sealed class FlakyStore(IEvidenceStore inner) : IEvidenceStore
+    {
+        public bool FailNext { get; set; }
+        public Task<StoredEvidence> SaveAsync(Guid caseId, Stream content, CancellationToken ct = default) => inner.SaveAsync(caseId, content, ct);
+        public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) => inner.OpenReadAsync(storagePath, ct);
+        public Task DiscardUnrecordedAsync(string storagePath) => inner.DiscardUnrecordedAsync(storagePath);
+        public Task<long?> FreeBytesAsync(CancellationToken ct = default) => Task.FromResult<long?>(null);
+        public Task<string> BeginIncomingAsync(CancellationToken ct = default) => inner.BeginIncomingAsync(ct);
+        public async Task AppendIncomingAsync(string incoming, long offset, ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
+        {
+            if (!FailNext)
+            {
+                await inner.AppendIncomingAsync(incoming, offset, bytes, ct);
+                return;
+            }
+            FailNext = false;
+            await inner.AppendIncomingAsync(incoming, offset, bytes[..(bytes.Length / 2)], ct);
+            throw new IOException("The connection was cut off mid-write.");
+        }
+        public Task<Stream> OpenIncomingAsync(string incoming, CancellationToken ct = default) => inner.OpenIncomingAsync(incoming, ct);
+        public Task FinishIncomingAsync(string incoming, long size, CancellationToken ct = default) => inner.FinishIncomingAsync(incoming, size, ct);
+        public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default) =>
+            inner.CommitIncomingAsync(incoming, caseId, sha256, size, ct);
+        public Task DiscardIncomingAsync(string incoming) => inner.DiscardIncomingAsync(incoming);
+        public Task<int> ClearIncomingAsync(TimeSpan olderThan, CancellationToken ct = default) => inner.ClearIncomingAsync(olderThan, ct);
+    }
+
     [Fact]
     public async Task The_store_reports_its_volume_size_with_its_free_space()
     {
@@ -390,18 +482,29 @@ public sealed class EvidenceStorageTests : IDisposable
         }
     }
 
-    /// <summary>A store that reports a given free space, or that can't be reached (a share that's down).</summary>
-    private sealed class FreeSpaceStore(IEvidenceStore inner, long? free, string? problem = null) : IEvidenceStore
+    /// <summary>A store that reports a given free space, or that can't be reached (a share that's down). With
+    /// <paramref name="shrinks"/>, the free space goes down by every byte written, as a real disk's does.</summary>
+    private sealed class FreeSpaceStore(IEvidenceStore inner, long? free, string? problem = null, bool shrinks = false) : IEvidenceStore
     {
-        public Task<StoredEvidence> SaveAsync(Guid caseId, Stream content, CancellationToken ct = default) => inner.SaveAsync(caseId, content, ct);
+        private long _written;
+        public async Task<StoredEvidence> SaveAsync(Guid caseId, Stream content, CancellationToken ct = default)
+        {
+            var stored = await inner.SaveAsync(caseId, content, ct);
+            Interlocked.Add(ref _written, stored.SizeBytes);
+            return stored;
+        }
         public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) => inner.OpenReadAsync(storagePath, ct);
         public Task DiscardUnrecordedAsync(string storagePath) => inner.DiscardUnrecordedAsync(storagePath);
-        public Task<long?> FreeBytesAsync(CancellationToken ct = default) => Task.FromResult(free);
+        public Task<long?> FreeBytesAsync(CancellationToken ct = default) =>
+            Task.FromResult(shrinks ? free - Interlocked.Read(ref _written) : free);
         public Task<string?> ProbeAsync(CancellationToken ct = default) => Task.FromResult(problem);
         public string Location => inner.Location;
         public Task<string> BeginIncomingAsync(CancellationToken ct = default) => inner.BeginIncomingAsync(ct);
-        public Task AppendIncomingAsync(string incoming, long offset, ReadOnlyMemory<byte> bytes, CancellationToken ct = default) =>
-            inner.AppendIncomingAsync(incoming, offset, bytes, ct);
+        public async Task AppendIncomingAsync(string incoming, long offset, ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
+        {
+            await inner.AppendIncomingAsync(incoming, offset, bytes, ct);
+            Interlocked.Add(ref _written, bytes.Length);
+        }
         public Task<Stream> OpenIncomingAsync(string incoming, CancellationToken ct = default) => inner.OpenIncomingAsync(incoming, ct);
         public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default) =>
             inner.CommitIncomingAsync(incoming, caseId, sha256, size, ct);

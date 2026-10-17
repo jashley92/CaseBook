@@ -44,6 +44,15 @@ public sealed class EvidenceUploadSessions
         public Guid? EvidenceId { get; set; }             // set once recorded
         public bool Ended { get; set; }                    // recorded or abandoned
         public int Parts => (int)((Size + PartBytes - 1) / PartBytes);
+
+        // Review finding 4: the part being written and its SHA-256, kept until it's committed. A write that failed part-way
+        // is retried at the same offset, so its chunks are sealed again under the same file key and chunk nonces; that's
+        // only safe with the same bytes. A retry with different bytes (the file changed under the browser) ends the upload.
+        public int PendingPart { get; set; } = -1;
+        public byte[]? PendingHash { get; set; }
+
+        /// <summary>Review finding 11: once ended, the running hash isn't needed again (every later step checks Ended first).</summary>
+        public void Release() => Hash.Dispose();
     }
 
     private readonly ConcurrentDictionary<string, Session> _sessions = new(StringComparer.Ordinal);
@@ -68,7 +77,11 @@ public sealed class EvidenceUploadSessions
     internal Session? Find(string id, string userId) =>
         _sessions.TryGetValue(id, out var s) && s.UserId == userId ? s : null;
 
-    internal void Forget(Session s) => _sessions.TryRemove(s.Id, out _);
+    internal void Forget(Session s)
+    {
+        _sessions.TryRemove(s.Id, out _);
+        s.Release();
+    }
 
     /// <summary>Uploads idle past <see cref="IdleLimit"/>, and finished ones past <see cref="DoneKept"/>, to drop.</summary>
     internal List<Session> Stale(DateTimeOffset now) =>
