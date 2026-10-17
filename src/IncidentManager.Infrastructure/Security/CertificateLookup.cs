@@ -19,7 +19,14 @@ public static class CertificateLookup
             throw new InvalidOperationException($"{setting}:StoreLocation '{storeLocation}' isn't LocalMachine or CurrentUser.");
 
         using var store = new X509Store(StoreName.My, location);
-        store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+        // A store that can't be opened (LocalMachine\My off Windows, one this account can't read) is "not found here",
+        // in the same words, so callers that try one store after another carry on (casebook-keytool, PROD-57).
+        try { store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly); }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            throw new InvalidOperationException($"The {location}\\My certificate store can't be opened here ({ex.Message}); " +
+                                                $"{setting}:CertificateThumbprint can't be found in it.", ex);
+        }
         var found = store.Certificates.Find(X509FindType.FindByThumbprint, normalized, validOnly: false);
         var cert = found.Count > 0 ? found[0] : null;
         foreach (var other in found.Skip(1)) other.Dispose();
