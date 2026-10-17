@@ -29,14 +29,25 @@ public sealed class EvidenceKeyringTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "im-evidence-key", Guid.NewGuid().ToString("N"));
     private readonly List<X509Certificate2> _installed = [];
-    private readonly TestDatabase _database;
+    private TestDatabase _database;
     private readonly CapturingAudit _audit = new();
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 10, 17, 9, 0, 0, TimeSpan.Zero));
 
     public EvidenceKeyringTests()
     {
         Directory.CreateDirectory(_dir);
-        _database = TestDatabase.Open(TestDatabase.Sqlite, new AuditChainInterceptor(new HashChainService(), new TestCurrentUser(), _clock, new CaseChangeNotifier()));
+        _database = OpenDatabase(TestDatabase.Sqlite);
+    }
+
+    private TestDatabase OpenDatabase(string provider) =>
+        TestDatabase.Open(provider, new AuditChainInterceptor(new HashChainService(), new TestCurrentUser(), _clock, new CaseChangeNotifier()));
+
+    // A test that runs on each engine swaps the SQLite database for the one named.
+    private void UseProvider(string provider)
+    {
+        if (provider == TestDatabase.Sqlite) return;
+        _database.Dispose();
+        _database = OpenDatabase(provider);
     }
 
     public void Dispose()
@@ -250,9 +261,11 @@ public sealed class EvidenceKeyringTests : IDisposable
         Convert.ToHexString(SHA256.HashData(unzipped.ToArray())).ToLowerInvariant().Should().Be(stored.Sha256);
     }
 
-    [Fact]
-    public async Task Each_envelope_copy_restores_the_others_and_a_damaged_one_is_rewritten()
+    [Theory]
+    [MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Each_envelope_copy_restores_the_others_and_a_damaged_one_is_rewritten(string provider)
     {
+        UseProvider(provider);   // the database copy (KeyEnvelopes) on the production engine too
         var server = Installed("CaseBook evidence server");
         using var recovery = NewCertificate("r");
         var options = On(server, RecoveryCer(recovery));
