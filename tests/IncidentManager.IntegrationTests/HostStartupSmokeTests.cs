@@ -133,6 +133,60 @@ public sealed class HostStartupSmokeTests : IDisposable
     }
 
     [Fact]
+    public async Task The_safe_download_is_a_zip_that_opens_with_infected_and_holds_the_file_as_recorded(/* PROD-58 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            (await client.GetAsync("/health/live")).EnsureSuccessStatusCode();   // starts the host (and its demo seed)
+            IncidentManager.Domain.Entities.Evidence evidence;
+            using (var scope = factory.Services.CreateScope())
+            {
+                await using var db = await scope.ServiceProvider
+                    .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                    .CreateDbContextAsync();
+                evidence = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(db.Evidence);
+            }
+
+            var zipped = await client.GetAsync($"/evidence/{evidence.Id}/safe");
+            zipped.StatusCode.Should().Be(HttpStatusCode.OK);
+            zipped.Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
+            zipped.Content.Headers.ContentDisposition!.FileNameStar.Should().Be(evidence.OriginalFileName + ".zip");
+            zipped.Headers.GetValues("Content-Security-Policy").Single().Should().StartWith("sandbox");
+
+            await using var body = new MemoryStream(await zipped.Content.ReadAsByteArrayAsync());
+            using var zip = new ICSharpCode.SharpZipLib.Zip.ZipFile(body) { Password = "infected" };
+            var entry = zip.Cast<ICSharpCode.SharpZipLib.Zip.ZipEntry>().Should().ContainSingle().Subject;
+            entry.Name.Should().Be(evidence.OriginalFileName);
+            entry.IsCrypted.Should().BeTrue();
+            entry.AESKeySize.Should().Be(0, "classic zip encryption, which Windows Explorer opens");
+            await using (var inside = zip.GetInputStream(entry))
+            {
+                var hash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(inside)).ToLowerInvariant();
+                hash.Should().Be(evidence.Sha256, "the zip holds the file exactly as recorded");
+            }
+            using (var wrong = new ICSharpCode.SharpZipLib.Zip.ZipFile(new MemoryStream(body.ToArray())) { Password = "not-it" })
+            {
+                var open = () => wrong.GetInputStream(wrong[0]).ReadByte();
+                open.Should().Throw<ICSharpCode.SharpZipLib.Zip.ZipException>("only the password opens it");
+            }
+
+            var plain = await client.GetAsync($"/evidence/{evidence.Id}");
+            plain.Content.Headers.ContentType!.MediaType.Should().Be("application/octet-stream", "the uploader's claimed type is never sent back");
+            plain.Headers.GetValues("Content-Security-Policy").Single().Should().StartWith("sandbox");
+
+            using var check = factory.Services.CreateScope();
+            await using var ctx = await check.ServiceProvider
+                .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                .CreateDbContextAsync();
+            var custody = ctx.Set<IncidentManager.Domain.Entities.ChainOfCustodyEvent>().Where(c => c.EvidenceId == evidence.Id && c.Action == "Downloaded").ToList();
+            custody.Should().Contain(c => c.Details == "in a zip with the password \"infected\"");
+            custody.Should().Contain(c => c.Details == null, "the plain download is recorded as before");
+        });
+    }
+
+    [Fact]
     public async Task Refused_passive_loads_dont_spend_the_download_budget(/* REV-61 */)
     {
         await RunWithin(Limit, async () =>

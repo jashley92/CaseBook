@@ -198,6 +198,12 @@ public static class SettingsCatalog
         new SettingDefinition("Evidence:ReadBackCheck", "Re-check large uploads before recording them", "Evidence storage", SettingKind.Bool,
             "Reads a file uploaded in parts back from the store and checks its SHA-256 before recording it, so a write damaged " +
             "on its way to a network share is caught at once. Doubles the reads for large files. Default on.", "true"),
+        // PROD-58: the safe download, a zip with the password "infected".
+        new SettingDefinition("Evidence:SafeDownload", "Safe download as the main button", "Evidence storage", SettingKind.Text,
+            "Which evidence files download by default inside a zip with the password 'infected', so a double-click can't run them and " +
+            "the analyst's antivirus doesn't delete them on arrival. Programs, scripts, shortcuts, disk images, Office files with " +
+            "macros and web pages count as risky. The zip and the plain file are both always available.", "RiskyTypes",
+            Options: [new("RiskyTypes", "Risky files only"), new("Always", "Every file"), new("Off", "No file (offer the zip beside it)")]),
         new SettingDefinition("Integrity:EvidenceVerify:Enabled", "Evidence re-verification enabled", "Integrity", SettingKind.Bool,
             "Periodically re-hashes stored evidence and alerts if a file no longer matches its recorded SHA-256. " +
             "Off by default because a full pass is I/O-heavy. Alerts go to the integrity-alert distribution.", "false"),

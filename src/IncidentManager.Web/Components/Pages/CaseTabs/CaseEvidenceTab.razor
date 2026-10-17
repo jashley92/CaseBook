@@ -12,6 +12,7 @@
 @inject UnsavedEdits Edits
 @inject IJSRuntime JS
 @inject AntiforgeryStateProvider Antiforgery
+@inject NavigationManager Nav
 @implements IDisposable
 
 <div id="evidence-dropzone">
@@ -102,7 +103,12 @@
                                 <div>
                                     @* RD-06: the file opens in its panel: preview, integrity, custody, what cites it. *@
                                     <button type="button" class="btn btn-link p-0 text-start im-evp-open" @onclick="() => OnOpenEvidence.InvokeAsync(ev.Id)"
-                                            title="Open the file's panel">@ev.OriginalFileName</button><br /><small class="text-muted">@ev.Description</small>
+                                            title="Open the file's panel">@ev.OriginalFileName</button>
+                                    @if (EvidenceRisk.IsRisky(ev.OriginalFileName, ev.ContentType))
+                                    {
+                                        <span class="im-badge im-b-warn ms-1" title="@EvidenceRisk.Sentence(ev.OriginalFileName, ev.ContentType)"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> Can run</span>
+                                    }
+                                    <br /><small class="text-muted">@ev.Description</small>
                                     @{
                                         var citedBy = Citations.Count(x => x.EvidenceId == ev.Id && _currentEntries.Contains(x.TimelineEntryId));   // BUG-443
                                         var inBrief = BriefText?.Contains($"evidence:{ev.Id}", StringComparison.OrdinalIgnoreCase) == true;   // INV-33
@@ -131,7 +137,21 @@
                                     aria-expanded="@(_custodyOpen.Contains(ev.Id) ? "true" : "false")">
                                 <span class="bi @(_custodyOpen.Contains(ev.Id) ? "bi-chevron-down" : "bi-clock-history")" aria-hidden="true"></span> Custody
                             </button>
-                            <a class="btn btn-sm btn-outline-primary" href="evidence/@ev.Id" target="_blank">Download</a>
+                            @* PROD-58: a file that can run downloads first inside a zip with the password "infected". *@
+                            @if (EvidenceRisk.ZipFirst(Evidence.Limits.SafeDownloadMode, ev.OriginalFileName, ev.ContentType))
+                            {
+                                <a class="btn btn-sm btn-primary" href="evidence/@ev.Id/safe" target="_blank"
+                                   title="A zip with the password &quot;infected&quot;, so it can't run by accident">
+                                    <span class="bi bi-file-earmark-zip" aria-hidden="true"></span> Download safely
+                                </a>
+                                <button type="button" class="btn btn-sm btn-link" @onclick="() => AskPlainDownload(ev)">Plain file</button>
+                            }
+                            else
+                            {
+                                <a class="btn btn-sm btn-outline-primary" href="evidence/@ev.Id" target="_blank">Download</a>
+                                <a class="btn btn-sm btn-link" href="evidence/@ev.Id/safe" target="_blank"
+                                   title="In a zip with the password &quot;infected&quot;">As zip</a>
+                            }
                             @if (CanEdit)
                             {
                                 <button type="button" class="btn btn-sm btn-link ms-1" @onclick="() => ToggleTask(ev.Id)"
@@ -246,6 +266,8 @@
     }
 </div>
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<Evidence> EvidenceItems { get; set; } = [];
@@ -280,6 +302,22 @@
         Edits.Track(this, "the transfer you're recording", () => TransferDirty, Region);
         // PROD-56: leaving mid-way through a large upload stops it, so it asks first.
         Edits.Track(this, "the upload in progress", () => _parts is not null, Region);
+    }
+
+    // PROD-58: the plain file of one that can run is a deliberate choice, asked first.
+    private ConfirmDialog? _confirm;
+
+    private void AskPlainDownload(Evidence ev)
+    {
+        var why = EvidenceRisk.Sentence(ev.OriginalFileName, ev.ContentType) ?? "It can run on your computer.";
+        _confirm?.Ask(this, $"Download {ev.OriginalFileName} as a plain file?",
+            $"{why} Opened on your computer it could start, and your antivirus may delete it on arrival. " +
+            $"“Download safely” gives it inside a zip with the password “{EvidenceRisk.ZipPassword}” instead.",
+            "Download the plain file", () =>
+            {
+                Nav.NavigateTo($"evidence/{ev.Id}", forceLoad: true);
+                return Task.CompletedTask;
+            });
     }
 
     public void Dispose()

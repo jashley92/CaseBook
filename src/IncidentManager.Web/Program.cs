@@ -601,31 +601,7 @@ app.MapGet("/agenda/feed.ics", async (string? token, IncidentManager.Application
 // --- Evidence download (streamed, records a chain-of-custody event) ---
 IncidentManager.Web.Security.EvidenceUploadEndpoints.MapEvidenceUploads(app);   // PROD-56: large uploads in parts
 
-app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
-    IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>
-{
-    IncidentManager.Domain.Entities.Evidence item;
-    Stream stream;
-    try { (item, stream) = await evidence.OpenAsync(id, recordDownload: true, ct); }
-    catch (IncidentManager.Application.Common.NotFoundException) { return Results.NotFound(); }   // REV-64: gone, or not theirs to see
-    catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
-    {
-        // BUG-197: the record is there but its file isn't (the evidence check reports it as missing).
-        return Results.Problem("This evidence file is missing from the evidence store. Nothing was downloaded; " +
-            "ask an administrator to restore it.", statusCode: StatusCodes.Status404NotFound);
-    }
-    catch (IOException)
-    {
-        // PROD-56: the store itself couldn't be read (a share that's down, permissions): nothing was downloaded or recorded.
-        return Results.Problem("The evidence store couldn't be read just now. Nothing was downloaded. Try again; if it keeps " +
-            "failing, ask an administrator to check the evidence store (Administration › Diagnostics).",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    // C-05: record the sensitive-artifact access (best-effort, out of the tamper-evident chain).
-    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.EvidenceDownload,
-        item.CaseId, item.OriginalFileName, item.Id, ct);
-    return Results.File(stream, item.ContentType, item.OriginalFileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
+IncidentManager.Web.Security.EvidenceDownloadEndpoints.MapEvidenceDownloads(app);   // the file, and PROD-58's safe zip
 
 // --- Inline evidence image (U-40): renders a linked screenshot as a timeline thumbnail ---
 // Same need-to-know enforcement as the download (OpenAsync scopes to ForUser cases). Restricted to
@@ -638,7 +614,7 @@ app.MapGet("/evidence/{id:guid}/inline", async (Guid id, EvidenceService evidenc
     Stream stream;
     // REV-64: an unknown or invisible id, or a thumbnail whose file is missing, is a 404 (it's an <img>), not an
     // unhandled error logged on every render and redirected to the HTML error page.
-    try { (_, stream) = await evidence.OpenAsync(id, recordDownload: false, ct); }
+    try { (_, stream) = await evidence.OpenAsync(id, recordDownload: false, ct: ct); }
     catch (Exception ex) when (ex is IncidentManager.Application.Common.NotFoundException or FileNotFoundException or DirectoryNotFoundException)
     {
         return Results.NotFound();

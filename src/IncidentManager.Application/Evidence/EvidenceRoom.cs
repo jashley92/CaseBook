@@ -23,6 +23,13 @@ public sealed class EvidenceStorageOptions
     /// <summary>PROD-55: re-read and verify a large upload before recording it (catches a corrupted write over a share).</summary>
     public bool ReadBackCheck { get; set; } = true;
 
+    /// <summary>PROD-58: when the password-protected zip is a file's main download (RiskyTypes, Always or Off).</summary>
+    public string SafeDownload { get; set; } = nameof(SafeDownloadMode.RiskyTypes);
+
+    /// <summary>The safe-download mode in force; a value that isn't one of the names (a number included) reads as the default.</summary>
+    public SafeDownloadMode SafeDownloadMode =>
+        IncidentManager.Domain.Common.EnumNames.TryParse<SafeDownloadMode>(SafeDownload, out var m, ignoreCase: true) ? m : SafeDownloadMode.RiskyTypes;
+
     public long MaxUploadBytes => Math.Max(1, (long)MaxUploadMB) * Mib;
     public long? QuotaBytes => StorageQuotaGB > 0 ? StorageQuotaGB * Gib : null;
     public long ReserveBytes => Math.Max(0, (long)MinFreeSpaceGB) * Gib;

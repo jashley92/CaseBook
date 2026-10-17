@@ -288,7 +288,7 @@ public sealed class EvidenceService
     /// must not fabricate "Downloaded" events an examiner would read as human access (S-03).
     /// </summary>
     public async Task<(Domain.Entities.Evidence Evidence, Stream Content)> OpenAsync(
-        Guid evidenceId, bool recordDownload = true, CancellationToken ct = default)
+        Guid evidenceId, bool recordDownload = true, string? downloadDetails = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var evidence = await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId, ct)
@@ -307,7 +307,8 @@ public sealed class EvidenceService
             {
                 evidence.CustodyEvents.Add(new ChainOfCustodyEvent
                 {
-                    EvidenceId = evidence.Id, AtUtc = _clock.UtcNow, Actor = _user.UserId, Action = "Downloaded"
+                    EvidenceId = evidence.Id, AtUtc = _clock.UtcNow, Actor = _user.UserId, Action = "Downloaded",
+                    Details = downloadDetails   // PROD-58: how, e.g. in a password-protected zip
                 });
                 await db.SaveChangesAsync(ct);
             }
@@ -412,7 +413,7 @@ public sealed class EvidenceService
     /// </summary>
     public async Task<string?> PreviewTextAsync(Guid evidenceId, int maxBytes = 4096, CancellationToken ct = default)
     {
-        var (evidence, stream) = await OpenAsync(evidenceId, recordDownload: false, ct);
+        var (evidence, stream) = await OpenAsync(evidenceId, recordDownload: false, ct: ct);
         await using (stream)
         {
             if (!IsTextPreviewable(evidence.ContentType, evidence.OriginalFileName)) return null;

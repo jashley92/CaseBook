@@ -193,6 +193,7 @@ process's working directory, which under IIS is the site folder.
 | `Evidence:MaxUploadMB` | The largest single evidence file, in MB (1 to 65,536). Files over 100 MB upload in 8 MB parts with a progress bar (PROD-56). | `500` | App |
 | `Evidence:StorageQuotaGB` | The most all stored evidence may take, in GB; an upload that would pass it is refused and uploaders are warned at 90 %. `0` is no limit. Two uploads at once may together go slightly over. | `0` | App |
 | `Evidence:MinFreeSpaceGB` | An upload is refused if it would leave less than this free on the evidence store's volume or share. | `10` | App |
+| `Evidence:SafeDownload` | Which evidence files the Evidence tab downloads first inside a zip with the password "infected" (PROD-58): `RiskyTypes` (programs, scripts, shortcuts, disk images, Office files with macros, web pages), `Always` or `Off`. The zip and the plain file are always both available. | `RiskyTypes` | App |
 | `Evidence:ReadBackCheck` | A file uploaded in parts is read back and its SHA-256 checked before it's recorded (catches a write damaged on its way to a share; doubles the reads for large files). | `true` | App |
 | `Retention:AccessLogYears` | Years the access log is kept. Older entries are deleted nightly (and after a restart), except a legal-hold case's; each prune is an audit-trail entry. `0` keeps it forever. | `3` | App |
 

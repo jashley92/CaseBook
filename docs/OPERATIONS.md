@@ -87,6 +87,17 @@ from `<store>\.incoming`.
 evidence re-check on Diagnostics. Stored paths are relative to the store, so the database doesn't change. Keep the
 old copy until the re-check is clean.
 
+**Safe download (PROD-58).** A file that can run (a program, script, shortcut, disk image, Office file with
+macros or web page, by its name and type) shows **Can run** on the Evidence tab and downloads first as **Download
+safely**: a zip holding the file, with the password `infected`, the security field's convention. A double-click can't
+run it, and the analyst's antivirus doesn't delete it on arrival; the zip opens in Windows Explorer and every zip tool.
+Its encryption is classic zip encryption, there to stop accidents, not to keep the file secret. The plain file is
+behind a confirmation; any file can be downloaded as a zip. `Evidence:SafeDownload` makes the zip the first choice for
+every file (`Always`) or none (`Off`). A program renamed to look harmless and uploaded with a harmless type isn't caught
+by its name; choose `Always` to wrap every file. The chain of custody records which kind of download it was. Every
+evidence download is sent as plain bytes (never the type its uploader's browser claimed) with a sandboxing
+`Content-Security-Policy`.
+
 **Disk encryption.** Turn on BitLocker (or the storage's own encryption) for the data root's volume and the evidence
 store's: until evidence is encrypted by CaseBook itself, a copied disk or backup exposes it.
 
