@@ -349,7 +349,7 @@ first.
 
 | Value | Where |
 |---|---|
-| Evidence upload limit **50 MB** | `Web/Components/Pages/CaseTabs/CaseEvidenceTab.razor` (`MaxEvidenceBytes`) |
+| Evidence uploads over **100 MB** go in **8 MB** parts; **3** in progress per person; abandoned after **24 hours** | `Application/Evidence/EvidenceUploadSessions.cs` |
 | Timeline screenshot **15 MB**; report logo 2 MB; Word template 5 MB; config bundle 64 MB | `CaseTimelineTab.razor`, `Admin.razor`, `Application/Admin/ReportTemplateService.cs`, `AdminConfigBundle.razor` |
 | Case-import file **4 MB in the UI, 5 MB through the API**; IOC import 2,000 indicators | `CaseImport.razor`, `Web/Program.cs`, `Application/Import/IocImportConverter.cs` |
 | Audit-chain verification every **10 minutes** (new entries and every record), the whole chain re-hashed every **6 hours** | `Web/BackgroundJobs/IntegritySealHostedService.cs`, `Application/Integrity/IntegrityCheckState.cs` |

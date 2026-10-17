@@ -114,13 +114,15 @@ public sealed class KeyToolTests : IDisposable
             // Review finding 11: the share files are readable by administrators (and SYSTEM, and whoever ran it) only.
             var acl = new DirectoryInfo(Path.Combine(_site, "shares-out")).GetAccessControl();
             acl.AreAccessRulesProtected.Should().BeTrue("nothing inherited from the parent folder");
-            acl.GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier)).Cast<System.Security.AccessControl.FileSystemAccessRule>()
-                .Select(r => r.IdentityReference.Value).Should().NotContain(new[]
-                {
-                    new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinUsersSid, null).Value,
-                    new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.WorldSid, null).Value,
-                    new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.AuthenticatedUserSid, null).Value,
-                });
+            var holders = new List<string>();
+            foreach (System.Security.AccessControl.FileSystemAccessRule rule in acl.GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier)))
+                holders.Add(rule.IdentityReference.Value);
+            holders.Should().NotContain(new[]
+            {
+                new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinUsersSid, null).Value,
+                new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.WorldSid, null).Value,
+                new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.AuthenticatedUserSid, null).Value,
+            });
         }
         KeyEnvelope.Parse(File.ReadAllText(site.EnvelopePath))!.Shares.Should().Match<SharesIssued>(s => s.Threshold == 3 && s.Count == 5);
         File.ReadAllText(site.EnvelopePath).Should().NotContain(shares[0], "the envelope records that shares were issued, never a share");

@@ -269,12 +269,15 @@ Below the list, relationships are added and edited (type, description and direct
 
 ![Evidence](../screenshots/doc-evidence.png)
 
-1. **Upload**: pick, paste or drag a file (up to 50 MB). It's hashed (SHA-256) on the way in and stored
-   outside the web root.
+1. **Upload**: pick, paste or drag a file (up to the administrator's limit, 500 MB by default; files over 100 MB go
+   up in parts with a progress bar). It's hashed (SHA-256) on the way in and stored outside the web root, encrypted
+   when evidence encryption is on.
 2. **An evidence row**: description, size, SHA-256, who uploaded it and when, and what cites it ("Cited by 1
    timeline entry and the brief"). **Custody** shows the chain of custody (uploaded, viewed, downloaded,
-   transferred) and records a transfer; **Download** is itself a custody event; **Task** raises a task about
-   the file. Evidence can't be deleted.
+   transferred) and records a transfer; **Download** is itself a custody event, and **As zip** gives the file in a
+   zip with the password `infected`. A file that can run (a program, script, shortcut, disk image, Office file with
+   macros) is marked **Can run** and offers **Download safely** (the zip) first, with the plain file behind a
+   confirmation. **Task** raises a task about the file. Evidence can't be deleted.
 
 ## Working notes
 
