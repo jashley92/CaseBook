@@ -51,9 +51,9 @@ public sealed class ReportingIntegrationTests : IDisposable
 
     private readonly TestOptionsMonitor<ReportingOptions> _reporting = new(new ReportingOptions());
 
-    private ReportService NewReportService(AppDbContext db)
+    private ReportService NewReportService(AppDbContext db, IReportStore? store = null)
     {
-        var store = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
+        store ??= new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
         var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
         return new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
             new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new StubUserDirectory(),
@@ -174,6 +174,61 @@ public sealed class ReportingIntegrationTests : IDisposable
         (await svc.VerifyFileAsync(report.Id)).Should().BeFalse();
         _user.UserId = "approver";   // a second IC: approval needs ApproveReports, and someone other than the author
         await svc.Invoking(s => s.ApproveAsync(report.Id)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*can't be approved*");
+    }
+
+    [Fact]
+    public async Task A_report_file_swapped_after_its_check_isnt_handed_over(/* BUG-657 */)
+    {
+        await using var db = NewContext();
+        _user.RoleSet = [AppRole.IncidentCommander];
+        var c = Case.Open(2026, 1, "Rpt", "Report swap", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", _clock.UtcNow);
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+        var store = new SwapAfterFirstRead(new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir })), _reportDir);
+        var svc = NewReportService(db, store);
+        var report = await svc.GenerateAsync(c.Id);
+        store.Arm();
+
+        var (_, stream) = await svc.OpenAsync(report.Id);
+        await using (stream)
+        {
+            var sent = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(stream)).ToLowerInvariant();
+            sent.Should().Be(report.ContentSha256, "the bytes handed over are the ones that were checked, not a later read of the file");
+        }
+    }
+
+    // Once armed, the file is replaced on disk just after its first read is opened (as between a check and a second open).
+    private sealed class SwapAfterFirstRead(IReportStore inner, string root) : IReportStore
+    {
+        private bool _armed;
+        public void Arm() => _armed = true;
+        public Task<StoredReport> SaveAsync(Guid caseId, string fileName, byte[] content, CancellationToken ct = default) =>
+            inner.SaveAsync(caseId, fileName, content, ct);
+        public async Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
+        {
+            if (!_armed) return await inner.OpenReadAsync(storagePath, ct);
+            _armed = false;
+            var path = Path.Combine(root, storagePath);
+            var original = new MemoryStream(await File.ReadAllBytesAsync(path, ct));
+            await File.WriteAllBytesAsync(path, [1, 2, 3], ct);
+            return original;
+        }
+    }
+
+    [Fact]
+    public async Task A_report_whose_path_was_edited_to_lead_outside_the_store_is_refused_as_altered(/* BUG-657 */)
+    {
+        await using var db = NewContext();
+        _user.RoleSet = [AppRole.IncidentCommander];
+        var c = Case.Open(2026, 1, "Rpt", "Report path", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", _clock.UtcNow);
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+        var svc = NewReportService(db);
+        var report = await svc.GenerateAsync(c.Id);
+        await db.Reports.Where(r => r.Id == report.Id).ExecuteUpdateAsync(u => u.SetProperty(r => r.StoragePath, "../outside.pdf"));
+
+        await svc.Invoking(s => s.OpenAsync(report.Id)).Should().ThrowAsync<ReportService.ReportFileAlteredException>();
+        (await svc.VerifyFileAsync(report.Id)).Should().BeFalse();
     }
 
     [Fact]

@@ -87,7 +87,7 @@ public sealed class FileReportStore : IReportStore
         // Root + separator, so a sibling folder sharing the root's name prefix can't pass (S-07).
         var rootPrefix = _root.EndsWith(Path.DirectorySeparatorChar) ? _root : _root + Path.DirectorySeparatorChar;
         if (!abs.StartsWith(rootPrefix, StringComparison.Ordinal))
-            throw new UnauthorizedAccessException("Report path is outside the store.");
+            throw new ReportPathOutsideStoreException();
 
         Stream stream = new FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.Read);
         return Task.FromResult(stream);

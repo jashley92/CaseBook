@@ -496,10 +496,10 @@ public sealed class ReportService
         var canAccess = await db.Cases.AsNoTracking().ForUser(_user)
             .AnyAsync(c => c.Id == report.CaseId, ct);
         if (!canAccess) throw new Common.NotFoundException("Report not found.");
-        if (!await FileMatchesAsync(db, report, ct)) throw new ReportFileAlteredException(AlteredMessage);
-
-        var stream = await _store.OpenReadAsync(report.StoragePath, ct);
-        return (report, stream);
+        // BUG-657: the bytes handed over are the ones that were checked (one read), not a second open of the file.
+        var (matches, content) = await CheckFileAsync(db, report, keep: true, ct);
+        if (!matches) throw new ReportFileAlteredException(AlteredMessage);
+        return (report, content!);
     }
 
     /// <summary>BUG-69: the stored file doesn't match the hash recorded when it was generated.</summary>
@@ -514,7 +514,11 @@ public sealed class ReportService
     /// edit in the database could change along with the file. A report from before its creation was audited is
     /// checked against its row.
     /// </summary>
-    private async Task<bool> FileMatchesAsync(IAppDbContext db, Report report, CancellationToken ct)
+    private async Task<bool> FileMatchesAsync(IAppDbContext db, Report report, CancellationToken ct) =>
+        (await CheckFileAsync(db, report, keep: false, ct)).Matches;
+
+    // With keep, the file's bytes as read and hashed, rewound, when they match.
+    private async Task<(bool Matches, MemoryStream? Content)> CheckFileAsync(IAppDbContext db, Report report, bool keep, CancellationToken ct)
     {
         var id = report.Id.ToString();
         var created = await db.AuditLog.AsNoTracking()
@@ -528,20 +532,40 @@ public sealed class ReportService
                 using var doc = System.Text.Json.JsonDocument.Parse(created);
                 if (doc.RootElement.TryGetProperty(nameof(Report.ContentSha256), out var h) && h.GetString() is { } chained)
                 {
-                    if (!string.Equals(chained, recorded, StringComparison.OrdinalIgnoreCase)) return false;
+                    if (!string.Equals(chained, recorded, StringComparison.OrdinalIgnoreCase)) return (false, null);
                     recorded = chained;
                 }
             }
             catch (System.Text.Json.JsonException) { /* not a snapshot this reads; the row's hash stands */ }
         }
+        MemoryStream? content = null;
         try
         {
             await using var stream = await _store.OpenReadAsync(report.StoragePath, ct);
+            Stream hashed = stream;
+            if (keep)
+            {
+                content = new MemoryStream();
+                await stream.CopyToAsync(content, ct);
+                content.Position = 0;
+                hashed = content;
+            }
             using var sha = System.Security.Cryptography.SHA256.Create();
-            var actual = Convert.ToHexString(await sha.ComputeHashAsync(stream, ct)).ToLowerInvariant();
-            return string.Equals(actual, recorded, StringComparison.OrdinalIgnoreCase);
+            var actual = Convert.ToHexString(await sha.ComputeHashAsync(hashed, ct)).ToLowerInvariant();
+            if (!string.Equals(actual, recorded, StringComparison.OrdinalIgnoreCase)) { content?.Dispose(); return (false, null); }
+            content?.Seek(0, SeekOrigin.Begin);
+            return (true, content);
         }
-        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return false; }
+        // BUG-657: a path edited to lead outside the store is an altered report, not an access error.
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or ReportPathOutsideStoreException)
+        {
+            return (false, null);
+        }
+        catch
+        {
+            content?.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
