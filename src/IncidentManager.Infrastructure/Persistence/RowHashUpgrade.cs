@@ -102,7 +102,7 @@ public static class RowHashUpgrade
                         _ when trail is null || !trail.Agrees(row) => "it doesn't agree with its audit trail",
                         _ => null,
                     };
-                    why ??= ChildOutsideTheTrail(row, records);
+                    why ??= await ChildOutsideTheTrailNowAsync(db, row, records, ct);
                     if (why is null) ok.Add(id);
                     else left.Add($"{type} {id}: {why}");
                 }
@@ -163,6 +163,24 @@ public static class RowHashUpgrade
             if (!records.TryGet((child.GetType().Name, child.Id.ToString()), out var last) || last.Deleted)
                 return $"its {child.GetType().Name} {child.Id} is in no audit entry";
         return null;
+    }
+
+    // BUG-661: the trail was read when the run began, so a child a user added since isn't in it. Before the row is left for
+    // one, its children's entries are read as they are now.
+    private static async Task<string?> ChildOutsideTheTrailNowAsync(AppDbContext db, IHashableEntity row,
+        RowIntegrityVerifier.ChainRecords records, CancellationToken ct)
+    {
+        if (ChildOutsideTheTrail(row, records) is null) return null;
+        var now = new RowIntegrityVerifier.ChainRecords();
+        foreach (var group in HashedChildren(row).GroupBy(c => c.GetType().Name))
+            foreach (var chunk in group.Select(c => c.Id.ToString()).Chunk(500))
+                await foreach (var e in db.AuditLog.AsNoTracking()
+                                   .Where(a => a.EntityType == group.Key && a.EntityId != null && chunk.Contains(a.EntityId))
+                                   .OrderBy(a => a.Sequence)
+                                   .Select(a => new AuditLogEntry { Sequence = a.Sequence, Action = a.Action, EntityType = a.EntityType, EntityId = a.EntityId, AfterJson = a.AfterJson })
+                                   .AsAsyncEnumerable().WithCancellation(ct))
+                    now.Add(e);
+        return ChildOutsideTheTrail(row, now);
     }
 
     // Records each row's hash as an audited update (CaseBook's upkeep): the interceptor computes it in format 4 and the

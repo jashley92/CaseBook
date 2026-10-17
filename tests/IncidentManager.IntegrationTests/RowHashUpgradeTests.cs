@@ -740,4 +740,67 @@ public sealed class RowHashUpgradeTests
         }
         (await VerifyRecordsAsync(database))?.Detail.Should().BeNull();
     }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_data_element_a_user_adds_during_the_upgrade_doesnt_leave_the_case_unrecorded(string provider /* BUG-661 */)
+    {
+        using var database = Seeded(provider);
+        Guid id;
+        string key;
+        await using (var db = database.NewContext())
+        {
+            var c = await db.Cases.Include(x => x.DataElements)
+                .FirstAsync(x => x.Phase != CasePhase.Closed && x.ReportedAtUtc == null && !x.IsArchived);
+            id = c.Id;
+            var had = c.DataElements.Select(d => d.ElementKey).ToList();
+            key = await db.DataElements.Where(e => !had.Contains(e.Key)).Select(e => e.Key).FirstAsync();
+        }
+        await UnrecordHashAsync(database, nameof(Case), id);
+
+        // Once the upgrade has read the trail (it reads the stage gates next), someone adds a data element to the case.
+        var added = new OnFirstRead("StageGates", () =>
+        {
+            using var db = database.NewContext();
+            var c = db.Cases.Include(x => x.DataElements).Single(x => x.Id == id);
+            c.SetImpactAssessment(c.AffectedIndividualsCount, c.DataElements.Select(d => d.ElementKey).Append(key), c.AffectedStates,
+                "alice", _clock.UtcNow);
+            db.SaveChanges();
+        });
+        RowHashUpgrade.Result result;
+        await using (var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>(database.Options).AddInterceptors(added).Options))
+            result = await RowHashUpgrade.RunAsync(db, _hasher, _clock);
+        added.Fired.Should().BeTrue();
+        result.Left.Should().BeEmpty("the element was added through CaseBook, after the run read the trail");
+        result.Marked.Should().BeTrue();
+        (await VerifyRecordsAsync(database))?.Detail.Should().BeNull();
+    }
+
+    // Runs an action once, before the first command whose text contains the match.
+    private sealed class OnFirstRead(string match, Action act) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        private int _fired;
+        public bool Fired => _fired != 0;
+
+        private void Check(System.Data.Common.DbCommand command)
+        {
+            if (command.CommandText.Contains(match, StringComparison.Ordinal) && Interlocked.Exchange(ref _fired, 1) == 0) act();
+        }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> ReaderExecuting(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result)
+        {
+            Check(command);
+            return result;
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Check(command);
+            return ValueTask.FromResult(result);
+        }
+    }
 }
