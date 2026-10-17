@@ -283,6 +283,39 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         Delivered.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("550", true, 0)]    // 2 of 3 refused: the third got it
+    [InlineData("550", false, 0)]   // 3 of 3 refused for good
+    [InlineData("452", false, 1)]   // 3 of 3 refused for now
+    public async Task Refused_recipients_dont_back_the_relay_off(string code, bool oneTakes, int attempts /* 0: not held */)
+    {
+        // BUG-650: SmtpClient reports several refused addresses with GeneralFailure, which read as a relay that didn't
+        // answer: a few sends to a closed distribution backed the relay off, and the email was held as never tried.
+        _mode = code;
+        for (var i = 0; i < OutboundCircuit.FailuresToOpen; i++)
+            await _sender.SendAsync([oneTakes ? "fine@example.test" : $"x{i}@example.test", $"y{i}@example.test", $"z{i}@example.test"],
+                "Case assigned to you", "b");
+
+        _circuit.TryEnter(_target).Should().BeTrue("the relay answered every time, so it isn't backed off");
+        Delivered.Should().Be(oneTakes ? OutboundCircuit.FailuresToOpen : 0);
+        var rows = await HeldRowsAsync();
+        if (attempts == 0) rows.Should().BeEmpty(oneTakes ? "the others got it (BUG-94)" : "refused for good, so not held");
+        else rows.Should().HaveCount(OutboundCircuit.FailuresToOpen).And.OnlyContain(h => h.Attempts == attempts, "a 4xx is a try");
+    }
+
+    [Theory]
+    [InlineData(new[] { 550, 550 }, "Refused")]
+    [InlineData(new[] { 550, 452 }, "Transient")]
+    [InlineData(new[] { 451, 452 }, "Transient")]
+    public void Several_refused_addresses_are_judged_by_their_own_codes(int[] codes, string expected /* BUG-650 */)
+    {
+        var many = new System.Net.Mail.SmtpFailedRecipientsException("refused",
+            codes.Select((c, i) => new System.Net.Mail.SmtpFailedRecipientException((System.Net.Mail.SmtpStatusCode)c, $"r{i}@example.test")).ToArray());
+        many.StatusCode.Should().Be(System.Net.Mail.SmtpStatusCode.GeneralFailure, "what SmtpClient gives the plural exception");
+        EmailSender.Unreachable(many).Should().BeFalse("the relay answered");
+        SendOutcomes.Of(many).ToString().Should().Be(expected);
+    }
+
     [Fact]
     public async Task A_partial_delivery_counts_as_delivered_and_isnt_held(/* BUG-94 */)
     {

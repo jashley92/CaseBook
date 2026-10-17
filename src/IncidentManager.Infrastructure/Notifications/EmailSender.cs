@@ -464,8 +464,10 @@ public sealed class EmailSender : IEmailSender, IDisposable
     }
 
     // A relay that answered with a refusal (auth required, sender refused) isn't hung, so it isn't backed off.
+    // BUG-650: refused addresses are an answer too, though SmtpClient gives several of them GeneralFailure.
     internal static bool Unreachable(Exception ex) => ex switch
     {
+        SmtpFailedRecipientException => false,
         SmtpException s => s.StatusCode is SmtpStatusCode.GeneralFailure or SmtpStatusCode.ServiceNotAvailable
             || s.InnerException is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException,
         _ => ex is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException,
