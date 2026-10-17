@@ -147,6 +147,27 @@ public sealed class ReloadOrderingTests : IDisposable
         directory.Resolve("S-1-5-21-2").Should().NotBeNull("the newer reload's read stands");
     }
 
+    [Fact]
+    public async Task A_sign_in_that_lands_during_a_reload_isnt_undone_by_it(/* BUG-656 */)
+    {
+        using var held = new HeldReadInterceptor("Users");
+        await using var services = new ServiceCollection()
+            .AddDbContext<AppDbContext>(o => o.UseSqlite(Conn).AddInterceptors(held)).BuildServiceProvider();
+        await AddUserAsync(services, "S-1-5-21-1");
+        var directory = new UserDirectory(services.GetRequiredService<IServiceScopeFactory>());
+
+        held.Arm();
+        var older = Task.Run(directory.Invalidate);
+        held.WaitHeld(Within).Should().BeTrue("the reload has read the user as an analyst");
+        await directory.TouchAsync("S-1-5-21-1", "S-1-5-21-1", "S-1-5-21-1", null, "Analyst,Manager");
+        directory.Resolve("S-1-5-21-1")!.RolesCsv.Should().Be("Analyst,Manager");
+        held.Release();
+        await older;
+
+        directory.Resolve("S-1-5-21-1")!.RolesCsv.Should().Be("Analyst,Manager",
+            "the sign-in wrote its roles after the reload read, so the reload's older copy doesn't put them back");
+    }
+
     private static async Task AddUserAsync(ServiceProvider services, string sid)
     {
         using var scope = services.CreateScope();

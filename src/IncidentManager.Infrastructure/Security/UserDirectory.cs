@@ -44,6 +44,9 @@ public sealed class UserDirectory : IUserDirectory
 
     // C21: a full reload stores its read only if no reload that started later has stored one.
     private readonly LatestWins _reloads = new();
+    // BUG-656: each sign-in's entry, numbered on the same order after its save. A reload whose read began before that number
+    // may have read the older row, so it puts these back over what it read. Under _swap.
+    private readonly Dictionary<string, (long Ticket, UserSummary Entry)> _touched = new(StringComparer.OrdinalIgnoreCase);
 
     public void Invalidate()
     {
@@ -57,7 +60,16 @@ public sealed class UserDirectory : IUserDirectory
                 u => u.Sid,
                 u => new UserSummary(u.Sid, u.DisplayName, u.UserPrincipalName, u.Email, u.RolesCsv),
                 StringComparer.OrdinalIgnoreCase);
-            _reloads.TryPublish(ticket, () => { lock (_swap) _byId = all; });
+            _reloads.TryPublish(ticket, () =>
+            {
+                lock (_swap)
+                {
+                    foreach (var (id, touch) in _touched.ToList())
+                        if (touch.Ticket > ticket) all[id] = touch.Entry;   // saved after this read began
+                        else _touched.Remove(id);                           // this read saw it
+                    _byId = all;
+                }
+            });
         }
         catch
         {
@@ -113,11 +125,14 @@ public sealed class UserDirectory : IUserDirectory
             _lastTouched[userId] = now;
 
             // Refresh just this entry in the snapshot (copy-on-write to stay lock-free for readers).
+            // BUG-656: numbered after the save, so a reload that began earlier (and may have read the old row) puts it back.
+            var ticket = _reloads.Begin();
+            var entry = new UserSummary(userId, displayName, upn, email, rolesCsv);
             lock (_swap)
-                _byId = new Dictionary<string, UserSummary>(_byId, StringComparer.OrdinalIgnoreCase)
-                {
-                    [userId] = new UserSummary(userId, displayName, upn, email, rolesCsv)
-                };
+            {
+                _touched[userId] = (ticket, entry);
+                _byId = new Dictionary<string, UserSummary>(_byId, StringComparer.OrdinalIgnoreCase) { [userId] = entry };
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

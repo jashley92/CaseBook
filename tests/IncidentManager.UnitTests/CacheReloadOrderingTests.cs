@@ -19,7 +19,8 @@ public partial class CacheReloadOrderingTests
     private static readonly Dictionary<string, string> Reviewed = new(StringComparer.Ordinal)
     {
         ["EmailSender.DrainHeldAsync"] = "stores drain bookkeeping (next due, failure count, the held-since-empty flag) under _gate; the queue itself is the HeldEmails table, read fresh on each pass, so no older read of it is ever published",
-        ["UserDirectory.TouchAsync"] = "stores the entry it has just written (the caller's values), not a read, under _swap",
+        ["UserDirectory.TouchAsync"] = "stores the entry it has just saved (the caller's values) under _swap, and records it in _touched with a number on " +
+            "Invalidate's order taken after the save; an Invalidate whose read began earlier puts that entry back over its older read (BUG-656)",
         // A hosted service's one loop stores when its last cycle ran: a clock time, not stored state, and one cycle at a time.
         ["DigestHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
         ["DueSoonActionItemHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
@@ -104,7 +105,10 @@ public partial class CacheReloadOrderingTests
                 var isProvider = cls.Groups["base"].Value.Contains("ConfigurationProvider", StringComparison.Ordinal);
                 if (!isProvider && !longLived.Contains(name)) continue;
                 var body = ClassBody(code, cls.Index + cls.Length);
-                foreach (var method in ComponentSourceScanner.Methods(body))
+                var methods = ComponentSourceScanner.Methods(body)
+                    .Where(m => m.Name != name && !m.Name.EndsWith("<lambda>", StringComparison.Ordinal)).ToList();
+                var classSites = new List<(Site Site, string Body)>();
+                foreach (var method in methods)
                 {
                     var read = StoredRead().Match(method.Body);
                     if (!read.Success) continue;
@@ -113,12 +117,38 @@ public partial class CacheReloadOrderingTests
                     var key = $"{name}.{method.Name}";
                     if (sites.Any(s => s.Key == key)) continue;
                     // Ordered: the method stores under an order, or every call to it is made holding a lock.
-                    sites.Add(new Site(file, key, OnlyCalledUnderLock(body, method.Name) || Order().IsMatch(method.Body)));
+                    var site = new Site(file, key, OnlyCalledUnderLock(body, method.Name) || Order().IsMatch(method.Body));
+                    sites.Add(site);
+                    classSites.Add((site, method.Body));
+                }
+
+                // BUG-656: an ordered reload is only as ordered as every other writer of the fields it stores. Another method
+                // of the class that stores one of them without an order (a sign-in's single entry) is an offender itself
+                // unless reviewed; when reviewed, the ordered reload must take back what it recorded (name one of its other
+                // fields), or an older read still overwrites it.
+                foreach (var (site, siteBody) in classSites.Where(s => s.Site.Ordered && Order().IsMatch(s.Body)))
+                {
+                    var stored = Stores(siteBody);
+                    foreach (var other in methods.Where(m => $"{name}.{m.Name}" != site.Key))
+                    {
+                        var otherKey = $"{name}.{other.Name}";
+                        var otherStores = Stores(other.Body);
+                        var shared = otherStores.Intersect(stored).ToList();
+                        if (shared.Count == 0 || Order().IsMatch(other.Body) || OnlyCalledUnderLock(body, other.Name)) continue;
+                        if (!Reviewed.ContainsKey(otherKey))
+                            sites.Add(new Site(file, $"{otherKey} (stores {string.Join(", ", shared)} beside {site.Key}'s order)", false));
+                        else if (!otherStores.Except(stored).Any(f => Regex.IsMatch(siteBody, $@"(?<![\w.]){Regex.Escape(f)}\b", RegexOptions.None, TimeSpan.FromSeconds(1))))
+                            sites.Add(new Site(file, $"{site.Key} (doesn't take back what {otherKey} stores in {string.Join(", ", shared)})", false));
+                    }
                 }
             }
         }
         return sites;
     }
+
+    // The fields a method stores into.
+    private static HashSet<string> Stores(string methodBody) =>
+        FieldStore().Matches(methodBody).Select(m => m.Groups["field"].Value).ToHashSet(StringComparer.Ordinal);
 
     // Every call to the method (in its class) is made holding a lock: lock (x) Name(...). Its declaration doesn't count.
     private static bool OnlyCalledUnderLock(string classBody, string name)
@@ -160,7 +190,7 @@ public partial class CacheReloadOrderingTests
     private static partial Regex StoredRead();
 
     // A store into the class's own state: a field (or an entry of one), or a configuration provider's Data.
-    [GeneratedRegex(@"(?<![\w.])(?:this\.)?(?:_\w+|Data|RejectedKeys|LastLoadError)\s*(?:\[[^\]\n]*\])?\s*=(?![=>])", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"(?<![\w.])(?:this\.)?(?<field>_\w+|Data|RejectedKeys|LastLoadError)\s*(?:\[[^\]\n]*\])?\s*=(?![=>])", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex FieldStore();
 
     // An order: a LatestWins publish, the settings load gate, or RoleDirectory's load generation (BUG-225).
