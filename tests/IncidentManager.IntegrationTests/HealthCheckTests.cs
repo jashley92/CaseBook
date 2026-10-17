@@ -90,5 +90,23 @@ public sealed class HealthCheckTests : IDisposable
         result.Status.Should().Be(HealthStatus.Unhealthy);
     }
 
+    [Fact]
+    public async Task Evidence_store_check_answers_in_time_when_the_share_doesnt(/* PROD-56, C10 */)
+    {
+        using var never = new ManualResetEventSlim();
+        var check = new EvidenceStoreHealthCheck(Options.Create(new EvidenceStoreOptions { RootPath = @"\\files01\casebook$\evidence" }))
+        {
+            TimeLimit = TimeSpan.FromMilliseconds(200),
+            Exists = _ => { never.Wait(TimeSpan.FromSeconds(30)); return true; },   // a server that's down
+        };
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await check.CheckHealthAsync(Context());
+        never.Set();
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("didn't answer");
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "the probe answers rather than hangs");
+    }
+
     public void Dispose() => _connection.Dispose();
 }
