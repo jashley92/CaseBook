@@ -36,7 +36,7 @@ public static class Cbe1
     public const int SealedChunk = ChunkSize + TagSize;
 
     /// <summary>Whether <paramref name="start"/> (a file's first bytes) is a CBE1 file.</summary>
-    public static bool IsCbe1(ReadOnlySpan<byte> start) => start.Length >= 5 && start[..4].SequenceEqual(Magic) && start[4] == Version;
+    public static bool IsCbe1(ReadOnlySpan<byte> start) => start.Length >= 5 && start.StartsWith(Magic) && start[4] == Version;
 
     /// <summary>A new file's header and its file key and id: the file key encrypted under <paramref name="masterKey"/>.</summary>
     public static (byte[] Header, byte[] FileKey, byte[] FileId) NewHeader(string keyId, byte[] masterKey)

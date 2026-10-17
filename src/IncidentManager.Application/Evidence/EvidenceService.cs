@@ -205,6 +205,7 @@ public sealed class EvidenceService
             await CheckCanUploadAsync(db, s.CaseId, s.FileName, s.Description, ct);
             await EvidenceRoom.CheckAsync(db, _store, Limits, s.Size, ct);
             var sha = Convert.ToHexString(s.Hash.GetCurrentHash()).ToLowerInvariant();
+            await _store.FinishIncomingAsync(s.Incoming, s.Size, ct);   // PROD-57: an encrypted file's final chunk
             if (Limits.ReadBackCheck && !await ReadsBackAsync(s, sha, ct))
             {
                 await EndAsync(s);

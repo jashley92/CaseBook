@@ -99,6 +99,10 @@ public static class DependencyInjection
         services.AddSingleton<ICasePresenceService, Realtime.CasePresenceService>();
         services.AddSingleton<ISealSigner, RsaSealSigner>();
         services.AddSingleton<ISealStore, FileSealStore>();
+        // PROD-57: the evidence key (Storage:Encryption); the stores encrypt new files with it once it's ready.
+        services.Configure<EvidenceEncryptionOptions>(config.GetSection("Storage:Encryption"));
+        services.AddSingleton<EvidenceKeyring>();
+        services.AddSingleton<IEvidenceKeyring>(sp => sp.GetRequiredService<EvidenceKeyring>());
         services.AddSingleton<IEvidenceStore, FileEvidenceStore>();
         services.AddSingleton<IReportStore, FileReportStore>();
         services.AddSingleton<IReportBrandingStore, FileReportBrandingStore>();

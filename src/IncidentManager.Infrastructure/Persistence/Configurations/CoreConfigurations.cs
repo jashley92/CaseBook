@@ -774,6 +774,18 @@ public sealed class HeldEmailConfiguration : IEntityTypeConfiguration<HeldEmail>
     }
 }
 
+/// <summary>PROD-57: the database's copy of each evidence-key envelope (ciphertext only), so database backups carry it.</summary>
+public sealed class KeyEnvelopeRecordConfiguration : IEntityTypeConfiguration<KeyEnvelopeRecord>
+{
+    public void Configure(EntityTypeBuilder<KeyEnvelopeRecord> b)
+    {
+        b.ToTable("KeyEnvelopes");
+        b.HasKey(x => x.KeyId);
+        b.Property(x => x.KeyId).HasMaxLength(16).IsRequired();
+        b.Property(x => x.EnvelopeJson).IsRequired();   // nvarchar(max): a few KB with several recovery certificates
+    }
+}
+
 public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
 {
     public void Configure(EntityTypeBuilder<UserNotificationPreference> b)

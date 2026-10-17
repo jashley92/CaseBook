@@ -15,7 +15,11 @@ public enum EvidenceDriftKind
 
     /// <summary>PROD-56: the evidence store itself can't be written and read (a share that's down, permissions changed),
     /// so no file was checked. Reported once, as one drift for the store, instead of every file as missing.</summary>
-    StoreUnreachable
+    StoreUnreachable,
+
+    /// <summary>PROD-57: the evidence key isn't available, so encrypted files can't be checked. Reported once, as one
+    /// drift for the store; nothing was checked, so earlier findings stand.</summary>
+    KeyUnavailable
 }
 
 /// <summary>

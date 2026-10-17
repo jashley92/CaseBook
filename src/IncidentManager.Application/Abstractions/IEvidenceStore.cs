@@ -37,6 +37,9 @@ public interface IEvidenceStore
     Task AppendIncomingAsync(string incoming, long offset, ReadOnlyMemory<byte> bytes, CancellationToken ct = default) =>
         throw new NotSupportedException();
     Task<Stream> OpenIncomingAsync(string incoming, CancellationToken ct = default) => throw new NotSupportedException();
+
+    /// <summary>PROD-57: ends the parts once all have arrived (an encrypted file's final chunk); safe to repeat.</summary>
+    Task FinishIncomingAsync(string incoming, long size, CancellationToken ct = default) => Task.CompletedTask;
     Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default) =>
         throw new NotSupportedException();
     Task DiscardIncomingAsync(string incoming) => Task.CompletedTask;

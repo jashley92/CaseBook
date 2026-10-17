@@ -380,6 +380,9 @@ using (var scope = app.Services.CreateScope())
         app.Services.GetRequiredService<IChainKeyring>(), db);
     await DevDataSeeder.InitializeAsync(db, clock, seedDemoData: app.Environment.IsDevelopment(),
         evidence: scope.ServiceProvider.GetService<IEvidenceStore>());
+    // PROD-57: the evidence key, once the database is current (it holds a copy of the envelope). It never stops start-up:
+    // a key that can't be opened pauses evidence and reports, and EvidenceKeyHostedService keeps trying.
+    await app.Services.GetRequiredService<IncidentManager.Infrastructure.Security.EvidenceKeyring>().LoadAsync();
     // BUG-288: a start-up fill that fails (a timeout on a large database) is retried at the next start. BUG-641: their
     // writes are audited saves now, which can also fail as a lost race, a value too long for its column, or a refused
     // change (InvalidOperationException): never a start-up that fails.
@@ -615,7 +618,8 @@ app.MapGet("/evidence/{id:guid}/inline", async (Guid id, EvidenceService evidenc
     // REV-64: an unknown or invisible id, or a thumbnail whose file is missing, is a 404 (it's an <img>), not an
     // unhandled error logged on every render and redirected to the HTML error page.
     try { (_, stream) = await evidence.OpenAsync(id, recordDownload: false, ct: ct); }
-    catch (Exception ex) when (ex is IncidentManager.Application.Common.NotFoundException or FileNotFoundException or DirectoryNotFoundException)
+    catch (Exception ex) when (ex is IncidentManager.Application.Common.NotFoundException or FileNotFoundException or DirectoryNotFoundException
+                                   or IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException)
     {
         return Results.NotFound();
     }
@@ -652,6 +656,11 @@ app.MapGet("/reports/{id:guid}", async (Guid id, IncidentManager.Application.Rep
     {
         // BUG-69: never hand over bytes that don't match what was generated; say why instead.
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status409Conflict, title: "Report file altered");
+    }
+    catch (IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException ex)
+    {
+        // PROD-57: the file is fine; its key isn't available on this server (administrators have been alerted).
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
     var (report, stream) = opened;
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.ReportDownload,

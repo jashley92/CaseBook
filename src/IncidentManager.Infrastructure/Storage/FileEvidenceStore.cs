@@ -13,14 +13,19 @@ public sealed class EvidenceStoreOptions
 /// <summary>
 /// Filesystem evidence store. Bytes are written under a randomized name in a per-case folder,
 /// hashed (SHA-256) as they stream to disk, and never executed. Reads are path-traversal safe.
+/// PROD-57: when the evidence key is ready, files are written encrypted (CBE1) from the first byte, a large upload's parts
+/// included, so a malware sample is never readable on the server's disk; the hash and size are always the original
+/// file's. Plain files (from before encryption, or before their conversion) still read.
 /// </summary>
 public sealed class FileEvidenceStore : IEvidenceStore
 {
     private readonly string _root;
+    private readonly IEvidenceKeyring _keys;
 
-    public FileEvidenceStore(IOptions<EvidenceStoreOptions> options)
+    public FileEvidenceStore(IOptions<EvidenceStoreOptions> options, IEvidenceKeyring? keys = null)
     {
         _root = Path.GetFullPath(options.Value.RootPath);
+        _keys = keys ?? NoEvidenceKeys.Instance;
         // PROD-56: a store on a share that's down at start-up mustn't stop the app; the start-up probe reports it.
         try { Directory.CreateDirectory(_root); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* reported by ProbeAsync */ }
@@ -37,27 +42,77 @@ public sealed class FileEvidenceStore : IEvidenceStore
         return Path.Combine(Incoming, incoming + ".part");
     }
 
-    public Task<string> BeginIncomingAsync(CancellationToken ct = default)
+    public async Task<string> BeginIncomingAsync(CancellationToken ct = default)
     {
         Directory.CreateDirectory(Incoming);
         var name = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-        using (new FileStream(IncomingPath(name), FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
-        return Task.FromResult(name);
+        await using var fs = new FileStream(IncomingPath(name), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        // PROD-57: encrypted from the start when the key is ready; the header decides how the parts are written.
+        if (EncryptedFiles.ForNewFile(_keys) is { } key) await fs.WriteAsync(Cbe1.NewHeader(key.KeyId, key.Key).Header, ct);
+        return name;
     }
 
     public async Task AppendIncomingAsync(string incoming, long offset, ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
     {
-        await using var fs = new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.Write, FileShare.None);
-        // A part retried after a write that failed half-way starts again where the last whole part ended.
-        fs.SetLength(offset);
-        fs.Seek(offset, SeekOrigin.Begin);
-        await fs.WriteAsync(bytes, ct);
+        await using var fs = new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        if (await IncomingCipherAsync(fs, ct) is not { } cipher)
+        {
+            // A part retried after a write that failed half-way starts again where the last whole part ended.
+            fs.SetLength(offset);
+            fs.Seek(offset, SeekOrigin.Begin);
+            await fs.WriteAsync(bytes, ct);
+            fs.Flush(flushToDisk: true);
+            return;
+        }
+        using var gcm = cipher.Gcm;
+        // Parts are whole chunks (8 MB is 128 of them) but the last, so a part starts at a chunk's boundary.
+        if (offset % Cbe1.ChunkSize != 0) throw new ArgumentException("A part must start on a chunk boundary.", nameof(offset));
+        var index = offset / Cbe1.ChunkSize;
+        fs.SetLength(Cbe1.ChunkOffset(index));
+        fs.Seek(Cbe1.ChunkOffset(index), SeekOrigin.Begin);
+        var sealedChunk = new byte[Cbe1.SealedChunk];
+        for (var at = 0; at < bytes.Length; at += Cbe1.ChunkSize, index++)
+        {
+            var piece = bytes.Span.Slice(at, Math.Min(Cbe1.ChunkSize, bytes.Length - at));
+            Cbe1.SealChunk(gcm, cipher.FileId, index, false, piece, sealedChunk);
+            await fs.WriteAsync(sealedChunk.AsMemory(0, piece.Length + Cbe1.TagSize), ct);
+        }
+        fs.Flush(flushToDisk: true);
+    }
+
+    // The part file's chunk cipher when it's encrypted (its key named by its header), else null.
+    private async Task<(AesGcm Gcm, byte[] FileId)?> IncomingCipherAsync(FileStream fs, CancellationToken ct)
+    {
+        var head = new byte[Cbe1.HeaderSize];
+        fs.Position = 0;
+        if (await fs.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, ct) < head.Length || Cbe1.KeyIdOf(head) is not { } keyId)
+            return null;
+        var (fileKey, fileId) = Cbe1.OpenHeader(head, _keys.Key(keyId) ?? throw new EvidenceKeyUnavailableException(keyId));
+        var gcm = new AesGcm(fileKey, Cbe1.TagSize);
+        CryptographicOperations.ZeroMemory(fileKey);
+        return (gcm, fileId);
+    }
+
+    /// <summary>PROD-57: ends an encrypted upload's parts with the final chunk (once), so it reads as whole.</summary>
+    public async Task FinishIncomingAsync(string incoming, long size, CancellationToken ct = default)
+    {
+        await using var fs = new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        if (await IncomingCipherAsync(fs, ct) is not { } cipher) return;
+        using var gcm = cipher.Gcm;
+        var chunks = (size + Cbe1.ChunkSize - 1) / Cbe1.ChunkSize;
+        var dataEnd = Cbe1.HeaderSize + size + chunks * Cbe1.TagSize;
+        if (fs.Length == dataEnd + Cbe1.TagSize) return;   // finished already (a repeated "complete")
+        if (fs.Length != dataEnd) throw new InvalidOperationException("The upload's parts don't add up to its size.");
+        var tag = new byte[Cbe1.TagSize];
+        Cbe1.SealChunk(gcm, cipher.FileId, chunks, true, ReadOnlySpan<byte>.Empty, tag);
+        fs.Seek(0, SeekOrigin.End);
+        await fs.WriteAsync(tag, ct);
         fs.Flush(flushToDisk: true);
     }
 
     public Task<Stream> OpenIncomingAsync(string incoming, CancellationToken ct = default) =>
-        Task.FromResult<Stream>(new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 1 << 16, useAsync: true));
+        Task.FromResult(EncryptedFiles.OpenContent(new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 1 << 16, useAsync: false), _keys));
 
     public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default)
     {
@@ -96,14 +151,14 @@ public sealed class FileEvidenceStore : IEvidenceStore
         var fileName = Guid.NewGuid().ToString("N") + ".bin";
         var absPath = Path.Combine(absDir, fileName);
 
-        using var sha = SHA256.Create();
         var created = false;
+        string hash;
+        long size;
         try
         {
             await using var fs = new FileStream(absPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             created = true;
-            await using var crypto = new CryptoStream(fs, sha, CryptoStreamMode.Write);
-            await content.CopyToAsync(crypto, ct);
+            (hash, size) = await EncryptedFiles.WriteAsync(fs, content, EncryptedFiles.ForNewFile(_keys), ct);
         }
         catch
         {
@@ -111,11 +166,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
             if (created) File.Delete(absPath);
             throw;
         }
-
-        var size = new FileInfo(absPath).Length;
-        var hash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
-        var relPath = $"{relDir}/{fileName}";
-        return new StoredEvidence(relPath, hash, size);
+        return new StoredEvidence($"{relDir}/{fileName}", hash, size);
     }
 
     public Task DiscardUnrecordedAsync(string storagePath)
@@ -134,7 +185,8 @@ public sealed class FileEvidenceStore : IEvidenceStore
 
     public string Location => _root;
 
-    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
+    /// <summary>The absolute path of a stored file, refused if it leads outside the store (S-07).</summary>
+    public string PathOf(string storagePath)
     {
         var abs = Path.GetFullPath(Path.Combine(_root, storagePath));
         // Compare against the root *plus a separator* so a sibling folder sharing the root's name prefix
@@ -142,8 +194,9 @@ public sealed class FileEvidenceStore : IEvidenceStore
         var rootPrefix = _root.EndsWith(Path.DirectorySeparatorChar) ? _root : _root + Path.DirectorySeparatorChar;
         if (!abs.StartsWith(rootPrefix, StringComparison.Ordinal))
             throw new UnauthorizedAccessException("Evidence path is outside the store.");
-
-        Stream stream = new FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return Task.FromResult(stream);
+        return abs;
     }
+
+    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) =>
+        Task.FromResult(EncryptedFiles.OpenContent(new FileStream(PathOf(storagePath), FileMode.Open, FileAccess.Read, FileShare.Read), _keys));
 }

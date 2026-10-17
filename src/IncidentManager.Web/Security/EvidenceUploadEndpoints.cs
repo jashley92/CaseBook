@@ -83,6 +83,7 @@ public static class EvidenceUploadEndpoints
         catch (ForbiddenException) { return Problem(StatusCodes.Status403Forbidden, "You can't add evidence to this case."); }
         catch (Application.Common.NotFoundException ex) { return Problem(StatusCodes.Status404NotFound, ex.Message); }
         catch (ArgumentException ex) { return Problem(StatusCodes.Status400BadRequest, ex.Message); }
+        catch (IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException ex) { return Problem(StatusCodes.Status503ServiceUnavailable, ex.Message); }
         catch (InvalidOperationException ex) when (ex.Message.StartsWith("Case not found", StringComparison.Ordinal))
         {
             return Problem(StatusCodes.Status404NotFound, "That case isn't there, or you can't see it.");

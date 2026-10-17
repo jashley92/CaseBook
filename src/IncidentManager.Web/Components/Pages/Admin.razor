@@ -845,7 +845,7 @@
                         @foreach (var d in ev.Drifts)
                         {
                             <tr>
-                                <td>@(d.Kind == IncidentManager.Application.Integrity.EvidenceDriftKind.StoreUnreachable ? "Evidence store" : d.CaseNumber ?? d.CaseId.ToString())</td>
+                                <td>@(d.Kind switch { IncidentManager.Application.Integrity.EvidenceDriftKind.StoreUnreachable => "Evidence store", IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable => "Evidence key", _ => d.CaseNumber ?? d.CaseId.ToString() })</td>
                                 <td>
                                     <span class="im-badge im-b-danger">@d.Kind</span>
                                     <span class="small text-muted ms-2">@d.OriginalFileName: @d.Detail</span>

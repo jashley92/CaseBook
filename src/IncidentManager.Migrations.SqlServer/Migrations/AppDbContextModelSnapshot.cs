@@ -1949,6 +1949,24 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("JurisdictionNotices", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.KeyEnvelopeRecord", b =>
+                {
+                    b.Property<string>("KeyId")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("EnvelopeJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("KeyId");
+
+                    b.ToTable("KeyEnvelopes", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
                 {
                     b.Property<Guid>("Id")

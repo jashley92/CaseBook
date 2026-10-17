@@ -1941,6 +1941,24 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("JurisdictionNotices", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.KeyEnvelopeRecord", b =>
+                {
+                    b.Property<string>("KeyId")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EnvelopeJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("KeyId");
+
+                    b.ToTable("KeyEnvelopes", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
                 {
                     b.Property<Guid>("Id")

@@ -107,7 +107,17 @@ public sealed class EvidenceIntegrityVerifier
         foreach (var r in rows)
         {
             ct.ThrowIfCancellationRequested();
-            var (kind, actual, detail) = await ReHashAsync(r, ct);
+            (EvidenceDriftKind? Kind, string? Actual, string? Detail) outcome;
+            try { outcome = await ReHashAsync(r, ct); }
+            catch (EvidenceKeyUnavailableException ex)
+            {
+                // PROD-57: the key is the problem, not the files; one finding, and what earlier runs found stands.
+                return new EvidenceVerificationResult(0,
+                    [new EvidenceDrift(Guid.Empty, Guid.Empty, null, "(the evidence key)", "", null, EvidenceDriftKind.KeyUnavailable,
+                        $"the evidence key ({ex.KeyId}) isn't available, so encrypted files can't be checked")],
+                    _clock.UtcNow, new HashSet<Guid>(), (known ?? rows.Select(x => x.Id)).ToHashSet());
+            }
+            var (kind, actual, detail) = outcome;
             if (kind is { } k)
                 drifts.Add(new EvidenceDrift(r.Id, r.CaseId, r.CaseNumber, r.OriginalFileName, r.Sha256, actual, k, detail!));
         }
@@ -151,6 +161,15 @@ public sealed class EvidenceIntegrityVerifier
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
             return (EvidenceDriftKind.Missing, null, "file not found in the evidence store");
+        }
+        catch (EvidenceKeyUnavailableException)
+        {
+            throw;   // the run reports the key once (above), not every file
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // PROD-57: an encrypted file that won't open was changed, cut short or swapped: its bytes aren't the evidence.
+            return (EvidenceDriftKind.HashMismatch, null, "the encrypted file doesn't open with its key: it was changed or damaged");
         }
         catch (Exception ex)
         {

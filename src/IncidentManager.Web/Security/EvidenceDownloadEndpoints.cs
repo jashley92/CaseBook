@@ -75,6 +75,11 @@ public static class EvidenceDownloadEndpoints
             return (null, null, Results.Problem("This evidence file is missing from the evidence store. Nothing was downloaded; " +
                 "ask an administrator to restore it.", statusCode: StatusCodes.Status404NotFound));
         }
+        catch (IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException ex)
+        {
+            // PROD-57: the file is fine; its key isn't available on this server (administrators have been alerted).
+            return (null, null, Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable));
+        }
         catch (IOException)
         {
             // PROD-56: the store itself couldn't be read (a share that's down, permissions): nothing was downloaded or recorded.

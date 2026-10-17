@@ -4235,3 +4235,29 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261017165615_EvidenceKeyEnvelopes'
+)
+BEGIN
+    CREATE TABLE [KeyEnvelopes] (
+        [KeyId] nvarchar(16) NOT NULL,
+        [EnvelopeJson] nvarchar(max) NOT NULL,
+        [UpdatedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_KeyEnvelopes] PRIMARY KEY ([KeyId])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261017165615_EvidenceKeyEnvelopes'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261017165615_EvidenceKeyEnvelopes'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

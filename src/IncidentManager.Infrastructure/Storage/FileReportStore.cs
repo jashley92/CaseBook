@@ -9,13 +9,16 @@ public sealed class ReportOutputOptions
     public string RootPath { get; set; } = "App_Data/report-output";
 }
 
-/// <summary>Stores generated report files per-case, hashing the bytes on write.</summary>
+/// <summary>Stores generated report files per-case, hashing the bytes on write. PROD-57: encrypted at rest (CBE1) when the
+/// evidence key is ready, with the same key; the hash is always the report's own. Plain reports still read.</summary>
 public sealed class FileReportStore : IReportStore
 {
     private readonly string _root;
+    private readonly IEvidenceKeyring _keys;
 
-    public FileReportStore(IOptions<ReportOutputOptions> options)
+    public FileReportStore(IOptions<ReportOutputOptions> options, IEvidenceKeyring? keys = null)
     {
+        _keys = keys ?? NoEvidenceKeys.Instance;
         _root = Path.GetFullPath(options.Value.RootPath);
         Directory.CreateDirectory(_root);
     }
@@ -45,7 +48,7 @@ public sealed class FileReportStore : IReportStore
             }
             try
             {
-                await using (fs) await fs.WriteAsync(content, ct);
+                await using (fs) await EncryptedFiles.WriteAsync(fs, new MemoryStream(content, writable: false), EncryptedFiles.ForNewFile(_keys), ct);
             }
             catch
             {
@@ -89,7 +92,6 @@ public sealed class FileReportStore : IReportStore
         if (!abs.StartsWith(rootPrefix, StringComparison.Ordinal))
             throw new ReportPathOutsideStoreException();
 
-        Stream stream = new FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return Task.FromResult(stream);
+        return Task.FromResult(EncryptedFiles.OpenContent(new FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.Read), _keys));
     }
 }
