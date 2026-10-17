@@ -1,0 +1,109 @@
+namespace IncidentManager.KeyTool;
+
+// PROD-57: casebook-keytool. See KeyToolCommands and OPERATIONS.md (Evidence key: backups and recovery).
+internal static class KeyToolProgram
+{
+    private const string Usage = """
+        casebook-keytool <command> [options]
+
+          split        --site <folder> [--threshold 3] [--shares 5] [--out <folder>]
+                       Split the evidence key into shares (run on the server, as an administrator).
+          check-share  <share> [<share> ...]
+                       Check shares are intact, on any machine. Nothing is rebuilt or recorded.
+          verify       --site <folder> (--pfx <file> | --cert <thumbprint> [--store CurrentUser|LocalMachine] | --shares)
+                       A recovery drill: prove a backup opens the key, and record it.
+          recover      --site <folder> (--pfx <file> | --cert <thumbprint> | --shares) --to-cert <thumbprint> [--to-store LocalMachine]
+                       [--chain-key]
+                       Rebuild the server's copy of the key onto another certificate.
+          export       --site <folder> (--case <number> | --all) --out <folder> [--pfx <file> | --cert <thumbprint> | --shares]
+                       Write evidence out as the original files, with a manifest of their SHA-256s.
+
+          --site is the CaseBook site folder (where appsettings.Production.json is).
+          --pfx asks for the PFX's password; --shares asks for the shares one per line.
+        """;
+
+    public static int Main(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        {
+            Console.WriteLine(Usage);
+            return 0;
+        }
+
+        try
+        {
+            var command = args[0];
+            var rest = args[1..];
+            string? Opt(string name) => Array.IndexOf(rest, name) is var i and >= 0 && i + 1 < rest.Length ? rest[i + 1] : null;
+            bool Flag(string name) => rest.Contains(name);
+            Site SiteArg() => Site.Load(Opt("--site") ?? throw new ArgumentException("--site is needed: the CaseBook site folder."));
+
+            Opening OpeningArg()
+            {
+                if (Flag("--shares")) return new Opening(Shares: ReadShares());
+                if (Opt("--pfx") is { } pfx) return new Opening(PfxPath: pfx, PfxPassword: ReadSecret($"Password for {pfx}: "));
+                if (Opt("--cert") is { } thumb) return new Opening(Thumbprint: thumb, Store: Opt("--store") ?? "CurrentUser");
+                return new Opening();
+            }
+
+            switch (command)
+            {
+                case "split":
+                    KeyToolCommands.Split(SiteArg(), int.Parse(Opt("--threshold") ?? "3", System.Globalization.CultureInfo.InvariantCulture),
+                        int.Parse(Opt("--shares") ?? "5", System.Globalization.CultureInfo.InvariantCulture), Opt("--out"), Console.Out);
+                    return 0;
+                case "check-share":
+                    KeyToolCommands.CheckShares(rest.Length > 0 ? rest : ReadShares(), Console.Out);
+                    return 0;
+                case "verify":
+                    KeyToolCommands.Verify(SiteArg(), OpeningArg(), Console.Out);
+                    return 0;
+                case "recover":
+                    KeyToolCommands.Recover(SiteArg(), OpeningArg(), Opt("--to-cert") ?? throw new ArgumentException("--to-cert is needed."),
+                        Opt("--to-store") ?? "LocalMachine", Flag("--chain-key"), Console.Out);
+                    return 0;
+                case "export":
+                    var all = Flag("--all");
+                    var caseNumber = Opt("--case");
+                    if (all == (caseNumber is not null)) throw new ArgumentException("Give --case <number> or --all.");
+                    var (_, mismatched) = KeyToolCommands.Export(SiteArg(), caseNumber, Opt("--out") ?? throw new ArgumentException("--out is needed."),
+                        OpeningArg(), Console.Out);
+                    return mismatched == 0 ? 0 : 2;
+                default:
+                    Console.Error.WriteLine($"Unknown command '{command}'.");
+                    Console.Error.WriteLine(Usage);
+                    return 1;
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Security.Cryptography.CryptographicException
+                                       or FormatException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"casebook-keytool: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static List<string> ReadShares()
+    {
+        Console.WriteLine("Enter the shares, one per line; a blank line when done.");
+        var shares = new List<string>();
+        while (Console.ReadLine() is { Length: > 0 } line) shares.Add(line.Trim());
+        return shares;
+    }
+
+    private static string ReadSecret(string prompt)
+    {
+        Console.Write(prompt);
+        if (Console.IsInputRedirected) return Console.ReadLine() ?? "";
+        var secret = new System.Text.StringBuilder();
+        while (true)
+        {
+            var k = Console.ReadKey(intercept: true);
+            if (k.Key == ConsoleKey.Enter) break;
+            if (k.Key == ConsoleKey.Backspace) { if (secret.Length > 0) secret.Length--; continue; }
+            secret.Append(k.KeyChar);
+        }
+        Console.WriteLine();
+        return secret.ToString();
+    }
+}

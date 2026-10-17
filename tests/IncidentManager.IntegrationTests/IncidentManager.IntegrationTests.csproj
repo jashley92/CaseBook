@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\IncidentManager.Application\IncidentManager.Application.csproj" />
     <ProjectReference Include="..\..\src\IncidentManager.Infrastructure\IncidentManager.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\IncidentManager.Web\IncidentManager.Web.csproj" />
+    <ProjectReference Include="..\..\src\IncidentManager.KeyTool\IncidentManager.KeyTool.csproj" />
   </ItemGroup>
 
 </Project>

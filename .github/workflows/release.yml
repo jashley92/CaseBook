@@ -90,6 +90,10 @@ jobs:
       - name: Publish web app
         run: dotnet publish src/IncidentManager.Web -c Release -o publish/app --nologo -p:Version="${GITHUB_REF_NAME#v}"
 
+      # PROD-57: casebook-keytool (key shares, recovery drills, recovery, decrypted export), shipped under deploy/keytool.
+      - name: Publish keytool
+        run: dotnet publish src/IncidentManager.KeyTool -c Release -o publish/keytool --nologo -p:Version="${GITHUB_REF_NAME#v}"
+
       - name: Assemble release bundle
         run: |
           set -euo pipefail
@@ -98,6 +102,7 @@ jobs:
           mkdir -p "$root"
           cp -r publish/app "$root/app"
           cp -r deploy "$root/deploy"
+          cp -r publish/keytool "$root/deploy/keytool"
           # Migration-ID manifest — Upgrade-CaseBook.ps1 compares this against the target DB's
           # __EFMigrationsHistory to detect a lineage mismatch BEFORE it deploys (the failure mode
           # that crashes the app on startup when an old DB meets a newer migration set).
