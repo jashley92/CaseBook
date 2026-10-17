@@ -157,7 +157,9 @@ else if (_pending.Count > 0)
         </button>
         @* BUG-636: what a time written without a zone means (a document's own "timeZone" wins). *@
         <label class="small text-muted ms-1" for="imp-zone">Times without a zone are in</label>
-        <select id="imp-zone" class="form-select form-select-sm w-auto" @bind="_unzonedZoneId">
+        @* BUG-655: a change re-reads the document shown; not once part of it is applied (the rest follows that reading). *@
+        <select id="imp-zone" class="form-select form-select-sm w-auto" @bind="_unzonedZoneId" @bind:after="ZoneChanged"
+                disabled="@(_applying || _preview is { } zp && TargetLocked(zp))">
             @foreach (var (id, label) in ZoneChoices())
             {
                 <option value="@id">@label</option>
@@ -170,6 +172,10 @@ else if (_pending.Count > 0)
             <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="Reset">Clear</button>
         }
     </div>
+    @if (_zoneNote is not null)
+    {
+        <div class="alert alert-info small mt-2 mb-0" role="status">@_zoneNote</div>
+    }
     @if (_parseError is not null)
     {
         @* Stays put next to the document (not a toast) so it can be read while fixing the text. *@
@@ -646,6 +652,7 @@ else if (_pending.Count > 0)
         _existingNumber = null;
         _existingError = null;
         _fileName = null;
+        (_zoneNote, _readZoneId) = (null, null);   // BUG-655
         _gate.UseGate(null);
     }
 
@@ -727,7 +734,9 @@ else if (_pending.Count > 0)
             if (!_reads.IsCurrent(r)) return;
             (_text, _fileName) = (text, name);
             await ShowInBox(_text);   // BUG-605: the box isn't bound, so it's shown there explicitly
-            if (_reads.IsCurrent(r)) await Preview();
+            if (!_reads.IsCurrent(r)) return;
+            _zoneNote = null;   // BUG-655: about the document before this one
+            await Preview();
         }
         catch (Exception ex)
         {
@@ -780,7 +789,10 @@ else if (_pending.Count > 0)
         }
         finally { _readingBox = false; }
         if (!_reads.IsCurrent(r)) return;
+        // BUG-655: the upload's name (a CSV's provenance) is kept only while the box still holds that file's text.
+        if (!string.Equals(text, _text, StringComparison.Ordinal)) _fileName = null;
         _text = text;
+        _zoneNote = null;
         await Preview();
     }
 
@@ -806,7 +818,9 @@ else if (_pending.Count > 0)
         ++_gateSeq;
         _gate.UseGate(null);
         // PROD-06: a STIX bundle or IOC CSV is converted into an entities-only import document first.
-        var converted = IocImportConverter.Convert(_text, _fileName, unzonedIn: UnzonedZone());
+        var zone = UnzonedZone();
+        _readZoneId = zone.Id;   // BUG-655
+        var converted = IocImportConverter.Convert(_text, _fileName, unzonedIn: zone);
         _parseError = null;
         if (!converted.Ok)
         {
@@ -849,7 +863,41 @@ else if (_pending.Count > 0)
     private TimeZoneInfo UnzonedZone()
     {
         var id = _unzonedZoneId ??= OrgZone.Current.Id;
-        return TimeZoneInfo.TryFindSystemTimeZoneById(id, out var z) ? z : OrgZone.Current;
+        return Zone(id);
+    }
+
+    private TimeZoneInfo Zone(string id) => TimeZoneInfo.TryFindSystemTimeZoneById(id, out var z) ? z : OrgZone.Current;
+
+    // BUG-655: the zone the document shown (or loading) was read in, and what the page says about a re-read.
+    private string? _readZoneId;
+    private string? _zoneNote;
+
+    // BUG-655: a zone picked after Preview went unused, and Apply imported the reading the picker no longer showed. The
+    // document is read again in the new zone, and the page says so, since the changes made to the preview go with it.
+    // Not when the zone changes nothing (the document names its own, or has no time without one): the preview stays.
+    // A queued review never sees the picker (its rule stays the document's own zone, else UTC).
+    private async Task ZoneChanged()
+    {
+        var zone = UnzonedZone();
+        if (_reviewingPendingId is not null || _text is null || _readZoneId is not { } readIn || readIn == zone.Id) return;
+        if (_applying || _preview is { } p && TargetLocked(p))
+        {
+            _unzonedZoneId = readIn;   // the rest of a part-applied import follows the reading already applied
+            return;
+        }
+        var now = Clock.UtcNow;
+        var before = IocImportConverter.Convert(_text, _fileName, now, Zone(readIn));
+        var after = IocImportConverter.Convert(_text, _fileName, now, zone);
+        if (before.Error == after.Error && (before.Document is null) == (after.Document is null)
+            && (before.Document is null || System.Text.Json.JsonSerializer.Serialize(before.Document, CaseImportJson.Options)
+                == System.Text.Json.JsonSerializer.Serialize(after.Document, CaseImportJson.Options)))
+        {
+            _readZoneId = zone.Id;
+            return;
+        }
+        _zoneNote = _preview is null ? null
+            : $"Times without a zone are now read as {IocImportConverter.ZoneName(zone)}. The preview was read again from the document, so any changes made to it were undone.";
+        await Preview();
     }
 
     // BUG-637: the number a new case would get (as the New case form shows it), and whether a chosen one is free.
@@ -897,6 +945,7 @@ else if (_pending.Count > 0)
         _existingNumber = null;
         _existingError = null;
         _fileName = null;
+        (_zoneNote, _readZoneId) = (null, null);   // BUG-655
         _related = [];
         ++_gateSeq;   // BUG-446: as Preview
         _gate.UseGate(null);
