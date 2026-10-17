@@ -80,8 +80,9 @@ jobs:
       # failing gate fails CI on main and PRs (it used to pass, and the release then shipped it).
       # BUG-495: xml:S5734 wants X-Content-Type-Options set in web.config; SecurityHeadersMiddleware sends it on every
       # response (Kestrel and IIS alike), and setting it in IIS too would send the header twice.
-      # csharpsquid:S5332 wants EnableSsl = true on the SmtpClient; EmailSender sets it from Email:EnableSsl, which
+      # csharpsquid:S5332 wants EnableSsl = true on the SmtpClient; SmtpClientFactory sets it from Email:EnableSsl, which
       # defaults to on (S4423) and is turned off only for a relay that does its own TLS. TLS is managed by that setting.
+      # BUG-657: the waiver covers that one small file, so the rest of the mail code is still checked for S5332.
       # csharpsquid:S3011 (reflection past accessibility) in TrailSnapshot: the integrity check rebuilds a record as its
       # audit trail recorded it, and the domain's value setters are private by design; it only copies CaseBook's own
       # entities in-process and never touches anything a caller supplies.
@@ -99,7 +100,7 @@ jobs:
           /d:sonar.issue.ignore.multicriteria.hdr.ruleKey="xml:S5734"
           /d:sonar.issue.ignore.multicriteria.hdr.resourceKey="**/web.config"
           /d:sonar.issue.ignore.multicriteria.smtp.ruleKey="csharpsquid:S5332"
-          /d:sonar.issue.ignore.multicriteria.smtp.resourceKey="**/Notifications/EmailSender.cs"
+          /d:sonar.issue.ignore.multicriteria.smtp.resourceKey="**/Notifications/SmtpClientFactory.cs"
           /d:sonar.issue.ignore.multicriteria.refl.ruleKey="csharpsquid:S3011"
           /d:sonar.issue.ignore.multicriteria.refl.resourceKey="**/Integrity/TrailSnapshot.cs"
 
