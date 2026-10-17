@@ -83,6 +83,9 @@ builder.Services.AddHostedService<RowHashUpgradeHostedService>();
 // --- F-17: periodic evidence-at-rest re-verification (re-hash stored bytes, alarm on drift) ---
 builder.Services.Configure<EvidenceVerifyOptions>(builder.Configuration.GetSection("Integrity:EvidenceVerify"));
 builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
+// PROD-52: deletes access-log entries older than Retention:AccessLogYears (default 3), keeping legal-hold cases' entries.
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
+builder.Services.AddHostedService<AccessLogRetentionHostedService>();
 
 // --- BUG-101: retries the breach-escalation and integrity-alarm emails whose send failed ---
 builder.Services.AddHostedService<CriticalAlertRetryHostedService>();

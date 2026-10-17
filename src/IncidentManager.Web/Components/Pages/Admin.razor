@@ -754,8 +754,10 @@
             <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
             <p class="small text-muted mb-2">
                 A background job re-hashes stored evidence and compares it to the SHA-256 recorded in the
-                audit chain, catching bit-rot or tampering. Turn it on and set the interval under
-                <strong>Governance &amp; security</strong>. Alerts go to the integrity-alert distribution.
+                audit chain, catching bit-rot or tampering. Each run checks a share of the files, so that every file is
+                checked within the full-pass days. A problem found stays listed until that file is checked again. Turn it
+                on and set the interval and full pass under <strong>Governance &amp; security</strong>. Alerts go to the
+                integrity-alert distribution.
             </p>
             <table class="table table-sm">
                 <tbody>
@@ -787,7 +789,15 @@
                                     <span class="im-badge im-b-danger">Drift: @ev.DriftCount</span>
                                 }
                                 <span class="small text-muted ms-2">
-                                    @ev.CheckedCount checked · @ev.CheckedAtUtc.ToString("u")
+                                    @if (ev.TotalCount > ev.CheckedCount)
+                                    {
+                                        @($"{ev.CheckedCount:N0} of {ev.TotalCount:N0} checked in the latest run (every file at least every {Math.Max(1, Config.GetValue("Integrity:EvidenceVerify:PassDays", 7))} days)")
+                                    }
+                                    else
+                                    {
+                                        @($"{ev.CheckedCount:N0} checked")
+                                    }
+                                    · @ev.CheckedAtUtc.ToString("u")
                                 </span>
                             </td>
                         </tr>

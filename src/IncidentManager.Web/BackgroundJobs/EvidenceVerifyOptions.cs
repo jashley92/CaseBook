@@ -11,8 +11,15 @@ public sealed class EvidenceVerifyOptions
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// Hours between full re-verification passes. A pass re-hashes every stored evidence file, so this is
-    /// deliberately slow (default daily) — unlike the audit-chain verify, which runs every few minutes.
+    /// Hours between re-verification runs (default daily). Each run re-hashes its share of the stored evidence files
+    /// (<see cref="PassDays"/>) — unlike the audit-chain verify, which runs every few minutes.
     /// </summary>
     public double IntervalHours { get; set; } = 24;
+
+    /// <summary>
+    /// PROD-53: every stored file is re-hashed at least once in this many days. Each run checks one share of the files
+    /// (<see cref="Application.Integrity.EvidenceIntegrityVerifier.Shares"/>), so a large store isn't read end to end every
+    /// run. 1 checks every file every run.
+    /// </summary>
+    public int PassDays { get; set; } = 7;
 }

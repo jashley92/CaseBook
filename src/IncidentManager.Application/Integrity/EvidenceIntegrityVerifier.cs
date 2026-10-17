@@ -40,7 +40,42 @@ public sealed class EvidenceIntegrityVerifier
     /// Re-hashes every stored evidence file and reports the ones whose bytes drifted from their recorded
     /// SHA-256. Pure: records nothing and raises no alarm (see <see cref="VerifyAndTrackAsync"/> for that).
     /// </summary>
-    public async Task<EvidenceVerificationResult> VerifyAllAsync(CancellationToken ct = default)
+    public Task<EvidenceVerificationResult> VerifyAllAsync(CancellationToken ct = default) => VerifyShareAsync(0, 1, ct);
+
+    /// <summary>
+    /// PROD-53: how many shares the files are split into so that every one is re-hashed at least once in
+    /// <paramref name="passDays"/> days with a run every <paramref name="interval"/>: each run reads one share, not the
+    /// whole store.
+    /// </summary>
+    public static int Shares(int passDays, TimeSpan interval) =>
+        interval <= TimeSpan.Zero ? 1 : (int)Math.Clamp(Math.Floor(TimeSpan.FromDays(Math.Max(1, passDays)) / interval), 1, 10_000);
+
+    /// <summary>The share a file is in: fixed by its id (random for evidence), so the shares are even and never move.</summary>
+    public static int ShareOf(Guid id, int shares)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        id.TryWriteBytes(bytes);
+        return (int)(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes) % (uint)Math.Max(1, shares));
+    }
+
+    /// <summary>
+    /// The share the run in the interval holding <paramref name="now"/> checks. Intervals are counted from 1 January 2000 UTC,
+    /// so the order holds across restarts without anything stored (this check writes nothing).
+    /// </summary>
+    public static int ShareDue(DateTimeOffset now, TimeSpan interval, int shares) =>
+        (int)(Slot(now, interval) % Math.Max(1, shares));
+
+    /// <summary>Which interval <paramref name="now"/> falls in, counted from 1 January 2000 UTC.</summary>
+    public static long Slot(DateTimeOffset now, TimeSpan interval) =>
+        (now.UtcTicks - Epoch.UtcTicks) / Math.Max(1, interval.Ticks);
+
+    private static readonly DateTimeOffset Epoch = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// PROD-53: re-hashes the files in share <paramref name="share"/> of <paramref name="shares"/> (every file when
+    /// <paramref name="shares"/> is 1) and reports the ones whose bytes drifted. Pure, as <see cref="VerifyAllAsync"/>.
+    /// </summary>
+    public async Task<EvidenceVerificationResult> VerifyShareAsync(int share, int shares, CancellationToken ct = default)
     {
         // Read the metadata once, then release the DbContext before the (potentially slow) file IO — the
         // re-hash pass must not hold a database connection open while it streams bytes off disk. A left
@@ -56,6 +91,10 @@ public sealed class EvidenceIntegrityVerifier
                     e.Sha256, e.StoragePath)).ToListAsync(ct);
         }
 
+        var all = shares <= 1;
+        var known = all ? null : rows.Select(r => r.Id).ToHashSet();
+        if (!all) rows = rows.Where(r => ShareOf(r.Id, shares) == share).ToList();
+
         var drifts = new List<EvidenceDrift>();
         foreach (var r in rows)
         {
@@ -65,7 +104,8 @@ public sealed class EvidenceIntegrityVerifier
                 drifts.Add(new EvidenceDrift(r.Id, r.CaseId, r.CaseNumber, r.OriginalFileName, r.Sha256, actual, k, detail!));
         }
 
-        return new EvidenceVerificationResult(rows.Count, drifts, _clock.UtcNow);
+        return new EvidenceVerificationResult(rows.Count, drifts, _clock.UtcNow,
+            all ? null : rows.Select(r => r.Id).ToHashSet(), known);
     }
 
     /// <summary>
@@ -74,9 +114,12 @@ public sealed class EvidenceIntegrityVerifier
     /// latch lives in the monitor, so the alarm fires once per episode regardless of how often this runs.
     /// The notifier never throws, so a notification failure can't hide the drift.
     /// </summary>
-    public async Task<EvidenceVerificationResult> VerifyAndTrackAsync(CancellationToken ct = default)
+    public Task<EvidenceVerificationResult> VerifyAndTrackAsync(CancellationToken ct = default) => VerifyAndTrackAsync(0, 1, ct);
+
+    /// <summary>PROD-53: as <see cref="VerifyAndTrackAsync(CancellationToken)"/>, over one share of the files.</summary>
+    public async Task<EvidenceVerificationResult> VerifyAndTrackAsync(int share, int shares, CancellationToken ct = default)
     {
-        var result = await VerifyAllAsync(ct);
+        var result = await VerifyShareAsync(share, shares, ct);
         if (_monitor.RecordResult(result, _clock.UtcNow))
             await _alerts.OnDriftDetectedAsync(result, ct);
         return result;

@@ -114,12 +114,16 @@ The audit hash-chain protects each evidence row's recorded **SHA-256** (it is pa
 canonical, chain-hashed content). It does **not** re-check that the *stored bytes* still match that
 hash — so bit-rot, a silently substituted file, or a deletion under the evidence store would go
 undetected until someone tried to open the file. F-17 closes that gap: a background job periodically
-**re-hashes every stored evidence file** and compares it to the recorded hash.
+**re-hashes the stored evidence files** and compares each with its recorded hash.
 
 - **Enable and schedule it** under **Administration → Settings → Integrity**
   (`Integrity:EvidenceVerify:Enabled`, default **off**; `Integrity:EvidenceVerify:IntervalHours`,
-  default **24**). It is off by default because a full re-hash of the store is I/O-heavy; turn it on
-  where the evidence store's at-rest integrity matters. A pass also runs once at startup.
+  default **24**; `Integrity:EvidenceVerify:PassDays`, default **7**). Each run re-hashes one share of the
+  files, so every file is checked at least once in `PassDays` days and a large store is read a seventh at a
+  time rather than end to end daily (PROD-53). A run also happens at startup, and a run after an outage or a
+  settings change may leave a file for up to twice `PassDays`. A drift found stays reported until that file
+  is checked again. Set `PassDays` to 1 to re-hash every file every run. It is off by default because
+  re-hashing is I/O-heavy; turn it on where the evidence store's at-rest integrity matters.
 - **On drift** (hash mismatch, missing, or unreadable file) it raises the same out-of-band alarm as the
   F-16 chain-break: a `LogLevel.Critical` event **`EventId 5003`** (the SIEM signal, counts only — no
   filenames), the same event on the F-18 stream, and **email** to `Email:IntegrityAlertDistribution`

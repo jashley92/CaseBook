@@ -104,6 +104,38 @@ public sealed class EvidenceIntegrityVerifierTests : IDisposable
     }
 
     [Fact]
+    public async Task A_run_checks_its_share_and_every_file_is_checked_once_over_the_pass(/* PROD-53 */)
+    {
+        var caseId = await SeedCaseAsync();
+        var files = new List<(Guid Id, string StoragePath)>();
+        for (var i = 0; i < 12; i++) files.Add(await UploadAsync(caseId, $"f{i}.bin", $"body {i}"));
+        var (bad, badPath) = files[5];
+        await File.WriteAllTextAsync(AbsPathFor(badPath), "tampered");
+
+        var monitor = new EvidenceIntegrityMonitor();
+        var notifier = new CapturingNotifier();
+        var verifier = NewVerifier(monitor, notifier);
+        var seen = new List<Guid>();
+        for (var share = 0; share < 3; share++)
+        {
+            var result = await verifier.VerifyAndTrackAsync(share, 3);
+            result.TotalCount.Should().Be(12);
+            result.CheckedIds.Should().OnlyContain(id => EvidenceIntegrityVerifier.ShareOf(id, 3) == share);
+            result.CheckedCount.Should().Be(result.CheckedIds!.Count);
+            seen.AddRange(result.CheckedIds);
+            monitor.Current!.Drifts.Select(d => d.EvidenceId).Should().Equal(
+                seen.Contains(bad) ? [bad] : Array.Empty<Guid>(), "a drift is reported from its share's run on");
+        }
+        seen.Should().BeEquivalentTo(files.Select(f => f.Id), "the three shares cover every file once");
+        notifier.Calls.Should().ContainSingle("the drift alarms once, not on the runs after");
+
+        var all = await verifier.VerifyAllAsync();
+        all.CoversEveryFile.Should().BeTrue();
+        all.CheckedCount.Should().Be(12);
+        all.Drifts.Select(d => d.EvidenceId).Should().Equal(bad);
+    }
+
+    [Fact]
     public async Task A_corrupted_file_is_reported_as_hash_mismatch()
     {
         var caseId = await SeedCaseAsync();

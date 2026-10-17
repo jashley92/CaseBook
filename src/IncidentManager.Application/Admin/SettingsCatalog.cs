@@ -171,6 +171,12 @@ public static class SettingsCatalog
             "Indicator lookup template: a full https:// address with {0} where the indicator value should appear.", "https://www.virustotal.com/gui/search/{0}", LinkTemplate: true),
         new SettingDefinition("Retention:CaseYears", "Case retention (years)", "Retention", SettingKind.Int,
             "How long closed cases are kept before they can be archived. A legal hold always overrides this.", "7", Max: 100),
+        // PROD-52: the access log (who opened a case, downloaded evidence or a report, exported) is outside the audit chain
+        // and grew without limit.
+        new SettingDefinition("Retention:AccessLogYears", "Access log retention (years)", "Retention", SettingKind.Int,
+            "How long the access log (who opened which case, downloaded which file, exported what) is kept. Older entries are " +
+            "deleted nightly, except for cases under a legal hold. 0 keeps it forever. Check your own record-keeping rules " +
+            "(some apply six years to access logs). Default 3.", "3", Max: 100),
         // F-12: two-person control for lifting a legal hold. Off by default.
         new SettingDefinition("Governance:LegalHoldRelease:RequireSecondApprover", "Second approver to release a legal hold", "Retention", SettingKind.Bool,
             "When on, releasing a legal hold is a request with a reason that a different person with Manage Legal must approve. Placing a hold stays a single action.", "false"),
@@ -183,8 +189,12 @@ public static class SettingsCatalog
             "Periodically re-hashes stored evidence and alerts if a file no longer matches its recorded SHA-256. " +
             "Off by default because a full pass is I/O-heavy. Alerts go to the integrity-alert distribution.", "false"),
         new SettingDefinition("Integrity:EvidenceVerify:IntervalHours", "Evidence re-verification interval (hours)", "Integrity", SettingKind.Int,
-            "Hours between full passes. Each pass re-hashes every stored file, so keep it slow. " +
-            "A pass also runs at startup. Default 24 (0 also means 24).", "24", Max: MaxIntervalHours),
+            "Hours between runs. Each run re-hashes a share of the stored files (see the full-pass setting), and one also runs at " +
+            "startup. Default 24 (0 also means 24).", "24", Max: MaxIntervalHours),
+        new SettingDefinition("Integrity:EvidenceVerify:PassDays", "Evidence re-verification full pass (days)", "Integrity", SettingKind.Int,
+            "Every stored file is re-hashed at least once in this many days: each run checks its share, so the disk reads spread out. " +
+            "1 re-hashes everything on every run. A damaged or swapped file is found within this time (up to twice it after a long " +
+            "outage). Default 7.", "7", Min: 1, Max: 90),
         // PROD-49: the update check. Off by default; the repository and any proxy stay server-side (Updates:Repository, Updates:Proxy).
         new SettingDefinition("Updates:CheckEnabled", "Check for new releases", "Updates", SettingKind.Bool,
             "Asks GitHub (api.github.com) which CaseBook releases are newer than this one and shows them here with their notes. " +

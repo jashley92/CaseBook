@@ -79,4 +79,67 @@ public class EvidenceIntegrityMonitorTests
         m.RecordResult(Clean(), T0.AddHours(24)).Should().BeFalse("a clean pass is not an alarm");
         m.RecordResult(Drift(), T0.AddHours(48)).Should().BeTrue("fresh drift after a clean pass alarms again");
     }
+
+    // PROD-53: a run over one share of the files.
+    private static EvidenceVerificationResult Share(Guid[] checkedIds, Guid[] known, params EvidenceDrift[] drifts) =>
+        new(checkedIds.Length, drifts, T0, checkedIds.ToHashSet(), known.ToHashSet());
+
+    [Fact]
+    public void A_drift_found_in_one_share_stays_until_that_file_is_checked_again(/* PROD-53 */)
+    {
+        var m = new EvidenceIntegrityMonitor();
+        var other = Guid.NewGuid();
+        Guid[] all = [Shot, Memo, other];
+
+        m.RecordResult(Share([Shot], all, D(Shot)), T0).Should().BeTrue();
+        m.RecordResult(Share([Memo], all), T0.AddDays(1)).Should().BeFalse("the drift is still there, so no new alarm");
+        m.Current!.IsClean.Should().BeFalse("a run that didn't check the drifted file doesn't clear it");
+        m.Current.Drifts.Select(d => d.EvidenceId).Should().Equal(Shot);
+        m.Current.CheckedCount.Should().Be(1);
+        m.Current.TotalCount.Should().Be(3);
+
+        m.RecordResult(Share([Memo, other], all, D(Memo, EvidenceDriftKind.Missing)), T0.AddDays(2))
+            .Should().BeTrue("a second file's drift alarms while the first persists");
+        m.Current.Drifts.Select(d => d.EvidenceId).Should().BeEquivalentTo([Shot, Memo]);
+
+        m.RecordResult(Share([Shot], all), T0.AddDays(3)).Should().BeFalse();
+        m.Current.Drifts.Select(d => d.EvidenceId).Should().Equal(Memo);   // Shot checked clean
+        m.RecordResult(Share([other], [Shot, other]), T0.AddDays(4)).Should().BeFalse();
+        m.Current.IsClean.Should().BeTrue("a drifted file whose evidence was removed is dropped");
+
+        m.RecordResult(Share([Shot], all, D(Shot)), T0.AddDays(5)).Should().BeTrue("one that cleared and came back alarms again");
+        m.RecordResult(Clean(3), T0.AddDays(6)).Should().BeFalse();
+        m.Current.IsClean.Should().BeTrue("a run over every file replaces what earlier shares found");
+    }
+
+    [Theory]
+    [InlineData(7, 24, 7)]
+    [InlineData(1, 24, 1)]
+    [InlineData(7, 48, 3)]      // a run every 2 days: every file within 6 days
+    [InlineData(1, 6, 4)]       // every 6 hours: every file each day
+    [InlineData(7, 200, 1)]     // runs further apart than the pass: every file every run
+    [InlineData(0, 24, 1)]
+    public void The_files_are_split_so_each_is_checked_within_the_pass(int passDays, int intervalHours, int shares)
+    {
+        var interval = TimeSpan.FromHours(intervalHours);
+        EvidenceIntegrityVerifier.Shares(passDays, interval).Should().Be(shares);
+        (interval * shares).Should().BeLessThanOrEqualTo(TimeSpan.FromDays(Math.Max(passDays, 1)) + (shares == 1 ? interval : TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void Each_share_comes_round_once_a_pass_and_files_spread_evenly(/* PROD-53 */)
+    {
+        var interval = TimeSpan.FromHours(24);
+        var start = new DateTimeOffset(2026, 10, 17, 0, 0, 0, TimeSpan.Zero);
+        Enumerable.Range(0, 7).Select(d => EvidenceIntegrityVerifier.ShareDue(start.AddDays(d).AddHours(13), interval, 7))
+            .Should().BeEquivalentTo(Enumerable.Range(0, 7), "seven consecutive days check each of the seven shares once");
+        EvidenceIntegrityVerifier.ShareDue(start.AddHours(1), interval, 7)
+            .Should().Be(EvidenceIntegrityVerifier.ShareDue(start.AddHours(23), interval, 7), "one share per interval, restart or not");
+
+        var ids = Enumerable.Range(0, 7_000).Select(_ => Guid.NewGuid()).ToList();
+        ids.All(id => EvidenceIntegrityVerifier.ShareOf(id, 7) == EvidenceIntegrityVerifier.ShareOf(id, 7)).Should().BeTrue();
+        ids.GroupBy(id => EvidenceIntegrityVerifier.ShareOf(id, 7)).Select(g => g.Count())
+            .Should().HaveCount(7).And.OnlyContain(n => n > 800 && n < 1_200, "random ids spread about evenly");
+        EvidenceIntegrityVerifier.ShareOf(Guid.NewGuid(), 1).Should().Be(0);
+    }
 }

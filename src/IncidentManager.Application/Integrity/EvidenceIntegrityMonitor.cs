@@ -1,12 +1,18 @@
 namespace IncidentManager.Application.Integrity;
 
-/// <summary>The most recent evidence-at-rest verification outcome, for the in-app banner/panel (F-17).</summary>
+/// <summary>
+/// The most recent evidence-at-rest verification outcome, for the in-app banner/panel (F-17). PROD-53: when runs check
+/// one share of the files each, <see cref="Drifts"/> holds what every file was found in at its latest check: a drift
+/// stays until that file is checked again (and dropped if its evidence was removed). <see cref="CheckedCount"/> is the
+/// latest run's, out of <see cref="TotalCount"/> in the store.
+/// </summary>
 public sealed record EvidenceIntegrityStatus(
     bool IsClean,
     int CheckedCount,
     int DriftCount,
     IReadOnlyList<EvidenceDrift> Drifts,
-    DateTimeOffset CheckedAtUtc);
+    DateTimeOffset CheckedAtUtc,
+    int TotalCount = 0);
 
 /// <summary>
 /// Holds the latest evidence-at-rest verification result app-wide (singleton, in-memory) and decides
@@ -57,12 +63,17 @@ public sealed class EvidenceIntegrityMonitor : IEvidenceIntegrityMonitor
     {
         lock (_gate)
         {
+            // PROD-53: a run over one share of the files leaves the others as their latest check found them.
+            var drifts = result.CoversEveryFile || _current is null
+                ? result.Drifts
+                : _current.Drifts.Where(d => !result.CheckedIds!.Contains(d.EvidenceId) && result.KnownIds!.Contains(d.EvidenceId))
+                    .Concat(result.Drifts).ToList();
             _current = new EvidenceIntegrityStatus(
-                result.IsClean, result.CheckedCount, result.Drifts.Count, result.Drifts, whenUtc);
+                drifts.Count == 0, result.CheckedCount, drifts.Count, drifts, whenUtc, result.TotalCount);
 
             // REV-09: latched per drift, not per episode. A file that stays unreadable mustn't hide a second file's bytes
             // being swapped weeks later. What's still drifted stays latched; what cleared can alert again.
-            var now = result.Drifts.Select(d => (d.EvidenceId, d.Kind)).ToHashSet();
+            var now = drifts.Select(d => (d.EvidenceId, d.Kind)).ToHashSet();
             var fresh = now.Any(d => !_alerted.Contains(d));
             _alerted = now;
             return fresh;

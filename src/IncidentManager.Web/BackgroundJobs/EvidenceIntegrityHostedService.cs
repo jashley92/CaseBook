@@ -5,10 +5,10 @@ namespace IncidentManager.Web.BackgroundJobs;
 
 /// <summary>
 /// Periodically re-hashes evidence at rest and raises the F-17 drift alarm (SIEM/critical log + email +
-/// in-app banner) when stored bytes no longer match their recorded SHA-256. Runs a pass immediately at
-/// startup so the banner/panel reflects the true state after a restart, then every
-/// <c>Integrity:EvidenceVerify:IntervalHours</c>. Gated by <c>Integrity:EvidenceVerify:Enabled</c>
-/// (off by default): a full re-hash of the store is I/O-heavy, so it is opt-in and runs on a slow cadence.
+/// in-app banner) when stored bytes no longer match their recorded SHA-256. Runs at startup, then once in every
+/// <c>Integrity:EvidenceVerify:IntervalHours</c> interval (counted from midnight UTC). PROD-53: each run re-hashes one
+/// share of the files, so that every file is checked at least once in <c>Integrity:EvidenceVerify:PassDays</c> days and a
+/// large store isn't read end to end every run. Gated by <c>Integrity:EvidenceVerify:Enabled</c> (off by default).
 ///
 /// Singleton hosted service; <see cref="EvidenceIntegrityVerifier"/> is scoped, so a new scope is created
 /// per cycle. Mirrors <see cref="IntegritySealHostedService"/>.
@@ -23,7 +23,7 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
     private readonly IOptionsMonitor<EvidenceVerifyOptions> _options;
     private readonly ILogger<EvidenceIntegrityHostedService> _logger;
 
-    private DateTimeOffset _lastRunUtc = DateTimeOffset.MinValue;
+    private long? _lastSlot;   // the interval the last run was in (PROD-53: one run per interval)
 
     public EvidenceIntegrityHostedService(IServiceScopeFactory scopeFactory,
         IOptionsMonitor<EvidenceVerifyOptions> options, ILogger<EvidenceIntegrityHostedService> logger)
@@ -41,8 +41,10 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
             try
             {
                 var options = _options.CurrentValue;
-                if (options.Enabled && IsDue(options))
-                    await RunCycleAsync(stoppingToken);
+                var interval = JobSchedule.Hours(options.IntervalHours, 24);
+                var slot = EvidenceIntegrityVerifier.Slot(DateTimeOffset.UtcNow, interval);
+                if (options.Enabled && slot != _lastSlot)   // the first run after startup, then one per interval
+                    await RunCycleAsync(options, interval, slot, stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -55,32 +57,28 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
         }
     }
 
-    private bool IsDue(EvidenceVerifyOptions options)
-    {
-        if (_lastRunUtc == DateTimeOffset.MinValue) return true; // first pass after startup
-        var interval = JobSchedule.Hours(options.IntervalHours, 24);
-        return DateTimeOffset.UtcNow - _lastRunUtc >= interval;
-    }
-
     private static async Task DelayAsync(TimeSpan delay, CancellationToken ct)
     {
         try { await Task.Delay(delay, ct).ConfigureAwait(false); }
         catch (OperationCanceledException) { /* shutting down */ }
     }
 
-    private async Task RunCycleAsync(CancellationToken ct)
+    private async Task RunCycleAsync(EvidenceVerifyOptions options, TimeSpan interval, long slot, CancellationToken ct)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var verifier = scope.ServiceProvider.GetRequiredService<EvidenceIntegrityVerifier>();
 
-            var result = await verifier.VerifyAndTrackAsync(ct);
-            _lastRunUtc = DateTimeOffset.UtcNow;
+            var shares = EvidenceIntegrityVerifier.Shares(options.PassDays, interval);
+            var share = (int)(slot % shares);
+            var result = await verifier.VerifyAndTrackAsync(share, shares, ct);
+            _lastSlot = slot;
 
             if (result.IsClean)
-                _logger.LogInformation("Evidence-at-rest verification passed: {CheckedCount} item(s) match their recorded hash.",
-                    result.CheckedCount);
+                _logger.LogInformation("Evidence-at-rest verification passed: {CheckedCount} of {TotalCount} item(s) checked " +
+                                       "(share {Share} of {Shares}) match their recorded hash.",
+                    result.CheckedCount, result.TotalCount, share + 1, shares);
             // A drift already raised the critical alarm inside VerifyAndTrackAsync; no extra logging here.
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

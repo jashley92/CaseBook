@@ -29,14 +29,23 @@ public sealed record EvidenceDrift(
     string Detail);
 
 /// <summary>
-/// Outcome of one at-rest re-verification pass over the evidence store (F-17): how many items were
-/// checked and which, if any, drifted from their recorded SHA-256.
+/// Outcome of one at-rest re-verification run over the evidence store (F-17): how many items were
+/// checked and which, if any, drifted from their recorded SHA-256. PROD-53: a run may check one share of the files
+/// (<see cref="CheckedIds"/>, out of <see cref="KnownIds"/>, every item in the store); null for a run over every file.
 /// </summary>
 public sealed record EvidenceVerificationResult(
     int CheckedCount,
     IReadOnlyList<EvidenceDrift> Drifts,
-    DateTimeOffset CheckedAtUtc)
+    DateTimeOffset CheckedAtUtc,
+    IReadOnlySet<Guid>? CheckedIds = null,
+    IReadOnlySet<Guid>? KnownIds = null)
 {
     /// <summary>True when every checked item's bytes still matched its recorded hash.</summary>
     public bool IsClean => Drifts.Count == 0;
+
+    /// <summary>Whether this run checked every file in the store.</summary>
+    public bool CoversEveryFile => CheckedIds is null;
+
+    /// <summary>How many evidence items the store holds (all of them checked, for a run over every file).</summary>
+    public int TotalCount => KnownIds?.Count ?? CheckedCount;
 }

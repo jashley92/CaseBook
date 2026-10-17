@@ -153,8 +153,9 @@ process's working directory, which under IIS is the site folder.
 |---|---|---|---|
 | `Integrity:AutoSeal:Enabled` | Sign a seal on a schedule. Chain verification runs every 10 minutes either way. | code `false`; json, template and catalog `true` | App |
 | `Integrity:AutoSeal:IntervalHours` | Hours between seals (`≤0` means 6) | `6`; prod template `24` | App |
-| `Integrity:EvidenceVerify:Enabled` | Periodically re-hash every stored evidence file (and once at startup); alarm 5003 on drift | `false` | App |
-| `Integrity:EvidenceVerify:IntervalHours` | Hours between passes (`≤0` means 24) | `24` | App |
+| `Integrity:EvidenceVerify:Enabled` | Periodically re-hash stored evidence files (a run also at startup); alarm 5003 on drift | `false` | App |
+| `Integrity:EvidenceVerify:IntervalHours` | Hours between runs, counted from midnight UTC (`≤0` means 24) | `24` | App |
+| `Integrity:EvidenceVerify:PassDays` | Every file is re-hashed at least once in this many days: each run checks its share of the files. `1` checks every file every run. | `7` | App |
 
 ### 3.5 Reporting
 
@@ -188,6 +189,7 @@ process's working directory, which under IIS is the site folder.
 |---|---|---|---|
 | `Governance:LegalHoldRelease:RequireSecondApprover` | Two-person control for releasing a legal hold | `false` | App |
 | `Retention:CaseYears` | Described as "years before a closed case can be archived". **Nothing reads it** ([known issues](../reference/known-issues.md)). | `7` | App |
+| `Retention:AccessLogYears` | Years the access log is kept. Older entries are deleted nightly (and after a restart), except a legal-hold case's; each prune is an audit-trail entry. `0` keeps it forever. | `3` | App |
 
 ### 3.8 Response SLAs
 

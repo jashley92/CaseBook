@@ -24,7 +24,8 @@ public partial class CacheReloadOrderingTests
         // A hosted service's one loop stores when its last cycle ran: a clock time, not stored state, and one cycle at a time.
         ["DigestHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
         ["DueSoonActionItemHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
-        ["EvidenceIntegrityHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
+        ["EvidenceIntegrityHostedService.RunCycleAsync"] = "stores the interval it ran in (_lastSlot), one loop",
+        ["AccessLogRetentionHostedService.RunAsync"] = "PROD-52: stores the day and setting it ran with (_lastRunDay, _lastYears), one loop",
         ["NotificationDeadlineHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
         ["OverdueActionItemHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
         ["StaleCaseHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",

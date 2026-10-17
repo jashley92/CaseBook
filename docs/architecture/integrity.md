@@ -132,7 +132,7 @@ is never earlier than the one before it (BUG-167), so a time range is a run of c
 |---|---|
 | `AuditLog`, `IntegritySeals` | They are the integrity records. |
 | `ChainOfCustodyEvents` | Has its own record; transfers are additionally chained. |
-| `CaseAccessEvents` (the read log) | High volume and prunable; must not disturb the record. |
+| `CaseAccessEvents` (the read log) | High volume, and deleted after `Retention:AccessLogYears` (except a legal-hold case's); must not disturb the record. Each prune is itself an audit-trail entry. |
 | `Users` (mirror), `EntityLayout` (graph positions), `SavedViews`, `PinnedCases`, display and notification preferences | Cosmetic or per-user state. |
 | `PendingImports` | Staging; applying an import goes through normal audited writes. |
 
@@ -252,8 +252,12 @@ then takes as long as the wait; the log and Diagnostics say so. A full check doe
 
 ## Evidence at rest
 
-When `Integrity:EvidenceVerify:Enabled` is on, a job re-hashes every stored evidence file on its interval (and
-once at startup). A mismatched, missing or unreadable file raises event 5003: a Critical log entry and a SIEM
+When `Integrity:EvidenceVerify:Enabled` is on, a job re-hashes stored evidence files once each interval (counted
+from midnight UTC) and once at startup. PROD-53: each run checks one share of the files, chosen by evidence id, and
+the shares come round in turn, so every file is re-hashed at least once in `Integrity:EvidenceVerify:PassDays` days
+(default 7; 1 checks every file every run) and the disk reads spread out. The order follows from the time alone, so
+nothing is stored and a restart doesn't disturb it; a run missed during an outage, or a settings change, can leave a
+file for up to twice the pass. A drift stays reported until its file is checked again. A mismatched, missing or unreadable file raises event 5003: a Critical log entry and a SIEM
 event (counts only), plus an email to the alert distribution listing the case, evidence id and file name. A
 banner appears for administrators. The status is shown under Administration → Diagnostics. The job only reads.
 
