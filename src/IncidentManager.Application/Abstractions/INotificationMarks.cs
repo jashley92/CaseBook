@@ -12,6 +12,9 @@ public interface INotificationMarks
     /// <summary>Records the mark; true only for the caller that recorded it first.</summary>
     bool TryAdd(string key);
 
+    /// <summary>Whether the mark is held. A lookup only: nothing is recorded or claimed.</summary>
+    bool Contains(string key);
+
     void Remove(string key);
 
     /// <summary>Confirms marks claimed inside a batch, once their sends are done.</summary>
@@ -35,6 +38,11 @@ public sealed class InMemoryNotificationMarks : INotificationMarks
         }
         NotificationMarkBatch.Current?.Claimed(this, key);
         return true;
+    }
+
+    public bool Contains(string key)
+    {
+        lock (_gate) return _keys.Contains(key);
     }
 
     public void Remove(string key)

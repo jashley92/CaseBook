@@ -8,12 +8,16 @@ using IncidentManager.Application.StageGates;
 using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
+using IncidentManager.Infrastructure.Notifications;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
 using IncidentManager.Infrastructure.Realtime;
 using IncidentManager.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace IncidentManager.IntegrationTests;
@@ -213,6 +217,86 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         await SetJurisdictionsAsync("SSN", "NY,CA");
         (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
         notifications.Received.Single().JurisdictionCodes.Should().Equal("CA");
+    }
+
+    [Fact]
+    public async Task A_regulator_joining_a_clock_reminded_before_the_upgrade_is_emailed_and_posted(/* BUG-649 */)
+    {
+        // End to end, over the real notifier and the database marks: v1.6.12 marked the tracker, each recipient and the
+        // channel without a jurisdiction. The tracker's conversion left the recipient and channel marks, which held CA back.
+        var id = await SeedMaterialBreachAsync(hoursAgo: 80);
+        EnableClock();
+        var due = (await NewDeadlines().EvaluateAsync(id)).Statuses.Single().DueAtUtc;
+        using var services = new ServiceCollection()
+            .AddDbContextFactory<AppDbContext>(o => o.UseSqlite(_connection)).BuildServiceProvider();
+        DbNotificationMarks Process() => new(services.GetRequiredService<IServiceScopeFactory>(), _clock,
+            NullLogger<DbNotificationMarks>.Instance);
+        var legacy = DeadlineIdentity.LegacyKey(id, SlaState.Breached, due);
+        var v1612 = Process();
+        v1612.TryAdd(legacy);
+        foreach (var to in new[] { "ic1@insurer.example", "analyst1@insurer.example", "chat:team-channel" })
+            v1612.TryAdd($"to|{legacy}|{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(to)))[..20]}");
+
+        var marks = Process();   // the upgraded process
+        var tracker = new DeadlineReminderTracker(marks);
+        var email = new CapturingSender();
+        var chat = new CapturingChat();
+        var notifications = new CaseNotifications(email, new EmailComposer(new ConfigurationBuilder().Build(), new NoLogo()),
+            new MailDirectory(), new ConfigurationBuilder().AddInMemoryCollection([new("Notifications:Chat:DeadlineReminders", "true")]).Build(),
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new NoPrefs(), sent: marks);
+
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(0, "NY was reminded before the upgrade");
+        email.Sent.Should().BeEmpty();
+        chat.Sent.Should().BeEmpty();
+
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+        email.Sent.SelectMany(m => m.To).Should().BeEquivalentTo(["ic1@insurer.example", "analyst1@insurer.example"]);
+        email.Sent.Should().AllSatisfy(m => m.TextBody.Should().Contain("CA"));
+        chat.Sent.Should().ContainSingle();
+
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(0, "each was reminded once");
+        email.Sent.Should().HaveCount(2);
+        chat.Sent.Should().ContainSingle();
+    }
+
+    private sealed class CapturingSender : IEmailSender
+    {
+        public List<EmailMessage> Sent { get; } = [];
+        public Task SendAsync(EmailMessage message, CancellationToken ct = default) { Sent.Add(message); return Task.CompletedTask; }
+        public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default) =>
+            SendAsync(new EmailMessage(to, subject, body, body), ct);
+    }
+
+    private sealed class CapturingChat : IChatNotifier
+    {
+        public List<ChatNotification> Sent { get; } = [];
+        public bool Enabled => true;
+        public Task SendAsync(ChatNotification message, CancellationToken ct = default) { Sent.Add(message); return Task.CompletedTask; }
+    }
+
+    private sealed class MailDirectory : IUserDirectory
+    {
+        public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv,
+            CancellationToken ct = default) => Task.CompletedTask;
+        public IReadOnlyList<UserSummary> All() => [];
+        public UserSummary? Resolve(string userId) => null;
+        public string DisplayFor(string? userId) => userId ?? "";
+        public string? EmailFor(string userId) => $"{userId}@insurer.example";
+        public void Invalidate() { }
+    }
+
+    private sealed class NoPrefs : INotificationPreferenceProvider
+    {
+        public Task<NotificationSuppression> GetAsync(string userId, CancellationToken ct = default) =>
+            Task.FromResult(NotificationSuppression.None);
+    }
+
+    private sealed class NoLogo : IReportBrandingStore
+    {
+        public Task<ReportLogo?> GetLogoAsync(CancellationToken ct = default) => Task.FromResult<ReportLogo?>(null);
+        public Task SaveLogoAsync(byte[] bytes, string contentType, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ClearLogoAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 
     [Fact]

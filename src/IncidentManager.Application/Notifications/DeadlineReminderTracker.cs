@@ -31,9 +31,13 @@ public sealed class DeadlineReminderTracker(Abstractions.INotificationMarks? mar
 {
     private readonly Abstractions.INotificationMarks _marks = marks ?? new Abstractions.InMemoryNotificationMarks();
 
-    public IReadOnlyList<string> MarkNotified(Guid caseId, IReadOnlyCollection<string> jurisdictionCodes, SlaState band, DateTimeOffset? dueAtUtc) =>
-        DeadlineIdentity.MarkNew(_marks, jurisdictionCodes, code => DeadlineIdentity.Key(caseId, code, band, dueAtUtc),
-            DeadlineIdentity.LegacyKey(caseId, band, dueAtUtc));
+    public IReadOnlyList<string> MarkNotified(Guid caseId, IReadOnlyCollection<string> jurisdictionCodes, SlaState band, DateTimeOffset? dueAtUtc)
+    {
+        var legacy = DeadlineIdentity.LegacyKey(caseId, band, dueAtUtc);
+        // BUG-649: the codes on the clock now are converted here, so who each was sent to (BUG-148) goes with the legacy mark.
+        return DeadlineIdentity.MarkNew(_marks, jurisdictionCodes, code => DeadlineIdentity.Key(caseId, code, band, dueAtUtc), legacy,
+            DeadlineIdentity.LegacyRecipientPrefix(legacy));
+    }
 
     public void Forget(Guid caseId, IReadOnlyCollection<string> jurisdictionCodes, SlaState band, DateTimeOffset? dueAtUtc)
     {

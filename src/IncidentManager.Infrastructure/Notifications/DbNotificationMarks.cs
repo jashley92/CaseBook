@@ -77,6 +77,16 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         }
     }
 
+    // A held legacy deadline mark (BUG-619) is looked up, rather than added and taken back: that wrote and deleted a row
+    // for every clock's first mark. The table is asked too, as TryAdd's clash check does, for a mark another process wrote.
+    public bool Contains(string key)
+    {
+        if (key.Length > NotificationMark.MaxKeyLength) key = key[..NotificationMark.MaxKeyLength];
+        lock (_gate)
+            if (Loaded().Contains(key)) return true;
+        return Exists(key);
+    }
+
     private void Renew(string key)
     {
         try
