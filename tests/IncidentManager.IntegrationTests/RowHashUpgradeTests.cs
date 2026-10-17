@@ -750,7 +750,7 @@ public sealed class RowHashUpgradeTests
         Guid id;
         await using (var db = database.NewContext())
             id = await db.Cases.Where(c => c.Phase != CasePhase.Closed).Select(c => c.Id).FirstAsync();
-        await UnrecordHashAsync(database, nameof(Case), id);   // last updated before v1.5.1: the upgrade records its hash
+        await UnrecordHashAsync(database, nameof(Case), id, createToo: true);   // from before row hashes: the upgrade records its hash
 
         await using var user = database.NewContext();
         var open = await user.Cases.Include(x => x.DataElements).SingleAsync(x => x.Id == id);
