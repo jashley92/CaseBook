@@ -368,6 +368,28 @@ public sealed class IntegrityUpkeepTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task Upkeep_that_changes_a_case_still_stops_a_save_from_the_case_as_it_was(string provider /* BUG-658 */)
+    {
+        using var database = Seeded(provider);
+        var (id, _) = await ClosedCaseAsync(database);
+        await using var user = database.NewContext();
+        var open = await user.Cases.Include(x => x.DataElements).SingleAsync(x => x.Id == id);
+
+        await using (var db = database.NewContext())
+        {
+            var c = await db.Cases.Include(x => x.DataElements).SingleAsync(x => x.Id == id);
+            c.ReportedJurisdictions = "NY;SSN";
+            db.PendingUpkeep = true;
+            await db.SaveChangesAsync();
+        }
+        // The user's save would hash the case without the filled value: a false alarm. It's refused as a stale edit.
+        open.Title += " (renamed)";
+        await FluentActions.Awaiting(() => user.SaveChangesAsync()).Should().ThrowAsync<ConcurrentEditException>();
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_database_timeout_in_the_upkeep_recheck_surfaces_as_itself(string provider /* BUG-660 */)
     {
         using var database = Seeded(provider);

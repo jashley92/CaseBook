@@ -32,9 +32,9 @@ public sealed class RowHashUpgradeTests
 
     public static TheoryData<string> Providers => TestDatabase.Providers;
 
-    private TestDatabase Seeded(string provider)
+    private TestDatabase Seeded(string provider, Application.Abstractions.ICaseChangeNotifier? notifier = null)
     {
-        var database = TestDatabase.Open(provider, new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()));
+        var database = TestDatabase.Open(provider, new AuditChainInterceptor(_hasher, _user, _clock, notifier ?? new CaseChangeNotifier()));
         using var db = database.NewContext();
         // The reference data a first start seeds, then the sample cases.
         DevDataSeeder.SeedStarterTemplatesAsync(db, _clock).GetAwaiter().GetResult();
@@ -743,6 +743,32 @@ public sealed class RowHashUpgradeTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task A_user_with_the_case_open_can_still_save_once_the_upgrade_records_its_hash(string provider /* BUG-658 */)
+    {
+        var notifier = new RecordingNotifier();
+        using var database = Seeded(provider, notifier);
+        Guid id;
+        await using (var db = database.NewContext())
+            id = await db.Cases.Where(c => c.Phase != CasePhase.Closed).Select(c => c.Id).FirstAsync();
+        await UnrecordHashAsync(database, nameof(Case), id);   // last updated before v1.5.1: the upgrade records its hash
+
+        await using var user = database.NewContext();
+        var open = await user.Cases.Include(x => x.DataElements).SingleAsync(x => x.Id == id);
+        notifier.Published.Clear();
+
+        var result = await UpgradeAsync(database);
+        result.Left.Should().BeEmpty();
+        result.Recorded.Should().BeGreaterThan(0);
+        notifier.Published.Should().NotContain(c => c.CaseId == id, "recording a hash isn't a change anyone viewing the case should reload for");
+
+        open.Title += " (renamed)";
+        await user.SaveChangesAsync();   // threw ConcurrentEditException: the upgrade had renewed the case's edit version
+        notifier.Published.Should().Contain(c => c.CaseId == id, "a user's change is still published");
+        (await VerifyRecordsAsync(database))?.Detail.Should().BeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_data_element_a_user_adds_during_the_upgrade_doesnt_leave_the_case_unrecorded(string provider /* BUG-661 */)
     {
         using var database = Seeded(provider);
@@ -802,5 +828,16 @@ public sealed class RowHashUpgradeTests
             Check(command);
             return ValueTask.FromResult(result);
         }
+    }
+
+    // Records what's published, as it's published.
+    private sealed class RecordingNotifier : Application.Abstractions.ICaseChangeNotifier
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<Application.Abstractions.CaseChange> Published { get; private set; } = new();
+        public void Publish(Guid caseId, string actorId) => Published.Enqueue(new Application.Abstractions.CaseChange(caseId, actorId, []));
+        public void Publish(Application.Abstractions.CaseChange change) => Published.Enqueue(change);
+        public IDisposable Subscribe(Guid caseId, Func<string, Task> onChanged) => new Nothing();
+        public IDisposable SubscribeAll(Func<Guid, string, Task> onAnyChanged) => new Nothing();
+        private sealed class Nothing : IDisposable { public void Dispose() { } }
     }
 }

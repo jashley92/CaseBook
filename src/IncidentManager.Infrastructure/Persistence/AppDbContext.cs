@@ -165,13 +165,22 @@ public sealed class AppDbContext : DbContext, IAppDbContext
             if (e.Metadata.FindProperty("CaseId") is not null && e.Property("CaseId").CurrentValue is Guid id) touched.Add(id);
         }
         foreach (var c in cases)
-            if (c.State == EntityState.Modified || touched.Contains(c.Entity.Id))
+            if ((c.State == EntityState.Modified && !OnlyHashRecorded(c)) || touched.Contains(c.Entity.Id))
             {
                 if (c.Property(CaseEditVersion).OriginalValue is Guid read) checkedCases[c.Entity.Id] = read;
                 c.Property(CaseEditVersion).CurrentValue = Guid.NewGuid();
             }
         return checkedCases;
     }
+
+    // BUG-658: upkeep that only records a case's hash (the integrity upgrade) changes nothing a user sees, so a user with
+    // the case open can still save. Its update is still checked against the version it read. Upkeep that fills a value
+    // (the kept jurisdictions) renews it: a save from the case as it was would hash it without the value.
+    private bool OnlyHashRecorded(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Case> c) =>
+        PendingUpkeep
+        && c.Properties.Where(p => p.IsModified).All(p => p.Metadata.Name is nameof(Case.RowHash) or CaseEditVersion)
+        && !c.References.Any(r => r.TargetEntry is { State: EntityState.Added or EntityState.Modified or EntityState.Deleted } t
+                                  && t.Metadata.IsOwned());
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

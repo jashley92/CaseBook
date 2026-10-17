@@ -293,8 +293,11 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         // Record which cases this save touches, to broadcast once it commits (SavedChanges).
         var pending = StateOf(ctx).PendingCaseIds;
         pending.Clear();
+        var upkeepSave = ctx is AppDbContext { PendingUpkeep: true };
         foreach (var e in auditable)
         {
+            // BUG-658: upkeep that only records a row's hash changes nothing a viewer sees, so nobody is told to reload.
+            if (upkeepSave && e.State == EntityState.Modified && !ChangesContent(e)) continue;
             var cid = e.Entity is Case cse ? cse.Id : TryGetCaseId(e);
             if (cid is not { } id) continue;
             if (!pending.TryGetValue(id, out var items)) pending[id] = items = [];
