@@ -56,4 +56,26 @@ public sealed class OutboundTransportRegistryTests
             .Select(t => t.Path).Should().BeEmpty("a send to a stalled host would hold every user action that makes one");
         NotOnTheUserPath.Keys.Should().BeSubsetOf(transports.Select(t => t.Path), "a listed transport that's gone is taken off the list");
     }
+
+    // BUG-657: CI waives csharpsquid:S5332 (clear-text SMTP) for SmtpClientFactory.cs only, so the client may be made
+    // nowhere else; otherwise the waiver would quietly stop covering a new construction, or one would go unanalysed.
+    [Fact]
+    public void An_SMTP_client_is_made_only_by_SmtpClientFactory()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "IncidentManager.sln"))) dir = dir.Parent;
+        dir.Should().NotBeNull();
+        var root = dir!.FullName;
+        var sep = Path.DirectorySeparatorChar;
+        var makers = Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{sep}obj{sep}", StringComparison.Ordinal) && !f.Contains($"{sep}bin{sep}", StringComparison.Ordinal))
+            .Where(f => NewSmtpClient.IsMatch(File.ReadAllText(f)))
+            .Select(f => Path.GetFileName(f)).ToList();
+        makers.Should().Equal("SmtpClientFactory.cs");
+        File.ReadAllText(Path.Combine(root, "src", "IncidentManager.Infrastructure", "Notifications", "EmailSender.cs"))
+            .Should().Contain("SmtpClientFactory.Create(");
+    }
+
+    private static readonly Regex NewSmtpClient = new(@"new\s+SmtpClient\s*\(|SmtpClient\s+\w+\s*=\s*new\s*\(|=>\s*new\s*\(\s*o\.SmtpHost",
+        RegexOptions.None, TimeSpan.FromSeconds(5));
 }

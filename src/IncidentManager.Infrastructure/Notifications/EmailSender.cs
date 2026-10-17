@@ -492,9 +492,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
         var target = Target(o);
         using var message = NotYetSent(target, () => Compose(o, to, subject, textBody, htmlBody));
 
-        // S4423: encrypt the connection by default (Email:EnableSsl, server-side). Only a deliberately
-        // configured relay that does its own TLS turns this off.
-        using var client = NotYetSent(target, () => new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl });
+        using var client = NotYetSent(target, () => SmtpClientFactory.Create(o));   // BUG-657: TLS per Email:EnableSsl (S4423)
         // BUG-99: SmtpClient.Timeout covers only the synchronous Send. A relay that accepts the connection and then stalls
         // would otherwise hold a reminder scan, or a user's assign or reclassify, until the app shut down.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
