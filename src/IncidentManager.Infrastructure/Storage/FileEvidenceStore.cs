@@ -26,9 +26,28 @@ public sealed class FileEvidenceStore : IEvidenceStore
     {
         _root = Path.GetFullPath(options.Value.RootPath);
         _keys = keys ?? NoEvidenceKeys.Instance;
-        // PROD-56: a store on a share that's down at start-up mustn't stop the app; the start-up probe reports it.
+        // PROD-56: the folder isn't created here. Start-up creates it for a fresh store (CreateIfNew) or marks it as
+        // holding evidence (HoldsEvidence); a store that holds evidence and has vanished is never recreated empty.
+    }
+
+    private volatile bool _holdsEvidence;
+
+    public void HoldsEvidence() => _holdsEvidence = true;
+
+    public void CreateIfNew()
+    {
+        if (_holdsEvidence) return;
+        // A store on a share that's down at start-up mustn't stop the app; the start-up probe reports it.
         try { Directory.CreateDirectory(_root); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* reported by ProbeAsync */ }
+    }
+
+    // Before writing: the folder is there, or (a fresh store) is created; one that held evidence and vanished is refused.
+    private void EnsureRoot()
+    {
+        if (Directory.Exists(_root)) return;
+        if (_holdsEvidence) throw new EvidenceStoreUnreachableException(_root);
+        Directory.CreateDirectory(_root);
     }
 
     /// <summary>PROD-56: where files arriving in parts are written until they're complete (never a recorded path).</summary>
@@ -44,6 +63,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
 
     public async Task<string> BeginIncomingAsync(CancellationToken ct = default)
     {
+        EnsureRoot();
         Directory.CreateDirectory(Incoming);
         var name = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         await using var fs = new FileStream(IncomingPath(name), FileMode.CreateNew, FileAccess.Write, FileShare.None);
@@ -117,9 +137,11 @@ public sealed class FileEvidenceStore : IEvidenceStore
     public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default)
     {
         var relDir = caseId.ToString("N");
+        EnsureRoot();
         Directory.CreateDirectory(Path.Combine(_root, relDir));
         var fileName = Guid.NewGuid().ToString("N") + ".bin";
         File.Move(IncomingPath(incoming), Path.Combine(_root, relDir, fileName), overwrite: false);
+        _holdsEvidence = true;
         return Task.FromResult(new StoredEvidence($"{relDir}/{fileName}", sha256, size));
     }
 
@@ -146,6 +168,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
     {
         var relDir = caseId.ToString("N");
         var absDir = Path.Combine(_root, relDir);
+        EnsureRoot();
         Directory.CreateDirectory(absDir);
 
         var fileName = Guid.NewGuid().ToString("N") + ".bin";
@@ -166,6 +189,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
             if (created) File.Delete(absPath);
             throw;
         }
+        _holdsEvidence = true;
         return new StoredEvidence($"{relDir}/{fileName}", hash, size);
     }
 
@@ -181,7 +205,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
 
     public async Task<long?> TotalBytesAsync(CancellationToken ct = default) => (await StoreVolume.SpaceAsync(_root, ct))?.Total;
 
-    public Task<string?> ProbeAsync(CancellationToken ct = default) => StoreVolume.ProbeAsync(_root, ct);
+    public Task<string?> ProbeAsync(CancellationToken ct = default) => StoreVolume.ProbeAsync(_root, mayCreate: !_holdsEvidence, ct);
 
     public string Location => _root;
 
@@ -197,6 +221,15 @@ public sealed class FileEvidenceStore : IEvidenceStore
         return abs;
     }
 
-    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) =>
-        Task.FromResult(EncryptedFiles.OpenContent(new FileStream(PathOf(storagePath), FileMode.Open, FileAccess.Read, FileShare.Read), _keys));
+    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
+    {
+        FileStream file;
+        try { file = new FileStream(PathOf(storagePath), FileMode.Open, FileAccess.Read, FileShare.Read); }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException && !Directory.Exists(_root))
+        {
+            // PROD-56: not this file missing but the whole store (the server answered, so this check is quick).
+            throw new EvidenceStoreUnreachableException(_root);
+        }
+        return Task.FromResult(EncryptedFiles.OpenContent(file, _keys));
+    }
 }

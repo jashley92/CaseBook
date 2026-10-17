@@ -36,6 +36,14 @@ public interface IEvidenceKeyring
 }
 
 /// <summary>PROD-57: an encrypted file was asked for while its key isn't held. The file is fine; the key needs restoring.</summary>
+/// <summary>
+/// PROD-56: the evidence store's folder isn't there while evidence is recorded (a share down, remapped or mounted
+/// elsewhere). One answer for every file, "the store can't be reached", never "this file is missing".
+/// </summary>
+public sealed class EvidenceStoreUnreachableException(string location)
+    : IOException($"The evidence store's folder ({location}) isn't there. It held evidence, so CaseBook doesn't recreate it: " +
+                  "check that the share or volume is reachable and EvidenceStore:RootPath points at it.");
+
 public sealed class EvidenceKeyUnavailableException(string keyId)
     : Exception($"The evidence key ({keyId}) isn't available on this server, so encrypted evidence and reports can't be read or " +
                 "written. An administrator has been alerted.")

@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
 
 // BUG-547: first, before any thread or service starts, so the server's culture never reaches a date or a number.
 IncidentManager.Web.Services.AppCulture.Pin();
@@ -382,6 +383,12 @@ using (var scope = app.Services.CreateScope())
         app.Services.GetRequiredService<IChainKeyring>(), db);
     await DevDataSeeder.InitializeAsync(db, clock, seedDemoData: app.Environment.IsDevelopment(),
         evidence: scope.ServiceProvider.GetService<IEvidenceStore>());
+    // PROD-56: once the database is current. A store whose evidence is recorded must already be there; a missing folder
+    // then is an outage, reported and never recreated empty. A fresh store's folder is made now, before the key writes
+    // its envelope copy beside the evidence. (The demo seeder's files, on a fresh store, create it as they're saved.)
+    var evidenceStore = scope.ServiceProvider.GetRequiredService<IEvidenceStore>();
+    if (await db.Evidence.IgnoreQueryFilters().AnyAsync()) evidenceStore.HoldsEvidence();
+    else evidenceStore.CreateIfNew();
     // PROD-57: the evidence key, once the database is current (it holds a copy of the envelope). It never stops start-up:
     // a key that can't be opened pauses evidence and reports, and EvidenceKeyHostedService keeps trying.
     await app.Services.GetRequiredService<IncidentManager.Infrastructure.Security.EvidenceKeyring>().LoadAsync();

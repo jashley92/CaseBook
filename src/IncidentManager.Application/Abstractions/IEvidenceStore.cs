@@ -31,6 +31,17 @@ public interface IEvidenceStore
     /// <summary>Where the store is, for messages and Diagnostics.</summary>
     string Location => "";
 
+    /// <summary>
+    /// PROD-56: evidence is recorded, so the store's folder must already exist. From then on a missing folder (a share
+    /// remapped or mounted elsewhere, the wrong volume) is an outage, never a first start: the store doesn't recreate it,
+    /// so nothing is written to an empty stand-in and every file isn't reported missing. Called at start-up when the
+    /// database holds evidence; the store also sets it itself after its first save.
+    /// </summary>
+    void HoldsEvidence() { }
+
+    /// <summary>A fresh store (no evidence recorded): creates its folder if it isn't there yet.</summary>
+    void CreateIfNew() { }
+
     // PROD-56: a file that arrives in parts (a large upload). It's written to the store's incoming folder under a name the
     // store makes, part by part at the offset the last whole part ended, then moved into place once complete and checked.
     Task<string> BeginIncomingAsync(CancellationToken ct = default) => throw new NotSupportedException();

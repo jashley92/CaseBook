@@ -141,6 +141,7 @@ public sealed class EvidenceStorageTests : IDisposable
     public async Task The_store_reports_its_volume_size_with_its_free_space()
     {
         var store = Files();
+        store.CreateIfNew();   // start-up makes a fresh store's folder
         var total = await store.TotalBytesAsync();
         var free = await store.FreeBytesAsync();
         total.Should().BeGreaterThan(0);
@@ -311,6 +312,42 @@ public sealed class EvidenceStorageTests : IDisposable
         await File.WriteAllTextAsync(file, "x");
         (await StoreVolume.ProbeAsync(Path.Combine(file, "store"))).Should().NotBeNull("a folder can't be made under a file");
         (await StoreVolume.FreeBytesAsync(Path.Combine(_dir, "ok"))).Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task A_store_that_held_evidence_and_vanished_is_reported_never_recreated_empty()
+    {
+        // Found on a UNC store: with the store's folder gone but the share answering, the probe recreated it empty and
+        // said all was well, uploads went into the empty stand-in, and every download said its file was missing.
+        var root = Path.Combine(_dir, "store");
+        var fresh = Files();
+        fresh.CreateIfNew();
+        Directory.Exists(root).Should().BeTrue("a fresh store's folder is made at start-up");
+        var stored = await fresh.SaveAsync(Guid.NewGuid(), new MemoryStream("sample"u8.ToArray()));
+        Directory.Delete(root, recursive: true);
+
+        (await fresh.ProbeAsync()).Should().Contain("isn't there", "after its first save the store knows it holds evidence");
+        Directory.Exists(root).Should().BeFalse();
+
+        var restarted = Files();   // a restart: start-up finds evidence recorded
+        restarted.HoldsEvidence();
+        restarted.CreateIfNew();
+        Directory.Exists(root).Should().BeFalse("never recreated at start-up either");
+        (await restarted.ProbeAsync()).Should().Contain("isn't there");
+        var read = () => restarted.OpenReadAsync(stored.StoragePath);
+        (await read.Should().ThrowAsync<EvidenceStoreUnreachableException>()).Which.Should().BeAssignableTo<IOException>(
+            "one answer for every file, the store can't be reached (503), not this file missing (404)");
+        var save = () => restarted.SaveAsync(Guid.NewGuid(), new MemoryStream("new"u8.ToArray()));
+        await save.Should().ThrowAsync<EvidenceStoreUnreachableException>("nothing goes into an empty stand-in");
+        var part = () => restarted.BeginIncomingAsync();
+        await part.Should().ThrowAsync<EvidenceStoreUnreachableException>();
+        Directory.Exists(root).Should().BeFalse();
+
+        Directory.CreateDirectory(root);   // the share is back (here: empty, so the one file is missing, not the store)
+        (await restarted.ProbeAsync()).Should().BeNull();
+        var missing = () => restarted.OpenReadAsync(stored.StoragePath);
+        (await missing.Should().ThrowAsync<IOException>()).Which.Should().NotBeOfType<EvidenceStoreUnreachableException>(
+            "with the store there, a file that isn't is that file missing");
     }
 
     [Theory]

@@ -54,6 +54,15 @@ public sealed class UserFacingErrorTests
     }
 
     [Fact]
+    public void Evidence_outages_say_what_happened_without_the_servers_paths()
+    {
+        Describe(new IncidentManager.Application.Abstractions.EvidenceStoreUnreachableException(@"\files01\casebook$\evidence"))
+            .Should().Contain("evidence store can't be reached").And.Contain("nothing was stored").And.NotContain("files01");
+        Describe(new IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException("0123456789abcdef"))
+            .Should().Contain("isn't available").And.Contain("administrator");
+    }
+
+    [Fact]
     public void A_framework_invalid_operation_is_replaced_not_shown(/* REV-66 */)
     {
         Exception fromFramework;

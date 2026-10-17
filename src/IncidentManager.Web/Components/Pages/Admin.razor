@@ -1271,7 +1271,10 @@
         try { dbOk = await db.Database.CanConnectAsync(); } catch { dbOk = false; }
         checks.Add(new HealthCheck("Database connectivity", dbOk, dbOk ? db.Database.ProviderName ?? "" : "cannot connect"));
 
-        checks.Add(WritableCheck("Evidence store writable", Config["EvidenceStore:RootPath"]));
+        // PROD-56: the store's own probe, in time (a share that's down answers rather than hangs the page) and never
+        // recreating a store that held evidence and has vanished (this check used to, just by being looked at).
+        var storeProblem = await EvidenceStoreFiles.ProbeAsync();
+        checks.Add(new HealthCheck("Evidence store writable", storeProblem is null, storeProblem ?? EvidenceStoreFiles.Location));
         checks.Add(WritableCheck("Report output writable", Config["ReportOutput:RootPath"]));
         checks.Add(new HealthCheck("Seal signing key present", SigningKeyPresent(),
             SigningKeyPresent() ? Signer.KeyId : "missing, so seals can't be signed"));

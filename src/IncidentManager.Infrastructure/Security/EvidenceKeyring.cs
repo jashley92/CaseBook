@@ -325,7 +325,7 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         var json = e.ToJson();
         var ok = true;
         if (fileJson != json) ok &= WriteFile(EnvelopePath, json, "keys folder", copies, warnings);
-        if (rootJson != json) ok &= WriteFile(EvidenceRootEnvelopePath, json, "beside the evidence", copies, warnings);
+        if (rootJson != json) ok &= WriteFile(EvidenceRootEnvelopePath, json, "beside the evidence", copies, warnings, within: _evidenceRoot);
         if (dbJson != json && _scopes is not null)
         {
             try
@@ -348,12 +348,17 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         return ok;
     }
 
-    private static bool WriteFile(string path, string json, string copy, List<EnvelopeCopyStatus> copies, List<string> warnings)
+    // within: a folder that must already be there (the evidence store's): PROD-56, a store that has vanished is reported,
+    // never recreated by writing this copy into it.
+    private static bool WriteFile(string path, string json, string copy, List<EnvelopeCopyStatus> copies, List<string> warnings,
+        string? within = null)
     {
         try
         {
             var write = Task.Run(() =>
             {
+                if (within is not null && !Directory.Exists(within))
+                    throw new DirectoryNotFoundException($"the evidence store's folder {within} isn't there");
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var temp = path + ".new";
                 File.WriteAllText(temp, json);

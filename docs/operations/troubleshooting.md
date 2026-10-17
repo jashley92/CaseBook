@@ -228,6 +228,20 @@ The email lists case, evidence id and file name. Preserve the store and database
 evidence backups (the recorded hash tells you what it must hash to); check EDR and file-system logs for who
 touched it.
 
+### Evidence store unreachable
+
+**Symptom:** evidence downloads answer "the evidence store couldn't be read just now", uploads say "the evidence
+store can't be reached", `/health` is Unhealthy, and the evidence re-check reports one "evidence store unreachable"
+finding; the rest of CaseBook works.
+**Cause:** the folder in `EvidenceStore:RootPath` can't be written and read: a share or volume that's down, the app
+account's rights changed, or the folder isn't there (a remapped share, a changed drive or DFS target, a move done
+without changing the setting). CaseBook never recreates a store that held evidence.
+**Where to look:** Administration → Diagnostics → Evidence storage gives the reason; the log has it with the account.
+**Fix:** bring the share back or restore the rights, or point `EvidenceStore:RootPath` at where the store now is
+([OPERATIONS.md §1.2.1](../OPERATIONS.md#121-evidence-storage-limits-large-uploads-and-network-shares)). Downloads and
+uploads resume as soon as it's reachable; no restart needed. Don't create an empty folder at the old path to make
+the error go away: every file would then read as missing.
+
 ### Evidence key unavailable
 
 **Symptom:** evidence and report downloads, uploads and report generation answer "the evidence key isn't

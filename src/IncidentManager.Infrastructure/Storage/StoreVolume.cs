@@ -45,11 +45,12 @@ public static class StoreVolume
 
     /// <summary>
     /// Whether the folder can be written, read back and cleaned up, as the app's account: null when it can, else why not.
-    /// Creates the folder if it's missing (a fresh store).
+    /// Creates the folder if it's missing only when <paramref name="mayCreate"/> (a fresh store); a store that holds
+    /// evidence and has vanished is reported, not recreated empty.
     /// </summary>
-    public static async Task<string?> ProbeAsync(string folder, CancellationToken ct = default)
+    public static async Task<string?> ProbeAsync(string folder, bool mayCreate = true, CancellationToken ct = default)
     {
-        try { return await Task.Run(() => Probe(folder), ct).WaitAsync(TimeLimit, ct); }
+        try { return await Task.Run(() => Probe(folder, mayCreate), ct).WaitAsync(TimeLimit, ct); }
         catch (TimeoutException) { return $"no answer within {TimeLimit.TotalSeconds:0} seconds"; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException
                                        or System.Security.SecurityException)
@@ -58,9 +59,13 @@ public static class StoreVolume
         }
     }
 
-    private static string? Probe(string folder)
+    private static string? Probe(string folder, bool mayCreate)
     {
-        Directory.CreateDirectory(folder);
+        if (!Directory.Exists(folder))
+        {
+            if (!mayCreate) return "the folder isn't there (it held evidence, so it isn't recreated empty)";
+            Directory.CreateDirectory(folder);
+        }
         var probe = Path.Combine(folder, $".probe-{Guid.NewGuid():N}");
         var bytes = Guid.NewGuid().ToByteArray();
         try

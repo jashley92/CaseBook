@@ -24,7 +24,11 @@ public sealed class KeyToolTests : IDisposable
     private readonly string _site = Path.Combine(Path.GetTempPath(), "im-keytool", Guid.NewGuid().ToString("N"));
     private readonly List<X509Certificate2> _installed = [];
 
-    public KeyToolTests() => Directory.CreateDirectory(_site);
+    public KeyToolTests()
+    {
+        Directory.CreateDirectory(_site);
+        Directory.CreateDirectory(Evidence);   // as CaseBook's start-up makes a fresh store's folder
+    }
 
     public void Dispose()
     {

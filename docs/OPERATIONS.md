@@ -79,7 +79,13 @@ from `<store>\.incoming`.
   so a share that's down can't hang it. A failure is logged with the account and the reason and shown on Diagnostics.
 - While the share is down, uploads are refused, downloads answer that the store can't be read, and the evidence
   re-check reports **one** finding, "evidence store unreachable", instead of every file missing. Earlier findings
-  stand until their files are checked again.
+  stand until their files are checked again. `/health` reports Unhealthy. When the share is back, all of it clears
+  without a restart.
+- **A store that held evidence is never recreated empty.** If the share answers but the store's folder isn't there
+  (the share was remapped, a DFS target or drive changed, the folder was moved), CaseBook treats it as the outage
+  above rather than making a new, empty folder: otherwise new uploads would land in the stand-in and every recorded
+  file would read as missing. Only a fresh install (no evidence recorded) has its folder created at start-up. To move
+  a store, follow *Moving an existing store* below.
 - Put the share on storage that is backed up with the database (section 1.2), and keep the data root's `keys` folder
   off the share.
 

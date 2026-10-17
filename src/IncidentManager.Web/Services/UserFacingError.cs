@@ -57,6 +57,15 @@ public static class UserFacingError
             case ArgumentException or InvalidOperationException when Ours(ex):
                 return ex.Message;
 
+            // PROD-57: written for the person (the administrators have already been alerted).
+            case IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException:
+                return ex.Message;
+            // PROD-56: the store's folder is gone (a share down or remapped); its message names the path, for the log.
+            case IncidentManager.Application.Abstractions.EvidenceStoreUnreachableException:
+                logger.LogWarning(ex, "The evidence store couldn't be reached while {Action}", action);
+                return "The evidence store can't be reached just now, so nothing was stored. Try again later; an administrator " +
+                       "can see why under Administration › Diagnostics.";
+
             default:
                 logger.LogError(ex, "Unexpected error while {Action}", action);
                 return generic ?? GenericSave;

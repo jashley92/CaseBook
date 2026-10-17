@@ -295,6 +295,13 @@ because the reader hands SHA-256 64 KiB blocks. A real disk (a few hundred MB/s)
 1 GbE) is the limit either way, so encryption doesn't change how long a pass takes. The read-back check on a large
 upload (`Evidence:ReadBackCheck`) is one more read + decrypt + SHA-256 of the file.
 
+**Checked against a real malware stand-in and a share (2026-10-17).** The EICAR test file, uploaded through the
+Evidence tab to a store on a UNC path (`\\localhost\C$\…`, SMB loopback), was stored as a 201-byte CBE1 file
+without the EICAR string; Microsoft Defender's scan of the store found nothing, while the same 68 bytes written plain
+beside it were detected (`Virus:DOS/EICAR_Test_File`). The download returned it exactly (its SHA-256 matched), the
+thumbnail endpoint refused it, and the safe zip (ZipCrypto, Deflate) passed Defender on the analyst's disk and opened
+with `infected`.
+
 ## The compliance evidence bundle
 
 `GET /export/compliance-bundle.zip?from=&to=` (administrators; also on the Integrity page) produces, for a date

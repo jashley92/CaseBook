@@ -36,6 +36,7 @@ public sealed class EvidenceKeyringTests : IDisposable
     public EvidenceKeyringTests()
     {
         Directory.CreateDirectory(_dir);
+        Directory.CreateDirectory(Evidence);   // as start-up makes a fresh store's folder (PROD-56: never implicitly later)
         _database = OpenDatabase(TestDatabase.Sqlite);
     }
 
