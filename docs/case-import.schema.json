@@ -119,13 +119,13 @@
         },
         "detectedAtUtc": {
           "type": "string",
-          "format": "date-time",
-          "description": "When the matter was detected (defaults to now; not in the future)."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
+          "description": "When the matter was detected (defaults to now; not in the future). An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
         },
         "occurredAtUtc": {
           "type": "string",
-          "format": "date-time",
-          "description": "When activity began (must not be after detection)."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
+          "description": "When activity began (must not be after detection). An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
         },
         "dataTypesInvolved": {
           "type": "string",
@@ -157,8 +157,8 @@
       "properties": {
         "occurredAtUtc": {
           "type": "string",
-          "format": "date-time",
-          "description": "When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
+          "description": "When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date. An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
         },
         "timePrecision": {
           "type": "string",
@@ -173,8 +173,8 @@
         },
         "occurredUntilUtc": {
           "type": "string",
-          "format": "date-time",
-          "description": "For timePrecision Window: the last date."
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
+          "description": "For timePrecision Window: the last date. An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
         },
         "kind": {
           "type": "string",
@@ -249,7 +249,7 @@
             "Other",
             "CommandLine"
           ],
-          "description": "Optional \u2014 auto-detected from the value when omitted."
+          "description": "Optional — auto-detected from the value when omitted."
         },
         "value": {
           "type": "string",
@@ -304,7 +304,8 @@
         },
         "dueAtUtc": {
           "type": "string",
-          "format": "date-time"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[+-]\\d{2}:\\d{2})?$",
+          "description": "An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none)."
         }
       }
     }

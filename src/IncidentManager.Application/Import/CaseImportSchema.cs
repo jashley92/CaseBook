@@ -146,12 +146,21 @@ public static class CaseImportSchema
         return o;
     }
 
-    private static JsonObject DateTime(string? description)
+    /// <summary>
+    /// BUG-662: an ISO 8601 date-time with or without an offset. "format": "date-time" (RFC 3339) requires an offset, so a
+    /// document using "timeZone" for its local times (BUG-636), which CaseBook imports, failed a strict validator. The
+    /// field names keep their "Utc" (the v1 contract): each time is stored as a UTC instant, whatever zone it's written in.
+    /// </summary>
+    internal const string DateTimePattern = @"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,7})?)?)?(Z|[+-]\d{2}:\d{2})?$";
+
+    private const string ZoneNote = " An ISO 8601 date-time: with an offset or Z it's kept as written; without one it's read in timeZone (UTC when there's none).";
+
+    private static JsonObject DateTime(string? description) => new()
     {
-        var o = new JsonObject { ["type"] = "string", ["format"] = "date-time" };
-        if (description is not null) o["description"] = description;
-        return o;
-    }
+        ["type"] = "string",
+        ["pattern"] = DateTimePattern,
+        ["description"] = (description is null ? "" : description.TrimEnd() + " ") + ZoneNote.TrimStart(),
+    };
 
     private static JsonObject Ref(string def) => new() { ["$ref"] = $"#/$defs/{def}" };
 

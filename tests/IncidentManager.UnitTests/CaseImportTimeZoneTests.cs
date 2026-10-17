@@ -86,6 +86,24 @@ public sealed class CaseImportTimeZoneTests
         c.Notes.Should().ContainSingle().Which.Should().Contain("1 time has no time zone").And.Contain("America/New_York");
     }
 
+    [Theory]   // BUG-662: the schema allows what the importer reads (RFC 3339 "date-time" refused a time without an offset)
+    [InlineData("2026-07-14T09:05:00Z", true)]
+    [InlineData("2026-07-14T09:05:00-04:00", true)]
+    [InlineData("2026-07-14T09:05:00", true)]
+    [InlineData("2026-07-14T09:05", true)]
+    [InlineData("2026-07-14T09:05:00.1234567+01:00", true)]
+    [InlineData("2026-07-14", true)]
+    [InlineData("14/07/2026 09:05", false)]
+    [InlineData("2026-07-14 09:05", false)]
+    public void The_schema_date_pattern_matches_what_the_importer_reads(string value, bool allowed)
+    {
+        var pattern = CaseImportSchema.Root()["$defs"]!["timelineEntry"]!["properties"]!["occurredAtUtc"]!["pattern"]!.GetValue<string>();
+
+        System.Text.RegularExpressions.Regex.IsMatch(value, pattern).Should().Be(allowed);
+        if (allowed)
+            CaseImportService.Parse(Doc(value)).Ok.Should().BeTrue($"the importer reads {value}");
+    }
+
     [Fact]
     public void Exercise_in_the_document_is_read()
     {
