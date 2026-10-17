@@ -202,9 +202,53 @@ seals are written in formats earlier builds don't read, so an earlier build repo
 SIEM event, alarm email, banner), and a migration's `Down()` can't always undo one (a wider column holding longer
 values). Restore the pre-upgrade database backup together with the previous binaries.
 
+With evidence encryption on (v1.7.0), earlier builds can't read encrypted evidence or reports either: a rollback
+after files were encrypted also needs the evidence and report stores from before the upgrade, or the files exported
+first with `casebook-keytool export`.
+
 ---
 
 ## Notes
+
+### v1.7.0
+
+A feature release with one additive migration (`EvidenceKeyEnvelopes`). Nothing changes until you choose it, except
+the larger upload limit and the safe-download button. Things to check:
+
+- **Upload limits are settings now, and the default is larger.** The largest file was fixed at 50 MB; it's now
+  **Administration › Governance & security › Evidence storage**: largest file (`Evidence:MaxUploadMB`, default
+  **500 MB**, up to 64 GB), the most all evidence may take (`Evidence:StorageQuotaGB`, no limit by default), and the
+  free space an upload must leave (`Evidence:MinFreeSpaceGB`, default 10 GB). Diagnostics shows the store's use
+  against them.
+  - Files over 100 MB, such as memory dumps, upload in 8 MB parts with a progress bar. Nothing in IIS needs changing.
+  - A per-user rate limit applies to the parts (`RateLimiting:Uploads`).
+- **The evidence store can be on a network share** (`EvidenceStore:RootPath` as a UNC path, installer
+  `-EvidencePath`). The app-pool account needs Modify on the folder and Change on the share. OPERATIONS.md §1.2.1
+  covers the rights and how to move an existing store.
+  - **New behaviour:** once evidence is recorded, CaseBook never recreates a missing store folder. If the folder is
+    gone (a share down or remapped), uploads are refused, downloads say the store can't be read, `/health` reports
+    Unhealthy, and Diagnostics gives the reason, until it's back. Don't create an empty folder in its place.
+- **Safe download.** A file that can run (a program, script, shortcut, disk image, Office file with macros) shows
+  **Can run** on the Evidence tab and downloads first as a zip with the password `infected`, so it can't be run by a
+  double-click and the analyst's antivirus doesn't delete it on arrival. The plain file is behind a confirmation.
+  `Evidence:SafeDownload` makes the zip the first choice for every file (`Always`) or none (`Off`).
+- **Evidence encryption at rest (off until you turn it on).** Evidence and reports can be stored encrypted (AES-256),
+  so a copied disk or backup doesn't expose them and the server's antivirus can't delete a malware sample. Read
+  **OPERATIONS.md §2, Evidence key** before turning it on. In short:
+  - The key is protected by the integrity certificate (or CyberArk chain key) you already have. Nothing is encrypted
+    until a backup of it exists: a recovery certificate (`Storage:Encryption:RecoveryCertificates`) or shares from
+    `casebook-keytool split`. Make two recovery certificates with two custodians, and run a drill
+    (`casebook-keytool verify`).
+  - **Losing the key loses the encrypted files.** Back up the data root's `keys` folder with the database and the
+    evidence store, and restore all three together.
+  - Files stored before are encrypted in the background, starting 15 minutes after start-up, or at once with
+    **Convert now** on Diagnostics. **This is one-way:** a rollback after it also needs the evidence store from
+    before it (see Rollback above).
+  - With encryption on, no antivirus exclusion is needed for the evidence store. Until conversion finishes, plain
+    samples are still visible to it.
+- **New in the release bundle:** `deploy\keytool\casebook-keytool.exe`, which splits the key into shares, checks a
+  share, runs a recovery drill, recovers the key onto a new certificate, and exports evidence as the original files.
+- **Compliance bundles** now say in VERIFY.txt that evidence hashes are of the original files.
 
 ### v1.6.15
 

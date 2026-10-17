@@ -34,6 +34,7 @@ Word template in the case Report tab's preview, in the browser. It loads only on
 | Markdig | 1.4.0 | BSD-2-Clause |
 | FluentValidation | 12.1.1 | Apache-2.0 |
 | SkiaSharp (+ SkiaSharp.NativeAssets.Linux.NoDependencies) | 4.153.1 | MIT |
+| [SharpZipLib](https://github.com/icsharpcode/SharpZipLib) (the safe download's password-protected zip) | 1.4.2 | MIT |
 | Microsoft.AspNetCore.Authentication.Negotiate | 10.x | MIT |
 | System.DirectoryServices.AccountManagement | 10.x | MIT |
 | System.Security.Cryptography.Pkcs | 10.x | MIT |
