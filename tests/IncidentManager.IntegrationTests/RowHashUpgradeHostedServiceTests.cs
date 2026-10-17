@@ -71,8 +71,9 @@ public sealed partial class RowHashUpgradeHostedServiceTests
         await started.CancelAsync();   // the app is up and serving
         await Task.Delay(1000);
         (await UpgradedAsync(database)).Should().BeFalse("nothing runs until the delay has passed");
-        var deadline = DateTime.UtcNow.AddSeconds(60);
-        while (!await UpgradedAsync(database) && DateTime.UtcNow < deadline) await Task.Delay(200);
+        // Wait for the job to finish rather than polling: a read here while the upgrade runs would share the test's one
+        // SQLite connection with it, and one of them could fail setting up its context (a fault of the test, not the app).
+        await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(60));
         (await UpgradedAsync(database)).Should().BeTrue("after the delay the upgrade runs and marks the check strict");
         await service.StopAsync(CancellationToken.None);
     }
