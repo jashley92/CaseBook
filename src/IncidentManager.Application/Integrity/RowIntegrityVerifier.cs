@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Common;
@@ -100,7 +102,7 @@ public static class RowIntegrityVerifier
     {
         var tables = Tables(db).ToList();
         var tableOf = new Dictionary<string, int>(StringComparer.Ordinal);
-        var present = new HashSet<(string, string)>();
+        var present = new HashSet<(int Type, Guid Id)>();   // keyed as ChainRecords keys them (a type the trail names)
         var suspects = new List<(int Table, Guid Id, RowMismatch Bad)>();
         var strict = await UpgradedAsync(db, ct);   // C18
         for (var i = 0; i < tables.Count; i++)
@@ -110,7 +112,7 @@ public static class RowIntegrityVerifier
             {
                 var entity = (Entity)row;
                 counts?.RecordRead(tables[i].ElementType.Name);
-                present.Add((row.GetType().Name, entity.Id.ToString()));
+                if (recorded.PresentKey(row.GetType().Name, entity.Id) is { } key) present.Add(key);
                 if (Check(row, recorded, hasher, strict) is not { } bad) continue;
                 if (recheck is null) return bad;
                 suspects.Add((i, entity.Id, bad));   // looked at again once the scan is done
@@ -119,7 +121,7 @@ public static class RowIntegrityVerifier
 
         // A record the chain last recorded as created or changed (with a row hash, so after row hashes existed) that is
         // no longer in its table was deleted outside CaseBook: the app records every removal.
-        var missing = recorded.All.Where(r => IsMissing(r.Key, r.Value, tableOf, present, strict)).Select(r => r.Key).ToList();
+        var missing = recorded.NotPresent(present, (type, last) => MayBeMissing(type, last, tableOf, strict));
         var lineage = await LineageAsync(db, strict, ct);
         if (recheck is null)
             return missing.Select(k => Missing(k, recorded)).FirstOrDefault() ?? lineage;
@@ -136,7 +138,7 @@ public static class RowIntegrityVerifier
             suspects = still;
             var gone = new List<(string Type, string Id)>();
             foreach (var key in missing)
-                if (recorded.TryGet(key, out var last) && IsMissing(key, last, tableOf, present, strict)
+                if (recorded.TryGetEntry(key, out var last) && MayBeMissing(key.Type, last, tableOf, strict) && !recorded.Present(key, present)
                     && (!Guid.TryParse(key.Id, out var gid) || await Reread(db, tableOf[key.Type], gid, ct) is null))
                     gone.Add(key);
             missing = gone;
@@ -233,10 +235,9 @@ public static class RowIntegrityVerifier
     // entry predates row hashes. BUG-648: and in every table once the check is strict: CaseBook records every removal
     // (each delete of a hashed row, and of the rows under it, is a tracked one), so a record whose latest entry predates
     // row hashes and that is gone was deleted outside it.
-    private static bool IsMissing((string Type, string Id) key, (string? Hash, long Sequence, bool Deleted) last,
-        Dictionary<string, int> tableOf, HashSet<(string, string)> present, bool strict) =>
-        !last.Deleted && (strict || last.Hash is not null || HashedFromUpgrade.Contains(key.Type)) && tableOf.ContainsKey(key.Type)
-        && !present.Contains(key);
+    // Whether a record with this latest entry, if it's not in its table, was deleted outside CaseBook.
+    private static bool MayBeMissing(string type, ChainRecords.Entry last, Dictionary<string, int> tableOf, bool strict) =>
+        !last.Deleted && (strict || last.HasHash || HashedFromUpgrade.Contains(type)) && tableOf.ContainsKey(type);
 
     // One record re-read by id from its table (index into Tables), with what its hash covers.
     private static Task<IHashableEntity?> Reread(IAppDbContext db, int table, Guid id, CancellationToken ct) =>
@@ -246,7 +247,7 @@ public static class RowIntegrityVerifier
     {
         var entity = (Entity)row;
         var type = row.GetType().Name;
-        var known = recorded.TryGet((type, entity.Id.ToString()), out var last);
+        var known = recorded.TryGetEntry(type, entity.Id, out var last);
 
         if (known && last.Deleted)
             return new RowMismatch(type, entity.Id, last.Sequence,
@@ -268,7 +269,7 @@ public static class RowIntegrityVerifier
             if (!known && HashedFromUpgrade.Contains(type))
                 return new RowMismatch(type, entity.Id, null,
                     $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
-            if (last.Hash is not null && !HashClearedByMigration.Contains(type))
+            if (last.HasHash && !HashClearedByMigration.Contains(type))
                 return new RowMismatch(type, entity.Id, last.Sequence,
                     $"{type} {entity.Id} had its hash removed outside CaseBook (audit entry {last.Sequence} recorded one).");
             // BUG-153: the start-up back-fill gives every recorded row in these tables a hash, so one without is a
@@ -285,13 +286,13 @@ public static class RowIntegrityVerifier
         if (!hasher.RowHashMatches(row, stored))   // BUG-24: in the format the hash was written in
             return new RowMismatch(type, entity.Id, last.Sequence,
                 $"{type} {entity.Id} was changed outside CaseBook: its content no longer matches its hash.");
-        if (last.Hash is { } chained && !string.Equals(chained, stored, StringComparison.OrdinalIgnoreCase))
+        if (last.HasHash && !last.HashEquals(stored))
             return new RowMismatch(type, entity.Id, last.Sequence,
                 $"{type} {entity.Id} doesn't match its last recorded change (audit entry {last.Sequence}): it was rewritten outside CaseBook.");
         if (!strict) return null;
         // BUG-629: the upgrade recorded the hash of every record whose latest entry (from before v1.5.1) didn't, so one
         // like that now was rewritten, its hash recomputed to match, outside CaseBook.
-        if (last.Hash is null)
+        if (!last.HasHash)
             return new RowMismatch(type, entity.Id, last.Sequence,
                 $"{type} {entity.Id}'s last recorded change (audit entry {last.Sequence}) doesn't record its hash, and every record's has since the upgrade: it was rewritten outside CaseBook.");
         // C18: and moved every record its hash didn't cover to format 4, so a value an older hash leaves out was set since,
@@ -330,10 +331,17 @@ public static class RowIntegrityVerifier
     /// <summary>
     /// Per record (type, id), the row hash its latest audit entry recorded, that entry's sequence, and whether it was a
     /// removal. BUG-195: built one entry at a time as the chain is read, keeping only these, not the entries.
+    /// The monitor keeps this between cycles, one entry per record the trail has ever named, so it's held compactly: a
+    /// record whose id is a GUID as CaseBook writes it is keyed by its type's index and the GUID, and a hash as CaseBook
+    /// writes it (an optional "vN:" prefix and 64 lower-case hex digits) is kept as its 32 bytes. Anything else (an id or
+    /// hash written some other way, as an edit outside CaseBook might) is kept as written, so nothing reads differently.
     /// </summary>
     public sealed class ChainRecords
     {
-        private readonly Dictionary<(string Type, string Id), (string? Hash, long Sequence, bool Deleted)> _last = new();
+        private readonly Dictionary<string, int> _typeIndex = new(StringComparer.Ordinal);
+        private readonly List<string> _types = [];
+        private readonly Dictionary<(int Type, Guid Id), Entry> _byGuid = new();
+        private readonly Dictionary<(string Type, string Id), Entry> _other = new();
 
         /// <summary>The last entry added: what the record check is up to date with.</summary>
         public long? Head { get; private set; }
@@ -341,13 +349,15 @@ public static class RowIntegrityVerifier
         /// <summary>BUG-257: that entry's hash, so a later cycle can tell the chain still runs through it.</summary>
         public string? HeadHash { get; private set; }
 
+        /// <summary>How many records are kept (one per record the trail has mentioned).</summary>
+        public int Count => _byGuid.Count + _other.Count;
+
         public void Add(AuditLogEntry e)
         {
             Head = e.Sequence;
             HeadHash = e.EntryHash;
             if (e.EntityId is not { } id) return;
-            var type = string.Intern(e.EntityType);   // a few dozen names, repeated across every entry
-            if (e.Action == Domain.Enums.AuditAction.Delete) { _last[(type, id)] = (null, e.Sequence, true); return; }
+            if (e.Action == Domain.Enums.AuditAction.Delete) { Set(e.EntityType, id, Entry.Removed(e.Sequence)); return; }
             if (e.AfterJson is not { } after) return;
             // The latest entry decides. Entries written before every update recorded the row hash don't carry it, and
             // a record whose latest entry is one of those is checked against its own hash only.
@@ -361,15 +371,165 @@ public static class RowIntegrityVerifier
                 }
                 catch (JsonException) { /* not a snapshot this check reads; the chain check covers the entry itself */ }
             }
-            _last[(type, id)] = (hash, e.Sequence, false);
+            Set(e.EntityType, id, Entry.Of(hash, e.Sequence));
         }
 
-        /// <summary>How many records are kept (one per record the trail has mentioned).</summary>
-        public int Count => _last.Count;
+        private void Set(string type, string id, Entry entry)
+        {
+            if (CanonicalGuid(id) is { } g) _byGuid[(IndexOf(type), g)] = entry;
+            else _other[(type, id)] = entry;
+        }
 
-        public bool TryGet((string Type, string Id) key, out (string? Hash, long Sequence, bool Deleted) last) =>
-            _last.TryGetValue(key, out last);
+        private int IndexOf(string type)
+        {
+            if (_typeIndex.TryGetValue(type, out var i)) return i;
+            _types.Add(type);
+            return _typeIndex[type] = _types.Count - 1;
+        }
 
-        internal IEnumerable<KeyValuePair<(string Type, string Id), (string? Hash, long Sequence, bool Deleted)>> All => _last;
+        public bool TryGet((string Type, string Id) key, out (string? Hash, long Sequence, bool Deleted) last)
+        {
+            if (TryGetEntry(key, out var entry))
+            {
+                last = (entry.Hash, entry.Sequence, entry.Deleted);
+                return true;
+            }
+            last = default;
+            return false;
+        }
+
+        internal bool TryGetEntry((string Type, string Id) key, out Entry entry)
+        {
+            if (CanonicalGuid(key.Id) is { } g) return TryGetEntry(key.Type, g, out entry);
+            return _other.TryGetValue(key, out entry);
+        }
+
+        /// <summary>A record by its type and GUID id, as the check reads it from its table (no text key made).</summary>
+        internal bool TryGetEntry(string type, Guid id, out Entry entry)
+        {
+            if (_typeIndex.TryGetValue(type, out var t) && _byGuid.TryGetValue((t, id), out entry)) return true;
+            entry = default;
+            return false;
+        }
+
+        /// <summary>The key a row read from its table has in the present set, or null for a type the trail never named.</summary>
+        internal (int Type, Guid Id)? PresentKey(string type, Guid id) =>
+            _typeIndex.TryGetValue(type, out var t) ? (t, id) : null;
+
+        /// <summary>Whether a kept record was read from its table this cycle.</summary>
+        internal bool Present((string Type, string Id) key, HashSet<(int Type, Guid Id)> present) =>
+            CanonicalGuid(key.Id) is { } g && _typeIndex.TryGetValue(key.Type, out var t) && present.Contains((t, g));
+
+        /// <summary>Every kept record whose entry passes <paramref name="keep"/> and that wasn't read from its table.</summary>
+        internal List<(string Type, string Id)> NotPresent(HashSet<(int Type, Guid Id)> present, Func<string, Entry, bool> keep)
+        {
+            var result = new List<(string Type, string Id)>();
+            foreach (var ((t, id), entry) in _byGuid)
+                if (keep(_types[t], entry) && !present.Contains((t, id))) result.Add((_types[t], id.ToString()));
+            foreach (var (key, entry) in _other)
+                if (keep(key.Type, entry)) result.Add(key);   // never read from a table: rows' ids are GUIDs
+            return result;
+        }
+
+        // The GUID an id names, when it's written as CaseBook writes one (Guid.ToString(): lower case, hyphenated), so
+        // turning it back into text gives the same id.
+        private static Guid? CanonicalGuid(string id)
+        {
+            if (id.Length != 36 || !Guid.TryParseExact(id, "D", out var g)) return null;
+            Span<char> again = stackalloc char[36];
+            return g.TryFormat(again, out var n, "D") && n == 36 && again.SequenceEqual(id) ? g : null;
+        }
+
+        /// <summary>
+        /// A record's latest entry: its sequence, whether it was a removal, and the row hash it recorded (null when it
+        /// recorded none). The hash is kept as its 32 bytes and format when CaseBook wrote it, else as written.
+        /// </summary>
+        internal readonly struct Entry
+        {
+            private const byte NoHash = 0, Bare = 1, AsWritten = 255;   // otherwise the format N of a "vN:" prefix (2-9)
+
+            private readonly ulong _h0, _h1, _h2, _h3;
+            private readonly string? _written;
+            private readonly byte _kind;
+
+            public long Sequence { get; }
+            public bool Deleted { get; }
+
+            private Entry(long sequence, bool deleted, byte kind, ReadOnlySpan<byte> bytes, string? written)
+            {
+                Sequence = sequence;
+                Deleted = deleted;
+                _kind = kind;
+                _written = written;
+                if (bytes.Length != 32) return;
+                _h0 = BinaryPrimitives.ReadUInt64BigEndian(bytes);
+                _h1 = BinaryPrimitives.ReadUInt64BigEndian(bytes[8..]);
+                _h2 = BinaryPrimitives.ReadUInt64BigEndian(bytes[16..]);
+                _h3 = BinaryPrimitives.ReadUInt64BigEndian(bytes[24..]);
+            }
+
+            public static Entry Removed(long sequence) => new(sequence, true, NoHash, default, null);
+
+            public static Entry Of(string? hash, long sequence)
+            {
+                if (hash is null) return new(sequence, false, NoHash, default, null);
+                Span<byte> bytes = stackalloc byte[32];
+                return Parse(hash, bytes, lowerCaseOnly: true) is { } kind
+                    ? new(sequence, false, kind, bytes, null)
+                    : new(sequence, false, AsWritten, default, hash);
+            }
+
+            /// <summary>Whether it recorded a row hash.</summary>
+            public bool HasHash => _kind != NoHash;
+
+            /// <summary>The recorded row hash as written (made on each read; the check compares with <see cref="HashEquals"/>).</summary>
+            public string? Hash
+            {
+                get
+                {
+                    if (_kind == NoHash) return null;
+                    if (_kind == AsWritten) return _written;
+                    Span<byte> b = stackalloc byte[32];
+                    Write(b);
+                    return (_kind == Bare ? "" : $"v{_kind}:") + Convert.ToHexStringLower(b);
+                }
+            }
+
+            /// <summary>Whether the recorded hash is <paramref name="stored"/>, ignoring case, without making text.</summary>
+            public bool HashEquals(string stored)
+            {
+                if (_kind == NoHash) return false;
+                if (_kind == AsWritten) return string.Equals(_written, stored, StringComparison.OrdinalIgnoreCase);
+                Span<byte> mine = stackalloc byte[32];
+                Span<byte> other = stackalloc byte[32];
+                Write(mine);
+                return Parse(stored, other, lowerCaseOnly: false) == _kind && mine.SequenceEqual(other);
+            }
+
+            private void Write(Span<byte> b)
+            {
+                BinaryPrimitives.WriteUInt64BigEndian(b, _h0);
+                BinaryPrimitives.WriteUInt64BigEndian(b[8..], _h1);
+                BinaryPrimitives.WriteUInt64BigEndian(b[16..], _h2);
+                BinaryPrimitives.WriteUInt64BigEndian(b[24..], _h3);
+            }
+
+            // The format of a hash written "vN:" (N 2-9) or bare, then 64 hex digits, with its digits into bytes; else null.
+            // With lowerCaseOnly, only a lower-case prefix and digits (as CaseBook writes them), so the text is rebuilt exactly.
+            private static byte? Parse(string hash, Span<byte> bytes, bool lowerCaseOnly)
+            {
+                var kind = Bare;
+                var hex = hash.AsSpan();
+                if (hash.Length == 67 && (hash[0] == 'v' || (!lowerCaseOnly && hash[0] == 'V')) && hash[1] is >= '2' and <= '9' && hash[2] == ':')
+                {
+                    kind = (byte)(hash[1] - '0');
+                    hex = hex[3..];
+                }
+                if (hex.Length != 64) return null;
+                foreach (var c in hex)
+                    if (!(char.IsAsciiDigit(c) || c is >= 'a' and <= 'f' || (!lowerCaseOnly && c is >= 'A' and <= 'F'))) return null;
+                return Convert.FromHexString(hex, bytes, out _, out var written) == OperationStatus.Done && written == 32 ? kind : null;
+            }
+        }
     }
 }

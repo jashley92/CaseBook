@@ -20,15 +20,17 @@ public sealed class IntegritySealHostedService : BackgroundService
     // interval, so detection latency is decoupled from — and far shorter than — how often we seal. BUG-257: a cycle
     // hashes the entries written since the last one and checks every record; the whole chain is re-hashed every
     // IntegrityCheckState.FullEvery (6 h), so an edit to an old audit entry is found within that.
-    private static readonly TimeSpan VerifyPoll = TimeSpan.FromMinutes(10);
+    internal static readonly TimeSpan VerifyPoll = TimeSpan.FromMinutes(10);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptionsMonitor<AutoSealOptions> _options;
     private readonly ILogger<IntegritySealHostedService> _logger;
+    private readonly IntegrityCheckState _state;
 
     public IntegritySealHostedService(IServiceScopeFactory scopeFactory, IOptionsMonitor<AutoSealOptions> options,
-        ILogger<IntegritySealHostedService> logger)
+        ILogger<IntegritySealHostedService> logger, IntegrityCheckState state)
     {
+        _state = state;
         _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
@@ -46,7 +48,13 @@ public sealed class IntegritySealHostedService : BackgroundService
             {
                 _logger.LogError(ex, "Auto-seal skipped: its settings couldn't be read.");
             }
-            await DelayAsync(VerifyPoll, stoppingToken);
+            // A slow check stretches the wait (IntegrityCheckState.NextWait), so it never takes most of the database's time.
+            var wait = _state.NextWait(VerifyPoll);
+            if (wait > VerifyPoll)
+                _logger.LogWarning("The integrity check took {Seconds:N0} s, so the next one runs in {Minutes:N0} minutes instead of " +
+                                   "{Poll:N0}: a change made outside CaseBook may take that long to be found.",
+                    _state.LastCycle?.Total.TotalSeconds, wait.TotalMinutes, VerifyPoll.TotalMinutes);
+            await DelayAsync(wait, stoppingToken);
         }
     }
 

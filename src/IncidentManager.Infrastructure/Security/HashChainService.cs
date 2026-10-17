@@ -36,11 +36,28 @@ public sealed class HashChainService : IHashChainService
     public string ComputeRowHash(IHashableEntity entity) =>
         Canonical.PrefixOf(Canonical.CurrentFormat) + Hash(Canonical.InFormat(Canonical.CurrentFormat, entity.BuildCanonicalContent));
 
+    // The integrity check calls this for every record every cycle, so it compares the digest's bytes with the stored hex
+    // digits instead of building the hash's text: the same as comparing PrefixOf(format) + Hash(...) with stored, ignoring
+    // case (hex digits parse in either case).
     public bool RowHashMatches(IHashableEntity entity, string stored)
     {
         var format = Canonical.FormatOf(stored);
-        return string.Equals(Canonical.PrefixOf(format) + Hash(Canonical.InFormat(format, entity.BuildCanonicalContent)), stored,
-            StringComparison.OrdinalIgnoreCase);
+        var prefix = Canonical.PrefixOf(format);
+        if (stored.Length != prefix.Length + 64 || !stored.AsSpan(0, prefix.Length).Equals(prefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+        Span<byte> expected = stackalloc byte[32];
+        if (Convert.FromHexString(stored.AsSpan(prefix.Length), expected, out _, out var written) != System.Buffers.OperationStatus.Done
+            || written != 32)
+            return false;
+        var content = Canonical.InFormat(format, entity.BuildCanonicalContent);
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetMaxByteCount(content.Length));
+        try
+        {
+            Span<byte> actual = stackalloc byte[32];
+            SHA256.HashData(buffer.AsSpan(0, Encoding.UTF8.GetBytes(content, buffer)), actual);
+            return actual.SequenceEqual(expected);
+        }
+        finally { System.Buffers.ArrayPool<byte>.Shared.Return(buffer); }
     }
 
     public void ChainAppend(AuditLogEntry entry, AuditLogEntry? previous)

@@ -727,6 +727,20 @@
                                 @cycle.RecordsKept.ToString("N0") held in memory between runs
                             </td>
                         </tr>
+                        @if (IntegrityCheck.NextWait(IncidentManager.Web.BackgroundJobs.IntegritySealHostedService.VerifyPoll) is var wait
+                             && wait > IncidentManager.Web.BackgroundJobs.IntegritySealHostedService.VerifyPoll)
+                        {
+                            <tr>
+                                <td>Next run</td>
+                                <td class="small">
+                                    <span class="im-badge im-b-warn">In @wait.TotalMinutes.ToString("N0") minutes</span>
+                                    <span class="text-muted ms-2">
+                                        The last run was slow, so the check waits longer to keep the database's load down. A
+                                        change made outside CaseBook may take that long to be found.
+                                    </span>
+                                </td>
+                            </tr>
+                        }
                         <tr>
                             <td>Largest tables</td>
                             <td class="small text-muted">

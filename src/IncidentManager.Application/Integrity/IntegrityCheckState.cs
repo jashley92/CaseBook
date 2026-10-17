@@ -20,6 +20,20 @@ public sealed class IntegrityCheckState
     /// <summary>What the latest check cost (the monitor's or Verify now), or null before the first since start-up.</summary>
     public IntegrityCycleStats? LastCycle { get; internal set; }
 
+    /// <summary>The longest the monitor waits between checks, however slow they get.</summary>
+    public static readonly TimeSpan LongestWait = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// How long the monitor waits before its next check: <paramref name="poll"/>, or, after an incremental check slower
+    /// than <see cref="SlowCycle"/>, ten times that check's time (up to <see cref="LongestWait"/>), so checking never takes
+    /// more than a tenth of the database's time. A full check (every <see cref="FullEvery"/>) doesn't stretch the wait.
+    /// Detection then takes as long as the wait, which the log and Diagnostics say.
+    /// </summary>
+    public TimeSpan NextWait(TimeSpan poll) =>
+        LastCycle is { Full: false } c && c.Total >= SlowCycle
+            ? TimeSpan.FromTicks(Math.Clamp(c.Total.Ticks * 10, poll.Ticks, Math.Max(poll.Ticks, LongestWait.Ticks)))
+            : poll;
+
     internal SemaphoreSlim Gate { get; } = new(1, 1);
     internal IChainVerifier? Verifier { get; private set; }
     internal RowIntegrityVerifier.ChainRecords? Records { get; private set; }

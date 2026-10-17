@@ -396,6 +396,24 @@ public sealed class IntegritySealIntegrationTests : IDisposable
         state.LastCycle!.Intact.Should().BeFalse("a check that finds a problem records its cost too");
     }
 
+    [Theory]
+    [InlineData(null, false, 10)]     // nothing run yet
+    [InlineData(5, false, 10)]        // a quick check
+    [InlineData(59, false, 10)]
+    [InlineData(60, false, 10)]       // a slow check, but ten times it is no longer than the poll
+    [InlineData(90, false, 15)]       // ten times the check
+    [InlineData(150, false, 25)]
+    [InlineData(600, false, 30)]      // never longer than LongestWait
+    [InlineData(600, true, 10)]       // a full check doesn't stretch the wait
+    public void A_slow_check_stretches_the_wait_before_the_next(int? seconds, bool full, int minutes)
+    {
+        var state = new IntegrityCheckState();
+        if (seconds is { } s)
+            state.LastCycle = new IntegrityCycleStats(_clock.UtcNow, full, true, TimeSpan.Zero, TimeSpan.FromSeconds(s), 0, 0, 0,
+                new Dictionary<string, long>());
+        state.NextWait(TimeSpan.FromMinutes(10)).Should().Be(TimeSpan.FromMinutes(minutes));
+    }
+
     [Fact]
     public async Task VerifyAndTrack_fires_the_alarm_once_when_the_chain_is_broken()
     {

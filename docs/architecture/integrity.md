@@ -236,13 +236,19 @@ entries, each with three audit entries. Allow a few times longer with a remote s
 | Records (audit entries) | 10-minute check | Full check (6-hourly, start-up, *Verify now*) | Held in memory between checks |
 |---|---|---|---|
 | 50,000 (150,000) | 0.4 s | 1.8 s | 7 MB |
-| 1,000,000 (3,000,000) | 8.1 s | 49.6 s | 305 MB |
-| 3,000,000 (9,000,000) | 23.1 s | 145.2 s | 1,021 MB |
+| 1,000,000 (3,000,000) | 7.5 s | 48.6 s | 114 MB |
+| 3,000,000 (9,000,000) | 23.1 s | 145.2 s | about 350 MB |
 
-The time is linear: about 125,000 records and 75,000 audit entries a second. CaseBook's target (a small SOC, low
+The time is linear: about 130,000 records and 75,000 audit entries a second. CaseBook's target (a small SOC, low
 hundreds of cases a year, [INSTALL.md §1.1](../INSTALL.md#11-server-specifications)) reaches about a million records
 over a decade. The memory held is the record check's map of each record's last recorded hash (`ChainRecords`), about
-300 bytes a record.
+120 bytes a record: a record whose id and hash are as CaseBook writes them is kept as its GUID and the hash's 32 bytes
+(anything else as written). Before that it was about 330 bytes a record (305 MB at a million, 1,021 MB at three). The
+3,000,000 time is from before that change and the memory there is scaled from the 1,000,000 run.
+
+A 10-minute check slower than 60 s stretches the wait before the next to ten times its time, up to 30 minutes
+(`IntegrityCheckState.NextWait`), so checking never takes more than about a tenth of the database's time. Detection
+then takes as long as the wait; the log and Diagnostics say so. A full check doesn't stretch it.
 
 ## Evidence at rest
 
