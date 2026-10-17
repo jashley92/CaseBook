@@ -10,7 +10,8 @@ namespace IncidentManager.UnitTests;
 /// then sent it, so one the relay still didn't take was lost. Every place in src that takes an item off a queue (an
 /// in-memory Queue or Channel, or a delete from a queue table) is listed below: either the attempt must come before the
 /// removal in the same method, or the entry says why the site is safe. A new removal site fails the test until it's
-/// listed. What this can't see: a removal reached through a helper method (the drain deletes inline for that reason),
+/// listed. The attempt must also be on every way to the removal (BUG-651: a send made only while email was on, then a
+/// delete either way, emptied the queue). What this can't see: a removal reached through a helper method (the drain deletes inline for that reason),
 /// or an attempt whose outcome is ignored; the behaviour tests (EmailSenderHeldMailTests, CriticalAlertOutboxTests)
 /// cover those for the mail queues. Notification marks aren't queued work (removing one makes a reminder go again).
 /// </summary>
@@ -79,6 +80,8 @@ public sealed partial class QueueRemovalTests
                     var tried = method.Body.IndexOf(attempt, StringComparison.Ordinal);
                     if (tried < 0 || method.Start + tried > m.Index)
                         offenders.Add($"{file}:{line} in {method.Name}: removed before {attempt.TrimEnd('(')} tries it");
+                    else if (!AlwaysTriedBefore(method.Body, tried, m.Index - method.Start))
+                        offenders.Add($"{file}:{line} in {method.Name}: removed on a path that skips {attempt.TrimEnd('(')}");
                 }
             }
         }
@@ -86,6 +89,38 @@ public sealed partial class QueueRemovalTests
         offenders.Should().BeEmpty("queued work comes off its queue only after it went or was given up with a record");
         Sites.Except(used).Select(s => $"{s.File} {s.Method}").Should().BeEmpty("the list names only sites that still remove something");
     }
+
+    /// <summary>
+    /// BUG-651: the attempt before the removal must be on every way to it: a statement of its own (not one arm of a ?:,
+    /// or under an if without braces), in the removal's block or one around it. The drain sent only while email was on
+    /// (<c>o.Enabled ? await DeliverLoggedAsync(...) : null</c>) and deleted either way, so email off emptied the queue.
+    /// </summary>
+    private static bool AlwaysTriedBefore(string body, int attempt, int removal)
+    {
+        var start = body.LastIndexOfAny([';', '{', '}'], attempt) + 1;
+        if (!StatementLead().IsMatch(body[start..attempt])) return false;
+        var depth = 0;
+        for (var i = attempt; i < removal; i++)
+        {
+            if (body[i] == '{') depth++;
+            else if (body[i] == '}' && --depth < 0) return false;   // the attempt's block closed first: it was conditional
+        }
+        return true;
+    }
+
+    // What may lead a statement up to its call: an assignment to a new or existing variable, and await.
+    [GeneratedRegex(@"^\s*(?:(?:[\w.<>]+\??\s+)?\w+\s*=\s*)?(?:await\s+)?$", RegexOptions.None, 1000)]
+    private static partial Regex StatementLead();
+
+    [Theory]
+    [InlineData("{ var outcome = await Try(x); if (outcome == A) return; await db.HeldEmails.ExecuteDeleteAsync(); }", true)]
+    [InlineData("{ SendOutcome? outcome = on\n ? await Try(x)\n : null; await db.HeldEmails.ExecuteDeleteAsync(); }", false)]
+    [InlineData("{ if (on) outcome = await Try(x); await db.HeldEmails.ExecuteDeleteAsync(); }", false)]
+    [InlineData("{ if (on) { var outcome = await Try(x); } await db.HeldEmails.ExecuteDeleteAsync(); }", false)]
+    [InlineData("{ var outcome = await Try(x); if (outcome == A) { await db.HeldEmails.ExecuteDeleteAsync(); } }", true)]
+    public void The_attempt_must_be_on_every_way_to_the_removal(string body, bool safe) =>
+        AlwaysTriedBefore(body, body.IndexOf("Try(", StringComparison.Ordinal), body.IndexOf("db.HeldEmails", StringComparison.Ordinal))
+            .Should().Be(safe);
 
     // BUG-627: the methods that keep a failed send for later write it without the caller's token, which may be the very
     // reason the send failed (a request that ended, a shutdown). Reads may stop with the caller: nothing is lost.

@@ -96,13 +96,16 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
             .AddDbContextFactory<AppDbContext>(o => o.UseSqlite($"Data Source={_dbPath};Pooling=False"))
             .BuildServiceProvider();
         using (var db = _services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext()) db.Database.EnsureCreated();
+        _monitor = new TestOptionsMonitor<EmailOptions>(_options);
         _circuit = new OutboundCircuit(_time);
         _sender = NewSender(_circuit);
         _target = EmailSender.Target(_options);
     }
 
+    private readonly TestOptionsMonitor<EmailOptions> _monitor;
+
     private EmailSender NewSender(OutboundCircuit circuit) =>
-        new(new TestOptionsMonitor<EmailOptions>(_options), _log, circuit, _services.GetRequiredService<IServiceScopeFactory>());
+        new(_monitor, _log, circuit, _services.GetRequiredService<IServiceScopeFactory>());
 
     // The sender looks for mail held before a restart when it starts; here there's none.
     public Task InitializeAsync() => _sender.DrainHeldAsync();
@@ -379,6 +382,32 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
                 "the relay's reply names the address, so only the exception's type and SMTP status are logged");
             _log.Entries.Should().Contain(e => e.Message.Contains("550", StringComparison.Ordinal), "the status is still there");
         }
+    }
+
+    [Theory]
+    [InlineData(true)]    // email turned on again: the reload says so
+    [InlineData(false)]   // no word of it: the next send that goes
+    public async Task Held_mail_waits_while_email_is_off(bool told /* BUG-651 */)
+    {
+        BackOff();
+        await _sender.SendAsync(["a@example.test"], "Mentioned", "b");
+        await _sender.SendAsync(["b@example.test"], "Assigned", "b");
+        await _sender.SendAsync(["c@example.test"], "Handed over", "b");
+
+        _options.Enabled = false;
+        _time.Now += OutboundCircuit.FirstBackOff;
+        await _sender.DrainHeldAsync();
+        await _sender.DrainHeldAsync();
+        (await HeldRowsAsync()).Should().HaveCount(3, "nothing is sent while email is off, so nothing is taken off (as the outbox, WF-92)");
+        _time.Timer!.Due.Should().Be(OutboundCircuit.MaxBackOff, "it looks again now and then");
+
+        _options.Enabled = true;
+        if (told) _monitor.Change(_options);
+        else await _sender.SendAsync(["d@example.test"], "Assigned", "b");
+        _time.Timer.Due.Should().Be(TimeSpan.Zero, "the held mail goes straight away");
+        _time.Timer.Fire();
+        await WaitForAsync(() => Delivered == (told ? 3 : 4));
+        await WaitForAsync(async () => await Held == 0);
     }
 
     [Fact]

@@ -38,8 +38,16 @@ public sealed class EmailSender : IEmailSender, IDisposable
         {
             _maybeHeld = true;
             ScheduleDrain(DrainFloor);
+            // BUG-651: held mail waits while email is off, and goes as soon as it's on again; a corrected relay or From
+            // (BUG-652) is tried at once too.
+            _onChange = options.OnChange(o =>
+            {
+                if (o.Enabled) DrainHeldSoon();
+            });
         }
     }
+
+    private readonly IDisposable? _onChange;
 
     // BUG-576: the relay is backed off by host and port, so a corrected relay setting is tried at once.
     internal static string Target(EmailOptions o) => $"smtp:{o.SmtpHost}:{o.SmtpPort}";
@@ -301,15 +309,21 @@ public sealed class EmailSender : IEmailSender, IDisposable
                 }
                 var o = _options.CurrentValue;
                 var target = Target(o);
-                if (o.Enabled && !_circuit.TryEnter(target))
+                if (!o.Enabled)
+                {
+                    // BUG-651: email turned off meanwhile: not sent, as a send made now wouldn't be, and kept, as the outbox
+                    // keeps its alerts (WF-92); taken off untried, every held email was lost. They go when email is on
+                    // again (OnChange), after the next send that goes, or on this slow look.
+                    _log.LogInformation("Email delivery disabled; the held notification emails wait until it's on again.");
+                    ScheduleDrain(OutboundCircuit.MaxBackOff);
+                    return;
+                }
+                if (!_circuit.TryEnter(target))
                 {
                     ScheduleDrain(_circuit.RetryIn(target));
                     return;
                 }
-                // Email turned off meanwhile: not sent, as a send made now wouldn't be.
-                SendOutcome? outcome = o.Enabled
-                    ? await DeliverLoggedAsync(o, next.RecipientList, next.Subject, next.TextBody, next.HtmlBody, CancellationToken.None)
-                    : null;
+                var outcome = await DeliverLoggedAsync(o, next.RecipientList, next.Subject, next.TextBody, next.HtmlBody, CancellationToken.None);
                 if (outcome != SendOutcome.Blocked) lock (_gate) _blockedDrains = 0;
                 // BUG-617: it stays first until that's final, so it isn't lost to a relay still down and the order holds.
                 // BUG-640: a relay that's down says nothing about the email, so it isn't a try; only age gives it up.
@@ -354,10 +368,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                         next.RecipientList.Count, attempts);
                 }
                 else if (outcome == SendOutcome.Refused)
-                    _log.LogError("The mail relay refused a held email to {RecipientCount} recipient(s); it isn't tried again.", next.RecipientList.Count);
-                else if (outcome is null)
-                    _log.LogInformation("Email delivery disabled; not sending a held email to {RecipientCount} recipient(s).", next.RecipientList.Count);
-                var done = next.Id;
+                    _log.LogError("The mail relay refused a held email to {RecipientCount} recipient(s); it isn't tried again.", next.RecipientList.Count);                var done = next.Id;
                 await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == done).ExecuteDeleteAsync());
             }
         }
@@ -394,6 +405,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
             _disposed = true;
             _drainTimer?.Dispose();
         }
+        _onChange?.Dispose();
     }
 
     private async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
