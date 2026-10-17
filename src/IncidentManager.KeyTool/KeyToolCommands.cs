@@ -32,12 +32,23 @@ internal sealed record Site(string EnvelopePath, string EvidenceRoot, string Rep
         config.GetSection("Integrity").Bind(integrity);
         var envelope = config["Storage:Encryption:EnvelopePath"];
         var signing = Full(integrity.SigningKeyPath, "App_Data/keys/seal-signing.pem");
+        var provider = config["Database:Provider"] ?? "Sqlite";
+        var connection = config.GetConnectionString("Default");
+        if (!provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            // The app resolves a relative SQLite file against the site folder (its working directory); so does the tool,
+            // wherever it's run from, rather than opening (or creating) an empty database beside the tool.
+            var sqlite = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connection ?? "Data Source=App_Data/incidentmanager.db");
+            sqlite.DataSource = Full(sqlite.DataSource, "App_Data/incidentmanager.db");
+            sqlite.Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite;
+            connection = sqlite.ToString();
+        }
         return new Site(
             string.IsNullOrWhiteSpace(envelope) ? Path.Combine(Path.GetDirectoryName(signing)!, "evidence-key.json") : Full(envelope, ""),
             Full(config["EvidenceStore:RootPath"], "App_Data/evidence-store"),
             Full(config["ReportOutput:RootPath"], "App_Data/report-output"),
-            config["Database:Provider"] ?? "Sqlite",
-            config.GetConnectionString("Default"),
+            provider,
+            connection,
             integrity);
     }
 }
@@ -129,7 +140,7 @@ internal static class KeyToolCommands
         var e = ReadEnvelope(site);
         var opened = Open(e, how);
         CryptographicOperations.ZeroMemory(opened.EvidenceKey);
-        output.WriteLine($"OK: {opened.How} opens evidence key {e.KeyId}" + (opened.ChainKey is null ? "." : ", and the audit chain key."));
+        output.WriteLine($"OK: evidence key {e.KeyId} opens with {opened.How}" + (opened.ChainKey is null ? "." : "; the audit chain key comes back with it."));
         e.LastDrillUtc = DateTimeOffset.UtcNow;
         e.LastDrillBy = $"{Environment.UserDomainName}\\{Environment.UserName}";
         Save(site, e, output);
@@ -176,7 +187,7 @@ internal static class KeyToolCommands
         var options = new DbContextOptionsBuilder<AppDbContext>();
         if (site.Provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
             options.UseSqlServer(site.ConnectionString ?? throw new InvalidOperationException("No database connection string in the site's settings."));
-        else options.UseSqlite(site.ConnectionString ?? "Data Source=App_Data/incidentmanager.db");
+        else options.UseSqlite(site.ConnectionString!);
         using var db = new AppDbContext(options.Options);
         var rows = (from ev in db.Evidence.AsNoTracking().IgnoreQueryFilters()
                     join c in db.Cases.AsNoTracking().IgnoreQueryFilters() on ev.CaseId equals c.Id

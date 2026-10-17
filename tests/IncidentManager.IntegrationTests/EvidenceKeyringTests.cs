@@ -11,6 +11,7 @@ using IncidentManager.Infrastructure.Security;
 using IncidentManager.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -265,6 +266,37 @@ public sealed class EvidenceKeyringTests : IDisposable
         (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready, "the next check clears it, no restart");
         await using var again = await store.OpenReadAsync(stored.StoragePath);
         new StreamReader(again).ReadToEnd().Should().Be("sample");
+    }
+
+    [Fact]
+    public async Task A_key_that_cant_be_opened_at_start_up_logs_its_alarm_on_the_first_load()
+    {
+        // Found on the dev server: before its first load the keyring reads Unavailable, so a key unavailable from start-up
+        // changed no state and logged nothing. The first load always logs.
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var options = On(server, RecoveryCer(recovery));
+        await Ring(options).LoadAsync();   // makes the key and its envelope
+        Uninstall(server);
+
+        var log = new ListLogger();
+        var restarted = new EvidenceKeyring(Options.Create(options),
+            Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_dir, "keys", "seal-signing.pem") }),
+            Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), Options.Create(new ReportOutputOptions { RootPath = Reports }),
+            NoChainKeys.Instance, Scopes(), log);
+        (await restarted.LoadAsync()).Should().Be(EvidenceKeyState.Unavailable);
+        log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical).Which.Message.Should().Contain("can't be opened");
+        await restarted.LoadAsync();
+        log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical, "once per change, not every 5-minute check");
+    }
+
+    private sealed class ListLogger : ILogger<EvidenceKeyring>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
     }
 
     [Fact]

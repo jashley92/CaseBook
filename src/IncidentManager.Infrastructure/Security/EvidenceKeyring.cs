@@ -62,6 +62,7 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);   // C21: one load at a time, so an older one can't land after a newer
 
     private sealed record Loaded(EvidenceKeyState State, string? KeyId, byte[]? Key, string? Problem);
+    private bool _loadedOnce;
     private volatile Loaded _now;
 
     public EvidenceKeyring(IOptions<EvidenceEncryptionOptions> options, IOptions<SealSigningOptions> integrity,
@@ -111,7 +112,10 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
             var (loaded, health) = await CheckAsync(ct);
             Replace(loaded);
             Health = health;
-            if (loaded.State != before) LogChange(loaded);
+            // Before the first load the state reads Unavailable ("not loaded yet"), so the first load always logs: a key
+            // that can't be opened at start-up gets its Critical line too.
+            if (!_loadedOnce || loaded.State != before) LogChange(loaded);
+            _loadedOnce = true;
             return loaded.State;
         }
         finally { _gate.Release(); }
@@ -418,7 +422,11 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         await WriteCopiesAsync(envelope, changes.Count > 0 ? null : fileJson, changes.Count > 0 ? null : dbJson,
             changes.Count > 0 ? null : rootJson, copies, warnings, ct);
         if (changes.Count > 0)
+        {
             await AuditAsync(AuditAction.Update, envelope.KeyId, $"Evidence encryption key {envelope.KeyId}: {string.Join("; ", changes)}.", ct);
+            _logger?.LogInformation("Evidence encryption key {KeyId}: {Changes}. Every envelope copy was rewritten; no file changes.",
+                envelope.KeyId, string.Join("; ", changes));
+        }
         return envelope;
     }
 

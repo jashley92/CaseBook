@@ -77,6 +77,21 @@ public sealed class KeyToolTests : IDisposable
             Options.Create(new ReportOutputOptions { RootPath = site.ReportRoot }), NoChainKeys.Instance);
 
     [Fact]
+    public void Relative_paths_and_a_relative_SQLite_file_are_the_site_folders_wherever_the_tool_is_run()
+    {
+        // Found on the dev server: the SQLite file resolved against the current folder, so export run from elsewhere
+        // opened (and created) an empty database beside the tool.
+        File.WriteAllText(Path.Combine(_site, "appsettings.json"), """
+            { "ConnectionStrings": { "Default": "Data Source=App_Data/incidentmanager.db" }, "Database": { "Provider": "Sqlite" } }
+            """);
+        var site = Site.Load(_site);
+        var built = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(site.ConnectionString);
+        built.DataSource.Should().Be(Path.Combine(_site, "App_Data", "incidentmanager.db"));
+        built.Mode.Should().Be(Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite, "never creates an empty database");
+        site.EvidenceRoot.Should().Be(Path.Combine(_site, "App_Data", "evidence-store"));
+    }
+
+    [Fact]
     public async Task Shares_split_on_the_server_turn_encryption_on_and_rebuild_the_key_and_a_drill_is_recorded()
     {
         var server = Installed("CaseBook keytool server");
@@ -101,7 +116,7 @@ public sealed class KeyToolTests : IDisposable
 
         var drill = new StringWriter();
         KeyToolCommands.Verify(site, new Opening(Shares: [shares[0], shares[2], shares[4]]), drill);
-        drill.ToString().Should().StartWith("OK: 3 shares opens evidence key");
+        drill.ToString().Should().StartWith("OK: evidence key ").And.Contain("opens with 3 shares");
         KeyEnvelope.Parse(File.ReadAllText(site.EnvelopePath))!.LastDrillUtc.Should().NotBeNull();
         var tooFew = () => KeyToolCommands.Verify(site, new Opening(Shares: [shares[0], shares[1]]), new StringWriter());
         tooFew.Should().Throw<ArgumentException>();
@@ -127,7 +142,7 @@ public sealed class KeyToolTests : IDisposable
 
         var drill = new StringWriter();
         KeyToolCommands.Verify(site, new Opening(PfxPath: pfx, PfxPassword: "safe-password"), drill);
-        drill.ToString().Should().Contain("recovery certificate").And.Contain("opens evidence key");
+        drill.ToString().Should().Contain("recovery certificate").And.Contain("opens with recovery certificate");
         var wrong = () => KeyToolCommands.Verify(site, new Opening(PfxPath: pfx, PfxPassword: "nope"), new StringWriter());
         wrong.Should().Throw<CryptographicException>();
 
