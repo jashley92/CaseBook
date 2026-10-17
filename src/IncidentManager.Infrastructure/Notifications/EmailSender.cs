@@ -296,6 +296,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
         lock (_gate) _drainDue = null;
         if (_scopes is null || Interlocked.Exchange(ref _draining, 1) == 1) return;
         var emptied = false;
+        HeldEmail? putBack = null;   // BUG-659: the one Blocked email this drain put back, as it was before
         try
         {
             while (!emptied)
@@ -345,6 +346,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                 }
                 var outcome = await DeliverHeldAsync(o, target, next);
                 if (outcome != SendOutcome.Blocked) lock (_gate) _blockedDrains = 0;
+                if (outcome is not (SendOutcome.Blocked or SendOutcome.Withdrawn)) putBack = null;   // the session took a message
                 // BUG-617: it stays first until that's final, so it isn't lost to a relay still down and the order holds.
                 // BUG-640: a relay that's down says nothing about the email, so it isn't a try; only age gives it up.
                 // BUG-652: nor does a refusal of the session or a setting that stops every send; it's waited out the same way,
@@ -355,6 +357,18 @@ public sealed class EmailSender : IEmailSender, IDisposable
                     {
                         if (outcome == SendOutcome.Blocked)
                         {
+                            // BUG-659: a 5xx to the message itself (550 5.7.1 from a DLP rule, 554 content) is about that
+                            // email only: it's put back, as after a 4xx, and the ones behind it go on. Only when the next is
+                            // refused too is it the session or the settings; the first is then left as it was.
+                            if (putBack is null)
+                            {
+                                putBack = next;
+                                await PutBackAsync(next.Id, next.Attempts + 1, _circuit.Time.GetUtcNow() + BackOff(next.Attempts + 1));
+                                _log.LogWarning("The mail relay refused a held email to {RecipientCount} recipient(s); it's tried again " +
+                                    "later, and the ones behind it go on.", next.RecipientList.Count);
+                                continue;
+                            }
+                            await PutBackAsync(putBack.Id, putBack.Attempts, putBack.NextAttemptAtUtc);
                             int blocked;
                             lock (_gate) blocked = ++_blockedDrains;
                             _log.LogError("The held notification emails can't be sent until the mail relay's sign-in or the email " +
@@ -379,10 +393,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                     {
                         // BUG-653: that recipient's "not now" is about this email only: it's put back for later, and the
                         // ones behind it go on (strict order is kept only while the relay can't be reached).
-                        var id = next.Id;
-                        var retryAt = _circuit.Time.GetUtcNow() + BackOff(attempts);
-                        await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == id)
-                            .ExecuteUpdateAsync(s => s.SetProperty(h => h.Attempts, attempts).SetProperty(h => h.NextAttemptAtUtc, retryAt)));
+                        await PutBackAsync(next.Id, attempts, _circuit.Time.GetUtcNow() + BackOff(attempts));
                         continue;
                     }
                     // One that never goes mustn't hold the rest back for ever.
@@ -407,6 +418,10 @@ public sealed class EmailSender : IEmailSender, IDisposable
             if (!emptied) Volatile.Write(ref _draining, 0);
         }
     }
+
+    private Task<int> PutBackAsync(long id, int attempts, DateTimeOffset? retryAt) =>
+        WithDbAsync(db => db.HeldEmails.Where(h => h.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(h => h.Attempts, attempts).SetProperty(h => h.NextAttemptAtUtc, retryAt)));
 
     /// <summary>
     /// Sends a held email. BUG-654: one about a case goes only to those of its recipients who may still see the case, by

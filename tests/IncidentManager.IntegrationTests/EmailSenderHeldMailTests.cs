@@ -380,6 +380,60 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
         _options.From = "casebook@example.test";
     }
 
+    [Theory]
+    [InlineData("dlp@example.test")]    // 550 5.7.1 at the end of DATA: a DLP or transport rule
+    [InlineData("spam@example.test")]   // 554 at the end of DATA: content rejected
+    public async Task One_email_refused_for_its_content_doesnt_hold_the_queue(string refused /* BUG-659 */)
+    {
+        BackOff();
+        await _sender.SendAsync([refused], "Mentioned", "b");
+        await _sender.SendAsync(["b@example.test"], "Assigned", "b");
+        await _sender.SendAsync(["c@example.test"], "Handed over", "b");
+        var heldAt = _time.Now;
+
+        _time.Now += OutboundCircuit.FirstBackOff;
+        await _sender.DrainHeldAsync();
+        Delivered.Should().Be(2, "the relay refused that message, not the session: the ones behind it go");
+        var row = (await HeldRowsAsync()).Should().ContainSingle().Subject;
+        row.RecipientList.Should().Equal(refused);
+        row.Attempts.Should().Be(1, "the relay answered about this email, so it's a try");
+        row.NextAttemptAtUtc.Should().BeAfter(_time.Now, "put back for later, as a 4xx is");
+        _log.Has(LogLevel.Error, "can't be sent until").Should().BeFalse("the settings and sign-in are fine");
+        _time.Timer!.Due.Should().Be(row.NextAttemptAtUtc - _time.Now, "it's tried again when its turn comes");
+
+        // Still refused a day on: given up, and logged.
+        _time.Now = heldAt + HeldEmail.GiveUpUnreachedAfter + TimeSpan.FromMinutes(1);
+        await _sender.DrainHeldAsync();
+        (await Held).Should().Be(0);
+        _log.Has(LogLevel.Error, "given up").Should().BeTrue();
+        _circuit.TryEnter(_target).Should().BeTrue("the relay answered every time, so it isn't backed off");
+    }
+
+    [Fact]
+    public async Task A_message_too_large_for_the_relay_is_refused_for_good(/* BUG-659 */)
+    {
+        BackOff();
+        await _sender.SendAsync(["big@example.test"], "Mentioned", "b");
+        await _sender.SendAsync(["b@example.test"], "Assigned", "b");
+        _time.Now += OutboundCircuit.FirstBackOff;
+        await _sender.DrainHeldAsync();
+        Delivered.Should().Be(1);
+        (await Held).Should().Be(0, "552: the same message would only be refused again");
+        _log.Has(LogLevel.Error, "refused a held email").Should().BeTrue("a given-up email leaves a record");
+
+        await _sender.SendAsync(["big@example.test"], "Assigned", "b");
+        (await Held).Should().Be(0, "nor is one sent now held");
+    }
+
+    [Theory]
+    [InlineData(System.Net.Mail.SmtpStatusCode.ExceededStorageAllocation, "Refused")]   // 552: too large for the relay
+    [InlineData(System.Net.Mail.SmtpStatusCode.MailboxUnavailable, "Blocked")]          // 550: at MAIL FROM it's the session's
+    [InlineData(System.Net.Mail.SmtpStatusCode.TransactionFailed, "Blocked")]           // 554: may be the greeting's
+    [InlineData(System.Net.Mail.SmtpStatusCode.MustIssueStartTlsFirst, "Blocked")]      // 530
+    [InlineData(System.Net.Mail.SmtpStatusCode.MailboxNameNotAllowed, "Blocked")]       // 553: the sender
+    public void A_refusal_of_the_message_itself_is_final_only_when_its_code_says_so(System.Net.Mail.SmtpStatusCode code, string expected /* BUG-659 */) =>
+        SendOutcomes.Of(new System.Net.Mail.SmtpException(code, "refused")).ToString().Should().Be(expected);
+
     [Fact]
     public async Task The_log_doesnt_carry_the_addresses_a_relay_echoes(/* BUG-657, CWE-359 */)
     {
@@ -647,6 +701,7 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
                 using var reader = new StreamReader(stream, Encoding.ASCII);
                 await using var writer = new StreamWriter(stream, Encoding.ASCII) { NewLine = "\r\n", AutoFlush = true };
                 await writer.WriteLineAsync("220 relay.test ESMTP");
+                string? atEndOfData = null;   // BUG-659: the reply to the message itself, decided by who it's to
                 while (await reader.ReadLineAsync(ct) is { } line)
                 {
                     var cmd = line.ToUpperInvariant();
@@ -654,8 +709,12 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
                     {
                         await writer.WriteLineAsync("354 Go ahead");
                         while (await reader.ReadLineAsync(ct) is { } body && body != ".") { }
-                        Interlocked.Increment(ref _delivered);
-                        await writer.WriteLineAsync("250 Queued");
+                        if (atEndOfData is not null) await writer.WriteLineAsync(atEndOfData);
+                        else
+                        {
+                            Interlocked.Increment(ref _delivered);
+                            await writer.WriteLineAsync("250 Queued");
+                        }
                     }
                     else if (cmd.StartsWith("MAIL FROM:", StringComparison.Ordinal) && _mode == "530")
                         await writer.WriteLineAsync("530 5.7.0 Authentication required");
@@ -664,6 +723,9 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
                         await writer.WriteLineAsync($"{_mode} {line["RCPT TO:".Length..].Trim()} Not this one");
                     else if (cmd.StartsWith("RCPT TO:", StringComparison.Ordinal))
                     {
+                        if (line.Contains("dlp@", StringComparison.Ordinal)) atEndOfData = "550 5.7.1 Message refused by a transport rule";
+                        else if (line.Contains("big@", StringComparison.Ordinal)) atEndOfData = "552 5.3.4 Message size exceeds fixed limit";
+                        else if (line.Contains("spam@", StringComparison.Ordinal)) atEndOfData = "554 5.6.0 Message content rejected";
                         _rcpts.Enqueue(line["RCPT TO:".Length..].Trim().Trim('<', '>'));
                         await writer.WriteLineAsync("250 OK");
                     }

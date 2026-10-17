@@ -130,7 +130,10 @@ schema, for use in the organization's own approved AI tool.
   A refusal that isn't about the addresses (530 "authentication required", a refused sender) or an email setting
   that stops every send (a From that isn't an address) keeps the held mail and logs an error until it's fixed
   (BUG-652). While email is turned off, held mail waits and goes once it's on again (BUG-651). One recipient's
-  "not now" puts only that email back for its own retry; the others go on (BUG-653). Before an email about a case
+  "not now" puts only that email back for its own retry; the others go on (BUG-653). So does a refusal of one
+  message at the end of its send (550 5.7.1 from a DLP or transport rule, 554 content rejected): it's retried on its
+  own back-off and given up after 24 hours, and only when the next email is refused too is it read as the session's;
+  a 552 "message too large" is refused for good (BUG-659). Before an email about a case
   goes, its recipients are checked against the case again: someone who lost access while it was held isn't sent
   it, and it's dropped if the case is gone (BUG-654). Held mail is kept in the `HeldEmails` table, so it survives a restart. It's removed once
   it's sent, refused for good, or given up after 12 temporary refusals or after 24 hours with the relay unreachable

@@ -6,7 +6,8 @@ namespace IncidentManager.Infrastructure.Notifications;
 /// C20 (BUG-617, BUG-626): what became of one send, so queued mail is removed only when that's final. Delivered
 /// (to some recipients at least, BUG-94) and Refused (the relay said no for good) end it; NotReached (the relay didn't
 /// answer, or the send was cut off) and Transient (a 4xx: mailbox busy, local error, out of storage) keep it to try again.
-/// Blocked (BUG-652: the relay refused the session, or the settings stop every send) keeps it too, like NotReached.
+/// Blocked (BUG-652: the relay refused the session, or the settings stop every send) keeps it too, like NotReached;
+/// the drain puts a Blocked email back on its own, and reads it as the session's only when the next is Blocked too (BUG-659).
 /// </summary>
 internal enum SendOutcome
 {
@@ -34,6 +35,9 @@ internal static class SendOutcomes
         // the sender) or our own setting (a From that doesn't parse) refuses every email alike, and read as Refused a
         // drain deleted the whole held queue in seconds.
         SmtpFailedRecipientException => SendOutcome.Refused,
+        // BUG-659: 552 (too large) is about this message only, at whatever step. 550 and 554 may be the session's (the
+        // sender, the greeting), so they stay Blocked, and the drain tells one email's refusal from the session's.
+        SmtpException { StatusCode: SmtpStatusCode.ExceededStorageAllocation } => SendOutcome.Refused,
         _ => SendOutcome.Blocked,
     };
 
