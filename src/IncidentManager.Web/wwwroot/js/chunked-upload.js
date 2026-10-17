@@ -93,7 +93,11 @@ window.imChunkedUpload = (function () {
                 call(dotnet, 'OnChunkedFailed', key, "The file can't be read any more. Pick it again.");
                 return;
             }
-            send(dotnet, key, file, caseId, description, token);
+            // send() reports its own failures; anything that still escapes it reaches the page rather than vanishing.
+            send(dotnet, key, file, caseId, description, token).catch(function (e) {
+                delete running[key];
+                call(dotnet, 'OnChunkedFailed', key, (e && e.message) || 'The upload failed.');
+            });
         },
         cancel: function (key) {
             var job = running[key];

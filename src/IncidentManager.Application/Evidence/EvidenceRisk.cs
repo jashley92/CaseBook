@@ -99,5 +99,5 @@ public static class EvidenceRisk
     }
 
     /// <summary>The password every safe zip uses: the field's convention, so anyone receiving it knows it.</summary>
-    public const string ZipPassword = "infected";
+    public const string ZipPassword = "infected"; // NOSONAR S2068: not a credential; the security field's public convention for zipped samples, shown to every user
 }

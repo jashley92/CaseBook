@@ -398,7 +398,7 @@
     {
         if (file.Size <= EvidenceUploadSessions.InPageMaxBytes)
         {
-            await using var stream = file.OpenReadStream(EvidenceUploadSessions.InPageMaxBytes);
+            await using var stream = file.OpenReadStream(EvidenceUploadSessions.InPageMaxBytes); // NOSONAR S5693: evidence up to 100 MB by design (PROD-56); larger goes in 8 MB parts, and EvidenceRoom checks the admin limit first
             await Evidence.UploadAsync(CaseId, file.Name, file.ContentType, stream, description, file.Size);
             return true;
         }
