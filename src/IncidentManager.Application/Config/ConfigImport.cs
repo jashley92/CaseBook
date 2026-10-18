@@ -22,10 +22,24 @@ public sealed record ConfigDiff(IReadOnlyList<ConfigDiffItem> Items, IReadOnlyLi
 /// The result of parsing and verifying an uploaded bundle: whether its embedded-key signature checks out,
 /// whether that key is this very instance's (a same-instance re-import) or another's (a cross-instance
 /// promotion), and the provenance the file carries. Import is refused unless <see cref="SignatureValid"/>.
+/// CAP-16: <see cref="Trust"/> says whose the carried key is, and <see cref="CarriedKeyId"/> is that key's id as this
+/// server computes it from the key itself (the <see cref="KeyId"/> the file states is only what it says).
 /// </summary>
 public sealed record ConfigVerification(
     bool SignatureValid, bool SignedByThisInstance, string KeyId, string ExportedBy,
-    DateTimeOffset ExportedAtUtc, int SchemaVersion, string AppVersion, string SourceHost);
+    DateTimeOffset ExportedAtUtc, int SchemaVersion, string AppVersion, string SourceHost,
+    ConfigBundleTrust Trust = ConfigBundleTrust.Unknown, string? CarriedKeyId = null, string? TrustedKeyFile = null);
+
+/// <summary>CAP-16: whose key a bundle is signed with, which decides whether it imports without asking.</summary>
+public enum ConfigBundleTrust
+{
+    /// <summary>A key this server holds (a re-import here): imports as it always has.</summary>
+    ThisServer,
+    /// <summary>A key in <c>Config:TrustedBundleKeys</c>: imports as this server's own would.</summary>
+    TrustedKey,
+    /// <summary>Any other key: refused unless the administrator types the key's id.</summary>
+    Unknown,
+}
 
 /// <summary>Counts applied by an import, per outcome.</summary>
 /// <param name="RolesInEffect">BUG-193: false when the import changed roles or mappings that the role directory couldn't

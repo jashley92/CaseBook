@@ -108,6 +108,8 @@ public static class DependencyInjection
         services.AddSingleton<ICaseChangeNotifier, Realtime.CaseChangeNotifier>();
         services.AddSingleton<ICasePresenceService, Realtime.CasePresenceService>();
         services.AddSingleton<ISealSigner, RsaSealSigner>();
+        // CAP-16: configuration-bundle keys trusted besides this server's own (Config:TrustedBundleKeys); none unless set.
+        services.AddSingleton<ITrustedBundleKeys>(sp => new TrustedBundleKeys(sp.GetRequiredService<IConfiguration>()));
         services.AddSingleton<ISealStore, FileSealStore>();
         // PROD-57: the evidence key (Storage:Encryption); the stores encrypt new files with it once it's ready.
         services.Configure<EvidenceEncryptionOptions>(config.GetSection("Storage:Encryption"));

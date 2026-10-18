@@ -716,7 +716,10 @@ jurisdiction codes), never a reason, a summary or any other text from the case. 
 not an alert), so filter on that prefix to keep drills out of a rule. Each is sent after the change is saved, best
 effort: a stream that's down never fails the action. Reasons and the full before and after are in the audit trail.
 A configuration bundle import sends one 5405 (`ConfigurationBundle`, with its counts and signing key) rather than one
-per row it replaced, alongside the 5401-5403 it already sends per role, mapping and setting.
+per row it replaced, alongside the 5401-5403 it already sends per role, mapping and setting. The detail ends with how
+the key was trusted (CAP-16): `signed with this server's key <id>`, `signed with trusted key <id> (<file>)`, or
+`signed with key <id> (not this server's or a trusted one), its id typed to confirm`. Alert on the last: someone
+imported configuration from a source the server doesn't know.
 
 **Suggested rules:** a `CaseDowngraded` (5508) followed by a 5509 on the same case within a few days; any 5509 with
 `gateOverridden=true`; a 5511 `CaseRestored`; a 5512 `status=Material`; and any 5405 with target type `StageGate` or

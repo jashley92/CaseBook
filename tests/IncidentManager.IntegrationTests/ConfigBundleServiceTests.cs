@@ -53,8 +53,8 @@ public sealed class ConfigBundleServiceTests : IDisposable
             .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
             .Options);
 
-    private ConfigBundleService NewService(AppDbContext db) =>
-        new(NewFactory(), _signer, new AuditWriter(NewFactory(), _hasher, _user, _clock), _user, _clock);
+    private ConfigBundleService NewService(AppDbContext db, ITrustedBundleKeys? trusted = null, CapturingSecurityEventSink? siem = null) =>
+        new(NewFactory(), _signer, new AuditWriter(NewFactory(), _hasher, _user, _clock), _user, _clock, siem: siem, trustedKeys: trusted);
 
     private async Task SeedConfigAsync(AppDbContext db)
     {
@@ -300,28 +300,120 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_bundle_signed_with_another_key_needs_its_source_confirmed()
+    public async Task A_bundle_signed_with_an_unknown_key_imports_only_with_its_key_id_typed()
     {
         // BUG-19: the signature is checked against the key in the bundle, so anyone can re-sign an edited bundle with
-        // their own key and it verifies. It proves the bundle is unchanged since signing, not who made it.
+        // their own key and it verifies. It proves the bundle is unchanged since signing, not who made it. CAP-16: the
+        // admin names the key by typing its id; a wrong id, the id the file states for another key, or none is refused.
         await using var db = NewContext();
         await SeedConfigAsync(db);
-        var svc = NewService(db);
+        var siem = new CapturingSecurityEventSink();
+        var svc = NewService(db, siem: siem);
         var live = await svc.BuildBundleAsync();
         var incoming = live with { DataElements = live.DataElements.Append(new ConfigDataElement("Passport", "Passport", 20, true, false, "US")).ToList() };
-        var other = new RsaSealSigner(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, "other.pem"), AllowKeyGeneration = true }));
-        var envelope = new ConfigBundleEnvelope(ConfigBundleJson.FormatTag, ConfigBundleJson.CurrentSchemaVersion, "test", _clock.UtcNow,
-            "someone", "elsewhere", other.Algorithm, other.KeyId, other.PublicKeyPem, other.Sign(ConfigBundleJson.Canonicalize(incoming)), incoming);
+        var other = OtherSigner("other.pem");
+        var envelope = SignedBy(other, incoming);
 
-        var untrusted = () => svc.ImportAsync(envelope);
-        await untrusted.Should().ThrowAsync<InvalidOperationException>().WithMessage("*doesn't hold*");
+        var (_, verification) = svc.ParseAndVerify(Bytes(envelope));
+        verification.Trust.Should().Be(ConfigBundleTrust.Unknown);
+        verification.CarriedKeyId.Should().Be(other.KeyId, "the id is computed from the carried key as a seal key's is");
+
+        await svc.Invoking(s => s.ImportAsync(envelope)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*neither holds nor trusts*");
+        await svc.Invoking(s => s.ImportAsync(envelope, confirmedKeyId: _signer.KeyId)).Should().ThrowAsync<InvalidOperationException>();
         (await db.DataElements.AsNoTracking().AnyAsync(e => e.Key == "Passport")).Should().BeFalse();
 
-        await svc.ImportAsync(envelope, sourceTrusted: true);
+        await svc.ImportAsync(envelope, confirmedKeyId: "  " + other.KeyId.ToUpperInvariant() + " ");
         (await db.DataElements.AsNoTracking().AnyAsync(e => e.Key == "Passport")).Should().BeTrue();
         (await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).LastAsync(a => a.EntityType == "ConfigBundle"))
-            .Summary.Should().Contain(other.KeyId).And.Contain("source confirmed trusted");
+            .Summary.Should().Contain(other.KeyId).And.Contain("typed to confirm");
+        siem.Events.Should().Contain(e => e.EventId == IncidentManager.Application.Security.SecurityEventIds.ReferenceDataChanged
+            && (e.Detail ?? "").Contains(other.KeyId));
     }
+
+    [Fact]
+    public async Task A_bundle_signed_with_a_trusted_key_imports_without_a_typed_id_and_names_the_key(/* CAP-16 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var other = OtherSigner("test-server.pem");
+        var folder = Path.Combine(_workDir, "trusted");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "test-server.pem"), other.PublicKeyPem);
+        var trusted = new TrustedBundleKeys(folder);
+        trusted.Keys.Should().ContainSingle().Which.KeyId.Should().Be(other.KeyId);
+        var siem = new CapturingSecurityEventSink();
+        var svc = NewService(db, trusted, siem);
+        svc.TrustedKeys.Should().ContainSingle(k => k.FileName == "test-server.pem");
+
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with { DataElements = live.DataElements.Append(new ConfigDataElement("Passport", "Passport", 20, true, false, "US")).ToList() };
+        var envelope = SignedBy(other, incoming);
+        var (_, verification) = svc.ParseAndVerify(Bytes(envelope));
+        verification.Trust.Should().Be(ConfigBundleTrust.TrustedKey);
+        verification.TrustedKeyFile.Should().Be("test-server.pem");
+
+        await svc.ImportAsync(envelope);
+        (await db.DataElements.AsNoTracking().AnyAsync(e => e.Key == "Passport")).Should().BeTrue();
+        (await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).LastAsync(a => a.EntityType == "ConfigBundle"))
+            .Summary.Should().Contain($"trusted key {other.KeyId} (test-server.pem)");
+        siem.Events.Should().Contain(e => e.EventId == IncidentManager.Application.Security.SecurityEventIds.ReferenceDataChanged
+            && (e.Detail ?? "").Contains($"trusted key {other.KeyId}"));
+    }
+
+    [Fact]
+    public async Task Re_importing_this_servers_own_bundle_still_needs_nothing_and_says_whose_key(/* CAP-16, ADR 0007/0016 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db, new TrustedBundleKeys(Path.Combine(_workDir, "no-such-folder")));
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with { DataElements = live.DataElements.Append(new ConfigDataElement("Passport", "Passport", 20, true, false, "US")).ToList() };
+
+        svc.ParseAndVerify(Bytes(Signed(incoming))).Verification.Trust.Should().Be(ConfigBundleTrust.ThisServer);
+        await svc.ImportAsync(Signed(incoming));
+        (await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).LastAsync(a => a.EntityType == "ConfigBundle"))
+            .Summary.Should().Contain($"this server's key {_signer.KeyId}");
+        svc.TrustedKeys.Should().BeEmpty("a folder that isn't there holds no keys");
+    }
+
+    [Fact]
+    public async Task A_bundle_that_borrows_a_trusted_keys_id_is_refused(/* CAP-16, as BUG-221 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var source = OtherSigner("source.pem");
+        var folder = Path.Combine(_workDir, "trusted-borrowed");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "source.pem"), source.PublicKeyPem);
+        var svc = NewService(db, new TrustedBundleKeys(folder));
+        var forger = OtherSigner("forger2.pem");
+        var live = await svc.BuildBundleAsync();
+        var signed = SignedBy(forger, live) with { KeyId = source.KeyId };
+
+        svc.Invoking(s => s.ParseAndVerify(Bytes(signed))).Should().Throw<InvalidOperationException>().WithMessage("*trusted key*different one*");
+        await svc.Invoking(s => s.ImportAsync(signed, confirmedKeyId: forger.KeyId)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void A_file_in_the_trusted_keys_folder_that_isnt_a_key_stops_startup(/* CAP-16, as F-24 */)
+    {
+        var folder = Path.Combine(_workDir, "trusted-bad");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "typo.pem"), "not a key");
+        var load = () => new TrustedBundleKeys(folder);
+        load.Should().Throw<InvalidOperationException>().WithMessage("*typo.pem*Config:TrustedBundleKeys*");
+        new TrustedBundleKeys((string?)null).Keys.Should().BeEmpty();
+    }
+
+    private RsaSealSigner OtherSigner(string file) =>
+        new(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, file), AllowKeyGeneration = true }));
+
+    private ConfigBundleEnvelope SignedBy(RsaSealSigner signer, ConfigBundle bundle) => new(
+        ConfigBundleJson.FormatTag, ConfigBundleJson.CurrentSchemaVersion, "test", _clock.UtcNow, "someone", "elsewhere",
+        signer.Algorithm, signer.KeyId, signer.PublicKeyPem, signer.Sign(ConfigBundleJson.Canonicalize(bundle)), bundle);
+
+    private static byte[] Bytes(ConfigBundleEnvelope envelope) =>
+        System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(envelope, ConfigBundleJson.File));
 
     [Fact]
     public async Task A_bundle_that_borrows_this_servers_key_id_is_refused(/* BUG-221 */)
@@ -339,7 +431,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
 
         var parse = () => svc.ParseAndVerify(bytes);
         parse.Should().Throw<InvalidOperationException>().WithMessage("*carries is a different one*");
-        var import = () => svc.ImportAsync(forged, sourceTrusted: true);
+        var import = () => svc.ImportAsync(forged, confirmedKeyId: ConfigBundleService.CarriedKeyId(other.PublicKeyPem));
         await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*carries is a different one*");
         (await db.DataElements.AsNoTracking().AnyAsync(e => e.Key == "Passport")).Should().BeFalse();
     }
@@ -371,7 +463,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         await ((Func<Task>)(() => svc.PreviewAsync(zeroWindow))).Should().ThrowAsync<ArgumentException>().WithMessage("*window must be 1 to*");
         var noOutcomes = live with { CaseOutcomes = (live.CaseOutcomes ?? []).Select(o => o with { IsActive = false }).ToList() };
         if (noOutcomes.CaseOutcomes!.Count > 0)
-            await ((Func<Task>)(() => svc.ImportAsync(Signed(noOutcomes), sourceTrusted: true))).Should().ThrowAsync<ArgumentException>()
+            await ((Func<Task>)(() => svc.ImportAsync(Signed(noOutcomes)))).Should().ThrowAsync<ArgumentException>()
                 .WithMessage("*no case outcome active*");
         // BUG-353: a key longer than its column is named before anything is written.
         var longKey = live with { DataElements = [.. live.DataElements, new ConfigDataElement(new string('K', 101), "Long one", 99, true, false, null)] };
@@ -416,7 +508,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
 
         var unusable = live with { RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("SOC-Ghosts", "NoSuchRole"), new ConfigRoleMapping("  ", "Analyst")] };
         (await svc.PreviewAsync(unusable)).Warnings.Should().Contain(w => w.Contains("2 AD mappings won't be imported"));
-        await svc.ImportAsync(Signed(unusable), sourceTrusted: true);
+        await svc.ImportAsync(Signed(unusable));
         (await db.RoleMappings.AsNoTracking().ToListAsync()).Should().NotContain(m => m.AdGroup == "SOC-Ghosts" || m.AdGroup.Trim() == "");
 
         var kind = IncidentManager.Application.Admin.TaxonomyCatalog.Kinds.First(k => k.AllowVisibilityOrder);
@@ -433,7 +525,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("SOC-Numbered", "numbered")],
             StageGates = [.. live.StageGates, zeroGate],
         };
-        await svc.ImportAsync(Signed(numbered), sourceTrusted: true);
+        await svc.ImportAsync(Signed(numbered));
 
         var role = await db.Roles.AsNoTracking().SingleAsync(r => r.Name == "Numbered");
         role.PermissionsCsv.Should().Be("ViewCases", "a number isn't a permission name");
@@ -460,7 +552,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         // Customised before the Command line type existed: every other member, reversed.
         var older = kind.Members.Select(m => m.Value).Where(v => v != nameof(EntityType.CommandLine)).Reverse().ToList();
         older.Should().HaveCount(kind.Members.Count - 1);
-        await svc.ImportAsync(Signed(WithOrder(older)), sourceTrusted: true);
+        await svc.ImportAsync(Signed(WithOrder(older)));
         (await db.AppSettings.AsNoTracking().SingleAsync(s => s.Key == orderKey)).Value.Should().Be(string.Join(",", older));
 
         // Still refused: a member named twice, or one the kind doesn't have.
@@ -483,7 +575,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
 
         var preview = () => svc.PreviewAsync(clash);
         await preview.Should().ThrowAsync<ArgumentException>().WithMessage("*2 active gates*");
-        var import = () => svc.ImportAsync(Signed(clash), sourceTrusted: true);
+        var import = () => svc.ImportAsync(Signed(clash));
         await import.Should().ThrowAsync<ArgumentException>().WithMessage("*2 active gates*");
         (await db.StageGates.AsNoTracking().AnyAsync(g => g.Name == second.Name)).Should().BeFalse();
 
@@ -508,12 +600,12 @@ public sealed class ConfigBundleServiceTests : IDisposable
 
         (await svc.Invoking(s => s.PreviewAsync(bundle)).Should().ThrowAsync<ArgumentException>())
             .Which.Message.Should().Contain($"More than one stage gate on this server is named \"{gate.Name}\"").And.Contain("Rename one");
-        (await svc.Invoking(s => s.ImportAsync(Signed(bundle), sourceTrusted: true)).Should().ThrowAsync<ArgumentException>())
+        (await svc.Invoking(s => s.ImportAsync(Signed(bundle))).Should().ThrowAsync<ArgumentException>())
             .Which.Message.Should().Contain("More than one stage gate on this server is named");
 
         // A bundle that doesn't carry that gate leaves both rows alone, so the duplicate doesn't stop it.
         var without = bundle with { StageGates = bundle.StageGates.Where(g => g != gate).ToList() };
-        await svc.Invoking(s => s.ImportAsync(Signed(without), sourceTrusted: true)).Should().NotThrowAsync();
+        await svc.Invoking(s => s.ImportAsync(Signed(without))).Should().NotThrowAsync();
         (await db.StageGates.AsNoTracking().Select(g => g.Name).ToListAsync())
             .Count(n => n.Equals(gate.Name, StringComparison.OrdinalIgnoreCase)).Should().Be(2);
     }
@@ -925,7 +1017,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         sink.Events.Should().ContainSingle(e => e.EventId == IncidentManager.Application.Security.SecurityEventIds.ReferenceDataChanged)
             .Which.Should().Match<IncidentManager.Application.Security.SecurityEvent>(e =>
                 e.TargetType == IncidentManager.Application.Security.ReferenceDataKinds.ConfigurationBundle
-                && e.Detail!.EndsWith($"; key {_signer.KeyId}"));
+                && e.Detail!.EndsWith($"; signed with this server's key {_signer.KeyId}"));
         directory.Invalidations.Should().Be(1);
         reloader.Reloads.Should().Be(1);
     }

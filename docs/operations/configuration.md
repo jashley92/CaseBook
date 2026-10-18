@@ -79,6 +79,7 @@ The app refuses to start in exactly these cases:
 | Environment is neither Development nor Production, `Auth:Mode` isn't `Windows`, and `Auth:AllowDevSignInOutsideDevelopment` isn't `true` | `Auth:Mode is '…' in the '<environment>' environment. Set Auth:Mode=Windows, or…` |
 | `DataProtection:KeyPath` is set but not an absolute path | `DataProtection:KeyPath must be an absolute path…` |
 | `Database:Provider` is `SqlServer` and there's no `ConnectionStrings:Default` | `A SqlServer connection string is required.` |
+| A `*.pem` in `Config:TrustedBundleKeys` isn't a readable RSA key (CAP-16) | `'…' in the trusted configuration-bundle keys folder (Config:TrustedBundleKeys) isn't a readable RSA key in PEM form…` |
 | Environment isn't Development and the seal-signing key file (`Integrity:SigningKeyPath`) doesn't exist | `The seal-signing key '…' (Integrity:SigningKeyPath) doesn't exist. Outside Development the app won't generate one…` |
 
 Everything else is checked lazily or not at all:
@@ -165,6 +166,7 @@ process's working directory, which under IIS is the site folder.
 | `Storage:Encryption:RecoveryCertificates` | Paths to recovery certificates (`.cer`, public part only); the key is also encrypted to each. | empty | Server |
 | `Storage:Encryption:CertificateThumbprint` / `StoreLocation` | Optional certificate of its own to protect the key; blank uses the chain key's certificate, else the seal-signing certificate, else the CyberArk chain key. | blank / `LocalMachine` | Server |
 | `Storage:Encryption:EnvelopePath` | The key's envelope file; blank is `evidence-key.json` beside the seal-signing key. | blank | Server |
+| `Config:TrustedBundleKeys` | CAP-16: a folder of public keys (`*.pem`, SubjectPublicKeyInfo; a private key's public half is used) whose configuration bundles import without asking, as this server's own do. Any other key's bundle imports only when the administrator types its key id. Read at startup like `Integrity:RetiredPublicKeysPath`: a file that isn't an RSA key stops the app; a folder that isn't there holds none. Restart to change. The Configuration bundle page lists the keys held. | blank (none) | Server |
 
 ### 3.5 Reporting
 

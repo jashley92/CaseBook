@@ -353,5 +353,5 @@ lessons-learned report.
 | Data elements | Personal-data categories and their notification jurisdictions | ![](../screenshots/data-elements.png) |
 | Regulatory deadlines | Notification window per jurisdiction | ![](../screenshots/regulatory-deadlines.png) |
 | Report templates | Word template library with live preview | ![](../screenshots/report-templates.png) |
-| Configuration bundle | Signed export and previewed import of editable configuration | ![](../screenshots/config-bundle.png) |
+| Configuration bundle | Signed export and previewed import of editable configuration. A bundle signed with a key this server neither holds nor trusts needs its key id typed; the *Trusted signing keys* card lists the keys in `Config:TrustedBundleKeys` (CAP-16) | ![](../screenshots/config-bundle.png) |
 | My access | What your roles allow | ![](../screenshots/my-access.png) |

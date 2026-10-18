@@ -234,6 +234,15 @@ first with `casebook-keytool export`.
   as JSON, paths only, never key material; it's access-logged and SIEM 5304. Setting sources now also show
   `Integrity:ExportPath`, `DataProtection:KeyPath`, `ReportTemplates:RootPath` and `ReportBranding:RootPath`. No setting
   or migration. Compare the card with your backup job's folder list once after upgrading.
+- **Trusted signing keys for configuration bundles (CAP-16).** A new server-side setting, `Config:TrustedBundleKeys`,
+  names a folder of public keys (PEM) whose bundles import as this server's own do; it's blank (none) unless you add it
+  to `appsettings.Production.json` (the production template now carries it). **Behavior change:** a bundle signed with
+  any other key no longer imports on a tick box; the administrator types the key's id, which the page shows, to
+  confirm it. Re-importing this server's own bundle is unchanged. To promote from a test server without typing, put
+  the public half of its seal-signing key in the folder and recycle the app pool. A file there that isn't an RSA key
+  stops startup with its name. The import's audit entry and SIEM 5405 now end `signed with this server's key <id>`,
+  `signed with trusted key <id> (<file>)` or `signed with key <id> (...), its id typed to confirm`; a SIEM rule that
+  matched the 5405 detail's old `; key <id>` ending needs updating.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

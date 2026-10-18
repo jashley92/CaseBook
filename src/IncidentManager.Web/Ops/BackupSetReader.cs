@@ -82,6 +82,7 @@ public sealed class BackupSetReader(
         AddIfOutside(list, keys, "Retired chain keys", "Integrity:ChainKey:RetiredWrappedKeysPath", integrity.Value.ChainKey.RetiredWrappedKeysPath);
         AddIfOutside(list, keys, "Retired seal public keys", "Integrity:RetiredPublicKeysPath", integrity.Value.RetiredPublicKeysPath);
         AddIfOutside(list, keys, "Evidence key envelope", "Storage:Encryption:EnvelopePath", config["Storage:Encryption:EnvelopePath"]);
+        AddIfOutside(list, keys, "Trusted bundle keys", TrustedBundleKeys.SettingKey, config[TrustedBundleKeys.SettingKey]);   // CAP-16
 
         var dp = config["DataProtection:KeyPath"];
         list.Add(("Data Protection keys", "DataProtection:KeyPath", string.IsNullOrWhiteSpace(dp) ? null : Full(dp),

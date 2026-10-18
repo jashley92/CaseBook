@@ -6,6 +6,7 @@
 @inject ConfigBundleService Config
 @inject ToastService Toasts
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Abstractions.ISealSigner Signer
 
 <PageTitle>Configuration bundle</PageTitle>
 
@@ -84,21 +85,30 @@
                 }
                 else
                 {
-                    <div class="alert @(_verification.SignedByThisInstance ? "alert-success" : "alert-warning") py-2 mb-2">
+                    <div class="alert @(_verification.Trust == ConfigBundleTrust.Unknown ? "alert-warning" : "alert-success") py-2 mb-2">
                         <span class="bi bi-shield-check me-1"></span>Signature valid:
-                        @(_verification.SignedByThisInstance ? "signed by this instance" : "signed by another instance")
-                        (key <code>@IncidentManager.Application.Common.ShortHash.Of(_verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
-                        from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
-                        @if (!_verification.SignedByThisInstance)
+                        @(_verification.Trust switch
                         {
-                            @* BUG-19: say what the signature does and doesn't prove, before anyone relies on it. *@
-                            <div class="mt-1">This server doesn't hold that key, so the signature shows the bundle wasn't changed after
-                                it was signed, not who signed it: anyone can sign a bundle with a key of their own, and the exporter,
-                                host and date above are part of what was signed. Import it only if it reached you from a source you trust.</div>
-                            <div class="form-check mt-1">
-                                <input class="form-check-input" type="checkbox" id="cfg-trust" @bind="_sourceTrusted" />
-                                <label class="form-check-label" for="cfg-trust">I got this bundle directly from a source I trust</label>
-                            </div>
+                            ConfigBundleTrust.ThisServer => "signed by this instance",
+                            ConfigBundleTrust.TrustedKey => $"signed with a trusted key ({_verification.TrustedKeyFile})",
+                            _ => "signed by another instance",
+                        })
+                        (key <code>@(_verification.CarriedKeyId ?? _verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
+                        from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
+                        @if (_verification.Trust == ConfigBundleTrust.Unknown)
+                        {
+                            @* BUG-19: say what the signature does and doesn't prove, before anyone relies on it. CAP-16: the admin
+                               names the key by typing its id, checked against the source, rather than ticking a box. *@
+                            <div class="mt-1">This server neither holds nor trusts that key, so the signature shows the bundle wasn't
+                                changed after it was signed, not who signed it: anyone can sign a bundle with a key of their own, and the
+                                exporter, host and date above are part of what was signed. Check the key id on the source server's
+                                <strong>Integrity</strong> page (Signing key), then type it here to import. To trust that source from now
+                                on, put its public key in the trusted keys folder (below).</div>
+                            <label class="form-label small mt-2 mb-1" for="cfg-keyid">Key id, as the source server shows it</label>
+                            <input class="form-control form-control-sm font-monospace" id="cfg-keyid" style="max-width:20rem"
+                                   autocomplete="off" spellcheck="false" maxlength="64" disabled="@_applying"
+                                   aria-describedby="cfg-keyid-help" @bind="_confirmedKeyId" @bind:event="oninput" />
+                            <div id="cfg-keyid-help" class="form-text">@(KeyIdTyped ? "That's the key this bundle carries." : "16 characters, letters a to f and digits.")</div>
                         }
                     </div>
                 }
@@ -135,7 +145,7 @@
                             </table>
                         </div>
                         <button class="btn btn-sm btn-primary" @onclick="Apply"
-                                disabled="@(!_verification.SignatureValid || _applying || (!_verification.SignedByThisInstance && !_sourceTrusted))">
+                                disabled="@(!_verification.SignatureValid || _applying || (_verification.Trust == ConfigBundleTrust.Unknown && !KeyIdTyped))">
                             <span class="bi bi-check2-circle me-1"></span>Apply import (@IncidentManager.Application.Common.Plural.Of(_diff.Changes.Count, "change"))
                         </button>
                     }
@@ -150,13 +160,56 @@
     </div>
 </div>
 
+@* CAP-16: the keys a bundle may be signed with and import without asking. Read-only: they're set on the server, so the
+   people an import could give access to can't add one. Public keys only. *@
+<div class="card mb-3">
+    <div class="card-header"><span class="bi bi-key me-1" aria-hidden="true"></span>Trusted signing keys</div>
+    <div class="card-body">
+        <p class="small text-muted">
+            A bundle imports without asking when it's signed by this server (key <code>@Signer.KeyId</code>) or with one of
+            these keys. Any other key's id has to be typed to import its bundle. They're public keys in PEM form, kept in the
+            folder named by <code>Config:TrustedBundleKeys</code> in the server's configuration, and read when CaseBook
+            starts (see <code>docs/operations/configuration.md</code>).
+        </p>
+        @if (Config.TrustedKeysFolder is not { } folder)
+        {
+            <p class="small mb-0"><span class="im-badge im-b-neutral">None</span>
+                <span class="text-muted ms-1">no folder is set, so only this server's own bundles import without a typed key id.</span></p>
+        }
+        else
+        {
+            <p class="small mb-2">Folder: <code style="word-break:break-all">@folder</code></p>
+            @if (Config.TrustedKeys.Count == 0)
+            {
+                <p class="small mb-0"><span class="im-badge im-b-neutral">None</span>
+                    <span class="text-muted ms-1">the folder holds no <code>.pem</code> keys, or wasn't there when CaseBook started.</span></p>
+            }
+            else
+            {
+                <table class="table table-sm mb-0">
+                    <thead><tr><th scope="col" style="width:12rem">Key id</th><th scope="col">File</th></tr></thead>
+                    <tbody>
+                        @foreach (var k in Config.TrustedKeys)
+                        {
+                            <tr><td><code>@k.KeyId</code></td><td class="small" style="word-break:break-all">@k.FileName</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+    </div>
+</div>
+
 @code {
     private ConfigBundle? _bundle;
     private ConfigBundleEnvelope? _incoming;   // signed: ImportAsync re-verifies it
     private ConfigVerification? _verification;
     private ConfigDiff? _diff;
     private bool _applying;
-    private bool _sourceTrusted;   // BUG-19: required for a bundle signed with a key this server doesn't hold
+    // BUG-19, CAP-16: a bundle signed with a key this server neither holds nor trusts needs the key's id typed.
+    private string? _confirmedKeyId;
+    private bool KeyIdTyped => _verification?.CarriedKeyId is { } id
+                               && string.Equals(_confirmedKeyId?.Trim(), id, StringComparison.OrdinalIgnoreCase);
 
     // Above the 8 MB rule-of-thumb on purpose: the bundle carries the Word template library (up to
     // ReportTemplateService.MaxTemplateBytes each, base64-inflated by a third), and only SysAdmins reach this page.
@@ -215,7 +268,7 @@
         _incoming = null;
         _verification = null;
         _diff = null;
-        _sourceTrusted = false;
+        _confirmedKeyId = null;
     }
 
     private async Task Apply()
@@ -225,7 +278,7 @@
         _applying = true;
         try
         {
-            var result = await Config.ImportAsync(_incoming, _sourceTrusted);
+            var result = await Config.ImportAsync(_incoming, _confirmedKeyId);
             Toasts.Success($"Import applied: {result.Added} added, {result.Updated} updated.");
             if (!result.RolesInEffect) Toasts.Error(IncidentManager.Application.Admin.RoleService.NotInEffectMessage);
             if (result.SettingsReloadError is { } reload) Toasts.Error(SettingsReloads.NotInEffectMessage(reload));   // BUG-270
