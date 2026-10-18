@@ -16,4 +16,10 @@ public sealed class DigestScanOptions
     /// it goes out promptly once the period rolls over or the user's first items appear. Default 1.
     /// </summary>
     public double IntervalHours { get; set; } = 1;
+
+    /// <summary>
+    /// CAP-01: a reviewer's digest has a line for the imports that have waited for review longer than this, in hours.
+    /// 0 leaves it out. Default 24.
+    /// </summary>
+    public int ImportWaitingHours { get; set; } = IncidentManager.Application.Notifications.DigestScanner.DefaultImportWaitingHours;
 }

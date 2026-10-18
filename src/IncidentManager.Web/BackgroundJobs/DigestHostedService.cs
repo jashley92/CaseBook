@@ -70,7 +70,7 @@ public sealed class DigestHostedService : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var scanner = scope.ServiceProvider.GetRequiredService<DigestScanner>();
 
-            var sent = await scanner.ScanAndNotifyAsync(ct);
+            var sent = await scanner.ScanAndNotifyAsync(_options.CurrentValue.ImportWaitingHours, ct);   // CAP-01
             _lastRunUtc = DateTimeOffset.UtcNow;
 
             if (sent > 0)

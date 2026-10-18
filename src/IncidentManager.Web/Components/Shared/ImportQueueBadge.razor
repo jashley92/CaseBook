@@ -1,0 +1,61 @@
+@* CAP-01: how many API imports wait for this reviewer, beside "Import" in the sidebar. It renders on every page, so the
+   count is bounded (99+) and time-limited (PendingImportQueue), and counted again only when the queue changes (a
+   submission arrives, or one is claimed, applied, rejected or put back), once things settle, as the bell does. Rendered
+   only inside EditCases markup; the count is the queue's own need-to-know scope. *@
+@using IncidentManager.Application.Import
+@implements IDisposable
+@inject PendingImportQueue Queue
+@inject PendingImportSignal Signal
+
+@if (_count is { Count: > 0 } c)
+{
+    <span class="im-nav-count" title="@Title(c)">@(c.More ? $"{PendingImportQueue.CountCap}+" : c.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))<span class="visually-hidden"> waiting for review</span></span>
+}
+
+@code {
+    private PendingImportCount? _count;
+    private Timer? _debounce;
+    private bool _disposed;
+    private const int SettleMs = 1500;
+
+    private static string Title(PendingImportCount c) =>
+        c.More ? $"More than {c.Count} imports waiting for review"
+            : $"{IncidentManager.Application.Common.Plural.Of(c.Count, "import")} waiting for review";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        if (_disposed) return;   // BUG-566's lesson: removed while it loaded, so don't subscribe
+        _debounce = new Timer(_ => _ = InvokeAsync(RefreshAsync), null, Timeout.Infinite, Timeout.Infinite);
+        Signal.Changed += OnChanged;
+    }
+
+    private void OnChanged()
+    {
+        if (!_disposed) _debounce?.Change(SettleMs, Timeout.Infinite);
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed) return;
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    // A count that can't be had (the database busy, a timeout) shows nothing; it never breaks the sidebar.
+    private async Task LoadAsync()
+    {
+        try { _count = await Queue.WaitingAsync(); }
+        catch (Exception ex) when (ex is System.Data.Common.DbException or InvalidOperationException or TimeoutException)
+        {
+            _count = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Signal.Changed -= OnChanged;
+        _debounce?.Dispose();
+    }
+}

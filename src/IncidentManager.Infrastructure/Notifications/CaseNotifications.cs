@@ -100,6 +100,7 @@ public sealed class CaseNotifications : ICaseNotifications
     // bare /cases, which opens the default view.
     private string? DeadlinesUrl() => Application.Cases.CaseListLinks.For(BaseUrl, Application.Cases.CaseListLinks.NotificationDeadlines);
     private string? QuietUrl() => Application.Cases.CaseListLinks.For(BaseUrl, Application.Cases.CaseListLinks.QuietestFirst);
+    private string? ImportQueueUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/import";   // CAP-01
 
     // PROD-02: is a given notification type routed to the team chat channel? Requires both a configured
     // chat transport and the per-type in-app toggle (Notifications:Chat:*, layered from DB + appsettings).
@@ -768,9 +769,55 @@ public sealed class CaseNotifications : ICaseNotifications
         }
     }
 
+    // CAP-01: the review queue, opened on one submission.
+    private string? ImportUrl(Guid pendingId) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/import?pending={pendingId}";
+
+    /// <summary>
+    /// CAP-01: a submission waits in the import queue. The team channel (<c>Notifications:Chat:ImportSubmissions</c>) is
+    /// told it's there, without its summary or origin when its target is restricted (S-13: the channel isn't that case's
+    /// audience). Each reviewer the caller named is emailed (<c>Notifications:ImportSubmitted:Email</c>), one message each.
+    /// Both are off by default. Nothing is applied: a reviewer confirms it on the Import page (ADR 0004).
+    /// </summary>
+    public async Task OnImportSubmittedAsync(ImportSubmission submission, CancellationToken ct = default)
+    {
+        var url = ImportUrl(submission.PendingImportId);
+        var tag = submission.IsExercise ? ExerciseMarking.Prefix : "";
+        var from = string.IsNullOrWhiteSpace(submission.Origin) ? "the API" : submission.Origin.Trim();
+        var by = _users.DisplayFor(submission.SubmittedBy);
+
+        if (ChatOn("ImportSubmissions"))
+            await _chat.SendAsync(submission.IsRestricted
+                ? new ChatNotification($"{tag}Import waiting for review (restricted case)",
+                    "An import for a restricted case is waiting for review. Details are limited to its team; open the import queue in CaseBook.",
+                    url)
+                : new ChatNotification($"{tag}Import waiting for review",
+                    $"{submission.Summary} · from {from}, submitted by {by}. A reviewer confirms it before anything is written.", url), ct);
+
+        if (!_config.GetValue<bool>("Notifications:ImportSubmitted:Email")) return;
+        foreach (var id in submission.ReviewerUserIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var to = _users.EmailFor(id);
+            if (string.IsNullOrWhiteSpace(to)) continue;
+            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Reviewer"] = _users.DisplayFor(id),
+                ["Summary"] = submission.Summary,
+                ["Origin"] = from,
+                ["SubmittedBy"] = by,
+                ["ItemCount"] = submission.ItemCount.ToString(CultureInfo.InvariantCulture),
+                ["ImportUrl"] = url ?? "",
+            };
+            var message = await _composer.ComposeAsync("import-submitted", [to], tokens, url, null, ct);
+            if (submission.IsExercise) message = message with { Subject = ExerciseMarking.Prefix + message.Subject };
+            // BUG-654: mail held for a restricted target is checked against that case's audience again before it goes.
+            if (submission.TargetCaseId is { } caseId) await _email.SendAsync(message, caseId, [id], ct);
+            else await _email.SendAsync(message, ct);
+        }
+    }
+
     public async Task OnDigestAsync(UserDigest digest, CancellationToken ct = default)
     {
-        if (digest.TotalItems == 0) return;
+        if (!digest.HasContent) return;   // CAP-01: items, or imports waiting too long
         var to = _users.EmailFor(digest.UserId);
         if (string.IsNullOrWhiteSpace(to)) return; // no address on file → nothing to send
 
@@ -797,6 +844,15 @@ public sealed class CaseNotifications : ICaseNotifications
         Section(sb, "Overdue", digest.Overdue);
         Section(sb, "Due today", digest.DueToday);
         Section(sb, "Due this week", digest.DueThisWeek);
+        // CAP-01: a count only (the queue holds who sent what), for a reviewer: the imports they'd see that have waited.
+        if (digest.ImportsWaiting is { Count: > 0 } waiting)
+        {
+            var count = waiting.More ? $"More than {waiting.Count}" : waiting.Count.ToString(CultureInfo.InvariantCulture);
+            var link = ImportQueueUrl() is { } q ? $" <a href=\"{WebUtility.HtmlEncode(q)}\">Review them</a>." : " Review them under Cases → Import.";
+            sb.Append("<p class=\"meta\"><strong>Imports waiting for review</strong></p><p>")
+              .Append(WebUtility.HtmlEncode($"{count} {(waiting.Count == 1 && !waiting.More ? "import has" : "imports have")} waited more than {Plural.Of(digest.ImportWaitingHours, "hour")} for someone to confirm or reject {(waiting.Count == 1 && !waiting.More ? "it" : "them")}."))
+              .Append(link).Append("</p>");
+        }
         return sb.ToString();
 
         void Section(System.Text.StringBuilder sb, string heading, IReadOnlyList<DigestItem> items)

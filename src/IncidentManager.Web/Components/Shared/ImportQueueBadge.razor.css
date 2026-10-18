@@ -1,0 +1,17 @@
+/* CAP-01: the count beside "Import" in the sidebar. */
+.im-nav-count {
+    display: inline-block;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    margin-left: .4rem;
+    padding: 0 .3rem;
+    border-radius: var(--im-radius-pill);
+    background: var(--im-accent);
+    color: #fff;
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 1.15rem;
+    text-align: center;
+    flex: none;
+    vertical-align: middle;
+}

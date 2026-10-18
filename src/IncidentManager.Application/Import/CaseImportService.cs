@@ -29,14 +29,30 @@ public sealed class CaseImportService
 
     private readonly IAuditWriter? _audit;   // WF-18
 
+    // CAP-01: who's told when a submission arrives, and the open pages' badges. CAP-06: the SIEM.
+    private readonly ICaseNotifications? _notifications;
+    private readonly IUserDirectory? _users;
+    private readonly IRoleDirectory? _roles;
+    private readonly Notifications.ReminderAudience? _audience;
+    private readonly PendingImportSignal? _signal;
+    private readonly ISecurityEventSink? _siem;
+
     public CaseImportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, CaseService cases,
-        IAuditWriter? audit = null)
+        IAuditWriter? audit = null, ICaseNotifications? notifications = null, IUserDirectory? users = null,
+        IRoleDirectory? roles = null, Notifications.ReminderAudience? audience = null, PendingImportSignal? signal = null,
+        ISecurityEventSink? siem = null)
     {
         _audit = audit;
         _factory = factory;
         _user = user;
         _clock = clock;
         _cases = cases;
+        _notifications = notifications;
+        _users = users;
+        _roles = roles;
+        _audience = audience;
+        _signal = signal;
+        _siem = siem;
     }
 
     // Defensive caps for untrusted text — matched to the create validator where one exists.
@@ -242,7 +258,9 @@ public sealed class CaseImportService
     /// failure never duplicates. Provenance (<see cref="CaseImportPreview.Origin"/> or a row's own source) is
     /// stamped on imported entities and timeline entries.
     /// </summary>
-    public async Task<CaseImportResult> ApplyAsync(CaseImportPreview p, CancellationToken ct = default)
+    /// <param name="pendingImportId">CAP-06: the queued submission being applied, named in the SIEM event; null for a
+    /// document pasted or uploaded on the Import page.</param>
+    public async Task<CaseImportResult> ApplyAsync(CaseImportPreview p, Guid? pendingImportId = null, CancellationToken ct = default)
     {
         // INV-18: checked before anything is written, so a missing why can't leave a half-applied import.
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale)))
@@ -355,7 +373,20 @@ public sealed class CaseImportService
         }, ct);
         var actionItems = tasks.Count;
 
+        await EmitAppliedAsync(caseId, pendingImportId, p.CreatedCaseId is not null, ct);
         return new CaseImportResult(caseId, caseNumber, created, notes, timeline, entities, actionItems);
+    }
+
+    // CAP-06: the import's SIEM event (5515), naming the case as it now stands (scoped: the reviewer just wrote to it).
+    private async Task EmitAppliedAsync(Guid caseId, Guid? pendingImportId, bool createdCase, CancellationToken ct)
+    {
+        if (_siem is null) return;
+        using var db = _factory.CreateDbContext();
+        var c = await db.Cases.AsNoTracking().ForUser(_user).Where(x => x.Id == caseId)
+            .Select(x => new { x.CaseNumber, x.DetectionCaseId, x.IsExercise }).FirstOrDefaultAsync(ct);
+        if (c is null) return;
+        _siem.EmitSafely(() => SecurityEvents.ImportApplied(new CaseSubject(c.CaseNumber, c.DetectionCaseId, c.IsExercise),
+            pendingImportId, createdCase, _user.UserId, _user.UserPrincipalName));
     }
 
     /// <summary>BUG-152: a TLP marking as written in a document ("Red", "TLP:RED", "amber+strict"); null when absent.</summary>
@@ -447,10 +478,58 @@ public sealed class CaseImportService
             Status = PendingImportStatus.Pending
         };
 
-        using var db = _factory.CreateDbContext();
-        db.PendingImports.Add(row);
-        await db.SaveChangesAsync(ct);
+        using (var db = _factory.CreateDbContext())
+        {
+            db.PendingImports.Add(row);
+            await db.SaveChangesAsync(ct);
+        }
+        _signal?.Raise();
+        await NotifySubmittedAsync(row, preview);
         return (row.Id, preview);
+    }
+
+    /// <summary>
+    /// CAP-01: tells the reviewers a submission is waiting (the email and chat toggles decide whether anything is sent).
+    /// The reviewers are the people who can confirm it (EditCases), cut to those who may see a restricted target, as the
+    /// queue is (<see cref="PendingImportQueue.Visible"/>). The submission is queued already, so nothing here fails it:
+    /// the API answers as it always has, and the queue, the Desk and the badge show it whatever happens to the email.
+    /// </summary>
+    private async Task NotifySubmittedAsync(PendingImport row, CaseImportPreview preview)
+    {
+        if (_notifications is null) return;
+        try
+        {
+            // Not the caller's token: the submission is saved, and telling people of it shouldn't stop because the
+            // producer stopped waiting for the response.
+            var ct = CancellationToken.None;
+            var restricted = false;   // a document can't file a new case restricted; only its target can be
+            var exercise = preview.NewCase?.IsExercise == true;
+            string? commander = null;
+            IReadOnlyCollection<string> team = [];
+            if (row.TargetCaseId is { } caseId)
+            {
+                // The target as the submitter's preview resolved it (BUG-279): one they can see.
+                using var db = _factory.CreateDbContext();
+                var target = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == caseId)
+                    .Select(c => new { c.IsRestricted, c.IsExercise, c.IncidentCommander, Team = c.Assignments.Select(a => a.UserId).ToList() })
+                    .FirstOrDefaultAsync(ct);
+                if (target is not null)
+                    (restricted, exercise, commander, team) = (target.IsRestricted, target.IsExercise, target.IncidentCommander, target.Team);
+            }
+            var reviewers = (_users?.All() ?? [])
+                .Where(u => _roles is not null && _roles.PermissionsForRoles(Domain.Common.RoleList.Split(u.RolesCsv, _roles.IsRole))
+                    .Contains(Permission.EditCases))
+                .Select(u => u.UserId)
+                .ToList();
+            var recipients = await (_audience ?? new Notifications.ReminderAudience(_users, _roles))
+                .RecipientsAsync(reviewers, restricted, commander, team, ct);
+            await _notifications.OnImportSubmittedAsync(new ImportSubmission(row.Id, row.SubmittedBy, row.Origin, row.Summary,
+                preview.IncludedItemCount, row.TargetCaseId, restricted, exercise, recipients), ct);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Deliberately swallowed (CAP-01): the submission is queued, and the queue, the Desk and the badge show it.
+        }
     }
 
     /// <summary>
@@ -459,13 +538,7 @@ public sealed class CaseImportService
     /// caller can't see (<see cref="CaseQueryExtensions.ForUser"/>) is left out; one with no target, or whose
     /// target no longer exists (it previews as a new case), is visible to every reviewer.
     /// </summary>
-    private IQueryable<PendingImport> VisiblePending(IAppDbContext db)
-    {
-        var visible = db.Cases.ForUser(_user).Select(c => c.Id);
-        return db.PendingImports.Where(p => p.TargetCaseId == null
-            || visible.Contains(p.TargetCaseId.Value)
-            || !db.Cases.Any(c => c.Id == p.TargetCaseId));
-    }
+    private IQueryable<PendingImport> VisiblePending(IAppDbContext db) => PendingImportQueue.Visible(db, _user);   // CAP-01: shared
 
     /// <summary>The queue of imports awaiting review, newest first (need-to-know scoped, <see cref="VisiblePending"/>).</summary>
     public async Task<IReadOnlyList<PendingImportSummary>> ListPendingAsync(CancellationToken ct = default)
@@ -511,6 +584,7 @@ public sealed class CaseImportService
                 .SetProperty(p => p.DecidedBy, (string?)null)
                 .SetProperty(p => p.DecidedAtUtc, (DateTimeOffset?)null), ct);
         if (reopened != 1) return false;
+        _signal?.Raise();   // CAP-01
         if (_audit is not null)
             await _audit.RecordAsync(AuditAction.Update, "PendingImport", pendingId.ToString(), null,
                 $"Reopened a stuck import \"{row.Summary}\" (claimed by {row.DecidedBy} at {Utc(at)}, no case recorded)", ct);
@@ -607,7 +681,7 @@ public sealed class CaseImportService
                 .SetProperty(p => p.Status, PendingImportStatus.Applied)
                 .SetProperty(p => p.DecidedBy, me)
                 .SetProperty(p => p.DecidedAtUtc, now), ct);
-        if (claimed == 1) return now;
+        if (claimed == 1) { _signal?.Raise(); return now; }   // CAP-01: out of the queue
 
         var left = await VisiblePending(db).AsNoTracking().Where(p => p.Id == pendingId)
             .Select(p => new { p.Status, p.DecidedBy, p.ResolvedCaseId, p.DecidedAtUtc }).FirstOrDefaultAsync(ct);
@@ -638,6 +712,7 @@ public sealed class CaseImportService
         row.ResolvedCaseNumber = result.CaseNumber;
         row.ResumeJson = null;
         await db.SaveChangesAsync(ct);
+        _signal?.Raise();   // CAP-01
     }
 
     /// <summary>
@@ -662,6 +737,7 @@ public sealed class CaseImportService
             row.TargetCaseId = into;
         if (HasApplied(preview)) row.ResumeJson = JsonSerializer.Serialize(preview, ResumeJsonOptions);
         await db.SaveChangesAsync(ct);
+        _signal?.Raise();   // CAP-01: back in the queue
     }
 
     /// <summary>Discards a queued submission with an optional reason (nothing is written to any case). False when it
@@ -686,6 +762,7 @@ public sealed class CaseImportService
                 .SetProperty(p => p.DecidedBy, me)
                 .SetProperty(p => p.DecidedAtUtc, now)
                 .SetProperty(p => p.DecisionNote, why), ct);
+        if (rejected == 1) _signal?.Raise();   // CAP-01
         return rejected == 1;
     }
 

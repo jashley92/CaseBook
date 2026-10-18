@@ -90,7 +90,10 @@ flowchart LR
 - **Data:** a `casebook-case-import` JSON document: target (new case or an existing case id), origin, summary,
   timeline entries, entities, tasks. Up to 5 MB.
 - **Result:** a pending import, nothing written to a case. A reviewer confirms or rejects it in *Import →
-  Pending imports*.
+  Pending imports*. Reviewers find it on the Desk ("Waiting for review") and by the count beside *Import* in the
+  sidebar, and, when turned on, by email (`Notifications:ImportSubmitted:Email`), a chat post
+  (`Notifications:Chat:ImportSubmissions`) and a line in their digest once it has waited a day (CAP-01). A failure to
+  tell them never fails the submission; the response is unchanged.
 - **Failure:** 400 with an `error` message for invalid documents; 401/403/413/429 as documented; a server error is a
   JSON 500 (`{ "error", "ref" }`, the ref matching the server log), as in [API.md](../API.md).
 - **Retry:** none on the server; the caller decides.
@@ -112,7 +115,7 @@ schema, for use in the organization's own approved AI tool.
 ## Email (SMTP)
 
 - **What:** breach escalation to Legal, assignment, mentions, handoff, reminders (overdue, due soon, deadlines,
-  stale cases), digests, the quarterly executive report, integrity alarms
+  stale cases), digests, API imports waiting for review (CAP-01), the quarterly executive report, integrity alarms
   ([who gets what](../architecture/backend.md#who-gets-notified-about-what)).
 - **Auth:** none. `SmtpClient` with host, port and STARTTLS (`Email:EnableSsl`). The relay must accept the server
   anonymously or by IP.
@@ -146,11 +149,11 @@ schema, for use in the organization's own approved AI tool.
 ## Team chat (Slack or Teams)
 
 - **What:** a shared channel broadcast for selected events (breach escalations, assignments, mentions, reminder
-  summaries), chosen per type under Notifications.
+  summaries, API imports waiting for review), chosen per type under Notifications.
 - **Auth:** the incoming-webhook URL is the credential (`Chat:Webhook:WebhookUrl`, literal or a CyberArk
   reference). Must be https (http only to loopback).
 - **Data:** Slack mrkdwn or a Teams MessageCard; restricted cases are redacted ("Breach escalation (restricted
-  case)").
+  case)"; an import into one says only that it's waiting, without its summary or origin).
 - **Failure and retry:** up to `MaxAttempts` (3) with a 250 ms × attempt back-off. A scheduled reminder's post that still
   fails is tried again at the next scan (WF-20); an event post (an escalation, an assignment) is then dropped and logged.
   A webhook that fails to answer (or answers 5xx/429) three posts in a row within two minutes is backed off like the
@@ -160,8 +163,13 @@ schema, for use in the organization's own approved AI tool.
 
 ## SIEM security-event stream
 
-- **What:** a structured stream of security-relevant actions for detection rules. Full reference, payload and
+- **What:** a structured stream of security-relevant actions for detection rules: reads, downloads and exports,
+  refusals, role, mapping, setting and token changes, reference-data changes (5405), legal holds, restrictions, and the
+  case lifecycle from filing to archive, including an applied import (5506-5515, CAP-06). Full reference, payload and
   event-id catalog: [OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18).
+- **XSIAM:** the lifecycle events end their `detail` with `detection=<id>` when the case records the detection
+  platform's incident id (an elevation from `CaseBookElevate.py` sets it), so a correlation rule can join a CaseBook
+  close, reopen or downgrade to the XSIAM incident it came from.
 - **Transports:** webhook (JSON over https, optional bearer or API-key header; token may be a CyberArk
   reference), syslog (RFC 5424 with a CEF payload, UDP or TCP), Windows Event Log (event id = catalog id).
 - **Delivery:** events go into a bounded in-memory queue (`Siem:QueueCapacity`, 2048) and a background dispatcher

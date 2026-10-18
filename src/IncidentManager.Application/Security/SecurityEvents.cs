@@ -272,6 +272,129 @@ public static class SecurityEvents
         Detail = reason.Length > 200 ? reason[..200] : reason
     };
 
+    /// <summary>
+    /// CAP-06: an administrator created, changed or deleted reference data: a stage gate, data element, deadline rule,
+    /// playbook, outcome, taxonomy label or order, report profile, Word template or email template.
+    /// <see cref="SecurityEvent.TargetType"/> is the kind, <see cref="SecurityEvent.TargetId"/> the row's id when it has
+    /// one, and <see cref="SecurityEvent.Detail"/> its name (a label or key, never a body).
+    /// Severity: a stage gate or deadline rule decides what a case must show before it moves on and how long a regulator's
+    /// clock runs, so any change to one is a Warning, as the role and setting changes (5401-5403) are; so is any delete,
+    /// which can't be undone from the page. Adding or relabelling the rest is Info.
+    /// </summary>
+    public static SecurityEvent ReferenceDataChanged(string kind, string name, ReferenceDataAction action, string actor,
+        string? actorUpn, Guid? id = null) => new()
+    {
+        EventId = SecurityEventIds.ReferenceDataChanged,
+        Category = "Admin",
+        Action = "ReferenceData" + action,   // ReferenceDataCreated / ReferenceDataChanged / ReferenceDataDeleted
+        Outcome = SecurityOutcome.Success,
+        Severity = action == ReferenceDataAction.Deleted || kind is ReferenceDataKinds.StageGate or ReferenceDataKinds.DeadlineRule
+            ? SecuritySeverity.Warning : SecuritySeverity.Info,
+        Actor = actor, ActorUpn = actorUpn, TargetType = kind, TargetId = id?.ToString(),
+        Detail = Common.TextFit.Cap(name, 300)
+    };
+
+    // ── CAP-06: the case lifecycle (5506-5515) ─────────────────────────────────────────────────────────────────────
+    // Each carries the case number, the actor and the detection platform's id (detection=…) when the case has one, so a
+    // SOC rule can join CaseBook's record to the platform's incident. An exercise's detail starts EXERCISE:, as its breach
+    // escalation's does (BUG-100); unlike that alert, these are activity records, so an exercise's are always sent.
+
+    /// <summary>CAP-06: a case was filed. Info: filing is the everyday act (a case filed as a Breach also sends 5503).</summary>
+    public static SecurityEvent CaseCreated(CaseSubject c, Domain.Enums.Classification? classification, Domain.Enums.Severity severity,
+        string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseCreated, "CaseCreated", SecuritySeverity.Info, c, actor, actorUpn,
+            $"classification={Rung(classification)} severity={severity}");
+
+    /// <summary>CAP-06: a case moved between phases (closing and reopening have their own ids). Info: routine progress.</summary>
+    public static SecurityEvent CasePhaseChanged(CaseSubject c, Domain.Enums.CasePhase from, Domain.Enums.CasePhase to,
+        string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CasePhaseChanged, "CasePhaseChanged", SecuritySeverity.Info, c, actor, actorUpn, $"from={from} to={to}");
+
+    /// <summary>
+    /// CAP-06: a case was reclassified, other than escalated to Breach (5503). Raising it, or promoting a Complex Event,
+    /// is Info. Lowering it is a Warning: a lowered case skips the higher rung's checks when it closes (WF-13), so it's the
+    /// move a SOC rule watches for before a quiet close.
+    /// </summary>
+    public static SecurityEvent CaseReclassified(CaseSubject c, Domain.Enums.Classification? from, Domain.Enums.Classification to,
+        string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseReclassified, from is { } f && to < f ? "CaseDowngraded" : "CaseReclassified",
+            from is { } g && to < g ? SecuritySeverity.Warning : SecuritySeverity.Info, c, actor, actorUpn,
+            $"from={Rung(from)} to={Rung(to)}");
+
+    /// <summary>
+    /// CAP-06: a case was closed, with the outcome's key. Closing past unmet gate requirements (an override with a written
+    /// justification) is a Warning: it's the close an examiner asks about. A close that met its gate is Info.
+    /// </summary>
+    public static SecurityEvent CaseClosed(CaseSubject c, string? outcomeKey, bool gateOverridden, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseClosed, "CaseClosed", gateOverridden ? SecuritySeverity.Warning : SecuritySeverity.Info,
+            c, actor, actorUpn, $"outcome={Common.TextFit.Cap(outcomeKey ?? "none", 64, "")}" + (gateOverridden ? " gateOverridden=true" : ""));
+
+    /// <summary>CAP-06: a closed case was reopened. Info: a reason is required and recorded on the case; it's routine.</summary>
+    public static SecurityEvent CaseReopened(CaseSubject c, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseReopened, "CaseReopened", SecuritySeverity.Info, c, actor, actorUpn, null);
+
+    /// <summary>
+    /// CAP-06: a case was archived or restored. Archiving is the end of a case's working life (Info). Restoring is a
+    /// Warning: it brings a retained record back into the working set, it's rare, and only an administrator can do it.
+    /// </summary>
+    public static SecurityEvent CaseArchived(CaseSubject c, bool archived, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseArchived, archived ? "CaseArchived" : "CaseRestored",
+            archived ? SecuritySeverity.Info : SecuritySeverity.Warning, c, actor, actorUpn, null);
+
+    /// <summary>
+    /// CAP-06: a materiality determination was recorded, with its status. "Material" is a Warning: it's the call that
+    /// can start a disclosure clock (an 8-K's four business days), so the SOC should see it the moment it's made.
+    /// </summary>
+    public static SecurityEvent MaterialityRecorded(CaseSubject c, Domain.Enums.MaterialityStatus status, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.MaterialityRecorded, "MaterialityRecorded",
+            status == Domain.Enums.MaterialityStatus.Material ? SecuritySeverity.Warning : SecuritySeverity.Info,
+            c, actor, actorUpn, $"status={status}");
+
+    /// <summary>
+    /// CAP-06: regulators were recorded as notified: the whole case (CaseReported) or one regulator's notice
+    /// (RegulatorNoticeRecorded, with its jurisdiction code). Info: it records a notice given outside CaseBook.
+    /// </summary>
+    public static SecurityEvent CaseReported(CaseSubject c, string? jurisdiction, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseReported, jurisdiction is null ? "CaseReported" : "RegulatorNoticeRecorded",
+            SecuritySeverity.Info, c, actor, actorUpn,
+            jurisdiction is null ? null : $"jurisdiction={Common.TextFit.Cap(jurisdiction, 32, "")}");
+
+    /// <summary>CAP-06: a report was approved; the target is the report. Info: approval is the expected end of drafting.</summary>
+    public static SecurityEvent ReportApproved(CaseSubject c, Guid reportId, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.ReportApproved, "ReportApproved", SecuritySeverity.Info, c, actor, actorUpn, null,
+            "Report", reportId.ToString());
+
+    /// <summary>
+    /// CAP-06: a case-import document was applied by a reviewer, into a new case or an existing one; the target is the
+    /// pending import when it came through the queue. Info: a person confirmed it (ADR 0004).
+    /// </summary>
+    public static SecurityEvent ImportApplied(CaseSubject c, Guid? pendingImportId, bool createdCase, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.ImportApplied, "ImportApplied", SecuritySeverity.Info, c, actor, actorUpn,
+            createdCase ? "createdCase=true" : null,
+            pendingImportId is null ? "Case" : "PendingImport", pendingImportId?.ToString());
+
+    private static string Rung(Domain.Enums.Classification? k) => k?.ToString() ?? "ComplexEvent";
+
+    private static SecurityEvent Lifecycle(int id, string action, SecuritySeverity severity, CaseSubject c, string actor,
+        string? actorUpn, string? detail, string targetType = "Case", string? targetId = null)
+    {
+        var parts = new List<string>(2);
+        if (!string.IsNullOrEmpty(detail)) parts.Add(detail);
+        if (!string.IsNullOrWhiteSpace(c.DetectionCaseId)) parts.Add("detection=" + Common.TextFit.Cap(c.DetectionCaseId.Trim(), 100, ""));
+        var text = (c.IsExercise ? Abstractions.ExerciseMarking.Prefix : "") + string.Join(' ', parts);
+        return new SecurityEvent
+        {
+            EventId = id,
+            Category = "Governance",
+            Action = action,
+            Outcome = SecurityOutcome.Success,
+            Severity = severity,
+            Actor = actor, ActorUpn = actorUpn, CaseNumber = c.CaseNumber,
+            TargetType = targetType, TargetId = targetId,
+            Detail = text.Length == 0 ? null : Common.TextFit.Cap(text.TrimEnd(), 300)
+        };
+    }
+
     public static SecurityEvent EvidenceIntegrityDrift(int driftCount, int checkedCount) => new()
     {
         EventId = SecurityEventIds.EvidenceIntegrityDrift,

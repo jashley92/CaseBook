@@ -28,10 +28,39 @@ public sealed class DeskServiceTests : IDisposable
 
     private IAppDbContextFactory NewFactory() => _db!.Factory();
 
-    private DeskService NewDesk(INotificationDeadlineSettingsProvider? deadlines = null) => new(NewFactory(), _me, _clock,
-        new MyWorkService(NewFactory(), _me, _clock),
-        new NotificationDeadlineService(NewFactory(), deadlines ?? new OffSettings(), new NotificationRuleService(NewFactory(), _me, _clock), _clock),
-        new TestSlaTargets());
+    private DeskService NewDesk(INotificationDeadlineSettingsProvider? deadlines = null, ICurrentUser? me = null) => new(NewFactory(), me ?? _me, _clock,
+        new MyWorkService(NewFactory(), me ?? _me, _clock),
+        new NotificationDeadlineService(NewFactory(), deadlines ?? new OffSettings(), new NotificationRuleService(NewFactory(), me ?? _me, _clock), _clock),
+        new TestSlaTargets(), new IncidentManager.Application.Import.PendingImportQueue(NewFactory(), me ?? _me));
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Imports_waiting_for_review_need_a_reviewer_but_not_one_into_a_restricted_case_they_are_not_on(string provider)
+    {
+        // CAP-01: the queue's own scope, so the Desk and the Import page agree.
+        _db = TestDatabase.Open(provider);
+        await using (var db = NewContext())
+        {
+            var secret = Case.Open(2026, 9, "secret", "Secret", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ivy", H(-50));
+            secret.IsRestricted = true;
+            db.Cases.Add(secret);
+            db.PendingImports.Add(new PendingImport { SubmittedBy = "xsiam-svc", SubmittedAtUtc = H(-3), Summary = "New case: Beacon",
+                RawJson = "{}", Status = PendingImportStatus.Pending });
+            db.PendingImports.Add(new PendingImport { SubmittedBy = "xsiam-svc", SubmittedAtUtc = H(-9), Summary = "Into secret",
+                RawJson = "{}", Status = PendingImportStatus.Pending, TargetCaseId = secret.Id });
+            db.PendingImports.Add(new PendingImport { SubmittedBy = "xsiam-svc", SubmittedAtUtc = H(-20), Summary = "Rejected",
+                RawJson = "{}", Status = PendingImportStatus.Rejected });
+            await db.SaveChangesAsync();
+        }
+
+        var need = (await NewDesk().GetAsync()).Needs.Should().ContainSingle(n => n.Kind == DeskNeedKind.ImportReview).Subject;
+        need.Title.Should().Be("1 import");
+        need.AtUtc.Should().Be(H(-3));
+        need.CaseId.Should().Be(Guid.Empty, "it's the queue's, not a case's");
+
+        var manager = new TestCurrentUser { UserId = "mgr", RoleSet = [AppRole.Manager] };
+        (await NewDesk(me: manager).GetAsync()).Needs.Should().NotContain(n => n.Kind == DeskNeedKind.ImportReview,
+            "a manager can't confirm an import");
+    }
 
     [Fact]
     public async Task A_running_notification_clock_on_my_case_needs_me(/* BUG-214: read in one pass */)

@@ -37,6 +37,8 @@ public static class DependencyInjection
         services.AddScoped<Compliance.LegalRegisterService>();        // PROD-12: Legal/Privacy obligations register export
         services.AddScoped<Config.ConfigBundleService>();
         services.AddScoped<Import.CaseImportService>();    // PROD-31: structured case import (schema + importer)
+        services.AddScoped<Import.PendingImportQueue>();   // CAP-01: the review queue on the Desk, the badge and the digest
+        services.AddSingleton<Import.PendingImportSignal>();   // CAP-01: the queue changed, so the badges count again
         services.AddScoped<ApiTokens.ApiTokenService>();   // PROD-34: API-token auth (personal + system tokens)
         services.AddScoped<EvidenceService>();
         services.AddSingleton<EvidenceUploadSessions>();   // PROD-56: large uploads in progress (one instance)

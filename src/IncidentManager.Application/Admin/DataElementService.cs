@@ -42,12 +42,14 @@ public sealed class DataElementService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
-    public DataElementService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+    public DataElementService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
+        _siem = siem;
     }
 
     /// <summary>Every element, active and archived, in display order — for administration. Each row carries
@@ -106,6 +108,7 @@ public sealed class DataElementService
         }
         var added = new List<string>();
         var rescoped = new List<string>();   // WF-11: elements whose jurisdictions change
+        var log = new ReferenceDataLog(ReferenceDataKinds.DataElement);   // CAP-06
 
         for (var i = 0; i < rows.Count; i++)
         {
@@ -122,9 +125,14 @@ public sealed class DataElementService
                     throw new InvalidOperationException($"Someone changed \"{el.Label}\" since this page opened (its label, " +
                         "jurisdictions, order or archive state), so nothing was saved: it would have undone that. Reload the page, then make your changes again.");
                 // BUG-235: not re-activated here: archiving is its own action, and one archived since the page loaded stays so.
+                var rescope = !string.Equals(el.NotificationJurisdictions ?? "", juris ?? "", StringComparison.OrdinalIgnoreCase);
+                // CAP-06: a change of jurisdictions names them (codes, not content): it changes which clocks a case runs.
+                if (el.Label != label || rescope)
+                    log.Add(rescope ? $"{label} (jurisdictions: {juris ?? "none"})" : label, ReferenceDataAction.Changed, el.Id);
+                else if (el.SortOrder != order) log.Reordered();
                 el.Label = label;
                 el.SortOrder = order;
-                if (!string.Equals(el.NotificationJurisdictions ?? "", juris ?? "", StringComparison.OrdinalIgnoreCase)) rescoped.Add(el.Key);
+                if (rescope) rescoped.Add(el.Key);
                 el.NotificationJurisdictions = juris;
                 el.ModifiedBy = _user.UserId;
                 el.ModifiedAtUtc = now;
@@ -134,7 +142,7 @@ public sealed class DataElementService
                 var key = UniqueKey(label, usedKeys);
                 usedKeys.Add(key);
                 added.Add(key);
-                db.DataElements.Add(new DataElement
+                var element = db.DataElements.Add(new DataElement
                 {
                     Key = key,
                     Label = label,
@@ -144,7 +152,8 @@ public sealed class DataElementService
                     NotificationJurisdictions = juris,
                     CreatedBy = _user.UserId,
                     CreatedAtUtc = now
-                });
+                }).Entity;
+                log.Add(juris is null ? label : $"{label} (jurisdictions: {juris})", ReferenceDataAction.Created, element.Id);
             }
         }
 
@@ -162,6 +171,7 @@ public sealed class DataElementService
                     "saved. Reload the page to see their change, then make yours again.", ex);
             throw;
         }
+        log.Emit(_siem, _user);
     }
 
     /// <summary>Archives (<paramref name="archived"/> = true) or restores an element — built-in ones included.
@@ -178,6 +188,8 @@ public sealed class DataElementService
         el.ModifiedBy = _user.UserId;
         el.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.DataElement, $"{el.Label} ({(archived ? "archived" : "restored")})",
+            ReferenceDataAction.Changed, el.Id);   // CAP-06
     }
 
     /// <summary>
@@ -202,6 +214,7 @@ public sealed class DataElementService
 
         db.DataElements.Remove(el);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.DataElement, el.Label, ReferenceDataAction.Deleted, el.Id);   // CAP-06
     }
 
     private static IQueryable<DataElement> Ordered(IAppDbContext db) =>

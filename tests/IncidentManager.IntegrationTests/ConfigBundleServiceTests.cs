@@ -921,6 +921,11 @@ public sealed class ConfigBundleServiceTests : IDisposable
 
         sink.Events.Select(e => e.Action).Should().Contain(["RoleImported", "AdGroupMappingImported", "SettingChanged"]);
         sink.Events.Should().Contain(e => e.Detail == "Some-Group → Shadow Admin");
+        // CAP-06: and one 5405 for the reference data it replaced, with its counts and signing key (not one per row).
+        sink.Events.Should().ContainSingle(e => e.EventId == IncidentManager.Application.Security.SecurityEventIds.ReferenceDataChanged)
+            .Which.Should().Match<IncidentManager.Application.Security.SecurityEvent>(e =>
+                e.TargetType == IncidentManager.Application.Security.ReferenceDataKinds.ConfigurationBundle
+                && e.Detail!.EndsWith($"; key {_signer.KeyId}"));
         directory.Invalidations.Should().Be(1);
         reloader.Reloads.Should().Be(1);
     }

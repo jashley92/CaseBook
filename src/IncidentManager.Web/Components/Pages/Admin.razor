@@ -119,6 +119,11 @@
                                         <span>Personal work digests <span class="text-muted">(per-user opt-in)</span></span>
                                         @TriggerState(FormBool("Notifications:DigestScan:Enabled"), EmailOn && FromSet)
                                     </li>
+                                    @* CAP-01 *@
+                                    <li class="mb-1 d-flex align-items-center justify-content-between">
+                                        <span>Imports waiting for review <span class="text-muted">(to whoever can confirm them)</span></span>
+                                        @TriggerState(FormBool("Notifications:ImportSubmitted:Email"), EmailOn && FromSet)
+                                    </li>
                                     <li class="d-flex align-items-center justify-content-between">
                                         <span>Team chat channel <span class="text-muted">(Slack/Teams, configured on host)</span></span>
                                         @if (ChatConfigured) { <span class="im-badge im-b-ok">Configured</span> }
@@ -1137,7 +1142,8 @@
         || FormBool("Notifications:DueSoonScan:Enabled")
         || FormBool("Notifications:DeadlineScan:Enabled")
         || FormBool("Notifications:StaleScan:Enabled")
-        || FormBool("Notifications:DigestScan:Enabled");
+        || FormBool("Notifications:DigestScan:Enabled")
+        || FormBool("Notifications:ImportSubmitted:Email");   // CAP-01
     // PROD-37: the regulatory-deadline reminder additionally needs the deadline clock itself on. That toggle
     // lives in the "Deadline clock" settings group (also part of the pending form), so read it from there.
     private bool DeadlineClockOn => FormBool("Compliance:NotificationDeadlines:Enabled");
@@ -1151,7 +1157,7 @@
         FormBool("Notifications:Chat:BreachEscalations") || FormBool("Notifications:Chat:Assignments")
         || FormBool("Notifications:Chat:Mentions") || FormBool("Notifications:Chat:OverdueReminders")
         || FormBool("Notifications:Chat:DueSoonReminders") || FormBool("Notifications:Chat:DeadlineReminders")
-        || FormBool("Notifications:Chat:StaleReminders");
+        || FormBool("Notifications:Chat:StaleReminders") || FormBool("Notifications:Chat:ImportSubmissions");   // CAP-01
 
     private static RenderFragment ReadyIcon(bool ok) => builder =>
     {

@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,7 @@ public sealed class ReportService
 {
     private readonly IAppDbContextFactory _factory;
     private readonly IOrganizationTimeZone? _zone;   // WF-36
+    private readonly ISecurityEventSink? _siem;   // CAP-06
     private readonly IReportGenerator _generator;
     private readonly IReportStore _store;
     private readonly IHashChainService _hasher;
@@ -35,8 +37,10 @@ public sealed class ReportService
         IHashChainService hasher, ICurrentUser user, IClock clock, Content.IMarkdownService markdown,
         IOptionsMonitor<ReportingOptions> reporting, IReportBrandingStore branding, IUserDirectory users,
         ISeverityLabels severityLabels, ITaxonomyDisplay? taxonomy = null, IReportDiagrams? diagrams = null,
-        IReportTemplateEngine? templates = null, IReportTemplateStore? templateStore = null, IOrganizationTimeZone? zone = null)
+        IReportTemplateEngine? templates = null, IReportTemplateStore? templateStore = null, IOrganizationTimeZone? zone = null,
+        Security.ISecurityEventSink? siem = null)
     {
+        _siem = siem;
         _zone = zone;
         _templates = templates;
         _templateStore = templateStore;
@@ -469,9 +473,10 @@ public sealed class ReportService
         var report = await db.Reports.FirstOrDefaultAsync(r => r.Id == reportId, ct)
                      ?? throw new InvalidOperationException("Report not found.");
 
-        // Same need-to-know guard (and same "not found" message) as OpenAsync.
-        var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == report.CaseId, ct);
-        if (!canAccess) throw new InvalidOperationException("Report not found.");
+        // Same need-to-know guard (and same "not found" message) as OpenAsync. CAP-06: it also names the case for the SIEM.
+        var subject = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == report.CaseId)
+            .Select(c => new { c.CaseNumber, c.DetectionCaseId, c.IsExercise }).FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException("Report not found.");
 
         if (_reporting.CurrentValue.RequireSeparateApprover
             && string.Equals(report.CreatedBy, _user.UserId, StringComparison.OrdinalIgnoreCase))
@@ -482,6 +487,9 @@ public sealed class ReportService
 
         report.Approve(_user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
+        _siem.EmitSafely(() => Security.SecurityEvents.ReportApproved(   // CAP-06
+            new Security.CaseSubject(subject.CaseNumber, subject.DetectionCaseId, subject.IsExercise), report.Id,
+            _user.UserId, _user.UserPrincipalName));
         return report;
     }
 

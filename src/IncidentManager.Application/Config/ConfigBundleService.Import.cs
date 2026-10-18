@@ -812,6 +812,12 @@ public sealed partial class ConfigBundleService
                 _siem?.Emit(SecurityEvents.RoleChanged("RoleImported", _user.UserId, _user.UserPrincipalName, role));
             foreach (var mapping in addedMappings)
                 _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
+            // CAP-06: the reference data it replaced (gates, templates, rules, outcomes...), as one event with the counts and the
+            // signing key; the audit trail has each row.
+            if (added + updated > 0)
+                _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ConfigurationBundle,
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{added} added, {updated} updated; key {envelope.KeyId}"),
+                    ReferenceDataAction.Changed);
         }
 
         return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true, notPlaced,

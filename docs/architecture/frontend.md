@@ -31,7 +31,7 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/program` | `ProgramOverviewPage` | ViewAllCases | Program › Overview, the leadership dashboard. Every Program page carries `Shared/ProgramNav` |
 | `/program/team` | `TeamWorkloadPage` | ViewAllCases | Program › Team: open caseload per analyst, unassigned queue |
 | `/program/legal` | `LegalRegisterPage` | ViewCases | Program › Legal register: the obligations register on screen (rows open the case's Briefing), beside its CSV |
-| `/desk` | `DeskPage` | ViewCases | The Desk (`DeskService`, on `MyWorkService`): since you last looked, what needs you, your cases with your part, your tasks with why, clocks, quiet changes, pinned, recent escalations |
+| `/desk` | `DeskPage` | ViewCases | The Desk (`DeskService`, on `MyWorkService`): since you last looked, what needs you (API imports waiting for review included, CAP-01), your cases with your part, your tasks with why, clocks, quiet changes, pinned, recent escalations |
 | `/program/due` | `AgendaPage` | ViewAllCases | Program › Due work: open tasks by due date. `?owner=` |
 | `/cases`, `/cases/mine` | `Cases` | ViewCases | Case list ([query parameters](#lists-filters-and-url-state)) |
 | `/cases/new` | `CreateCase` | EditCases | New case form |

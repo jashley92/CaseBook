@@ -33,13 +33,16 @@ public sealed class EmailTemplateAdminService
     private readonly IClock _clock;
     private readonly ICurrentUser _user;
     private readonly ISettingsReloader _reloader;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
-    public EmailTemplateAdminService(IAppDbContextFactory factory, IClock clock, ICurrentUser user, ISettingsReloader reloader)
+    public EmailTemplateAdminService(IAppDbContextFactory factory, IClock clock, ICurrentUser user, ISettingsReloader reloader,
+        ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _clock = clock;
         _user = user;
         _reloader = reloader;
+        _siem = siem;
     }
 
     public async Task<IReadOnlyList<EmailTemplateView>> GetAllAsync(CancellationToken ct = default)
@@ -125,6 +128,8 @@ public sealed class EmailTemplateAdminService
                     "so nothing was saved. Reload the page to see their change, then make yours again.", ex);
             throw;
         }
+        // CAP-06: saved, so streamed before the reload (which can report it isn't in effect yet). The template's id, not its text.
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.EmailTemplate, def.Id, ReferenceDataAction.Changed);
         _reloader.ReloadOrThrow();   // BUG-270
     }
 
@@ -155,6 +160,7 @@ public sealed class EmailTemplateAdminService
         if (rows.Count == 0) return;
         db.AppSettings.RemoveRange(rows);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.EmailTemplate, $"{def.Id} (reset to the built-in)", ReferenceDataAction.Changed);   // CAP-06
         _reloader.ReloadOrThrow();   // BUG-270
     }
 

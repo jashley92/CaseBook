@@ -35,12 +35,14 @@ public sealed class CaseOutcomeService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
-    public CaseOutcomeService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+    public CaseOutcomeService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
+        _siem = siem;
     }
 
     /// <summary>Every outcome, active and archived, in display order, with how many closes recorded each.</summary>
@@ -106,6 +108,7 @@ public sealed class CaseOutcomeService
             usedKeys.UnionWith(await RetiredKeys.DeletedAsync(db, nameof(CaseOutcome), ct));
         }
         var now = _clock.UtcNow;
+        var log = new ReferenceDataLog(ReferenceDataKinds.CaseOutcome);   // CAP-06
 
         for (var i = 0; i < rows.Count; i++)
         {
@@ -118,6 +121,8 @@ public sealed class CaseOutcomeService
                     throw new InvalidOperationException($"Someone changed \"{o.Label}\" since this page opened, so nothing was " +
                         "saved: it would have undone that. Reload the page, then make your changes again.");
                 // BUG-235: an outcome archived since the page loaded isn't brought back by a save of the list.
+                if (o.Label != labels[i] || o.Description != description) log.Add(labels[i], ReferenceDataAction.Changed, o.Id);
+                else if (o.SortOrder != i + 1) log.Reordered();
                 o.Label = labels[i];
                 o.Description = description;
                 o.SortOrder = i + 1;
@@ -128,14 +133,16 @@ public sealed class CaseOutcomeService
             {
                 var key = UniqueKey(labels[i], usedKeys);
                 usedKeys.Add(key);
-                db.CaseOutcomes.Add(new CaseOutcome
+                var added = db.CaseOutcomes.Add(new CaseOutcome
                 {
                     Key = key, Label = labels[i], Description = description, SortOrder = i + 1,
                     IsActive = true, IsSystem = false, CreatedBy = _user.UserId, CreatedAtUtc = now
-                });
+                }).Entity;
+                log.Add(labels[i], ReferenceDataAction.Created, added.Id);
             }
         }
         await db.SaveChangesAsync(ct);
+        log.Emit(_siem, _user);
     }
 
     /// <summary>Archives or restores an outcome (built-in ones too). Archived outcomes aren't offered when closing
@@ -154,6 +161,8 @@ public sealed class CaseOutcomeService
         o.ModifiedBy = _user.UserId;
         o.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.CaseOutcome, $"{o.Label} ({(archived ? "archived" : "restored")})",
+            ReferenceDataAction.Changed, o.Id);   // CAP-06
     }
 
     /// <summary>Deletes an added outcome that no close has recorded. Built-in or recorded outcomes are archived instead.</summary>
@@ -173,6 +182,7 @@ public sealed class CaseOutcomeService
             throw new InvalidOperationException("Keep at least one outcome active, or a case can't be closed.");
         db.CaseOutcomes.Remove(o);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.CaseOutcome, o.Label, ReferenceDataAction.Deleted, o.Id);   // CAP-06
     }
 
     private static IQueryable<CaseOutcome> Ordered(IAppDbContext db) =>

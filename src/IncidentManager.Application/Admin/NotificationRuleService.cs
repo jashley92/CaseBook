@@ -30,12 +30,14 @@ public sealed class NotificationRuleService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
-    public NotificationRuleService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+    public NotificationRuleService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
+        _siem = siem;
     }
 
     /// <summary>Every rule, active and archived, in code order — for administration.</summary>
@@ -84,6 +86,7 @@ public sealed class NotificationRuleService
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
+        Guid savedId;
 
         if (id is { } ruleId)
         {
@@ -96,6 +99,7 @@ public sealed class NotificationRuleService
             rule.WindowHours = windowHours;
             rule.ModifiedBy = _user.UserId;
             rule.ModifiedAtUtc = now;
+            savedId = rule.Id;
         }
         else
         {
@@ -105,11 +109,11 @@ public sealed class NotificationRuleService
             if (await db.NotificationRules.AnyAsync(r => r.Code.ToUpper() == code, ct))
 #pragma warning restore CA1304, CA1311, CA1862
                 throw new InvalidOperationException($"A rule for '{code}' already exists. Edit that rule instead.");
-            db.NotificationRules.Add(new NotificationRule
+            savedId = db.NotificationRules.Add(new NotificationRule
             {
                 Code = code, Label = label, WindowHours = windowHours,
                 IsActive = true, IsSystem = false, CreatedBy = _user.UserId, CreatedAtUtc = now
-            });
+            }).Entity.Id;
         }
 
         try { await db.SaveChangesAsync(ct); }
@@ -123,7 +127,13 @@ public sealed class NotificationRuleService
                 throw new InvalidOperationException($"A rule for '{code}' already exists. Edit that rule instead.", ex);
             throw;
         }
+        // CAP-06: the code and window, which is what a SOC rule cares about (a window lengthened lets a deadline pass later).
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.DeadlineRule, RuleName(code, windowHours),
+            id is null ? ReferenceDataAction.Created : ReferenceDataAction.Changed, savedId);
     }
+
+    private static string RuleName(string code, int windowHours) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{code} ({windowHours} h)");
 
     /// <summary>Archives or restores a rule (built-in ones included). Archiving drops it from the clock; the
     /// default window then covers its jurisdiction. Audited.</summary>
@@ -139,6 +149,8 @@ public sealed class NotificationRuleService
         rule.ModifiedBy = _user.UserId;
         rule.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.DeadlineRule,
+            $"{RuleName(rule.Code, rule.WindowHours)} ({(archived ? "archived" : "restored")})", ReferenceDataAction.Changed, rule.Id);   // CAP-06
     }
 
     /// <summary>Permanently deletes a non-built-in rule; built-in ones must be archived. Audited.</summary>
@@ -153,6 +165,8 @@ public sealed class NotificationRuleService
             throw new InvalidOperationException("A built-in rule can't be deleted. Archive it instead.");
         db.NotificationRules.Remove(rule);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.DeadlineRule, RuleName(rule.Code, rule.WindowHours),
+            ReferenceDataAction.Deleted, rule.Id);   // CAP-06
     }
 
     /// <summary>

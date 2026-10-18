@@ -1066,7 +1066,7 @@ else if (_pending.Count > 0)
                 return;
             }
             claimed = pendingId;
-            var result = await Import.ApplyAsync(p);
+            var result = await Import.ApplyAsync(p, pendingId);   // CAP-06: the SIEM event names the queued submission
             if (pendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result, claim);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
             Toasts.Success($"{what}. {IncidentManager.Application.Common.Plural.Of(result.Total, "item")} imported.");

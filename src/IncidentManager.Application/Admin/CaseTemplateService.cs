@@ -40,12 +40,14 @@ public sealed class CaseTemplateService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
-    public CaseTemplateService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+    public CaseTemplateService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
+        _siem = siem;
     }
 
     /// <summary>Active templates for the pickers, ordered for display.</summary>
@@ -93,6 +95,7 @@ public sealed class CaseTemplateService
                 throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.", ex);
             throw;
         }
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.CaseTemplate, name, ReferenceDataAction.Created, template.Id);   // CAP-06
         return template.Id;
     }
 
@@ -135,6 +138,7 @@ public sealed class CaseTemplateService
                 throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.", ex);
             throw;
         }
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.CaseTemplate, name, ReferenceDataAction.Changed, id);   // CAP-06
     }
 
     private static string ChangedSinceOpened(string name) =>
@@ -150,7 +154,11 @@ public sealed class CaseTemplateService
         if (template is null) return;
         db.CaseTemplateSteps.RemoveRange(template.Steps);
         db.CaseTemplates.Remove(template);
-        try { await db.SaveChangesAsync(ct); }
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            _siem.ReferenceDataChanged(_user, ReferenceDataKinds.CaseTemplate, template.Name, ReferenceDataAction.Deleted, id);   // CAP-06
+        }
         // BUG-557: it or its steps changed meanwhile (a writer outside the gate); the context's message is about cases.
         catch (ConcurrentEditException ex)
         {
