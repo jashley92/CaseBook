@@ -333,6 +333,8 @@ tasks about it; relationships; and **Seen before**, the open and closed cases wh
 with the verdict reached there and, for closed ones, how they ended. Under it, **Possibly related** (CAP-28): indicators
 on other cases you can see that aren't the same value but share its registrable domain, /24 (or /48) or email domain,
 each with its case, the verdict there and the rule ("same /24 (203.0.113.0/24)"). A suggestion only; nothing is linked.
+For one of your organization's domains, an excluded address range or a free mail address it says that it isn't used to
+suggest relations, and why.
 
 An evidence file name, a cited-file chip or a brief citation opens the **evidence panel** (`?evidence=<id>`): a
 preview on request (images, or the first lines of a text file; looking records a "Viewed" custody event), the full

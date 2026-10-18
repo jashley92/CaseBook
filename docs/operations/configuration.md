@@ -64,7 +64,7 @@ inserted while the app is running is ignored silently until the next restart.
 
 | Takes effect | Settings |
 |---|---|
-| Immediately | Anything read per request: SLA targets, deadline settings, labels, access-log scope, time zone, base URL, branding colors, external links, email, chat, SIEM transports, reporting options, legal-hold option |
+| Immediately | Anything read per request: SLA targets, deadline settings, labels, access-log scope, time zone, base URL, branding colors, external links, the related-indicator exclusions (`RelatedIndicators:*`, from the next check), email, chat, SIEM transports, reporting options, legal-hold option |
 | Within about 5–10 minutes | Background-job options (jobs re-read them every 5 minutes; the integrity monitor every 10; the executive report hourly) |
 | New sessions only | `Security:IdleTimeoutMinutes` |
 | **Restart required** | `Auth:Mode`, `Auth:AllowDevSignInOutsideDevelopment`, `Database:*`, `ConnectionStrings:*`, `DataProtection:KeyPath`, `RateLimiting:*`, `Siem:QueueCapacity`, every `Secrets:CyberArk:*` key, all storage paths, `Integrity:SigningKeyPath`/`ExportPath`, `DevAuth:*`, `RoleMapping:*` (first run only, see §3.16) |
@@ -194,6 +194,9 @@ process's working directory, which under IIS is the site folder.
 | `ExternalLinks:DetectionCaseUrlTemplate` | Deep link to the detection platform; `{0}` = the case's detection id | blank | App |
 | `ExternalLinks:VirusTotalUrlTemplate` | IOC lookup link; `{0}` = indicator | json: VirusTotal search URL | App |
 | `App:BaseUrl` | Absolute site URL used in email links, the email logo and calendar links. Blank still sends, without links. **The installer doesn't set it.** | blank | App |
+| `RelatedIndicators:ExcludedDomains` | CAP-28: your organization's domains, one per line (a pasted `contoso.com, corp.contoso.local` is split). Each covers every name under it (`mail.contoso.com`, `a@corp.contoso.com`; never `notcontoso.com`), checked against the whole host. A domain, URL, email address or account on one is never used to suggest *Possibly related* indicators, and nothing is suggested because of it. Stored lowercased without a trailing dot (`*.contoso.com` is `contoso.com`). Refused on save: an email address, an IP, a single label, a public suffix (`co.uk`), or non-ASCII (enter an international name in its `xn--` form). Under Administration › Integrations › Related indicators. | blank | App |
+| `RelatedIndicators:ExcludedRanges` | CAP-28: address ranges in CIDR, IPv4 or IPv6, one per line. An address inside one (an IPv4-mapped `::ffff:10.1.2.3` as its IPv4 address), or a URL on one, is never related by its /24 or /48. A bare address is stored as /32 or /128; a range with bits set past its prefix (`10.0.0.1/8`) is refused with the range it probably meant. Blank relates every range; Reset brings back the default. | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `::1/128`, `fe80::/10`, `fc00::/7` (private, loopback, link-local and unique local) | App |
+| `RelatedIndicators:ExcludeFreeMail` | CAP-28: addresses at the big free mail providers (Gmail, Outlook.com, Yahoo, iCloud, Proton and the like; a fixed list in `RelatedObservables`) aren't related by their email domain | `true` | App |
 
 ### 3.7 Governance and retention
 

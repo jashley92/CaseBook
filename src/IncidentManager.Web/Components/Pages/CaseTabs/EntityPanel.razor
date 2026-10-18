@@ -238,7 +238,7 @@
                see. Suggestions only: nothing is linked, and no value goes in a link (C7). *@
             <section aria-labelledby="ep-related-h">
                 <h3 class="im-entity-panel-h" id="ep-related-h">Possibly related@(_related is null or { Count: 0 } ? "" : $" · {_related.Count}")</h3>
-                @if (IncidentManager.Domain.Observables.RelatedObservables.KeyOf(en.Type, en.Value) is not { } key)
+                @if (!IncidentManager.Domain.Observables.RelatedObservables.HasRule(en.Type, en.Value))
                 {
                     <p class="small text-muted mb-0">Suggested for domains, URLs, IP addresses and email addresses only.</p>
                 }
@@ -246,12 +246,17 @@
                 {
                     <p class="small text-muted mb-0">Checking…</p>
                 }
+                else if (_related.ExcludedBecause(en.Value) is { } excludedWhy)
+                {
+                    @* CAP-28 exclusions: the organization's own domain or range, or free mail; said rather than "nothing found". *@
+                    <p class="small text-muted mb-0">@excludedWhy</p>
+                }
                 else if (_related.Count == 0)
                 {
                     @* CAP-28 review: past the scan limit, "nothing" is only for the newest checked. *@
                     <p class="small text-muted mb-0">@(_related.ScanLimitHit
-                        ? $"Checked the newest {CaseService.RelatedScanLimit} candidates for the {key.Describe()}: none on other cases you can see has it. Older ones weren't checked."
-                        : $"Nothing on other cases you can see has the {key.Describe()}.")</p>
+                        ? $"Checked the newest {CaseService.RelatedScanLimit} candidates for {SharedPart(en)}: none on other cases you can see has it. Older ones weren't checked."
+                        : $"Nothing on other cases you can see has {SharedPart(en)}.")</p>
                 }
                 else
                 {
@@ -408,6 +413,10 @@
 
     private IReadOnlyList<EntityOverlap>? _otherCases;
     private RelatedIndicators? _related;   // CAP-28
+    // CAP-28: "the same /24 (203.0.113.0/24)", for an entity the check didn't leave out.
+    private static string SharedPart(CaseEntity en) =>
+        IncidentManager.Domain.Observables.RelatedObservables.KeyOf(en.Type, en.Value, IncidentManager.Domain.Observables.RelatedExclusions.None) is { } k
+            ? "the " + k.Describe() : "it";
     private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
     private string? OutcomeLabel(string? key) => key is null ? null
         : _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);

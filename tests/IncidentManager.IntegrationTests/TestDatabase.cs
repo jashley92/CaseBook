@@ -64,11 +64,17 @@ public abstract class TestDatabase : IDisposable
 
     public abstract void Dispose();
 
+    /// <summary>The provider's name and a connection string to this database, for what opens its own connection (the
+    /// settings configuration provider). The SQLite one is a named in-memory database that lives while this one is open.</summary>
+    public abstract (string Provider, string ConnectionString) Connection { get; }
+
     private sealed class SqliteDatabase : TestDatabase
     {
-        private readonly SqliteConnection _connection = new("Data Source=:memory:");
+        private readonly SqliteConnection _connection = new($"Data Source=im-test-{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
 
         public SqliteDatabase(IInterceptor[] interceptors) : base(interceptors) => _connection.Open();
+
+        public override (string Provider, string ConnectionString) Connection => (Sqlite, _connection.ConnectionString);
 
         private protected override DbContextOptionsBuilder<AppDbContext> Configure(DbContextOptionsBuilder<AppDbContext> b) => b.UseSqlite(_connection);
 
@@ -85,6 +91,8 @@ public abstract class TestDatabase : IDisposable
                 { InitialCatalog = $"casebook_test_{Guid.NewGuid():N}" }.ConnectionString;
 
         private protected override DbContextOptionsBuilder<AppDbContext> Configure(DbContextOptionsBuilder<AppDbContext> b) => b.UseSqlServer(_connectionString);
+
+        public override (string Provider, string ConnectionString) Connection => (SqlServer, _connectionString);
 
         public override void Dispose()
         {

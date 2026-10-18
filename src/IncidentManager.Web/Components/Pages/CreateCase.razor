@@ -341,6 +341,23 @@
                     <div class="small text-muted">A suggestion by a fixed rule (domain, /24 or /48, email domain), not a match. Nothing is linked.@(_related.ScanLimitHit ? $" Checked the newest {CaseService.RelatedScanLimit} candidates for each shared part only." : "")</div>
                 </div>
             }
+            @* CAP-28 exclusions: the organization's own domains and ranges (and free mail) aren't checked; say which, briefly. *@
+            @if (!_checking && _related.Excluded.Count > 0 && _checkedInput == _indicators)
+            {
+                <div class="small text-muted mt-2" role="status">
+                    <div>Left out of the possibly related check:</div>
+                    <ul class="mb-0 ps-3 text-break">
+                        @foreach (var why in _related.Excluded.Values.Distinct().Take(5))
+                        {
+                            <li>@why</li>
+                        }
+                    </ul>
+                    @if (_related.Excluded.Values.Distinct().Count() > 5)
+                    {
+                        <div>and @(_related.Excluded.Values.Distinct().Count() - 5) more.</div>
+                    }
+                </div>
+            }
         </div>
 
         @* FR-04: the check ran on Create and surfaced related cases the analyst hadn't seen — pause once so

@@ -1,5 +1,10 @@
 using FluentAssertions;
+using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Admin;
 using IncidentManager.Application.Cases;
+using IncidentManager.Infrastructure.Configuration;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
@@ -189,5 +194,133 @@ public sealed class RelatedIndicatorTests
 
         (await svc.FindRelatedIndicatorsForIocsAsync(["2001:db8::5"])).Should().ContainSingle()
             .Which.OtherValue.Should().Be("2001:0db8:0:0:0:0:0:1");
+    }
+
+    // --- CAP-28 exclusions: the organization's own domains and ranges, saved in Administration and read live -------------
+
+    private sealed record Live(CaseService Cases, AdminSettingsService Settings, IConfigurationRoot Config);
+
+    // The service as the app wires it: the exclusions read from the configuration, whose settings provider reads the
+    // AppSettings table, and a save that reloads it (no restart).
+    private Live LiveSettings(TestDatabase database)
+    {
+        var (provider, connection) = database.Connection;
+        var config = new ConfigurationBuilder().Add(new DbSettingsConfigurationSource(provider, connection)).Build();
+        var cases = new CaseService(database.Factory(), _user, _clock, new CaseNumberGenerator(database.NewContext()), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            relatedExclusions: new ConfigurationRelatedExclusions(config));
+        return new(cases, new AdminSettingsService(database.Factory(), _user, _clock, new ConfigurationReloader(config)), config);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Excluded_values_are_not_suggested_and_suggest_nothing_and_a_saved_change_applies_at_once(string provider)
+    {
+        using var database = Open(provider);
+        var live = LiveSettings(database);
+        var other = await CaseWithAsync(live.Cases, "Other", false,
+            (EntityType.Domain, "www.contoso.com"), (EntityType.Domain, "dc1.corp.contoso.com"), (EntityType.EmailAddress, "hr@contoso.com"),
+            (EntityType.IpAddress, "10.20.30.40"), (EntityType.Url, "http://10.20.30.41/x"),
+            (EntityType.Domain, "cdn.evil.example"), (EntityType.IpAddress, "203.0.113.77"));
+        string[] entered = ["shop.contoso.com", "it@contoso.com", "10.20.30.5", "evil.example", "203.0.113.5"];
+
+        // The defaults: no domains yet, the private ranges left out.
+        var before = await live.Cases.FindRelatedIndicatorsForIocsAsync(entered);
+        before.Select(r => (r.Indicator, r.OtherValue)).Should().BeEquivalentTo(new[]
+        {
+            ("shop.contoso.com", "www.contoso.com"), ("shop.contoso.com", "dc1.corp.contoso.com"), ("it@contoso.com", "hr@contoso.com"),
+            ("evil.example", "cdn.evil.example"), ("203.0.113.5", "203.0.113.77"),
+        });
+        before.ExcludedBecause("10.20.30.5").Should().Be(
+            "10.20.30.5 is in 10.0.0.0/8, one of your organization's excluded address ranges, so it isn't used to suggest relations.");
+
+        // The organization's domain, saved: no restart.
+        await live.Settings.SetAsync(RelatedExclusionSettings.DomainsKey, "Contoso.COM");
+        var after = await live.Cases.FindRelatedIndicatorsForIocsAsync(entered);
+        after.Select(r => (r.Indicator, r.OtherValue)).Should().BeEquivalentTo(new[]
+        {
+            ("evil.example", "cdn.evil.example"), ("203.0.113.5", "203.0.113.77"),
+        }, "what isn't excluded still relates");
+        after.ExcludedBecause("shop.contoso.com").Should().Be(
+            "shop.contoso.com is under contoso.com, one of your organization's domains, so it isn't used to suggest relations.");
+        after.ExcludedBecause("it@contoso.com").Should().NotBeNull();
+
+        // An excluded value on the other case suggests nothing either: the case's own www.contoso.com, asked from the panel.
+        var wwwId = (await live.Cases.GetDetailAsync(other))!.Entities.Single(e => e.Value == "www.contoso.com").Id;
+        var panel = await live.Cases.FindRelatedIndicatorsAsync(other, wwwId);
+        panel.Should().BeEmpty();
+        panel.ExcludedBecause("www.contoso.com").Should().StartWith("www.contoso.com is under contoso.com");
+
+        // Narrowed to a sub-domain: contoso.com relates again, but never to the hosts under corp.contoso.com.
+        await live.Settings.SetAsync(RelatedExclusionSettings.DomainsKey, "corp.contoso.com");
+        (await live.Cases.FindRelatedIndicatorsForIocsAsync(["shop.contoso.com"])).Select(r => r.OtherValue)
+            .Should().Equal(["www.contoso.com"]);
+
+        // The ranges cleared: a private /24 relates as before, the URL on it too.
+        await live.Settings.SetAsync(RelatedExclusionSettings.RangesKey, "");
+        (await live.Cases.FindRelatedIndicatorsForIocsAsync(["10.20.30.5"])).Select(r => r.OtherValue)
+            .Should().BeEquivalentTo(["10.20.30.40", "http://10.20.30.41/x"]);
+
+        // A range of the organization's own public addresses.
+        await live.Settings.SetAsync(RelatedExclusionSettings.RangesKey, "203.0.113.0/25");
+        var own = await live.Cases.FindRelatedIndicatorsForIocsAsync(["203.0.113.200", "203.0.113.5"]);
+        own.Select(r => (r.Indicator, r.OtherValue)).Should().BeEmpty("203.0.113.5 and .77 are in the range; .200 relates to neither");
+        own.ExcludedBecause("203.0.113.5").Should().Contain("203.0.113.0/25");
+        own.ExcludedBecause("203.0.113.200").Should().BeNull();
+
+        // Reset: the defaults again.
+        await live.Settings.ResetAsync(RelatedExclusionSettings.RangesKey);
+        (await live.Cases.FindRelatedIndicatorsForIocsAsync(["10.20.30.5"])).ExcludedBecause("10.20.30.5").Should().NotBeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_invalid_exclusion_is_refused_with_its_entry_named_and_nothing_changes(string provider)
+    {
+        using var database = Open(provider);
+        var live = LiveSettings(database);
+        await live.Settings.SetAsync(RelatedExclusionSettings.DomainsKey, "contoso.com");
+
+        var badRange = () => live.Settings.SetAsync(RelatedExclusionSettings.RangesKey, "10.0.0.0/8, 10.0.0.1/8");
+        (await badRange.Should().ThrowAsync<ArgumentException>())
+            .WithMessage("Excluded address ranges: \"10.0.0.1/8\" has bits set past its /8. Did you mean 10.0.0.0/8?");
+        var badDomain = () => live.Settings.SetAsync(RelatedExclusionSettings.DomainsKey, "fabrikam.com\nco.uk");
+        (await badDomain.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().StartWith("Your organization's domains: \"co.uk\"");
+
+        using var db = database.NewContext();
+        (await db.AppSettings.Where(s => s.Key.StartsWith("RelatedIndicators:")).Select(s => new { s.Key, s.Value }).ToListAsync())
+            .Should().BeEquivalentTo(new[] { new { Key = RelatedExclusionSettings.DomainsKey, Value = (string?)"contoso.com" } });
+        live.Config.GetSection(RelatedExclusionSettings.DomainsKey).GetChildren().Select(c => c.Value).Where(v => v != "")
+            .Should().Equal(["contoso.com"]);
+    }
+
+    // CAP-28 exclusions: an organization's sub-domain under a suggested one (corp.contoso.com under contoso.com) is left out
+    // in SQL too, so its hosts, often many and on newer cases, don't fill the scan and hide an older related one.
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Excluded_hosts_do_not_fill_the_scan(string provider)
+    {
+        using var database = Open(provider);
+        var live = LiveSettings(database);
+        await live.Settings.SetAsync(RelatedExclusionSettings.DomainsKey, "corp.contoso.com");
+        var now = _clock.UtcNow;
+        await using (var db = database.NewContext())
+        {
+            Case NewCase(int seq, DateTimeOffset opened, string value)
+            {
+                var c = Case.Open(2026, seq, $"C{seq}", $"Case {seq}", Classification.Incident, Severity.High,
+                    CaseOrigin.InternalDetection, "ic2", opened);
+                c.Entities.Add(new CaseEntity { CaseId = c.Id, Type = EntityType.Domain, Value = value });
+                return c;
+            }
+            db.Cases.Add(NewCase(1, now.AddDays(-30), "www.contoso.com"));
+            db.Cases.AddRange(Enumerable.Range(0, CaseService.RelatedScanLimit + 1)
+                .Select(i => NewCase(i + 2, now.AddDays(-20).AddMinutes(i), $"ws{i}.corp.contoso.com")));
+            await db.SaveChangesAsync();
+        }
+
+        var related = await live.Cases.FindRelatedIndicatorsForIocsAsync(["shop.contoso.com"]);
+        related.Should().ContainSingle().Which.OtherValue.Should().Be("www.contoso.com");
+        related.ScanLimitHit.Should().BeFalse("the excluded hosts weren't read");
     }
 }

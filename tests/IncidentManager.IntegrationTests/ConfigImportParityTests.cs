@@ -1,4 +1,5 @@
 using FluentAssertions;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
 using IncidentManager.Application.Config;
 using IncidentManager.Application.StageGates;
@@ -107,6 +108,14 @@ public sealed class ConfigImportParityTests : IDisposable
         // CAP-31: how long a decided import keeps its document travels as a setting too.
         ["decided import retention set"] = new(nameof(ConfigBundle.Settings), b => b with
             { Settings = [.. b.Settings, new ConfigSetting("Retention:DecidedImportDays", "30")] }),
+        // CAP-28 exclusions: the organization's domains and ranges are its configuration, so they travel in a bundle, written
+        // as a person would paste them (stored lowercased, one per line, as the page stores them).
+        ["related exclusions set"] = new(nameof(ConfigBundle.Settings), b => b with
+        {
+            Settings = [.. b.Settings, new ConfigSetting(RelatedExclusionSettings.DomainsKey, "Contoso.com, corp.contoso.local."),
+                new ConfigSetting(RelatedExclusionSettings.RangesKey, "10.0.0.0/8; FD00::/8 198.51.100.0/24"),
+                new ConfigSetting(RelatedExclusionSettings.FreeMailKey, "False")],
+        }),
         ["role changed"] = new(nameof(ConfigBundle.Roles), b => b with
             { Roles = Set(b.Roles, r => r.Name == "IR Lead", r => r with { PermissionsCsv = "EditCases,ViewCases,ViewAllCases" }) }),
         ["role permissions reordered"] = new(nameof(ConfigBundle.Roles), b => b with
@@ -198,11 +207,45 @@ public sealed class ConfigImportParityTests : IDisposable
         (await db.NotificationRules.Select(r => new { r.Code, r.Label }).SingleAsync()).Should().Be(new { Code = "NY", Label = "New York" });
     }
 
+    [Fact]
+    public async Task Related_exclusions_round_trip_through_a_bundle(/* CAP-28 exclusions */)
+    {
+        await SeedAsync();
+        using (var db = _factory.CreateAppDbContext())
+        {
+            db.AppSettings.Add(new AppSetting { Key = RelatedExclusionSettings.DomainsKey, Value = "contoso.com\ncorp.contoso.local", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin1" });
+            db.AppSettings.Add(new AppSetting { Key = RelatedExclusionSettings.RangesKey, Value = "", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin1" });
+            db.AppSettings.Add(new AppSetting { Key = RelatedExclusionSettings.FreeMailKey, Value = "false", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin1" });
+            await db.SaveChangesAsync();
+        }
+        var bundle = await _config.BuildBundleAsync();
+        bundle.Settings.Where(s => s.Key.StartsWith("RelatedIndicators:", StringComparison.Ordinal)).Should().HaveCount(3);
+
+        using (var db = _factory.CreateAppDbContext())
+        {
+            db.AppSettings.RemoveRange(db.AppSettings.Where(s => s.Key.StartsWith("RelatedIndicators:")));
+            await db.SaveChangesAsync();
+        }
+        await _config.ImportAsync(Signed(bundle));
+
+        using var check = _factory.CreateDbContext();
+        (await check.AppSettings.Where(s => s.Key.StartsWith("RelatedIndicators:")).ToDictionaryAsync(s => s.Key, s => s.Value))
+            .Should().BeEquivalentTo(new Dictionary<string, string?>
+            {
+                [RelatedExclusionSettings.DomainsKey] = "contoso.com\ncorp.contoso.local",
+                [RelatedExclusionSettings.RangesKey] = "",
+                [RelatedExclusionSettings.FreeMailKey] = "false",
+            }, "a cleared range list travels as cleared, not as the default");
+    }
+
     // --- refusals: what the import refuses, the preview refuses in the same words, and nothing is written ---------------
 
     private static readonly Dictionary<string, Func<ConfigBundle, ConfigBundle>> Refused = new()
     {
         ["setting twice"] = b => b with { Settings = [.. b.Settings, new ConfigSetting("Reporting:OrganizationName", "Contoso")] },
+        // CAP-28 exclusions: what the page refuses, the bundle can't bring in.
+        ["excluded range not CIDR"] = b => b with { Settings = [.. b.Settings, new ConfigSetting(RelatedExclusionSettings.RangesKey, "10.0.0.0/8\n10.1.2.3/8")] },
+        ["excluded domain a public suffix"] = b => b with { Settings = [.. b.Settings, new ConfigSetting(RelatedExclusionSettings.DomainsKey, "co.uk")] },
         ["role twice"] = b => b with { Roles = [.. b.Roles, new ConfigRole("Ops", null, false, "ViewCases"), new ConfigRole("ops", null, false, "ViewCases")] },
         ["role name with a comma"] = b => b with { Roles = [.. b.Roles, new ConfigRole("Readers,SysAdmin", null, false, "ViewCases")] },
         ["last administrator"] = b => b with { Roles = Set(b.Roles, r => r.Name == "Ops Admin", r => r with { PermissionsCsv = "ViewCases" }) },
