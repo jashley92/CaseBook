@@ -306,7 +306,10 @@ sealed with AES-256-GCM, each bound to its file, its position and whether it's t
 Decryption costs less than the hash the re-check already computes; the encrypted re-check is faster here only
 because the reader hands SHA-256 64 KiB blocks. A real disk (a few hundred MB/s) or a share (around 100 MB/s on
 1 GbE) is the limit either way, so encryption doesn't change how long a pass takes. The read-back check on a large
-upload (`Evidence:ReadBackCheck`) is one more read + decrypt + SHA-256 of the file.
+upload (`Evidence:ReadBackCheck`) is one more read + decrypt + SHA-256 of the file. So is an evidence package (CAP-12):
+each file is read, decrypted and hashed once to check it before any of it is sent (so a file that doesn't match is never
+handed over), then again as it's sent. At a share's 100 MB/s that is about 10 s more per GB, well inside the package's
+time limit (15 minutes plus a second per MB); the bytes are read twice rather than kept, so no plain copy is written.
 
 **Checked against a real malware stand-in and a share (2026-10-17).** The EICAR test file, uploaded through the
 Evidence tab to a store on a UNC path (`\\localhost\C$\…`, SMB loopback), was stored as a 201-byte CBE1 file

@@ -78,5 +78,17 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     /// </summary>
     bool PendingUpkeep { get; set; }
 
+    /// <summary>
+    /// CAP-12 review: audit entries for an act that changes no audited row (an evidence package's hand-over), to be
+    /// written by the next save, in its transaction: the audit-chain interceptor chains them after the save's own entries,
+    /// under the same gate, so the rows saved beside them (custody, which the chain leaves out) and the entries commit or
+    /// fail together. Add them immediately before <see cref="SaveChangesAsync"/>; the interceptor takes and clears them.
+    /// </summary>
+    IList<AuditNote> PendingAuditNotes { get; }
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }
+
+/// <summary>CAP-12 review: one audit entry for <see cref="IAppDbContext.PendingAuditNotes"/>, as
+/// <see cref="IAuditWriter.RecordAsync"/> takes it.</summary>
+public sealed record AuditNote(Domain.Enums.AuditAction Action, string EntityType, string? EntityId, string? CaseNumber, string Summary);

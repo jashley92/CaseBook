@@ -3154,7 +3154,8 @@ public sealed class CaseService
         {
             case ActionItem.AboutEntity when c.Entities.Any(e => e.Id == target):
                 return $"{ActionItem.AboutEntity}:{target}";
-            case ActionItem.AboutEvidence when await db.Evidence.AnyAsync(e => e.Id == target && e.CaseId == c.Id, ct):
+            // CAP-21 review: not a withdrawn file; it's off the case's record (its panel offers no task either).
+            case ActionItem.AboutEvidence when await db.Evidence.AnyAsync(e => e.Id == target && e.CaseId == c.Id && e.WithdrawnAtUtc == null, ct):
                 return $"{ActionItem.AboutEvidence}:{target}";
             case ActionItem.AboutEntry when c.TimelineEntries.FirstOrDefault(e => e.Id == target) is { } entry:
                 var first = entry;
@@ -3326,16 +3327,20 @@ public sealed class CaseService
     /// </summary>
     /// <param name="expectedStamp">The file's row hash when the dialog opened (empty for one without). Given, a file whose
     /// record changed since is refused with <see cref="StaleEditException"/>.</param>
+    /// <exception cref="ConcurrentEditException">The case changed while this was checked (a notice or an entry may name
+    /// the file now, or it was withdrawn alongside); nothing was saved.</exception>
     public async Task WithdrawEvidenceAsync(Guid caseId, Guid evidenceId, string reason, string? expectedStamp = null,
         CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
-        var head = await Scoped(db.Cases.AsNoTracking()).Where(c => c.Id == caseId)
-                       .Select(c => new { c.CaseNumber, c.DetectionCaseId, c.IsExercise }).FirstOrDefaultAsync(ct)
+        // CAP-21 review: the case is tracked, so this save checks and renews its edit version (BUG-113) as a notice naming
+        // the file, an entry showing it, a citation of it or a second withdrawal does: of two made from the same reads, the
+        // later is refused (ConcurrentEditException) rather than both passing the checks below.
+        var head = await Scoped(db.Cases).FirstOrDefaultAsync(c => c.Id == caseId, ct)
                    ?? throw new InvalidOperationException("Case not found or not accessible.");
         var subject = new Security.CaseSubject(head.CaseNumber, head.DetectionCaseId, head.IsExercise);
-        var ev =await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
+        var ev = await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
                  ?? throw new InvalidOperationException("That evidence isn't on this case.");
         if (expectedStamp is not null && !string.Equals(ev.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
             throw new StaleEditException(ev.RowHash ?? "", "Someone changed this file's record since you opened it, so it wasn't " +
@@ -3356,8 +3361,8 @@ public sealed class CaseService
     /// are named; a withdrawn one is refused, CAP-21), and who it's for, how and why, named once. Checks the permission, the
     /// case (need-to-know), that each file is on it, and the package's size (<see cref="Evidence.EvidencePackage.CheckSize"/>),
     /// and returns a ticket for the download (<c>/evidence/package/{ticket}</c>), so nothing picked or typed goes in a
-    /// URL. Records nothing: each file's "Transferred" custody event and the audit entry are written when the download
-    /// has sent the whole package (<see cref="Evidence.EvidenceService.RecordPackageAsync"/>).
+    /// URL. Records nothing: the download records the transfer as begun before its first byte, then how far it got
+    /// (<see cref="Evidence.EvidenceService.RecordPackageBegunAsync"/>, CAP-12 review).
     /// </summary>
     public async Task<Evidence.EvidencePackageStaged> StageEvidencePackageAsync(Guid caseId, IReadOnlyCollection<Guid>? evidenceIds,
         string recipient, string? method, string purpose, CancellationToken ct = default)

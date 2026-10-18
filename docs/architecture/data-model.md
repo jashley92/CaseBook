@@ -245,9 +245,11 @@ in the row hash (format 5) only when set. A withdrawn file's row, bytes and cust
 
 ### `ChainOfCustodyEvents` (not hashed, not audited; ledger table)
 
-`EvidenceId` (foreign key), `Action` ("Uploaded", "Viewed", "Downloaded", "Transferred", "Withdrawn"), `Actor`, `AtUtc`,
+`EvidenceId` (foreign key), `Action` ("Uploaded", "Viewed", "Downloaded", "Transferred", "Withdrawn", and for an evidence
+package "Transfer begun", "Partly transferred", "Not transferred", "Transferred (SHA-256 mismatch)"), `Actor`, `AtUtc`,
 `Details`. "Viewed" is recorded once per person per 10 minutes. A transfer is also written to the audit chain; an
-evidence package (CAP-12) records one "Transferred" per file in it and one audit entry for the package. "Withdrawn"
+evidence package (CAP-12) records "Transfer begun" on each file before its first byte and then how far each got, each
+step with one audit entry for the package (id in `EntityId`, type `EvidencePackage`) in the same transaction. "Withdrawn"
 (CAP-21) carries the reason.
 
 ### `EvidenceCitations` (A)

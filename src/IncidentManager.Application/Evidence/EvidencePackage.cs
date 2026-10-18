@@ -81,9 +81,49 @@ public sealed class EvidencePackageTickets
 /// name it has in the zip.</summary>
 public sealed record EvidencePackageFile(Domain.Entities.Evidence Evidence, string EntryName, IReadOnlyList<ChainOfCustodyEvent> Custody);
 
+/// <summary>CAP-12 review: how far one file of a package got.</summary>
+public enum PackagedFileOutcome
+{
+    /// <summary>None of its bytes were sent (the package stopped before it).</summary>
+    NotSent,
+    /// <summary>Its bytes didn't match its recorded SHA-256 when it was checked, before any was sent; so none was.</summary>
+    HeldBack,
+    /// <summary>Some of its bytes were sent, then the package stopped.</summary>
+    PartlySent,
+    /// <summary>Every byte was sent.</summary>
+    Sent,
+    /// <summary>Every byte was sent, but they didn't match its recorded SHA-256 as they went (the file changed after its check).</summary>
+    SentNotMatching,
+}
+
+/// <summary>
+/// CAP-12 review: what a package's download has sent so far, file by file, kept by the writer as it goes so a package
+/// that stops part-way is recorded as far as it got. "Sent" means written to the response: what reached the recipient
+/// may be less, never more.
+/// </summary>
+public sealed class EvidencePackageProgress(int files)
+{
+    private readonly PackagedFileOutcome[] _files = new PackagedFileOutcome[files];
+
+    /// <summary>Each file's outcome so far, in the package's order.</summary>
+    public IReadOnlyList<PackagedFileOutcome> Files => _files;
+
+    /// <summary>Whether the whole MANIFEST.txt was sent.</summary>
+    public bool ManifestSent { get; set; }
+
+    public void Mark(int file, PackagedFileOutcome outcome) => _files[file] = outcome;
+
+    /// <summary>How many files went out in full (whether or not they matched).</summary>
+    public int SentInFull => _files.Count(f => f is PackagedFileOutcome.Sent or PackagedFileOutcome.SentNotMatching);
+
+    /// <summary>Whether any byte of any file went out.</summary>
+    public bool AnySent => _files.Any(f => f is PackagedFileOutcome.PartlySent or PackagedFileOutcome.Sent or PackagedFileOutcome.SentNotMatching);
+}
+
 /// <summary>
 /// CAP-12: an evidence package being downloaded: the case, the files and the hand-over, checked again as the download
-/// began. <see cref="EvidenceService.RecordPackageAsync"/> records it once every byte has been written.
+/// began. CAP-12 review: <see cref="EvidenceService.RecordPackageBegunAsync"/> records it before its first byte, and
+/// <see cref="EvidenceService.RecordPackageSentAsync"/> or <see cref="EvidenceService.RecordPackageStoppedAsync"/> how it ended.
 /// </summary>
 public sealed class EvidencePackage
 {
@@ -159,7 +199,7 @@ public sealed class EvidencePackage
         Line();
         Line($"The zip's password is \"{EvidenceRisk.ZipPassword}\", the security field's convention for samples, so no file can run by accident.");
         Line("Each file's SHA-256 below is the one recorded when it was uploaded, and its bytes were checked against it as they were packaged.");
-        Line("CaseBook records this hand-over in each file's chain of custody (\"Transferred\") and in its audit trail once the package has been sent.");
+        Line("CaseBook recorded this hand-over in each file's chain of custody and in its audit trail before the first file was sent, and records how it ended: \"Transferred\" for each file sent in full, or where it stopped.");
         for (var i = 0; i < Files.Count; i++)
         {
             var (ev, entry, custody) = (Files[i].Evidence, Files[i].EntryName, Files[i].Custody);

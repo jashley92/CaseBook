@@ -44,22 +44,21 @@
                    title="Downloading adds a custody event in your name and an access-log entry">
                     <span class="bi bi-download" aria-hidden="true"></span> Download
                 </a>
-                @if (CanEdit)
+                @if (CanEdit && !ev.IsWithdrawn)
                 {
-                    @* BUG-578: opening one doesn't close the other, so what's typed in it stays. *@
+                    @* BUG-578: opening one doesn't close the other, so what's typed in it stays.
+                       CAP-21 review: none for a withdrawn file: it's off the record, so no task is about it and no transfer of it is
+                       recorded (both refused on the server too). *@
                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _addingTask = true">
                         <span class="bi bi-plus-lg" aria-hidden="true"></span> Task about it
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _transferOpen = true">
                         <span class="bi bi-arrow-left-right" aria-hidden="true"></span> Record a transfer…
                     </button>
-                    @if (!ev.IsWithdrawn)
-                    {
-                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => StartWithdraw(ev)"
-                                title="Take a file filed on the wrong case off its record, with a reason">
-                            <span class="bi bi-slash-circle" aria-hidden="true"></span> Withdraw…
-                        </button>
-                    }
+                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => StartWithdraw(ev)"
+                            title="Take a file filed on the wrong case off its record, with a reason">
+                        <span class="bi bi-slash-circle" aria-hidden="true"></span> Withdraw…
+                    </button>
                 }
             </div>
             <div class="small text-muted mt-1">Downloading adds a custody event in your name and an access-log entry.</div>
@@ -86,14 +85,14 @@
                     </div>
                 </section>
             }
-            @if (_addingTask)
+            @if (_addingTask && !ev.IsWithdrawn)
             {
                 <section>
                     <QuickTask CaseId="Case.Id" About="@($"{ActionItem.AboutEvidence}:{ev.Id}")" Placeholder="A task about this file"
                                OnDone="async () => { _addingTask = false; await OnChanged.InvokeAsync(); }" OnCancel="() => _addingTask = false" />
                 </section>
             }
-            @if (_transferOpen)
+            @if (_transferOpen && !ev.IsWithdrawn)
             {
                 <section class="im-dossier-reason">
                     <h3 class="im-entity-panel-h">Record a transfer</h3>
@@ -326,6 +325,17 @@
             // The form stays open with the reason, expecting what's there now, so withdrawing again is a knowing choice.
             if (!_showing.IsCurrent(shown)) { Toasts.Error(ex.Message); return; }
             _withdrawError = ex.Message;
+            await OnChanged.InvokeAsync();
+            if (File is { } now && now.Id == ev.Id) _withdrawStamp = now.RowHash ?? "";
+        }
+        catch (ConcurrentEditException)
+        {
+            // CAP-21 review: the case changed while the withdrawal was checked (a notice or an entry may name the file now, or
+            // a colleague withdrew it). Nothing was saved; the form stays open with the reason, on the case as it is now.
+            const string problem = "Someone changed this case while the file was being withdrawn, so it wasn't withdrawn. " +
+                "Check whether a notice or a timeline entry names it now, then withdraw it again if it's still needed.";
+            if (!_showing.IsCurrent(shown)) { Toasts.Error(problem); return; }
+            _withdrawError = problem;
             await OnChanged.InvokeAsync();
             if (File is { } now && now.Id == ev.Id) _withdrawStamp = now.RowHash ?? "";
         }

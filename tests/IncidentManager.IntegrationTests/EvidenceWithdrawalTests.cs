@@ -228,6 +228,129 @@ public sealed class EvidenceWithdrawalTests : IDisposable
         (await RowAsync(database, id)).IsWithdrawn.Should().BeFalse();
     }
 
+    private CaseService Cases(TestDatabase db, IAppDbContextFactory factory) =>
+        new(factory, _user, _clock, new CaseNumberGenerator(db.NewContext()), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(), siem: _siem);
+
+    /// <summary>CAP-21 review: what races a withdrawal of the file: a notice naming it, an entry showing it, a second withdrawal.</summary>
+    public static TheoryData<string, string, bool> Races
+    {
+        get
+        {
+            var rows = new TheoryData<string, string, bool>();
+            foreach (var provider in TestDatabase.Providers)
+                foreach (var other in new[] { "notice", "entry", "withdraw" })
+                    foreach (var withdrawFirst in new[] { true, false })
+                        rows.Add(provider, other, withdrawFirst);
+            return rows;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Races))]
+    public async Task Of_a_withdrawal_and_a_save_naming_the_file_made_from_the_same_reads_exactly_one_lands(string provider, string other,
+        bool withdrawFirst)
+    {
+        // CAP-21 review: the withdrawal read the case untracked, so it took no part in the case's edit version (BUG-113): a
+        // notice naming the file saved between its checks and its save (or a second withdrawal) passed as well. Here one
+        // writer has made its reads when the other runs whole; the later save must be refused, whichever it is.
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var file = await UploadAsync(database, caseId, "ack.pdf", "ack");
+        Func<CaseService, Task> withdraw = s => s.WithdrawEvidenceAsync(caseId, file, "Wrong case");
+        Func<CaseService, Task> naming = other switch
+        {
+            "notice" => s => s.RecordNoticeAsync(caseId, "NY", Start.AddMinutes(-5), details: new NoticeDetails(NoticeMethod.Portal, "NY-1", null, file)),
+            "entry" => s => s.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, Start.AddMinutes(-20),
+                "Screenshot", null, evidenceId: file),
+            _ => s => s.WithdrawEvidenceAsync(caseId, file, "Wrong case, said twice"),
+        };
+        var (outer, inner) = withdrawFirst ? (withdraw, naming) : (naming, withdraw);
+        Exception? innerFailed = null;
+        var racer = new BeforeFirstSave(async () =>
+        {
+            try { await inner(Cases(database)); }
+            catch (Exception ex) { innerFailed = ex; }
+        });
+        Exception? outerFailed = null;
+        try { await outer(Cases(database, database.FactoryWith(racer))); }
+        catch (Exception ex) { outerFailed = ex; }
+
+        new[] { outerFailed, innerFailed }.Count(e => e is null).Should().Be(1, "exactly one of the two lands");
+        var refused = (outerFailed ?? innerFailed)!;
+        refused.Should().Match<Exception>(e => e is ConcurrentEditException || e is InvalidOperationException,
+            "the other is refused in words, never saved alongside");
+        await using var ctx = database.NewContext();
+        var withdrawn = (await ctx.Evidence.AsNoTracking().SingleAsync(e => e.Id == file)).IsWithdrawn;
+        var named = await ctx.JurisdictionNotices.AnyAsync(n => n.EvidenceId == file)
+                    || await ctx.TimelineEntries.AnyAsync(t => t.EvidenceId == file && t.IsCurrent);
+        (withdrawn && named).Should().BeFalse("nothing on the record points at a withdrawn file");
+        (await ctx.CustodyEvents.CountAsync(c => c.EvidenceId == file && c.Action == "Withdrawn")).Should().BeLessThanOrEqualTo(1);
+        if (other == "withdraw") withdrawn.Should().BeTrue();
+        else (withdrawn || named).Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_withdrawn_copy_isnt_named_as_evidence_elsewhere_and_Find_marks_it(string provider)
+    {
+        // CAP-21 review: withdrawn from A and uploaded to B, the file on B doesn't say it's "also evidence in" A.
+        var (database, a) = await OpenAsync(provider);
+        using var _ = database;
+        var b = (await Cases(database).CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Right case", Title = "Mailbox compromise", Classification = Classification.Breach, Severity = Severity.High,
+            Origin = CaseOrigin.InternalDetection, DetectedAtUtc = _clock.UtcNow.AddDays(-2)
+        })).Id;
+        var onA = await UploadAsync(database, a, "quarterly.csv", "rows");
+        await Cases(database).WithdrawEvidenceAsync(a, onA, "Belongs to the other case");
+        var onB = await UploadAsync(database, b, "quarterly.csv", "rows");
+        var evidence = Evidence(database);
+
+        (await evidence.AlsoEvidenceInAsync(onB)).Should().BeEmpty("A's copy is off A's record");
+        (await evidence.AlsoEvidenceInAsync(onA)).Should().ContainSingle("the withdrawn copy still says where the file stands");
+
+        var found = (await new IncidentManager.Application.Search.FindService(database.Factory(), _user, new StubUserDirectory())
+            .FindAsync("quarterly")).Evidence;
+        found.Should().HaveCount(2, "a withdrawn file is still held, so still found");
+        found.Single(f => f.Id == onA).IsWithdrawn.Should().BeTrue("but marked");
+        found.Single(f => f.Id == onB).IsWithdrawn.Should().BeFalse();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_withdrawn_file_takes_no_new_task_and_no_recorded_transfer(string provider)
+    {
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var id = await UploadAsync(database, caseId, "wrong.csv", "rows");
+        var cases = Cases(database);
+        await cases.WithdrawEvidenceAsync(caseId, id, "Wrong case");
+
+        var task = () => cases.AddActionItemAsync(caseId, "Look at it", null, null, about: $"{ActionItem.AboutEvidence}:{id}");
+        await task.Should().ThrowAsync<InvalidOperationException>();
+        var transfer = () => Evidence(database).RecordTransferAsync(id, "Outside counsel", null, "Litigation");
+        (await transfer.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("withdrawn");
+        await using var ctx = database.NewContext();
+        (await ctx.CustodyEvents.CountAsync(c => c.EvidenceId == id && c.Action == "Transferred")).Should().Be(0);
+        (await ctx.ActionItems.CountAsync(t => t.CaseId == caseId && t.AboutRef != null)).Should().Be(0);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_withdrawal_reason_of_the_full_length_fits_the_audit_entry(string provider)
+    {
+        // CAP-21 review: the reason (2,000 characters) is the audit entry's Reason (2,000) and the custody event's Details (2,000).
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var id = await UploadAsync(database, caseId, "long.csv", "rows");
+        var reason = new string('r', IncidentManager.Domain.Entities.Evidence.MaxWithdrawnReasonLength);
+        await Cases(database).WithdrawEvidenceAsync(caseId, id, reason);
+        await using var ctx = database.NewContext();
+        (await ctx.AuditLog.AsNoTracking().SingleAsync(a => a.EntityType == "Evidence" && a.EntityId == id.ToString() && a.Action == AuditAction.Update))
+            .Reason.Should().Be(reason);
+    }
+
     private ReportService NewReportService(TestDatabase database) =>
         new(database.Factory(), new ReportGenerator(),
             new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = Path.Combine(_dir, "reports") })), _hasher, _user, _clock,

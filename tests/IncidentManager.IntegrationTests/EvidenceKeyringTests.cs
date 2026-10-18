@@ -761,8 +761,10 @@ public sealed class EvidenceKeyringTests : IDisposable
         var staged = await cases.StageEvidencePackageAsync(caseId, [id], "Malware lab", null, "Reverse engineering");
         var package = await svc.OpenPackageAsync(staged.Ticket);
         using var zipped = new MemoryStream();
+        await svc.RecordPackageBegunAsync(package);
+        var progress = new EvidencePackageProgress(package.Files.Count);
         await IncidentManager.Web.Security.EvidencePackageWriter.WriteAsync(package, svc.ManifestOf(package), svc.OpenPackagedFileAsync, zipped,
-            (sha, manifestSha) => svc.RecordPackageAsync(package, sha, manifestSha), default);
+            progress, (sha, manifestSha) => svc.RecordPackageSentAsync(package, progress, sha, manifestSha), default);
 
         Directory.GetFiles(Evidence, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith("evidence-key.json", StringComparison.Ordinal))
             .Should().AllSatisfy(f => File.ReadAllBytes(f).AsSpan().IndexOf("EICAR"u8).Should().Be(-1, "the store stays encrypted, and no plain copy is made"));
@@ -773,7 +775,10 @@ public sealed class EvidenceKeyringTests : IDisposable
         using (var entry = reader.GetInputStream(reader.GetEntry("eicar.com"))) await entry.CopyToAsync(unzipped);
         unzipped.ToArray().Should().Equal(eicar, "the recipient gets the sample exactly as recorded");
         reader.GetEntry(EvidencePackage.ManifestName).Should().NotBeNull();
-        _audit.Entries.Should().ContainSingle(e => e.StartsWith("EvidenceTransferred EvidencePackage", StringComparison.Ordinal));
+        // CAP-12 review: begun, then sent in full, each in the chain in the save that wrote the custody.
+        await using var check = _database.NewContext();
+        (await check.AuditLog.AsNoTracking().Where(a => a.EntityType == "EvidencePackage").OrderBy(a => a.Sequence).Select(a => a.Summary).ToListAsync())
+            .Should().SatisfyRespectively(b => b.Should().StartWith("Began sending"), s => s.Should().StartWith("Sent evidence package"));
     }
 
     [Fact]

@@ -291,8 +291,8 @@ Below the list, relationships are added and edited (type, description and direct
    with the count and size, and the recipient, method (optional) and purpose are named once. *Prepare the package*
    checks it all (at most 500 files and the largest-file limit in all) and offers *Download the package*, a link that
    works once, for 10 minutes, and opens in a new tab: one zip with the password `infected` holding the files and a
-   `MANIFEST.txt`. When it has finished downloading, each file's chain of custody records the transfer and the audit
-   trail records the package.
+   `MANIFEST.txt`. As it starts, each file's chain of custody records the transfer as begun and the audit trail the
+   package; when it ends, how far it got (sent in full, or which files went out before it stopped).
 3. **An evidence row**: description, size, SHA-256, when, where from and by whom it was collected, who uploaded it and when, and what cites it ("Cited by 1
    timeline entry and the brief"). **Custody** shows the chain of custody (uploaded, viewed, downloaded,
    transferred, withdrawn) and records a transfer; **Download** is itself a custody event, and **As zip** gives the file in a
