@@ -1574,8 +1574,8 @@
     private async Task SaveLogo(InputFileChangeEventArgs e)
     {
         _logoError = null;
-        var file = e.File;
-        if (file is null) return;
+        // BUG-341 sibling: never InputFileChangeEventArgs.File, which throws for two or more files; the first is the logo.
+        if (DroppedFiles.First(e).First is not { } file) return;
 
         var ct = file.ContentType ?? "";
         if (!ct.Contains("png", StringComparison.OrdinalIgnoreCase) && !ct.Contains("jpeg", StringComparison.OrdinalIgnoreCase))

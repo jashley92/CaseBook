@@ -235,12 +235,14 @@
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
         if (_applying) return;   // BUG-440: the bundle being applied stays the one shown
+        // BUG-341 sibling: never InputFileChangeEventArgs.File, which throws for two or more files; the first is the bundle.
+        if (DroppedFiles.First(e).First is not { } file) return;
         ClearUpload();
         var seq = _uploadSeq;
         try
         {
             using var ms = new MemoryStream();
-            await e.File.OpenReadStream(maxAllowedSize: MaxBundleBytes).CopyToAsync(ms); // NOSONAR S5693: sized for the template library, see MaxBundleBytes
+            await file.OpenReadStream(maxAllowedSize: MaxBundleBytes).CopyToAsync(ms); // NOSONAR S5693: sized for the template library, see MaxBundleBytes
             var (envelope, verification) = Config.ParseAndVerify(ms.ToArray());
             var diff = await Config.PreviewAsync(envelope.Bundle);
             if (seq != _uploadSeq) return;

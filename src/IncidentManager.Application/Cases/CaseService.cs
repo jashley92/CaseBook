@@ -2231,7 +2231,7 @@ public sealed class CaseService
         {
             var types = Domain.Observables.RelatedObservables.TypesFor(key.Rule).ToList();
             var direct = types[0];
-            var (pDirect, pIn1, pIn2, pIn3) = RelatedPatterns(key);
+            var (pDirect, pDirect2, pIn1, pIn2, pIn3) = RelatedPatterns(key);
             // CAP-28 review: this check's own values are left out in SQL, so copies of them on newer cases (an exact match,
             // never a suggestion) can't fill the scan and hide an older related one. They're read apart, below.
             var own = keyed.Where(k => k.Key == key).Select(k => k.Value.Trim().ToLowerInvariant()).Distinct().ToList();
@@ -2243,7 +2243,8 @@ public sealed class CaseService
                 select new { e.Type, e.Value, e.Disposition, c.Id, c.CaseNumber, c.Title, c.Phase, c.CreatedAtUtc };
             var rows = await candidates
                 .Where(x => !own.Contains(x.Value.ToLower())
-                    && ((x.Type == direct && EF.Functions.Like(x.Value.ToLower(), pDirect, LikeEscape))
+                    && ((x.Type == direct && (EF.Functions.Like(x.Value.ToLower(), pDirect, LikeEscape)
+                            || EF.Functions.Like(x.Value.ToLower(), pDirect2, LikeEscape)))
                         || (x.Type != direct && (EF.Functions.Like(x.Value.ToLower(), pIn1, LikeEscape)
                             || EF.Functions.Like(x.Value.ToLower(), pIn2, LikeEscape)
                             || EF.Functions.Like(x.Value.ToLower(), pIn3, LikeEscape)))))
@@ -2277,9 +2278,9 @@ public sealed class CaseService
 
     private const string LikeEscape = "\\";
 
-    // CAP-28: the LIKEs that narrow to values that can share the part (lowercase; wildcards in the part escaped): one for
+    // CAP-28: the LIKEs that narrow to values that can share the part (lowercase; wildcards in the part escaped): two for
     // the key's own type (a domain, an IP address, an email address), three for the type that carries it (a URL, an account).
-    private static (string Direct, string In1, string In2, string In3) RelatedPatterns(Domain.Observables.RelatedKey key)
+    private static (string Direct, string Direct2, string In1, string In2, string In3) RelatedPatterns(Domain.Observables.RelatedKey key)
     {
         static string Esc(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[");
         switch (key.Rule)
@@ -2287,28 +2288,33 @@ public sealed class CaseService
             case Domain.Observables.RelatedRule.Ipv4Slash24:
             {
                 // CAP-28 review: anchored. "%1.2.3.%" also read 11.2.3.4 and 201.2.3.9, which could fill the scan. An address
-                // is stored as a dotted quad; in a URL it follows the "//", a userinfo "@" or a mapped "[::ffff:".
+                // is stored as a dotted quad; in a URL it follows the "//", a userinfo "@" or a mapped "[::ffff:". R1: an
+                // address stored before v1.5.3 (BUG-176, no backfill) can still be IPv4-mapped ("::ffff:1.2.3.4").
                 var p = Esc(key.Shared) + ".%";
-                return (p, "%/" + p, "%@" + p, "%:" + p);
+                return (p, "%:" + p, "%/" + p, "%@" + p, "%:" + p);
             }
             case Domain.Observables.RelatedRule.Ipv6Slash48:
             {
-                // CAP-28 review: an IPv6 address is stored in its canonical form, which starts with the /48's hextets up to
-                // the first zero one (2001:db8:0::5 is "2001:db8::5"), so those narrow, not only the first. A URL carries
-                // the address in brackets.
-                var lead = string.Concat(key.Shared.Split(':').TakeWhile(h => h != "0").Select(h => Esc(h) + ":"));
+                // CAP-28 review: the /48's hextets up to the first zero one narrow, not only the first (2001:db8:0::5 is
+                // "2001:db8::5" canonically). R1: an address isn't always stored canonically (a URL's never is, and an
+                // IpAddress stored before v1.5.3 may not be, BUG-176), so a hextet shorter than four may carry leading
+                // zeros ("0db8"), and a zero one may be written out rather than compressed; the exact rule filters after.
+                // A URL carries the address in brackets.
+                var lead = string.Concat(key.Shared.Split(':').TakeWhile(h => h != "0")
+                    .Select(h => (h.Length < 4 ? "%" : "") + Esc(h) + ":"));
                 var inUrl = "%\\[" + lead + "%";
-                return (lead.Length == 0 ? "%:%" : lead + "%", inUrl, inUrl, inUrl);
+                var direct = lead.Length == 0 ? "%:%" : lead + "%";
+                return (direct, direct, inUrl, inUrl, inUrl);
             }
             case Domain.Observables.RelatedRule.EmailDomain:
             {
                 var p = $"%@{Esc(key.Shared)}";
-                return (p, p, p, p);
+                return (p, p, p, p, p);
             }
             default:
             {
                 var p = $"%{Esc(key.Shared)}%";
-                return (p, p, p, p);
+                return (p, p, p, p, p);
             }
         }
     }

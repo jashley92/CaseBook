@@ -246,12 +246,12 @@
         await OnChanged.InvokeAsync();
     }
 
-    private static async Task<byte[]> ReadAsync(InputFileChangeEventArgs e)
+    private static async Task<byte[]> ReadAsync(IBrowserFile file)
     {
         // BUG-215: the size is checked up front, so a failure saving the file isn't reported as the file being too big.
-        if (e.File.Size > ReportTemplateService.MaxTemplateBytes)
+        if (file.Size > ReportTemplateService.MaxTemplateBytes)
             throw new ArgumentException($"A template must be {ReportTemplateService.MaxTemplateBytes / 1024 / 1024} MB or smaller.");
-        await using var stream = e.File.OpenReadStream(ReportTemplateService.MaxTemplateBytes);
+        await using var stream = file.OpenReadStream(ReportTemplateService.MaxTemplateBytes);
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms);
         return ms.ToArray();
@@ -264,13 +264,15 @@
     private async Task Upload(InputFileChangeEventArgs e)
     {
         if (_uploading) return;
+        // BUG-341 sibling: never InputFileChangeEventArgs.File, which throws for two or more files; the first is the template.
+        if (DroppedFiles.First(e).First is not { } file) return;
         _uploading = true;
         _problems = null;
         try
         {
             var typed = _newName;
-            var name = string.IsNullOrWhiteSpace(typed) ? Path.GetFileNameWithoutExtension(e.File.Name) : typed;
-            var result = await Templates.UploadAsync(name, e.File.Name, await ReadAsync(e));
+            var name = string.IsNullOrWhiteSpace(typed) ? Path.GetFileNameWithoutExtension(file.Name) : typed;
+            var result = await Templates.UploadAsync(name, file.Name, await ReadAsync(file));
             if (!result.Check.Ok) { _problems = result.Check.Problems; return; }
             _newName = DraftText.ClearIfUnchanged(_newName, typed, null);   // BUG-601: a name typed for the next one stays
             await Changed();
@@ -289,13 +291,14 @@
 
     private async Task ReplaceCore(ReportTemplateView t, InputFileChangeEventArgs e)
     {
+        if (DroppedFiles.First(e).First is not { } file) return;   // BUG-341 sibling: never InputFileChangeEventArgs.File
         _problems = null;
         try
         {
-            var check = await Templates.ReplaceFileAsync(t.Id, e.File.Name, await ReadAsync(e));
+            var check = await Templates.ReplaceFileAsync(t.Id, file.Name, await ReadAsync(file));
             if (!check.Ok) { _problems = check.Problems; return; }
             await Changed();
-            Toasts.Success($"“{t.Name}” now uses {e.File.Name}. Preview it with a case below.");
+            Toasts.Success($"“{t.Name}” now uses {file.Name}. Preview it with a case below.");
             ClearShown();   // what was shown came from the old file
             await OpenPreview(t);
         }

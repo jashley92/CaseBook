@@ -671,7 +671,16 @@ public sealed class CaseImportService
                 return new BatchConfirmItem(id, row.Summary, false, null, null, "It's from another submitter, so it wasn't confirmed.");
             summary = row.Summary;
         }
-        var preview = await BuildPreviewForPendingAsync(id, ct);
+        CaseImportPreview? preview;
+        try { preview = await BuildPreviewForPendingAsync(id, ct); }
+        catch (Exception ex) when (ex is not OutOfMemoryException && !(ex is OperationCanceledException && ct.IsCancellationRequested))
+        {
+            // CAP-35 review: one that can't be previewed (unreadable resume state, say) is reported, and the batch goes on.
+            // Nothing was claimed, so it's still waiting.
+            _log?.LogError(ex, "A batch confirm couldn't preview import {PendingImportId}.", id);
+            return new BatchConfirmItem(id, summary, false, null, null,
+                "Not applied: it couldn't be previewed (the error is logged). It's still in the queue to review on its own.");
+        }
         if (preview is null)
             return new BatchConfirmItem(id, summary, false, null, null, "It's no longer waiting, or can't be read.");
         if (NeedsReview(preview) is { } why) return new BatchConfirmItem(id, summary, false, null, null, why);
@@ -684,15 +693,31 @@ public sealed class CaseImportService
         }
 
         DateTimeOffset claim;
+        // CAP-35 review: the claim's stamp is fixed here, so a claim whose call then threw can still be released (only that
+        // claim: ReleaseClaimAsync matches it).
+        var claimAt = _clock.UtcNow;
         try
         {
-            if (await ClaimPendingAsync(id, preview, ct) is not { } claimed)
+            if (await ClaimCoreAsync(id, preview, ct, claimAt) is not { } claimed)
                 return new BatchConfirmItem(id, summary, false, null, null, "It's being applied (perhaps in another tab), or was just decided.");
             claim = claimed;
         }
         catch (StaleResumeException ex)
         {
             return new BatchConfirmItem(id, summary, false, null, null, ex.Message);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await ReleaseQuietlyAsync(id, preview, claimAt);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // CAP-35 review: a claim that fails otherwise is that one's failure, not the batch's; if it was taken, it's put back.
+            await ReleaseQuietlyAsync(id, preview, claimAt);
+            _log?.LogError(ex, "A batch confirm couldn't claim import {PendingImportId}.", id);
+            return new BatchConfirmItem(id, summary, false, null, null,
+                "Not applied: it couldn't be claimed (the error is logged). It's in the queue to review on its own.");
         }
         try
         {
@@ -1126,12 +1151,14 @@ public sealed class CaseImportService
     public Task<DateTimeOffset?> ClaimPendingAsync(Guid pendingId, CaseImportPreview preview, CancellationToken ct = default) =>
         ClaimCoreAsync(pendingId, preview, ct);
 
-    private async Task<DateTimeOffset?> ClaimCoreAsync(Guid pendingId, CaseImportPreview? preview, CancellationToken ct)
+    // The claim is stamped claimAt (now, unless the caller fixed it first so it can release a claim whose call then threw).
+    private async Task<DateTimeOffset?> ClaimCoreAsync(Guid pendingId, CaseImportPreview? preview, CancellationToken ct,
+        DateTimeOffset? claimAt = null)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
         var me = _user.UserId;
-        var now = _clock.UtcNow;
+        var now = claimAt ?? _clock.UtcNow;
         var resume = await VisiblePending(db).AsNoTracking().Where(p => p.Id == pendingId).Select(p => p.ResumeJson).FirstOrDefaultAsync(ct);
         var checkResume = preview is not null;
         if (checkResume && !ResumesFrom(preview!, resume))
@@ -1213,14 +1240,20 @@ public sealed class CaseImportService
         if (preview.CreatedCaseId is { } created) row.TargetCaseId = created;
         else if (preview is { TargetKind: CaseImportTargetKind.ExistingCase, ExistingCaseId: { } into } && HasApplied(preview))
             row.TargetCaseId = into;
+        Guid? stamp = null;
         if (HasApplied(preview))
         {
             // CAP-35 review: a fresh stamp each time, kept on this preview too, so only it (or a reload of this state)
-            // claims the import next (ResumesFrom).
-            preview.ResumeStamp = Guid.NewGuid();
-            row.ResumeJson = JsonSerializer.Serialize(preview, ResumeJsonOptions);
+            // claims the import next (ResumesFrom). R2: kept only once the row has it; a failed save left the preview
+            // with a stamp the row never got, and its own retry was refused for good.
+            stamp = Guid.NewGuid();
+            var prior = preview.ResumeStamp;
+            preview.ResumeStamp = stamp;
+            try { row.ResumeJson = JsonSerializer.Serialize(preview, ResumeJsonOptions); }
+            finally { preview.ResumeStamp = prior; }
         }
         await db.SaveChangesAsync(ct);
+        if (stamp is not null) preview.ResumeStamp = stamp;
         _signal?.Raise();   // CAP-01: back in the queue
     }
 

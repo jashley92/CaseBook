@@ -162,4 +162,32 @@ public sealed class RelatedIndicatorTests
             ("2001:db8::5", "http://[2001:db8::9]/y"),
         }, "13.0.113.8 isn't in 203.0.113.0/24, nor 2001:db8:1::7 in 2001:db8::/48");
     }
+
+    // R1: a URL's address is never canonicalised, and an IpAddress stored before v1.5.3 (BUG-176, no backfill) may not be,
+    // so the anchored narrowing used to miss them: leading zeros, an IPv4-mapped address, a zero hextet written out.
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Addresses_not_stored_canonically_still_narrow(string provider)
+    {
+        using var database = Open(provider);
+        var svc = NewService(database);
+        var other = await CaseWithAsync(svc, "Other", false, (EntityType.Url, "http://[2001:0db8:abcd::9]/y"));
+        await using (var db = database.NewContext())
+        {
+            // Written past Normalize, as a legacy row would be.
+            db.CaseEntities.Add(new CaseEntity { CaseId = other, Type = EntityType.IpAddress, Value = "::ffff:203.0.113.9" });
+            db.CaseEntities.Add(new CaseEntity { CaseId = other, Type = EntityType.IpAddress, Value = "2001:0db8:0:0:0:0:0:1" });
+            await db.SaveChangesAsync();
+        }
+
+        var related = await svc.FindRelatedIndicatorsForIocsAsync(["2001:db8:abcd::5", "203.0.113.5"]);
+        related.Select(r => (r.Indicator, r.OtherValue)).Should().BeEquivalentTo(new[]
+        {
+            ("2001:db8:abcd::5", "http://[2001:0db8:abcd::9]/y"),
+            ("203.0.113.5", "::ffff:203.0.113.9"),
+        });
+
+        (await svc.FindRelatedIndicatorsForIocsAsync(["2001:db8::5"])).Should().ContainSingle()
+            .Which.OtherValue.Should().Be("2001:0db8:0:0:0:0:0:1");
+    }
 }

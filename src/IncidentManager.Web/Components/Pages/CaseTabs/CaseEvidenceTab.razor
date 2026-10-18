@@ -448,7 +448,8 @@
     {
         if (_busy) return;
         _uploadError = null;
-        var file = e.File;
+        // BUG-341 sibling: never InputFileChangeEventArgs.File, which throws for two or more; the first is checked against the upload.
+        if (DroppedFiles.First(e).First is not { } file) return;
         if (!string.Equals(file.Name, u.FileName, StringComparison.Ordinal) || file.Size != u.Size)
         {
             _uploadError = $"That isn't the same file. Pick {u.FileName} ({u.Size:N0} bytes) to carry on.";
@@ -541,7 +542,12 @@
     private void OnFileSelected(InputFileChangeEventArgs e)
     {
         if (_busy) { Toasts.Warning("An upload is still running. Paste the screenshot again once it's finished."); return; }
-        _file = e.File;
+        // BUG-341 sibling: the paste shim puts every pasted image in this picker, and InputFileChangeEventArgs.File throws for two or more.
+        var (f, count) = DroppedFiles.First(e);
+        if (f is null) return;
+        _file = f;
+        if (count > 1)
+            Toasts.Info($"One file is staged at a time, so “{f.Name}” is. Drag the others onto this tab to upload them together.");
     }
 
     private async Task Upload()

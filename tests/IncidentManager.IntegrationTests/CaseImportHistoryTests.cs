@@ -34,19 +34,22 @@ public sealed class CaseImportHistoryTests : IDisposable
         new UserSummary("ic-lee", "Dana Lee", "dana.lee@contoso.example", "dana.lee@contoso.example", "Analyst"),
         ListedUserDirectory.User("analyst9", "Analyst"));
 
+    private readonly FailingRelease _releaseFails = new();
+
     public static TheoryData<string> Providers => TestDatabase.Providers;
 
     private void Open(string provider)
     {
-        _db = TestDatabase.Open(provider, new AuditChainInterceptor(_hasher, _reviewer, _clock, new CaseChangeNotifier()));
+        _db = TestDatabase.Open(provider, _releaseFails, new AuditChainInterceptor(_hasher, _reviewer, _clock, new CaseChangeNotifier()));
         using var db = _db.NewContext();
         DevDataSeeder.SeedCaseOutcomesAsync(db, _clock).GetAwaiter().GetResult();
     }
 
-    private CaseImportService Import(TestCurrentUser user, ICaseNotifications? notifications = null, IUserDirectory? users = null) =>
+    private CaseImportService Import(TestCurrentUser user, ICaseNotifications? notifications = null, IUserDirectory? users = null,
+        PendingImportSignal? signal = null) =>
         new(_db!.Factory(), user, _clock, new CaseService(_db.Factory(), user, _clock, new CaseNumberGenerator(_db.Factory()),
             new CreateCaseValidator(), notifications ?? new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(),
-            new TestSlaTargets(), siem: _siem, users: users ?? _users), users: users ?? _users, siem: _siem);
+            new TestSlaTargets(), siem: _siem, users: users ?? _users), users: users ?? _users, signal: signal, siem: _siem);
 
     // CAP-35 review: records who is told of an assignment; throws an exception no catch list names, the first N times.
     private sealed class AssignNotices(int throwFirst = 0) : ICaseNotifications
@@ -511,6 +514,92 @@ public sealed class CaseImportHistoryTests : IDisposable
         await Import(other).MarkPendingAppliedAsync(pid, result, claim2);
         result.CaseId.Should().Be(mine.CreatedCaseId!.Value, "it resumed into the case already created");
         (await CaseCountAsync()).Should().Be(1, "not a second case");
+    }
+
+    // R2: a release whose save failed left the page's preview with a stamp the row never got, so once the claim went
+    // stale the page's own retry was refused for good (StaleResumeException).
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_failed_release_leaves_the_preview_able_to_claim_again(string provider)
+    {
+        Open(provider);
+        var pid = await SubmitAs(_xsiam, StillOpen());
+        var svc = Import(_reviewer, new AssignNotices(throwFirst: 2));
+        var mine = (await svc.BuildPreviewForPendingAsync(pid))!;
+
+        var claim = await svc.ClaimPendingAsync(pid, mine);
+        await svc.Invoking(s => s.ApplyAsync(mine, pid)).Should().ThrowAsync<NotSupportedException>();
+        await svc.ReleaseClaimAsync(pid, mine, claim);
+        mine.CreatedCaseId.Should().NotBeNull("the case was created before it stopped");
+
+        claim = await svc.ClaimPendingAsync(pid, mine);
+        claim.Should().NotBeNull();
+        await svc.Invoking(s => s.ApplyAsync(mine, pid)).Should().ThrowAsync<NotSupportedException>();
+        _releaseFails.Armed = true;
+        await svc.Invoking(s => s.ReleaseClaimAsync(pid, mine, claim)).Should().ThrowAsync<InvalidOperationException>();
+        _releaseFails.Armed = false;
+
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(31);
+        var retry = await svc.ClaimPendingAsync(pid, mine);
+        retry.Should().NotBeNull("the preview still carries the stamp the row has");
+        var result = await svc.ApplyAsync(mine, pid);
+        await svc.MarkPendingAppliedAsync(pid, result, retry);
+        result.CaseId.Should().Be(mine.CreatedCaseId!.Value);
+        (await CaseCountAsync()).Should().Be(1);
+        await using var db = _db!.NewContext();
+        var timeline = await db.TimelineEntries.AsNoTracking().Where(t => t.CaseId == result.CaseId)
+            .Select(t => t.Description).ToListAsync();
+        timeline.Should().OnlyHaveUniqueItems("nothing written twice");
+        timeline.Should().ContainSingle(t => t == "Finance reported the request.");
+    }
+
+    // CAP-35 review: a preview that throws (unreadable resume state) or a claim that fails other than stale is that one's
+    // failure: a claim taken is put back, and the batch carries on.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_batch_confirm_carries_on_past_a_preview_or_claim_that_throws(string provider)
+    {
+        Open(provider);
+        var unreadable = await SubmitAs(_xsiam, StillOpen("Unreadable"));
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(1);
+        var unclaimable = await SubmitAs(_xsiam, StillOpen("Unclaimable"));
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(1);
+        var fine = await SubmitAs(_xsiam, StillOpen("Fine"));
+        await using (var db = _db!.NewContext())
+        {
+            (await db.PendingImports.SingleAsync(p => p.Id == unreadable)).ResumeJson = "{not json";
+            await db.SaveChangesAsync();
+        }
+        // The claim of the second lands, then its call throws (a listener no catch names), once.
+        var signal = new PendingImportSignal();
+        var throws = 1;
+        signal.Changed += () => { if (throws-- > 0) throw new NotSupportedException("listener exploded"); };
+
+        var results = await Import(_reviewer, signal: signal).ConfirmBatchAsync(_xsiam.UserId, [unreadable, unclaimable, fine]);
+
+        results.Select(r => (r.PendingImportId, r.Applied)).Should().Equal((unreadable, false), (unclaimable, false), (fine, true));
+        results[0].Message.Should().Contain("couldn't be previewed");
+        results[1].Message.Should().Contain("couldn't be claimed");
+        await using (var db = _db!.NewContext())
+        {
+            var rows = await db.PendingImports.AsNoTracking().Where(p => p.Id == unreadable || p.Id == unclaimable).ToListAsync();
+            rows.Should().OnlyContain(p => p.Status == PendingImportStatus.Pending && p.DecidedBy == null, "neither is left claimed");
+        }
+        (await CaseCountAsync()).Should().Be(1);
+    }
+
+    // R2: refuses a save that releases a claimed import, while armed.
+    private sealed class FailingRelease : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        public bool Armed;
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Armed && eventData.Context!.ChangeTracker.Entries<PendingImport>()
+                    .Any(e => e.State == EntityState.Modified && e.Entity.Status == PendingImportStatus.Pending))
+                throw new InvalidOperationException("The database is down.");
+            return ValueTask.FromResult(result);
+        }
     }
 
     public void Dispose() => _db?.Dispose();

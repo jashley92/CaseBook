@@ -862,11 +862,13 @@ else if (_pending.Count > 0)
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
+        // BUG-341 sibling: never InputFileChangeEventArgs.File, which throws for two or more files; the first is the document.
+        if (DroppedFiles.First(e).First is not { } file) return;
         var r = _reads.Begin();   // BUG-601: a later file or paste, a Clear or a queued review supersedes this one
         try
         {
-            var name = e.File.Name;
-            using var reader = new StreamReader(e.File.OpenReadStream(maxAllowedSize: 4 * 1024 * 1024));
+            var name = file.Name;
+            using var reader = new StreamReader(file.OpenReadStream(maxAllowedSize: 4 * 1024 * 1024));
             var text = await reader.ReadToEndAsync();
             if (!_reads.IsCurrent(r)) return;
             (_text, _fileName) = (text, name);

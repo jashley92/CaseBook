@@ -212,6 +212,15 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Fixes from the regression review (CAP-28, CAP-35, BUG-341).** Possibly related indicators now also find addresses
+  not stored in canonical form: an IPv6 address in a URL written with leading zeros (`[2001:0db8:…]`), and an IP address
+  recorded before v1.5.3 as IPv4-mapped (`::ffff:203.0.113.9`) or written out in full. An import apply whose release
+  back to the queue failed can be retried from the same page once its claim is 30 minutes old, rather than being
+  refused as stale. *Confirm all from this submitter* reports a submission it can't preview (unreadable saved
+  progress) or claim, puts back a claim it took, and carries on with the rest. Pasting two or more screenshots into the
+  Evidence tab stages the first and says so, instead of dropping the connection; every file picker reads only the
+  first file however many arrive. No migration and nothing to configure.
+
 - **Possibly related indicators (CAP-28).** The entity panel and the New case form's indicator check now also list
   indicators on other cases you can see that share a registrable domain, a /24 (or /48) or an email domain, clearly
   labelled as suggestions. Nothing is linked and gates and the Desk are unchanged. No migration and nothing to

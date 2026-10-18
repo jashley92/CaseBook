@@ -5,7 +5,9 @@ namespace IncidentManager.Web.Components.Shared;
 /// <summary>
 /// BUG-341 (B2 review): the one way a component reads the files of a pick, paste or drop.
 /// <see cref="InputFileChangeEventArgs.GetMultipleFiles"/> throws past its limit, and the throw lands outside a handler's
-/// per-file catch, so a drop of more files than that took the circuit down. A guard test keeps every call here.
+/// per-file catch, so a drop of more files than that took the circuit down. BUG-341 sibling: and
+/// <see cref="InputFileChangeEventArgs.File"/> throws for two or more, which a paste or drop into a picker can bring. A guard
+/// test keeps every call here.
 /// </summary>
 public static class DroppedFiles
 {
