@@ -212,6 +212,11 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Vendors are picked from a list, with their history (CAP-24).** On a third-party case, the New case form's vendor name
+  offers the vendors on cases you can see, and a known one shows *Seen before*: how many earlier cases, how the last
+  closed one ended, and a link to the case list filtered to that vendor (`?vendor=`, a new filter that saved views and
+  the CSV export carry too). The name stays free text, so nothing existing changes. No migration and nothing to
+  configure.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

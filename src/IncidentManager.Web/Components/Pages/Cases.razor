@@ -614,6 +614,7 @@ else
     [SupplyParameterFromQuery(Name = "sev")] public string? QSeverity { get; set; }
     [SupplyParameterFromQuery(Name = "origin")] public string? QOrigin { get; set; }
     [SupplyParameterFromQuery(Name = "outcome")] public string? QOutcome { get; set; }
+    [SupplyParameterFromQuery(Name = "vendor")] public string? QVendor { get; set; }   // CAP-24: the "Seen before" link
     [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
     [SupplyParameterFromQuery(Name = "closed")] public string? QClosedRaw { get; set; }
     private bool QClosed => QueryValue.Flag(QClosedRaw);   // BUG-31: a bad value is ignored, not an error
@@ -654,6 +655,7 @@ else
     private string _minSeverity = "";
     private string _origin = "";
     private string _outcome = "";
+    private string _vendor = "";   // CAP-24
     private List<IncidentManager.Application.Admin.CaseOutcomeView> _outcomes = [];
     private string _search = "";
     private bool _includeClosed;
@@ -680,7 +682,7 @@ else
 
     private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
         && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin) && string.IsNullOrEmpty(_outcome)
-        && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly && !_notifyOnly
+        && string.IsNullOrEmpty(_vendor) && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly && !_notifyOnly
         && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
     // FR-16: whether the collapsed "More filters" (status roll-up toggles) group is expanded.
@@ -811,6 +813,7 @@ else
         _minSeverity = QSeverity ?? "";
         _origin = QOrigin ?? "";
         _outcome = QOutcome ?? "";
+        _vendor = QVendor?.Trim() ?? "";
         _search = QSearch ?? "";
         _includeClosed = QClosed;
         _includeExercises = QExercises;
@@ -871,6 +874,7 @@ else
         ["sev"] = Blank(_minSeverity),
         ["origin"] = Blank(_origin),
         ["outcome"] = Blank(_outcome),
+        ["vendor"] = Blank(_vendor),
         ["q"] = Blank(_search),
         ["closed"] = _includeClosed ? "true" : null,
         ["exercises"] = _includeExercises ? "true" : null,
@@ -975,6 +979,8 @@ else
             yield return ("Origin: Third-party", () => _origin = "");
         if (!string.IsNullOrEmpty(_outcome))
             yield return ($"Outcome: {_outcomes.FirstOrDefault(o => o.Key == _outcome)?.Label ?? _outcome}", () => _outcome = "");
+        if (!string.IsNullOrEmpty(_vendor))
+            yield return ($"Vendor: {_vendor}", () => _vendor = "");
         if (!string.IsNullOrWhiteSpace(_search))
             yield return ($"Search: “{_search}”", () => _search = "");
         if (_includeClosed) yield return ("Including closed", () => _includeClosed = false);

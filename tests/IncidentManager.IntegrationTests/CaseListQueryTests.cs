@@ -20,7 +20,7 @@ public sealed class CaseListQueryTests
     public void Every_filter_the_page_writes_is_read()
     {
         var f = Parse(("scope", "mine"), ("classification", "Breach"), ("phase", "Containment"), ("sev", "High"),
-            ("origin", "ThirdParty"), ("outcome", "false-positive"), ("q", "10.0.0.5"), ("closed", "true"), ("exercises", "true"),
+            ("origin", "ThirdParty"), ("outcome", "false-positive"), ("vendor", "Northwind"), ("q", "10.0.0.5"), ("closed", "true"), ("exercises", "true"),
             ("overdue", "true"), ("sla", "true"), ("notify", "true"), ("referred", "true"), ("hold", "true"),
             ("assignee", "ivy"), ("opened", "2026-03"), ("sort", "severity"), ("dir", "asc"));
 
@@ -30,6 +30,7 @@ public sealed class CaseListQueryTests
         f.MinSeverity.Should().Be(Severity.High);
         f.Origin.Should().Be(CaseOrigin.ThirdParty);
         f.OutcomeKey.Should().Be("false-positive");
+        f.Vendor.Should().Be("Northwind");
         f.Search.Should().Be("10.0.0.5");
         new[] { f.IncludeClosed, f.IncludeExercises, f.OverdueOnly, f.SlaAtRiskOnly, f.NotifyDeadlineOnly, f.ReferredOnly, f.OnHoldOnly }
             .Should().AllBeEquivalentTo(true);

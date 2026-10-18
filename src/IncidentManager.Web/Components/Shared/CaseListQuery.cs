@@ -29,6 +29,7 @@ public static class CaseListQuery
             MinSeverity = EnumNames.OrNull<Severity>(get("sev")),
             Origin = EnumNames.OrNull<CaseOrigin>(get("origin")),
             OutcomeKey = string.IsNullOrEmpty(get("outcome")) ? null : get("outcome"),
+            Vendor = string.IsNullOrWhiteSpace(get("vendor")) ? null : get("vendor"),   // CAP-24
             Search = get("q") ?? "",
             IncludeClosed = QueryValue.Flag(get("closed")),
             IncludeExercises = QueryValue.Flag(get("exercises")),
@@ -76,6 +77,7 @@ public static class CaseListQuery
         to.MinSeverity = from.MinSeverity;
         to.Origin = from.Origin;
         to.OutcomeKey = from.OutcomeKey;
+        to.Vendor = from.Vendor;
         to.Search = from.Search;
         to.IncludeClosed = from.IncludeClosed;
         to.IncludeExercises = from.IncludeExercises;

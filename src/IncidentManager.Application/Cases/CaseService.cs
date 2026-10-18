@@ -35,6 +35,12 @@ public sealed record CaseHistoryMatch(Guid CaseId, string CaseNumber, string Tit
     DateTimeOffset? ClosedAtUtc, string? OutcomeKey, string? ClosingLine,
     IReadOnlyList<(string Value, EntityDisposition Disposition)> Indicators);
 
+/// <summary>
+/// CAP-24: a vendor's earlier cases the user can see, shown at intake as "Seen before": how many, how many are still
+/// open, and the most recently closed one with how it ended (null when none has closed).
+/// </summary>
+public sealed record VendorHistory(string Vendor, int Cases, int Open, CaseHistoryMatch? LastClosed);
+
 /// <summary>A case related to the one in view (E-14), resolved to the "other" case's summary.</summary>
 public sealed record CaseLinkView(
     Guid LinkId, Guid OtherCaseId, string OtherCaseNumber, string OtherTitle,
@@ -335,6 +341,7 @@ public sealed class CaseService
         if (filter.Phase is { } ph) q = q.Where(c => c.Phase == ph);
         if (filter.MinSeverity is { } sev) q = q.Where(c => c.Severity >= sev);
         if (filter.Origin is { } origin) q = q.Where(c => c.Origin == origin);
+        if (filter.Vendor?.Trim() is { Length: > 0 } vendor) q = VendorCases(q, vendor.ToLowerInvariant());   // CAP-24
         // UX-10: SOC/IC roll-up of Legal obligations across the queue (Legal doesn't use the app).
         if (filter.ReferredOnly) q = q.Where(c => c.LegalReferral.IsReferred);
         if (filter.OnHoldOnly) q = q.Where(c => c.LegalHold);
@@ -2169,6 +2176,79 @@ public sealed class CaseService
             .OrderByDescending(m => m.ClosedAtUtc)
             .ToList();
     }
+
+    /// <summary>CAP-24: at most this many vendor names are offered to pick from.</summary>
+    public const int VendorNameLimit = 500;
+
+    /// <summary>
+    /// CAP-24: the vendor names on third-party cases the user can see (<c>ForUser</c>, so a restricted case outside their
+    /// need-to-know never names its vendor), exercises left out, for the New case form to offer. Trimmed, one per name
+    /// ignoring case (spelled as most of its cases spell it, else as the latest does), A–Z, at most
+    /// <see cref="VendorNameLimit"/>, from the latest <see cref="VendorCaseScan"/> vendor cases. A suggestion only: the
+    /// stored value stays free text.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListVendorNamesAsync(CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var rows = await Scoped(db.Cases.AsNoTracking()).ExcludingExercises()
+            .Where(c => c.Origin == CaseOrigin.ThirdParty && c.ThirdParty != null && c.ThirdParty.VendorName != "")
+            .OrderByDescending(c => c.CreatedAtUtc).Take(VendorCaseScan)
+            .Select(c => c.ThirdParty!.VendorName)
+            .ToListAsync(ct);
+        return rows.Select(n => n.Trim()).Where(n => n.Length > 0)
+            .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .Select(SpelledAsMost)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .Take(VendorNameLimit)
+            .ToList();
+    }
+
+    /// <summary>CAP-24: the vendor list reads at most this many of the latest vendor cases (C10: a bounded query).</summary>
+    public const int VendorCaseScan = 5000;
+
+    // CAP-24: one vendor's spellings (newest first): the commonest, ties going to the newest.
+    private static string SpelledAsMost(IEnumerable<string> newestFirst) =>
+        newestFirst.Select((n, i) => (n, i)).GroupBy(x => x.n, StringComparer.Ordinal)
+            .OrderByDescending(g => g.Count()).ThenBy(g => g.Min(x => x.i)).First().Key;
+
+    /// <summary>
+    /// CAP-24: what the user can see of a vendor's earlier cases, for the New case form's "Seen before" line: how many
+    /// (and how many are still open), and the most recently closed one with its outcome and closing line, as HR-03 shows
+    /// an indicator's. Matched on the trimmed name ignoring case; need-to-know scoped; exercises and the cases of other
+    /// origins left out. Null when the name is blank or no visible case names it.
+    /// </summary>
+    public async Task<VendorHistory?> FindVendorHistoryAsync(string? vendorName, CancellationToken ct = default)
+    {
+        var wanted = (vendorName ?? "").Trim().ToLowerInvariant();
+        if (wanted.Length == 0) return null;
+
+        using var db = _factory.CreateDbContext();
+#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
+        var rows = await VendorCases(Scoped(db.Cases.AsNoTracking()).ExcludingExercises(), wanted)
+            .OrderByDescending(c => c.CreatedAtUtc)
+            .Select(c => new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.ClosedAtUtc, c.OutcomeKey,
+                Vendor = c.ThirdParty!.VendorName })
+            .ToListAsync(ct);
+#pragma warning restore CA1304, CA1311
+        if (rows.Count == 0) return null;
+
+        var last = rows.Where(r => r.Phase == CasePhase.Closed).MaxBy(r => r.ClosedAtUtc);
+        CaseHistoryMatch? lastClosed = null;
+        if (last is not null)
+        {
+            var closing = await ClosingLinesAsync(db, [last.Id], ct);
+            lastClosed = new CaseHistoryMatch(last.Id, last.CaseNumber, last.Title, last.Classification, last.ClosedAtUtc,
+                last.OutcomeKey, closing.GetValueOrDefault(last.Id), []);
+        }
+        return new VendorHistory(SpelledAsMost(rows.Select(r => r.Vendor.Trim())), rows.Count, rows.Count(r => r.Phase != CasePhase.Closed), lastClosed);
+    }
+
+    // CAP-24: the third-party cases naming a vendor (trimmed, ignoring case; wanted is already trimmed and lowered). One
+    // rule for the "Seen before" count and the case list's vendor filter it links to (C2).
+#pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower() to SQL LOWER(); the culture overloads don't translate.
+    internal static IQueryable<Case> VendorCases(IQueryable<Case> q, string wanted) =>
+        q.Where(c => c.Origin == CaseOrigin.ThirdParty && c.ThirdParty != null && c.ThirdParty.VendorName.Trim().ToLower() == wanted);
+#pragma warning restore CA1304, CA1311, CA1862
 
     /// <summary>
     /// E-23: given the raw indicators an analyst is entering on a <em>new</em> case, returns the visible

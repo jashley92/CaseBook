@@ -101,9 +101,36 @@
                 {
                     <div class="col-md-4">
                         <label class="form-label" for="cc-vendor-name">Vendor name <span class="text-danger">*</span></label>
-                        <InputText id="cc-vendor-name" class="@($"form-control {Invalid("cc-vendor-name")}")" @bind-Value="_request.VendorName" @bind-Value:after='() => _fieldErrors.Remove("cc-vendor-name")'
-                                   aria-invalid="@(_fieldErrors.ContainsKey("cc-vendor-name") ? "true" : null)" aria-describedby="cc-vendor-name-err" />
+                        @* CAP-24: the vendors on cases you can see, to pick from; the value stays free text. *@
+                        <input id="cc-vendor-name" class="@($"form-control {Invalid("cc-vendor-name")}")" maxlength="300" list="cc-vendor-names"
+                               autocomplete="off" @bind="_request.VendorName" @bind:event="oninput" @bind:after="OnVendorChanged" @onfocus="LoadVendorNames"
+                               aria-invalid="@(_fieldErrors.ContainsKey("cc-vendor-name") ? "true" : null)" aria-describedby="cc-vendor-name-err cc-vendor-seen" />
+                        <datalist id="cc-vendor-names">
+                            @foreach (var v in _vendorNames) { <option value="@v"></option> }
+                        </datalist>
                         @if (_fieldErrors.TryGetValue("cc-vendor-name", out var vendorErr)) { <div id="cc-vendor-name-err" class="invalid-feedback d-block">@vendorErr</div> }
+                    </div>
+                    @* CAP-24: a vendor seen before, as an indicator is (HR-03): how many earlier cases, and how the last one ended. *@
+                    <div class="col-12" id="cc-vendor-seen" aria-live="polite">
+                        @if (_vendorHistory is { } vh && !_request.IsExercise && SameVendor(vh.Vendor, _request.VendorName))
+                        {
+                            <div class="im-seen-box">
+                                <div class="fw-semibold small">
+                                    <span class="bi bi-clock-history me-1" aria-hidden="true"></span>
+                                    Seen before: @vh.Vendor has @(vh.Cases == 1 ? "1 earlier case" : $"{vh.Cases} earlier cases")@(vh.Open > 0 ? $" ({vh.Open} open)" : "")
+                                    <a class="ms-1 fw-normal" href="@VendorCasesHref(vh.Vendor)" target="_blank" rel="noopener noreferrer">View them</a>
+                                </div>
+                                @if (vh.LastClosed is { } h)
+                                {
+                                    <CaseHistoryItem CaseId="h.CaseId" CaseNumber="@h.CaseNumber" Title="@h.Title" Classification="h.Classification"
+                                                     ClosedAtUtc="h.ClosedAtUtc" OutcomeLabel="@OutcomeLabel(h.OutcomeKey)" ClosingLine="@h.ClosingLine" NewTab="true" />
+                                }
+                                else
+                                {
+                                    <div class="small text-muted">None has closed yet.</div>
+                                }
+                            </div>
+                        }
                     </div>
                     <div class="col-md-4">
                         <label class="form-label" for="cc-vendor-contact">Vendor contact</label>
@@ -432,6 +459,8 @@
         _linkChoice.Clear();
         if (IndicatorLines(_indicators).Any()) await CheckOverlaps();
         else { ++_checkSeq; _checking = false; }
+        _vendorHistory = null;   // CAP-24: a drill shows no vendor history either
+        await LookUpVendor();
         await RefreshGates();
     }
 
@@ -500,6 +529,52 @@
     }
 
     private bool CanClassify => CurrentUser.Has(Permission.ChangeClassification);   // REV-14
+
+    // CAP-24: the vendor names offered (loaded once, on first focus), and the history of the one typed, when it's known.
+    private IReadOnlyList<string> _vendorNames = [];
+    private bool _vendorNamesLoaded;
+    private VendorHistory? _vendorHistory;
+    private int _vendorSeq;
+
+    private async Task LoadVendorNames()
+    {
+        if (_vendorNamesLoaded) return;
+        _vendorNamesLoaded = true;
+        var names = await Cases.ListVendorNamesAsync();
+        if (_disposed) return;
+        _vendorNames = names;
+        await LookUpVendor();   // a name typed before the list arrived
+    }
+
+    private async Task OnVendorChanged()
+    {
+        _fieldErrors.Remove("cc-vendor-name");
+        await LookUpVendor();
+    }
+
+    private static bool SameVendor(string? a, string? b) =>
+        string.Equals(a?.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    // C5: a name typed on while a look-up ran keeps only the newest answer; a name that isn't one offered looks up nothing.
+    private async Task LookUpVendor()
+    {
+        var seq = ++_vendorSeq;
+        var name = _request.VendorName?.Trim() ?? "";
+        if (_request.IsExercise || !_vendorNames.Any(v => SameVendor(v, name))) { _vendorHistory = null; return; }
+        if (_vendorHistory is { } shown && SameVendor(shown.Vendor, name)) return;
+        var history = await Cases.FindVendorHistoryAsync(name);
+        IReadOnlyDictionary<string, string>? labels = null;
+        if (history?.LastClosed is not null && _outcomeLabels.Count == 0) labels = await Outcomes.LabelsAsync();
+        if (seq != _vendorSeq || _disposed) return;
+        if (labels is not null) _outcomeLabels = labels;
+        _vendorHistory = history;
+    }
+
+    // CAP-24: the case list filtered to the vendor, closed cases included. A vendor's name isn't personal data, and no
+    // indicator goes in this link (C7).
+    private string VendorCasesHref(string vendor) =>
+        Nav.ToBaseRelativePath(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(),
+            new Dictionary<string, object?> { ["scope"] = "all", ["vendor"] = vendor, ["closed"] = "true" }));
 
     protected override async Task OnInitializedAsync()
     {

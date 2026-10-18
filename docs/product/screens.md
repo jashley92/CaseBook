@@ -86,7 +86,8 @@ From top to bottom:
 3. **Filters**: classification, phase, minimum severity, origin, outcome and search (case number, title, IOC,
    and the record: timeline entries and decisions, the brief, notes, tasks and their results, the review; a row
    says where it matched). *More filters* adds closed, exercises, notify state, legal referral, legal hold, assignee and opened
-   window. All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export CSV**, beside
+   window. A vendor filter (`?vendor=`, shown as a *Vendor:* chip) comes from the New case form's *Seen before* link
+   (CAP-24). All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export CSV**, beside
    Views, downloads every case the filters match (not only the page shown), with the list's columns and the detected,
    contained, resolved, closed and reported times (CAP-17; up to 10,000 cases).
 4. **A case row.** The left edge is marked for High or Critical cases. In the list, `j`/`k` move, `p` opens a
@@ -109,6 +110,10 @@ A single page, not a wizard.
    that already carry them, and lists closed ones as **Seen before**, with each one's outcome, closing line and the
    verdict the indicator reached there. You can mark matches as related, duplicate or same campaign. A match pauses the
    first *Create* but never blocks it: **Create anyway** on the pause files the case (a second *Create* doesn't).
+6. **Vendor name** (third-party origin, CAP-24): offers the vendor names on cases you can see (exercises left out), but
+   any name can be typed. Picking or typing one already known shows **Seen before**: how many earlier cases name it (and
+   how many are open), the last closed one with its outcome and closing line, and *View them*, which opens the case list
+   filtered to that vendor with closed cases included. Nothing shows on an exercise.
 
 ## The case workspace
 

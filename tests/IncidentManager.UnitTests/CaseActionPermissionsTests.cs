@@ -41,6 +41,8 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.FindEntityOverlapsAsync),
         nameof(CaseService.FindOpenCaseMatchesForIocsAsync),
         nameof(CaseService.FindCaseHistoryForIocsAsync),   // HR-03: closed "seen before" (scoped read)
+        nameof(CaseService.ListVendorNamesAsync),   // CAP-24: vendor names to pick from (scoped read)
+        nameof(CaseService.FindVendorHistoryAsync),   // CAP-24: a vendor's "seen before" (scoped read)
         nameof(CaseService.FindRelatedOpenCasesAsync),
         nameof(CaseService.GetCaseLinksAsync),
         nameof(CaseService.SearchLinkableCasesAsync),
