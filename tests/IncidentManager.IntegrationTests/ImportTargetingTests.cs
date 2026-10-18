@@ -180,6 +180,15 @@ public sealed class ImportTargetingTests : IDisposable
         // ASCII letters fold, others are compared as written, on SQL Server (whose UPPER folds É) as on SQLite (whose doesn't).
         (await svc.FindOpenByDetectionIdAsync("CAFÉ-1003")).Should().BeEmpty();
         (await svc.CheckTargetAsync(Doc("CAFÉ-1003", accented.Id))).Should().Contain("name different cases");
+
+        // R1: SQL TRIM strips spaces only, so an old id ending in other whitespace matches on neither path, and both say so.
+        var noBreak = Add(4, "INC-1004 ");
+        var tab = Add(5, "	INC-1005");
+        foreach (var (search, stored) in new[] { ("INC-1004", noBreak), ("INC-1005", tab), ("INC-1004 ", noBreak), ("	INC-1005", tab) })
+        {
+            (await svc.FindOpenByDetectionIdAsync(search)).Should().BeEmpty(search);
+            (await svc.CheckTargetAsync(Doc(search, stored.Id))).Should().Contain("name different cases", "as the search finds no match");
+        }
     }
 
     [Fact]

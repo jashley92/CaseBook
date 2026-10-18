@@ -105,8 +105,16 @@ public sealed class IocFeedService
 #pragma warning restore CA1304, CA1311
         var query = occurrences;
         // CAP-09 review: the delta is every occurrence of an indicator that has one changed since then, not only the changed ones.
+        // R2: the changed indicators' keys are picked once (a grouped derived table) and joined to, not looked for again per
+        // occurrence (a correlated EXISTS, which SQLite ran in O(n²): over a minute for 20,000 occurrences).
         if (since is { } from)
-            query = query.Where(x => occurrences.Any(y => y.Type == x.Type && y.Key == x.Key && y.Changed >= from));
+        {
+            var changed = occurrences.GroupBy(y => new { y.Type, y.Key })
+                .Where(g => g.Max(y => y.Changed) >= from).Select(g => g.Key);
+            query = from x in occurrences
+                    join k in changed on new { x.Type, x.Key } equals new { k.Type, k.Key }
+                    select x;
+        }
         // CAP-09 (C10): bounded, the most recently changed first, so a cut keeps what a blocking control most needs.
         var rows = await query.OrderByDescending(x => x.Changed).ThenBy(x => x.Id).Take(limit + 1).ToListAsync(ct);
         var cut = rows.Count > limit;
@@ -132,12 +140,24 @@ public sealed class IocFeedService
                 var last = keys[fit - 1];
                 var (at, type, key) = (last.Latest, last.Type, last.Key);
                 // string.Compare is the SQL comparison (the database's collation, as its ORDER BY above); Ordinal doesn't translate.
+                // R2: the indicators that fit, grouped once with their latest change and joined to (each such key is in the
+                // delta too, as its latest change is at or after the last one's, which is). Ordered as the keys were, so if a
+                // change since then brings more than fit, the read is cut at the end and the indicator it splits dropped whole.
 #pragma warning disable CA1309
-                rows = await occurrences
-                    .Where(x => occurrences.Any(y => y.Type == x.Type && y.Key == x.Key
-                        && (y.Changed > at || (y.Changed == at && (y.Type < type || (y.Type == type && string.Compare(y.Key, key) <= 0))))))
-                    .Take(limit).ToListAsync(ct);
+                var fitting = occurrences.GroupBy(y => new { y.Type, y.Key })
+                    .Select(g => new { g.Key.Type, g.Key.Key, Latest = g.Max(y => y.Changed) })
+                    .Where(k => k.Latest > at || (k.Latest == at && (k.Type < type || (k.Type == type && string.Compare(k.Key, key) <= 0))));
 #pragma warning restore CA1309
+                rows = await (from x in occurrences
+                              join k in fitting on new { x.Type, x.Key } equals new { k.Type, k.Key }
+                              orderby k.Latest descending, k.Type, k.Key, x.Id
+                              select x)
+                    .Take(limit + 1).ToListAsync(ct);
+                if (rows.Count > limit)
+                {
+                    var split = rows[limit];
+                    rows = rows.Take(limit).Where(x => x.Type != split.Type || x.Key != split.Key).ToList();
+                }
             }
         }
 

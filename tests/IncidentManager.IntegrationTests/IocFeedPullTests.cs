@@ -6,6 +6,7 @@ using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace IncidentManager.IntegrationTests;
 
@@ -15,7 +16,7 @@ namespace IncidentManager.IntegrationTests;
 /// (token sign-in, 304, the rate limit) is in <see cref="ApiEndpointTests"/>.
 /// Runs on SQLite and, when a server is configured, on SQL Server (<see cref="TestDatabase"/>).
 /// </summary>
-public sealed class IocFeedPullTests : IDisposable
+public sealed class IocFeedPullTests(ITestOutputHelper output) : IDisposable
 {
     private TestDatabase? _db;
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 10, 1, 9, 0, 0, TimeSpan.Zero));
@@ -241,6 +242,52 @@ public sealed class IocFeedPullTests : IDisposable
         var report = doc.RootElement.GetProperty("objects")[1];
         report.GetProperty("x_casebook_truncated").GetBoolean().Should().BeTrue();
         report.GetProperty("description").GetString().Should().Contain("Cut: more than 1 indicator occurrences");
+    }
+
+    [Fact]
+    public async Task A_delta_over_twenty_thousand_occurrences_is_read_in_a_few_seconds_on_sqlite()
+    {
+        // R2: the delta picks its indicators with one grouped query, not a correlated EXISTS per occurrence, which SQLite ran
+        // in O(n²). 20,000 occurrences of 10,000 indicators over 1,000 cases, a quarter changed since the delta's start.
+        _db = TestDatabase.Open(TestDatabase.Sqlite);
+        const int occurrences = 20_000, cases = 1_000, indicators = 10_000;
+        var rnd = new Random(7);
+        await using (var db = NewContext())
+        {
+            db.ChangeTracker.AutoDetectChangesEnabled = false;
+            var ids = new Guid[cases];
+            for (var i = 0; i < cases; i++)
+            {
+                var c = Case.Open(2026, i + 1, $"case{i + 1}", $"Case {i + 1}", Classification.Incident, Severity.High,
+                    CaseOrigin.InternalDetection, "ic1", T0);
+                ids[i] = c.Id;
+                db.Cases.Add(c);
+            }
+            for (var i = 0; i < occurrences; i++)
+            {
+                var e = Ioc($"host{rnd.Next(indicators)}.example", EntityType.Domain, created: T0,
+                    modified: i % 4 == 0 ? T0.AddDays(10) : null);
+                e.CaseId = ids[rnd.Next(cases)];
+                db.CaseEntities.Add(e);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var run = System.Diagnostics.Stopwatch.StartNew();
+        var delta = await Feed(_feed).GetFeedAsync(T0.AddDays(5));
+        var whole = run.Elapsed;
+        delta.Cut.Should().BeFalse();
+        delta.Rows.Should().NotBeEmpty().And.HaveCountLessThan(indicators);
+
+        run.Restart();
+        var cut = await Feed(_feed).GetFeedAsync(T0.AddDays(5), limit: 1_000);
+        var bounded = run.Elapsed;
+        cut.Cut.Should().BeTrue();
+        cut.Rows.Should().NotBeEmpty();
+        output.WriteLine($"Delta over {occurrences:N0} occurrences: {whole.TotalMilliseconds:N0} ms; cut at 1,000: {bounded.TotalMilliseconds:N0} ms.");
+
+        whole.Should().BeLessThan(TimeSpan.FromSeconds(5));
+        bounded.Should().BeLessThan(TimeSpan.FromSeconds(5));
     }
 
     public void Dispose() => _db?.Dispose();
