@@ -311,6 +311,25 @@ public sealed class HostStartupSmokeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_flood_of_probes_never_429s_readiness_only_the_alarms_word(/* CAP-37 review */)
+    {
+        // Behind a proxy every probe shares one address: a limited readiness probe would let anyone take the node out of
+        // rotation. Only /health/alarms is limited.
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory(("RateLimiting:Health:TokenLimit", "2"), ("RateLimiting:Health:TokensPerPeriod", "1"),
+                ("RateLimiting:Health:PeriodSeconds", "3600"));
+            using var client = factory.CreateClient();
+            for (var i = 0; i < 10; i++)
+                foreach (var probe in new[] { "/health", "/health/ready", "/health/live" })
+                    (await client.GetAsync(probe)).StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests, probe);
+            var alarms = new List<HttpStatusCode>();
+            for (var i = 0; i < 4; i++) alarms.Add((await client.GetAsync("/health/alarms")).StatusCode);
+            alarms.Should().Contain(HttpStatusCode.TooManyRequests, "the alarms word is still limited per address");
+        });
+    }
+
+    [Fact]
     public async Task Alarms_say_degraded_with_no_detail_and_never_take_the_node_out_of_rotation(/* CAP-18 */)
     {
         await RunWithin(Limit, async () =>

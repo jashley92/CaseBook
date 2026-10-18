@@ -195,12 +195,14 @@ public static class EvidencePackageWriter
                             read += n;
                         }
                     }
-                    zip.CloseEntry();
+                    // Checked before CloseEntry: a file whose length changed since the check read makes CloseEntry throw
+                    // (its declared size), which would read as "partly sent" rather than sent and not matching.
                     if (!Matches(f, read, file))
                     {
                         progress.Mark(i, PackagedFileOutcome.SentNotMatching);
                         throw Mismatch(f);
                     }
+                    zip.CloseEntry();
                     progress.Mark(i, PackagedFileOutcome.Sent);
                 }
                 zip.PutNextEntry(new ZipEntry(EvidencePackage.ManifestName)

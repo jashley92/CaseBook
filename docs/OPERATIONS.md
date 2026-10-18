@@ -551,10 +551,11 @@ the tool on the server, against the site's own keys folder, or the record waits 
     (so a new backup shows on `/health/alarms` within half a minute), and the evidence store's folder, kept
     **10 s** (so a node whose share is back returns to rotation within about 10 s of the next probe). A share
     that doesn't answer holds one thread, however many probes arrive; each still answers within its 5 s limit.
-    `/health`, `/health/ready` and `/health/alarms` are also limited **per caller's address**: a burst of 120,
-    then 120 a minute (`RateLimiting:Health`), far above a load balancer or monitor polling every few seconds;
-    past it the address gets **429** (logged, SIEM 5306). `/health/live` reads nothing and isn't limited. If
-    every probe arrives through one proxy address, raise the limit there.
+    `/health/alarms` is also limited **per caller's address**: a burst of 120, then 120 a minute
+    (`RateLimiting:Health`), far above a monitor polling every few seconds; past it the address gets **429**
+    (logged, SIEM 5306). If every monitor arrives through one proxy address, raise the limit there. The
+    readiness probes (`/health`, `/health/ready`, `/health/live`) are never limited: behind a proxy every probe
+    shares one address, and a 429 would take the node out of rotation.
 
 ---
 

@@ -641,8 +641,11 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 // Readiness: DB + evidence-store reachable. The default response writer emits just the status word
 // ("Healthy"/"Unhealthy") with 200/503 — no per-check names, paths, or exception detail.
 var readyOptions = new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") };
-app.MapHealthChecks("/health", readyOptions).AllowAnonymous().RequireRateLimiting("health");
-app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous().RequireRateLimiting("health");
+// Not rate-limited (CAP-37 review): behind a proxy every probe shares one address, so a flood of /health from anyone
+// would 429 the load balancer's own readiness probe and take every node out of rotation. SharedRead already bounds the
+// slow reads behind them.
+app.MapHealthChecks("/health", readyOptions).AllowAnonymous();
+app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous();
 // CAP-18: alarms for a monitoring tool: "Healthy" or "Degraded", always 200 (the word, never the status code, carries
 // it, so nothing reads it as the node being down). No detail: which alarm is up is on Diagnostics and in the SIEM.
 app.MapHealthChecks("/health/alarms", new HealthCheckOptions

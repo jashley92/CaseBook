@@ -416,6 +416,46 @@ public sealed class EvidencePackageTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task A_file_that_grows_between_its_check_and_its_send_is_recorded_as_sent_and_not_matching(string provider /* CAP-12 review */)
+    {
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var one = await UploadAsync(database, caseId, "one.bin", RandomNumberGenerator.GetBytes(50_000));
+        _clock.UtcNow = Start.AddMinutes(1);
+        var two = await UploadAsync(database, caseId, "two.bin", RandomNumberGenerator.GetBytes(50_000));
+        var staged = await Cases(database).StageEvidencePackageAsync(caseId, null, "Insurer", null, "Claim");
+
+        // The second file checks out, then has a byte more by the time it's sent (its 4th open: each file is checked, then sent).
+        var (whole, sent, package, _) = await SendAsync(Evidence(database, store: new Grows(Files(), onOpen: 4)), staged.Ticket);
+
+        whole.Should().BeFalse();
+        NoDirectory(sent);
+        var custody = await CustodyAsync(database, package.Id);
+        (Action(custody, one), Action(custody, two)).Should().Be((EvidenceService.PackageSentAction, EvidenceService.PackageSentNotMatchingAction),
+            "every byte of it went out, so it's sent and not matching, not 'partly sent'");
+        (await PackageAuditAsync(database, package.Id))[1].Should().Contain("Not matching their recorded SHA-256: two.bin.");
+    }
+
+    // A store whose n-th opened file has one byte more than was stored.
+    private sealed class Grows(IEvidenceStore inner, int onOpen) : IEvidenceStore
+    {
+        private int _opened;
+        public Task<StoredEvidence> SaveAsync(Guid caseId, Stream content, CancellationToken ct = default) => inner.SaveAsync(caseId, content, ct);
+
+        public async Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
+        {
+            var s = await inner.OpenReadAsync(storagePath, ct);
+            if (++_opened != onOpen) return s;
+            var bytes = new MemoryStream();
+            await using (s) await s.CopyToAsync(bytes, ct);
+            bytes.WriteByte(0x5A);
+            bytes.Position = 0;
+            return bytes;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_store_or_key_outage_part_way_records_how_far_the_package_got(string provider)
     {
         var (database, caseId) = await OpenAsync(provider);
