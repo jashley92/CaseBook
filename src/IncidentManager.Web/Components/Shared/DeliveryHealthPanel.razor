@@ -14,6 +14,7 @@
 @inject IOptionsMonitor<EmailOptions> EmailOptions
 @inject IOptionsMonitor<ChatOptions> ChatOptions
 @inject IEnumerable<ISecurityEventTransport> Transports
+@inject IChatNotifier ChatNotifier
 
 <p class="small text-muted mb-2">
     Whether email, team chat and the SIEM stream are getting through. Never shows a recipient or what a server answered,
@@ -53,7 +54,19 @@
         {
             <tr>
                 <td>Team chat (webhook)</td>
-                <td class="small">@State(Chat) @Detail(Chat)</td>
+                <td class="small">
+                    @if (_chatStopped is { } stopped)
+                    {
+                        @* CAP-40: on, but no URL, or a saved one that won't decrypt here: shown as failing, with why. *@
+                        <span class="im-badge im-b-danger">Stopped</span>
+                        <span class="ms-1">@stopped</span>
+                    }
+                    else
+                    {
+                        @State(Chat)
+                    }
+                    @Detail(Chat)
+                </td>
             </tr>
         }
         @foreach (var t in _siemRows)
@@ -101,11 +114,13 @@
     // CAP-04 review: rows by whether a transport is switched on in its settings, not whether it's delivering, so one
     // that stopped (a missing Event Log source) shows as failing instead of vanishing (SiemTransportRows).
     private IReadOnlyList<SiemTransportRow> _siemRows = [];
+    private string? _chatStopped;
 
     protected override async Task OnInitializedAsync()
     {
         _channels = Health.Snapshot();
         _siemRows = SiemTransportRows.Pick(Transports);
+        _chatStopped = ChatNotifier.StoppedReason;   // CAP-40
         _held = await HeldEmailSummary.ReadAsync(DbFactory, HeldEmailSummary.DefaultLimit);
     }
 

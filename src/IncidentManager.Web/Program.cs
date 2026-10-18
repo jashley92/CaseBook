@@ -157,6 +157,10 @@ builder.Services.AddSingleton<IncidentManager.Web.Notifications.SmtpSignInStore>
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Notifications.ISmtpSignInSource>(
     sp => sp.GetRequiredService<IncidentManager.Web.Notifications.SmtpSignInStore>());
 builder.Services.AddScoped<IncidentManager.Web.Notifications.SmtpSignInAdminService>();
+// CAP-40: the chat webhook URL and the SIEM webhook token saved in Administration (each under its own Data Protection
+// purpose), read per send by ChatWebhookNotifier and WebhookTransport when the server's configuration sets none.
+builder.Services.AddSingleton<IncidentManager.Web.Secrets.StoredSecretStore>();
+builder.Services.AddScoped<IncidentManager.Web.Secrets.StoredSecretAdminService>();
 
 // --- F-13: per-user rate limit on the download/export endpoints, so a compromised account can't bulk-
 // scrape evidence/reports/exports. A token bucket keyed on the caller's id — bursts are fine, sustained

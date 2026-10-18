@@ -13,7 +13,11 @@ public sealed class SiemWebhookOptions
     /// <summary>HTTPS endpoint of the SIEM HTTP Log Collector (or any JSON webhook).</summary>
     public string Url { get; set; } = "";
 
-    /// <summary>Bearer token / API key. Empty = no auth header sent.</summary>
+    /// <summary>
+    /// Bearer token / API key: a literal, an <c>@cyberark:</c> reference or a <c>@protected:</c> value. CAP-40: empty here
+    /// means the token saved in Administration → Server configuration, and with none there, no auth header is sent. A token
+    /// that's set but won't resolve or decrypt stops the send (fail closed), rather than sending without it.
+    /// </summary>
     public string Token { get; set; } = "";
 
     /// <summary>Header carrying the token. Default "Authorization"; some collectors use "x-api-key".</summary>

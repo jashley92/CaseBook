@@ -28,6 +28,8 @@
 @inject IncidentManager.Application.Abstractions.IEvidenceStore EvidenceStoreFiles
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject IncidentManager.Web.Notifications.SmtpSignInStore SmtpSignIns
+@inject IncidentManager.Web.Secrets.StoredSecretStore StoredSecrets
+@inject IncidentManager.Web.Secrets.StoredSecretAdminService StoredSecretAdmin
 @inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Infrastructure.Notifications.EmailOptions> EmailOptions
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
@@ -127,9 +129,9 @@
                                         @TriggerState(FormBool("Notifications:ImportSubmitted:Email"), EmailOn && FromSet)
                                     </li>
                                     <li class="d-flex align-items-center justify-content-between">
-                                        <span>Team chat channel <span class="text-muted">(Slack/Teams, configured on host)</span></span>
+                                        <span>Team chat channel <span class="text-muted">(Slack/Teams webhook)</span></span>
                                         @if (ChatConfigured) { <span class="im-badge im-b-ok">Configured</span> }
-                                        else if (AnyChatTypeOn) { <span class="im-badge im-b-warn">No webhook on host</span> }
+                                        else if (AnyChatTypeOn) { <span class="im-badge im-b-warn">No webhook set</span> }
                                         else { <span class="im-badge im-b-neutral">Not configured</span> }
                                     </li>
                                 </ul>
@@ -414,6 +416,15 @@
                         <IncidentManager.Web.Components.Shared.EmailSignInCard />
                     }
 
+                    @* CAP-40: the team-chat webhook URL, entered here (server configuration wins when it sets one). *@
+                    @if (group == "Notifications")
+                    {
+                        <IncidentManager.Web.Components.Shared.StoredSecretCard Kind="IncidentManager.Web.Secrets.StoredSecretKind.ChatWebhookUrl"
+                            Title="Team chat webhook" FieldLabel="Webhook URL"
+                            Help="The Slack incoming webhook or Teams workflow URL for the channel. It's the channel's credential, so it's kept like a password. It must be https."
+                            Note="@(Config.GetValue<bool>("Chat:Webhook:Enabled") ? null : "Chat is off in the server's configuration (Chat:Webhook:Enabled), so nothing posts until it's turned on there. The URL is kept until then.")" />
+                    }
+
                     @* Send-a-test-email sits with the notification settings it exercises. *@
                     @if (group == "Notifications")
                     {
@@ -452,7 +463,7 @@
                                 <div class="form-text">
                                     @(ChatConfigured
                                         ? "Posts a test message to the configured Slack/Teams channel."
-                                        : "No chat webhook is configured. Set Chat:Webhook on the host to enable chat broadcasts.")
+                                        : "No chat webhook is configured. Turn on Chat:Webhook:Enabled on the server and set the URL under Team chat webhook above.")
                                 </div>
                             </div>
                         </div>
@@ -547,7 +558,7 @@
                             @if (Config.GetValue<bool>("Siem:Webhook:Enabled"))
                             {
                                 <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Webhook:Url"]), "Endpoint configured", "No endpoint")</span>
-                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Webhook:Token"]), "Token set", "No token")</span>
+                                <span class="ms-2">@SecretSource(IncidentManager.Web.Secrets.StoredSecretKind.SiemWebhookToken, "Token", "No token")</span>
                             }
                         </td>
                     </tr>
@@ -600,7 +611,7 @@
                             @StatusBadge(Config.GetValue<bool>("Chat:Webhook:Enabled"), "Enabled", "Disabled")
                             @if (Config.GetValue<bool>("Chat:Webhook:Enabled"))
                             {
-                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Chat:Webhook:WebhookUrl"]), "Webhook configured", "No webhook")</span>
+                                <span class="ms-2">@SecretSource(IncidentManager.Web.Secrets.StoredSecretKind.ChatWebhookUrl, "Webhook", "No webhook")</span>
                                 <code class="small ms-2">@(Config["Chat:Webhook:Format"] ?? "Slack")</code>
                             }
                         </td>
@@ -625,6 +636,12 @@
             </table>
             <p class="small text-muted mt-2">Auto-seal is set in-app under <strong>Governance &amp; security</strong>.
             To verify or seal on demand, go to <a href="integrity">Integrity &amp; audit</a>.</p>
+
+            @* CAP-40: the one SIEM webhook value that may be entered here rather than on the server: its token. *@
+            <IncidentManager.Web.Components.Shared.StoredSecretCard Kind="IncidentManager.Web.Secrets.StoredSecretKind.SiemWebhookToken"
+                Title="SIEM webhook token" FieldLabel="Token"
+                Help="The collector's bearer token or API key, sent in the header set by Siem:Webhook:AuthHeader. The collector URL stays in the server's configuration."
+                Note="@(Config.GetValue<bool>("Siem:Webhook:Enabled") ? null : "The SIEM webhook is off in the server's configuration (Siem:Webhook:Enabled), so nothing is sent until it's turned on there. The token is kept until then.")" />
         }
         else if (_activeId == "source")
         {
@@ -1187,9 +1204,9 @@
     // "Live" = at least one notification will actually reach someone once saved.
     private bool NotifyLive => EmailOn && FromSet && (AnyTriggerOn || LegalDistributionSet);
 
-    // PROD-02: the team-chat webhook is server-side config (not the in-app form), so read it from Config.
-    private bool ChatConfigured =>
-        Config.GetValue<bool>("Chat:Webhook:Enabled") && !string.IsNullOrWhiteSpace(Config["Chat:Webhook:WebhookUrl"]);
+    // PROD-02: the team-chat switch is server-side config. CAP-40: its URL may be there or saved in Administration, which the
+    // notifier knows (it reads the saved one), so ask it.
+    private bool ChatConfigured => Chat.Enabled;
     private bool AnyChatTypeOn =>
         FormBool("Notifications:Chat:BreachEscalations") || FormBool("Notifications:Chat:Assignments")
         || FormBool("Notifications:Chat:Mentions") || FormBool("Notifications:Chat:OverdueReminders")
@@ -1251,7 +1268,7 @@
 
     private async Task SendTestChatCore()
     {
-        if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured. Set Chat:Webhook on the host."); return; }
+        if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured. Turn on Chat:Webhook:Enabled on the server and set the URL under Team chat webhook."); return; }
 
         var baseUrl = (Config["App:BaseUrl"] ?? "").TrimEnd('/');
         var error = await Chat.SendTestAsync(new IncidentManager.Application.Abstractions.ChatNotification(
@@ -1260,7 +1277,7 @@
             baseUrl.Length == 0 ? null : baseUrl));
         if (error is not null)
         {
-            Toasts.Error($"Couldn't post the test message. {error} Check the webhook URL on the host.");
+            Toasts.Error($"Couldn't post the test message. {error} Check the webhook URL.");
             return;
         }
 
@@ -1307,6 +1324,24 @@
 
     private IncidentManager.Web.Notifications.SmtpSignInStatus? _smtpSignIn;
 
+    // CAP-40: where a secret comes from, for Server configuration: the server's configuration, Administration, or nowhere.
+    // Status only, never the value; a saved one that won't decrypt here says so.
+    private RenderFragment SecretSource(IncidentManager.Web.Secrets.StoredSecretKind kind, string what, string none) => builder =>
+    {
+        var saved = StoredSecretAdmin.SetInServerConfiguration(kind) ? null : StoredSecrets.Peek(kind);
+        var (css, text) = saved switch
+        {
+            null => ("im-badge im-b-ok", $"{what} set in server configuration"),
+            { Unreadable: true } => ("im-badge im-b-danger", $"{what} saved in Administration can't be decrypted: re-enter it"),
+            { Set: true } => ("im-badge im-b-ok", $"{what} saved in Administration"),
+            _ => ("im-badge im-b-warn", none),
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, text);
+        builder.CloseElement();
+    };
+
     // PROD-55/56: what evidence takes against its limits, read when Diagnostics opens.
     private IncidentManager.Application.Evidence.EvidenceStorageUse? _evidenceUse;
     private string? _evidenceUseError;
@@ -1346,6 +1381,16 @@
             checks.Add(new HealthCheck("Email relay sign-in", !saved.PasswordUnreadable, saved.PasswordUnreadable
                 ? "The SMTP password saved in Administration can't be decrypted on this server: re-enter the SMTP password (Settings, Notifications, Email sign-in)."
                 : saved.Mode == IncidentManager.Infrastructure.Notifications.SmtpSignInMode.None ? "none (the relay takes mail without a sign-in)" : "set in Administration"));
+        }
+        // CAP-40: a secret saved in Administration that can't be decrypted here stops its sends: re-enter it.
+        foreach (var d in IncidentManager.Web.Secrets.StoredSecretDefinition.All)
+        {
+            if (StoredSecretAdmin.SetInServerConfiguration(d.Kind)) continue;
+            var saved = await StoredSecrets.StatusAsync(d.Kind);
+            if (!saved.Set) continue;
+            checks.Add(new HealthCheck(char.ToUpperInvariant(d.Label[0]) + d.Label[1..], !saved.Unreadable, saved.Unreadable
+                ? $"The {d.Label} saved in Administration can't be decrypted on this server: re-enter the {d.Label} ({d.Where})."
+                : "saved in Administration"));
         }
         checks.Add(new HealthCheck("Schema up to date", _pendingMigrations is { Count: 0 },
             _pendingMigrations is { Count: > 0 } ? $"{_pendingMigrations.Count} pending" : "no pending migrations"));

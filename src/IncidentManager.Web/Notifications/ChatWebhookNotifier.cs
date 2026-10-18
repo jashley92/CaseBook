@@ -2,6 +2,7 @@ using System.Text;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Notifications;
 using IncidentManager.Infrastructure.Siem;
+using IncidentManager.Web.Secrets;
 using Microsoft.Extensions.Options;
 
 namespace IncidentManager.Web.Notifications;
@@ -12,6 +13,8 @@ namespace IncidentManager.Web.Notifications;
 /// time-bounded, bounded retry, https-only egress (the webhook URL carries the channel secret) — and lives in
 /// Web because it needs <see cref="IHttpClientFactory"/>. The URL is resolved through <see cref="ISecretProvider"/>
 /// so it may be a literal or a <c>@cyberark:</c> reference (F-19). Never throws into the caller.
+/// CAP-40: when the server's configuration sets no URL, the one saved in Administration (<see cref="StoredSecretStore"/>)
+/// is used, read per post so a save applies without a restart; one that won't decrypt here isn't posted to (fail closed).
 /// </summary>
 public sealed class ChatWebhookNotifier : IChatNotifier
 {
@@ -21,9 +24,11 @@ public sealed class ChatWebhookNotifier : IChatNotifier
     private readonly ILogger<ChatWebhookNotifier> _logger;
     private readonly OutboundCircuit _circuit;
     private readonly IDeliveryHealth? _health;   // CAP-04: what Diagnostics shows of the webhook
+    private readonly StoredSecretStore? _stored;   // CAP-40: the URL saved in Administration, when the server sets none
 
     public ChatWebhookNotifier(IHttpClientFactory httpFactory, IOptionsMonitor<ChatOptions> options,
-        ISecretProvider secrets, ILogger<ChatWebhookNotifier> logger, OutboundCircuit? circuit = null, IDeliveryHealth? health = null)
+        ISecretProvider secrets, ILogger<ChatWebhookNotifier> logger, OutboundCircuit? circuit = null, IDeliveryHealth? health = null,
+        StoredSecretStore? stored = null)
     {
         _httpFactory = httpFactory;
         _options = options;
@@ -31,14 +36,32 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         _logger = logger;
         _circuit = circuit ?? new OutboundCircuit();
         _health = health;
+        _stored = stored;
     }
 
+    // CAP-40: a URL in the server's configuration, or one saved in Administration (even one that won't decrypt here: its
+    // post then fails, so a scheduled broadcast is tried again once it's re-entered, rather than marked sent).
     public bool Enabled
     {
         get
         {
             var o = _options.CurrentValue;
-            return o.Enabled && !string.IsNullOrWhiteSpace(o.WebhookUrl);
+            return o.Enabled && (!string.IsNullOrWhiteSpace(o.WebhookUrl) || _stored?.Peek(StoredSecretKind.ChatWebhookUrl).Set == true);
+        }
+    }
+
+    // CAP-40: on, but nothing will post: shown as stopped on the delivery card, with why.
+    public string? StoppedReason
+    {
+        get
+        {
+            var o = _options.CurrentValue;
+            if (!o.Enabled || !string.IsNullOrWhiteSpace(o.WebhookUrl)) return null;
+            var saved = _stored?.Peek(StoredSecretKind.ChatWebhookUrl);
+            if (saved is not { Set: true }) return "not posting: no webhook URL is set (Chat:Webhook:WebhookUrl, or Settings, Notifications)";
+            return saved.Unreadable
+                ? "not posting: the webhook URL saved in Administration can't be decrypted on this server; re-enter it"
+                : null;
         }
     }
 
@@ -55,15 +78,34 @@ public sealed class ChatWebhookNotifier : IChatNotifier
     private async Task<string?> PostAsync(ChatNotification message, bool test, CancellationToken ct)
     {
         var o = _options.CurrentValue;
-        if (!o.Enabled || string.IsNullOrWhiteSpace(o.WebhookUrl)) return null;
+        if (!o.Enabled) return null;
 
-        // The webhook URL is itself the channel credential; resolve it (literal or @cyberark: reference).
-        var url = await _secrets.ResolveAsync(o.WebhookUrl, ct).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(url))
+        string? url;
+        if (!string.IsNullOrWhiteSpace(o.WebhookUrl))
         {
-            _logger.LogWarning("Chat webhook URL could not be resolved; message not posted.");
-            _health?.RecordFailure(DeliveryHealth.Chat, "the webhook URL couldn't be resolved");   // CAP-04
-            return "The webhook URL couldn't be resolved.";
+            // The webhook URL is itself the channel credential; resolve it (literal or @cyberark: reference).
+            url = await _secrets.ResolveAsync(o.WebhookUrl, ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                _logger.LogWarning("Chat webhook URL could not be resolved; message not posted.");
+                _health?.RecordFailure(DeliveryHealth.Chat, "the webhook URL couldn't be resolved");   // CAP-04
+                return "The webhook URL couldn't be resolved.";
+            }
+        }
+        else
+        {
+            // CAP-40: the URL saved in Administration, read now. None saved: chat is off, as with no URL configured.
+            var saved = _stored is null ? StoredSecretValue.NotSaved
+                : await _stored.ResolveAsync(StoredSecretKind.ChatWebhookUrl, ct).ConfigureAwait(false);
+            if (!saved.Saved) return null;
+            if (saved.Unreadable)
+            {
+                // Fail closed. The store logged it once; the failure counts, so a scheduled broadcast is tried again.
+                _health?.RecordFailure(DeliveryHealth.Chat, "the saved webhook URL can't be decrypted on this server");
+                return "The webhook URL saved in Administration can't be decrypted on this server (its Data Protection keys " +
+                       "aren't here). Re-enter it under Settings, Notifications, Team chat webhook.";
+            }
+            url = saved.Value!;
         }
 
         // Same egress guard as the SIEM webhook (S-06): https required (http only to loopback) so the secret

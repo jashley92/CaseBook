@@ -3,6 +3,7 @@ using System.Text;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using IncidentManager.Infrastructure.Siem;
+using IncidentManager.Web.Secrets;
 using Microsoft.Extensions.Options;
 
 namespace IncidentManager.Web.Siem;
@@ -12,7 +13,10 @@ namespace IncidentManager.Web.Siem;
 /// SIEM HTTP Collector, with a per-request timeout and a bounded retry. Best-effort — a failure is
 /// logged and the event dropped (the audit chain remains the record of truth). Lives in Web because it
 /// needs <see cref="IHttpClientFactory"/>. The auth token is resolved through <see cref="ISecretProvider"/>
-/// (F-19), so <c>Siem:Webhook:Token</c> may be a literal or a <c>@cyberark:</c> reference.
+/// (F-19), so <c>Siem:Webhook:Token</c> may be a literal or a <c>@cyberark:</c> reference. CAP-40: when the server's
+/// configuration sets no token, the one saved in Administration (<see cref="StoredSecretStore"/>) is used, read per event so
+/// a save applies without a restart. A token that's set but won't resolve or decrypt stops the send (fail closed): the
+/// event isn't posted unauthenticated.
 /// </summary>
 public sealed class WebhookTransport : ISecurityEventTransport
 {
@@ -21,15 +25,18 @@ public sealed class WebhookTransport : ISecurityEventTransport
     private readonly ISecretProvider _secrets;
     private readonly ILogger<WebhookTransport> _logger;
     private readonly IDeliveryHealth? _health;   // CAP-04
+    private readonly StoredSecretStore? _stored;   // CAP-40: the token saved in Administration, when the server sets none
+    private int _tokenReported;                    // CAP-40: a token that won't resolve is logged once, until one does
 
     public WebhookTransport(IHttpClientFactory httpFactory, IOptionsMonitor<SiemWebhookOptions> options,
-        ISecretProvider secrets, ILogger<WebhookTransport> logger, IDeliveryHealth? health = null)
+        ISecretProvider secrets, ILogger<WebhookTransport> logger, IDeliveryHealth? health = null, StoredSecretStore? stored = null)
     {
         _httpFactory = httpFactory;
         _options = options;
         _secrets = secrets;
         _logger = logger;
         _health = health;
+        _stored = stored;
     }
 
     public string Name => "webhook";
@@ -53,7 +60,12 @@ public sealed class WebhookTransport : ISecurityEventTransport
             var o = _options.CurrentValue;
             if (!o.Enabled) return null;
             if (string.IsNullOrWhiteSpace(o.Url)) return "not sending: no collector URL is set (Siem:Webhook:Url)";
-            return SiemWebhookUrl.IsAcceptable(o.Url, out var reason) ? null : $"not sending: the collector URL was refused ({reason})";
+            if (!SiemWebhookUrl.IsAcceptable(o.Url, out var reason)) return $"not sending: the collector URL was refused ({reason})";
+            // CAP-40: a saved token that won't decrypt here stops every event (a configured one that won't resolve shows as the
+            // last error instead: the secret provider is asked per send, not here).
+            return string.IsNullOrWhiteSpace(o.Token) && _stored?.Peek(StoredSecretKind.SiemWebhookToken).Unreadable == true
+                ? "not sending: the webhook token saved in Administration can't be decrypted on this server; re-enter it"
+                : null;
         }
     }
 
@@ -77,19 +89,32 @@ public sealed class WebhookTransport : ISecurityEventTransport
             return $"The collector URL was refused ({reason}). Use an https URL.";
         }
 
+        // F-19: resolve the token (literal or @cyberark: reference) once per event; the provider caches. A reference string
+        // is never sent as the bearer token. CAP-40: with none configured, the one saved in Administration. A token that's
+        // set but won't resolve or decrypt stops the send: before, the event went without an auth header, which a collector
+        // that wants one refuses (a 401 that pointed at the collector, not the secret) and one that doesn't should have had
+        // no token set. As the SMTP sign-in (never a send without the sign-in that was asked for) and ADR 0018 §3.
+        var (asked, token, where) = await TokenAsync(opts, ct).ConfigureAwait(false);
+        if (asked && string.IsNullOrEmpty(token))
+        {
+            if (Interlocked.Exchange(ref _tokenReported, 1) == 0)
+                _logger.LogWarning("The SIEM webhook token ({Where}) could not be {How}; events aren't sent until it is (first: event {EventId}).",
+                    where, where == "server configuration" ? "resolved" : "decrypted", e.EventId);
+            _health?.RecordFailure(DeliveryHealth.Siem(Name), where == "server configuration"
+                ? "the token couldn't be resolved; not sent"
+                : "the saved token can't be decrypted on this server; not sent");
+            return where == "server configuration"
+                ? "The webhook token (Siem:Webhook:Token) couldn't be resolved, so nothing was sent. See Diagnostics, Secret resolution."
+                : "The webhook token saved in Administration can't be decrypted on this server (its Data Protection keys aren't " +
+                  "here), so nothing was sent. Re-enter it under Server configuration, SIEM webhook token.";
+        }
+        Interlocked.Exchange(ref _tokenReported, 0);
+
         var payload = SecurityEventJson.Serialize(e);
         var attempts = Math.Max(1, opts.MaxAttempts);
         string? lastError = null;
         string? shown = null;   // CAP-04: a status or a type for Diagnostics, never the collector's reply
         int? status = null;
-
-        // F-19: resolve the token (literal or @cyberark: reference) once per event; the provider caches.
-        // A configured-but-unresolvable secret comes back null → we send no auth header (fail-closed) rather
-        // than leaking a reference string as a bearer token.
-        var token = await _secrets.ResolveAsync(opts.Token, ct).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(opts.Token) && string.IsNullOrEmpty(token))
-            _logger.LogWarning("SIEM webhook token could not be resolved; sending event {EventId} without auth.",
-                e.EventId);
 
         for (var attempt = 1; attempt <= attempts && !ct.IsCancellationRequested; attempt++)
         {
@@ -136,6 +161,17 @@ public sealed class WebhookTransport : ISecurityEventTransport
         }
         if (lastError is not null) _health?.RecordFailure(DeliveryHealth.Siem(Name), shown ?? "failed", status);
         return lastError;
+    }
+
+    // CAP-40: whether a token is asked for (server configuration, else saved in Administration), the token (null when it won't
+    // resolve or decrypt), and where it came from, for the log and the delivery card: never the value or the reference.
+    private async Task<(bool Asked, string? Token, string Where)> TokenAsync(SiemWebhookOptions opts, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(opts.Token))
+            return (true, await _secrets.ResolveAsync(opts.Token, ct).ConfigureAwait(false), "server configuration");
+        if (_stored is null) return (false, null, "");
+        var saved = await _stored.ResolveAsync(StoredSecretKind.SiemWebhookToken, ct).ConfigureAwait(false);
+        return (saved.Saved, saved.Value, "saved in Administration");
     }
 
     private static void ApplyAuth(HttpRequestMessage req, SiemWebhookOptions opts, string? token)
