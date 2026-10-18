@@ -250,7 +250,9 @@ Paste a screenshot anywhere in the composer to attach it as hashed evidence.
 
 **Then**, under a finding, decision or adversary step, adds follow-ups saved in the same act: tasks about the
 entry (a decision's tasks read as carrying it out), a question for the brief, a line for the brief's Known, and a
-link to another case. The footer says what the save writes before you save it.
+link to another case. Under a finding, **Answers an open question** (shown while the brief has one not yet answered)
+picks the question the finding answers: saving completes its task with the finding as the answer, or raises and
+completes one. The footer says what the save writes before you save it.
 
 ## IOCs & entities tab
 

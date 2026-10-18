@@ -212,6 +212,11 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **A finding can answer an open question directly (CAP-23).** In the timeline composer's *Finding* mode, *Then* →
+  *Answers an open question* picks one of the brief's open questions; saving completes the question's task with the
+  finding as its result, or raises and completes one when none followed it up, in the entry's save. No migration and
+  nothing to configure. A question someone else answered or followed up while you were writing is refused, with your
+  text kept.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

@@ -7,8 +7,17 @@ namespace IncidentManager.Application.Cases;
 public sealed record FollowUpTask(string Title, string? Owner = null, TaskKind Kind = TaskKind.General, DateTimeOffset? DueAtUtc = null);
 
 /// <summary>
+/// CAP-23: an open question a finding answers, as the picker offered it (<see cref="OpenQuestionAnswers.Answerable"/>).
+/// <paramref name="TaskId"/> is the open task that follows it up, completed with the finding as its result; null when no
+/// task did, and one is raised and completed in the same save. <paramref name="Question"/> (the brief's line) is read
+/// only then: a task is always found by its id, never by its title (WF-25).
+/// </summary>
+public sealed record QuestionAnswer(string Question, Guid? TaskId);
+
+/// <summary>
 /// RD-09: what the composer saves with a timeline entry, in the same save: tasks about the entry, a question for the
-/// brief (optionally followed up as a task), a line for the brief's Known, and a link to another case.
+/// brief (optionally followed up as a task), a line for the brief's Known, a link to another case, and (CAP-23) the open
+/// question a finding answers.
 /// </summary>
 public sealed record EntryFollowUps(
     IReadOnlyList<FollowUpTask>? Tasks = null,
@@ -16,10 +25,12 @@ public sealed record EntryFollowUps(
     bool QuestionTask = false,
     string? KnownLine = null,
     Guid? LinkCaseId = null,
-    CaseLinkType LinkType = CaseLinkType.RelatedTo)
+    CaseLinkType LinkType = CaseLinkType.RelatedTo,
+    QuestionAnswer? Answers = null)
 {
     /// <summary>Whether anything is asked for at all.</summary>
-    public bool Any => (Tasks?.Count ?? 0) > 0 || Clean(Question) is not null || Clean(KnownLine) is not null || LinkCaseId is not null;
+    public bool Any => (Tasks?.Count ?? 0) > 0 || Clean(Question) is not null || Clean(KnownLine) is not null || LinkCaseId is not null
+                       || Answers is not null;
 
     /// <summary>Checks the parts before anything is written, so a bad follow-up stops the whole save.</summary>
     public void Validate()
@@ -34,6 +45,8 @@ public sealed record EntryFollowUps(
             throw new ArgumentException($"Keep the question to {ActionItem.MaxTitleLength} characters or fewer.");
         if (Clean(KnownLine) is { } k && TypedLength(k) > 2000)
             throw new ArgumentException("Keep the line for Known to 2,000 characters or fewer.");
+        if (Answers is { TaskId: null } a && Clean(a.Question) is null)
+            throw new ArgumentException("Choose the question the finding answers.");
     }
 
     /// <summary>

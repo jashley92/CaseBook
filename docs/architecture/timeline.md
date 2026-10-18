@@ -56,7 +56,7 @@ flowchart LR
 
 | How | Kind / type | What's set | Code |
 |---|---|---|---|
-| Timeline composer, *Investigation entry* | Investigation, chosen type | Markdown text, source, optional pasted screenshot; Decision needs a rationale | `CaseService.AddTimelineEntryAsync` |
+| Timeline composer, *Investigation entry* | Investigation, chosen type | Markdown text, source, optional pasted screenshot; Decision needs a rationale. CAP-23: a finding that answers an open question (*Then* → *Answers an open question*) also has `ActionItemId` (the question's task, completed in the same save with the text as its result), so, as with a logged result, the task's "Task done" milestone isn't shown beside it | `CaseService.AddTimelineEntryAsync` |
 | Timeline composer, *Event step* | Event, Other (or a disclosure type on third-party cases) | Tactics, technique, actor → target entities, source, optional screenshot | `CaseService.AddEventStepAsync` → `Case.AddEventStep` |
 | *Add to timeline* on a note or task comment | Investigation, chosen type (not Decision) | `PromotedFrom = note:<id>` or `taskcomment:<id>`; text can be edited on the way | `CaseService.PromoteToTimelineAsync` |
 | Completing a task with "add to the timeline" | Investigation, chosen type (not Decision) | `ActionItemId`, source `Task: <title>`, time = completion time | `CaseService.CompleteActionItemAsync` |
