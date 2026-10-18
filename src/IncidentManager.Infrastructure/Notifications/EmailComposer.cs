@@ -263,6 +263,11 @@ public sealed partial class EmailComposer : IEmailComposer
             ["Cadence"] = "daily",
             ["Quarter"] = "Q3 2026",
             ["PreviousQuarter"] = "Q2 2026",
+            // CAP-01
+            ["Reviewer"] = "Robin Reyes",
+            ["Summary"] = "New case: Suspicious OAuth consent grant (14 items)",
+            ["Origin"] = "XSIAM",
+            ["SubmittedBy"] = "XSIAM playbook token",
         };
         var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

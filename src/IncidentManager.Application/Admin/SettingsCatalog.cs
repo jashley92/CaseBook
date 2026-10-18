@@ -132,6 +132,11 @@ public static class SettingsCatalog
             "Master switch for opt-in digests of each user's open follow-up items (overdue, due today, due this week). Users choose daily or weekly under account menu → Notifications.", "false"),
         new SettingDefinition("Notifications:DigestScan:IntervalHours", "Digest scan interval (hours)", "Notifications", SettingKind.Int,
             "How often to check whether a digest is due. Each digest still sends once per day or week. Default 1 (0 also means 1).", "1", Max: MaxIntervalHours),
+        // CAP-01: an API import that waits is found only when someone opens Import.
+        new SettingDefinition("Notifications:DigestScan:ImportWaitingHours", "Digest: imports waiting longer than (hours)", "Notifications", SettingKind.Int,
+            "The digest of someone who can confirm imports says how many API imports they could review have waited longer than this. 0 leaves the line out. Default 24.", "24", Max: MaxWaitHours),
+        new SettingDefinition("Notifications:ImportSubmitted:Email", "Email reviewers about new imports", "Notifications", SettingKind.Bool,
+            "Emails everyone who can confirm imports when a case-import document arrives through the API. One into a restricted case goes only to those who can see it. Nothing is applied until someone confirms it.", "false"),
         // PROD-15: quarterly executive report email to managers (the E-31 program report's headline figures).
         new SettingDefinition("Notifications:ExecutiveReport:Enabled", "Quarterly executive report email", "Notifications", SettingKind.Bool,
             "In the first week of each quarter, emails everyone with the Manager role last quarter's headline figures and a link to the full program report.", "false"),
@@ -165,6 +170,9 @@ public static class SettingsCatalog
             "Posts cases at risk of or past their regulatory deadline to the team channel after each scan. Needs a chat webhook on the host.", "false"),
         new SettingDefinition("Notifications:Chat:StaleReminders", "Chat: stale-case nudges", "Notifications", SettingKind.Bool,
             "Posts a count of quiet cases to the team channel after each stale-case scan. Needs a chat webhook on the host.", "false"),
+        // CAP-01
+        new SettingDefinition("Notifications:Chat:ImportSubmissions", "Chat: imports waiting for review", "Notifications", SettingKind.Bool,
+            "Posts to the team channel when a case-import document arrives through the API. For a restricted case it says only that one is waiting. Needs a chat webhook on the host.", "false"),
         new SettingDefinition("ExternalLinks:DetectionCaseUrlTemplate", "Detection case link template", "Integrations", SettingKind.Text,
             "Deep-link template for the referenced detection-source case: a full https:// address with {0} where the case id should appear.", "", LinkTemplate: true),
         new SettingDefinition("ExternalLinks:VirusTotalUrlTemplate", "VirusTotal lookup template", "Integrations", SettingKind.Text,

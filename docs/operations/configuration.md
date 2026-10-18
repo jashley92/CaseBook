@@ -275,9 +275,11 @@ scans read case data only. All deliver only when `Email:Enabled` is on (or to ch
 | `Notifications:StaleScan:Days:{Critical,High,Medium,Low}` | Quiet days before a nudge (`0` = never) | `2` / `5` / `10` / `21` | App |
 | `Notifications:StaleScan:Days:Informational` | As above | `0` | Server |
 | `Notifications:DigestScan:Enabled` / `IntervalHours` | Master switch for the per-user work digest (users opt in from the account menu) | `false` / `1` | App |
+| `Notifications:DigestScan:ImportWaitingHours` | A digest for someone who can confirm imports (`EditCases`) says how many API imports they could review have waited longer than this (CAP-01). `0` leaves the line out | `24` | App |
+| `Notifications:ImportSubmitted:Email` | Email everyone who can confirm imports when a document arrives through the import API; one into a restricted case goes only to those who can see it (CAP-01). Nothing is applied until someone confirms it | `false` | App |
 | `Notifications:ExecutiveReport:Enabled` | Quarterly program-report email to managers, sent in the first 7 days of a quarter | `false` | App |
 | `Notifications:Mandatory:{Assignment,Overdue,DueSoon}` | Users can't opt out of that type | `false` | App |
-| `Notifications:Chat:{BreachEscalations,Assignments,Mentions,OverdueReminders,DueSoonReminders,DeadlineReminders,StaleReminders}` | Also post that type to the team chat channel | `false` | App |
+| `Notifications:Chat:{BreachEscalations,Assignments,Mentions,OverdueReminders,DueSoonReminders,DeadlineReminders,StaleReminders,ImportSubmissions}` | Also post that type to the team chat channel. `ImportSubmissions` (CAP-01) says an API import is waiting; for a restricted case it leaves out the summary and origin | `false` | App |
 
 Administration → Settings → Notifications has a **Delivery readiness** panel. It shows whether email is on,
 whether a sender is set and which triggers are enabled, and a *Send a test email* card.

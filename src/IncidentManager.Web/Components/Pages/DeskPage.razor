@@ -74,7 +74,15 @@
                                     <span class="bi @icon" aria-hidden="true"></span>
                                     <div class="im-desk-need-body">
                                         <div><span class="im-desk-need-lead">@lead</span> @n.Title</div>
-                                        <div class="im-desk-sub"><code>@n.CaseNumber</code>@NeedDetail(n, now)</div>
+                                        @if (n.Kind == DeskNeedKind.ImportReview)
+                                        {
+                                            @* CAP-01: the queue's, not one case's. *@
+                                            <div class="im-desk-sub">@(n.AtUtc is { } oldest ? $"oldest arrived {TimeDisp.Brief(oldest, now)} · " : "")nothing is written until someone confirms</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="im-desk-sub"><code>@n.CaseNumber</code>@NeedDetail(n, now)</div>
+                                        }
                                     </div>
                                     <a class="btn btn-sm btn-outline-secondary" href="@href">@act</a>
                                 </li>
@@ -327,6 +335,7 @@
         DeskNeedKind.Overdue => ("bi-exclamation-circle", "Overdue:", $"cases/{n.CaseId}?tab=Tasks", "Work on it"),
         DeskNeedKind.Mention => ("bi-at", $"{Users.DisplayFor(n.ByUserId)} mentioned you:", $"cases/{n.CaseId}?tab=Notes&note={n.NoteId}", "Open note"),
         DeskNeedKind.Assigned => ("bi-person-plus", $"{Users.DisplayFor(n.ByUserId)} added you to", $"cases/{n.CaseId}", "Open"),
+        DeskNeedKind.ImportReview => ("bi-box-arrow-in-down", "Waiting for review:", "cases/import", "Review"),   // CAP-01
         _ => ("bi-clock", "Due within a day:", $"cases/{n.CaseId}?tab=Tasks", "Work on it"),
     };
 

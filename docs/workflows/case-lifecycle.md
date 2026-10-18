@@ -64,6 +64,15 @@ one, edits the preview and chooses **Confirm & apply** or **Reject** (with an op
 the submitting token could see: a document naming a case the token can't see is queued as a new case, as its preview
 said.
 
+**Telling reviewers (CAP-01).** A submission isn't left for someone to stumble on. Everyone who can confirm imports
+(`EditCases`) sees a *Waiting for review* item on their Desk and a count beside **Import** in the sidebar (up to 99+),
+each counting only the submissions they'd see in the queue. Two notifications, both off by default, go out when one
+arrives: an email to each reviewer (`Notifications:ImportSubmitted:Email`; one into a restricted case goes only to
+those who can see that case) and a team chat post (`Notifications:Chat:ImportSubmissions`; for a restricted case it
+says only that one is waiting). A reviewer's digest also says how many have waited longer than
+`Notifications:DigestScan:ImportWaitingHours` (24 by default). None of this applies anything (ADR 0004), and a failed
+email or post never fails the submission. Applying one sends SIEM event 5515, naming the pending import.
+
 ## 3. Promoting and reclassifying
 
 | | |

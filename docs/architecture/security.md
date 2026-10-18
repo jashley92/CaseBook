@@ -172,9 +172,11 @@ return query.Where(c => !c.IsRestricted
   tab, the audit CSV), the trail includes the entries made under every number the case has held, such as its
   Complex Event number before a promotion (REV-01); typing a former number on its own matches only that number,
   and only for oversight.
-- The pending-import queue (`CaseImportService`) leaves out a submission into an existing case the reviewer
-  can't see, for listing, counting, previewing, applying and rejecting. One with no target, or a target that no
-  longer exists, is visible to every reviewer.
+- The pending-import queue (`CaseImportService`, through `PendingImportQueue.Visible`) leaves out a submission into
+  an existing case the reviewer can't see, for listing, counting, previewing, applying and rejecting, and for the
+  Desk item, the sidebar count and the digest line (CAP-01). One with no target, or a target that no longer exists,
+  is visible to every reviewer. The email about a new submission goes to reviewers through the same audience filter
+  as other case emails, and the chat post leaves out a restricted target's summary.
 - Without `ViewCases` it returns nothing, whatever else the user holds (as `CaseAudience.CanSee`). Windows auth
   signs in every domain user, so this is what keeps one with no CaseBook role out of the palette, Find and the
   case tabs; the layout also hides those (and the activity bell) behind the `ViewCases` policy (BUG-465).

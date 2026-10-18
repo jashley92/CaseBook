@@ -23,9 +23,11 @@ public sealed record DeskTask(
     Guid Id, Guid CaseId, string CaseNumber, string CaseTitle, string Title, DateTimeOffset? DueAtUtc,
     TaskKind Kind, DeskWhy Why, string? WhyDetail);
 
-public enum DeskNeedKind { Notify, Overdue, Mention, Assigned, DueSoon }
+/// <remarks>CAP-01: <see cref="ImportReview"/> is the import queue's, not one case's (no case id or number).</remarks>
+public enum DeskNeedKind { Notify, Overdue, Mention, Assigned, DueSoon, ImportReview }
 
-/// <summary>Something that needs the caller, in order of consequence.</summary>
+/// <summary>Something that needs the caller, in order of consequence. CAP-01: an <see cref="DeskNeedKind.ImportReview"/>'s
+/// title is the count waiting and <see cref="AtUtc"/> when the oldest arrived.</summary>
 public sealed record DeskNeed(
     DeskNeedKind Kind, Guid CaseId, string CaseNumber, string Title, string? Detail, DateTimeOffset? AtUtc,
     string? ByUserId = null, Guid? TaskId = null, Guid? NoteId = null);
@@ -61,10 +63,12 @@ public sealed class DeskService
     private readonly MyWorkService _work;
     private readonly NotificationDeadlineService _deadlines;
     private readonly ISlaTargetsProvider _sla;
+    private readonly Import.PendingImportQueue? _imports;   // CAP-01
 
     public DeskService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, MyWorkService work,
-        NotificationDeadlineService deadlines, ISlaTargetsProvider sla)
+        NotificationDeadlineService deadlines, ISlaTargetsProvider sla, Import.PendingImportQueue? imports = null)
     {
+        _imports = imports;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -219,6 +223,11 @@ public sealed class DeskService
             var c = work.OpenCases.First(x => x.Id == r.CaseId);
             needs.Add(new DeskNeed(DeskNeedKind.Assigned, c.Id, c.CaseNumber, c.Title, r.Role.ToString(), r.AssignedAtUtc, r.AssignedBy));
         }
+        // CAP-01: for someone who can confirm imports, the API submissions waiting in the queue they'd see (its own scope),
+        // after the people who asked for them by name and before work merely due soon.
+        if (_imports is not null && await _imports.WaitingAsync(ct) is { Count: > 0 } waiting)
+            needs.Add(new DeskNeed(DeskNeedKind.ImportReview, Guid.Empty, "",
+                waiting.More ? $"More than {waiting.Count} imports" : Common.Plural.Of(waiting.Count, "import"), null, waiting.OldestUtc));
         foreach (var t in next.Where(t => t.DueAtUtc is { } due && due >= now && due < now.AddDays(1)).OrderBy(t => t.DueAtUtc))
             needs.Add(new DeskNeed(DeskNeedKind.DueSoon, t.CaseId, t.CaseNumber, t.Title, t.CaseTitle, t.DueAtUtc, TaskId: t.Id));
 

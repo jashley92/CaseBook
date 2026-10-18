@@ -1040,4 +1040,76 @@ public class CaseNotificationsTests
         }
         sender.Sent.Should().HaveCount(2);
     }
+
+    // ── CAP-01: an API import waiting for review ───────────────────────────────────────────────────────────────
+
+    private static ImportSubmission Submission(bool restricted = false, Guid? target = null, bool exercise = false) =>
+        new(Guid.NewGuid(), "xsiam-svc", "XSIAM", "New case: Suspicious OAuth consent grant (14 items)", 14, target,
+            restricted, exercise, ["rev1", "rev2"]);
+
+    [Fact]
+    public async Task An_import_sends_nothing_while_its_toggles_are_off()
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("rev1", "Robin", "robin@insurer.example").Add("rev2", "Sam", "sam@insurer.example");
+        await Build(sender, new EmailOptions(), users, chat).OnImportSubmittedAsync(Submission());
+
+        sender.Sent.Should().BeEmpty("import emails are off by default");
+        chat.Sent.Should().BeEmpty("and so is the chat post");
+    }
+
+    [Fact]
+    public async Task An_import_emails_each_reviewer_and_posts_to_chat_without_a_restricted_targets_summary()
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("rev1", "Robin", "robin@insurer.example").Add("rev2", "Sam", "sam@insurer.example");
+        var config = TestEmail.Config(("Notifications:Chat:ImportSubmissions", "true"), ("Notifications:ImportSubmitted:Email", "true"),
+            ("App:BaseUrl", "https://casebook.example"));
+        var n = new CaseNotifications(sender, TestEmail.Composer(), users, config,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs());
+
+        var open = Submission();
+        await n.OnImportSubmittedAsync(open);
+        chat.Sent.Should().ContainSingle().Which.Text.Should().Contain("Suspicious OAuth consent grant").And.Contain("XSIAM");
+        chat.Sent[0].Url.Should().Be($"https://casebook.example/cases/import?pending={open.PendingImportId}");
+        sender.Sent.Select(m => m.To.Single()).Should().Equal("robin@insurer.example", "sam@insurer.example");
+        sender.Sent[0].Subject.Should().Contain("Suspicious OAuth consent grant");
+        sender.Sent[0].HtmlBody.Should().Contain("Robin").And.Contain("XSIAM").And.Contain("Nothing has been written");
+
+        chat.Sent.Clear();
+        sender.Sent.Clear();
+        var caseId = Guid.NewGuid();
+        await n.OnImportSubmittedAsync(Submission(restricted: true, target: caseId) with { Summary = "Into 2026-77_Secret (3 items)" });
+        var post = chat.Sent.Should().ContainSingle().Subject;
+        (post.Title + " " + post.Text).Should().Contain("restricted case").And.NotContain("2026-77_Secret").And.NotContain("XSIAM");
+        sender.Sent.Should().HaveCount(2, "the reviewers named are already those who may see it");
+        sender.About.Should().OnlyContain(a => a!.Value.CaseId == caseId, "held mail is checked against the case again");
+    }
+
+    [Fact]
+    public async Task An_exercise_import_is_marked_EXERCISE()
+    {
+        var chat = new CapturingChatNotifier();
+        var n = Build(new CapturingEmailSender(), new EmailOptions(), chat: chat, config: ChatConfig("ImportSubmissions"));
+        await n.OnImportSubmittedAsync(Submission(exercise: true));
+        chat.Sent.Single().Title.Should().StartWith(ExerciseMarking.Prefix);
+    }
+
+    [Fact]
+    public async Task A_digest_says_how_many_imports_have_waited_even_with_no_tasks()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("rev1", "Robin", "robin@insurer.example");
+        var n = Build(sender, new EmailOptions(), users);
+
+        await n.OnDigestAsync(new UserDigest("rev1", DigestCadence.Daily, [], [], [],
+            new IncidentManager.Application.Import.PendingImportCount(3, false, Now.AddHours(-30)), 24));
+
+        sender.Sent.Should().ContainSingle().Which.HtmlBody.Should().Contain("3 imports have waited more than 24 hours");
+        sender.Sent.Clear();
+        await n.OnDigestAsync(new UserDigest("rev1", DigestCadence.Daily, [], [], []));
+        sender.Sent.Should().BeEmpty("nothing to say");
+    }
 }

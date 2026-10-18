@@ -262,6 +262,30 @@ public static class EmailTemplateCatalog
             CtaLabel: "Open the case",
             CtaUrlToken: "CaseUrl"),
 
+        // CAP-01: an API import waits for review. Needs Notifications:ImportSubmitted:Email on.
+        new EmailTemplateDefinition(
+            "import-submitted",
+            "Import waiting for review",
+            "Sent to the people who can confirm imports when a case-import document arrives through the API. For a restricted target case, only to those who can see it. Needs import emails on.",
+            "Import waiting for review: {{Summary}}",
+            """
+            <h1>An import is waiting for review</h1>
+            <p>Hi {{Reviewer}},</p>
+            <p>A case-import document from <strong>{{Origin}}</strong>, submitted by {{SubmittedBy}}, is in the review queue:</p>
+            <p class="meta">{{Summary}}</p>
+            <p>Nothing has been written to any case. Review it, then confirm or reject it.</p>
+            """,
+            new[]
+            {
+                new EmailToken("Reviewer", "Display name of the person this email goes to."),
+                new EmailToken("Summary", "The queue's line for it: the target case or the new case's title, with the item count."),
+                new EmailToken("Origin", "Where it came from, as the document says (for example XSIAM), or \"the API\"."),
+                new EmailToken("SubmittedBy", "Who submitted it: the owner of the API token used."),
+                new EmailToken("ItemCount", "How many items it would import."),
+            },
+            CtaLabel: "Review the import",
+            CtaUrlToken: "ImportUrl"),
+
         new EmailTemplateDefinition(
             "audit-chain-alarm",
             "Audit-chain integrity alarm",

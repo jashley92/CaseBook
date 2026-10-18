@@ -106,7 +106,8 @@ means it has no UI coupling and could back another entry point.
 | `EvidenceService` | Upload (hash, custody), open (custody on download), view and transfer custody | |
 | `ReportService` | Generate drafts, approve, verify hash, preview, template preview | |
 | `LessonsService` | Post-incident review, improvement actions and register | |
-| `CaseImportService` | Parse, preview, apply; pending-import queue | Goes through `CaseService` writes |
+| `CaseImportService` | Parse, preview, apply; pending-import queue; tells reviewers of an API submission (CAP-01) | Goes through `CaseService` writes |
+| `PendingImportQueue` | The queue's need-to-know scope, and the bounded, time-limited count for the Desk, the sidebar badge and the digest (CAP-01) | Read-only; `PendingImportSignal` tells open badges the queue changed |
 | `IntegrityService` | Verify chain, seal, audit queries | |
 | `EvidenceIntegrityVerifier` | Re-hash evidence | Read-only |
 | `ComplianceBundleService`, `ConfigBundleService`, `LegalRegisterService` | Bundles and register | |
@@ -141,7 +142,8 @@ chat webhook and the matching `Notifications:Chat:*` switch.
 | Task overdue / due soon (background) | the owner, else the IC; escalation tiers to the IC, then managers | optional |
 | Notification deadline at risk / passed (background) | the IC and assignees | optional |
 | Stale case (background) | the IC and assignees | optional |
-| Digest (background) | each opted-in user | — |
+| Digest (background) | each opted-in user; for someone who can confirm imports, a line for the API imports they could review that have waited longer than `Notifications:DigestScan:ImportWaitingHours` (CAP-01) | — |
+| API import waiting for review (CAP-01) | everyone who can confirm imports (`EditCases`), cut to the target case's audience when it's restricted, if `Notifications:ImportSubmitted:Email` | optional (`ImportSubmissions`; a restricted target's summary and origin left out) |
 | Quarterly executive report (background) | users holding the built-in Manager role | — |
 | Audit-chain break / evidence drift | `Email:IntegrityAlertDistribution` | — |
 

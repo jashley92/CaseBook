@@ -101,14 +101,21 @@ public sealed record DigestItem(string CaseNumber, string TaskTitle, Severity Se
 /// A single user's consolidated work digest (PROD-39): their open, dated follow-up items grouped into the
 /// familiar agenda bands. Sent on the cadence they chose, in place of a scatter of per-item reminders.
 /// </summary>
+/// <param name="ImportsWaiting">CAP-01: for a reviewer, the imports they could see that have waited for review longer than
+/// <paramref name="ImportWaitingHours"/>; null or none leaves the line out.</param>
 public sealed record UserDigest(
     string UserId,
     DigestCadence Cadence,
     IReadOnlyList<DigestItem> Overdue,
     IReadOnlyList<DigestItem> DueToday,
-    IReadOnlyList<DigestItem> DueThisWeek)
+    IReadOnlyList<DigestItem> DueThisWeek,
+    Import.PendingImportCount? ImportsWaiting = null,
+    int ImportWaitingHours = 0)
 {
     public int TotalItems => Overdue.Count + DueToday.Count + DueThisWeek.Count;
+
+    /// <summary>CAP-01: whether there's anything to send: an item, or imports waiting too long.</summary>
+    public bool HasContent => TotalItems > 0 || ImportsWaiting is { Count: > 0 };
 }
 
 /// <summary>
@@ -203,4 +210,28 @@ public interface ICaseNotifications
     /// </summary>
     Task OnExecutiveReportAsync(IncidentManager.Application.Dashboards.ProgramReport report, CancellationToken ct = default)
         => Task.CompletedTask;
+
+    /// <summary>
+    /// CAP-01: a case-import document arrived through the API and waits in the review queue. Emails the reviewers named
+    /// (<see cref="ImportSubmission.ReviewerUserIds"/>, already cut to those who may see its target) and posts to the team
+    /// channel, each only when its toggle is on (both off by default). Tells only: nothing is applied (ADR 0004). A default
+    /// no-op so existing implementers and test doubles need not change.
+    /// </summary>
+    Task OnImportSubmittedAsync(ImportSubmission submission, CancellationToken ct = default) => Task.CompletedTask;
 }
+
+/// <summary>
+/// CAP-01: a queued import as its notification describes it. <see cref="Summary"/> is the queue's line ("Into …" or
+/// "New case: …", with the item count), which the shared channel leaves out when <see cref="IsRestricted"/> (its target
+/// case is restricted). <see cref="ReviewerUserIds"/> are the people who may be emailed.
+/// </summary>
+public sealed record ImportSubmission(
+    Guid PendingImportId,
+    string SubmittedBy,
+    string? Origin,
+    string Summary,
+    int ItemCount,
+    Guid? TargetCaseId,
+    bool IsRestricted,
+    bool IsExercise,
+    IReadOnlyList<string> ReviewerUserIds);

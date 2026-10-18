@@ -74,6 +74,12 @@
                     <span class="bi bi-plus-circle" aria-hidden="true"></span><span class="nav-text">New case</span>
                 </NavLink>
             </div>
+            @* CAP-01: the import review queue, with how many API imports wait for this reviewer. *@
+            <div class="nav-item">
+                <NavLink class="nav-link" href="cases/import" Match="NavLinkMatch.All" title="Import">
+                    <span class="bi bi-box-arrow-in-down" aria-hidden="true"></span><span class="nav-text">Import</span><ImportQueueBadge />
+                </NavLink>
+            </div>
         </AuthorizeView>
 
         @* UX-17: audit/forensic surfaces + the export hub together. Access log (the "who viewed this"

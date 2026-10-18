@@ -24,11 +24,19 @@ public sealed class DigestScanner(
     IOrganizationTimeZone? zone = null,
     IUserDirectory? users = null,
     ApiTokens.ITokenOwnerCheck? owners = null,
-    IRoleDirectory? roles = null)
+    IRoleDirectory? roles = null,
+    IAppDbContextFactory? factory = null)
 {
+    /// <summary>CAP-01: <c>Notifications:DigestScan:ImportWaitingHours</c>'s default: imports waiting longer than a day.</summary>
+    public const int DefaultImportWaitingHours = 24;
+
     /// <summary>Sends a digest to each subscriber who has items and hasn't been sent one this period. Returns
     /// how many digests were sent.</summary>
-    public async Task<int> ScanAndNotifyAsync(CancellationToken ct = default)
+    public Task<int> ScanAndNotifyAsync(CancellationToken ct = default) => ScanAndNotifyAsync(DefaultImportWaitingHours, ct);
+
+    /// <param name="importWaitingHours">CAP-01: a reviewer's digest says how many imports have waited for review longer
+    /// than this; 0 leaves the line out.</param>
+    public async Task<int> ScanAndNotifyAsync(int importWaitingHours, CancellationToken ct = default)
     {
         var subscribers = await prefs.ListSubscribersAsync(ct);
         if (subscribers.Count == 0) return 0;
@@ -50,7 +58,12 @@ public sealed class DigestScanner(
             var overdue = Band(items, now, tz, AgendaBucketKind.Overdue);
             var today = Band(items, now, tz, AgendaBucketKind.Today);
             var thisWeek = Band(items, now, tz, AgendaBucketKind.ThisWeek);
-            if (overdue.Count == 0 && today.Count == 0 && thisWeek.Count == 0)
+            // CAP-01: and, for someone who reviews imports, the ones they'd see that have waited too long.
+            var imports = importWaitingHours > 0 && factory is not null
+                ? await Import.PendingImportQueue.WaitingForAsync(factory, sub.UserId, TimeSpan.FromHours(importWaitingHours), now,
+                    users, roles, audience, ct)
+                : Import.PendingImportCount.None;
+            if (overdue.Count == 0 && today.Count == 0 && thisWeek.Count == 0 && imports.Count == 0)
                 continue; // nothing worth a digest → don't send, and don't consume the period slot
 
             // Once per period: only mark (and thus consume the slot) when we actually have something to send. BUG-147:
@@ -61,7 +74,8 @@ public sealed class DigestScanner(
 
             // BUG-08: a digest that wasn't delivered is un-marked, so the next scan sends it again.
             using var watch = DeliveryWatch.Begin();
-            await notifications.OnDigestAsync(new UserDigest(sub.UserId, sub.Cadence, overdue, today, thisWeek), ct);
+            await notifications.OnDigestAsync(new UserDigest(sub.UserId, sub.Cadence, overdue, today, thisWeek,
+                imports, importWaitingHours), ct);
             if (watch.Failed) { tracker.Forget(sub.UserId, sub.Cadence, PeriodKey(sub.Cadence, ZonedDays.Of(now, tz))); continue; }
             marks.Complete();
             sent++;
