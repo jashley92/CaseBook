@@ -112,7 +112,7 @@ public static class RelatedObservables
             case RelatedRule.Ipv6Slash48:
             {
                 var address = type == EntityType.Url && Uri.TryCreate(v, UriKind.Absolute, out var u) ? u.Host.Trim('[', ']') : v;
-                if (!IPAddress.TryParse(address, out var ip) || exclusions.RangeOf(ip) is not { } range) return null;
+                if (!IpText.TryParse(address, out var ip) || exclusions.RangeOf(ip) is not { } range) return null;   // F3: decimal parts
                 return $"{address.ToLowerInvariant()} is in {range}, one of your organization's excluded address ranges, so it isn't used to suggest relations.";
             }
             case RelatedRule.RegistrableDomain:
@@ -212,7 +212,8 @@ public static class RelatedObservables
 
     private static RelatedKey? IpKey(string v)
     {
-        if (!IPAddress.TryParse(v, out var ip)) return null;
+        // CAP-28 review (F3): each IPv4 part decimal; IPAddress.TryParse read 010.0.0.1 as 8.0.0.1, so its /24 was 8.0.0.
+        if (!IpText.TryParse(v, out var ip)) return null;
         if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
         if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any) || ip.Equals(IPAddress.None)) return null;
         var bytes = ip.GetAddressBytes();

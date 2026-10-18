@@ -35,11 +35,16 @@ Above the results Find says how it read what you typed:
   - **On SQL Server with Full-Text Search**, a word matches the words that **start with it**, from the full-text
     indexes: `lsa` finds "LSASS", and `lateral mov` finds "lateral movement", but `sass` doesn't find "LSASS". That's
     what makes typing in the command bar fast on a large database. It covers case titles and summaries, briefs, record
-    entries (text and *why*), tasks, working notes and evidence names; anything you type, `AND`, `OR`, `NEAR`, `*`, `~`
-    and quotes included, is searched as words, never as a full-text operator. A word with no letter or digit in it
-    (`--`, `*`) matches anywhere in the text, as below. A change is searchable within seconds of being saved.
-  - **Otherwise** (SQLite, or SQL Server without the feature), and always for case numbers, entities and indicators,
-    a word matches **anywhere** in the text, part of a word included.
+    entries (text and *why*), tasks, working notes and evidence descriptions; anything you type, `AND`, `OR`, `NEAR`,
+    `*`, `~` and quotes included, is searched as words, never as a full-text operator. A word with no letter or digit
+    in it (`--`, `*`) matches anywhere in the text, as below. A change is searchable within seconds of being saved.
+    **Words joined by `_` or `-` are one word** to SQL Server's word breaker: `svc_backup` and `e-mail` are found by
+    `svc_backup`, `svc` or `e-mail`, but **not** by `backup` or `mail`, the part after the join. Type the start of the
+    joined word, or ask an administrator to set *How search matches words* (`Search:Mode`) to *Anywhere in the text*,
+    which turns full-text off for everyone (CAP-22 review).
+  - **Otherwise** (SQLite, SQL Server without the feature, or `Search:Mode` set to `Substring`), and always for case
+    numbers, entities, indicators and evidence file names (`dump` finds `lsass_dump.dmp`), a word matches
+    **anywhere** in the text, part of a word included.
 
 ## Filters
 
@@ -73,7 +78,8 @@ Examples:
 
 ## Limits
 
-- Matching is literal: by word prefix with full-text search, by substring without it (above). There is no fuzzy
+- Matching is literal: by word prefix with full-text search, by substring without it (above). With full-text, the
+  part of a word after a `_` or `-` isn't a word of its own (`backup` doesn't find `svc_backup`). There is no fuzzy
   matching, no stemming (`run` doesn't find "ran"), no CIDR or subdomain expansion, and part of a domain matches the
   record's text, not related indicators.
 - An account and an email address with the same value are one identity (as everywhere in CaseBook).

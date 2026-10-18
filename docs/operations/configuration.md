@@ -33,7 +33,12 @@ Things to know:
   `Development`). Nothing in `deploy/` sets it, so an IIS install runs as **Production**, which loads
   `appsettings.Production.json` and enforces Windows authentication.
 - **Lists merge by index** across sources. A later source can replace items 0..n but can't make a list
-  shorter. If you put recipients in a file, you can't clear them from the in-app editor.
+  shorter, except the in-app editor, which blanks the file's items past the end of its own (BUG-98), so a shorter
+  or cleared list saved in Administration wins.
+- **A list written as one string** (`RelatedIndicators__ExcludedRanges="10.0.0.0/8, fd00::/8"`, read by the
+  related-indicator exclusions) is used only while no source gives the list as items. An in-app list, blank
+  included, always wins over it (CAP-28 review). An empty JSON array (`"ExcludedDomains": []`) is an empty list,
+  not an unset one.
 - **Administration → Settings → Configuration source map** shows the true effective value of each key and
   which source it came from. Use it when a value isn't what you expect.
 
@@ -202,7 +207,7 @@ process's working directory, which under IIS is the site folder.
 | `ExternalLinks:VirusTotalUrlTemplate` | IOC lookup link; `{0}` = indicator | json: VirusTotal search URL | App |
 | `App:BaseUrl` | Absolute site URL used in email links, the email logo and calendar links. Blank still sends, without links. **The installer doesn't set it.** | blank | App |
 | `RelatedIndicators:ExcludedDomains` | CAP-28: your organization's domains, one per line (a pasted `contoso.com, corp.contoso.local` is split). Each covers every name under it (`mail.contoso.com`, `a@corp.contoso.com`; never `notcontoso.com`), checked against the whole host. A domain, URL, email address or account on one is never used to suggest *Possibly related* indicators, and nothing is suggested because of it. Stored lowercased without a trailing dot (`*.contoso.com` is `contoso.com`). Refused on save: an email address, an IP, a single label, a public suffix (`co.uk`), or non-ASCII (enter an international name in its `xn--` form). Under Administration › Integrations › Related indicators. **Default (CAP-28 discovery):** while it isn't set anywhere (never saved in Administration, not in a settings file), the domains found on the server's network are used: the AD domain the server is joined to, its forest root and the forest's other domains (NetBIOS names and public suffixes dropped). Domains the domain and the forest trust are found too but only offered under *Use these*: a partner's domain isn't necessarily noise. They're looked up once in the background after start-up (5 s limit), kept until restart or *Look again*, never stored, and never in a config bundle. Not domain-joined, not Windows, or a failure finds none. Once saved, blank included, the saved value is used; Reset brings discovery back. Setting sources shows *Discovered*. | blank, or the domains found on the server's network | App |
-| `RelatedIndicators:ExcludedRanges` | CAP-28: address ranges in CIDR, IPv4 or IPv6, one per line. An address inside one (an IPv4-mapped `::ffff:10.1.2.3` as its IPv4 address), or a URL on one, is never related by its /24 or /48. A bare address is stored as /32 or /128; a range with bits set past its prefix (`10.0.0.1/8`) is refused with the range it probably meant. Blank relates every range; Reset brings back the default. | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `::1/128`, `fe80::/10`, `fc00::/7` (private, loopback, link-local and unique local) | App |
+| `RelatedIndicators:ExcludedRanges` | CAP-28: address ranges in CIDR, IPv4 or IPv6, one per line. An address inside one (an IPv4-mapped `::ffff:10.1.2.3` as its IPv4 address), or a URL on one, is never related by its /24 or /48. A bare address is stored as /32 or /128; a range with bits set past its prefix (`10.0.0.1/8`) is refused with the range it probably meant. Each IPv4 part is decimal: a zero-padded `010.0.0.0/8` is `10.0.0.0/8` (never octal 8.0.0.0/8), and a hex part (`0x0A`) is refused; an indicator `010.0.0.1` is likewise 10.0.0.1. An IPv4-mapped range (`::ffff:10.0.0.0/104`) is stored as its IPv4 range (`10.0.0.0/8`). Blank relates every range; Reset brings back the default. | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `::1/128`, `fe80::/10`, `fc00::/7` (private, loopback, link-local and unique local) | App |
 | `RelatedIndicators:ExcludeFreeMail` | CAP-28: addresses at the big free mail providers (Gmail, Outlook.com, Yahoo, iCloud, Proton and the like; a fixed list in `RelatedObservables`) aren't related by their email domain | `true` | App |
 
 ### 3.7 Governance and retention
@@ -364,7 +369,13 @@ start. After that, mappings are managed in Administration → Roles & access, an
 `appsettings.json` carries sample group names (`SOC-Analysts`, …), and the template replaces them with the
 installer's values. Sensitivity: ⚠ (names AD groups).
 
-### 3.17 Design-time only
+### 3.17 Search
+
+| Key | Purpose | Default | Edit |
+|---|---|---|---|
+| `Search:Mode` | CAP-22 review: how Find and the case-list search match words on SQL Server with Full-Text Search. `Auto` by word from the full-text indexes, fast, but a word joined by `_` or `-` is one word (`backup` doesn't find `svc_backup`); `Substring` anywhere in the text, reading every row ([OPERATIONS.md §9](../OPERATIONS.md#9-full-text-search-on-sql-server-cap-22)). Read by name at each search; anything else is `Auto`. No effect without Full-Text Search. | `Auto` | App |
+
+### 3.18 Design-time only
 
 `IM_MIGRATIONS_PROVIDER=SqlServer` (environment variable) points the `dotnet ef` tooling at the SQL Server
 migrations assembly. The running app never reads it. See [development/recipes.md](../development/recipes.md#add-or-change-a-database-column).

@@ -129,8 +129,13 @@ public sealed class RelatedExclusions
         var slash = e.IndexOf('/');
         var addressPart = slash < 0 ? e : e[..slash];
         // IPAddress.TryParse takes "10.1" as 10.0.0.1; only a dotted quad or an IPv6 address is a range's address here.
-        if (!IPAddress.TryParse(addressPart, out var address) || addressPart.Contains('%')
-            || (address.AddressFamily == AddressFamily.InterNetwork && addressPart.Count(c => c == '.') != 3))
+        // CAP-28 review (F3): and each IPv4 part in decimal (IpText): IPAddress.TryParse read 010.0.0.0/8 as 8.0.0.0/8.
+        if (IpText.IsNonDecimalIpv4(addressPart))
+        {
+            problem = "isn't an address range. Write all four parts of an IPv4 address in decimal, like 10.0.0.0/8.";
+            return null;
+        }
+        if (!IpText.TryParse(addressPart, out var address) || addressPart.Contains('%'))
         {
             problem = "isn't an address range. Write it as CIDR, like 10.0.0.0/8 or fd00::/8.";
             return null;
@@ -141,6 +146,14 @@ public sealed class RelatedExclusions
         {
             problem = $"has a prefix length that isn't 0 to {max}. Write it as CIDR, like {(max == 32 ? "10.0.0.0/8" : "fd00::/8")}.";
             return null;
+        }
+        // CAP-28 review: an IPv4-mapped range (::ffff:10.0.0.0/104) is the IPv4 range (10.0.0.0/8). Kept as IPv6 it never
+        // matched a plain IPv4 indicator. One shorter than /96 covers more than mapped addresses, so its bits past the
+        // prefix are set and it's refused below.
+        if (address.IsIPv4MappedToIPv6 && prefix >= 96)
+        {
+            address = address.MapToIPv4();
+            prefix -= 96;
         }
         var network = Masked(address, prefix);
         if (!network.Equals(address))

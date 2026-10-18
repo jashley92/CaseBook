@@ -201,6 +201,16 @@ public static class SettingsCatalog
         new SettingDefinition(RelatedExclusionSettings.FreeMailKey, "Leave out free mail providers", "Related indicators", SettingKind.Bool,
             "Two addresses at Gmail, Outlook.com, Yahoo, iCloud, Proton and the like say nothing about who sent them, so they " +
             "aren't related by their email domain. Default on.", "true"),
+        // CAP-22 review (F2): full-text matches whole words, and SQL Server keeps words joined by _ or - as one, so a site
+        // whose analysts need "backup" to find svc_backup can turn it off. Read live by SqlFullTextSearch, by name.
+        new SettingDefinition("Search:Mode", "How search matches words", "Search", SettingKind.Text,
+            "Find and the case-list search, on SQL Server with Full-Text Search. By word (the default) is fast on a large " +
+            "database and finds the words that start with what you type: lsa finds LSASS, but backup doesn't find svc_backup " +
+            "and mail doesn't find e-mail, because a word joined by _ or - is one word. Anywhere in the text finds both, and " +
+            "part of any word, by reading every row of every searched column, so it slows as the record grows. Without " +
+            "Full-Text Search (and on SQLite) search is always anywhere in the text. Indicators, case numbers and evidence " +
+            "file names always are.", "Auto",
+            Options: [new("Auto", "By word where indexed (fast)"), new("Substring", "Anywhere in the text (reads every row)")]),
         // CAP-10: read by the retention review (Administration › Retention review) and its nightly count. Never purges.
         new SettingDefinition("Retention:CaseYears", "Case retention (years)", "Retention", SettingKind.Int,
             "How long after closing a case is listed under Administration › Retention review, for an administrator to archive. " +

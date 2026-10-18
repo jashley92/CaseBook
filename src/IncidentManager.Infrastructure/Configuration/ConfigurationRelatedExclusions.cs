@@ -36,13 +36,21 @@ public sealed class ConfigurationRelatedExclusions(IConfiguration config, IOrgan
     // A list setting: indexed children (an in-app value, or a JSON array in a settings file), or one string written by hand
     // ("10.0.0.0/8, fd00::/8"); null when it isn't set anywhere, so the default applies. An in-app value saved blank is
     // set: its children are there, blank (DbSettingsConfiguration masks the file's list), and it means none.
+    // CAP-28 review (F1): the children first. The in-app value is only ever children, so a single string in the settings
+    // file or an environment variable (RelatedIndicators__ExcludedRanges) beat it, and beat an in-app "none", while the
+    // page said Database. The single string is read only when there are no children anywhere.
     private IReadOnlyList<string>? List(string key)
     {
         var section = config.GetSection(key);
+        var children = section.GetChildren().ToList();
+        if (children.Count > 0)
+            return children.Select(c => c.Value?.Trim()).Where(v => !string.IsNullOrEmpty(v)).Select(v => v!).ToList();
         if (section.Value is { } flat)
             return flat.Split(['\n', '\r', ',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var children = section.GetChildren().ToList();
-        if (children.Count == 0) return null;
-        return children.Select(c => c.Value?.Trim()).Where(v => !string.IsNullOrEmpty(v)).Select(v => v!).ToList();
+        // A settings file's empty array ("ExcludedDomains": []) is the key with no value and no children: set, to none.
+        return ListedEmpty(key) ? [] : null;
     }
+
+    private bool ListedEmpty(string key) =>
+        config is IConfigurationRoot root && root.Providers.Any(p => p.TryGet(key, out var v) && v is null);
 }

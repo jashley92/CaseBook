@@ -103,6 +103,48 @@ public sealed class OrganizationDomainsTests
         p.DiscoveredInForce.Should().BeNull();
     }
 
+    // CAP-28 review (F1): the single string first in the builder (the settings file, an environment variable), the in-app
+    // list after it, shaped as DbSettingsConfiguration loads it (children, the mask blank, the key itself null).
+    private static ConfigurationRelatedExclusions Layered(Dictionary<string, string?> file, Dictionary<string, string?> inApp) =>
+        new(new ConfigurationBuilder().AddInMemoryCollection(file).AddInMemoryCollection(inApp).Build(), new FakeDomains(Contoso));
+
+    [Fact]
+    public void An_in_app_list_beats_a_single_string_from_the_file_or_environment()
+    {
+        var file = new Dictionary<string, string?>
+        {
+            [RelatedExclusionSettings.DomainsKey] = "fabrikam.com, tailspin.example",
+            [RelatedExclusionSettings.RangesKey] = "203.0.113.0/24, 198.51.100.0/24",
+        };
+        var p = Layered(file, new()
+        {
+            [RelatedExclusionSettings.DomainsKey] = null, [RelatedExclusionSettings.DomainsKey + ":0"] = "corp.contoso.com",
+            [RelatedExclusionSettings.DomainsKey + ":1"] = "",
+            [RelatedExclusionSettings.RangesKey] = null, [RelatedExclusionSettings.RangesKey + ":0"] = "10.0.0.0/8",
+        });
+        p.Current.Domains.Should().Equal("corp.contoso.com");
+        p.Current.Ranges.Select(r => r.ToString()).Should().Equal("10.0.0.0/8");
+
+        // Even without the key masked (a provider that only writes children), the children win.
+        Layered(file, new() { [RelatedExclusionSettings.RangesKey + ":0"] = "10.0.0.0/8" })
+            .Current.Ranges.Select(r => r.ToString()).Should().Equal("10.0.0.0/8");
+    }
+
+    [Fact]
+    public void An_in_app_blank_beats_a_single_string_and_means_none()
+    {
+        var p = Layered(
+            new() { [RelatedExclusionSettings.DomainsKey] = "fabrikam.com", [RelatedExclusionSettings.RangesKey] = "203.0.113.0/24" },
+            new()
+            {
+                [RelatedExclusionSettings.DomainsKey] = null, [RelatedExclusionSettings.DomainsKey + ":0"] = "",
+                [RelatedExclusionSettings.RangesKey] = null, [RelatedExclusionSettings.RangesKey + ":0"] = "",
+            });
+        p.Current.Domains.Should().BeEmpty();
+        p.Current.Ranges.Should().BeEmpty();
+        p.DiscoveredInForce.Should().BeNull();
+    }
+
     [Fact]
     public void Nothing_found_means_no_domains_and_nothing_in_force()
     {

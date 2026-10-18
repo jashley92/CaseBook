@@ -11,6 +11,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace IncidentManager.IntegrationTests;
@@ -318,6 +319,91 @@ public sealed class FullTextSearchTests : IDisposable
         var until = DateTime.UtcNow.AddSeconds(30);
         while ((await Find(search).FindAsync("in:notes zerolog")).Notes.Count == 0 && DateTime.UtcNow < until) await Task.Delay(500);
         (await Find(search).FindAsync("in:notes zerolog")).Notes.Should().ContainSingle();
+    }
+
+    // CAP-22 review (F2): SQL Server's English word breaker keeps words joined by _ or - as one token (lsass_dump.dmp,
+    // svc_backup, e-mail). Evidence file names are no longer indexed, so part of one still finds it; in the free text it's
+    // the documented limit of searching by word, and Search:Mode Substring is the way round it.
+    [SqlServerFullTextFact]
+    public async Task Joined_words_by_word_and_with_search_mode_substring()
+    {
+        Use(TestDatabase.SqlServer);
+        await using (var db = _db!.NewContext())
+        {
+            db.Notes.Add(new AnalystNote { CaseId = _alpha, Body = "The svc_backup account was added to Domain Admins", CreatedBy = "robin", CreatedAtUtc = Now });
+            db.Notes.Add(new AnalystNote { CaseId = _alpha, Body = "A phishing e-mail from the CFO's lookalike domain", CreatedBy = "robin", CreatedAtUtc = Now });
+            await db.SaveChangesAsync();
+        }
+        var search = await IndexedAsync();
+
+        (await Find(search).FindAsync("dump")).Evidence.Should().ContainSingle(x => x.FileName == "lsass_dump.dmp", "a file name is a substring match");
+        (await Find(search).FindAsync("dmp")).Evidence.Should().ContainSingle();
+        (await Find(search).FindAsync("in:notes svc_backup")).Notes.Should().ContainSingle("the whole token, by word");
+        (await Find(search).FindAsync("in:notes e-mail")).Notes.Should().ContainSingle();
+        (await Find(search).FindAsync("in:notes svc")).Notes.Should().ContainSingle("the token's start is a prefix of it");
+        // The documented limit (find.md, OPERATIONS §9): by word, the part after the _ or - isn't a word of its own.
+        (await Find(search).FindAsync("in:notes backup")).Notes.Should().BeEmpty();
+        (await Find(search).FindAsync("in:notes mail")).Notes.Should().BeEmpty();
+
+        // Search:Mode Substring: the same indexes, every column matched anywhere in the text.
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [SqlFullTextSearch.ModeKey] = "Substring" }).Build();
+        var off = new SqlFullTextSearch(_db!.Factory(), new FullTextStatusCache(), _clock, config: config);
+        var status = await off.StatusAsync();
+        status.TurnedOff.Should().BeTrue();
+        status.Mode.Should().Be(FullTextMode.Ready);
+        status.Any.Should().BeFalse();
+        (await Find(off).FindAsync("in:notes backup")).Notes.Should().ContainSingle();
+        (await Find(off).FindAsync("in:notes mail")).Notes.Should().ContainSingle();
+        (await Find(off).FindAsync("sass")).Entries.Should().Contain(e => e.Text.Contains("LSASS"), "part of a word, as without full-text");
+        foreach (var q in Queries)
+            Shown(await Find(off).FindAsync(q)).Should().Be(Shown(await Find(null).FindAsync(q)), q);
+    }
+
+    // CAP-22 review (C21): a fallback while a check is in flight leaves the status stale, whatever the check finds after.
+    [Fact]
+    public void A_check_that_began_before_a_fallback_does_not_mark_the_status_fresh()
+    {
+        var cache = new FullTextStatusCache();
+        var ready = SqlFullTextSearch.Classify(FullTextSchema.Columns.Select(c => (c.Table.Name, c.Column, true, 0)), Now);
+        var began = cache.Generation;
+        cache.MarkStale();   // the fallback, during the check
+        cache.Keep(ready, Now + SqlFullTextSearch.ReadyFor, began);
+        cache.Current.Should().BeSameAs(ready);
+        cache.StaleAtUtc.Should().Be(DateTimeOffset.MinValue, "the next search checks again");
+
+        cache.Keep(ready, Now + SqlFullTextSearch.ReadyFor, cache.Generation);
+        cache.StaleAtUtc.Should().Be(Now + SqlFullTextSearch.ReadyFor, "a check that began after it is kept as fresh");
+    }
+
+    /// <summary>Cancels the caller's token as the check's query starts, as a person leaving the page would.</summary>
+    private sealed class CancelOnQuery(CancellationTokenSource cts) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("IsFullTextInstalled", StringComparison.Ordinal)) cts.Cancel();
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
+    // CAP-22 review: the caller cancelling during the check isn't the database failing, so nothing is kept as Unknown.
+    [SqlServerFact]
+    public async Task A_caller_cancelling_during_the_check_is_not_kept_as_unknown()
+    {
+        Use(TestDatabase.SqlServer);
+        using var cts = new CancellationTokenSource();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(_db!.Connection.ConnectionString)
+            .AddInterceptors(new CancelOnQuery(cts)).Options;
+        var cache = new FullTextStatusCache();
+        var search = new SqlFullTextSearch(new TestDbContextFactory(options), cache, _clock);
+
+        var check = () => search.StatusAsync(cts.Token);
+        await check.Should().ThrowAsync<Exception>();
+        cts.IsCancellationRequested.Should().BeTrue();
+        cache.Current.Should().BeNull("nothing was found, so nothing is kept");
+        (await Real(cache).StatusAsync()).Mode.Should().NotBe(FullTextMode.Unknown, "the next search checks");
     }
 
     [SqlServerFullTextFact]

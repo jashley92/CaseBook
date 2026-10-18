@@ -135,6 +135,9 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
                     // the options drop blank entries.
                     for (var i = lines.Length; i < lines.Length + MaskedListEntries; i++)
                         data[$"{r.Key}:{i}"] = "";
+                    // CAP-28 review (F1): and the key itself, so a single string the file or an environment variable gives
+                    // it ("10.0.0.0/8, fd00::/8") can't show through as the list either.
+                    data[r.Key] = null;
                 }
                 else
                 {

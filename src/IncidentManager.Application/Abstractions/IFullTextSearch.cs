@@ -2,6 +2,18 @@ using System.Linq.Expressions;
 
 namespace IncidentManager.Application.Abstractions;
 
+/// <summary>
+/// CAP-22 review (F2): the <c>Search:Mode</c> setting (Administration › Settings › Search), read by name. <see cref="Auto"/>
+/// (the default) searches by word wherever the full-text indexes are ready; <see cref="Substring"/> never does. SQL
+/// Server's word breaker keeps words joined by <c>_</c> or <c>-</c> as one token, so by word <c>backup</c> doesn't find
+/// "svc_backup" and <c>mail</c> doesn't find "e-mail"; a site that needs those found turns full-text off.
+/// </summary>
+public enum SearchMode
+{
+    Auto,
+    Substring,
+}
+
 /// <summary>CAP-22: how Find and the case-list search match words now.</summary>
 public enum FullTextMode
 {
@@ -24,6 +36,8 @@ public enum FullTextMode
 /// <summary>
 /// CAP-22: what the last check found, for the queries and Diagnostics. <see cref="Columns"/> are the (entity type, property)
 /// pairs that are full-text indexed and populated, so each is searched by word and anything else by substring.
+/// <see cref="NotIndexed"/> are the columns with no full-text index ("Table.Column"), which Diagnostics can create.
+/// <see cref="TurnedOff"/>: <c>Search:Mode</c> is Substring, so nothing is searched by word whatever the indexes are.
 /// </summary>
 public sealed record FullTextStatus(
     FullTextMode Mode,
@@ -31,7 +45,9 @@ public sealed record FullTextStatus(
     DateTimeOffset CheckedAtUtc,
     string? Detail = null,
     int Fallbacks = 0,
-    string? LastFallback = null)
+    string? LastFallback = null,
+    IReadOnlyList<string>? NotIndexed = null,
+    bool TurnedOff = false)
 {
     public static FullTextStatus Substring(FullTextMode mode, DateTimeOffset at, string? detail = null) =>
         new(mode, new HashSet<(Type, string)>(), at, detail);
@@ -39,10 +55,22 @@ public sealed record FullTextStatus(
     /// <summary>Whether any column is searched by word.</summary>
     public bool Any => Columns.Count > 0;
 
+    /// <summary>CAP-22 review: whether some column has no full-text index, so Diagnostics offers to create it.</summary>
+    public bool CanCreate => Mode is FullTextMode.NotCreated or FullTextMode.Partial || NotIndexed is { Count: > 0 };
+
+    /// <summary>CAP-22 review (F2): this status with nothing searched by word, as <c>Search:Mode</c> Substring has it; the
+    /// indexes' own state stays in <see cref="Mode"/> and <see cref="Detail"/> for Diagnostics.</summary>
+    public FullTextStatus Off() => TurnedOff ? this : this with
+    {
+        Columns = new HashSet<(Type, string)>(),
+        TurnedOff = true,
+        Detail = $"The indexes: {Label["Search: ".Length..]}{(Detail is { } d ? $", {d}" : "")}.",
+    };
+
     public bool Covers(Type entity, string property) => Columns.Contains((entity, property));
 
     /// <summary>Diagnostics' line for it.</summary>
-    public string Label => Mode switch
+    public string Label => TurnedOff ? "Search: substring (full-text turned off by the Search mode setting)" : Mode switch
     {
         FullTextMode.Ready => "Search: full-text (SQL Server)",
         FullTextMode.Partial => "Search: full-text on some columns, substring on the rest",

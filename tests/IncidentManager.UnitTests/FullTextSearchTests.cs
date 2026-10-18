@@ -4,6 +4,7 @@ using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Search;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Persistence;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace IncidentManager.UnitTests;
@@ -247,6 +248,61 @@ public sealed class FullTextSearchTests
         s.Covers(typeof(AnalystNote), nameof(AnalystNote.Body)).Should().BeFalse("a disabled index isn't used");
         s.Covers(typeof(TimelineEntry), nameof(TimelineEntry.Description)).Should().BeTrue();
         s.Detail.Should().Contain("AnalystNotes.Body");
+    }
+
+    [Fact]
+    public void A_filling_index_with_a_column_never_indexed_names_it_and_offers_to_create_it()
+    {
+        // CAP-22 review: one column with no index at all while the rest fill read only as Populating, which hid Create.
+        var s = SqlFullTextSearch.Classify(All(populate: 1).Where(r => r.Item1 != "AnalystNotes"), At);
+        s.Mode.Should().Be(FullTextMode.Populating);
+        s.NotIndexed.Should().Equal("AnalystNotes.Body");
+        s.Detail.Should().Contain("not indexed: AnalystNotes.Body");
+        s.CanCreate.Should().BeTrue();
+
+        SqlFullTextSearch.Classify(All(populate: 1), At).CanCreate.Should().BeFalse("everything is indexed, only filling");
+        SqlFullTextSearch.Classify(All(), At).CanCreate.Should().BeFalse();
+        SqlFullTextSearch.Classify([], At).CanCreate.Should().BeTrue();
+        SqlFullTextSearch.Classify([], At).NotIndexed.Should().HaveCount(FullTextSchema.Columns.Count());
+    }
+
+    [Fact]
+    public void Evidence_file_names_are_not_indexed_so_part_of_one_still_finds_it()
+    {
+        // CAP-22 review (F2): the word breaker keeps lsass_dump.dmp as one token, so by word "dump" missed it.
+        FullTextSchema.Columns.Should().NotContain(c => c.Table.Name == "Evidence" && c.Column == nameof(Evidence.OriginalFileName));
+        FullTextSchema.Columns.Should().Contain(c => c.Table.Name == "Evidence" && c.Column == nameof(Evidence.Description));
+        FullTextSchema.Script.Should().NotContain("OriginalFileName");
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("Auto", false)]
+    [InlineData("auto", false)]
+    [InlineData("Substring", true)]
+    [InlineData(" substring ", true)]
+    [InlineData("1", false)]           // BUG-592: by name only, never a number
+    [InlineData("Off", false)]         // not a mode: the default
+    public void Search_mode_is_read_by_name_and_only_Substring_turns_word_search_off(string? value, bool off)
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [SqlFullTextSearch.ModeKey] = value }).Build();
+        new SqlFullTextSearch(null!, new FullTextStatusCache(), null!, config: config).TurnedOff.Should().Be(off);
+    }
+
+    [Fact]
+    public void Turned_off_nothing_is_searched_by_word_and_the_indexes_state_is_kept_for_diagnostics()
+    {
+        var s = SqlFullTextSearch.Classify(All(), At).Off();
+        s.Any.Should().BeFalse();
+        s.TurnedOff.Should().BeTrue();
+        s.Mode.Should().Be(FullTextMode.Ready, "the indexes are still there and filled");
+        s.Label.Should().Be("Search: substring (full-text turned off by the Search mode setting)");
+        s.Detail.Should().Be("The indexes: full-text (SQL Server).");
+        s.CanCreate.Should().BeFalse();
+        s.Off().Should().BeSameAs(s);
+        SqlFullTextSearch.Classify([], At).Off().CanCreate.Should().BeTrue("Create is still offered while it's off");
     }
 
     [Fact]

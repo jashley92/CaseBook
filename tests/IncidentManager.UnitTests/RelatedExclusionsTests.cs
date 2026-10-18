@@ -162,4 +162,48 @@ public sealed class RelatedExclusionsTests
     [InlineData("10.0.0.0/-1", "0 to 32")]
     public void An_entry_that_isnt_a_range_is_refused_with_its_name(string entry, string why) =>
         SettingsCatalog.Problem(Ranges, entry).Should().StartWith($"Excluded address ranges: \"{entry}\"").And.Contain(why);
+
+    // --- CAP-28 review (F3): IPv4 parts are decimal, never octal or hex ---
+
+    [Theory]
+    [InlineData("010.0.0.0/8", "10.0.0.0/8")]
+    [InlineData("192.168.010.000/24", "192.168.10.0/24")]
+    [InlineData("010.000.000.001", "10.0.0.1/32")]
+    [InlineData("::ffff:10.0.0.0/104", "10.0.0.0/8")]
+    [InlineData("::ffff:192.168.010.000/120", "192.168.10.0/24")]
+    [InlineData("::ffff:0:0/96", "0.0.0.0/0")]
+    public void A_zero_padded_or_mapped_range_is_read_as_the_decimal_IPv4_range(string entry, string stored) =>
+        SettingsCatalog.Normalize(Ranges, entry).Should().Be(stored);
+
+    [Theory]
+    [InlineData("0x0A.0.0.0/8")]
+    [InlineData("0xC0.168.0.0/16")]
+    [InlineData("10.0.0.0x0/32")]
+    [InlineData("0010.0.0.0/8")]
+    [InlineData("256.0.0.0/8")]
+    [InlineData("::ffff:0x0A.0.0.0/104")]
+    public void A_hex_or_out_of_range_part_is_refused(string entry) =>
+        SettingsCatalog.Problem(Ranges, entry).Should().StartWith($"Excluded address ranges: \"{entry}\"").And.Contain("isn't an address range");
+
+    [Fact]
+    public void A_mapped_range_matches_a_plain_IPv4_indicator_and_a_zero_padded_one_its_decimal_addresses()
+    {
+        var ex = Org(ranges: ["::ffff:198.51.100.0/120", "010.0.0.0/8"]);
+        ex.Ranges.Select(r => r.ToString()).Should().Equal("198.51.100.0/24", "10.0.0.0/8");
+        RelatedObservables.KeyOf(EntityType.IpAddress, "198.51.100.7", ex).Should().BeNull("inside the mapped range");
+        RelatedObservables.KeyOf(EntityType.IpAddress, "10.1.2.3", ex).Should().BeNull("inside 10/8, not 8/8");
+        RelatedObservables.KeyOf(EntityType.IpAddress, "8.1.2.3", ex).Should().NotBeNull("8.0.0.0/8 was never meant");
+    }
+
+    [Fact]
+    public void A_zero_padded_indicator_is_its_decimal_address_and_a_hex_one_is_no_address()
+    {
+        IocObservable.DetectType("010.000.000.001").Should().Be(EntityType.IpAddress);
+        RelatedObservables.KeyOf(EntityType.IpAddress, "010.000.000.001", RelatedExclusions.None)!.Value.Shared.Should().Be("10.0.0", "not 8.0.0");
+        RelatedObservables.KeyOf(EntityType.IpAddress, "192.168.010.005", RelatedExclusions.None)!.Value.Shared.Should().Be("192.168.10");
+        RelatedObservables.ExcludedBecause(EntityType.IpAddress, "010.4.5.6", Org()).Should().Contain("10.0.0.0/8");
+        IocObservable.DetectType("0x0A.0.0.1").Should().NotBe(EntityType.IpAddress);
+        RelatedObservables.KeyOf(EntityType.IpAddress, "0x0A.0.0.1", RelatedExclusions.None).Should().BeNull();
+        IocObservable.Normalize(EntityType.IpAddress, "::ffff:010.0.0.1").Should().Be("10.0.0.1", "BUG-176's mapped form, read decimally");
+    }
 }

@@ -236,13 +236,33 @@ first with `casebook-keytool export`.
   command bar stays fast on a large database. A word then matches the words that **start with** it (`lsa` finds
   "LSASS", `sass` no longer does); indicators, case numbers and entities still match anywhere in the text, and without
   the feature everything searches by substring as before. The upgrade adds the migration `FullTextSearch` (SQL Server:
-  catalog `CaseBookText` and indexes on the case, brief, record entry, note, task, task comment and evidence text, made
+  catalog `CaseBookText` and indexes on the case, brief, record entry, note, task, task comment and evidence description text, made
   only when the instance has the feature and outside a transaction; SQLite: nothing). Indexes fill in the background
   after the upgrade, and search uses them once they're filled. Nothing to configure. **Administration › Diagnostics**
   shows a *Search* row with the mode; if the feature is added later, *Create full-text indexes* there (the app account
   needs `db_owner`), or in `DbaApplies` mode have the DBA run the new `deploy\sql\03-Enable-FullText.sql`.
   `Verify-Install.ps1` now reports whether the instance has the feature (information only). A future migration that
   alters one of the indexed columns must take it out of the full-text index first (docs/OPERATIONS.md §9).
+- **Fixes from the CAP-22 and CAP-28 review.**
+  - **Search by word and joined words.** SQL Server's word breaker keeps a word joined by `_` or `-` whole, so with
+    full-text on, `dump` stopped finding the evidence file `lsass_dump.dmp`, `backup` the note text `svc_backup` and
+    `mail` the text `e-mail`. Evidence file names are no longer full-text indexed (the unreleased `FullTextSearch`
+    migration and `deploy\sql\03-Enable-FullText.sql` changed in place) and match anywhere again. In the other free
+    text the part after the join still isn't a word by itself; that is documented (docs/workflows/find.md, OPERATIONS
+    §9), and the new in-app setting **Search › How search matches words** (`Search:Mode`: `Auto`, the default, or
+    `Substring`) turns full-text off for a site that needs it, at the cost of a scan per search. Diagnostics' *Search*
+    row says when it's off, and now names a column with no index (and offers *Create full-text indexes*) even while the
+    rest are still filling. A search cancelled during the full-text check no longer leaves search on substring for a
+    minute, and a full-text failure during a check always has the next search check again.
+  - **Related-indicator exclusions.** A list written as one string in a settings file or an environment variable
+    (`RelatedIndicators__ExcludedRanges="10.0.0.0/8, ..."`) no longer beats the list saved in Administration, or a
+    saved blank; an empty JSON array (`[]`) now means none rather than the default. IPv4 parts are read as decimal: a
+    range or indicator written zero-padded (`010.0.0.0/8`, `192.168.010.000/24`, `010.0.0.1`) was read as octal
+    (8.0.0.0/8, 192.168.8.0/24, 8.0.0.1), and now means 10.0.0.0/8, 192.168.10.0/24 and 10.0.0.1; a hex part
+    (`0x0A.0.0.0/8`) is refused, and an indicator written so isn't read as an address. An IPv4-mapped range
+    (`::ffff:10.0.0.0/104`) is stored as its IPv4 range, so it matches IPv4 indicators. A range a settings file gives
+    in a form now refused is skipped and listed by Diagnostics as an invalid setting, as before. No migration.
+
 - **An owning team on each case (CAP-36).** One migration, `AddTeams` (both providers): new `Teams` and `TeamMembers`
   tables, and a nullable `TeamId` on `Cases` and on `SavedViews` (both indexed); no data moves and no case gets a team.
   Administration › Workflow & taxonomy › **Teams** adds, renames, retires and restores teams, sets who is in each, an

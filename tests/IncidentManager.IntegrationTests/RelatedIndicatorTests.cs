@@ -273,6 +273,56 @@ public sealed class RelatedIndicatorTests
         (await live.Cases.FindRelatedIndicatorsForIocsAsync(["10.20.30.5"])).ExcludedBecause("10.20.30.5").Should().NotBeNull();
     }
 
+    // CAP-28 review (F1): a single string in the settings file or an environment variable (RelatedIndicators__ExcludedRanges)
+    // is in force only until an administrator saves a list: theirs wins, blank included, and the page's "Database" is true.
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_saved_list_beats_a_single_string_from_the_file_or_environment_and_a_saved_blank_means_none(string provider)
+    {
+        using var database = Open(provider);
+        var (p, connection) = database.Connection;
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [RelatedExclusionSettings.RangesKey] = "203.0.113.0/24, 198.51.100.0/24",
+                [RelatedExclusionSettings.DomainsKey] = "fabrikam.com; contoso.com",
+            })
+            .Add(new DbSettingsConfigurationSource(p, connection))
+            .Build();
+        var exclusions = new ConfigurationRelatedExclusions(config);
+        var settings = new AdminSettingsService(database.Factory(), _user, _clock, new ConfigurationReloader(config));
+
+        exclusions.Current.Ranges.Select(r => r.ToString()).Should().Equal("203.0.113.0/24", "198.51.100.0/24");
+        exclusions.Current.Domains.Should().Equal("fabrikam.com", "contoso.com");
+
+        await settings.SetAsync(RelatedExclusionSettings.RangesKey, "10.0.0.0/8");
+        await settings.SetAsync(RelatedExclusionSettings.DomainsKey, "corp.contoso.com");
+        exclusions.Current.Ranges.Select(r => r.ToString()).Should().Equal(["10.0.0.0/8"], "the in-app list, not the file's");
+        exclusions.Current.Domains.Should().Equal("corp.contoso.com");
+        config[RelatedExclusionSettings.RangesKey].Should().BeNull("the saved list masks the file's single string");
+
+        await settings.SetAsync(RelatedExclusionSettings.RangesKey, "");
+        await settings.SetAsync(RelatedExclusionSettings.DomainsKey, "");
+        exclusions.Current.Ranges.Should().BeEmpty("saved blank: none, not the file's");
+        exclusions.Current.Domains.Should().BeEmpty();
+
+        await settings.ResetAsync(RelatedExclusionSettings.RangesKey);
+        exclusions.Current.Ranges.Should().HaveCount(2, "reset: the file's string again");
+    }
+
+    // CAP-28 review: the JSON provider reads "[]" as the key with no value and no children, which read as unset.
+    [Fact]
+    public void An_empty_array_in_a_settings_file_means_none_not_unset()
+    {
+        using var json = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(
+            """{ "RelatedIndicators": { "ExcludedDomains": [], "ExcludedRanges": [] } }"""));
+        var listed = new ConfigurationRelatedExclusions(new ConfigurationBuilder().AddJsonStream(json).Build()).Current;
+        listed.Ranges.Should().BeEmpty("[] lists none, not the default ranges");
+        listed.Domains.Should().BeEmpty();
+        new ConfigurationRelatedExclusions(new ConfigurationBuilder().Build()).Current.Ranges
+            .Should().HaveCount(RelatedExclusions.DefaultRanges.Count, "not set at all: the defaults");
+    }
+
     [Theory]
     [MemberData(nameof(Providers))]
     public async Task An_invalid_exclusion_is_refused_with_its_entry_named_and_nothing_changes(string provider)

@@ -4,8 +4,9 @@
   Creates CaseBook's full-text catalog (CaseBookText) and the full-text indexes on
   the free-text columns Find and the case-list search read: case titles and
   summaries, briefs, record entries, working notes, tasks, task comments and
-  evidence names. With them, a search word matches words that start with it, from
-  the index, instead of a substring scan of every row.
+  evidence descriptions. With them, a search word matches words that start with
+  it, from the index, instead of a substring scan of every row. Evidence file
+  names stay a substring match (the word breaker keeps lsass_dump.dmp whole).
 
   Optional. Without Full-Text Search installed on the instance, CaseBook searches
   by substring, as it always has; this script then does nothing.
@@ -79,10 +80,7 @@ BEGIN
        AND NOT EXISTS (SELECT 1 FROM sys.fulltext_index_columns WHERE object_id = OBJECT_ID(N'[ActionItemComments]') AND column_id = COLUMNPROPERTY(OBJECT_ID(N'[ActionItemComments]'), N'Body', 'ColumnId'))
         EXEC(N'ALTER FULLTEXT INDEX ON [ActionItemComments] ADD ([Body] LANGUAGE 1033)');
     IF OBJECT_ID(N'[Evidence]') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID(N'[Evidence]'))
-        EXEC(N'CREATE FULLTEXT INDEX ON [Evidence] ([OriginalFileName] LANGUAGE 1033, [Description] LANGUAGE 1033) KEY INDEX [PK_Evidence] ON [CaseBookText] WITH (CHANGE_TRACKING = AUTO, STOPLIST = OFF)');
-    IF EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID(N'[Evidence]'))
-       AND NOT EXISTS (SELECT 1 FROM sys.fulltext_index_columns WHERE object_id = OBJECT_ID(N'[Evidence]') AND column_id = COLUMNPROPERTY(OBJECT_ID(N'[Evidence]'), N'OriginalFileName', 'ColumnId'))
-        EXEC(N'ALTER FULLTEXT INDEX ON [Evidence] ADD ([OriginalFileName] LANGUAGE 1033)');
+        EXEC(N'CREATE FULLTEXT INDEX ON [Evidence] ([Description] LANGUAGE 1033) KEY INDEX [PK_Evidence] ON [CaseBookText] WITH (CHANGE_TRACKING = AUTO, STOPLIST = OFF)');
     IF EXISTS (SELECT 1 FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID(N'[Evidence]'))
        AND NOT EXISTS (SELECT 1 FROM sys.fulltext_index_columns WHERE object_id = OBJECT_ID(N'[Evidence]') AND column_id = COLUMNPROPERTY(OBJECT_ID(N'[Evidence]'), N'Description', 'ColumnId'))
         EXEC(N'ALTER FULLTEXT INDEX ON [Evidence] ADD ([Description] LANGUAGE 1033)');

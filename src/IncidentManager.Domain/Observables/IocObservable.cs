@@ -50,8 +50,9 @@ public static partial class IocObservable
         if (UrlRx().IsMatch(v)) return EntityType.Url;
         if (EmailRx().IsMatch(v)) return EntityType.EmailAddress;
         // IPAddress.TryParse is lenient (it accepts partials like "1.2.3" as 1.2.0.3), so require a real
-        // dotted-quad for IPv4; IPv6 is unambiguous (it always carries ':').
-        if (System.Net.IPAddress.TryParse(v, out var ip) &&
+        // dotted-quad for IPv4; IPv6 is unambiguous (it always carries ':'). CAP-28 review (F3): IpText also reads each IPv4
+        // part as decimal, so 010.0.0.1 is 10.0.0.1, never octal, and 0x0A.0.0.1 isn't an address.
+        if (IpText.TryParse(v, out var ip) &&
             (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ||
              (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && CountDots(v) == 3)))
             return EntityType.IpAddress;
@@ -107,7 +108,7 @@ public static partial class IocObservable
     /// </summary>
     private static string CanonicalIp(string v)
     {
-        if (v.IndexOf(':') < 0 || !System.Net.IPAddress.TryParse(v, out var ip)
+        if (v.IndexOf(':') < 0 || !IpText.TryParse(v, out var ip)
             || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
             return v;
         return ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString() : ip.ToString();

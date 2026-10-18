@@ -6,15 +6,17 @@ namespace IncidentManager.Infrastructure.Persistence;
 
 /// <summary>
 /// CAP-22: CaseBook's SQL Server full-text catalog and the free-text columns Find and the case-list search read by word.
-/// Indicators (entity values and labels), case numbers, phase reasons and the review stay substring matches: an indicator
-/// is matched by its exact value, and the rest are small. Each table's full-text key is its primary key (a unique,
+/// Indicators (entity values and labels), case numbers, phase reasons, the review and evidence file names stay substring
+/// matches: an indicator is matched by its exact value, and the rest are small. CAP-22 review (F2): a file name is words
+/// joined by <c>_</c>, <c>-</c> and <c>.</c>, which the English word breaker keeps as one token (<c>lsass_dump.dmp</c>),
+/// so by word "dump" didn't find it; the Evidence table is small enough to scan. Each table's full-text key is its primary key (a unique,
 /// single, non-null column, as full-text needs). Indexed with the English word breaker (fixed, so it doesn't depend on the
 /// server's default) and no stoplist, so no word is a noise word that finds nothing; change tracking is automatic, so a
 /// write is searchable by word within seconds.
 /// <para>
 /// <see cref="Script"/> creates whatever of it is missing, and only when the server has Full-Text Search, so it can run on
 /// any server at any time: the Diagnostics action runs it, deploy/sql/03-Enable-FullText.sql is a copy of it for a DBA
-/// (a test keeps them the same), and the 20261018120000_FullTextSearch migration ran it as it stood then. Full-text DDL
+/// (a test keeps them the same), and the 20261018131002_FullTextSearch migration ran it as it stood then. Full-text DDL
 /// can't run inside a transaction, so it runs on its own.
 /// </para>
 /// </summary>
@@ -36,7 +38,7 @@ public static class FullTextSchema
         new("AnalystNotes", typeof(AnalystNote), "PK_AnalystNotes", ["Body"]),
         new("ActionItems", typeof(ActionItem), "PK_ActionItems", ["Title", "Description"]),
         new("ActionItemComments", typeof(ActionItemComment), "PK_ActionItemComments", ["Body"]),
-        new("Evidence", typeof(Evidence), "PK_Evidence", ["OriginalFileName", "Description"]),
+        new("Evidence", typeof(Evidence), "PK_Evidence", ["Description"]),
     ];
 
     /// <summary>Every (table, column) indexed.</summary>

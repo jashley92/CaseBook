@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Domain.Common;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -19,6 +21,9 @@ public sealed class FullTextStatusCache : IDisposable
     internal readonly SemaphoreSlim Gate = new(1, 1);
     internal volatile FullTextStatus? Current;
     private long _staleAtTicks = DateTimeOffset.MinValue.UtcTicks;
+    // CAP-22 review (C21): bumped by each fallback, so a check that began before one can't mark the status fresh after it.
+    private long _generation;
+    private readonly Lock _keep = new();
     private int _fallbacks;
     private volatile string? _lastFallback;
     internal readonly ConcurrentDictionary<string, byte> Logged = new(StringComparer.Ordinal);
@@ -35,6 +40,31 @@ public sealed class FullTextStatusCache : IDisposable
         _lastFallback = what;
     }
 
+    internal long Generation { get { lock (_keep) return _generation; } }
+
+    /// <summary>A fallback: check again at the next search, whatever a check in flight finds.</summary>
+    internal void MarkStale()
+    {
+        lock (_keep)
+        {
+            _generation++;
+            StaleAtUtc = DateTimeOffset.MinValue;
+        }
+    }
+
+    /// <summary>
+    /// Keeps a check's status, fresh until <paramref name="staleAt"/> unless a fallback came after the check began
+    /// (<paramref name="generation"/>, read before it): newest wins, so that one still checks again at the next search.
+    /// </summary>
+    internal void Keep(FullTextStatus status, DateTimeOffset staleAt, long generation)
+    {
+        lock (_keep)
+        {
+            Current = status;
+            StaleAtUtc = generation == _generation ? staleAt : DateTimeOffset.MinValue;
+        }
+    }
+
     internal FullTextStatus WithFallbacks(FullTextStatus s) =>
         s with { Fallbacks = Volatile.Read(ref _fallbacks), LastFallback = _lastFallback };
 }
@@ -43,14 +73,19 @@ public sealed class FullTextStatusCache : IDisposable
 /// CAP-22: SQL Server full-text search (see <see cref="IFullTextSearch"/>). The check reads <c>SERVERPROPERTY
 /// ('IsFullTextInstalled')</c> and which of <see cref="FullTextSchema"/>'s columns are indexed and populated, within
 /// <see cref="CheckTimeout"/>; it's cached for <see cref="ReadyFor"/> (<see cref="FillingFor"/> while indexes fill), and a
-/// stale status is still used while another request checks it again. SQLite always searches by substring.
+/// stale status is still used while another request checks it again. SQLite always searches by substring. CAP-22 review
+/// (F2): <c>Search:Mode</c> Substring (read live, by name) turns searching by word off; the check still runs, for Diagnostics.
 /// </summary>
 public sealed class SqlFullTextSearch(
     IAppDbContextFactory factory,
     FullTextStatusCache cache,
     IClock clock,
-    ILogger<SqlFullTextSearch>? logger = null) : IFullTextSearch
+    ILogger<SqlFullTextSearch>? logger = null,
+    IConfiguration? config = null) : IFullTextSearch
 {
+    /// <summary>The setting that turns searching by word off (<see cref="SearchMode"/>).</summary>
+    public const string ModeKey = "Search:Mode";
+
     public static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan ReadyFor = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan FillingFor = TimeSpan.FromSeconds(30);
@@ -60,7 +95,9 @@ public sealed class SqlFullTextSearch(
 
     public Expression<Func<string?, string, bool>> ContainsTemplate { get; } = (column, condition) => EF.Functions.Contains(column!, condition);
 
-    public async Task<FullTextStatus> StatusAsync(CancellationToken ct = default)
+    public async Task<FullTextStatus> StatusAsync(CancellationToken ct = default) => Moded(await CachedStatusAsync(ct));
+
+    private async Task<FullTextStatus> CachedStatusAsync(CancellationToken ct)
     {
         var current = cache.Current;
         if (current is not null && clock.UtcNow < cache.StaleAtUtc) return cache.WithFallbacks(current);
@@ -78,21 +115,27 @@ public sealed class SqlFullTextSearch(
     public async Task<FullTextStatus> RefreshAsync(CancellationToken ct = default)
     {
         await cache.Gate.WaitAsync(ct);
-        try { return cache.WithFallbacks(await CheckAndKeepAsync(ct)); }
+        try { return Moded(cache.WithFallbacks(await CheckAndKeepAsync(ct))); }
         finally { cache.Gate.Release(); }
     }
 
+    /// <summary>CAP-22 review (F2): whether <c>Search:Mode</c> turns searching by word off (Auto when unset or unknown).</summary>
+    public bool TurnedOff =>
+        EnumNames.TryParse<SearchMode>(config?[ModeKey], out var mode, ignoreCase: true) && mode == SearchMode.Substring;   // BUG-592: by name
+
+    private FullTextStatus Moded(FullTextStatus status) => TurnedOff ? status.Off() : status;
+
     private async Task<FullTextStatus> CheckAndKeepAsync(CancellationToken ct)
     {
+        var generation = cache.Generation;
         var status = await CheckAsync(ct);
-        cache.Current = status;
-        cache.StaleAtUtc = status.CheckedAtUtc + status.Mode switch
+        cache.Keep(status, status.CheckedAtUtc + status.Mode switch
         {
             FullTextMode.NotSqlServer => TimeSpan.FromDays(3650),   // the provider doesn't change while the app runs
             FullTextMode.Populating or FullTextMode.Partial => FillingFor,
             FullTextMode.Unknown => UnknownFor,
             _ => ReadyFor,
-        };
+        }, generation);
         return status;
     }
 
@@ -130,8 +173,10 @@ public sealed class SqlFullTextSearch(
                 .ToListAsync(timeout.Token);
             return Classify(rows.Select(r => (r.Table, r.Column, r.Enabled == 1, r.Populate)), now);
         }
-        catch (Exception ex) when (ex is SqlException or InvalidOperationException
-                                   || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        // CAP-22 review: the caller giving up isn't the database failing. SqlClient can report a cancelled command as a
+        // SqlException ("Operation cancelled by user"), which was kept as Unknown, and searched by substring, for a minute.
+        catch (Exception ex) when (!ct.IsCancellationRequested
+                                   && ex is SqlException or InvalidOperationException or OperationCanceledException)
         {
             // The database didn't answer in time, or refused the metadata read: substring until the next check.
             if (cache.Logged.TryAdd("check:" + ex.GetType().Name, 0))
@@ -150,13 +195,18 @@ public sealed class SqlFullTextSearch(
         var ready = indexed.Where(e => reported.Any(r => Same(r.Table, e.Table.Name) && Same(r.Column, e.Column)
                                                         && Searchable.Contains(r.Populate))).ToList();
         var columns = ready.Select(e => (e.Table.Entity, e.Column)).ToHashSet();
-        if (indexed.Count == 0) return FullTextStatus.Substring(FullTextMode.NotCreated, now);
+        // CAP-22 review: the columns with no index, named and offered for Create in every mode (a filling index with one
+        // column never indexed read only as Populating, which hid the action).
+        var notIndexed = expected.Except(indexed).Select(e => $"{e.Table.Name}.{e.Column}").ToList();
+        if (indexed.Count == 0) return FullTextStatus.Substring(FullTextMode.NotCreated, now) with { NotIndexed = notIndexed };
         if (ready.Count == expected.Count) return new FullTextStatus(FullTextMode.Ready, columns, now);
         if (ready.Count == 0)
-            return new FullTextStatus(FullTextMode.Populating, columns, now, $"{indexed.Count} of {expected.Count} columns indexed, still being filled");
+            return new FullTextStatus(FullTextMode.Populating, columns, now,
+                $"{indexed.Count} of {expected.Count} columns indexed, still being filled"
+                + (notIndexed.Count > 0 ? $"; not indexed: {string.Join(", ", notIndexed)}" : ""), NotIndexed: notIndexed);
         var missing = expected.Except(ready).Select(e => $"{e.Table.Name}.{e.Column}");
         return new FullTextStatus(FullTextMode.Partial, columns, now,
-            $"{ready.Count} of {expected.Count} columns searched by word; by substring: {string.Join(", ", missing)}");
+            $"{ready.Count} of {expected.Count} columns searched by word; by substring: {string.Join(", ", missing)}", NotIndexed: notIndexed);
     }
 
     private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
@@ -180,7 +230,7 @@ public sealed class SqlFullTextSearch(
     {
         var number = FullTextErrorNumber(ex);
         cache.CountFallback($"{search}: SQL Server error {number}");
-        cache.StaleAtUtc = DateTimeOffset.MinValue;   // an index may have gone: check again at the next search
+        cache.MarkStale();   // an index may have gone: check again at the next search (C21: even if a check is in flight)
         if (cache.Logged.TryAdd("fallback:" + number, 0))
             _log.LogWarning(ex, "A full-text search ({Search}) failed with SQL Server error {Number} and ran again by substring. "
                                 + "Later failures like it are logged at Debug; Diagnostics counts them.", search, number);

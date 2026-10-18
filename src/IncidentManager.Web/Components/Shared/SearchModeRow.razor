@@ -18,7 +18,7 @@
         }
         else
         {
-            <span class="@(_status.Mode == FullTextMode.Ready ? "im-badge im-b-ok" : _status.Mode is FullTextMode.Unknown ? "im-badge im-b-warn" : "im-badge im-b-neutral")">@_status.Label</span>
+            <span class="@(_status.Mode == FullTextMode.Ready && !_status.TurnedOff ? "im-badge im-b-ok" : _status.Mode is FullTextMode.Unknown ? "im-badge im-b-warn" : "im-badge im-b-neutral")">@_status.Label</span>
             @if (_status.Detail is { } detail)
             {
                 <span class="small text-muted ms-2">@detail</span>
@@ -30,7 +30,7 @@
                     server's log has the first of each kind.
                 </div>
             }
-            @if (_status.Mode is FullTextMode.NotCreated or FullTextMode.Partial)
+            @if (_status.CanCreate)
             {
                 <div class="small text-muted">
                     Full-Text Search is installed, but not every column Find searches is indexed. Create the indexes here (the
@@ -43,7 +43,7 @@
                     aria-label="Check how search works on this database again">
                 Check again
             </button>
-            @if (_status?.Mode is FullTextMode.NotCreated or FullTextMode.Partial)
+            @if (_status?.CanCreate == true)
             {
                 <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_busy.Busy)" @onclick="Create"
                         aria-label="Create the missing full-text indexes">
