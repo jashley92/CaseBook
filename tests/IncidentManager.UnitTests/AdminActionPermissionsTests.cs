@@ -60,6 +60,7 @@ public sealed class AdminActionPermissionsTests
         K<IntegrityService>(nameof(IntegrityService.QueryAsync)),
         K<IntegrityService>(nameof(IntegrityService.QueryPageAsync)),   // CAP-03: the same read, a page at a time
         K<IntegrityService>(nameof(IntegrityService.ExportCsvAsync)),   // CAP-03: the same read, as the CSV
+        K<IntegrityService>(nameof(IntegrityService.WriteCsvAsync)),    // CAP-32: the same read, streamed
         K<IntegrityService>(nameof(IntegrityService.AuditFacetsAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifySealAsync)),
         K<IntegrityService>(nameof(IntegrityService.RecentSealsAsync)),

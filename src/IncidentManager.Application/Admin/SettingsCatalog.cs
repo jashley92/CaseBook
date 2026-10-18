@@ -191,6 +191,11 @@ public static class SettingsCatalog
             "How long the access log (who opened which case, downloaded which file, exported what) is kept. Older entries are " +
             "deleted nightly, except for cases under a legal hold. 0 keeps it forever. Check your own record-keeping rules " +
             "(some apply six years to access logs). Default 3.", "3", Max: 100),
+        // CAP-31: a decided import's submitted document (up to 5 MB) was kept for good.
+        new SettingDefinition("Retention:DecidedImportDays", "Decided import retention (days)", "Retention", SettingKind.Int,
+            "How long an applied or rejected import keeps the document it was sent with. After that it's cleared nightly; who sent " +
+            "it, who decided, when, why and the case it went into are kept. Imports waiting for review or being applied keep " +
+            "theirs. 0 keeps every document. Default 90.", "90", Max: Import.DecidedImportRetention.MaxDays),
         // F-12: two-person control for lifting a legal hold. Off by default.
         new SettingDefinition("Governance:LegalHoldRelease:RequireSecondApprover", "Second approver to release a legal hold", "Retention", SettingKind.Bool,
             "When on, releasing a legal hold is a request with a reason that a different person with Manage Legal must approve. Placing a hold stays a single action.", "false"),

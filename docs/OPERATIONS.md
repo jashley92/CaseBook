@@ -1034,3 +1034,13 @@ restart counts again). With `Notifications:RetentionReview:Email` on, the Legal 
 (`Email:LegalDistribution`) gets the counts once a month. The job only counts (ADR 0004): it never archives or deletes,
 and CaseBook has no purge. Nothing needs scheduling outside CaseBook; to monitor it, watch the Diagnostics row, or the
 app log for "Retention review count failed".
+
+**Stored import documents (CAP-31).** An import sent through the API keeps the document it was sent with (up to 5 MB)
+while it waits for review. Once it's applied or rejected, `Retention:DecidedImportDays` (default 90; 0 keeps every
+document) decides how long the document stays: a nightly step of the access-log retention job (and one at start-up, and
+whenever the setting changes) clears it after that. The decision row stays: who sent it and when, the document's
+SHA-256, who decided, when, why and the case it went into, so the sender's status call (`GET /api/import/cases/{id}`)
+still answers. Imports waiting for review, or claimed and still being applied, keep theirs. Each run that clears
+anything writes an audit-trail entry (entity type `PendingImport`) saying how many and the cutoff. If you need the
+documents longer (to re-read what a detection platform sent), raise the setting before the first night after
+upgrading. A failure is logged as "Import retention failed" and retried a few minutes later.

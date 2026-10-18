@@ -210,6 +210,7 @@ process's working directory, which under IIS is the site folder.
 | `Evidence:SafeDownload` | Which evidence files the Evidence tab downloads first inside a zip with the password "infected" (PROD-58): `RiskyTypes` (programs, scripts, shortcuts, disk images, Office files with macros, web pages), `Always` or `Off`. The zip and the plain file are always both available. | `RiskyTypes` | App |
 | `Evidence:ReadBackCheck` | A file uploaded in parts is read back and its SHA-256 checked before it's recorded (catches a write damaged on its way to a share; doubles the reads for large files). | `true` | App |
 | `Retention:AccessLogYears` | Years the access log is kept. Older entries are deleted nightly (and after a restart), except a legal-hold case's; each prune is an audit-trail entry. `0` keeps it forever. | `3` | App |
+| `Retention:DecidedImportDays` | Days an applied or rejected API import keeps the document it was sent with (CAP-31). After that it's cleared nightly (and after a restart); the decision row (sender, decider, times, reason, the case) stays, and each run is an audit-trail entry. Imports waiting for review or being applied keep theirs. `0` keeps every document; at most 3650. | `90` | App |
 
 ### 3.8 Response SLAs
 
@@ -393,8 +394,8 @@ first.
 | User directory refresh 30 minutes | `Infrastructure/Security/UserDirectory.cs` |
 | API token maximum lifetime 90 days (personal) / 365 days (system) | `Application/ApiTokens/ApiTokenService.cs` |
 | "Recorded later" threshold 1 hour | `Application/Cases/CaseService.cs` (`BackdateReasonThreshold`) |
-| Audit and access-log CSV exports capped at **100,000 rows**, newest kept; a cut file says so on its second line (and an audit export on its last line too) | `Web/Program.cs` (`ExportRowLimit`) |
-| Indicator list 300 rows | `Application/Intel/IndicatorService.cs` |
+| Audit and access-log CSV exports streamed, up to **1,000,000 rows**, newest kept; a cut file says so on its second line and its last; stopped after 15 minutes plus a second per 1,000 rows, the last line then saying the file is incomplete | `Application/Common/CsvStream.cs` (`MaxRows`, `TimeLimit`); `Web/Program.cs` (`ExportRowLimit`) |
+| Indicator list 300 rows a page (Previous and Next page through the rest); its CSV up to **50,000** indicators, a cut file saying so at the top and the end | `Application/Intel/IndicatorService.cs` (`PageSize`, `ExportLimit`) |
 | Access review "dormant" after 90 days | `Application/Admin/AccessReviewService.cs` |
 | Webhook and chat retry back-off 250 ms × attempt | `Web/Siem/WebhookTransport.cs`, `Web/Notifications/ChatWebhookNotifier.cs` |
 | Seal key RSA-3072, PKCS#1 v1.5 with SHA-256 | `Infrastructure/Security/RsaSealSigner.cs` |

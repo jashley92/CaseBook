@@ -79,7 +79,8 @@ public partial class CaseAudienceGateTests
         ["ProgramReportService.cs:LoadAsync"] = (1, "ids are a subquery over the ForUser cases"),
         ["ProgramReportService.cs:ReviewsRecordedAsync"] = (1, "caseIds is LoadAsync's ForUser subquery"),
         ["VendorCasesService.cs:GetAsync"] = (1, "ids come from the ForUser cases"),
-        ["IndicatorService.cs:SearchAsync"] = (2, "occurrences are joined to the ForUser cases; names are read for the case ids already shown"),
+        ["IndicatorService.cs:SearchAsync"] = (1, "names are read for the case ids already shown (MatchAsync's ForUser rows)"),
+        ["IndicatorService.cs:MatchAsync"] = (1, "CAP-27: occurrences are joined to the ForUser cases"),
         ["LessonsService.cs:GetRegisterAsync"] = (1, "joined to the ForUser cases"),
         ["FindService.cs:FindAsync"] = (16, "caseIds is the ForUser case query; entity ids are read within it"),
         ["FindService.cs:EditedEntriesFirstRecordedByAsync"] = (1, "caseIds is FindAsync's ForUser case query"),
@@ -87,6 +88,7 @@ public partial class CaseAudienceGateTests
         ["FindService.cs:ClosingLinesAsync"] = (3, "ids are FindAsync's visible case rows"),
         ["FindService.cs:ClosingBriefIdsAsync"] = (2, "ids are FindAsync's visible case ids"),
         ["DeskService.cs:GetAsync"] = (7, "ids come from the caller's own work (MyWork: scoped open cases, tasks, escalations)"),
+        ["AccessLogService.cs:Filtered"] = (1, "CAP-32, private: the access log's filter for QueryAsync and WriteCsvAsync, which both require Administer first"),
         ["AccessLogService.cs:RecordAsync"] = (1, "the caller's own access rows (ActorUserId == actor), to fold a repeat view"),
         // Background jobs: no caller to scope for; who is told goes through ReminderAudience
         ["DueSoonActionItemScanner.cs:ScanAndNotifyAsync"] = (2, "a background scan of every case; who is told goes through ReminderAudience"),

@@ -15,9 +15,18 @@ public static class AuditCsv
     public static string Build(IReadOnlyList<AuditLogEntry> entries, DateTimeOffset generatedAtUtc, string? caseNumber = null,
         int? truncatedAt = null)
     {
-        var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
+        AppendHeader(sb, generatedAtUtc, caseNumber, truncatedAt);
+        foreach (var a in entries) AppendRow(sb, a);
+        AppendTail(sb, truncatedAt);
+        return sb.ToString();
+    }
 
+    // CAP-32: the file in its three parts, so the streamed export (IntegrityService.WriteCsvAsync) writes exactly what
+    // Build does, a row at a time.
+    internal static void AppendHeader(StringBuilder sb, DateTimeOffset generatedAtUtc, string? caseNumber, int? truncatedAt)
+    {
+        var inv = CultureInfo.InvariantCulture;
         var scope = string.IsNullOrWhiteSpace(caseNumber) ? "all visible cases" : "case " + CommentText(caseNumber);
         sb.Append("# CaseBook audit trail: ").Append(scope).Append(", generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
@@ -30,29 +39,31 @@ public static class AuditCsv
         // `changes` renders the captured before/after diff (e.g. "Legal hold: No → Yes") so an examiner sees
         // what moved without parsing raw JSON; it sits next to the (now field-naming) summary.
         sb.Append("sequence,at_utc,actor,action,entity_type,entity_label,entity_id,case_number,summary,changes,reason,entry_hash\r\n");
+    }
 
-        foreach (var a in entries)
-        {
-            sb.Append(a.Sequence.ToString(inv)).Append(',')
-              .Append(a.AtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(',')
-              .Append(Escape(a.Actor)).Append(',')
-              .Append(a.Action).Append(',')
-              .Append(Escape(a.EntityType)).Append(',')
-              .Append(Escape(a.EntityLabel ?? "")).Append(',')
-              .Append(Escape(a.EntityId ?? "")).Append(',')
-              .Append(Escape(a.CaseNumber ?? "")).Append(',')
-              .Append(Escape(a.Summary ?? "")).Append(',')
-              .Append(Escape(AuditChangeDetail.ToLine(AuditChangeDetail.Changes(a)))).Append(',')
-              .Append(Escape(a.Reason ?? "")).Append(',')
-              .Append(Escape(a.EntryHash)).Append("\r\n");
-        }
+    internal static void AppendRow(StringBuilder sb, AuditLogEntry a)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        sb.Append(a.Sequence.ToString(inv)).Append(',')
+          .Append(a.AtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(',')
+          .Append(Escape(a.Actor)).Append(',')
+          .Append(a.Action).Append(',')
+          .Append(Escape(a.EntityType)).Append(',')
+          .Append(Escape(a.EntityLabel ?? "")).Append(',')
+          .Append(Escape(a.EntityId ?? "")).Append(',')
+          .Append(Escape(a.CaseNumber ?? "")).Append(',')
+          .Append(Escape(a.Summary ?? "")).Append(',')
+          .Append(Escape(AuditChangeDetail.ToLine(AuditChangeDetail.Changes(a)))).Append(',')
+          .Append(Escape(a.Reason ?? "")).Append(',')
+          .Append(Escape(a.EntryHash)).Append("\r\n");
+    }
 
+    internal static void AppendTail(StringBuilder sb, int? truncatedAt)
+    {
         // CAP-03 (CAP-32): and again at the end, where someone reading to the bottom would take the last row for the oldest.
         // No comma or semicolon in it (BUG-516, BUG-543): it stays one cell.
         if (truncatedAt is { } cut)
-            sb.Append("# Truncated at ").Append(cut.ToString(inv)).Append(" rows: narrow the range to export the rest.\r\n");
-
-        return sb.ToString();
+            sb.Append("# Truncated at ").Append(cut.ToString(CultureInfo.InvariantCulture)).Append(" rows: narrow the range to export the rest.\r\n");
     }
 
     // BUG-516: the comment line is one spreadsheet cell that starts with "#". A case number is printed after "case ", so it

@@ -104,6 +104,9 @@ public sealed class ConfigImportParityTests : IDisposable
             { Settings = [.. b.Settings, new ConfigSetting("Notifications:RetentionReview:Email", "true"), new ConfigSetting("Retention:CaseYears", "10")] }),
         ["access review reminder set"] = new(nameof(ConfigBundle.Settings), b => b with
             { Settings = [.. b.Settings, new ConfigSetting("Governance:AccessReview:ReminderDays", "30")] }),
+        // CAP-31: how long a decided import keeps its document travels as a setting too.
+        ["decided import retention set"] = new(nameof(ConfigBundle.Settings), b => b with
+            { Settings = [.. b.Settings, new ConfigSetting("Retention:DecidedImportDays", "30")] }),
         ["role changed"] = new(nameof(ConfigBundle.Roles), b => b with
             { Roles = Set(b.Roles, r => r.Name == "IR Lead", r => r with { PermissionsCsv = "EditCases,ViewCases,ViewAllCases" }) }),
         ["role permissions reordered"] = new(nameof(ConfigBundle.Roles), b => b with

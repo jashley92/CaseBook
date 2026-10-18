@@ -226,6 +226,31 @@ first with `casebook-keytool export`.
   closed one ended, and a link to the case list filtered to that vendor (`?vendor=`, a new filter that saved views and
   the CSV export carry too). The name stays free text, so nothing existing changes. No migration and nothing to
   configure.
+- **Indicators page through, and export, instead of stopping at 300 (CAP-27).** Intel › Indicators shows 300 a page
+  with *Previous* and *Next*, paged by the row a page ends at, so indicators recorded meanwhile don't repeat or push
+  others out of sight. *Export CSV* (`/export/indicators.csv`) downloads every indicator the filters match, of every
+  verdict, with case and open-case counts and each case's number and verdict there, up to 50,000 (a cut file says so
+  at the top and the end); a restricted case's occurrences stay out, as on the page. A search isn't put in the link:
+  it's held for you for an hour, as the Cases export does. Recorded in the access log and as SIEM 5304, like every
+  export. No migration and nothing to configure. The order now breaks ties between equally shared, equally recent
+  indicators by value and type, so a few rows may sit in a different order than before.
+- **Decided imports' stored documents are cleared after 90 days (CAP-31).** New setting
+  `Retention:DecidedImportDays` (Administration › Retention, default **90**; `0` keeps every document). Nightly, as a
+  second step of the access-log retention job, an import applied or rejected longer ago than that loses the JSON it
+  was sent with (up to 5 MB each) and any saved part-way preview; who sent it, who decided, when, why and the case it
+  went into stay, and the API's status call answers as before. Imports waiting for review or being applied are
+  untouched. **On the first night after upgrading, and at the first start, documents of imports decided more than 90
+  days ago are cleared**, recorded as one audit-trail entry. No migration. To keep them, set
+  `"Retention": { "DecidedImportDays": 0 }` in `appsettings.Production.json` (or change it in Administration) before
+  upgrading.
+- **Audit and access-log CSVs stream, up to 1,000,000 rows (CAP-32).** `/export/audit.csv`, `/export/case-audit.csv`
+  and `/export/access-log.csv` are written to the browser as they're read instead of built in memory, so the bound
+  rises from 100,000 rows to 1,000,000 (what one spreadsheet sheet opens). A cut file says so on its second line and
+  its last (the access-log CSV used to say it only at the top). A very long export stops after 15 minutes plus a
+  second per 1,000 rows: its last line says the file is incomplete and the download shows as failed; narrow the range.
+  The access log and SIEM 5304 entry are now written as the download begins. Scoping, permissions and the downloads
+  rate limit are unchanged. No migration and nothing to configure. An export holds a database connection while it
+  downloads; with read-committed snapshot on (the installer sets it) it doesn't hold up other work.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

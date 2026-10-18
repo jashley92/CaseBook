@@ -14,9 +14,18 @@ public static class AccessLogCsv
 {
     public static string Build(IReadOnlyList<CaseAccessEvent> rows, DateTimeOffset generatedAtUtc, int? truncatedAt = null)
     {
-        var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
+        AppendHeader(sb, generatedAtUtc, truncatedAt);
+        foreach (var r in rows) AppendRow(sb, r);
+        AppendTail(sb, truncatedAt);
+        return sb.ToString();
+    }
 
+    // CAP-32: the file in its three parts, so the streamed export (IAccessLogService.WriteCsvAsync) writes exactly what
+    // Build does, a row at a time.
+    public static void AppendHeader(StringBuilder sb, DateTimeOffset generatedAtUtc, int? truncatedAt)
+    {
+        var inv = CultureInfo.InvariantCulture;
         sb.Append("# CaseBook access log (read and access telemetry, kept outside the tamper-evident chain), generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
         // REV-65: an export cut at its row limit says so, so the missing oldest rows aren't mistaken for no activity.
@@ -26,20 +35,26 @@ public static class AccessLogCsv
               .Append(" rows are here. Narrow the date range to export the rest.\r\n");
 
         sb.Append("actor,access_type,case_number,target,restricted,count,first_seen_utc,last_seen_utc\r\n");
+    }
 
-        foreach (var r in rows)
-        {
-            sb.Append(Escape(r.ActorUserId)).Append(',')
-              .Append(r.AccessType).Append(',')
-              .Append(Escape(r.CaseNumber ?? "")).Append(',')
-              .Append(Escape(r.TargetLabel ?? "")).Append(',')
-              .Append(r.WasRestricted ? "yes" : "no").Append(',')
-              .Append(r.Count.ToString(inv)).Append(',')
-              .Append(r.FirstSeenUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(',')
-              .Append(r.LastSeenUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append("\r\n");
-        }
+    public static void AppendRow(StringBuilder sb, CaseAccessEvent r)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        sb.Append(Escape(r.ActorUserId)).Append(',')
+          .Append(r.AccessType).Append(',')
+          .Append(Escape(r.CaseNumber ?? "")).Append(',')
+          .Append(Escape(r.TargetLabel ?? "")).Append(',')
+          .Append(r.WasRestricted ? "yes" : "no").Append(',')
+          .Append(r.Count.ToString(inv)).Append(',')
+          .Append(r.FirstSeenUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(',')
+          .Append(r.LastSeenUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append("\r\n");
+    }
 
-        return sb.ToString();
+    public static void AppendTail(StringBuilder sb, int? truncatedAt)
+    {
+        // CAP-32: a cut is said at the end too, as the audit CSV's is (CAP-03). One cell: no comma or semicolon.
+        if (truncatedAt is { } cut)
+            sb.Append("# Truncated at ").Append(cut.ToString(CultureInfo.InvariantCulture)).Append(" rows: narrow the range to export the rest.\r\n");
     }
 
     /// <summary>

@@ -101,6 +101,7 @@ public static class AdminActionPermissions
             [Key<RetentionReviewService>(nameof(RetentionReviewService.BuildAsync))] = Permission.Administer,
             [Key<RetentionReviewService>(nameof(RetentionReviewService.ArchiveAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.QueryAsync))] = Permission.Administer,
+            [Key<IAccessLogService>(nameof(IAccessLogService.WriteCsvAsync))] = Permission.Administer,   // CAP-32: the export
             [Key<IAccessLogService>(nameof(IAccessLogService.ActorsAsync))] = Permission.Administer,
             [Key<ApiTokenService>(nameof(ApiTokenService.ListAllAsync))] = Permission.Administer,
             [Key<ApiTokenService>(nameof(ApiTokenService.CreateSystemAsync))] = Permission.Administer,

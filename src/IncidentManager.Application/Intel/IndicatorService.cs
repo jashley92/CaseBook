@@ -41,8 +41,50 @@ public sealed record IndicatorRow(EntityType Type, string Value, EntityDispositi
 
 public sealed record IndicatorSummary(int Indicators, int Shared, int Malicious, int InOpenCases);
 
-/// <param name="Truncated">True when more rows matched than <see cref="IndicatorService.MaxRows"/>; narrow the search.</param>
-public sealed record IndicatorLibrary(IndicatorSummary Summary, IReadOnlyList<IndicatorRow> Rows, bool Truncated);
+/// <summary>
+/// CAP-27: one page of the library. <paramref name="HasNext"/> and <paramref name="HasPrevious"/> say whether rows follow
+/// it or come before it; <paramref name="Matched"/> is how many the filter matched and <paramref name="FirstIndex"/> where
+/// in that order the page starts (0-based), both as they stood when this page was read.
+/// </summary>
+public sealed record IndicatorLibrary(IndicatorSummary Summary, IReadOnlyList<IndicatorRow> Rows, bool HasNext,
+    bool HasPrevious = false, int Matched = 0, int FirstIndex = 0);
+
+/// <summary>
+/// CAP-27: where an indicator sits in the library's order: most-shared first, then most recently seen, then by its
+/// value (case-insensitively) and type family, so no two indicators share a place.
+/// </summary>
+public readonly record struct IndicatorPosition(int CaseCount, DateTimeOffset LastSeenUtc, string Key, EntityType Family)
+{
+    public static IndicatorPosition Of(IndicatorRow r) =>
+        new(r.CaseCount, r.LastSeenUtc, r.Value.ToLowerInvariant(), IocObservable.MatchFamily(r.Type));
+
+    /// <summary>Negative when <paramref name="a"/> comes before <paramref name="b"/> in the library's order.</summary>
+    public static int Compare(IndicatorPosition a, IndicatorPosition b)
+    {
+        var c = b.CaseCount.CompareTo(a.CaseCount);
+        if (c != 0) return c;
+        c = b.LastSeenUtc.CompareTo(a.LastSeenUtc);
+        if (c != 0) return c;
+        c = string.CompareOrdinal(a.Key, b.Key);
+        return c != 0 ? c : a.Family.CompareTo(b.Family);
+    }
+}
+
+/// <summary>
+/// CAP-27: which page of the library to read, by where the page shown starts or ends rather than by its number (keyset
+/// paging, as CAP-03's audit trail): the library changes as analysts record indicators, and an offset moves under the
+/// reader, so Next would repeat rows just shown and Previous skip some. <see cref="First"/> is the first page;
+/// <see cref="Next"/> the rows after the last one shown; <see cref="Previous"/> the rows before the first one shown.
+/// </summary>
+public readonly record struct IndicatorPageAt(IndicatorPosition? After, IndicatorPosition? Before)
+{
+    public static IndicatorPageAt First => default;
+    public static IndicatorPageAt Next(IndicatorRow lastShown) => new(IndicatorPosition.Of(lastShown), null);
+    public static IndicatorPageAt Previous(IndicatorRow firstShown) => new(null, IndicatorPosition.Of(firstShown));
+}
+
+/// <summary>CAP-27: the library as its CSV reads it: every matching indicator up to the limit, with its cases' numbers.</summary>
+public sealed record IndicatorExport(IReadOnlyList<IndicatorRow> Rows, int Matched, bool Truncated);
 
 /// <summary>
 /// PROD-10: the cross-case indicator pivot ("this indicator appears in N cases") — a lightweight internal
@@ -55,8 +97,11 @@ public sealed record IndicatorLibrary(IndicatorSummary Summary, IReadOnlyList<In
 /// </summary>
 public sealed class IndicatorService
 {
-    /// <summary>Row cap for one page of results; the summary always counts the whole library.</summary>
-    public const int MaxRows = 300;
+    /// <summary>Rows on one page; the summary always counts the whole library. CAP-27: the rest are a page away.</summary>
+    public const int PageSize = 300;
+
+    /// <summary>CAP-27: the most indicators one CSV holds; a cut file says so at the top and the end.</summary>
+    public const int ExportLimit = 50_000;
 
     private static readonly EntityType[] IocTypes =
         [EntityType.IpAddress, EntityType.Domain, EntityType.Url, EntityType.FileHash];
@@ -80,10 +125,82 @@ public sealed class IndicatorService
         _ => 0, // Benign
     };
 
-    public async Task<IndicatorLibrary> SearchAsync(IndicatorFilter filter, CancellationToken ct = default)
-    {
-        using var db = _factory.CreateDbContext();
+    /// <summary>The first page of the library for <paramref name="filter"/>.</summary>
+    public Task<IndicatorLibrary> SearchAsync(IndicatorFilter filter, CancellationToken ct = default) =>
+        SearchAsync(filter, IndicatorPageAt.First, PageSize, ct);
 
+    /// <summary>
+    /// CAP-27: one page of the library, <paramref name="at"/> the page shown (keyset, <see cref="IndicatorPageAt"/>). A
+    /// Previous page that reaches the start is the first page, full.
+    /// </summary>
+    public async Task<IndicatorLibrary> SearchAsync(IndicatorFilter filter, IndicatorPageAt at, int pageSize = PageSize,
+        CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        using var db = _factory.CreateDbContext();
+        var (all, ordered) = await MatchAsync(db, filter, ct);
+
+        var summary = new IndicatorSummary(
+            Indicators: all.Count,
+            Shared: all.Count(r => r.CaseCount > 1),
+            Malicious: all.Count(r => r.WorstDisposition == EntityDisposition.Malicious),
+            InOpenCases: all.Count(r => r.OpenCaseCount > 0));
+
+        // CAP-27: from the row the page shown ended (Next) or started (Previous) at, wherever that place is now; a row since
+        // gone (or moved) still marks a place in the order.
+        int start;
+        if (at.Before is { } before)
+        {
+            var end = ordered.FindIndex(r => IndicatorPosition.Compare(IndicatorPosition.Of(r), before) >= 0);
+            start = Math.Max(0, (end < 0 ? ordered.Count : end) - pageSize);
+        }
+        else if (at.After is { } after)
+        {
+            start = ordered.FindIndex(r => IndicatorPosition.Compare(IndicatorPosition.Of(r), after) > 0);
+            if (start < 0) start = ordered.Count;
+        }
+        else start = 0;
+
+        var shown = ordered.Skip(start).Take(pageSize).ToList();
+        var shownCases = shown.SelectMany(r => r.Cases.Select(c => c.CaseId)).Distinct().ToList();
+        var names = await db.Cases.AsNoTracking().Where(c => shownCases.Contains(c.Id))
+            .Select(c => new { c.Id, c.CaseNumber, c.Title }).ToDictionaryAsync(c => c.Id, ct);
+        shown = shown.Select(r => r with
+        {
+            Cases = r.Cases.Select(c => names.TryGetValue(c.CaseId, out var n) ? c with { CaseNumber = n.CaseNumber, Title = n.Title } : c).ToList()
+        }).ToList();
+        return new IndicatorLibrary(summary, shown, HasNext: start + shown.Count < ordered.Count, HasPrevious: start > 0,
+            Matched: ordered.Count, FirstIndex: start);
+    }
+
+    /// <summary>
+    /// CAP-27: every indicator <paramref name="filter"/> matches, in the library's order, up to <paramref name="limit"/>
+    /// (and whether more matched), each with its cases' numbers and verdicts: the Indicators page's CSV. The same read as
+    /// the page (<see cref="MatchAsync"/>), so need-to-know, the exercise rule and every filter are the page's own.
+    /// </summary>
+    public async Task<IndicatorExport> ExportAsync(IndicatorFilter filter, int limit = ExportLimit, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        using var db = _factory.CreateDbContext();
+        var (_, ordered) = await MatchAsync(db, filter, ct);
+        var kept = ordered.Take(limit).ToList();
+        // Numbers only (no titles), from the same scoped cases the occurrences were joined to.
+        var wanted = kept.SelectMany(r => r.Cases.Select(c => c.CaseId)).ToHashSet();
+        var numbers = (await db.Cases.AsNoTracking().ForUser(_user).Select(c => new { c.Id, c.CaseNumber }).ToListAsync(ct))
+            .Where(c => wanted.Contains(c.Id)).ToDictionary(c => c.Id, c => c.CaseNumber);
+        kept = kept.Select(r => r with
+        {
+            Cases = r.Cases.Select(c => numbers.TryGetValue(c.CaseId, out var n) ? c with { CaseNumber = n } : c).ToList()
+        }).ToList();
+        return new IndicatorExport(kept, ordered.Count, ordered.Count > limit);
+    }
+
+    // CAP-27: the whole library and the rows the filter matches, in the library's order (IndicatorPosition): the page's and
+    // the CSV's one read (C2). Case numbers and titles are left blank, for the caller to fill for the rows it keeps.
+    private sealed record Matched(List<IndicatorRow> All, List<IndicatorRow> Ordered);
+
+    private async Task<Matched> MatchAsync(IAppDbContext db, IndicatorFilter filter, CancellationToken ct)
+    {
         var cases = db.Cases.AsNoTracking().ForUser(_user);
         if (!filter.IncludeExercises) cases = cases.ExcludingExercises();
 
@@ -139,28 +256,12 @@ public sealed class IndicatorService
         if (filter.SharedOnly) matched = matched.Where(r => r.CaseCount > 1);
         if (filter.Disposition is { } d) matched = matched.Where(r => r.WorstDisposition == d);
 
-        // Most-shared first (the pivot's point), then most recently seen.
+        // Most-shared first (the pivot's point), then most recently seen. CAP-27: then by value and type family, so every
+        // row has its own place and a page can start after one.
         var ordered = matched
-            .OrderByDescending(r => r.CaseCount)
-            .ThenByDescending(r => r.LastSeenUtc)
-            .ThenBy(r => r.Value, StringComparer.OrdinalIgnoreCase)
+            .Order(Comparer<IndicatorRow>.Create((a, b) => IndicatorPosition.Compare(IndicatorPosition.Of(a), IndicatorPosition.Of(b))))
             .ToList();
-
-        var summary = new IndicatorSummary(
-            Indicators: all.Count,
-            Shared: all.Count(r => r.CaseCount > 1),
-            Malicious: all.Count(r => r.WorstDisposition == EntityDisposition.Malicious),
-            InOpenCases: all.Count(r => r.OpenCaseCount > 0));
-
-        var shown = ordered.Take(MaxRows).ToList();
-        var shownCases = shown.SelectMany(r => r.Cases.Select(c => c.CaseId)).Distinct().ToList();
-        var names = await db.Cases.AsNoTracking().Where(c => shownCases.Contains(c.Id))
-            .Select(c => new { c.Id, c.CaseNumber, c.Title }).ToDictionaryAsync(c => c.Id, ct);
-        shown = shown.Select(r => r with
-        {
-            Cases = r.Cases.Select(c => names.TryGetValue(c.CaseId, out var n) ? c with { CaseNumber = n.CaseNumber, Title = n.Title } : c).ToList()
-        }).ToList();
-        return new IndicatorLibrary(summary, shown, ordered.Count > MaxRows);
+        return new Matched(all, ordered);
     }
 
     /// <summary>

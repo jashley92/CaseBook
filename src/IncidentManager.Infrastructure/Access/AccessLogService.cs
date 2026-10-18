@@ -157,6 +157,38 @@ public sealed class AccessLogService : IAccessLogService
     {
         AdminActionPermissions.Require<IAccessLogService>(_user, _siem);   // who read what: administrators only
         using var db = _factory.CreateDbContext();
+        return await Newest(Filtered(db, filter)).Take(take).ToListAsync(ct);
+    }
+
+    public async Task<CsvStreamResult> WriteCsvAsync(AccessLogFilter filter, Stream output, int rowLimit,
+        Func<int, bool, Task>? started, TimeSpan? timeLimit, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<IAccessLogService>(_user, _siem);   // who read what: administrators only
+        ArgumentOutOfRangeException.ThrowIfLessThan(rowLimit, 1);
+        using var db = _factory.CreateDbContext();
+        // CAP-32: sessions begun before the export did, so the count that decides the top line and the rows agree (and the
+        // export's own access entry, recorded when it starts, isn't in it). One statement, read as it's written out: a
+        // snapshot under read-committed snapshot isolation, which the database installer turns on, so a session extended
+        // meanwhile is neither missed nor repeated, and writers aren't blocked.
+        var startedAt = _clock.UtcNow;
+        var q = Filtered(db, filter).Where(e => e.FirstSeenUtc < startedAt);
+        var matched = await q.CountAsync(ct);
+        var truncated = matched > rowLimit;
+        var rows = Math.Min(matched, rowLimit);
+        if (started is not null) await started(rows, truncated);
+        return await CsvStream.WriteAsync(output, Newest(q).Take(rowLimit + 1).AsAsyncEnumerable(), rowLimit,
+            sb => AccessLogCsv.AppendHeader(sb, startedAt, truncated ? rowLimit : null),
+            AccessLogCsv.AppendRow,
+            (sb, cutAt) => AccessLogCsv.AppendTail(sb, cutAt ?? (truncated ? rowLimit : null)),
+            timeLimit ?? CsvStream.TimeLimit(rows), ct);
+    }
+
+    // CAP-32: newest session first; the id breaks a tie, so the console and the file list sessions in the same order.
+    private static IOrderedQueryable<CaseAccessEvent> Newest(IQueryable<CaseAccessEvent> q) =>
+        q.OrderByDescending(e => e.LastSeenUtc).ThenByDescending(e => e.Id);
+
+    private static IQueryable<CaseAccessEvent> Filtered(IAppDbContext db, AccessLogFilter filter)
+    {
         var q = db.CaseAccessEvents.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filter.Actor))
@@ -173,8 +205,7 @@ public sealed class AccessLogService : IAccessLogService
             q = q.Where(e => e.LastSeenUtc >= from);
         if (filter.ToUtc is { } to)
             q = q.Where(e => e.FirstSeenUtc <= to);
-
-        return await q.OrderByDescending(e => e.LastSeenUtc).Take(take).ToListAsync(ct);
+        return q;
     }
 
     public async Task<IReadOnlyList<CaseAccessEvent>> ForCaseAsync(Guid caseId, int take = 200, CancellationToken ct = default)
