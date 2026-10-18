@@ -86,7 +86,9 @@ From top to bottom:
 3. **Filters**: classification, phase, minimum severity, origin, outcome and search (case number, title, IOC,
    and the record: timeline entries and decisions, the brief, notes, tasks and their results, the review; a row
    says where it matched). *More filters* adds closed, exercises, notify state, legal referral, legal hold, assignee and opened
-   window. All filters live in the URL, so a view can be bookmarked or saved under **Views**.
+   window. All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export CSV**, beside
+   Views, downloads every case the filters match (not only the page shown), with the list's columns and the detected,
+   contained, resolved, closed and reported times (CAP-17; up to 10,000 cases).
 4. **A case row.** The left edge is marked for High or Critical cases. In the list, `j`/`k` move, `p` opens a
    read-only preview beside the list, and `Enter` opens the case.
 

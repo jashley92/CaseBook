@@ -19,6 +19,8 @@
 @inject AuthenticationStateProvider AuthState
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+@inject IncidentManager.Web.Services.ExportSearchRefs SearchRefs
 
 <PageTitle>Cases</PageTitle>
 
@@ -36,6 +38,12 @@
             @(ActiveViewName is { } av ? av : "Views")
             <span class="bi @(_viewsOpen || _savingView ? "bi-chevron-up" : "bi-chevron-down") small" aria-hidden="true"></span>
         </button>
+        @* CAP-17: every case the list's filters match (not just this page), with its lifecycle times. *@
+        <a class="btn btn-sm btn-outline-secondary" href="@_exportHref" download
+           title="Every case these filters match, not only this page, as CSV with detected, contained, resolved, closed and reported times"
+           aria-label="Export the cases these filters match as CSV">
+            <span class="bi bi-filetype-csv" aria-hidden="true"></span> Export CSV
+        </a>
         <a class="btn btn-sm btn-outline-secondary d-none d-sm-inline-block" href="export/iocs.csv" download
            title="Confirmed-malicious IOCs from your visible cases, as a blocklist for SIEM, firewall or EDR">
             <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
@@ -885,11 +893,20 @@ else
 
     private CaseSort _sort = CaseSort.Opened;
     private bool _sortDesc = true;
-    private static readonly Dictionary<CaseSort, string> SortKeys = new()
+    private static IReadOnlyDictionary<CaseSort, string> SortKeys => CaseListQuery.SortKeys;   // CAP-17: one map for the page and the export
+
+    // CAP-17: the CSV of what the list shows, every filter as the page has it. A search isn't put in the link (it can be an
+    // indicator or a person's name, and a download's URL reaches the web server's log): it's held for this user under an
+    // opaque reference instead.
+    private string _exportHref = "export/cases.csv";
+
+    private string ExportHref(IReadOnlyDictionary<string, object?> query)
     {
-        [CaseSort.Opened] = "opened", [CaseSort.Updated] = "updated", [CaseSort.Severity] = "severity",
-        [CaseSort.Sla] = "sla", [CaseSort.Phase] = "phase", [CaseSort.CaseNumber] = "case",
-    };
+        var parameters = query.Where(p => p.Key is not ("q" or "assigneeName" or "size")).ToDictionary(p => p.Key, p => p.Value);
+        if (!string.IsNullOrWhiteSpace(_search)) parameters["qref"] = SearchRefs.Hold(CurrentUser.UserId, _search);
+        var url = Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("export/cases.csv").ToString(), parameters);
+        return Nav.ToBaseRelativePath(url);
+    }
 
     // A header click sorts by that column in its natural direction; clicking the sorted column flips it.
     private void SetSort(CaseSort sort)
@@ -1119,22 +1136,11 @@ else
 
     private async Task Reload()
     {
-        // C16: by name only; ?sev=9 (or "1,2") isn't a severity, and is ignored like any unknown value.
-        _filter.Classification = EnumNames.OrNull<Classification>(_classification);
-        _filter.Phase = EnumNames.OrNull<CasePhase>(_phase);
-        _filter.MinSeverity = EnumNames.OrNull<Severity>(_minSeverity);
-        _filter.Origin = EnumNames.OrNull<CaseOrigin>(_origin);
-        _filter.OutcomeKey = string.IsNullOrEmpty(_outcome) ? null : _outcome;
-        _filter.Search = _search;
-        _filter.IncludeClosed = _includeClosed;
-        _filter.IncludeExercises = _includeExercises;
-        _filter.OverdueOnly = _overdueOnly;
-        _filter.SlaAtRiskOnly = _slaAtRiskOnly;
-        _filter.NotifyDeadlineOnly = _notifyOnly;
-        _filter.ReferredOnly = _referredOnly;
-        _filter.OnHoldOnly = _onHoldOnly;
-        _filter.UnassignedOnly = _assignee == "none";
-        _filter.AssigneeUserId = _assignee == "none" ? null : _assignee;
+        // CAP-17 (C2): the filter is read from the page's own query by the parser /export/cases.csv uses, so the export
+        // lists exactly these cases. C16: by name only; ?sev=9 (or "1,2") isn't a severity, and is ignored like any unknown value.
+        var query = CurrentParams();
+        CaseListQuery.CopyFilters(CaseListQuery.Parse(query), _filter);
+        _exportHref = ExportHref(query);
         _targets = SlaProvider.Current;
         // BUG-278: a slower earlier load (a search typed, then a filter changed) mustn't overwrite a later one.
         var seq = ++_reloadSeq;

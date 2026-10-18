@@ -307,6 +307,42 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task The_case_list_exports_as_csv_with_its_filters_and_a_held_search_never_in_the_url(/* CAP-17 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            using var asImage = new HttpRequestMessage(HttpMethod.Get, "/export/cases.csv");
+            asImage.Headers.Add("Sec-Fetch-Dest", "image");
+            (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var all = await client.GetAsync("/export/cases.csv?scope=all");
+            all.StatusCode.Should().Be(HttpStatusCode.OK);
+            all.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+            var rows = (await all.Content.ReadAsStringAsync()).Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+            rows[1].Should().StartWith("case_number,title,");
+            rows.Length.Should().BeGreaterThan(2, "the demo cases are listed");
+
+            var refs = factory.Services.GetRequiredService<IncidentManager.Web.Services.ExportSearchRefs>();
+            var nothing = refs.Hold("S-1-5-21-DEV-1001", "no case is called this " + Guid.NewGuid());
+            var searched = await client.GetAsync($"/export/cases.csv?scope=all&qref={nothing}");
+            searched.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await searched.Content.ReadAsStringAsync()).Split("\r\n", StringSplitOptions.RemoveEmptyEntries)
+                .Should().HaveCount(2, "the held search is applied: only the comment and the header");
+
+            (await client.GetAsync("/export/cases.csv?qref=0123456789abcdef0123456789abcdef")).StatusCode.Should().Be(HttpStatusCode.Gone);
+
+            using var scope = factory.Services.CreateScope();
+            await using var db = await scope.ServiceProvider
+                .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                .CreateDbContextAsync();
+            db.CaseAccessEvents.AsEnumerable().Should().Contain(e => e.TargetLabel != null && e.TargetLabel.StartsWith("cases-"));
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);

@@ -283,6 +283,7 @@ builder.Services.AddScoped<IncidentManager.Web.Services.CommandPaletteController
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseTabsState>();
 // Remembers the case list's filters so the case workspace's "Cases" breadcrumb returns to them.
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseListMemory>();
+builder.Services.AddSingleton<IncidentManager.Web.Services.ExportSearchRefs>();   // CAP-17: a list search kept out of the export's URL
 // PROD-19: lets the open CaseWorkspace publish its action verbs to the hosted command palette.
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseCommandRegistry>();
 // BUG-578: the circuit's unsaved edits, asked before a tab switch, leaving a case or a time-display redraw hides them.
@@ -844,6 +845,41 @@ app.MapGet("/export/improvement-actions.csv", async (
     var csv = await lessons.ExportRegisterCsvAsync(filter, ct);
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"improvement-actions-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
+
+// --- CAP-17: the Cases list as CSV, every case its filters match. The same URL filter as the page, read by the page's own
+// parser (C2), through CaseService.ListAsync a page at a time (ForUser, need-to-know), bounded at 10,000 cases (a cut said in
+// the file). A search comes as qref, held for this user by the page, so its text stays out of the URL; a plain q (the page's
+// own URL) is read too. Access log and SIEM 5304; plain attachment.
+app.MapGet("/export/cases.csv", async (HttpContext http,
+    IncidentManager.Application.Cases.CaseService cases,
+    IncidentManager.Web.Services.ExportSearchRefs searchRefs,
+    IncidentManager.Application.Abstractions.ICurrentUser user,
+    IncidentManager.Application.Sla.ISlaTargetsProvider sla,
+    IncidentManager.Application.Abstractions.ISeverityLabels sevLabels,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var query = http.Request.Query;
+    var filter = IncidentManager.Web.Components.Shared.CaseListQuery.Parse(k => query.TryGetValue(k, out var v) ? v.ToString() : null);
+    if (query.TryGetValue("qref", out var qref))
+    {
+        if (searchRefs.Read(user.UserId, qref.ToString()) is not { } search)
+            return Results.Text("This export link has expired. Export again from the Cases page.", statusCode: StatusCodes.Status410Gone);
+        filter.Search = search;
+    }
+    var (items, truncated) = await IncidentManager.Application.Cases.CaseListCsv.CollectAsync(cases, filter, ct: ct);
+    var targets = sla.Current;
+    var now = clock.UtcNow;
+    var csv = IncidentManager.Application.Cases.CaseListCsv.Build(items, now, truncated,
+        IncidentManager.Web.Components.Shared.Ui.Label, IncidentManager.Web.Components.Shared.Ui.Label, sevLabels.For,
+        c => IncidentManager.Application.Sla.SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
+                targets, now, c.Classification, c.ContainmentNotNeeded) is { State: not IncidentManager.Application.Sla.SlaState.NoTarget } st
+            ? IncidentManager.Web.Components.Shared.Ui.SlaLabel(st.State) : "");
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"cases-{now.UtcDateTime:yyyyMMdd-HHmm}.csv");
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{fileName} ({items.Count} cases{(truncated ? ", cut" : "")})"), null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 

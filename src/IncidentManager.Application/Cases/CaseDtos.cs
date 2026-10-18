@@ -83,7 +83,10 @@ public sealed record CaseListItem(
     int OtherAssignees = 0,
     string? OwnerUserId = null,
     // BUG-189: containment was recorded as not needed, so it has no target to meet or miss.
-    bool ContainmentNotNeeded = false);
+    bool ContainmentNotNeeded = false,
+    // CAP-17: for the list's CSV export, with the detected, contained and resolved times above.
+    DateTimeOffset? ClosedAtUtc = null,
+    DateTimeOffset? ReportedAtUtc = null);
 
 /// <summary>Filter for listing cases.</summary>
 public sealed class CaseFilter

@@ -327,6 +327,7 @@ The Enterprise matrix (v19.1) is embedded as JSON and loaded once. No network ac
 | Export | For |
 |---|---|
 | `/export/iocs.csv` | A blocklist feed of malicious indicators (signed-in download) |
+| `/export/cases.csv` | The Cases list as filtered, with lifecycle times, for a spreadsheet or a report pack (signed-in download, CAP-17) |
 | `/api/export/iocs.csv`, `/api/export/iocs.stix.json` | The same feed for a machine, with an API token ([above](#ioc-feed-for-firewalls-edr-and-threat-intel-platforms)) |
 | `/cases/{id}/graph.stix.json` | A case's entities and relationships as STIX 2.1, for a TIP or a partner |
 | `/campaigns/{id}/rollup.json` | A campaign rollup |

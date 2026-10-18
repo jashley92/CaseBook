@@ -243,6 +243,11 @@ first with `casebook-keytool export`.
   stops startup with its name. The import's audit entry and SIEM 5405 now end `signed with this server's key <id>`,
   `signed with trusted key <id> (<file>)` or `signed with key <id> (...), its id typed to confirm`; a SIEM rule that
   matched the 5405 detail's old `; key <id>` ending needs updating.
+- **The Cases list exports to CSV (CAP-17).** *Export CSV* beside Views downloads every case the list's filters match
+  (`/export/cases.csv`, the same query as the page), with the list's columns and the detected, contained, resolved,
+  closed and reported times, up to 10,000 cases. Need-to-know applies as on the page; each download is in the access
+  log and is SIEM 5304, and it counts against the downloads rate limit. A search is passed as a short-lived reference,
+  not its text. No setting or migration.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

@@ -558,7 +558,8 @@ public sealed class CaseService
                 c.Assignments.Where(a => a.Role != CaseAssignmentRole.Observer)
                     .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
                     .Select(a => a.UserId).FirstOrDefault(),
-                c.ContainmentNotNeededReason != null);
+                c.ContainmentNotNeededReason != null,
+                c.ClosedAtUtc, c.ReportedAtUtc);   // CAP-17
 
     /// <summary>
     /// Design review P3: the case preview panel's summary, scoped like every read (null when the case doesn't exist
