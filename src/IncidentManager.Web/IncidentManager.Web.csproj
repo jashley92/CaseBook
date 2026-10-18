@@ -24,4 +24,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- SkiaSharp ships native debug symbols for each Windows architecture (~90 MB apiece, 276 MB of the release bundle).
+       They only help debug SkiaSharp's own C++ code; CaseBook's IncidentManager.Web.pdb (line numbers in logs) stays. -->
+  <Target Name="DropNativeSymbols" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'libSkiaSharp.pdb'" />
+    </ItemGroup>
+  </Target>
+
 </Project>
