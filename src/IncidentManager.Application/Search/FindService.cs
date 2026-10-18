@@ -61,9 +61,10 @@ public sealed record FindResult(
 /// RD-20: Find. One query, typed results across entities, cases, record entries (closing briefs included), tasks,
 /// evidence names and, when asked, working notes. Read only. Need-to-know scoped by the same rule as the case list (a case
 /// the caller can't see contributes nothing and nothing hints it exists); exercises left out unless asked for. Matching is
-/// exact and literal: words must each appear (ignoring case); an indicator matches entities by its exact value; there is
-/// no fuzzy matching, no related-indicator expansion and no AI reading of the question, only <see cref="FindQuery"/>'s
-/// documented grammar.
+/// literal: words must each appear (ignoring case); an indicator matches entities by its exact value; there is no fuzzy
+/// matching, no related-indicator expansion and no AI reading of the question, only <see cref="FindQuery"/>'s documented
+/// grammar. CAP-22: on SQL Server with Full-Text Search, a word matches the record's text by word prefix (<c>lsa</c> finds
+/// "lsass", not "salsa"); without it, and always for indicators, case numbers and entities, it matches as a substring.
 /// </summary>
 public sealed class FindService
 {
@@ -74,16 +75,38 @@ public sealed class FindService
     private readonly ICurrentUser _user;
     private readonly IUserDirectory _users;
     private readonly IOrganizationTimeZone? _zone;
+    private readonly IFullTextSearch? _fullText;
 
-    public FindService(IAppDbContextFactory factory, ICurrentUser user, IUserDirectory users, IOrganizationTimeZone? zone = null)
+    public FindService(IAppDbContextFactory factory, ICurrentUser user, IUserDirectory users, IOrganizationTimeZone? zone = null,
+        IFullTextSearch? fullText = null)
     {
         _factory = factory;
         _user = user;
         _users = users;
         _zone = zone;
+        _fullText = fullText;
     }
 
     public async Task<FindResult> FindAsync(string? raw, int limit = DefaultLimit, CancellationToken ct = default)
+    {
+        // CAP-22: by word where the record's text is full-text indexed; a full-text query the server refuses is run again by
+        // substring, so an odd search (or an index dropped since the last check) still finds what it always did.
+        if (_fullText is not null && await _fullText.StatusAsync(ct) is { Any: true } status)
+        {
+            try { return await FindCoreAsync(raw, limit, new FullTextPlan(_fullText, status), ct); }
+            catch (Exception ex) when (_fullText.IsFullTextFailure(ex)) { _fullText.FellBack(ex, "Find"); }
+        }
+        return await FindCoreAsync(raw, limit, null, ct);
+    }
+
+    // CAP-22: a word's full-text condition when the query may use full-text, else null (matched by substring).
+    private static string? Condition(FullTextPlan? plan, string term) => plan is null ? null : FullTextCondition.For(term);
+
+    // CAP-22: the predicate with its TextMatch.Has columns made SQL: by word when the term has a condition, else by substring.
+    private static Expression<Func<T, bool>> Words<T>(Expression<Func<T, bool>> predicate, string? condition, FullTextPlan? plan) =>
+        TextMatch.Prepare(predicate, condition is null ? null : plan);
+
+    private async Task<FindResult> FindCoreAsync(string? raw, int limit, FullTextPlan? plan, CancellationToken ct)
     {
         var q = FindQuery.Parse(raw);
         // BUG-280: only filters it can't use (status:pending, after:2026-13-01) is said back as such, not shown as nothing.
@@ -304,10 +327,14 @@ public sealed class FindService
                 break;
             case FindReadAs.Words:
                 foreach (var t in terms)
-                    caseQ = caseQ.Where(c => c.CaseNumber.ToLower().Contains(t) || c.Title.ToLower().Contains(t)
-                                             || (c.Summary != null && c.Summary.ToLower().Contains(t))
-                                             || c.Briefs.Any(b => b.IsCurrent && ((b.Summary != null && b.Summary.ToLower().Contains(t))
-                                                                                  || (b.WorkingAssessment != null && b.WorkingAssessment.ToLower().Contains(t)))));
+                {
+                    // CAP-22: the number stays a substring match; the title, summary and brief are full-text indexed.
+                    var ftc = Condition(plan, t);
+                    caseQ = caseQ.Where(Words<Case>(c => c.CaseNumber.ToLower().Contains(t) || TextMatch.Has(c.Title, t, ftc)
+                                                         || TextMatch.Has(c.Summary, t, ftc)
+                                                         || c.Briefs.Any(b => b.IsCurrent && (TextMatch.Has(b.Summary, t, ftc)
+                                                                                              || TextMatch.Has(b.WorkingAssessment, t, ftc))), ftc, plan));
+                }
                 break;
         }
 #pragma warning restore CA1304, CA1311, CA1862
@@ -352,9 +379,13 @@ public sealed class FindService
             var entriesTaggingIoc = await TaggingAsync(eq, entryTags, e => e.Id, indicatorRefs, ct);
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    eq = eq.Where(e => e.Description.ToLower().Contains(t) || (e.Rationale != null && e.Rationale.ToLower().Contains(t))
-                                       || entriesTaggingIoc.Contains(e.Id)
-                                       || (alsoPersonId != null && ((e.Version == 1 && e.CreatedBy == alsoPersonId) || alsoRecorded.Contains(e.Id))));
+                {
+                    var ftc = readAs == FindReadAs.Words ? Condition(plan, t) : null;   // CAP-22: an indicator stays a substring
+                    eq = eq.Where(Words<TimelineEntry>(e => TextMatch.Has(e.Description, t, ftc) || TextMatch.Has(e.Rationale, t, ftc)
+                                                            || entriesTaggingIoc.Contains(e.Id)
+                                                            || (alsoPersonId != null && ((e.Version == 1 && e.CreatedBy == alsoPersonId) || alsoRecorded.Contains(e.Id))),
+                        ftc, plan));
+                }
             // WF-09: who recorded it is the first version's author, not whoever last edited it.
             if (readAs == FindReadAs.Person)
             {
@@ -406,8 +437,11 @@ public sealed class FindService
                 var taggedBriefs = await TaggingAsync(bq, briefTags, b => b.Id, filterRefs, ct);
                 var briefsTaggingIoc = await TaggingAsync(bq, briefTags, b => b.Id, indicatorRefs, ct);
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(t) || (b.Summary != null && b.Summary.ToLower().Contains(t))
-                                       || briefsTaggingIoc.Contains(b.Id));
+                {
+                    var ftc = readAs == FindReadAs.Words ? Condition(plan, t) : null;
+                    bq = bq.Where(Words<CaseBrief>(b => TextMatch.Has(b.WorkingAssessment, t, ftc) || TextMatch.Has(b.Summary, t, ftc)
+                                                        || briefsTaggingIoc.Contains(b.Id), ftc, plan));
+                }
                 if (q.Entity is { } ent2) { var v = ent2.ToLower(); bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(v) || taggedBriefs.Contains(b.Id)); }
 #pragma warning restore CA1304, CA1311, CA1862
                 if (recheck)
@@ -443,9 +477,13 @@ public sealed class FindService
 #pragma warning disable CA1304, CA1311, CA1862
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    tq = tq.Where(x => x.Title.ToLower().Contains(t) || (x.Description != null && x.Description.ToLower().Contains(t))
-                                       || tasksTaggingIoc.Contains(x.Id)
-                                       || (x.Owner != null && alsoOwner.Contains(x.Owner.Trim().ToLower())));   // WF-89
+                {
+                    var ftc = readAs == FindReadAs.Words ? Condition(plan, t) : null;
+                    tq = tq.Where(Words<ActionItem>(x => TextMatch.Has(x.Title, t, ftc) || TextMatch.Has(x.Description, t, ftc)
+                                                         || tasksTaggingIoc.Contains(x.Id)
+                                                         || (x.Owner != null && alsoOwner.Contains(x.Owner.Trim().ToLower())),   // WF-89
+                        ftc, plan));
+                }
             if (q.Entity is { } ent3)
             {
                 var v = ent3.ToLower();
@@ -497,7 +535,10 @@ public sealed class FindService
             if (hash is not null) xq = xq.Where(x => x.Sha256.ToLower() == hash);
             else
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    xq = xq.Where(x => x.OriginalFileName.ToLower().Contains(t) || (x.Description != null && x.Description.ToLower().Contains(t)));
+                {
+                    var ftc = readAs == FindReadAs.Words ? Condition(plan, t) : null;
+                    xq = xq.Where(Words<Domain.Entities.Evidence>(x => TextMatch.Has(x.OriginalFileName, t, ftc) || TextMatch.Has(x.Description, t, ftc), ftc, plan));
+                }
 #pragma warning restore CA1304, CA1311, CA1862
             if (by is not null) xq = xq.Where(x => x.CreatedBy == by);
             if (from is not null) xq = xq.Where(x => x.CreatedAtUtc >= from);
@@ -528,7 +569,10 @@ public sealed class FindService
 #pragma warning disable CA1304, CA1311, CA1862
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
-                    nq = nq.Where(n => n.Body.ToLower().Contains(t) || notesTaggingIoc.Contains(n.Id));
+                {
+                    var ftc = readAs == FindReadAs.Words ? Condition(plan, t) : null;
+                    nq = nq.Where(Words<AnalystNote>(n => TextMatch.Has(n.Body, t, ftc) || notesTaggingIoc.Contains(n.Id), ftc, plan));
+                }
             if (q.Entity is { } ent4) { var v = ent4.ToLower(); nq = nq.Where(n => n.Body.ToLower().Contains(v) || taggedNotes.Contains(n.Id)); }
 #pragma warning restore CA1304, CA1311, CA1862
             // WF-09: as for entries, the note's first author.

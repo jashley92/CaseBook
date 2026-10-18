@@ -1,0 +1,120 @@
+@* CAP-22: Diagnostics' search row: whether Find and the case list search by word (SQL Server's full-text indexes) or by
+   substring, checked when Diagnostics opens and on Check again; how many full-text searches fell back to substring since
+   start. Create full-text indexes (Administer, audited) for a server that got Full-Text Search after the migration ran. A
+   table row, for the Diagnostics table it sits in. *@
+@using IncidentManager.Application.Abstractions
+@using IncidentManager.Application.Search
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+@inject FullTextAdminService FullText
+@inject ILogger<SearchModeRow> Logger
+
+<tr>
+    <td>Search</td>
+    <td>
+        @if (_status is null)
+        {
+            <em>checking&hellip;</em>
+        }
+        else
+        {
+            <span class="@(_status.Mode == FullTextMode.Ready ? "im-badge im-b-ok" : _status.Mode is FullTextMode.Unknown ? "im-badge im-b-warn" : "im-badge im-b-neutral")">@_status.Label</span>
+            @if (_status.Detail is { } detail)
+            {
+                <span class="small text-muted ms-2">@detail</span>
+            }
+            @if (_status.Fallbacks > 0)
+            {
+                <div class="small text-muted">
+                    @_status.Fallbacks full-text search(es) ran again by substring since start (last: @_status.LastFallback). The
+                    server's log has the first of each kind.
+                </div>
+            }
+            @if (_status.Mode is FullTextMode.NotCreated or FullTextMode.Partial)
+            {
+                <div class="small text-muted">
+                    Full-Text Search is installed, but not every column Find searches is indexed. Create the indexes here (the
+                    database account needs db_owner), or have a DBA run <code>deploy/sql/03-Enable-FullText.sql</code>.
+                </div>
+            }
+        }
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_busy.Busy)" @onclick="Check"
+                    aria-label="Check how search works on this database again">
+                Check again
+            </button>
+            @if (_status?.Mode is FullTextMode.NotCreated or FullTextMode.Partial)
+            {
+                <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_busy.Busy)" @onclick="Create"
+                        aria-label="Create the missing full-text indexes">
+                    @(_creating ? "Creating…" : "Create full-text indexes")
+                </button>
+            }
+            <span class="small @(_problem ? "text-danger" : "text-muted")" role="status" aria-live="polite">@_message</span>
+        </div>
+    </td>
+</tr>
+
+@code {
+    private FullTextStatus? _status;
+    private readonly InFlight _busy = new();   // C8: one check or create at a time
+    private readonly LoadSequence _load = new();   // C5: only the newest result lands
+    private bool _creating;
+    private string? _message;
+    private bool _problem;
+    private bool _disposed;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        FullTextStatus status;
+        try { status = await FullText.StatusAsync(); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (_disposed || !_load.IsCurrent(t)) return;
+            (_message, _problem) = (UserFacingError.Describe(ex, Logger, "checking full-text search",
+                "Couldn't check how search works. Try again; the server's log has the detail."), true);
+            return;
+        }
+        if (_disposed || !_load.IsCurrent(t)) return;
+        _status = status;
+    }
+
+    private Task Check() => _busy.Run(async () =>
+    {
+        _message = null;
+        await LoadAsync();
+    });
+
+    private Task Create() => _busy.Run(async () =>
+    {
+        _creating = true;
+        (_message, _problem) = (null, false);
+        var t = _load.Begin();
+        try
+        {
+            var after = await FullText.CreateIndexesAsync();
+            if (_disposed || !_load.IsCurrent(t)) return;
+            _status = after;
+            (_message, _problem) = (after.Mode == FullTextMode.Ready
+                ? "Full-text indexes are ready."
+                : "Created what was missing. SQL Server fills the indexes in the background; search uses them once they're filled.", false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            if (_disposed) return;
+            (_message, _problem) = (ex.Message, true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (_disposed) return;
+            (_message, _problem) = (UserFacingError.Describe(ex, Logger, "creating full-text indexes",
+                "The full-text indexes couldn't be created. Try again; the server's log has the detail."), true);
+        }
+        finally { _creating = false; }
+    });
+
+    public void Dispose() => _disposed = true;
+}

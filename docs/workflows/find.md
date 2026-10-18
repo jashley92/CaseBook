@@ -31,6 +31,15 @@ Above the results Find says how it read what you typed:
   hidden target, such as `evidence:` and its id, doesn't count); quote a phrase to keep it together.
   Find uses the first 12 words or phrases and says *only the first 12 words used* when there were more.
   Characters like `%`, `_` and `[` match themselves.
+  How a word matches depends on the database (CAP-22; *Administration › Diagnostics* shows which, on its *Search* row):
+  - **On SQL Server with Full-Text Search**, a word matches the words that **start with it**, from the full-text
+    indexes: `lsa` finds "LSASS", and `lateral mov` finds "lateral movement", but `sass` doesn't find "LSASS". That's
+    what makes typing in the command bar fast on a large database. It covers case titles and summaries, briefs, record
+    entries (text and *why*), tasks, working notes and evidence names; anything you type, `AND`, `OR`, `NEAR`, `*`, `~`
+    and quotes included, is searched as words, never as a full-text operator. A word with no letter or digit in it
+    (`--`, `*`) matches anywhere in the text, as below. A change is searchable within seconds of being saved.
+  - **Otherwise** (SQLite, or SQL Server without the feature), and always for case numbers, entities and indicators,
+    a word matches **anywhere** in the text, part of a word included.
 
 ## Filters
 
@@ -63,12 +72,14 @@ Examples:
 
 ## Limits
 
-- Matching is exact and literal. There is no fuzzy matching, no CIDR or subdomain expansion, and part of a domain
-  matches the record's text, not related indicators.
+- Matching is literal: by word prefix with full-text search, by substring without it (above). There is no fuzzy
+  matching, no stemming (`run` doesn't find "ran"), no CIDR or subdomain expansion, and part of a domain matches the
+  record's text, not related indicators.
 - An account and an email address with the same value are one identity (as everywhere in CaseBook).
 - Need-to-know applies: restricted cases you can't see contribute nothing, and nothing says they exist.
 - Nothing interprets the question but the grammar above. CaseBook never sends a query to an AI.
 - Each kind lists its 25 most recent results; the count covers them all. Add words or a filter to narrow it.
 
 Code: `Application/Search/FindQuery.cs` (the grammar), `Application/Search/FindService.cs` (the search),
+`Application/Search/FullTextCondition.cs` and `TextMatch.cs` (full-text or substring, CAP-22),
 `Pages/FindPage.razor`, and `Shared/CommandPalette.razor`.

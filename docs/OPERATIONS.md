@@ -1066,3 +1066,58 @@ still answers. Imports waiting for review, or claimed and still being applied, k
 anything writes an audit-trail entry (entity type `PendingImport`) saying how many and the cutoff. If you need the
 documents longer (to re-read what a detection platform sent), raise the setting before the first night after
 upgrading. A failure is logged as "Import retention failed" and retried a few minutes later.
+
+---
+
+## 9. Full-text search on SQL Server (CAP-22)
+
+Find and the case-list search match words. Without help, SQL Server does that by reading every row of every text
+column (`LIKE '%word%'`), on every keystroke in the command bar, which slows as the record grows. With SQL Server's
+**Full-Text Search** feature, CaseBook keeps full-text indexes on the free-text columns and matches words from them.
+It's **optional**: without the feature, search works as before, by substring.
+
+| | With Full-Text Search | Without |
+|---|---|---|
+| How a word matches | Words that **start with** it (`lsa` finds "LSASS", not "salsa") | **Anywhere** in the text |
+| Columns | Case title and summary; brief summary, working assessment, known and open questions; record entry text and *why*; working notes; task titles, descriptions and comments; evidence names and descriptions | All of them |
+| Indicators, case numbers, entities, phase reasons, the review | Anywhere in the text (substring), as without | Anywhere |
+| A save | Searchable within seconds (change tracking) | At once |
+
+**Setting it up.** Install the feature (SQL Server setup, *Full-Text and Semantic Extractions for Search*) before the
+app's first start, and CaseBook's migration (`FullTextSearch`) creates the catalog `CaseBookText` and its indexes:
+English word breaker, no stoplist (so no word is ignored as a noise word), automatic change tracking, and each table's
+primary key as the full-text key. On a server without the feature the migration does nothing and completes.
+
+Added the feature later? In **Administration › Diagnostics**, the *Search* row offers **Create full-text indexes**
+(`Administer`, recorded in the audit trail as `FullTextSearch`). It creates whatever is missing and changes nothing
+else. It needs the app's database account to be allowed to (`db_owner`, as `AppMigrates` grants). With `DbaApplies`,
+the DBA runs the same statements from `deploy\sql\03-Enable-FullText.sql` (idempotent, not in a transaction):
+
+```powershell
+sqlcmd -S SQLHOST\INSTANCE -E -b -C -I -d CaseBook -i deploy\sql\03-Enable-FullText.sql
+```
+
+SQL Server fills new indexes in the background; until they're filled, search stays substring. `Verify-Install.ps1`
+reports whether the instance has the feature, as information.
+
+**Watching it.** Diagnostics' *Search* row shows the mode:
+
+- *Search: full-text (SQL Server)*
+- *Search: full-text on some columns, substring on the rest* (it names them)
+- *Search: substring (full-text indexes still being filled)*
+- *Search: substring (full-text installed, CaseBook's indexes not created)*
+- *Search: substring (full-text not installed)*
+- *Search: substring (full-text couldn't be checked)*
+
+It's checked at startup (and logged), every 5 minutes (30 seconds while filling), when Diagnostics opens, and on
+*Check again*. A full-text query the server refuses (an index dropped since the check, an input the word breaker can't
+read) runs again by substring, so the person searching still gets their answer. The first of each kind is logged as a
+warning ("A full-text search (Find) failed with SQL Server error …"), later ones at Debug. The row counts them, and the
+status is checked again at the next search.
+
+**Schema changes.** SQL Server refuses to alter or drop a column that's in a full-text index. A future migration that
+changes one of the columns above has to take it out of the index first (`ALTER FULLTEXT INDEX … DROP (…)`) and put it
+back after. `FullTextSchema` in `Infrastructure/Persistence` lists them.
+
+**Taking it out.** Drop the indexes (`DROP FULLTEXT INDEX ON …`), then the catalog (`DROP FULLTEXT CATALOG
+[CaseBookText]`). CaseBook returns to substring search at its next check; nothing else depends on them.

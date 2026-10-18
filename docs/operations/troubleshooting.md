@@ -170,6 +170,40 @@ The app pool identity has no SQL login or user, or it's running as a different a
 See [UPGRADE.md](../UPGRADE.md#the-migration-compatibility-preflight-why-an-old-instance-can-fail-to-start). The
 second also blocks downgrades: you can't deploy an older build over a newer database.
 
+### Search is slow, or Diagnostics says "Search: substring" on SQL Server (CAP-22)
+
+- **Symptom:** the command bar lags on a large database, or Diagnostics' *Search* row says *substring* though you expected
+  full-text.
+- **Cause:** by the row's words:
+  - *full-text not installed*: the instance lacks the optional Full-Text Search feature.
+  - *indexes not created*: it was added after CaseBook's migration ran.
+  - *still being filled*: SQL Server is populating new indexes (minutes on a large database).
+  - *couldn't be checked*: the metadata read failed or took over 5 seconds.
+- **Where to look:** Diagnostics' *Search* row; the startup log line `Search: …`; the warning "Couldn't check SQL
+  Server's full-text indexes".
+- **Fix:** install the feature (SQL Server setup, *Full-Text and Semantic Extractions for Search*), then *Create
+  full-text indexes* on the row, or have a DBA run `deploy\sql\03-Enable-FullText.sql`
+  ([OPERATIONS.md §9](../OPERATIONS.md#9-full-text-search-on-sql-server-cap-22)). Wait for the fill; *Check again*.
+  "isn't allowed to create full-text indexes" means the app account isn't `db_owner`: use the script.
+
+### "A full-text search (…) failed with SQL Server error …" in the log (CAP-22)
+
+- **Symptom:** a warning naming error 7601 (not full-text indexed), 7609 (not installed), 7630 (syntax) or another in
+  the 7600s or 30000s; the *Search* row counts searches that "ran again by substring".
+- **Cause:** a full-text query the server refused: an index or the catalog was dropped, or the feature removed, since
+  the last check; or a search the word breaker can't read. The person searching got their results by substring.
+- **Where to look:** the first of each error number is a warning, later ones Debug. The status is checked again at the
+  next search, so a dropped index stops being used.
+- **Fix:** none needed for an odd search. For a dropped index, recreate it (Diagnostics or `03-Enable-FullText.sql`). If
+  one error number keeps coming for ordinary words, report it with the number and the words.
+
+### A word finds less than it used to (CAP-22)
+
+- **Symptom:** `sass` no longer finds "LSASS", or part of a host name finds nothing.
+- **Cause:** with full-text search a word matches the words that **start** with it, not text in the middle of a word
+  ([Find](../workflows/find.md#how-find-reads-the-query)). Indicators, case numbers and entities still match anywhere.
+- **Fix:** type the start of the word, or the whole value (a value shaped like an indicator is matched as written).
+
 ## Access and permissions
 
 ### A user lands on `/access-denied` everywhere

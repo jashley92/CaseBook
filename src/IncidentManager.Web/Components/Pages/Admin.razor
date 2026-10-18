@@ -700,6 +700,8 @@
                             else { <span class="im-badge im-b-warn">@_pendingMigrations.Count pending</span> }
                         </td>
                     </tr>
+                    @* CAP-22: by word (full-text) or by substring *@
+                    <IncidentManager.Web.Components.Shared.SearchModeRow />
                     <tr><td>Authentication mode</td><td><code>@(Config["Auth:Mode"] ?? "(unset)")</code></td></tr>
                 </tbody>
             </table>

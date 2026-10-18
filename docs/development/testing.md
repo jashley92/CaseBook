@@ -23,6 +23,7 @@ are **no** browser end-to-end tests and **no** Razor component (bUnit) tests.
 | `CapturingSecurityEventSink` | Assert SIEM events |
 | `NoOpAuditWriter`, `NoOpCaseNotifications`, `TestSlaTargets`, `TestOptionsMonitor` | Stub out side effects and live settings |
 | `[SqlServerFact]` | Runs only when `CASEBOOK_TEST_SQL` is set |
+| `[SqlServerFullTextFact]` | CAP-22: runs only when that server also has Full-Text Search (`SERVERPROPERTY('IsFullTextInstalled') = 1`); skipped, saying so, otherwise. The `mssql/server` image doesn't have it, so the full-text path runs only against a full SQL Server install; the substring fallback is tested everywhere |
 
 The usual setup: open `SqliteConnection("Data Source=:memory:")` in the test class constructor, build options
 with `UseSqlite`, often add the real `AuditChainInterceptor`, call `EnsureCreated()`, and frequently seed the three
@@ -49,7 +50,9 @@ dotnet test tests/IncidentManager.IntegrationTests --filter "DisplayName~SqlServ
 
 Each test creates and drops its own database. There are two kinds:
 
-- `[SqlServerFact]` tests in a SQL Server class (the dashboard parity tests).
+- `[SqlServerFact]` tests in a SQL Server class (the dashboard parity tests, the measured `*ThroughputTests`, which
+  write their figures to the test output: `IntegrityCheckThroughputTests` with `CASEBOOK_CHECK_ROWS`,
+  `FindThroughputTests` with `CASEBOOK_FIND_ROWS`).
 - Theories over `TestDatabase.Providers` (Find, open-case tabs, live updates, the Desk). They run once on SQLite, and
   again on SQL Server when `CASEBOOK_TEST_SQL` is set, as a row named `provider: "SqlServer"`. Without a server the row
   doesn't exist rather than passing as a skip. To put a test on both engines, take `string provider`, start with
