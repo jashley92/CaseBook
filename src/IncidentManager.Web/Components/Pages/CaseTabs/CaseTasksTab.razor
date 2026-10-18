@@ -1121,7 +1121,7 @@ else
 
     // CAP-11: opens the apply card on the offered playbook with the steps the case doesn't have ticked (PlaybookOffer, the
     // notice's own reading, C2). Applying is the usual ApplyTemplateAsync with those steps. C7: a card already open with
-    // another playbook or other steps ticked isn't replaced.
+    // another playbook or other steps ticked isn't replaced; CAP-11 review: one already open as offered is left as it is.
     private async Task TakeOffer(Guid templateId)
     {
         await OnOfferHandled.InvokeAsync();
@@ -1132,10 +1132,12 @@ else
             return;
         }
         var missing = PlaybookOffer.MissingSteps(template, Case.ActionItems.Select(t => t.Title)).Select(s => s.Id).ToHashSet();
-        if (_applyingTemplate && _applyTemplate is not null && (_applyTemplate.Id != templateId || !_applySelected.SetEquals(missing)))
+        switch (PlaybookOffer.Take(_applyingTemplate ? _applyTemplate?.Id : null, _applySelected, templateId, missing))
         {
-            Toasts.Error("You're already applying a playbook. Add its tasks or cancel it, then try again.");
-            return;
+            case OfferTake.Keep: return;   // the default owner chosen in it stays
+            case OfferTake.Refuse:
+                Toasts.Error("You're already applying a playbook. Add its tasks or cancel it, then try again.");
+                return;
         }
         _applyingTemplate = true;
         _applyTemplate = template;

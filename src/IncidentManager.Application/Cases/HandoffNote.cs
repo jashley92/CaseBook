@@ -14,7 +14,10 @@ public sealed record HandoffParts(string? HandedTo, string? WhereItStands, strin
 /// <param name="HandedAtUtc">When the handoff was first recorded (an edit doesn't move it, BUG-363).</param>
 /// <param name="HandedTo">The recipient's name as the entry gives it, or null when it can't be read (edited away).</param>
 /// <param name="WatchFor">The "Watch for" part, as Markdown.</param>
-public sealed record HandoverWatch(Guid EntryId, string HandedBy, DateTimeOffset HandedAtUtc, string? HandedTo, string WatchFor);
+/// <param name="HandedToUserId">CAP-20 review: the recipient's user id as the handoff recorded it; null on a handoff
+/// recorded before it was kept, which is matched by <paramref name="HandedTo"/> instead.</param>
+public sealed record HandoverWatch(Guid EntryId, string HandedBy, DateTimeOffset HandedAtUtc, string? HandedTo, string WatchFor,
+    string? HandedToUserId = null);
 
 /// <summary>
 /// CAP-20 (INV-15): a handoff is stored as one Markdown text the hand-off form writes: "**Handed to Name**", then a bold
@@ -85,27 +88,35 @@ public static partial class HandoffNote
         if (latest.Entry is null) return null;
         var parts = Parse(latest.Entry.Description);
         return parts.WatchFor is { } watch
-            ? new HandoverWatch(latest.Entry.Id, latest.First.CreatedBy, latest.First.CreatedAtUtc, parts.HandedTo, watch)
+            ? new HandoverWatch(latest.Entry.Id, latest.First.CreatedBy, latest.First.CreatedAtUtc, parts.HandedTo, watch,
+                // CAP-20 review: the recipient is who the handoff was recorded to; an edit can't change it
+                string.IsNullOrWhiteSpace(latest.First.HandedToUserId) ? null : latest.First.HandedToUserId)
             : null;
     }
 
     /// <summary>
-    /// Whether <paramref name="userId"/> is the person the case was handed to. The entry names them as the form wrote
-    /// them (their display name), so that's what is compared, ignoring case. When the name can't be read, nobody is.
+    /// Whether <paramref name="userId"/> is the person the case was handed to. CAP-20 review: by the recipient's user id
+    /// when the handoff recorded it, so a rename or a namesake doesn't change who it is. A handoff recorded before then
+    /// names them only as the form wrote them (their display name), so that's what is compared, ignoring case; when the
+    /// name can't be read, nobody is.
     /// </summary>
     public static bool IsRecipient(HandoverWatch w, string? userId, Func<string?, string> displayName) =>
-        !string.IsNullOrWhiteSpace(userId) && w.HandedTo is { } to
-        && string.Equals(displayName(userId).Trim(), to, StringComparison.OrdinalIgnoreCase);
+        !string.IsNullOrWhiteSpace(userId)
+        && (w.HandedToUserId is { } id
+            ? string.Equals(userId.Trim(), id.Trim(), StringComparison.OrdinalIgnoreCase)
+            : w.HandedTo is { } to && string.Equals(displayName(userId).Trim(), to, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Whether the person who took the case has taken stock since the handoff: revised the brief (a version they wrote;
-    /// one CaseBook appended for them, WF-30, doesn't count) or confirmed it still stands. When the entry no longer names
-    /// the recipient, anyone but the person who handed off counts, so the card can't outstay the handover.
+    /// one CaseBook appended for them, WF-30, doesn't count) or confirmed it still stands. When an older entry no longer
+    /// names the recipient, anyone but the person who handed off counts, so the card can't outstay the handover.
     /// </summary>
     public static bool TakenStock(Case c, HandoverWatch w, Func<string?, string> displayName)
     {
         bool Taker(string? actor) => !string.IsNullOrWhiteSpace(actor)
-            && (w.HandedTo is not null ? IsRecipient(w, actor, displayName) : !string.Equals(actor, w.HandedBy, StringComparison.OrdinalIgnoreCase));
+            && (w.HandedToUserId is not null || w.HandedTo is not null
+                ? IsRecipient(w, actor, displayName)
+                : !string.Equals(actor, w.HandedBy, StringComparison.OrdinalIgnoreCase));
         return c.Briefs.Any(b => (!b.Appended && b.CreatedAtUtc > w.HandedAtUtc && Taker(b.CreatedBy))
                                  || (b.ConfirmedAtUtc is { } at && at > w.HandedAtUtc && Taker(b.ConfirmedBy)));
     }

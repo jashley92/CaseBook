@@ -7,6 +7,17 @@ namespace IncidentManager.Application.Cases;
 /// <summary>CAP-11: a playbook for the case's rung, and its steps not yet on the case (in the playbook's order).</summary>
 public sealed record PlaybookSuggestion(TemplateView Template, IReadOnlyList<TemplateStepView> Missing);
 
+/// <summary>CAP-11: what the notice's "Add them…" does to the apply card (<see cref="PlaybookOffer.Take"/>).</summary>
+public enum OfferTake
+{
+    /// <summary>Open the card on the offered playbook with its missing steps ticked.</summary>
+    Open,
+    /// <summary>The card is already open on it, as offered: leave it, and the default owner chosen there, alone.</summary>
+    Keep,
+    /// <summary>The card is open on another playbook, or other steps are ticked: don't replace that work (C7).</summary>
+    Refuse
+}
+
 /// <summary>
 /// CAP-11: after a case is escalated, or filed straight at a rung, the playbooks whose default classification is that
 /// rung are offered with the steps the case doesn't have yet. A suggestion only (ADR 0004, A4): the notice opens the
@@ -51,4 +62,14 @@ public static class PlaybookOffer
             .Where(s => s.Missing.Count > 0)
             .ToList();
     }
+
+    /// <summary>
+    /// CAP-11 review (C7): what "Add them…" does when the apply card may already be open. A card showing another playbook,
+    /// or other steps ticked, is someone's work in progress and isn't replaced; one already showing this offer is kept as
+    /// it is, so a second click doesn't reset the default owner chosen in it.
+    /// </summary>
+    public static OfferTake Take(Guid? openTemplateId, IReadOnlySet<Guid> ticked, Guid offeredTemplateId, IReadOnlySet<Guid> missing) =>
+        openTemplateId is not { } open ? OfferTake.Open
+        : open == offeredTemplateId && ticked.SetEquals(missing) ? OfferTake.Keep
+        : OfferTake.Refuse;
 }

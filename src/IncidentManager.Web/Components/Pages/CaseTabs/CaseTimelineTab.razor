@@ -1566,10 +1566,14 @@ else
     private static string QuestionLabel(string q) =>
         IncidentManager.Application.Common.TextFit.Cap(IncidentManager.Application.Content.MarkdownService.PlainLine(q), 90);
 
+    // CAP-23 review: an option is keyed by its task and question, not its place in the list, and the pick is read back
+    // against the list as it is now, so a list that changed between render and change can't hand over another question.
+    private static string AnswerKey(QuestionAnswer q) => $"{q.TaskId}|{q.Question}";
+
     private void PickAnswer(ChangeEventArgs e)
     {
-        var list = Answerable();
-        _fuAnswer = int.TryParse(e.Value?.ToString(), out var i) && i >= 0 && i < list.Count ? list[i] : null;
+        var key = e.Value?.ToString();
+        _fuAnswer = string.IsNullOrEmpty(key) ? null : Answerable().FirstOrDefault(q => AnswerKey(q) == key);
     }
 
     // CAP-23 (C5/C7): a reload (a colleague's answer, a task raised, the brief revised) re-reads the pick. One no longer
@@ -1660,16 +1664,14 @@ else
         {
             @* CAP-23: the finding is the answer; its question's task is completed with it as the result, in this save. *@
             var answerable = Answerable();
-            var answerAt = _fuAnswer is { } chosen ? answerable.ToList().IndexOf(chosen) : -1;
             <div class="im-then-row">
                 <span class="bi bi-patch-question" aria-hidden="true"></span>
-                <select class="form-select form-select-sm im-then-wide" aria-label="Open question this finding answers" value="@(answerAt >= 0 ? answerAt.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")" @onchange="PickAnswer">
+                <select class="form-select form-select-sm im-then-wide" aria-label="Open question this finding answers" value="@(_fuAnswer is { } chosen && answerable.Contains(chosen) ? AnswerKey(chosen) : "")" @onchange="PickAnswer">
                     <option value="">Choose the question it answers</option>
-                    @for (var i = 0; i < answerable.Count; i++)
+                    @foreach (var q in answerable)
                     {
-                        var q = answerable[i];
                         var task = q.TaskId is { } tid ? Case.ActionItems.FirstOrDefault(t => t.Id == tid) : null;
-                        <option value="@i.ToString(System.Globalization.CultureInfo.InvariantCulture)">@QuestionLabel(q.Question)@(task is null ? " (no task yet: one is raised and done)" : string.IsNullOrWhiteSpace(task.Owner) ? "" : $" (task: {Users.DisplayFor(task.Owner)})")</option>
+                        <option value="@AnswerKey(q)">@QuestionLabel(q.Question)@(task is null ? " (no task yet: one is raised and done)" : string.IsNullOrWhiteSpace(task.Owner) ? "" : $" (task: {Users.DisplayFor(task.Owner)})")</option>
                     }
                 </select>
                 <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the answered question" @onclick="() => { _fuAnswerOpen = false; _fuAnswer = null; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>

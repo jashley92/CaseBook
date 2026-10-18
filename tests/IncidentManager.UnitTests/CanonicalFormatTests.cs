@@ -140,6 +140,27 @@ public class CanonicalFormatTests
     }
 
     [Fact]
+    public void Format_5_covers_a_handoffs_recipient_and_an_older_handoff_keeps_its_hash(/* CAP-20 review */)
+    {
+        var e = new TimelineEntry
+        {
+            CaseId = CaseId, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Handoff, Description = "Over to you",
+            Source = "Handoff", OccurredAtUtc = DateTimeOffset.UnixEpoch, CreatedBy = "a1", CreatedAtUtc = DateTimeOffset.UnixEpoch,
+        };
+        var v4 = Canonical.V4Prefix + _hasher.Hash(Canonical.InFormat(4, e.BuildCanonicalContent));
+        Canonical.InFormat(5, e.BuildCanonicalContent).Should().Be(Canonical.InFormat(4, e.BuildCanonicalContent),
+            "a handoff recorded before the recipient was kept builds what format 4 built");
+        _hasher.RowHashMatches(e, v4).Should().BeTrue();
+
+        e.HandedToUserId = "a2";
+        Canonical.Covers(4, e.BuildCanonicalContent).Should().BeFalse("a format-4 hash can't show the recipient");
+        var v5 = _hasher.ComputeRowHash(e);
+        Canonical.FormatOf(v5).Should().Be(5);
+        e.HandedToUserId = "mallory";
+        _hasher.RowHashMatches(e, v5).Should().BeFalse();
+    }
+
+    [Fact]
     public void Format_3_covers_an_indicators_marking_and_pin_and_earlier_formats_dont(/* BUG-316 */)
     {
         var e = Entity("seen beaconing", "EDR");
@@ -249,9 +270,9 @@ public class CanonicalFormatTests
         ["StageGateRequirement/Bare"] = ["d8896f8ab25ce8a3dadf4072aa9f70709b8489199507f245a345538c5fbddc4a", "d8896f8ab25ce8a3dadf4072aa9f70709b8489199507f245a345538c5fbddc4a", "d8896f8ab25ce8a3dadf4072aa9f70709b8489199507f245a345538c5fbddc4a", "d8896f8ab25ce8a3dadf4072aa9f70709b8489199507f245a345538c5fbddc4a", "d8896f8ab25ce8a3dadf4072aa9f70709b8489199507f245a345538c5fbddc4a"],
         ["StatusChange/Full"] = ["253dc9ba3c490d0f30d3ef7abe0b7f4d0a6b9ab2d668a9bd5b4d2530c5c34c66", "617e160b7ca5062b296763e692354063eebd1970b9481a222e4b66bdff809447", "617e160b7ca5062b296763e692354063eebd1970b9481a222e4b66bdff809447", "617e160b7ca5062b296763e692354063eebd1970b9481a222e4b66bdff809447", "617e160b7ca5062b296763e692354063eebd1970b9481a222e4b66bdff809447"],
         ["StatusChange/Bare"] = ["dadee7a3470bb086c746105656a65e2ea2313a9fc3574d865ce3d2e0ceaba31b", "dadee7a3470bb086c746105656a65e2ea2313a9fc3574d865ce3d2e0ceaba31b", "dadee7a3470bb086c746105656a65e2ea2313a9fc3574d865ce3d2e0ceaba31b", "dadee7a3470bb086c746105656a65e2ea2313a9fc3574d865ce3d2e0ceaba31b", "dadee7a3470bb086c746105656a65e2ea2313a9fc3574d865ce3d2e0ceaba31b"],
-        ["TimelineEntry/Full"] = ["ef32e22d787806b72211c4d6cc95dc4fc424cc441b0d3df178791513fed57807", "0200c8d8433a81634808a6a4454be9116cd4fec424576b4c7b4860a69a98dd0a", "0200c8d8433a81634808a6a4454be9116cd4fec424576b4c7b4860a69a98dd0a", "ef272a3bdfd97340c64c1199001150eb732a656ed3d8478fa9a2d1d00a1506f9", "ef272a3bdfd97340c64c1199001150eb732a656ed3d8478fa9a2d1d00a1506f9"],
+        ["TimelineEntry/Full"] = ["ef32e22d787806b72211c4d6cc95dc4fc424cc441b0d3df178791513fed57807", "0200c8d8433a81634808a6a4454be9116cd4fec424576b4c7b4860a69a98dd0a", "0200c8d8433a81634808a6a4454be9116cd4fec424576b4c7b4860a69a98dd0a", "ef272a3bdfd97340c64c1199001150eb732a656ed3d8478fa9a2d1d00a1506f9", "3684529d967b8ddd89abcbad72462eb047d067a71a1ccb52f7fab51e27e73db6"],
         ["TimelineEntry/Bare"] = ["5a447b164669e41eafb62604c1f5d193df338d4b51054f28a5d0eaa1a95d3119", "5a447b164669e41eafb62604c1f5d193df338d4b51054f28a5d0eaa1a95d3119", "5a447b164669e41eafb62604c1f5d193df338d4b51054f28a5d0eaa1a95d3119", "5a447b164669e41eafb62604c1f5d193df338d4b51054f28a5d0eaa1a95d3119", "5a447b164669e41eafb62604c1f5d193df338d4b51054f28a5d0eaa1a95d3119"],
-        ["TimelineEntry/Event"] = ["c5013e6eda6faea4fb0e84bda5677d0b1ef4a425cf569ec3dd02ffc75b9bc5d2", "82ced255fbf2cf309bfa453963e43c6af031c79880c86f51aa9b578b31ef7955", "82ced255fbf2cf309bfa453963e43c6af031c79880c86f51aa9b578b31ef7955", "87381629c1df08be53374b6092b8a611833d07821fabbb708fa6e2262023ca8b", "87381629c1df08be53374b6092b8a611833d07821fabbb708fa6e2262023ca8b"],
+        ["TimelineEntry/Event"] = ["c5013e6eda6faea4fb0e84bda5677d0b1ef4a425cf569ec3dd02ffc75b9bc5d2", "82ced255fbf2cf309bfa453963e43c6af031c79880c86f51aa9b578b31ef7955", "82ced255fbf2cf309bfa453963e43c6af031c79880c86f51aa9b578b31ef7955", "87381629c1df08be53374b6092b8a611833d07821fabbb708fa6e2262023ca8b", "43bdf2fe5523aaf129f472e95bdc6d713b8905281b6c9cc5e6cc00cd4781f1f6"],
         ["TransitionTimeCorrection/Full"] = ["4265f4d3cdea74926a2b12b4325914b4c671e437a142f71ae250bbb9fb025c34", "5e5ebe1cb0480d19a9a9672c29d427e85a7dbbe7403c31fbd286bbd07110ea41", "5e5ebe1cb0480d19a9a9672c29d427e85a7dbbe7403c31fbd286bbd07110ea41", "5e5ebe1cb0480d19a9a9672c29d427e85a7dbbe7403c31fbd286bbd07110ea41", "5e5ebe1cb0480d19a9a9672c29d427e85a7dbbe7403c31fbd286bbd07110ea41"],
         ["TransitionTimeCorrection/Bare"] = ["1c0d2def37cdb013277fe3a86c11e19e6e9774d18e8122c4effbd639114e5b46", "1c0d2def37cdb013277fe3a86c11e19e6e9774d18e8122c4effbd639114e5b46", "1c0d2def37cdb013277fe3a86c11e19e6e9774d18e8122c4effbd639114e5b46", "1c0d2def37cdb013277fe3a86c11e19e6e9774d18e8122c4effbd639114e5b46", "1c0d2def37cdb013277fe3a86c11e19e6e9774d18e8122c4effbd639114e5b46"],
         ["Report/Bare"] = ["0321e32223d79920b79c6aae2d69962ece74d151b31a79518f8ff2a5a555b423", "0321e32223d79920b79c6aae2d69962ece74d151b31a79518f8ff2a5a555b423", "0321e32223d79920b79c6aae2d69962ece74d151b31a79518f8ff2a5a555b423", "0321e32223d79920b79c6aae2d69962ece74d151b31a79518f8ff2a5a555b423", "0321e32223d79920b79c6aae2d69962ece74d151b31a79518f8ff2a5a555b423"],

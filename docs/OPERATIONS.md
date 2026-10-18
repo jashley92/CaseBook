@@ -999,8 +999,8 @@ the reminder off). Like the evidence-key drill (§2), the reminder is worked out
 there's no job to schedule.
 
 **Case retention.** `Retention:CaseYears` (default 7) lists closed cases older than that under **Administration →
-Retention review**, where an administrator archives them, at most 25 at a time. A background count runs a few minutes
-after start-up and then daily (`Notifications:RetentionReview:IntervalHours`, server-side, default 24): Diagnostics'
+Retention review**, where an administrator archives them, at most 25 at a time. A background count runs at start-up and
+then every `Notifications:RetentionReview:IntervalHours` (server-side, default 24): Diagnostics'
 *Retention review* row shows how many are waiting and how many are under a legal hold, as of that count (in memory; a
 restart counts again). With `Notifications:RetentionReview:Email` on, the Legal / Privacy distribution
 (`Email:LegalDistribution`) gets the counts once a month. The job only counts (ADR 0004): it never archives or deletes,

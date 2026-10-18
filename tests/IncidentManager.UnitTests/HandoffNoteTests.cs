@@ -30,12 +30,12 @@ public class HandoffNoteTests
     private static Case NewCase() => Case.Open(2026, 9, "Phish", "Credential phishing", Classification.Incident,
         Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
 
-    private static TimelineEntry Handoff(Case c, string text, DateTimeOffset at, string by = "ic1")
+    private static TimelineEntry Handoff(Case c, string text, DateTimeOffset at, string by = "ic1", string? to = null)
     {
         var e = new TimelineEntry
         {
             CaseId = c.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Handoff, Description = text,
-            Source = "Handoff", OccurredAtUtc = at, CreatedAtUtc = at, CreatedBy = by
+            Source = "Handoff", OccurredAtUtc = at, CreatedAtUtc = at, CreatedBy = by, HandedToUserId = to
         };
         c.TimelineEntries.Add(e);
         return e;
@@ -155,5 +155,45 @@ public class HandoffNoteTests
         HandoffNote.ForNow(c, Name).Should().NotBeNull();
         c.ConfirmBrief("an2", T0.AddHours(3));
         HandoffNote.ForNow(c, Name).Should().BeNull();
+    }
+
+    [Fact]
+    public void A_handoff_that_recorded_its_recipient_finds_them_by_id_not_by_name(/* CAP-20 review */)
+    {
+        // The directory as it stands: u2 renamed since the handoff, and u3 sharing the name the entry gives.
+        var names = new Dictionary<string, string> { ["ic1"] = "Pat Lee", ["u2"] = "Sam Ortiz", ["u3"] = "Sam Ortiz" };
+        string Dir(string? id) => id is not null && names.TryGetValue(id, out var n) ? n : id ?? "—";
+
+        var c = NewCase();
+        Handoff(c, Written("Sam Ortiz", "Contained.", watch: "Logins from abroad"), T0.AddHours(1), to: "u2");
+        var w = HandoffNote.ForNow(c, Dir)!;
+        w.HandedToUserId.Should().Be("u2");
+        HandoffNote.IsRecipient(w, "u2", Dir).Should().BeTrue();
+        HandoffNote.IsRecipient(w, "u3", Dir).Should().BeFalse("a namesake isn't who it was handed to");
+
+        // The namesake revising the brief doesn't take the card away.
+        c.ReviseBrief("Phishing", "Contained", null, null, null, "u3", T0.AddHours(2));
+        HandoffNote.ForNow(c, Dir).Should().NotBeNull();
+
+        // Renamed, the recipient is still the recipient, and confirming the brief clears the card.
+        names["u2"] = "Sam Ortiz-Reyes";
+        HandoffNote.IsRecipient(HandoffNote.ForNow(c, Dir)!, "u2", Dir).Should().BeTrue();
+        c.ConfirmBrief("u2", T0.AddHours(3));
+        HandoffNote.ForNow(c, Dir).Should().BeNull();
+    }
+
+    [Fact]
+    public void The_recipient_is_read_from_the_handoff_as_first_recorded(/* CAP-20 review */)
+    {
+        // An edit doesn't carry the id, and can't move the handoff to someone else by renaming them in the text.
+        var c = NewCase();
+        var first = Handoff(c, Written("Sam Ortiz", "Contained.", watch: "Logins from abroad"), T0.AddHours(1), to: "an2");
+        first.IsCurrent = false;
+        var edit = Handoff(c, Written("Alex Ng", "Contained.", watch: "Logins from abroad"), T0.AddHours(2));
+        edit.SupersedesEntryId = first.Id;
+
+        var w = HandoffNote.ForNow(c, Name)!;
+        HandoffNote.IsRecipient(w, "an2", Name).Should().BeTrue();
+        HandoffNote.IsRecipient(w, "an1", Name).Should().BeFalse();
     }
 }

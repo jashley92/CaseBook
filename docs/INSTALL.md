@@ -236,7 +236,8 @@ Or pass every value directly instead of a config file:
   `/agenda/feed.ics` to anonymous requests with `<location>` entries, the same way as `/api`, so a load balancer,
   mail clients and calendar apps reach them without a sign-in. The app still enforces each: the probes answer a
   status word only, the logo is the branding image or a 404, and the feed is a 404 without a valid signed token.
-  `Verify-Install.ps1 -Url` checks all four paths.
+  `Verify-Install.ps1 -Url` checks all five paths (`/api`, `/health/live`, `/health/alarms`, `/branding/logo` and
+  `/agenda/feed.ics`).
 
 ### Publishing / NuGet restore
 
