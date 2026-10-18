@@ -16,6 +16,19 @@ public interface ISecurityEventTransport
     /// <summary>Whether this transport is currently configured to deliver (read live from options).</summary>
     bool Enabled { get; }
 
+    /// <summary>
+    /// CAP-04 review: whether this transport is switched on in its options, whether or not it can deliver right now.
+    /// The Diagnostics delivery card picks its rows by this, so a transport that's on but has stopped (an Event Log
+    /// source that's missing, a collector with no address) shows as failing instead of vanishing. Read live from options.
+    /// </summary>
+    bool Configured => Enabled;
+
+    /// <summary>
+    /// CAP-04 review: why a <see cref="Configured"/> transport isn't delivering (e.g. "stopped until restart: event source
+    /// missing"), or null when it is delivering or isn't on. A short reason for an administrator, never a secret.
+    /// </summary>
+    string? StoppedReason => null;
+
     Task SendAsync(SecurityEvent e, CancellationToken ct);
 
     /// <summary>

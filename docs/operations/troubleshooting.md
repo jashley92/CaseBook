@@ -359,7 +359,8 @@ logged today; check the folder's permissions directly.
 3. Webhook URLs must be https (http only to loopback). A token that's a CyberArk reference and fails to resolve
    is sent without authentication; see Diagnostics → Secret resolution.
 4. The Event Log transport needs its source registered once (`New-EventLog -LogName Application -Source
-   CaseBook`); otherwise it disables itself until restart.
+   CaseBook`); otherwise it disables itself until restart, and Diagnostics → **Delivery health** shows it as
+   **Stopped** ("event source missing").
 5. The queue (`Siem:QueueCapacity`) drops events under a flood; delivery is best effort and events in the queue
    are lost on restart. The audit chain remains the record. Diagnostics → **Delivery health** shows each transport's
    last good send, queue depth and drops since start.

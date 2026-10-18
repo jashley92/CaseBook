@@ -37,8 +37,23 @@ public sealed record AuditQueryFilter
         string.IsNullOrWhiteSpace(EntityType) && FromUtc is null && ToUtc is null && string.IsNullOrWhiteSpace(SettingKey);
 }
 
-/// <summary>CAP-03: one page of the filtered trail, newest first, and whether older entries follow it.</summary>
-public sealed record AuditPage(IReadOnlyList<AuditLogEntry> Entries, bool HasOlder);
+/// <summary>
+/// CAP-03: one page of the filtered trail, newest first, whether older entries follow it and whether newer ones are
+/// before it. CAP-03 review: <see cref="HasNewer"/> is false only on the newest page.
+/// </summary>
+public sealed record AuditPage(IReadOnlyList<AuditLogEntry> Entries, bool HasOlder, bool HasNewer = false);
+
+/// <summary>
+/// CAP-03 review: which page of the trail to read, by sequence rather than by offset (keyset paging), so entries written
+/// while someone pages neither repeat nor go missing. <see cref="Newest"/> is the first page; <see cref="Older"/> the
+/// entries below the last sequence shown; <see cref="Newer"/> the ones above the first shown.
+/// </summary>
+public readonly record struct AuditPageAt(long? OlderThan, long? NewerThan)
+{
+    public static AuditPageAt Newest => default;
+    public static AuditPageAt Older(long lastShown) => new(lastShown, null);
+    public static AuditPageAt Newer(long firstShown) => new(null, firstShown);
+}
 
 /// <summary>CAP-03: an audit-trail CSV and how many entries it holds (at most the limit it was built with).</summary>
 public sealed record AuditExport(string Csv, int Rows, bool Truncated);

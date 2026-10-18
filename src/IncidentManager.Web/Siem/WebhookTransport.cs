@@ -43,6 +43,20 @@ public sealed class WebhookTransport : ISecurityEventTransport
         }
     }
 
+    // CAP-04 review: on in its options but with no URL, or one S-06 refuses, nothing goes; the delivery card says why.
+    public bool Configured => _options.CurrentValue.Enabled;
+
+    public string? StoppedReason
+    {
+        get
+        {
+            var o = _options.CurrentValue;
+            if (!o.Enabled) return null;
+            if (string.IsNullOrWhiteSpace(o.Url)) return "not sending: no collector URL is set (Siem:Webhook:Url)";
+            return SiemWebhookUrl.IsAcceptable(o.Url, out var reason) ? null : $"not sending: the collector URL was refused ({reason})";
+        }
+    }
+
     public Task SendAsync(SecurityEvent e, CancellationToken ct) => PostAsync(e, ct);
 
     public Task<string?> SendTestAsync(SecurityEvent e, CancellationToken ct) => PostAsync(e, ct);

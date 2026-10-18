@@ -380,7 +380,7 @@ else
                             @if (CanEdit)
                             {
                                 <td><input class="form-check-input" type="checkbox" aria-label="Select @Ui.Label(e.Type) @(e.Label ?? e.Value)"
-                                           checked="@_picked.Contains(e.Id)" @onchange="ev => Pick(e.Id, (bool)(ev.Value ?? false))" /></td>
+                                           checked="@_picked.Contains(e.Id)" @onchange="ev => Pick(e.Id, e.Disposition, (bool)(ev.Value ?? false))" /></td>
                             }
                             <td class="text-nowrap">@Ui.EntityGlyph(e.Type) @Ui.Label(e.Type)</td>
                             <td><code class="small">@DisplayValue(e)</code>
@@ -668,8 +668,10 @@ else
     private readonly List<BulkRow> _bulkRows = new();
 
     // CAP-02: the entities picked for one verdict, and the dialog that records it. _assess is what the dialog opened with
-    // (id → the verdict each showed then), so a colleague's change since is refused rather than written over.
-    private readonly HashSet<Guid> _picked = new();
+    // (id → the verdict each showed when it was ticked), so a colleague's change since is refused rather than written over.
+    // CAP-02 review (C9): the verdict is taken at the tick (EntityPicks), not at dialog open: a live refresh in between
+    // reloaded the case, so the colleague's verdict was already what the dialog "saw" and the stale check passed.
+    private readonly EntityPicks _picked = new();
     private Dictionary<Guid, EntityDisposition>? _assess;
     private EntityDisposition _assessDisposition = EntityDisposition.Benign;
     private DateTime? _assessDeterminedWall;
@@ -789,7 +791,7 @@ else
         // BUG-578: a relationship a colleague removed takes its open edit with it (its row is gone), so another can open.
         if (_relEdit.Current is { } rel && Case.EntityRelationships.All(r => r.Id != rel.Key)) _relEdit.Close();
         // CAP-02: a removed entity leaves the selection (the open dialog keeps what it opened with, and the save refuses it).
-        _picked.IntersectWith(Case.Entities.Select(e => e.Id));
+        _picked.KeepOnly(Case.Entities.Select(e => e.Id));
         // Load overlaps on first mount and whenever the parent signals a live change.
         if (_loadedToken != RefreshToken)
         {
@@ -990,22 +992,17 @@ else
     }
 
     // --- CAP-02: one verdict on several entities ---
-    private void Pick(Guid entityId, bool on)
-    {
-        if (on) _picked.Add(entityId); else _picked.Remove(entityId);
-    }
+    // CAP-02 review (C9): each pick keeps the verdict shown when it was ticked.
+    private void Pick(Guid entityId, EntityDisposition shown, bool on) => _picked.Set(entityId, shown, on);
 
     private void PickAll(bool on)
     {
-        _picked.Clear();
-        if (on) _picked.UnionWith(Case.Entities.Select(e => e.Id));
+        if (on) _picked.Replace(Case.Entities.Select(e => (e.Id, e.Disposition)));
+        else _picked.Clear();
     }
 
-    private void PickUnknown()
-    {
-        _picked.Clear();
-        _picked.UnionWith(Case.Entities.Where(e => e.Disposition == EntityDisposition.Unknown).Select(e => e.Id));
-    }
+    private void PickUnknown() =>
+        _picked.Replace(Case.Entities.Where(e => e.Disposition == EntityDisposition.Unknown).Select(e => (e.Id, e.Disposition)));
 
     private void OpenAssess()
     {
@@ -1015,7 +1012,7 @@ else
             Toasts.Info($"Pick up to {CaseService.MaxEntitiesPerAssessment:N0} entities at a time.");
             return;
         }
-        _assess = Case.Entities.Where(e => _picked.Contains(e.Id)).ToDictionary(e => e.Id, e => e.Disposition);
+        _assess = _picked.Snapshot();   // CAP-02 review (C9): what each showed when ticked, not what it shows now
         _assessDisposition = OfferedOr(_assessDisposition, Verdicts);   // BUG-506: the last one used, if the select offers it
         _assessDeterminedWall = null;   // BUG-414: now, unless set
         _assessReason = null;
@@ -1055,9 +1052,14 @@ else
         }
         catch (StaleEditException ex)
         {
-            _assess = null;
-            Toasts.Error(ex.Message);
+            // CAP-02 review: the refusal is shown in the dialog, which stays open with the verdict, time and reason typed,
+            // and the picks then expect what each shows now: saving again records theirs knowingly, over the colleague's.
+            // (Before the live refresh lands, "now" is still the old verdict, so a second save is refused again, not lost.)
+            _assessError = ex.Message;
             await OnChanged.InvokeAsync();
+            if (Disposed || _assess is null) return;
+            _picked.Rebase(Case.Entities.Select(e => (e.Id, e.Disposition)));
+            _assess = _picked.Snapshot();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

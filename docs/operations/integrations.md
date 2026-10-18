@@ -206,7 +206,8 @@ schema, for use in the organization's own approved AI tool.
   Event Log don't retry. Overflow and anything queued at shutdown is lost; the audit chain remains the record.
 - **Health (CAP-04):** Diagnostics → Delivery health shows, for each transport that's on, its last good send, its queue
   depth and the events it dropped since start (and any dropped before reaching a transport). In memory, reset at
-  restart.
+  restart. A transport that's on in its settings but not sending shows as **Stopped** with why: an Event Log source that's
+  missing (stopped until restart), no syslog host, no webhook URL or one that's refused.
 - **Testing:** Administration → Diagnostics → *Send test event* (id 5901) reports per-transport success.
   Locally, a webhook to `http://localhost:<port>` or syslog to a local UDP listener.
 

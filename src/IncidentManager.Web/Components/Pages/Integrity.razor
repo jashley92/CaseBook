@@ -187,10 +187,10 @@ else
                 <button type="button" class="btn btn-sm btn-link p-0" @onclick="ClearFilter">Clear filters</button>
             }
             <span class="btn-group btn-group-sm" role="group" aria-label="Pages of the audit trail">
-                <button type="button" class="btn btn-outline-secondary" disabled="@(_pageIndex == 0)" @onclick="() => GoToPage(_pageIndex - 1)">
+                <button type="button" class="btn btn-outline-secondary" disabled="@(!_page.HasNewer || _page.Entries.Count == 0)" @onclick="Newer">
                     <span class="bi bi-chevron-left" aria-hidden="true"></span> Newer
                 </button>
-                <button type="button" class="btn btn-outline-secondary" disabled="@(!_page.HasOlder)" @onclick="() => GoToPage(_pageIndex + 1)">
+                <button type="button" class="btn btn-outline-secondary" disabled="@(!_page.HasOlder || _page.Entries.Count == 0)" @onclick="Older">
                     Older <span class="bi bi-chevron-right" aria-hidden="true"></span>
                 </button>
             </span>
@@ -241,14 +241,18 @@ else
     private const int PageSize = 100;
     private readonly AuditFilterState _filter = new();
     private AuditPage? _page;
-    private int _pageIndex;
+    // CAP-03 review: the page by where it starts in the trail (keyset), not by its number: an offset moved as entries were
+    // written, so Older repeated some and Newer skipped some.
+    private AuditPageAt _at = AuditPageAt.Newest;
     private AuditQueryFilter? _shownFilter;
     private DateTime? _shownFrom, _shownTo;
     private CancellationTokenSource? _loadCts;
     private int _loadSeq;
 
-    // Never personal data in these (an actor is picked on the page, not carried in the address): a case number, an action,
-    // a record type, a setting key and dates.
+    // Never personal data in the page's own address (an actor is picked on the page, not read from it): a case number, an
+    // action, a record type, a setting key and dates. CAP-03 review: the Export CSV link does carry actor= when one is
+    // picked, as the case Audit tab's /export/case-audit.csv link always has; that's kept deliberately (a download link
+    // the viewer clicks, for a filter they chose, not an address the page is shared by).
     [SupplyParameterFromQuery(Name = "case")] public string? QCase { get; set; }
     [SupplyParameterFromQuery(Name = "action")] public string? QAction { get; set; }
     [SupplyParameterFromQuery(Name = "entity")] public string? QEntity { get; set; }
@@ -269,10 +273,26 @@ else
     protected override async Task OnInitializedAsync()
     {
         _count = await IntegritySvc.AuditCountAsync();
-        SeedFilterFromAddress();
-        await LoadTrail();
         _seals = await IntegritySvc.RecentSealsAsync();
         _ledger = await Ledger.GetAsync();
+    }
+
+    // CAP-03 review (C15): the trail is seeded from the address here, not once in OnInitializedAsync. The nav menu's
+    // "Integrity" from /integrity?entity=AppSetting&key=Email:From (a History link), and Back and Forward, reuse this
+    // component, so a filter seeded only on first load stayed on the table, the "(filtered)" summary and the CSV link.
+    // Only a change in what the address asks for reseeds, so a filter picked on the page isn't reset by a re-render.
+    private (string?, string?, string?, string?, string?, string?)? _addressSeeded;
+    private bool _disposed;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_disposed) return;   // BUG-566: ComponentBase still runs this after a disposed OnInitializedAsync
+        var address = (QCase, QAction, QEntity, QKey, QFrom, QTo);
+        if (_addressSeeded == address) return;
+        _addressSeeded = address;
+        SeedFilterFromAddress();
+        _at = AuditPageAt.Newest;
+        await LoadTrail();
     }
 
     // CAP-03: what the address asks for; a value that doesn't parse is ignored (BUG-31), not an error.
@@ -292,13 +312,16 @@ else
     private string PageSummary()
     {
         if (_page is null || _page.Entries.Count == 0) return Filtered ? "No entries (filtered)" : "No entries";
-        var first = _pageIndex * PageSize + 1;
-        return $"Entries {first:N0}–{first + _page.Entries.Count - 1:N0}, newest first{(Filtered ? " (filtered)" : "")}";
+        // CAP-03 review: the range by sequence (the # column), not "Entries 101–200": with keyset paging the page's place
+        // counted from the newest isn't known, and entries written since would make it wrong anyway.
+        var e = _page.Entries;
+        var range = e.Count == 1 ? $"#{e[0].Sequence:N0}" : $"#{e[0].Sequence:N0} to #{e[^1].Sequence:N0}";
+        return $"{e.Count:N0} entr{(e.Count == 1 ? "y" : "ies")}, {range}, newest first{(_page.HasNewer ? "" : " (the latest)")}{(Filtered ? " (filtered)" : "")}";
     }
 
     private async Task ApplyFilter()
     {
-        _pageIndex = 0;
+        _at = AuditPageAt.Newest;
         await LoadTrail();
     }
 
@@ -308,9 +331,18 @@ else
         await ApplyFilter();
     }
 
-    private async Task GoToPage(int page)
+    // CAP-03 review: from the page shown, by its last (Older) or first (Newer) sequence.
+    private async Task Older()
     {
-        _pageIndex = Math.Max(0, page);
+        if (_page is not { Entries.Count: > 0 } p) return;
+        _at = AuditPageAt.Older(p.Entries[^1].Sequence);
+        await LoadTrail();
+    }
+
+    private async Task Newer()
+    {
+        if (_page is not { Entries.Count: > 0 } p) return;
+        _at = AuditPageAt.Newer(p.Entries[0].Sequence);
         await LoadTrail();
     }
 
@@ -328,7 +360,7 @@ else
             previous.Dispose();
         }
         var filter = _filter.ToQuery(_filter.Case);
-        var (from, to, index) = (_filter.From, _filter.To, _pageIndex);
+        var (from, to, at) = (_filter.From, _filter.To, _at);
         try
         {
             if (!_filter.FacetsLoaded)
@@ -338,15 +370,17 @@ else
                 (_filter.Actors, _filter.EntityTypes) = facets;
                 _filter.FacetsLoaded = true;
             }
-            var page = await IntegritySvc.QueryPageAsync(filter, index, PageSize, ct);
+            var page = await IntegritySvc.QueryPageAsync(filter, at, PageSize, ct);
             if (seq != _loadSeq) return;
             (_page, _shownFilter, _shownFrom, _shownTo) = (page, filter, from, to);
+            if (!page.HasNewer) _at = AuditPageAt.Newest;   // a Newer that reached the top is the newest page
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* superseded */ }
     }
 
     public void Dispose()
     {
+        _disposed = true;
         _loadCts?.Cancel();
         _loadCts?.Dispose();
     }

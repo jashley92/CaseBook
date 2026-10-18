@@ -340,7 +340,7 @@ lessons-learned report.
 
 | Screen | What it's for | Image |
 |---|---|---|
-| Integrity & audit | Verify the audit chain, see seals, search the whole audit trail (case, actor, action, entity type, dates; paged) and export it as CSV, export a compliance bundle. A setting's *History* link in Administration opens it filtered to that setting | ![](../screenshots/integrity-audit.png) |
+| Integrity & audit | Verify the audit chain, see seals, search the whole audit trail (case, actor, action, entity type, dates; paged by sequence, so new entries don't shift the pages) and export it as CSV, export a compliance bundle. A setting's *History* link in Administration opens it filtered to that setting | ![](../screenshots/integrity-audit.png) |
 | Access log | Who read which case or downloaded which artifact (administrators) | ![](../screenshots/access-log.png) |
 | Administration | Settings by section, with a left rail of every admin area | ![](../screenshots/admin-settings.png) |
 | Roles & access | System and custom roles, and AD group mappings | ![](../screenshots/roles-access.png) |

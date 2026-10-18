@@ -59,6 +59,24 @@ public sealed class EventLogTransport : ISecurityEventTransport
     public bool Enabled => (_write is not null || OperatingSystem.IsWindows()) && _options.CurrentValue.Enabled && !_sourceMissing
                            && !string.IsNullOrWhiteSpace(_options.CurrentValue.Source);
 
+    // CAP-04 review: Enabled turns false once the source is found missing, so the delivery card picks its row by the
+    // options instead and shows why it stopped; before, the row vanished and the card read "no transport is on".
+    public bool Configured => _options.CurrentValue.Enabled;
+
+    public string? StoppedReason
+    {
+        get
+        {
+            var o = _options.CurrentValue;
+            if (!o.Enabled) return null;
+            if (_write is null && !OperatingSystem.IsWindows()) return "not sending: the Windows Event Log needs a Windows server";
+            if (string.IsNullOrWhiteSpace(o.Source)) return "not sending: no event source is set (Siem:EventLog:Source)";
+            return _sourceMissing
+                ? $"stopped until restart: event source '{o.Source}' missing in the {o.LogName} log (register it as an administrator, then restart)"
+                : null;
+        }
+    }
+
     public Task SendAsync(SecurityEvent e, CancellationToken ct)
     {
         Deliver(e);

@@ -56,13 +56,22 @@
                 <td class="small">@State(Chat) @Detail(Chat)</td>
             </tr>
         }
-        @foreach (var t in EnabledTransports)
+        @foreach (var t in _siemRows)
         {
             var s = Channel(DeliveryHealth.Siem(t.Name));
             <tr>
                 <td>SIEM: @TransportLabel(t.Name)</td>
                 <td class="small">
-                    @State(s)
+                    @if (t.StoppedReason is { } stopped)
+                    {
+                        @* CAP-04 review: on in its settings but not sending: shown as failing, with why. *@
+                        <span class="im-badge im-b-danger">Stopped</span>
+                        <span class="ms-1">@stopped</span>
+                    }
+                    else
+                    {
+                        @State(s)
+                    }
                     <div>
                         Queue: @(s?.QueueDepth ?? 0) waiting · @(s?.Dropped ?? 0) dropped since start
                         @if (Channel(DeliveryHealth.SiemQueue) is { Dropped: > 0 } shared)
@@ -74,7 +83,7 @@
                 </td>
             </tr>
         }
-        @if (!EnabledTransports.Any())
+        @if (_siemRows.Count == 0)
         {
             <tr><td>SIEM stream</td><td class="small"><span class="im-badge im-b-neutral">Off</span> <span class="text-muted ms-1">no transport is on</span></td></tr>
         }
@@ -89,15 +98,14 @@
     private DeliveryChannelStatus? Chat => Channel(DeliveryHealth.Chat);
     private DeliveryChannelStatus? Channel(string name) => _channels.GetValueOrDefault(name);
 
-    private IEnumerable<ISecurityEventTransport> EnabledTransports => Transports.Where(t =>
-    {
-        try { return t.Enabled; }   // BUG-262: Enabled reads options, which can throw
-        catch (Exception ex) when (ex is not OutOfMemoryException) { return false; }
-    });
+    // CAP-04 review: rows by whether a transport is switched on in its settings, not whether it's delivering, so one
+    // that stopped (a missing Event Log source) shows as failing instead of vanishing (SiemTransportRows).
+    private IReadOnlyList<SiemTransportRow> _siemRows = [];
 
     protected override async Task OnInitializedAsync()
     {
         _channels = Health.Snapshot();
+        _siemRows = SiemTransportRows.Pick(Transports);
         _held = await HeldEmailSummary.ReadAsync(DbFactory, HeldEmailSummary.DefaultLimit);
     }
 

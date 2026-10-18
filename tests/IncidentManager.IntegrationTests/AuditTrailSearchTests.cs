@@ -67,14 +67,15 @@ public sealed class AuditTrailSearchTests
 
         var everything = new List<AuditLogEntry>();
         AuditPage page;
-        var index = 0;
+        var at = AuditPageAt.Newest;
         do
         {
-            page = await analyst.QueryPageAsync(new AuditQueryFilter(), index++, 3);
+            page = await analyst.QueryPageAsync(new AuditQueryFilter(), at, 3);
             everything.AddRange(page.Entries);
+            if (page.Entries.Count > 0) at = AuditPageAt.Older(page.Entries[^1].Sequence);
         } while (page.HasOlder);
         everything.Should().NotBeEmpty().And.OnlyContain(a => a.CaseNumber == open);
-        (await analyst.QueryPageAsync(new AuditQueryFilter { CaseNumber = restricted }, 0, 100)).Entries.Should().BeEmpty();
+        (await analyst.QueryPageAsync(new AuditQueryFilter { CaseNumber = restricted }, AuditPageAt.Newest, 100)).Entries.Should().BeEmpty();
 
         var csv = (await analyst.ExportCsvAsync(new AuditQueryFilter(), 100_000)).Csv;
         csv.Should().Contain(open).And.NotContain(restricted).And.NotContain("Restricted step").And.NotContain("Restricted matter");
@@ -83,7 +84,7 @@ public sealed class AuditTrailSearchTests
         var admin = NewService(database, Admin());
         (await admin.ExportCsvAsync(new AuditQueryFilter(), 100_000)).Csv.Should().Contain(restricted);
         var commander = NewService(database, new TestCurrentUser { UserId = "commander1", RoleSet = [AppRole.Analyst] });
-        (await commander.QueryPageAsync(new AuditQueryFilter { CaseNumber = restricted }, 0, 100)).Entries.Should().NotBeEmpty();
+        (await commander.QueryPageAsync(new AuditQueryFilter { CaseNumber = restricted }, AuditPageAt.Newest, 100)).Entries.Should().NotBeEmpty();
     }
 
     [Theory]
@@ -95,13 +96,58 @@ public sealed class AuditTrailSearchTests
         var admin = NewService(database, Admin());
         var all = await admin.QueryAsync(new AuditQueryFilter(), 10_000);
 
-        var first = await admin.QueryPageAsync(new AuditQueryFilter(), 0, 4);
-        var second = await admin.QueryPageAsync(new AuditQueryFilter(), 1, 4);
+        var first = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Newest, 4);
+        var second = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Older(first.Entries[^1].Sequence), 4);
         first.HasOlder.Should().BeTrue();
+        first.HasNewer.Should().BeFalse("the first page is the newest");
+        second.HasNewer.Should().BeTrue();
         first.Entries.Concat(second.Entries).Select(a => a.Sequence).Should().Equal(all.Take(8).Select(a => a.Sequence));
-        var last = await admin.QueryPageAsync(new AuditQueryFilter(), (all.Count - 1) / 4, 4);
-        last.HasOlder.Should().BeFalse();
-        last.Entries[^1].Sequence.Should().Be(all[^1].Sequence);
+        var page = second;
+        while (page.HasOlder) page = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Older(page.Entries[^1].Sequence), 4);
+        page.Entries[^1].Sequence.Should().Be(all[^1].Sequence);
+        var back = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Newer(second.Entries[0].Sequence), 4);
+        back.Entries.Select(a => a.Sequence).Should().Equal(first.Entries.Select(a => a.Sequence), "Newer from the second page is the first");
+        back.HasNewer.Should().BeFalse();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Entries_written_while_paging_are_neither_repeated_nor_skipped(string provider)
+    {
+        // CAP-03 review: an offset (Skip(page * size)) moved as entries were written, so Older showed the last few of the
+        // page before again, and Newer then skipped as many. Paging by sequence holds its place.
+        using var database = Open(provider);
+        var (openNumber, _) = await SeedCasesAsync(database);
+        var admin = NewService(database, Admin());
+
+        var first = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Newest, 4);
+        await using (var db = database.NewContext())
+        {
+            var open = await db.Cases.SingleAsync(c => c.CaseNumber == openNumber);
+            for (var i = 0; i < 3; i++)
+            {
+                _clock.UtcNow = _clock.UtcNow.AddMinutes(1);
+                open.Title = $"Renamed {i}";
+                await db.SaveChangesAsync();
+            }
+        }
+        var second = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Older(first.Entries[^1].Sequence), 4);
+
+        var shown = first.Entries.Select(a => a.Sequence).ToList();
+        second.Entries.Select(a => a.Sequence).Should().NotIntersectWith(shown, "nothing on the first page comes back");
+        var all = (await admin.QueryAsync(new AuditQueryFilter(), 10_000)).Select(a => a.Sequence).ToList();
+        var from = all.IndexOf(shown[0]);
+        all.Skip(from).Take(8).Should().Equal(shown.Concat(second.Entries.Select(a => a.Sequence)), "and none is skipped");
+
+        // Newer from the second page is the page just above it, the first one again (not shifted by what was written), and
+        // there are newer entries still; Newer once more reaches the top and is the newest page.
+        var back = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Newer(second.Entries[0].Sequence), 4);
+        back.Entries.Select(a => a.Sequence).Should().Equal(shown, "the page just above the one shown, with nothing between");
+        back.HasNewer.Should().BeTrue("entries were written since");
+        var top = await admin.QueryPageAsync(new AuditQueryFilter(), AuditPageAt.Newer(back.Entries[0].Sequence), 4);
+        top.Entries.Select(a => a.Sequence).Should().Equal(all.Take(4));
+        top.HasNewer.Should().BeFalse();
+        all[0].Should().BeGreaterThan(shown[0], "the renames were written to the trail");
     }
 
     [Theory]
@@ -126,7 +172,7 @@ public sealed class AuditTrailSearchTests
         }
         var admin = NewService(database, Admin());
 
-        var history = (await admin.QueryPageAsync(new AuditQueryFilter { EntityType = nameof(AppSetting), SettingKey = "Email:From" }, 0, 100)).Entries;
+        var history = (await admin.QueryPageAsync(new AuditQueryFilter { EntityType = nameof(AppSetting), SettingKey = "Email:From" }, AuditPageAt.Newest, 100)).Entries;
 
         history.Select(a => a.Action).Should().Equal(AuditAction.Create, AuditAction.Delete, AuditAction.Update, AuditAction.Create);
         history.Select(a => a.EntityId).Distinct().Should().HaveCount(2, "the reset row and the one after it");
@@ -134,7 +180,7 @@ public sealed class AuditTrailSearchTests
             "Email:FromName is another setting, though its key starts the same");
         (await admin.ExportCsvAsync(new AuditQueryFilter { SettingKey = "Email:From" }, 100_000)).Rows.Should().Be(4);
         // Configuration has no case, so only oversight sees it (as before).
-        (await NewService(database, Analyst()).QueryPageAsync(new AuditQueryFilter { SettingKey = "Email:From" }, 0, 100)).Entries.Should().BeEmpty();
+        (await NewService(database, Analyst()).QueryPageAsync(new AuditQueryFilter { SettingKey = "Email:From" }, AuditPageAt.Newest, 100)).Entries.Should().BeEmpty();
     }
 
     [Theory]
