@@ -311,6 +311,20 @@ public sealed class HostStartupSmokeTests : IDisposable
     }
 
     [Fact]
+    public async Task The_retention_settings_reach_the_retention_job(/* batch-4 review B1 */)
+    {
+        // A lost line break once left this registration at the end of a comment: the job then ran on its defaults (3 years,
+        // 90 days) whatever the administrator set, and deleted what they had asked to keep.
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory(("Retention:AccessLogYears", "0"), ("Retention:DecidedImportDays", "0"));
+            using var client = factory.CreateClient();
+            var retention = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Web.BackgroundJobs.RetentionOptions>>().CurrentValue;
+            (retention.AccessLogYears, retention.DecidedImportDays).Should().Be((0, 0));
+        });
+    }
+
+    [Fact]
     public async Task A_flood_of_probes_never_429s_readiness_only_the_alarms_word(/* CAP-37 review */)
     {
         // Behind a proxy every probe shares one address: a limited readiness probe would let anyone take the node out of
