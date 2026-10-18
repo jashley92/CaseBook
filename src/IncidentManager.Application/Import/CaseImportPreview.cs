@@ -78,9 +78,40 @@ public sealed class CaseImportPreview
     /// <summary>CAP-35: the override reason a close takes when its gate's checks can't be met.</summary>
     public string ImportedRecordReason => $"imported record: {(string.IsNullOrWhiteSpace(Origin) ? "import" : Origin.Trim())}";
 
+    /// <summary>CAP-35 review: whether the history ends in Closed (a batch confirm leaves such a one for a person: its close
+    /// may override the close gate).</summary>
+    public bool ClosesCase => History.Count > 0 && History[^1].Phase == CasePhase.Closed;
+
+    /// <summary>CAP-35 review: the reason the close records, trimmed: the closing step's own, or the conclusion standing in
+    /// for it (as <see cref="CaseService.ChangePhaseAsync"/> does, clipped to the reason's 2,000).</summary>
+    public string CloseReason
+    {
+        get
+        {
+            var own = ClosesCase ? History[^1].Reason?.Trim() : null;
+            var reason = string.IsNullOrEmpty(own) ? (Conclusion ?? "").Trim() : own;
+            return Common.TextFit.Cap(reason, MaxCloseReason, "");
+        }
+    }
+
+    private const int MaxCloseReason = 2000;
+
+    /// <summary>
+    /// CAP-35 review: the override justification a close takes when its gate's checks can't be met:
+    /// <see cref="ImportedRecordReason"/>, followed by the close's reason when that alone is shorter than the gate's
+    /// commentary minimum (<paramref name="minLength"/>), so an override is never refused for a short justification.
+    /// </summary>
+    public string CloseOverrideReason(int minLength) => ImportedRecordReason.Length >= minLength
+        ? ImportedRecordReason
+        : Common.TextFit.Cap($"{ImportedRecordReason}. {CloseReason}", MaxCloseReason, "");
+
     // Resume-safe apply state (not user-facing).
     public Guid? CreatedCaseId { get; set; }
     public bool SummaryApplied { get; set; }
+
+    /// <summary>CAP-35 review: set each time a failed apply is saved on its queued row to resume from, so a claim made with
+    /// a preview from before that (another reviewer's stale page) is refused rather than creating the case again.</summary>
+    public Guid? ResumeStamp { get; set; }
 
     public int IncludedItemCount =>
         (IncludeSummary && !string.IsNullOrWhiteSpace(Summary) ? 1 : 0)
@@ -163,6 +194,16 @@ public sealed class ImportActionItemRow
     public string? Owner { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
     public string? Warning { get; set; }
+}
+
+/// <summary>
+/// CAP-35 review: a claim refused because the preview predates the queued import's resume state: an apply since it was
+/// opened stopped part-way and was put back, so applying this preview would write again what that one wrote.
+/// </summary>
+public sealed class StaleResumeException : InvalidOperationException
+{
+    public StaleResumeException() : base("An apply of this import stopped part-way since you opened it, and was put back in the " +
+        "queue with what it wrote. Reopen it from the queue to carry on into the same case.") { }
 }
 
 /// <summary>A queued programmatic import awaiting human review (PROD-33), for the pending-imports list.</summary>

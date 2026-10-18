@@ -43,10 +43,66 @@ public sealed class CaseImportHistoryTests : IDisposable
         DevDataSeeder.SeedCaseOutcomesAsync(db, _clock).GetAwaiter().GetResult();
     }
 
-    private CaseImportService Import(TestCurrentUser user) =>
+    private CaseImportService Import(TestCurrentUser user, ICaseNotifications? notifications = null, IUserDirectory? users = null) =>
         new(_db!.Factory(), user, _clock, new CaseService(_db.Factory(), user, _clock, new CaseNumberGenerator(_db.Factory()),
-            new CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(),
-            new TestSlaTargets(), siem: _siem, users: _users), users: _users, siem: _siem);
+            new CreateCaseValidator(), notifications ?? new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(),
+            new TestSlaTargets(), siem: _siem, users: users ?? _users), users: users ?? _users, siem: _siem);
+
+    // CAP-35 review: records who is told of an assignment; throws an exception no catch list names, the first N times.
+    private sealed class AssignNotices(int throwFirst = 0) : ICaseNotifications
+    {
+        private int _throws = throwFirst;
+        public List<string> Assigned { get; } = new();
+        public Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role,
+            string assignedByUserId, CancellationToken ct = default)
+        {
+            if (_throws-- > 0) throw new NotSupportedException("relay exploded");
+            Assigned.Add(assigneeUserId);
+            return Task.CompletedTask;
+        }
+        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    // The same case, still open: its history stops at PostIncident, with no outcome or conclusion.
+    private CaseImportDocument StillOpen(string title = "Wire fraud attempt, still open")
+    {
+        var doc = Historical(title);
+        var nc = doc.Target!.NewCase!;
+        nc.History!.RemoveAt(nc.History.Count - 1);
+        (nc.Outcome, nc.Conclusion) = (null, null);
+        return doc;
+    }
+
+    // A new case detected ten days ago with just these steps.
+    private CaseImportDocument WithSteps(CaseImportPhaseChange first, CaseImportPhaseChange? second = null,
+        CaseImportPhaseChange? third = null, CaseImportPhaseChange? fourth = null)
+    {
+        var doc = Historical();
+        var nc = doc.Target!.NewCase!;
+        nc.History = new[] { first, second, third, fourth }.OfType<CaseImportPhaseChange>().ToList();
+        (nc.Outcome, nc.Conclusion, nc.IncidentCommander, nc.Assignments) = (null, null, null, null);
+        return doc;
+    }
+
+    private async Task AddCloseGateAsync(int commentaryMin, bool withRequirement)
+    {
+        await using var db = _db!.NewContext();
+        var gate = new StageGate { Trigger = StageGateTrigger.CloseCase, Name = "Closure readiness", IsActive = true,
+            CreatedBy = "system", CreatedAtUtc = _clock.UtcNow, CommentaryMinLength = commentaryMin };
+        if (withRequirement)
+            gate.Requirements.Add(new StageGateRequirement { GateId = gate.Id, Order = 0, Kind = GateRequirementKind.Attestation,
+                Label = "Lessons review held", IsBlocking = true });
+        db.StageGates.Add(gate);
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<int> CaseCountAsync()
+    {
+        await using var db = _db!.NewContext();
+        return await db.Cases.CountAsync();
+    }
 
     private DateTimeOffset Ago(int days) => _clock.UtcNow.AddDays(-days);
 
@@ -203,14 +259,15 @@ public sealed class CaseImportHistoryTests : IDisposable
     public async Task A_batch_confirm_applies_a_submitters_imports_each_on_its_own_and_reports_each(string provider)
     {
         Open(provider);
-        var first = await SubmitAs(_xsiam, Historical("First"));
+        // CAP-35 review: histories that stay open (one that closes is confirmed on its own; see below).
+        var first = await SubmitAs(_xsiam, StillOpen("First"));
         _clock.UtcNow = _clock.UtcNow.AddSeconds(1);   // oldest first: submitted in turn, not in one instant
-        var second = await SubmitAs(_xsiam, Historical("Second"));
+        var second = await SubmitAs(_xsiam, StillOpen("Second"));
         _clock.UtcNow = _clock.UtcNow.AddSeconds(1);
-        var bad = Historical("Bad");
-        bad.Target!.NewCase!.Outcome = "made-up";   // queued (the producer's view can't judge it), refused at review
+        var bad = StillOpen("Bad");
+        bad.Target!.NewCase!.History![2].At = Ago(9).AddHours(-1);   // queued (SubmitAsync doesn't judge it), refused at review
         var third = await SubmitAs(_xsiam, bad);
-        var other = await SubmitAs(new TestCurrentUser { UserId = "apitoken:other", RoleSet = [AppRole.Analyst] }, Historical("Other"));
+        var other = await SubmitAs(new TestCurrentUser { UserId = "apitoken:other", RoleSet = [AppRole.Analyst] }, StillOpen("Other"));
 
         var svc = Import(_reviewer);
         (await svc.ListBatchFromSubmitterAsync(_xsiam.UserId)).Select(p => p.Id).Should().Equal(first, second, third);
@@ -219,10 +276,10 @@ public sealed class CaseImportHistoryTests : IDisposable
 
         var results = await svc.ConfirmBatchAsync(_xsiam.UserId, [first, second, third, other]);
         results.Select(r => (r.PendingImportId, r.Applied)).Should().Equal((first, true), (second, true), (third, false), (other, false));
-        results[2].Message.Should().Contain("isn't an active outcome");
+        results[2].Message.Should().Contain("give the history in order");
         results[3].Message.Should().Contain("another submitter");
         foreach (var r in results.Where(r => r.Applied))
-            (await LoadAsync(r.CaseId!.Value)).Phase.Should().Be(CasePhase.Closed);
+            (await LoadAsync(r.CaseId!.Value)).Phase.Should().Be(CasePhase.PostIncident);
         _siem.Events.Count(e => e.Action == "ImportApplied").Should().Be(2, "one per case applied");
 
         // CAP-13: the producer sees each as it stands; the one left needing review is still pending.
@@ -253,6 +310,207 @@ public sealed class CaseImportHistoryTests : IDisposable
         preview.Warnings.Should().Contain(w => w.Contains("aren't applied to an existing one"));
         var result = await Import(_reviewer).ApplyAsync(preview);
         (await LoadAsync(result.CaseId)).Phase.Should().Be(CasePhase.New);
+    }
+
+    public static TheoryData<string, string> RefusedSkips
+    {
+        get
+        {
+            var rows = new TheoryData<string, string>();
+            foreach (var provider in TestDatabase.Providers)
+                foreach (var shape in new[] { "contained-future", "contained-before-detection", "contained-after-move", "resolved-future",
+                             "resolved-before-detection", "resolved-after-move", "resolved-before-contained", "rev11" })
+                    rows.Add(provider, shape);
+            return rows;
+        }
+    }
+
+    // CAP-35 review (P1): every skip the domain refuses is refused in the preview, and apply writes nothing.
+    [Theory, MemberData(nameof(RefusedSkips))]
+    public async Task A_skip_the_domain_refuses_is_refused_before_anything_is_written(string provider, string shape)
+    {
+        Open(provider);
+        var future = _clock.UtcNow.AddHours(1);
+        var doc = shape switch
+        {
+            "contained-future" => WithSteps(new() { Phase = "Eradication", At = Ago(5), ContainedAt = future }),
+            "contained-before-detection" => WithSteps(new() { Phase = "Eradication", At = Ago(5), ContainedAt = Ago(11) }),
+            "contained-after-move" => WithSteps(new() { Phase = "Eradication", At = Ago(5), ContainedAt = Ago(4) }),
+            "resolved-future" => WithSteps(new() { Phase = "Containment", At = Ago(8) }, new() { Phase = "PostIncident", At = Ago(5), ResolvedAt = future }),
+            "resolved-before-detection" => WithSteps(new() { Phase = "Containment", At = Ago(8) }, new() { Phase = "PostIncident", At = Ago(5), ResolvedAt = Ago(11) }),
+            "resolved-after-move" => WithSteps(new() { Phase = "Containment", At = Ago(8) }, new() { Phase = "PostIncident", At = Ago(5), ResolvedAt = Ago(4) }),
+            "resolved-before-contained" => WithSteps(new() { Phase = "PostIncident", At = Ago(5), ContainedAt = Ago(7), ResolvedAt = Ago(8) }),
+            // REV-11: "not needed", then Containment after all, takes back the resolution recorded on the way past.
+            _ => WithSteps(new() { Phase = "Eradication", At = Ago(9), ContainmentNotNeeded = "Nothing to contain" },
+                new() { Phase = "Recovery", At = Ago(8) }, new() { Phase = "Containment", At = Ago(7) }, new() { Phase = "PostIncident", At = Ago(6) }),
+        };
+        var svc = Import(_reviewer);
+        var preview = await svc.BuildPreviewAsync(Parsed(doc));
+        preview.HistoryProblem.Should().StartWith("History step");
+        svc.CheckHistory(Parsed(doc)).Should().NotBeNull("the API refuses it before queueing");
+        await svc.Invoking(s => s.ApplyAsync(preview)).Should().ThrowAsync<ArgumentException>();
+        (await CaseCountAsync()).Should().Be(0, "nothing was written");
+        if (shape == "rev11") preview.HistoryProblem.Should().Contain("give \"resolvedAt\"").And.Contain("took back the resolution");
+    }
+
+    [Theory, MemberData(nameof(Providers))]
+    public async Task The_REV11_history_applies_when_it_says_when_it_was_resolved_again(string provider)
+    {
+        Open(provider);
+        var doc = WithSteps(new() { Phase = "Eradication", At = Ago(9), ContainmentNotNeeded = "Nothing to contain" },
+            new() { Phase = "Recovery", At = Ago(8) }, new() { Phase = "Containment", At = Ago(7) },
+            new() { Phase = "PostIncident", At = Ago(5), ResolvedAt = Ago(6) });
+        var preview = await Import(_reviewer).BuildPreviewAsync(Parsed(doc));
+        preview.HistoryProblem.Should().BeNull("the preview takes what the domain takes");
+        var c = await LoadAsync((await Import(_reviewer).ApplyAsync(preview)).CaseId);
+        (c.Phase, c.ContainedAtUtc, c.ResolvedAtUtc).Should().Be((CasePhase.PostIncident, Ago(7), Ago(6)));
+    }
+
+    // CAP-35 review (P2): a close gate's commentary minimum is checked in the preview, against the close's own reason (or the
+    // conclusion standing in for it), so a closing history doesn't fail at its last step.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_close_gates_commentary_minimum_is_checked_before_anything_is_written(string provider)
+    {
+        Open(provider);
+        await AddCloseGateAsync(commentaryMin: 40, withRequirement: true);
+        var svc = Import(_reviewer);
+        var preview = await svc.BuildPreviewAsync(Parsed(Historical()));   // no closing reason; the conclusion has 32 characters
+        preview.HistoryProblem.Should().Contain("at least 40 characters");
+        await svc.Invoking(s => s.ApplyAsync(preview)).Should().ThrowAsync<ArgumentException>();
+        (await CaseCountAsync()).Should().Be(0, "refused before any write");
+
+        var reasoned = Historical();
+        const string why = "Closed on the legacy tracker after the finance review signed off.";
+        reasoned.Target!.NewCase!.History![^1].Reason = why;
+        var ok = await svc.BuildPreviewAsync(Parsed(reasoned));
+        ok.HistoryProblem.Should().BeNull();
+        var c = await LoadAsync((await svc.ApplyAsync(ok)).CaseId);
+        c.Phase.Should().Be(CasePhase.Closed);
+        c.StatusChanges.Single(s => s.To == CasePhase.Closed).Reason.Should().Be(why, "the close takes the step's own reason");
+        var passage = c.GatePassages.Single(p => p.Trigger == StageGateTrigger.CloseCase);
+        passage.WasOverridden.Should().BeTrue();
+        passage.OverrideJustification.Should().StartWith("imported record: Legacy tracker").And.Contain(why);
+        passage.OverrideJustification!.Length.Should().BeGreaterThanOrEqualTo(40);
+    }
+
+    [Theory, MemberData(nameof(Providers))]
+    public async Task Without_its_own_reason_a_close_records_the_conclusion(string provider)
+    {
+        Open(provider);
+        var c = await LoadAsync((await Import(_reviewer).ApplyAsync(await Import(_reviewer).BuildPreviewAsync(Parsed(Historical())))).CaseId);
+        c.StatusChanges.Single(s => s.To == CasePhase.Closed).Reason.Should().Be("Stopped before any payment left.");
+    }
+
+    // CAP-35 review (P3): a batch confirm leaves a closing history for a person, whose close would override the gate.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_batch_confirm_leaves_a_closing_history_for_review_on_its_own(string provider)
+    {
+        Open(provider);
+        await AddCloseGateAsync(commentaryMin: 0, withRequirement: true);
+        var closing = await SubmitAs(_xsiam, Historical("Closes"));
+        var svc = Import(_reviewer);
+        var result = (await svc.ConfirmBatchAsync(_xsiam.UserId, [closing])).Single();
+        (result.Applied, result.CaseId).Should().Be((false, (Guid?)null));
+        result.Message.Should().Contain("confirm it on its own");
+        (await CaseCountAsync()).Should().Be(0, "nothing was written");
+        (await Import(_xsiam).GetSubmissionStatusAsync(closing))!.Status.Should().Be("pending");
+
+        // A single confirm still applies it, overriding the gate as an imported record.
+        var preview = (await svc.BuildPreviewForPendingAsync(closing))!;
+        var claim = await svc.ClaimPendingAsync(closing, preview);
+        var applied = await svc.ApplyAsync(preview, closing);
+        await svc.MarkPendingAppliedAsync(closing, applied, claim);
+        (await LoadAsync(applied.CaseId)).GatePassages.Single(p => p.Trigger == StageGateTrigger.CloseCase).WasOverridden.Should().BeTrue();
+    }
+
+    // CAP-35 review (P4): an exception no catch list names releases that one and goes on to the next.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_batch_confirm_releases_an_import_that_fails_unexpectedly_and_carries_on(string provider)
+    {
+        Open(provider);
+        var first = await SubmitAs(_xsiam, StillOpen("First"));
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(1);
+        var second = await SubmitAs(_xsiam, StillOpen("Second"));
+        var notices = new AssignNotices(throwFirst: 1);
+        var svc = Import(_reviewer, notices);
+
+        var results = await svc.ConfirmBatchAsync(_xsiam.UserId, [first, second]);
+        results.Select(r => (r.PendingImportId, r.Applied)).Should().Equal((first, false), (second, true));
+        results[0].Message.Should().Contain("back in the queue");
+        (await Import(_xsiam).GetSubmissionStatusAsync(first))!.Status.Should().Be("pending");
+        await using (var db = _db!.NewContext())
+        {
+            var row = await db.PendingImports.AsNoTracking().SingleAsync(p => p.Id == first);
+            (row.Status, row.DecidedBy, row.ResumeJson is null).Should().Be((PendingImportStatus.Pending, (string?)null, false),
+                "released, with what it wrote kept to resume from");
+        }
+        // Reviewed on its own, it carries on into the case it created.
+        var resumed = (await svc.BuildPreviewForPendingAsync(first))!;
+        var claim = await svc.ClaimPendingAsync(first, resumed);
+        claim.Should().NotBeNull();
+        var done = await svc.ApplyAsync(resumed, first);
+        await svc.MarkPendingAppliedAsync(first, done, claim);
+        (await CaseCountAsync()).Should().Be(2, "one case each, none twice");
+    }
+
+    // CAP-35 review (P5): two directory rows with one UPN are ambiguous: a warning, and nobody is added.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_UPN_two_users_share_is_a_warning_and_no_assignment(string provider)
+    {
+        Open(provider);
+        var users = new ListedUserDirectory(
+            new UserSummary("S-1-5-21-1", "Dana Lee", "dana.lee@contoso.example", "dana.lee@contoso.example", "Analyst"),
+            new UserSummary("S-1-5-21-2", "Dana Lee (old)", "DANA.LEE@contoso.example", null, "Analyst"),
+            ListedUserDirectory.User("analyst9", "Analyst"));
+        var svc = Import(_reviewer, users: users);
+        var preview = await svc.BuildPreviewAsync(Parsed(Historical()));
+        preview.IncidentCommander!.UserId.Should().BeNull();
+        preview.Warnings.Should().Contain(w => w.Contains("matches more than one CaseBook user") && w.Contains("S-1-5-21-1") && w.Contains("S-1-5-21-2"));
+        var c = await LoadAsync((await svc.ApplyAsync(preview)).CaseId);
+        c.IncidentCommander.Should().BeNull();
+        c.Assignments.Select(a => a.UserId).Should().Equal("analyst9");
+    }
+
+    // CAP-35 review (P6): a closed historical case's team isn't emailed "assigned"; one that stays open is.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task Importing_a_closed_history_sends_no_assignment_notices(string provider)
+    {
+        Open(provider);
+        var closedNotices = new AssignNotices();
+        var closed = await LoadAsync((await Import(_reviewer, closedNotices).ApplyAsync(
+            await Import(_reviewer).BuildPreviewAsync(Parsed(Historical())))).CaseId);
+        closed.Assignments.Select(a => a.UserId).Should().BeEquivalentTo(["ic-lee", "analyst9"]);
+        closedNotices.Assigned.Should().BeEmpty("a closed historical case isn't work to act on");
+
+        var openNotices = new AssignNotices();
+        await Import(_reviewer, openNotices).ApplyAsync(await Import(_reviewer).BuildPreviewAsync(Parsed(StillOpen())));
+        openNotices.Assigned.Should().BeEquivalentTo(["ic-lee", "analyst9"], "an open one is work in hand");
+    }
+
+    // CAP-35 review: a stale page can't claim after another reviewer's apply stopped part-way and was put back; it reopens.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_stale_preview_cant_claim_over_a_partial_apply_and_a_reload_resumes_it(string provider)
+    {
+        Open(provider);
+        var pid = await SubmitAs(_xsiam, StillOpen());
+        var other = new TestCurrentUser { UserId = "analyst3", RoleSet = [AppRole.Analyst] };
+        var stale = (await Import(other).BuildPreviewForPendingAsync(pid))!;   // analyst3 opens it, then looks away
+
+        var failing = Import(_reviewer, new AssignNotices(throwFirst: 1));
+        var mine = (await failing.BuildPreviewForPendingAsync(pid))!;
+        var claim = await failing.ClaimPendingAsync(pid, mine);
+        await failing.Invoking(s => s.ApplyAsync(mine, pid)).Should().ThrowAsync<NotSupportedException>();
+        await failing.ReleaseClaimAsync(pid, mine, claim);
+        (await CaseCountAsync()).Should().Be(1);
+
+        await Import(other).Invoking(s => s.ClaimPendingAsync(pid, stale)).Should().ThrowAsync<StaleResumeException>();
+        var reloaded = (await Import(other).BuildPreviewForPendingAsync(pid))!;
+        var claim2 = await Import(other).ClaimPendingAsync(pid, reloaded);
+        claim2.Should().NotBeNull("a reload carries the resume state");
+        var result = await Import(other).ApplyAsync(reloaded, pid);
+        await Import(other).MarkPendingAppliedAsync(pid, result, claim2);
+        result.CaseId.Should().Be(mine.CreatedCaseId!.Value, "it resumed into the case already created");
+        (await CaseCountAsync()).Should().Be(1, "not a second case");
     }
 
     public void Dispose() => _db?.Dispose();

@@ -64,7 +64,7 @@ changed document is a new submission.
 |---|---|
 | `201 Created` | Accepted for review. Body: `{ pendingImportId, status: "pending", duplicate: false, message, itemCount, warnings[] }`. `Location` points at the review URL. |
 | `200 OK` | The identical document from the same token is already waiting for review (sent within 24 hours), so a retry isn't queued twice. Same body, `duplicate: true`, with that import's id. |
-| `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports / carries more than one import takes (2,000 indicators, 1,000 timeline entries, 500 tasks; split it) / gives a `target.caseId` and a `target.detectionCaseId` that name different cases / (v2) has a `newCase.history` that breaks the time checks: a step out of order, in the future, before `detectedAt` (or no `detectedAt`), a close before the last step or without its `outcome` and `conclusion` (CAP-35). Body: `{ error }`. |
+| `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports / carries more than one import takes (2,000 indicators, 1,000 timeline entries, 500 tasks; split it) / gives a `target.caseId` and a `target.detectionCaseId` that name different cases / (v2) has a `newCase.history` that breaks the time checks: a step out of order, in the future, before `detectedAt` (or no `detectedAt`), a `containedAt` or `resolvedAt` the phase change would refuse (in the future, before detection, after its step, resolved before contained, or missing where a later Containment took the resolution back), a close before the last step or without its `outcome` and `conclusion` (CAP-35). Body: `{ error }`. |
 | `401 Unauthorized` | Missing, invalid, expired, or revoked token. |
 | `403 Forbidden` | The token authenticated but lacks the **EditCases** permission. |
 | `413 Payload Too Large` | The body is over 5 MiB (with or without a `Content-Length`). |
@@ -245,7 +245,11 @@ Notes:
   as before. **v2** lets a new case carry how it went, for a historical or closed case: `newCase.history` (phase
   transitions, oldest first), `newCase.outcome` and `newCase.conclusion` (when the history ends in Closed),
   `newCase.incidentCommander` and `newCase.assignments` (users by id or UPN). In a v1 document these are ignored, with a
-  warning.
+  warning. The history is checked by the phase change's own rules before queueing. A closing step's `reason` is what the
+  close records (without one, the `conclusion`); when the close gate asks for a reason of a minimum length, the reviewer's
+  preview refuses a shorter one. A name two users share as a UPN isn't added (a warning). A history that closes the case
+  is confirmed on its own, never by *Confirm all from this submitter*, and its team isn't emailed "assigned" (CAP-35
+  review).
 
   ```json
   "schemaVersion": 2,

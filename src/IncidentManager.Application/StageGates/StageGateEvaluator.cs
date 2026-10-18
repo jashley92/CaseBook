@@ -26,16 +26,22 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
 
     public StageGateEvaluator(Compliance.INotificationDeadlineSettingsProvider? deadlines = null) => _deadlines = deadlines;
 
+    /// <summary>
+    /// The gate in force for <paramref name="trigger"/>, as every evaluation picks it. CAP-35 review: also how an import's
+    /// preview reads the close gate's commentary minimum (C2).
+    /// </summary>
+    public static IQueryable<Domain.Entities.StageGate> ActiveGate(IAppDbContext db, StageGateTrigger trigger) =>
+        db.StageGates.AsNoTracking()
+            .Include(g => g.Requirements)
+            .Where(g => g.IsActive && g.Trigger == trigger)
+            .OrderBy(g => g.Name);   // BUG-237: one active gate per transition is enforced; if two slip in, pick the same one every time
+
     /// <param name="summaryProvided">HR-01: the transition itself records a summary (the closing brief), so the
     /// "summary recorded" check is met by it.</param>
     public async Task<GateEvaluation> EvaluateAsync(IAppDbContext db, Guid caseId, StageGateTrigger trigger,
         bool summaryProvided = false, CancellationToken ct = default)
     {
-        var gate = await db.StageGates.AsNoTracking()
-            .Include(g => g.Requirements)
-            .Where(g => g.IsActive && g.Trigger == trigger)
-            .OrderBy(g => g.Name)   // BUG-237: one active gate per transition is enforced; if two slip in, pick the same one every time
-            .FirstOrDefaultAsync(ct);
+        var gate = await ActiveGate(db, trigger).FirstOrDefaultAsync(ct);
 
         // A gate is "in force" when it has requirements or requires commentary — a commentary-only gate
         // still gates the transition.
@@ -50,11 +56,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
     public async Task<GateEvaluation> EvaluateNewAsync(IAppDbContext db, Domain.Entities.Case c, StageGateTrigger trigger,
         int plannedEntities = 0, IReadOnlyList<EntityDisposition>? plannedDispositions = null, CancellationToken ct = default)
     {
-        var gate = await db.StageGates.AsNoTracking()
-            .Include(g => g.Requirements)
-            .Where(g => g.IsActive && g.Trigger == trigger)
-            .OrderBy(g => g.Name)
-            .FirstOrDefaultAsync(ct);
+        var gate = await ActiveGate(db, trigger).FirstOrDefaultAsync(ct);
         if (gate is null || (gate.Requirements.Count == 0 && gate.CommentaryMinLength == 0))
             return GateEvaluation.None(trigger);
 

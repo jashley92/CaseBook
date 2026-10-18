@@ -98,7 +98,7 @@ else if (_pending.Count > 0)
                 }
                 else if (_batchItems is { } items)
                 {
-                    <div class="small mb-1">These @items.Count imports from <strong>@submitter</strong> (oldest first, at most @CaseImportService.MaxBatchConfirm at a time) are applied under your name, each as if you confirmed it on its own. One that needs a choice (a target, a gate to tick, a history to correct) stays in the queue.</div>
+                    <div class="small mb-1">These @items.Count imports from <strong>@submitter</strong> (oldest first, at most @CaseImportService.MaxBatchConfirm at a time) are applied under your name, each as if you confirmed it on its own. One that needs a choice (a target, a gate to tick, a history to correct) stays in the queue, and so does a history that closes its case: its close can override the close gate, so confirm it on its own to see that.</div>
                     <ol class="small mb-2">@foreach (var i in items) { <li>@i.Summary <span class="text-muted">(@TimeDisp.Short(i.SubmittedAtUtc))</span></li> }</ol>
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-sm btn-primary" @onclick="ConfirmBatch" disabled="@(_batching.Busy || items.Count == 0)">Confirm these @items.Count</button>
@@ -571,7 +571,8 @@ else if (_pending.Count > 0)
                                 <tr class="@(h.Applied ? "opacity-50" : "")">
                                     <td>@Ui.Label(h.Phase)</td>
                                     <td class="small">@TimeDisp.Short(h.AtUtc)</td>
-                                    <td class="small text-break">@(h.Reason ?? p.ImportedRecordReason)</td>
+                                    @* CAP-35 review: a close records its own reason, or the conclusion standing in for it. *@
+                                    <td class="small text-break">@(h.Phase == IncidentManager.Domain.Enums.CasePhase.Closed ? p.CloseReason : h.Reason ?? p.ImportedRecordReason)</td>
                                 </tr>
                             }
                         </tbody>
@@ -593,6 +594,8 @@ else if (_pending.Count > 0)
                         </li>
                     }
                 </ul>
+                @* CAP-35 review: a closed historical case's team isn't emailed "assigned"; an open one's is. *@
+                <div class="small text-muted mt-1">@(p.ClosesCase ? "They're added without an assignment email: the case closes." : "They're told they've been assigned, as for any assignment.")</div>
             }
         </div>
     }
@@ -699,9 +702,13 @@ else if (_pending.Count > 0)
             _batchResults = results;
             Toasts.Success($"{IncidentManager.Application.Common.Plural.Of(results.Count(r => r.Applied), "import")} applied.");
         }
-        catch (Exception ex) when (ex is ArgumentException or ForbiddenException or InvalidOperationException)
+        catch (Exception ex)
         {
-            if (!_disposed) Toasts.Error(ex.Message);
+            // CAP-35 review: as a single confirm does: a message written for the person shows, anything else is logged and
+            // replaced, and the queue is reloaded either way (each import is applied or back in it).
+            var message = UserFacingError.Describe(ex, Logger, "confirming imports together",
+                "Couldn't finish confirming these imports. Reload the queue to see which were applied.");
+            if (!_disposed) Toasts.Error(message);
         }
         if (!_disposed) await LoadQueue();
     }
@@ -1195,7 +1202,8 @@ else if (_pending.Count > 0)
                 nc.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
             }
             // BUG-13: a queued import is claimed first, so it can't be applied twice.
-            if (pendingId is { } pending && (claim = await Import.ClaimPendingAsync(pending)) is null)
+            // CAP-35 review: with the preview applied, so one from before another apply stopped and was put back is refused.
+            if (pendingId is { } pending && (claim = await Import.ClaimPendingAsync(pending, p)) is null)
             {
                 if (_previews.IsCurrent(shown))
                     _error = "This import is being applied (perhaps in another tab), or was already applied or rejected. " +

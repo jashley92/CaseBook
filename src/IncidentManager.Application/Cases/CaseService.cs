@@ -1702,7 +1702,7 @@ public sealed class CaseService
     }
 
     public async Task AssignAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
-        CancellationToken ct = default) => await AssignCoreAsync(id, userId, displayName, role, onlyIfAbsent: false, nameof(AssignAsync), ct);
+        CancellationToken ct = default) => await AssignCoreAsync(id, userId, displayName, role, onlyIfAbsent: false, nameof(AssignAsync), notify: true, ct);
 
     /// <summary>
     /// REV-26: the Cases list's bulk assign. It adds the person where they aren't on the case yet, and leaves a case they
@@ -1710,10 +1710,18 @@ public sealed class CaseService
     /// analyst where they're the IC) leave the case with none. False when they were already on it.
     /// </summary>
     public Task<bool> AddAssigneeAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
-        CancellationToken ct = default) => AssignCoreAsync(id, userId, displayName, role, onlyIfAbsent: true, nameof(AddAssigneeAsync), ct);
+        CancellationToken ct = default) => AssignCoreAsync(id, userId, displayName, role, onlyIfAbsent: true, nameof(AddAssigneeAsync), notify: true, ct);
+
+    /// <summary>
+    /// CAP-35 review: an imported history's team, through the same guarded, audited assignment as
+    /// <see cref="AssignAsync"/> (and its permission), told of it only when <paramref name="notify"/>: a closed historical
+    /// case's team isn't emailed "you've been assigned" (CaseImportService decides).
+    /// </summary>
+    internal Task AssignImportedAsync(Guid id, string userId, string displayName, CaseAssignmentRole role, bool notify,
+        CancellationToken ct = default) => AssignCoreAsync(id, userId, displayName, role, onlyIfAbsent: false, nameof(AssignAsync), notify, ct);
 
     private async Task<bool> AssignCoreAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
-        bool onlyIfAbsent, string action, CancellationToken ct)
+        bool onlyIfAbsent, string action, bool notify, CancellationToken ct)
     {
         Require(action);
         using var db = _factory.CreateDbContext();
@@ -1731,7 +1739,7 @@ public sealed class CaseService
 
         // E-03b: tell the assignee (out of band; never fails the assignment). Not on a self-assignment (as before), and
         // only when they're entitled to the case (BUG-596).
-        if (!string.Equals(userId, _user.UserId, StringComparison.OrdinalIgnoreCase)
+        if (notify && !string.Equals(userId, _user.UserId, StringComparison.OrdinalIgnoreCase)
             && (await RecipientsAsync(c, [userId], ct)).Count > 0)
             await _notifications.OnAssignedAsync(c, userId, displayName, role, _user.UserId, ct);
         return true;

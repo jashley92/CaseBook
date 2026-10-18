@@ -412,6 +412,11 @@ public sealed class CaseImportService
         // CAP-35: a history that breaks R4's checks is refused before anything is written.
         if (p.TargetKind == CaseImportTargetKind.NewCase && p.HistoryProblem is { } historyProblem)
             throw new ArgumentException(historyProblem);
+        // CAP-35 review: and checked again as of now, by the domain's own rules and against the close gate as it stands, so a
+        // gate tightened (or a minute passed) since the preview refuses here rather than leaving a half-applied case.
+        if (p.TargetKind == CaseImportTargetKind.NewCase && p.History.Any(h => !h.Applied) && p.NewCase?.DetectedAtUtc is { } detectedAt
+            && (ReplayHistory(p.History, detectedAt, _clock.UtcNow) ?? await CloseGateProblemAsync(p, ct)) is { } nowRefused)
+            throw new ArgumentException(nowRefused);
 
         Guid caseId;
         string caseNumber;
@@ -549,23 +554,29 @@ public sealed class CaseImportService
     /// </summary>
     private async Task ApplyHistoryAsync(CaseImportPreview p, Guid caseId, CancellationToken ct)
     {
+        // CAP-35 review: the team is added quietly for a history that closes the case: a record of work finished elsewhere
+        // isn't an assignment to act on, so nobody is emailed "you've been assigned" to a closed case. One that stays open is
+        // work in hand, so its incident commander and team are told, as for any assignment.
+        var notify = !p.ClosesCase;
         foreach (var who in (p.IncidentCommander is { } ic ? [ic] : Array.Empty<ImportAssignmentRow>()).Concat(p.Assignments))
         {
             if (who.Applied || who.UserId is not { } userId) continue;
-            await _cases.AssignAsync(caseId, userId, who.DisplayName ?? userId, who.Role, ct);
+            await _cases.AssignImportedAsync(caseId, userId, who.DisplayName ?? userId, who.Role, notify, ct);
             who.Applied = true;
         }
 
         foreach (var h in p.History)
         {
             if (h.Applied) continue;
-            var reason = h.Reason ?? p.ImportedRecordReason;
             CaseService.CaseClosing? closing = null;
             if (h.Phase == CasePhase.Closed)
             {
                 var summary = p.NewCase?.Summary ?? p.Summary ?? p.NewCase?.Title ?? "Imported record";
                 closing = new CaseService.CaseClosing(p.Outcome ?? "", TextFit.Cap(summary, CaseBrief.MaxPartLength, ""), p.Conclusion ?? "");
             }
+            // CAP-35 review: a close takes the step's own reason, or none, so ChangePhaseAsync records the conclusion as it
+            // does for any close; that's what the gate's commentary minimum was checked against (CloseGateProblemAsync).
+            var reason = closing is not null ? h.Reason : h.Reason ?? p.ImportedRecordReason;
             var containment = h.ContainedAtUtc is not null || h.ContainmentNotNeeded is not null
                 ? new CaseService.ContainmentDecision(h.ContainedAtUtc, h.ContainmentNotNeeded) : null;
             try
@@ -575,11 +586,36 @@ public sealed class CaseImportService
             }
             catch (StageGates.GateNotSatisfiedException) when (closing is not null)
             {
-                await _cases.ChangePhaseAsync(caseId, h.Phase, reason, overrideJustification: p.ImportedRecordReason,
+                var justification = p.CloseOverrideReason(await CloseCommentaryMinAsync(ct));
+                await _cases.ChangePhaseAsync(caseId, h.Phase, reason, overrideJustification: justification,
                     effectiveAtUtc: h.AtUtc, closing: closing, containment: containment, resolvedAtUtc: h.ResolvedAtUtc, ct: ct);
             }
             h.Applied = true;
         }
+    }
+
+    // CAP-35 review: the active close gate's commentary minimum (0 when none asks), read as the gate evaluation picks it.
+    private async Task<int> CloseCommentaryMinAsync(CancellationToken ct)
+    {
+        using var db = _factory.CreateDbContext();
+        return await StageGates.StageGateEvaluator.ActiveGate(db, StageGateTrigger.CloseCase)
+            .Select(g => g.CommentaryMinLength).FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// CAP-35 review: why a history's close can't meet the close gate's commentary minimum, or null. The close's reason is
+    /// the step's own, or the conclusion standing in for it (as <see cref="CaseService.ChangePhaseAsync"/> falls back), and
+    /// an override's justification is built to be at least as long (<see cref="CaseImportPreview.CloseOverrideReason"/>),
+    /// so this one check covers both. Checked in the preview and again before apply writes anything.
+    /// </summary>
+    private async Task<string?> CloseGateProblemAsync(CaseImportPreview p, CancellationToken ct)
+    {
+        if (p.TargetKind != CaseImportTargetKind.NewCase || !p.ClosesCase) return null;
+        var min = await CloseCommentaryMinAsync(ct);
+        var length = p.CloseReason.Length;
+        if (min == 0 || length >= min) return null;
+        return $"The close gate asks for a reason of at least {min:N0} characters, and the history's close gives {length:N0}. " +
+               $"Give the closing step a \"reason\" of at least {min:N0} characters (without one, the \"conclusion\" stands in for it).";
     }
 
     /// <summary>CAP-35: the most queued submissions one batch confirm applies.</summary>
@@ -605,7 +641,8 @@ public sealed class CaseImportService
     /// (<see cref="ListBatchFromSubmitterAsync"/>) and confirms them, at most <see cref="MaxBatchConfirm"/> at a time. Each is
     /// claimed, previewed as the reviewer sees it, and applied by the same audited writes as a single confirm, under the
     /// reviewer's name, one after another; one that needs a person's eye (a target to choose, a filing gate to tick, a
-    /// history that breaks R4's checks, a decision without its why) or that fails is left in the queue with why. A
+    /// history that breaks R4's checks, a decision without its why, CAP-35 review: a history that closes the case, whose close
+    /// can override the close gate) or that fails, however it fails, is left in the queue with why. A
     /// submission not from <paramref name="submittedBy"/>, or no longer waiting, is reported and left alone.
     /// </summary>
     public async Task<IReadOnlyList<BatchConfirmItem>> ConfirmBatchAsync(string submittedBy, IReadOnlyList<Guid> pendingIds,
@@ -646,24 +683,48 @@ public sealed class CaseImportService
             nc.PlannedDispositions = preview.Entities.Where(e => e.Include && !e.Applied).Select(e => e.Disposition).ToList();
         }
 
-        if (await ClaimPendingAsync(id, ct) is not { } claim)
-            return new BatchConfirmItem(id, summary, false, null, null, "It's being applied (perhaps in another tab), or was just decided.");
+        DateTimeOffset claim;
+        try
+        {
+            if (await ClaimPendingAsync(id, preview, ct) is not { } claimed)
+                return new BatchConfirmItem(id, summary, false, null, null, "It's being applied (perhaps in another tab), or was just decided.");
+            claim = claimed;
+        }
+        catch (StaleResumeException ex)
+        {
+            return new BatchConfirmItem(id, summary, false, null, null, ex.Message);
+        }
         try
         {
             var result = await ApplyAsync(preview, id, ct);
             await MarkPendingAppliedAsync(id, result, claim, ct);
             return new BatchConfirmItem(id, summary, true, result.CaseNumber, result.CaseId, null);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException
-                                       or StageGates.GateNotSatisfiedException or ConcurrentEditException or DbUpdateException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // BUG-116: back in the queue (with what was written marked), for a person to finish.
-            try { await ReleaseClaimAsync(id, preview, claim, CancellationToken.None); }
-            catch (Exception releaseEx) when (releaseEx is not OutOfMemoryException)
-            {
-                _log?.LogWarning(releaseEx, "Couldn't put import {PendingImportId} back in the queue after a batch confirm failed.", id);
-            }
-            return new BatchConfirmItem(id, summary, false, null, null, $"Not applied: {ex.Message} It's back in the queue to review on its own.");
+            // CAP-35 review: the reviewer left; this one goes back in the queue (with what was written marked) and the batch stops.
+            await ReleaseQuietlyAsync(id, preview, claim);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // BUG-116: back in the queue (with what was written marked), for a person to finish. CAP-35 review: whatever the
+            // failure, so one unexpected exception neither strands its claim nor stops the rest of the batch.
+            await ReleaseQuietlyAsync(id, preview, claim);
+            var known = ex is ArgumentException or InvalidOperationException or ForbiddenException
+                or StageGates.GateNotSatisfiedException or ConcurrentEditException or DbUpdateException;
+            if (!known) _log?.LogError(ex, "A batch confirm couldn't apply import {PendingImportId}.", id);
+            return new BatchConfirmItem(id, summary, false, null, null,
+                $"Not applied: {(known ? ex.Message : "something went wrong applying it (the error is logged).")} It's back in the queue to review on its own.");
+        }
+    }
+
+    private async Task ReleaseQuietlyAsync(Guid id, CaseImportPreview preview, DateTimeOffset claim)
+    {
+        try { await ReleaseClaimAsync(id, preview, claim, CancellationToken.None); }
+        catch (Exception releaseEx) when (releaseEx is not OutOfMemoryException)
+        {
+            _log?.LogWarning(releaseEx, "Couldn't put import {PendingImportId} back in the queue after a batch confirm failed.", id);
         }
     }
 
@@ -674,6 +735,9 @@ public sealed class CaseImportService
         if (p.TargetKind == CaseImportTargetKind.ExistingCase && p.ExistingCaseId is null)
             return "It needs a target case chosen (more than one open case carries its detection case id).";
         if (p.TargetKind == CaseImportTargetKind.NewCase && p.HistoryProblem is { } problem) return problem;
+        // CAP-35 review: a close may be forced past the close gate's unmet checks ("imported record"), which a person must see.
+        if (p.TargetKind == CaseImportTargetKind.NewCase && p.ClosesCase)
+            return "Its history closes the case, and a close can override the close gate's checks, so confirm it on its own to see that.";
         if (p.TargetKind == CaseImportTargetKind.NewCase && string.IsNullOrWhiteSpace(p.NewCase?.Title)) return "Its new case has no title.";
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale)))
             return "A decision on its timeline needs its why.";
@@ -1049,14 +1113,31 @@ public sealed class CaseImportService
     /// BUG-198). A failed apply puts it back in the queue (BUG-116); a claim of this reviewer's left behind anyway (the
     /// release failed too) can be taken again once it's <see cref="StaleClaim"/> old.
     /// </summary>
-    public async Task<DateTimeOffset?> ClaimPendingAsync(Guid pendingId, CancellationToken ct = default)
+    public Task<DateTimeOffset?> ClaimPendingAsync(Guid pendingId, CancellationToken ct = default) =>
+        ClaimCoreAsync(pendingId, null, ct);
+
+    /// <summary>
+    /// <see cref="ClaimPendingAsync(Guid, CancellationToken)"/> for applying <paramref name="preview"/>. CAP-35 review: the
+    /// claim honours the row's resume state (BUG-146): when an apply since this preview was built stopped part-way and was
+    /// put back (another reviewer's, or another tab's), applying this preview would write again what that one wrote (a
+    /// second case), so it's refused with <see cref="StaleResumeException"/>, and reopening the import resumes it. The
+    /// check and the claim are one conditional update, so a release landing between them can't slip past.
+    /// </summary>
+    public Task<DateTimeOffset?> ClaimPendingAsync(Guid pendingId, CaseImportPreview preview, CancellationToken ct = default) =>
+        ClaimCoreAsync(pendingId, preview, ct);
+
+    private async Task<DateTimeOffset?> ClaimCoreAsync(Guid pendingId, CaseImportPreview? preview, CancellationToken ct)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
         var me = _user.UserId;
         var now = _clock.UtcNow;
+        var resume = await VisiblePending(db).AsNoTracking().Where(p => p.Id == pendingId).Select(p => p.ResumeJson).FirstOrDefaultAsync(ct);
+        var checkResume = preview is not null;
+        if (checkResume && !ResumesFrom(preview!, resume))
+            throw new StaleResumeException();
         var claimed = await VisiblePending(db)
-            .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending)
+            .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending && (!checkResume || p.ResumeJson == resume))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.Status, PendingImportStatus.Applied)
                 .SetProperty(p => p.DecidedBy, me)
@@ -1069,9 +1150,26 @@ public sealed class CaseImportService
             || left.DecidedAtUtc is not { } at || now - at < StaleClaim) return null;
         claimed = await VisiblePending(db)
             .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Applied && p.DecidedBy == me
-                        && p.ResolvedCaseId == null && p.DecidedAtUtc == at)
+                        && p.ResolvedCaseId == null && p.DecidedAtUtc == at && (!checkResume || p.ResumeJson == resume))
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.DecidedAtUtc, now), ct);
         return claimed == 1 ? now : null;
+    }
+
+    /// <summary>
+    /// CAP-35 review: whether <paramref name="preview"/> carries the progress the queued row records (<paramref name="resumeJson"/>,
+    /// BUG-146), so applying it carries on rather than writing again. With none recorded, any preview does. Otherwise it must be
+    /// that resume state or the very preview that saved it (<see cref="CaseImportPreview.ResumeStamp"/>); one saved before the
+    /// stamp existed is matched by the case it created, and by having written something itself.
+    /// </summary>
+    private static bool ResumesFrom(CaseImportPreview preview, string? resumeJson)
+    {
+        if (resumeJson is null) return true;
+        CaseImportPreview? saved;
+        try { saved = JsonSerializer.Deserialize<CaseImportPreview>(resumeJson, ResumeJsonOptions); }
+        catch (JsonException) { return false; }
+        if (saved is null) return true;
+        if (saved.ResumeStamp is { } stamp) return preview.ResumeStamp == stamp;
+        return preview.CreatedCaseId == saved.CreatedCaseId && HasApplied(preview);
     }
 
     /// <summary>Records the case a claimed submission went into (<see cref="ClaimPendingAsync"/> claims it first, and
@@ -1115,7 +1213,13 @@ public sealed class CaseImportService
         if (preview.CreatedCaseId is { } created) row.TargetCaseId = created;
         else if (preview is { TargetKind: CaseImportTargetKind.ExistingCase, ExistingCaseId: { } into } && HasApplied(preview))
             row.TargetCaseId = into;
-        if (HasApplied(preview)) row.ResumeJson = JsonSerializer.Serialize(preview, ResumeJsonOptions);
+        if (HasApplied(preview))
+        {
+            // CAP-35 review: a fresh stamp each time, kept on this preview too, so only it (or a reload of this state)
+            // claims the import next (ResumesFrom).
+            preview.ResumeStamp = Guid.NewGuid();
+            row.ResumeJson = JsonSerializer.Serialize(preview, ResumeJsonOptions);
+        }
         await db.SaveChangesAsync(ct);
         _signal?.Raise();   // CAP-01: back in the queue
     }
@@ -1373,7 +1477,7 @@ public sealed class CaseImportService
 
         var steps = nc.History ?? [];
         var detected = p.NewCase?.DetectedAtUtc;
-        var (phase, contained, resolved) = (CasePhase.New, false, false);
+        var phase = CasePhase.New;
         DateTimeOffset? previous = null;
         for (var i = 0; i < steps.Count; i++)
         {
@@ -1382,31 +1486,25 @@ public sealed class CaseImportService
             if (steps[i] is not { } s) { Problem("it's empty."); return; }
             if (!ImportEnums.TryName<CasePhase>(s.Phase, out var to)) { Problem($"\"{s.Phase}\" isn't a phase ({string.Join(", ", Enum.GetNames<CasePhase>())})."); return; }
             if (s.At is not { } at) { Problem("say when it happened (\"at\")."); return; }
-            if (detected is not { } det) { Problem("a case with a history needs newCase.detectedAt, so its steps can be checked against it."); return; }
-            if (Case.ToMinute(at) > Case.ToMinute(nowUtc)) { Problem($"{Utc(at)} is in the future."); return; }
-            if (Case.ToMinute(at) < Case.ToMinute(det)) { Problem($"{Utc(at)} is before the case was detected ({Utc(det)})."); return; }
+            if (detected is null) { Problem("a case with a history needs newCase.detectedAt, so its steps can be checked against it."); return; }
             if (previous is { } prev && Case.ToMinute(at) < Case.ToMinute(prev)) { Problem($"{Utc(at)} is before the step before it ({Utc(prev)}): give the history in order."); return; }
             if (to == phase) { Problem($"the case is already in {to}."); return; }
             if (phase == CasePhase.Closed) { Problem("a history closes only at its end."); return; }
             if (to == CasePhase.Closed && n != steps.Count) { Problem("a history closes only at its end."); return; }
-            var skipsContainment = phase < CasePhase.Containment && to is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident && !contained;
-            var notNeeded = Blank(Clamp(s.ContainmentNotNeeded, Case.MaxContainmentReason, "Why containment wasn't needed", p.Warnings));
-            if (skipsContainment && s.ContainedAt is null && notNeeded is null)
-            { Problem($"moving to {to} skips Containment: give \"containedAt\" or \"containmentNotNeeded\"."); return; }
-            if (!skipsContainment && (s.ContainedAt is not null || notNeeded is not null))
-            { Problem("\"containedAt\" and \"containmentNotNeeded\" belong only on a step that skips Containment."); return; }
-            var skipsRecovery = phase < CasePhase.Recovery && to == CasePhase.PostIncident && !resolved;
-            if (skipsRecovery != (s.ResolvedAt is not null))
-            { Problem(skipsRecovery ? "moving to PostIncident skips Recovery: give \"resolvedAt\"." : "\"resolvedAt\" belongs only on a step to PostIncident that skips Recovery."); return; }
-
-            contained |= to == CasePhase.Containment || skipsContainment;
-            resolved |= to == CasePhase.Recovery || skipsRecovery;
             p.History.Add(new ImportHistoryRow
             {
                 Phase = to, AtUtc = at, Reason = Clamp(s.Reason, 2000, "Transition reason", p.Warnings),
-                ContainedAtUtc = s.ContainedAt, ContainmentNotNeeded = notNeeded, ResolvedAtUtc = s.ResolvedAt,
+                ContainedAtUtc = s.ContainedAt, ResolvedAtUtc = s.ResolvedAt,
+                ContainmentNotNeeded = Blank(Clamp(s.ContainmentNotNeeded, Case.MaxContainmentReason, "Why containment wasn't needed", p.Warnings)),
             });
             (phase, previous) = (to, at);
+        }
+        // CAP-35 review: everything else (future, before detection, the containment and resolution times a skip states, the
+        // REV-11 resolution a later Containment clears) is the domain's own check, replayed (C2), so preview and apply agree.
+        if (detected is { } detectedAt && ReplayHistory(p.History, detectedAt, nowUtc) is { } refused)
+        {
+            p.HistoryProblem ??= refused;
+            return;
         }
         if (phase == CasePhase.Closed)
         {
@@ -1421,8 +1519,53 @@ public sealed class CaseImportService
     }
 
     /// <summary>
+    /// CAP-35 review: why <paramref name="history"/> can't be applied to a case detected at <paramref name="detectedAtUtc"/>,
+    /// or null. Each step is replayed through <see cref="Case.ChangePhase"/> itself, on a scratch case held in memory, so
+    /// the preview refuses exactly what the apply would (C2): a time in the future or before detection, a contained or
+    /// resolved time after the move or before detection, resolved before contained, and the REV-11 case (a Containment after
+    /// "not needed" clears the resolution, so a later step to PostIncident must say when it was resolved again). Only the
+    /// wording is the import's: a skip names the document's field.
+    /// </summary>
+    internal static string? ReplayHistory(IReadOnlyList<ImportHistoryRow> history, DateTimeOffset detectedAtUtc, DateTimeOffset nowUtc)
+    {
+        var scratch = Case.Open(nowUtc.Year, 0, "imported history", "imported history", null, Severity.Medium,
+            CaseOrigin.InternalDetection, "import", nowUtc);
+        scratch.DetectedAtUtc = detectedAtUtc;
+        var resolutionTakenBack = false;
+        for (var i = 0; i < history.Count; i++)
+        {
+            var h = history[i];
+            var where = $"History step {i + 1}";
+            var skipsContainment = scratch.SkipsContainment(h.Phase);
+            if (skipsContainment && h.ContainedAtUtc is null && h.ContainmentNotNeeded is null)
+                return $"{where}: moving to {h.Phase} skips Containment: give \"containedAt\" or \"containmentNotNeeded\".";
+            if (!skipsContainment && (h.ContainedAtUtc is not null || h.ContainmentNotNeeded is not null))
+                return $"{where}: \"containedAt\" and \"containmentNotNeeded\" belong only on a step that skips Containment.";
+            var skipsRecovery = scratch.SkipsRecovery(h.Phase);
+            if (skipsRecovery != (h.ResolvedAtUtc is not null))
+                return skipsRecovery
+                    ? $"{where}: moving to PostIncident skips Recovery: give \"resolvedAt\"" + (resolutionTakenBack
+                        ? " (coming into Containment after \"containmentNotNeeded\" took back the resolution recorded before it)." : ".")
+                    : $"{where}: \"resolvedAt\" belongs only on a step to PostIncident that skips Recovery.";
+            var resolvedBefore = scratch.ResolvedAtUtc;
+            try
+            {
+                scratch.ChangePhase(h.Phase, "imported", "import", nowUtc, h.AtUtc,
+                    h.Phase == CasePhase.Closed ? "imported" : null, h.ContainedAtUtc, h.ContainmentNotNeeded, h.ResolvedAtUtc);
+            }
+            catch (ArgumentException ex)
+            {
+                return $"{where} ({h.Phase} at {Utc(h.AtUtc)}): {ex.Message}";
+            }
+            resolutionTakenBack |= resolvedBefore is not null && scratch.ResolvedAtUtc is null;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// CAP-35: matches the incident commander and team to the user directory, by user id or UPN, as the reviewer reviews it.
-    /// Someone it doesn't know is a warning, and isn't added: never dropped without a word.
+    /// Someone it doesn't know is a warning, and isn't added: never dropped without a word. CAP-35 review: nor is someone
+    /// two directory rows answer to (a UPN shared by two accounts): which one was meant is for a person to say.
     /// </summary>
     private void ResolveTeam(CaseImportPreview p)
     {
@@ -1431,24 +1574,39 @@ public sealed class CaseImportService
         var all = _users?.All() ?? [];
         foreach (var row in people)
         {
-            var u = all.FirstOrDefault(x => string.Equals(x.UserId, row.Named, StringComparison.OrdinalIgnoreCase))
-                    ?? all.FirstOrDefault(x => string.Equals(x.UserPrincipalName, row.Named, StringComparison.OrdinalIgnoreCase));
+            var who = row.Role == CaseAssignmentRole.IncidentCommander ? "The incident commander" : "Team member";
+            // CAP-35 review: a user id, then a UPN; more than one row answering either is ambiguous, not the first found.
+            var byId = all.Where(x => string.Equals(x.UserId, row.Named, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            var matches = byId.Count > 0 ? byId
+                : all.Where(x => string.Equals(x.UserPrincipalName, row.Named, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            var u = matches.Count == 1 ? matches[0] : null;
             (row.UserId, row.DisplayName) = (u?.UserId, u?.DisplayName);
-            if (u is null)
-                p.Warnings.Add($"{(row.Role == CaseAssignmentRole.IncidentCommander ? "The incident commander" : "Team member")} \"{row.Named}\" " +
+            if (matches.Count > 1)
+                p.Warnings.Add($"{who} \"{row.Named}\" matches more than one CaseBook user ({string.Join(", ", matches.Select(m => m.UserId))}), " +
+                               "so they won't be added. Add the right one on the case.");
+            else if (u is null)
+                p.Warnings.Add($"{who} \"{row.Named}\" " +
                                "isn't a user CaseBook knows (by user id or UPN), so they won't be added. Add them on the case once they've signed in.");
         }
         // The team doesn't repeat the incident commander.
         if (p.IncidentCommander?.UserId is { } icId) p.Assignments.RemoveAll(a => a.UserId == icId);
     }
 
-    // CAP-35: an outcome a history closes with must be one the close accepts (an active outcome).
+    // CAP-35: an outcome a history closes with must be one the close accepts (an active outcome). CAP-35 review: and its
+    // reason must meet the close gate's commentary minimum, or every closing history would fail at its last step.
     private async Task CheckOutcomeAsync(CaseImportPreview p, CancellationToken ct)
     {
-        if (p.Outcome is not { } key || p.HistoryProblem is not null) return;
-        using var db = _factory.CreateDbContext();
-        if (!await db.CaseOutcomes.AsNoTracking().AnyAsync(o => o.Key == key && o.IsActive, ct))
-            p.HistoryProblem = $"The outcome \"{key}\" isn't an active outcome (Administration › Case outcomes).";
+        if (p.HistoryProblem is not null) return;
+        if (p.Outcome is { } key)
+        {
+            using var db = _factory.CreateDbContext();
+            if (!await db.CaseOutcomes.AsNoTracking().AnyAsync(o => o.Key == key && o.IsActive, ct))
+            {
+                p.HistoryProblem = $"The outcome \"{key}\" isn't an active outcome (Administration › Case outcomes).";
+                return;
+            }
+        }
+        p.HistoryProblem = await CloseGateProblemAsync(p, ct);
     }
 
     private static CreateCaseRequest BuildNewCase(CaseImportNewCase? nc, DateTimeOffset nowUtc, List<string> warnings)

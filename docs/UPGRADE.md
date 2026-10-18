@@ -259,6 +259,18 @@ first with `casebook-keytool export`.
   published schema with `"const": 1` for `schemaVersion` should accept 2 as well. The Import queue gains *Confirm all
   from &lt;submitter&gt;…* (up to 25 at a time, each applied as its own confirm under the reviewer's name; SIEM 5515 per case).
   Nothing to configure.
+- **Imported histories: checked as applying checks them, and batch confirm tightened (CAP-35 review).** No migration and
+  nothing to configure. A v2 history is now replayed through the phase change's own checks before anything is written,
+  so a `containedAt` or `resolvedAt` in the future, before detection, after its step or out of order (and the REV-11
+  case, a step to PostIncident after a Containment that followed "not needed", which must give `resolvedAt` again) is
+  refused in the preview and by the API (400), not half-way through applying. A closing step records its own `reason`,
+  or the `conclusion`; when the close gate has a commentary minimum, a shorter one is refused in the preview, and an
+  override's justification is "imported record: &lt;origin&gt;" followed by that reason when the minimum asks for more.
+  *Confirm all from &lt;submitter&gt;* now leaves a history that closes its case for a confirm on its own (its close can
+  override the close gate), and an import that fails in any way is put back in the queue while the batch carries on. A
+  team member named by a UPN two users share is a warning and isn't added. Importing a history that closes the case no
+  longer emails its team "you've been assigned"; one that stays open still does. A reviewer confirming from a page opened
+  before another apply of the same import stopped part-way is told to reopen it, rather than creating the case twice.
 - **Outside parties on a case (CAP-34).** One migration, `AddCaseParties`: a new `CaseParties` table (role, name,
   contact, reference, when engaged, notes), cascading from `Cases`; no data moves. Things › Connections lists them under
   *Outside parties* (*Add a party*, needing `EditCases`). Each row is audited and hashed from its first row, so the
