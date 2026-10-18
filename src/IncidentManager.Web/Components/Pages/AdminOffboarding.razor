@@ -1,0 +1,276 @@
+@page "/admin/users/{UserRef:guid}"
+@* CAP-30: offboarding a person who leaves, opened from Known users (Roles & access). One page for what used to be on four
+   screens: the roles AD gave them at their last sign-in (AD stays the source of roles: nothing here changes one), the
+   open cases they command or are on (restricted ones only with the administrator's own clearance, otherwise counted),
+   their open tasks, their working API tokens and whether their calendar link works. The two things CaseBook can take
+   back are here (revoke the tokens, void the calendar link: each confirmed and audited); reassigning their cases is
+   Team workload's limited reassign. The address carries the person's opaque reference, never a name or an account. *@
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject OffboardingService Offboarding
+@inject ToastService Toasts
+@inject TimeDisplay TimeDisp
+@inject IAuthorizationService Authz
+@inject AuthenticationStateProvider AuthState
+@implements IDisposable
+
+<PageTitle>Offboarding</PageTitle>
+
+<PageHeader Title="Offboarding" Subtitle="What a person who leaves still holds in CaseBook, and taking back what CaseBook issued them.">
+    <Actions>
+        <a href="admin/roles" class="btn btn-sm btn-outline-secondary"><span class="bi bi-arrow-left me-1" aria-hidden="true"></span>Roles &amp; access</a>
+    </Actions>
+</PageHeader>
+
+@if (_missing)
+{
+    <p class="text-muted">That person isn't in the list of people who have signed in. Open them from <a href="admin/roles">Known users</a>.</p>
+}
+else if (_view is null)
+{
+    <LoadingBlock />
+}
+else
+{
+    var v = _view;
+    <section class="mb-4" aria-labelledby="ob-person">
+        <h2 id="ob-person" class="h5 mb-1">@v.DisplayName</h2>
+        @if (v.UserPrincipalName is { } upn) { <div class="small text-muted">@upn</div> }
+        <div class="small mt-1">
+            Last seen @TimeDisp.Short(v.LastSeenUtc)
+            @if (v.IsDormant) { <span class="im-badge im-b-warn ms-1">Dormant</span> }
+        </div>
+    </section>
+
+    <h6 class="text-uppercase small text-muted">Roles at last sign-in</h6>
+    <p class="small mb-1">
+        @if (v.Roles.Count == 0) { <span class="text-muted">none</span> }
+        else { @foreach (var r in v.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> } }
+    </p>
+    <p class="small text-muted mb-4">
+        Roles come from Active Directory groups, read at each sign-in. To take them away, remove the person from those
+        groups in AD (or disable the account); CaseBook doesn't change AD.
+    </p>
+
+    <h6 class="text-uppercase small text-muted">Open cases they command or are on</h6>
+    @if (v.Cases.Count == 0 && v.HiddenCases == 0)
+    {
+        <p class="text-muted small">None.</p>
+    }
+    else
+    {
+        @if (v.Cases.Count > 0)
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle" aria-label="Open cases they command or are on">
+                    <thead><tr><th scope="col">Case</th><th scope="col">Phase</th><th scope="col">Their part</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in v.Cases)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="cases/@c.CaseId" class="text-decoration-none"><code>@c.CaseNumber</code></a>
+                                    @if (c.IsRestricted) { <span class="im-badge im-b-info ms-1">Restricted</span> }
+                                    @if (c.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
+                                    <div class="small text-muted" style="overflow-wrap:anywhere">@c.Title</div>
+                                </td>
+                                <td class="small">@c.Phase</td>
+                                <td class="small">@(c.Commands ? "Incident commander" : "Assignee")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        @if (v.HiddenCases > 0)
+        {
+            <p class="small"><span class="im-badge im-b-warn me-1">@v.HiddenCases</span>more @(v.HiddenCases == 1 ? "case" : "cases") you can't see (restricted). Someone cleared for restricted cases can reassign them.</p>
+        }
+        <p class="small mb-4">
+            Reassign them in <a href="program/team">Team workload</a>: <strong>Reassign…</strong> on their row moves up to 25
+            cases at a time, after you confirm.
+            @if (!_canSeeTeam) { <span class="text-muted">(It needs the All cases permission, which your role doesn't grant.)</span> }
+        </p>
+    }
+
+    <h6 class="text-uppercase small text-muted">Open tasks they own</h6>
+    @if (v.Tasks.Count == 0 && v.HiddenTasks == 0)
+    {
+        <p class="text-muted small mb-4">None.</p>
+    }
+    else
+    {
+        <ul class="list-unstyled small mb-1">
+            @foreach (var t in v.Tasks)
+            {
+                <li class="mb-1">
+                    <a href="cases/@t.CaseId" class="text-decoration-none"><code>@t.CaseNumber</code></a>
+                    <span style="overflow-wrap:anywhere">@t.Title</span>
+                    @if (t.DueAtUtc is { } due) { <span class="text-muted">· due @TimeDisp.Short(due)</span> }
+                </li>
+            }
+        </ul>
+        @if (v.HiddenTasks > 0) { <p class="small mb-1">@v.HiddenTasks more on cases you can't see.</p> }
+        <p class="small text-muted mb-4">Give each a new owner on its case's Tasks tab.</p>
+    }
+
+    <h6 class="text-uppercase small text-muted">API tokens that work now</h6>
+    @if (v.Tokens.Count == 0)
+    {
+        <p class="text-muted small">None.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle" aria-label="Their API tokens">
+                <thead><tr><th scope="col">Name</th><th scope="col">Prefix</th><th scope="col">Last used</th><th scope="col">Expires</th></tr></thead>
+                <tbody>
+                    @foreach (var t in v.Tokens)
+                    {
+                        <tr>
+                            <td style="overflow-wrap:anywhere">@t.Name</td>
+                            <td><code class="small">@t.Prefix</code></td>
+                            <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "never")</td>
+                            <td class="small">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-danger mb-2" @onclick="ConfirmRevoke" disabled="@(_revoking.Busy)">
+            Revoke @(v.Tokens.Count == 1 ? "this token" : $"these {v.Tokens.Count} tokens")…
+        </button>
+    }
+    @if (v.SystemTokensCreated > 0)
+    {
+        <p class="small text-muted">They also created @v.SystemTokensCreated system @(v.SystemTokensCreated == 1 ? "token" : "tokens") that still @(v.SystemTokensCreated == 1 ? "works" : "work"). System tokens aren't theirs; review them under <a href="admin/api-tokens">API tokens</a>.</p>
+    }
+    <div class="mb-4"></div>
+
+    <h6 class="text-uppercase small text-muted">Calendar link</h6>
+    @if (!v.CalendarFeedOn && !v.CalendarLinkLive)
+    {
+        <p class="text-muted small">The calendar feed is off on this server.</p>
+    }
+    else if (!v.CalendarLinkLive)
+    {
+        <p class="small">No link that works.</p>
+    }
+    else
+    {
+        <p class="small mb-2">
+            <span class="im-badge im-b-warn me-1">Live</span>
+            A calendar subscribed to their link keeps getting their cases and tasks until @TimeDisp.DateOnly(v.CalendarLinkExpiresAtUtc!.Value),
+            or until it's voided. The link itself is never shown here.
+        </p>
+        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmVoid" disabled="@(_voiding.Busy)">Void the calendar link…</button>
+    }
+}
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    [Parameter] public Guid UserRef { get; set; }
+
+    private ConfirmDialog _confirm = null!;
+    private OffboardingView? _view;
+    private bool _missing;
+    private bool _canSeeTeam;
+    // C5: a reload replaces what's shown only if it's the newest and for the person on the page; C8: each action once.
+    private readonly LoadSequence _load = new();
+    private readonly InFlight _revoking = new();
+    private readonly InFlight _voiding = new();
+    private bool _disposed;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_view is not null && _view.UserRef != UserRef) _view = null;   // another person: nothing of the last one stays
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        if (_disposed) return;
+        _canSeeTeam = (await Authz.AuthorizeAsync(auth.User, Policies.ViewAllCases)).Succeeded;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var person = UserRef;
+        OffboardingView? view;
+        try { view = await Offboarding.BuildAsync(person); }
+        catch (ForbiddenException ex)
+        {
+            if (_load.IsCurrent(t) && !_disposed) Toasts.Error(ex.Message);
+            return;
+        }
+        if (!_load.IsCurrent(t) || _disposed || person != UserRef) return;
+        _view = view;
+        _missing = view is null;
+    }
+
+    private void ConfirmRevoke()
+    {
+        if (_view is not { Tokens.Count: > 0 } v || _revoking.Busy) return;
+        // C9: exactly the tokens shown are revoked; one created since isn't, and one revoked since is left out.
+        var ids = v.Tokens.Select(t => t.TokenId).ToList();
+        var person = v.UserRef;
+        _confirm.Ask(this, "Revoke API tokens",
+            $"Revoke {(ids.Count == 1 ? "this token" : $"these {ids.Count} tokens")} of {v.DisplayName}? Anything using " +
+            (ids.Count == 1 ? "it" : "them") + " is refused from now on. This can't be undone; a new token would have to be created.",
+            ids.Count == 1 ? "Revoke token" : $"Revoke {ids.Count} tokens",
+            () => _revoking.Run(() => RevokeCore(person, ids)));
+    }
+
+    private async Task RevokeCore(Guid person, List<Guid> ids)
+    {
+        int revoked;
+        try { revoked = await Offboarding.RevokeTokensAsync(person, ids); }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException)
+        {
+            if (!_disposed) Toasts.Error(ex.Message);
+            await ReloadAfterAsync();
+            return;
+        }
+        if (_disposed) return;
+        Toasts.Success(revoked == 1 ? "1 token revoked" : $"{revoked} tokens revoked");
+        if (revoked < ids.Count) Toasts.Info("Some had already stopped working, so they were left as they were.");
+        await ReloadAfterAsync();
+    }
+
+    private void ConfirmVoid()
+    {
+        if (_view is not { CalendarLinkLive: true } v || _voiding.Busy) return;
+        var person = v.UserRef;
+        _confirm.Ask(this, "Void the calendar link",
+            $"Void {v.DisplayName}'s calendar link? A calendar subscribed to it stops getting CaseBook's cases and tasks at its " +
+            "next refresh. They can't get a new link without signing in to CaseBook.",
+            "Void link",
+            () => _voiding.Run(() => VoidCore(person)));
+    }
+
+    private async Task VoidCore(Guid person)
+    {
+        try { await Offboarding.VoidCalendarLinkAsync(person); }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException)
+        {
+            if (!_disposed) Toasts.Error(ex.Message);
+            await ReloadAfterAsync();
+            return;
+        }
+        if (_disposed) return;
+        Toasts.Success("Calendar link voided");
+        await ReloadAfterAsync();
+    }
+
+    private async Task ReloadAfterAsync()
+    {
+        if (_disposed) return;
+        await LoadAsync();
+        if (!_disposed) StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _load.Invalidate();
+    }
+}

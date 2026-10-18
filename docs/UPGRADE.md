@@ -266,6 +266,24 @@ first with `casebook-keytool export`.
   facts), Word templates get a `party` list (`party.role`, `name`, `contact`, `reference`, `engaged`, `notes`), and the
   legal register CSV gains a last column, `outside_parties`: a script reading the register by position still reads the
   columns before it as before. The configuration bundle is unchanged.
+- **An offboarding page for a person who leaves (CAP-30).** In Administration › Roles & access, each name under *Known
+  users* opens a page with their roles at last sign-in, the open cases they command or are on, their open tasks, their
+  working API tokens and whether their calendar link works, with **Revoke** for the tokens and **Void the calendar link**
+  (a new administrator action; the link is never shown). Both are confirmed and recorded in the audit trail; reassign
+  their cases in Program › Team workload. The page's address carries an opaque reference, not the person's name or
+  account. AD stays the source of roles. No migration and nothing to configure.
+- **Syslog can go over TLS (CAP-33).** Set `Siem:Syslog:Protocol` to `Tls` (and usually `Port` to 6514) to send the
+  SIEM stream per RFC 5425, with the collector's certificate checked against this server's trusted roots and its name,
+  an optional pinned thumbprint (`ServerCertificateThumbprint`) and an optional client certificate from
+  `LocalMachine\My` (`ClientCertificateThumbprint`). See OPERATIONS §5. **Check your `Protocol` value:** it's now read
+  by name (`Udp`, `Tcp` or `Tls`, any case). Before, anything other than `Tcp` (a typo, a number) silently sent UDP;
+  now it stops syslog and Diagnostics → Delivery health shows it **Stopped** with why. No migration.
+- **Diagnostics lists the scheduled jobs (CAP-29).** Administration → Diagnostics → *Scheduled jobs* shows each
+  background job's last run (when, how long, how it ended, items processed), when it's next due and its last error by
+  type only. It's held in memory, so after the upgrade (a restart) every row starts at "Not run yet" and fills in as the
+  jobs run. **Run now** is offered for the two read-only scans (the evidence re-verification and the retention review's
+  count); it needs Administer, won't start while that job runs, and is recorded in the audit trail. No migration and
+  nothing to configure.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

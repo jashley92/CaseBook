@@ -18,8 +18,16 @@ namespace IncidentManager.Web.BackgroundJobs;
 /// </list>
 /// </summary>
 public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceConversion conversion, EvidenceConversionStatus status,
-    IEvidenceIntegrityMonitor monitor, IEvidenceIntegrityAlertNotifier alerts, ILogger<EvidenceKeyHostedService> logger) : BackgroundService
+    IEvidenceIntegrityMonitor monitor, IEvidenceIntegrityAlertNotifier alerts, ILogger<EvidenceKeyHostedService> logger,
+    IJobStatus? jobs = null) : BackgroundService
 {
+    /// <summary>
+    /// CAP-29: this job's row on Diagnostics: a run is a pass that re-read the key or converted files (its items); Convert
+    /// now is on the Evidence encryption card, so no Run now here.
+    /// </summary>
+    public static readonly JobDefinition Job = new("evidence-key", "Evidence key and file conversion",
+        "key every 5 minutes until ready, then daily; conversion daily, or Convert now");
+
     /// <summary>As the integrity upgrade's: longer than Upgrade-CaseBook.ps1's warm-up, so a failed upgrade rolls back first.</summary>
     public static readonly TimeSpan StartDelay = TimeSpan.FromMinutes(15);
 
@@ -36,11 +44,13 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
         var envelopeStamp = EnvelopeStamp();
         DateTimeOffset? lastConversion = null;
         var lastRunConverted = false;
+        jobs?.Register(Job);
         await ReportAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
             try { await Task.Delay(Tick, stoppingToken); }
             catch (OperationCanceledException) { return; }
+            JobRun? run = null;   // CAP-29: begun only when this tick does something
             try
             {
                 var now = DateTimeOffset.UtcNow;
@@ -52,6 +62,7 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
                 envelopeStamp = stamp;
                 if (now - lastLoad >= every || touched)
                 {
+                    run ??= jobs.Begin(Job);
                     await keyring.LoadAsync(stoppingToken);
                     lastLoad = now;
                     await ReportAsync(stoppingToken);
@@ -64,22 +75,30 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
                           || (now - started >= StartDelay && (lastConversion is null
                                                               || (status.Remaining > 0 && now - lastConversion >= retry)
                                                               || now - lastConversion >= TimeSpan.FromDays(1)));
+                long? convertedItems = null;
                 if (keyring.State == EvidenceKeyState.Ready && due)
                 {
+                    run ??= jobs.Begin(Job);
                     status.NowRequested = false;
                     var converted = 0;
                     int batch;
                     while ((batch = await conversion.RunAsync(Batch, stoppingToken)) > 0 && !stoppingToken.IsCancellationRequested) converted += batch;
                     lastConversion = now;
                     lastRunConverted = converted > 0;
+                    convertedItems = converted;
                 }
+                if (keyring.State == EvidenceKeyState.Unavailable) run?.Failed("Evidence key unavailable");   // why: its card
+                else run?.Succeeded(convertedItems);
+                jobs?.Scheduled(Job, keyring.State != EvidenceKeyState.Off, lastLoad + every);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { run?.Dispose(); return; }
             catch (Exception ex)
             {
+                run?.Failed(ex);
                 status.LastProblem = ex.Message;
                 logger.LogError(ex, "The evidence key or file conversion check failed; it will try again in a minute.");
             }
+            run?.Dispose();
         }
     }
 

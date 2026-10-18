@@ -81,6 +81,8 @@ public static class DependencyInjection
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Secrets.ProtectedSecretProvider>>()));
         // CAP-04: what each outbound channel's senders saw since start, for the Diagnostics card.
         services.AddSingleton<IDeliveryHealth, DeliveryHealth>();
+        // CAP-29: each scheduled job's last run, next due and last error since start, for the Diagnostics table.
+        services.AddSingleton<IJobStatus, JobStatus>();
 
         // Lets a settings write signal the configuration root to re-read the DB provider (A-08).
         services.AddSingleton<ISettingsReloader, Configuration.ConfigurationReloader>();

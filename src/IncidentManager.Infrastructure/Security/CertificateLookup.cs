@@ -78,6 +78,33 @@ public static class CertificateLookup
         return cert;
     }
 
+    /// <summary>
+    /// CAP-33: a client certificate for TLS (any key type) with <paramref name="thumbprint"/> in <c>LocalMachine\My</c>, the
+    /// store CyberArk's client certificate is read from, with a private key the app account can use. Throws a message
+    /// naming <paramref name="setting"/> when it's missing or has no usable key. The caller disposes it.
+    /// </summary>
+    public static X509Certificate2 FindClient(string thumbprint, string setting)
+    {
+        var normalized = Normalize(thumbprint);
+        if (normalized.Length == 0) throw new InvalidOperationException($"{setting} is empty.");
+        using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+        try { store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly); }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            throw new InvalidOperationException($"The LocalMachine\\My certificate store can't be opened here ({ex.GetType().Name}); {setting} can't be found in it.", ex);
+        }
+        var found = store.Certificates.Find(X509FindType.FindByThumbprint, normalized, validOnly: false);
+        var cert = found.Count > 0 ? found[0] : null;
+        foreach (var other in found.Skip(1)) other.Dispose();
+        if (cert is null) throw new InvalidOperationException($"No certificate with thumbprint {normalized} in LocalMachine\\My ({setting}).");
+        if (!cert.HasPrivateKey)
+        {
+            cert.Dispose();
+            throw new InvalidOperationException($"The certificate {normalized} in LocalMachine\\My has no private key, or the app account can't read it ({setting}). Grant it read on the private key.");
+        }
+        return cert;
+    }
+
     public static string Normalize(string thumbprint) =>
         new string(thumbprint.Where(char.IsAsciiHexDigit).ToArray()).ToUpperInvariant();
 }

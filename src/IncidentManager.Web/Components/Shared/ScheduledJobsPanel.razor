@@ -1,0 +1,168 @@
+@* CAP-29: the scheduled jobs on Diagnostics, one row each: its last run (when, how long, how it ended, what it processed),
+   when it's next due, and its last error by type only (never a message, which can hold a case number, a path or a
+   server's reply). Held in memory by IJobStatus since the last restart. Run now only for the read-only scans (ADR 0004),
+   checked for Administer on the server and refused while the job runs. *@
+@using System.Globalization
+@using IncidentManager.Application.Abstractions
+@using IncidentManager.Web.BackgroundJobs
+@implements IDisposable
+@inject IJobStatus Jobs
+@inject JobRunNowService Runner
+@inject IClock Clock
+
+<p class="small text-muted mb-2">
+    When each background job last ran, how it ended and when it's next due. Errors show their type only; the server's log
+    has the detail. The figures are held in memory and reset when CaseBook restarts (since @Time(Jobs.SinceUtc)). Run now
+    is offered only for the scans that read and change nothing.
+</p>
+<div class="d-flex align-items-center gap-2 mb-2">
+    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Reload" aria-label="Refresh the scheduled jobs">
+        <span class="bi bi-arrow-clockwise" aria-hidden="true"></span> Refresh
+    </button>
+    <span class="small @(_problem ? "text-danger" : "text-muted")" role="status" aria-live="polite">@_message</span>
+</div>
+<div class="table-responsive">
+    <table class="table table-sm align-middle" aria-label="Scheduled jobs">
+        <thead>
+            <tr>
+                <th scope="col" style="min-width:12rem">Job</th>
+                <th scope="col" style="min-width:12rem">Last run</th>
+                <th scope="col">Next due</th>
+                <th scope="col">Last error</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (_rows.Count == 0)
+            {
+                <tr><td colspan="5" class="small text-muted">No job has started yet.</td></tr>
+            }
+            @foreach (var r in _rows)
+            {
+                <tr>
+                    <td>
+                        @r.Job.Name
+                        <div class="small text-muted">@r.Job.Cadence</div>
+                    </td>
+                    <td class="small">
+                        @Outcome(r)
+                        @if (r.StartedAtUtc is { } started)
+                        {
+                            <div class="text-muted">
+                                @(r.Running ? "Started" : "Ran") @Time(started)@(r.LastRunManual ? " (run now)" : "")
+                                @if (!r.Running && r.FinishedAtUtc is { } finished)
+                                {
+                                    @($" · {Duration(finished - started)}")
+                                }
+                                @if (!r.Running && r.Items is { } items)
+                                {
+                                    @($" · {items.ToString("N0", CultureInfo.InvariantCulture)} processed")
+                                }
+                            </div>
+                        }
+                        <div class="text-muted">@r.Runs run(s), @r.Failures failed since start</div>
+                    </td>
+                    <td class="small">
+                        @if (!r.Enabled) { <span class="text-muted">Off</span> }
+                        else if (r.NextDueUtc is { } next) { @(next <= Clock.UtcNow ? "Now (at the next check)" : Time(next)) }
+                        else { <span class="text-muted">Not scheduled</span> }
+                    </td>
+                    <td class="small">
+                        @if (r.LastErrorType is { } type)
+                        {
+                            <code>@type</code>
+                            <div class="text-muted">@Time(r.LastErrorAtUtc)</div>
+                        }
+                        else { <span class="text-muted">None since start</span> }
+                    </td>
+                    <td class="text-end">
+                        @if (Runner.CanRunNow(r.Job))
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" disabled="@(r.Running || _running.Busy)"
+                                    @onclick="() => RunNow(r.Job.Key)" aria-label="@($"Run {r.Job.Name} now")">
+                                @(r.Running ? "Running…" : "Run now")
+                            </button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private IReadOnlyList<JobStatusRow> _rows = [];
+    private readonly InFlight _running = new();
+    private string? _message;
+    private bool _problem;
+    private bool _disposed;
+
+    protected override void OnInitialized() => Reload();
+
+    private void Reload() => _rows = Jobs.Snapshot();
+
+    private Task RunNow(string key) => _running.Run(() => RunNowCore(key));
+
+    private async Task RunNowCore(string key)
+    {
+        var name = _rows.FirstOrDefault(r => r.Job.Key == key)?.Job.Name ?? "The job";
+        Task run;
+        try
+        {
+            run = await Runner.RunNowAsync(key);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            if (_disposed) return;
+            (_message, _problem) = (ex.Message, true);
+            Reload();
+            return;
+        }
+        if (_disposed) return;
+        (_message, _problem) = ($"{name} started. This table updates when it finishes.", false);
+        Reload();
+        _ = WhenFinishedAsync(run, name);
+    }
+
+    // C5: the run ends after the page may have gone; nothing renders then.
+    private async Task WhenFinishedAsync(Task run, string name)
+    {
+        try { await run; }
+        catch (Exception) { /* recorded on the job's row */ }
+        if (_disposed) return;
+        await InvokeAsync(() =>
+        {
+            if (_disposed) return;
+            Reload();
+            (_message, _problem) = ($"{name} finished.", false);
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => _disposed = true;
+
+    private static RenderFragment Outcome(JobStatusRow r) => builder =>
+    {
+        var (css, text) = r switch
+        {
+            { Running: true } => ("im-badge im-b-neutral", "Running"),
+            { Outcome: JobOutcome.Succeeded } => ("im-badge im-b-ok", "Succeeded"),
+            { Outcome: JobOutcome.Failed } => ("im-badge im-b-danger", "Failed"),
+            { Outcome: JobOutcome.Stopped } => ("im-badge im-b-warn", "Stopped"),
+            { Enabled: false } => ("im-badge im-b-neutral", "Off"),
+            _ => ("im-badge im-b-neutral", "Not run yet"),
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, text);
+        builder.CloseElement();
+    };
+
+    // BUG-531: invariant, whatever the server culture.
+    private static string Time(DateTimeOffset? at) =>
+        at?.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture) ?? "";
+
+    private static string Duration(TimeSpan d) => d.TotalSeconds < 60
+        ? $"{Math.Max(0, d.TotalSeconds).ToString("N1", CultureInfo.InvariantCulture)} s"
+        : $"{d.TotalMinutes.ToString("N1", CultureInfo.InvariantCulture)} min";
+}

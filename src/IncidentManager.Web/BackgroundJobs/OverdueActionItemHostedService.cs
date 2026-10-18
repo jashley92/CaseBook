@@ -1,3 +1,4 @@
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Notifications;
 using Microsoft.Extensions.Options;
 
@@ -21,11 +22,18 @@ public sealed class OverdueActionItemHostedService : BackgroundService
     private readonly IOptionsMonitor<OverdueScanOptions> _options;
     private readonly ILogger<OverdueActionItemHostedService> _logger;
 
+    private readonly IJobStatus? _jobs;   // CAP-29: last run, next due and last error, for Diagnostics
+
     private DateTimeOffset _lastRunUtc = DateTimeOffset.MinValue;
 
+    /// <summary>CAP-29: this job's row on Diagnostics.</summary>
+    public static readonly JobDefinition Job = new("overdue-actions", "Overdue after-action reminders", "every IntervalHours (default 24 h), when on");
+
     public OverdueActionItemHostedService(IServiceScopeFactory scopeFactory,
-        IOptionsMonitor<OverdueScanOptions> options, ILogger<OverdueActionItemHostedService> logger)
+        IOptionsMonitor<OverdueScanOptions> options, ILogger<OverdueActionItemHostedService> logger, IJobStatus? jobs = null)
     {
+        _jobs = jobs;
+        jobs?.Register(Job);
         _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
@@ -41,6 +49,7 @@ public sealed class OverdueActionItemHostedService : BackgroundService
                 var options = _options.CurrentValue;
                 if (options.Enabled && IsDue(options))
                     await RunCycleAsync(options, stoppingToken);
+                _jobs?.Scheduled(Job, options.Enabled, NextDue(options));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -58,6 +67,10 @@ public sealed class OverdueActionItemHostedService : BackgroundService
         return DateTimeOffset.UtcNow - _lastRunUtc >= interval;
     }
 
+    // CAP-29: when the next pass is due (it runs at the first poll after); the first runs at once.
+    private DateTimeOffset NextDue(OverdueScanOptions options) =>
+        _lastRunUtc == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : _lastRunUtc + JobSchedule.Hours(options.IntervalHours, 24);
+
     private static async Task DelayAsync(TimeSpan delay, CancellationToken ct)
     {
         try { await Task.Delay(delay, ct).ConfigureAwait(false); }
@@ -66,6 +79,8 @@ public sealed class OverdueActionItemHostedService : BackgroundService
 
     private async Task RunCycleAsync(OverdueScanOptions options, CancellationToken ct)
     {
+        using var run = _jobs.Begin(Job);   // CAP-29
+        if (run is null) return;
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -77,6 +92,7 @@ public sealed class OverdueActionItemHostedService : BackgroundService
                 : null;
             var notified = await scanner.ScanAndNotifyAsync(policy, ct);
             _lastRunUtc = DateTimeOffset.UtcNow;
+            run.Succeeded(notified);
 
             if (notified > 0)
                 _logger.LogInformation("Overdue after-action scan: sent {Count} reminder(s).", notified);
@@ -87,6 +103,7 @@ public sealed class OverdueActionItemHostedService : BackgroundService
         }
         catch (Exception ex)
         {
+            run.Failed(ex);
             _logger.LogError(ex, "Overdue after-action scan cycle failed.");
         }
     }

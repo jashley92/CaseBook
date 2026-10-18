@@ -21,15 +21,20 @@ public sealed class EvidenceStoreStatus
 /// change, with the store and the reason.
 /// </summary>
 public sealed class EvidenceStoreHostedService(IEvidenceStore store, EvidenceUploadSessions uploads, EvidenceStoreStatus status,
-    IClock clock, ILogger<EvidenceStoreHostedService> logger) : BackgroundService
+    IClock clock, ILogger<EvidenceStoreHostedService> logger, IJobStatus? jobs = null) : BackgroundService
 {
     private static readonly TimeSpan Every = TimeSpan.FromHours(1);
+
+    /// <summary>CAP-29: this job's row on Diagnostics (it writes a probe file and removes parts, so no Run now).</summary>
+    public static readonly JobDefinition Job = new("evidence-store", "Evidence store upkeep", "at start-up, then hourly");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var first = true;
+        jobs?.Register(Job);
         while (!stoppingToken.IsCancellationRequested)
         {
+            var run = jobs.Begin(Job);   // CAP-29: removed parts count as its items
             try
             {
                 if (first)
@@ -42,12 +47,17 @@ public sealed class EvidenceStoreHostedService(IEvidenceStore store, EvidenceUpl
                     first ? TimeSpan.Zero : EvidenceUploadSessions.IdleLimit, stoppingToken);
                 if (removed > 0) logger.LogInformation("Removed {Count} abandoned large upload(s) from the evidence store.", removed);
                 await ProbeAsync(stoppingToken);
+                if (status.Problem is null) run?.Succeeded(removed);
+                else run?.Failed("Store not writable");   // why is on the Evidence storage card
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { run?.Dispose(); return; }
             catch (Exception ex)
             {
+                run?.Failed(ex);
                 logger.LogError(ex, "The evidence store's upkeep failed; it will try again in an hour.");
             }
+            run?.Dispose();
+            jobs?.Scheduled(Job, true, clock.UtcNow + Every);
             first = false;
             try { await Task.Delay(Every, stoppingToken); }
             catch (OperationCanceledException) { return; }

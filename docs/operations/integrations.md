@@ -245,7 +245,7 @@ schema, for use in the organization's own approved AI tool.
   platform's incident id (an elevation from `CaseBookElevate.py` sets it), so a correlation rule can join a CaseBook
   close, reopen or downgrade to the XSIAM incident it came from.
 - **Transports:** webhook (JSON over https, optional bearer or API-key header; token may be a CyberArk
-  reference or a `@protected:` value, or entered in Administration, below), syslog (RFC 5424 with a CEF payload, UDP or TCP), Windows Event Log (event id =
+  reference or a `@protected:` value, or entered in Administration, below), syslog (RFC 5424 with a CEF payload, UDP, TCP or, CAP-33, TLS per RFC 5425 with the collector's certificate checked, an optional pinned thumbprint and an optional client certificate from `LocalMachine\My`; see [OPERATIONS §5](../OPERATIONS.md#5-siem-security-event-stream-f-18)), Windows Event Log (event id =
   catalog id).
 - **Delivery:** events go into a bounded in-memory queue (`Siem:QueueCapacity`, 2048) and a background dispatcher
   sends each to every enabled transport. Never blocks a user action. Webhook retries up to 3 times; syslog and
@@ -253,7 +253,7 @@ schema, for use in the organization's own approved AI tool.
 - **Health (CAP-04):** Diagnostics → Delivery health shows, for each transport that's on, its last good send, its queue
   depth and the events it dropped since start (and any dropped before reaching a transport). In memory, reset at
   restart. A transport that's on in its settings but not sending shows as **Stopped** with why: an Event Log source that's
-  missing (stopped until restart), no syslog host, no webhook URL or one that's refused, or a webhook token saved in
+  missing (stopped until restart), no syslog host, a syslog protocol that isn't `Udp`, `Tcp` or `Tls`, a TLS pin that isn't a thumbprint or a client certificate that can't be used (CAP-33), no webhook URL or one that's refused, or a webhook token saved in
   Administration that can't be decrypted here.
 - **Webhook token in Administration (CAP-40):** with `Siem:Webhook:Token` blank on the server, enter it under
   **Administration → Server configuration → SIEM webhook token**, with a **Send test event** beside it. It's kept as the

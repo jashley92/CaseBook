@@ -1,3 +1,4 @@
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Notifications;
 using Microsoft.Extensions.Options;
 
@@ -23,11 +24,18 @@ public sealed class NotificationDeadlineHostedService : BackgroundService
     private readonly IOptionsMonitor<DeadlineReminderScanOptions> _options;
     private readonly ILogger<NotificationDeadlineHostedService> _logger;
 
+    private readonly IJobStatus? _jobs;   // CAP-29: last run, next due and last error, for Diagnostics
+
     private DateTimeOffset _lastRunUtc = DateTimeOffset.MinValue;
 
+    /// <summary>CAP-29: this job's row on Diagnostics.</summary>
+    public static readonly JobDefinition Job = new("deadline-reminders", "Regulatory deadline reminders", "every IntervalHours (default 1 h), when on");
+
     public NotificationDeadlineHostedService(IServiceScopeFactory scopeFactory,
-        IOptionsMonitor<DeadlineReminderScanOptions> options, ILogger<NotificationDeadlineHostedService> logger)
+        IOptionsMonitor<DeadlineReminderScanOptions> options, ILogger<NotificationDeadlineHostedService> logger, IJobStatus? jobs = null)
     {
+        _jobs = jobs;
+        jobs?.Register(Job);
         _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
@@ -43,6 +51,7 @@ public sealed class NotificationDeadlineHostedService : BackgroundService
                 var options = _options.CurrentValue;
                 if (options.Enabled && IsDue(options))
                     await RunCycleAsync(stoppingToken);
+                _jobs?.Scheduled(Job, options.Enabled, NextDue(options));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -60,6 +69,10 @@ public sealed class NotificationDeadlineHostedService : BackgroundService
         return DateTimeOffset.UtcNow - _lastRunUtc >= interval;
     }
 
+    // CAP-29: when the next pass is due (it runs at the first poll after); the first runs at once.
+    private DateTimeOffset NextDue(DeadlineReminderScanOptions options) =>
+        _lastRunUtc == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : _lastRunUtc + JobSchedule.Hours(options.IntervalHours, 1);
+
     private static async Task DelayAsync(TimeSpan delay, CancellationToken ct)
     {
         try { await Task.Delay(delay, ct).ConfigureAwait(false); }
@@ -68,6 +81,8 @@ public sealed class NotificationDeadlineHostedService : BackgroundService
 
     private async Task RunCycleAsync(CancellationToken ct)
     {
+        using var run = _jobs.Begin(Job);   // CAP-29
+        if (run is null) return;
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -75,6 +90,7 @@ public sealed class NotificationDeadlineHostedService : BackgroundService
 
             var notified = await scanner.ScanAndNotifyAsync(ct);
             _lastRunUtc = DateTimeOffset.UtcNow;
+            run.Succeeded(notified);
 
             if (notified > 0)
                 _logger.LogInformation("Regulatory notification-deadline scan: sent {Count} reminder(s).", notified);
@@ -85,6 +101,7 @@ public sealed class NotificationDeadlineHostedService : BackgroundService
         }
         catch (Exception ex)
         {
+            run.Failed(ex);
             _logger.LogError(ex, "Regulatory notification-deadline scan cycle failed.");
         }
     }

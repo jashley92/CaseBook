@@ -132,6 +132,7 @@ means it has no UI coupling and could back another entry point.
 | `MyWorkService`, `AgendaService`, `AgendaFeedService`, `TeamWorkloadService` | Personal and team work views; calendar | |
 | `SavedViewService`, `UserDisplayPreferenceService`, `UserNotificationPreferenceService` | Per-user state | Not audited |
 | `ApiTokenService` | API tokens | |
+| `OffboardingService` | CAP-30: one leaver by their `AppUser` id: roles at last sign-in, open cases they command or are on (through the caller's `ForUser`, the rest counted), open tasks (owner matched by id, name, UPN or address), working personal tokens, whether the calendar link is live; `RevokeTokensAsync` revokes exactly the tokens the page listed in one save (SIEM per token), `VoidCalendarLinkAsync` clears `FeedLinkIssuedAtUtc` so every earlier link stops resolving; each with an `Offboarding` audit entry | `Administer` (`AdminActionPermissions`); never touches AD or roles |
 | Admin services (`AdminSettingsService`, `RoleService`, `CaseTemplateService`, `StageGateService`, `DataElementService`, `NotificationRuleService`, `ReportProfileService`, `ReportTemplateService`, `TaxonomyAdminService`, `EmailTemplateAdminService`, `AccessReviewService`) | Administration. `AccessReviewService` also records a review (CAP-15) as an `AccessReview` audit entry through `IAuditWriter`, reads the last one back, and builds the CSV | Writes guarded by `AdminActionPermissions` |
 | Scanners (`OverdueActionItemScanner`, `DueSoonActionItemScanner`, `NotificationDeadlineScanner`, `StaleCaseScanner`, `DigestScanner`, `ExecutiveReportScanner`, `RetentionReviewScanner`) | Decide who to remind; used by the background jobs. `RetentionReviewScanner` (CAP-10) counts the cases past retention into `RetentionReviewState` for Diagnostics, and tells Legal monthly | Read-only |
 | `MarkdownService` | Markdown to sanitized HTML and plain text | |
@@ -202,6 +203,19 @@ Caveats:
 - `CriticalAlertRetryHostedService` retries undelivered breach-escalation and integrity-alarm emails from the alert
   outbox (BUG-101), holding them while email is off; `UpdateCheckHostedService` runs the update check (PROD-49, off by
   default).
+
+**Status on Diagnostics (CAP-29).** Each scheduled job reports into `IJobStatus` (`Application/Abstractions/IJobStatus.cs`,
+a singleton held in memory, reset at restart): it registers a `JobDefinition` (a static `Job` on its class) when it's
+built or starts, reports on each poll whether it's on and when it's next due (`Scheduled`), and wraps each pass in `TryStart`
+(`jobs.Begin(Job)`), recording `Succeeded(items)`, `Failed(exception)` (the type only, never the message) or, when a
+shutdown cuts it off, stopped. `TryStart` hands a job's slot to one run at a time, so a pass that finds its job running
+skips until its next poll. Administration › Diagnostics › **Scheduled jobs** lists them (`ScheduledJobsPanel`). **Run now**
+is offered only for a job whose definition says `RunNow: true` and that registered a pass, which only the read-only
+scans do (ADR 0004): the evidence re-verification (this interval's share) and the retention review's count (never its
+email). `JobRunNowService.RunNowAsync` checks `Administer`, refuses while the job runs, records an `Access` audit entry
+(`ScheduledJob`, the job's key), and runs the pass in the background until it ends or the app stops; the schedule isn't
+moved. `ReportJobs` and `SecurityEventDispatcher` are queues, not schedules, and aren't listed (delivery health covers the
+SIEM). A new job joins with the three calls above; `IJobStatus` describes them.
 
 ## Real-time
 

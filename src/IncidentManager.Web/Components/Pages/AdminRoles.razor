@@ -287,7 +287,11 @@ else
                 @foreach (var u in _review.KnownUsers)
                 {
                     <tr>
-                        <td>@u.DisplayName @if (u.UserPrincipalName is { } upn) { <div class="small text-muted">@upn</div> }</td>
+                        <td>
+                            @* CAP-30: the offboarding page, by the mirror row's opaque id (no name or account in the address). *@
+                            <a href="admin/users/@u.UserRef" title="@($"Offboarding: what {u.DisplayName} holds")">@u.DisplayName</a>
+                            @if (u.UserPrincipalName is { } upn) { <div class="small text-muted">@upn</div> }
+                        </td>
                         <td>
                             @if (u.Roles.Count == 0) { <span class="text-muted small">none</span> }
                             else { @foreach (var r in u.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> } }
