@@ -373,11 +373,12 @@
         {
             var name = _file.Name;
             var sentDesc = _evDesc;
-            if (!await SendAsync(_file, "evidence-file-input", 0, sentDesc)) return;
+            if (await SendAsync(_file, "evidence-file-input", 0, sentDesc) is not { } recorded) return;
             _file = null;
             _evDesc = DraftText.ClearIfUnchanged(_evDesc, sentDesc, null);   // BUG-601 (the box is disabled while it uploads)
             await OnChanged.InvokeAsync();
             Toasts.Success($"Uploaded {name}");
+            await NoteElsewhereAsync(recorded, name);
             await WarnIfNearLimitAsync();
         }
         catch (Exception ex)
@@ -393,16 +394,30 @@
     }
 
     // PROD-56: a file up to 100 MB goes through the page as before; a larger one in parts (chunked-upload.js), with
-    // progress. False when the person cancelled a large upload (nothing was recorded); a failure throws with its reason.
-    private async Task<bool> SendAsync(IBrowserFile file, string inputId, int index, string? description)
+    // progress. The recorded evidence's id; null when the person cancelled a large upload (nothing was recorded); a
+    // failure throws with its reason.
+    private async Task<Guid?> SendAsync(IBrowserFile file, string inputId, int index, string? description)
     {
         if (file.Size <= EvidenceUploadSessions.InPageMaxBytes)
         {
             await using var stream = file.OpenReadStream(EvidenceUploadSessions.InPageMaxBytes); // NOSONAR S5693: evidence up to 100 MB by design (PROD-56); larger goes in 8 MB parts, and EvidenceRoom checks the admin limit first
-            await Evidence.UploadAsync(CaseId, file.Name, file.ContentType, stream, description, file.Size);
-            return true;
+            return (await Evidence.UploadAsync(CaseId, file.Name, file.ContentType, stream, description, file.Size)).Id;
         }
         return await SendInPartsAsync(file, inputId, index, description);
+    }
+
+    // PROD-59: the same file is already evidence in other cases this person can see: say where (a hint, not a refusal).
+    private async Task NoteElsewhereAsync(Guid evidenceId, string name)
+    {
+        try
+        {
+            if (await Evidence.AlsoEvidenceInAsync(evidenceId) is { Count: > 0 } cases)
+                Toasts.Info($"{name} is also evidence in {string.Join(", ", cases)}.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Couldn't look up other cases holding the same evidence");   // a hint only: never fails the upload
+        }
     }
 
     // PROD-56: the large upload in progress (one at a time from this tab), its progress, and how it ended.
@@ -412,6 +427,7 @@
         public string Name { get; } = name;
         public long Size { get; } = size;
         public long Sent { get; set; }
+        public Guid? RecordedId { get; set; }
         public TaskCompletionSource<string?> Ended { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);   // null: done; "": cancelled
     }
 
@@ -419,7 +435,7 @@
     private DotNetObjectReference<CaseEvidenceTab>? _self;
     private bool _disposed;
 
-    private async Task<bool> SendInPartsAsync(IBrowserFile file, string inputId, int index, string? description)
+    private async Task<Guid?> SendInPartsAsync(IBrowserFile file, string inputId, int index, string? description)
     {
         var token = Antiforgery.GetAntiforgeryToken()?.Value
                     ?? throw new InvalidOperationException("The page's security token is missing. Reload the page and try again.");
@@ -430,8 +446,8 @@
         {
             await JS.InvokeVoidAsync("imChunkedUpload.start", _self, upload.Key, inputId, index, CaseId, description, token);
             var failed = await upload.Ended.Task;
-            if (failed is null) return true;
-            if (failed.Length == 0) { Toasts.Info($"Upload of {upload.Name} cancelled. Nothing was recorded."); return false; }
+            if (failed is null) return upload.RecordedId ?? throw new InvalidOperationException("The upload finished without a record.");
+            if (failed.Length == 0) { Toasts.Info($"Upload of {upload.Name} cancelled. Nothing was recorded."); return null; }
             throw new ArgumentException(failed);
         }
         finally
@@ -444,7 +460,11 @@
     public Task OnChunkedProgress(string key, long sent, long size) => Report(key, u => u.Sent = sent);
 
     [JSInvokable]
-    public Task OnChunkedDone(string key, string id) => Report(key, u => u.Ended.TrySetResult(null));
+    public Task OnChunkedDone(string key, string id) => Report(key, u =>
+    {
+        u.RecordedId = Guid.TryParse(id, out var recorded) ? recorded : null;
+        u.Ended.TrySetResult(null);
+    });
 
     [JSInvokable]
     public Task OnChunkedFailed(string key, string reason) => Report(key, u => u.Ended.TrySetResult(reason));
@@ -498,6 +518,7 @@
         catch (InvalidOperationException) { _uploadError = $"Drop up to {MaxDropFiles} files at a time."; return; }
         _busy = true;
         var uploaded = 0;
+        var recorded = new List<(Guid Id, string Name)>();
         try
         {
             for (var i = 0; i < files.Count; i++)
@@ -507,7 +528,11 @@
                 try
                 {
                     // REV-34: the description box belongs to the file staged in the picker, not to these.
-                    if (await SendAsync(f, "evidence-file-drop", i, description: null)) uploaded++;
+                    if (await SendAsync(f, "evidence-file-drop", i, description: null) is { } id)
+                    {
+                        uploaded++;
+                        recorded.Add((id, f.Name));
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -524,6 +549,7 @@
         {
             await OnChanged.InvokeAsync();
             Toasts.Success($"Uploaded {uploaded} file{(uploaded == 1 ? "" : "s")}");
+            foreach (var (id, name) in recorded) await NoteElsewhereAsync(id, name);
         }
     }
 

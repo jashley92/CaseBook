@@ -116,7 +116,7 @@ public sealed class EvidenceStorageTests : IDisposable
         var tight = Service(database, new FreeSpaceStore(Files(), 10 * gib + 100));
         var noRoom = () => tight.UploadAsync(caseId, "c.txt", "", new MemoryStream(new byte[200]), null, 200);
         (await noRoom.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("less than 10 GB free");
-        (await tight.UploadAsync(caseId, "d.txt", "", new MemoryStream(new byte[50]), null, 50)).SizeBytes.Should().Be(50);
+        (await tight.UploadAsync(caseId, "d.txt", "", new MemoryStream(Random(50)), null, 50)).SizeBytes.Should().Be(50);
     }
 
     [Fact]
@@ -139,6 +139,58 @@ public sealed class EvidenceStorageTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task The_same_file_twice_in_a_case_is_refused_and_another_case_holding_it_is_named(string provider)
+    {
+        // PROD-59: the first copy holds the chain of custody; a second one in the same case isn't stored. In another case
+        // it's stored, and the uploader learns where else it is, only among the cases they can see (C14).
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var svc = Service(database, Files());
+        var bytes = Random(5000);
+        var first = await svc.UploadAsync(caseId, "beacon.exe", "", new MemoryStream(bytes), null, bytes.Length);
+        var again = () => svc.UploadAsync(caseId, "beacon-copy.exe", "", new MemoryStream(bytes), null, bytes.Length);
+        (await again.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("already evidence in this case").And.Contain("beacon.exe");
+        StoredFiles().Should().ContainSingle("the second copy was discarded");
+
+        var parts = await svc.BeginUploadAsync(caseId, "beacon-big.exe", "", bytes.Length, null);
+        await SendAllAsync(svc, parts, bytes);
+        var viaParts = () => svc.CompleteUploadAsync(parts.Id);
+        await viaParts.Should().ThrowAsync<ArgumentException>("the same through the large-upload path");
+        StoredFiles().Should().ContainSingle();
+
+        Guid otherCase, hiddenCase;
+        await using (var ctx = database.NewContext())
+        {
+            var cases = await ctx.Cases.Where(c => c.Id != caseId).OrderBy(c => c.CaseNumber).Select(c => c.Id).Take(2).ToListAsync();
+            (otherCase, hiddenCase) = (cases[0], cases[1]);
+        }
+        var second = await svc.UploadAsync(otherCase, "beacon.exe", "", new MemoryStream(bytes), null, bytes.Length);
+        second.Sha256.Should().Be(first.Sha256);
+        string otherNumber;
+        await using (var ctx = database.NewContext()) otherNumber = (await ctx.Cases.FirstAsync(c => c.Id == otherCase)).CaseNumber;
+        (await svc.AlsoEvidenceInAsync(first.Id)).Should().Equal(otherNumber);
+
+        // A case the uploader can't see is never named.
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            raw.Evidence.Add(new Evidence
+            {
+                CaseId = hiddenCase, OriginalFileName = "beacon.exe", ContentType = "", SizeBytes = bytes.Length, Sha256 = first.Sha256,
+                StoragePath = "x/hidden.bin", CreatedBy = "seed", CreatedAtUtc = _clock.UtcNow,
+            });
+            var hidden = await raw.Cases.FirstAsync(c => c.Id == hiddenCase);
+            hidden.IsRestricted = true;
+            await raw.SaveChangesAsync();
+        }
+        string hiddenNumber;
+        await using (var ctx = database.NewContext()) hiddenNumber = (await ctx.Cases.IgnoreQueryFilters().FirstAsync(c => c.Id == hiddenCase)).CaseNumber;
+        var outsider = new TestCurrentUser { UserId = "outsider", DisplayName = "Outsider" };
+        (await Service(database, Files(), outsider).AlsoEvidenceInAsync(second.Id)).Should().NotContain(hiddenNumber,
+            "only cases the person can see: a restricted case they're not on isn't named");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_file_that_fits_isnt_refused_once_its_bytes_are_on_the_store(string provider)
     {
         // Review finding 2: the checks after storing (and at a large upload's completion) took the file's size off a free
@@ -153,13 +205,14 @@ public sealed class EvidenceStorageTests : IDisposable
         (await inPage.UploadAsync(caseId, "edge.bin", "", new MemoryStream(bytes), null, bytes.Length)).SizeBytes.Should().Be(bytes.Length,
             "exactly the reserve is left: it fits");
         var undeclared = Service(database, new FreeSpaceStore(Files(), 10 * gib + bytes.Length, shrinks: true));
-        (await undeclared.UploadAsync(caseId, "edge2.bin", "", new MemoryStream(bytes), null)).SizeBytes.Should().Be(bytes.Length,
+        (await undeclared.UploadAsync(caseId, "edge2.bin", "", new MemoryStream(Random(bytes.Length)), null)).SizeBytes.Should().Be(bytes.Length,
             "its size known only once stored");
 
         var parts = Service(database, new FreeSpaceStore(Files(), 10 * gib + bytes.Length, shrinks: true));
-        var started = await parts.BeginUploadAsync(caseId, "edge.dmp", "", bytes.Length, null);
-        await SendAllAsync(parts, started, bytes);
-        (await parts.CompleteUploadAsync(started.Id)).Sha256.Should().Be(Sha(bytes));
+        var third = Random(bytes.Length);   // distinct content: the same file twice in one case is refused (PROD-59)
+        var started = await parts.BeginUploadAsync(caseId, "edge.dmp", "", third.Length, null);
+        await SendAllAsync(parts, started, third);
+        (await parts.CompleteUploadAsync(started.Id)).Sha256.Should().Be(Sha(third));
 
         var tooBig = Service(database, new FreeSpaceStore(Files(), 10 * gib + bytes.Length - 1, shrinks: true));
         var refused = () => tooBig.BeginUploadAsync(caseId, "over.dmp", "", bytes.Length, null);

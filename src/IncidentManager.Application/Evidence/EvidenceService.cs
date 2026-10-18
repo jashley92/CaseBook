@@ -91,6 +91,17 @@ public sealed class EvidenceService
     private async Task<Domain.Entities.Evidence> RecordAsync(IAppDbContext db, Guid caseId, string fileName, string contentType,
         string? description, StoredEvidence stored, CancellationToken ct)
     {
+        // PROD-59: the same file again in this case isn't stored twice: the first copy holds its chain of custody. The
+        // case was checked by the caller (CheckCanUploadAsync), so this reads only its own evidence.
+        var already = await db.Evidence.AsNoTracking().Where(e => e.CaseId == caseId && e.Sha256 == stored.Sha256)
+            .OrderBy(e => e.CreatedAtUtc).Select(e => new { e.OriginalFileName, e.CreatedAtUtc }).FirstOrDefaultAsync(ct);
+        if (already is not null)
+        {
+            await _store.DiscardUnrecordedAsync(stored.StoragePath);
+            throw new ArgumentException($"This file is already evidence in this case, as \"{already.OriginalFileName}\" " +
+                $"(uploaded {already.CreatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)} UTC). " +
+                "It wasn't stored again; that copy's chain of custody stands.");
+        }
         var evidence = new Domain.Entities.Evidence
         {
             CaseId = caseId,
@@ -117,6 +128,26 @@ public sealed class EvidenceService
             throw;
         }
         return evidence;
+    }
+
+    /// <summary>
+    /// PROD-59: other cases holding the same file (by SHA-256), among the cases this person can see (C14: no other case is
+    /// named), newest first; at most five. Empty when the evidence isn't theirs to see.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> AlsoEvidenceInAsync(Guid evidenceId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var visible = db.Cases.AsNoTracking().ForUser(_user);
+        var ev = await (from e in db.Evidence.AsNoTracking()
+                        join c in visible on e.CaseId equals c.Id
+                        where e.Id == evidenceId
+                        select new { e.CaseId, e.Sha256 }).FirstOrDefaultAsync(ct);
+        if (ev is null) return [];
+        var hits = await (from e in db.Evidence.AsNoTracking()
+                          join c in visible on e.CaseId equals c.Id
+                          where e.Sha256 == ev.Sha256 && e.CaseId != ev.CaseId
+                          select new { c.CaseNumber, e.CreatedAtUtc }).ToListAsync(ct);
+        return hits.OrderByDescending(h => h.CreatedAtUtc).Select(h => h.CaseNumber).Distinct().Take(5).ToList();
     }
 
     /// <summary>BUG-206: the record's limits (its columns), checked before a file is stored.</summary>

@@ -61,6 +61,7 @@ public partial class CaseAudienceGateTests
         ["EvidenceService.cs:RecordTransferAsync"] = (1, "after LoadScopedAsync for the evidence; reads its own case's number"),
         ["EvidenceService.cs:GetCustodyAsync"] = (1, "the evidence's case is checked through ForUser before anything is returned"),
         ["EvidenceService.cs:CompleteUploadAsync"] = (1, "PROD-56: re-reads the record this person's own upload just wrote, after CheckCanUploadAsync scoped its case"),
+        ["EvidenceService.cs:RecordAsync"] = (1, "PROD-59: the same file already in this case, keyed by the case every caller checked first (CheckCanUploadAsync); it names that case's own file"),
         ["EvidenceRoom.cs:UseAsync"] = (1, "PROD-55: the total size of all evidence, one number with no case or file in it (the storage limit check and Diagnostics)"),
         ["ReportService.cs:StoreAsync"] = (1, "private: its callers checked the case through ForUser"),
         ["ReportService.cs:ApproveCoreAsync"] = (1, "the report's case is checked through ForUser before anything else"),

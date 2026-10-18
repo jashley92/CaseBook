@@ -226,7 +226,7 @@ public static class SecurityEvents
         Outcome = SecurityOutcome.Failure,
         Severity = SecuritySeverity.High,
         Actor = "system", TargetType = "EvidenceKey",
-        Detail = reason.Length > 300 ? reason[..300] : reason
+        Detail = Common.TextFit.Cap(reason, 300)
     };
 
     /// <summary>
@@ -242,7 +242,7 @@ public static class SecurityEvents
         Outcome = SecurityOutcome.Success,
         Severity = action == "KeyRecovered" ? SecuritySeverity.High : SecuritySeverity.Info,
         Actor = actor, TargetType = "EvidenceKey", TargetId = keyId,
-        Detail = detail.Length > 300 ? detail[..300] : detail
+        Detail = Common.TextFit.Cap(detail, 300)
     };
 
     /// <summary>PROD-59: evidence written out decrypted by casebook-keytool export, by an administrator on the server
@@ -255,7 +255,7 @@ public static class SecurityEvents
         Outcome = SecurityOutcome.Success,
         Severity = SecuritySeverity.Warning,
         Actor = actor, CaseNumber = caseNumber, TargetType = "Evidence",
-        Detail = detail.Length > 300 ? detail[..300] : detail
+        Detail = Common.TextFit.Cap(detail, 300)
     };
 
     /// <summary>F-26/F-27: a copy of a seal (export folder, email digest, timestamp) failed. The seal itself is recorded;
