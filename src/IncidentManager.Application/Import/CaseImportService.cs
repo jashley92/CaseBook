@@ -594,7 +594,7 @@ public sealed class CaseImportService
         using var db = _factory.CreateDbContext();
         return await VisiblePending(db).AsNoTracking()
             .Where(p => p.Status == PendingImportStatus.Pending && p.SubmittedBy == submittedBy)
-            .OrderBy(p => p.SubmittedAtUtc)
+            .OrderBy(p => p.SubmittedAtUtc).ThenBy(p => p.Id)   // a tie (one producer's burst) in a fixed order
             .Take(MaxBatchConfirm)
             .Select(p => new PendingImportSummary(p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary, null, null))
             .ToListAsync(ct);

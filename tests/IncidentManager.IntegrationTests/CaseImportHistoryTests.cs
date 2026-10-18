@@ -204,7 +204,9 @@ public sealed class CaseImportHistoryTests : IDisposable
     {
         Open(provider);
         var first = await SubmitAs(_xsiam, Historical("First"));
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(1);   // oldest first: submitted in turn, not in one instant
         var second = await SubmitAs(_xsiam, Historical("Second"));
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(1);
         var bad = Historical("Bad");
         bad.Target!.NewCase!.Outcome = "made-up";   // queued (the producer's view can't judge it), refused at review
         var third = await SubmitAs(_xsiam, bad);
