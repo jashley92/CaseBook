@@ -1138,4 +1138,36 @@ public class CaseNotificationsTests
         normal.HtmlBody.Should().Contain("Here are your open follow-up items across the cases you're working")
             .And.Contain("Reset credentials").And.Contain("3 imports have waited more than 24 hours");
     }
+
+    // --- CAP-10: the monthly retention-review notice ------------------------------------------------------------------
+
+    [Fact]
+    public async Task The_retention_review_email_tells_legal_the_counts_and_names_no_case()
+    {
+        var sender = new CapturingEmailSender();
+        var notifications = Build(sender, new EmailOptions { LegalDistribution = ["legal@insurer.example", "privacy@insurer.example"] });
+
+        using var month = DeliveryWatch.Begin();
+        await notifications.OnRetentionReviewDueAsync(new IncidentManager.Application.Notifications.RetentionReviewCount(Now, 7, 12, 1));
+
+        month.Failed.Should().BeFalse();
+        var sent = sender.Sent.Should().ContainSingle().Subject;
+        sent.To.Should().BeEquivalentTo("legal@insurer.example", "privacy@insurer.example");
+        sent.Subject.Should().Be("Retention review: 12 cases past retention");
+        sent.HtmlBody.Should().Contain("7 years").And.Contain("12 cases").And.Contain("Nothing is archived or deleted automatically");
+        sent.TextBody.Should().Contain("under a legal hold").And.Contain(": 1");
+    }
+
+    [Fact]
+    public async Task With_no_legal_distribution_the_retention_month_isnt_told()
+    {
+        var sender = new CapturingEmailSender();
+        using var month = DeliveryWatch.Begin();
+
+        await Build(sender, new EmailOptions()).OnRetentionReviewDueAsync(
+            new IncidentManager.Application.Notifications.RetentionReviewCount(Now, 7, 3, 0));
+
+        sender.Sent.Should().BeEmpty();
+        month.Failed.Should().BeTrue("the scan tries again once a distribution is set");
+    }
 }

@@ -218,6 +218,14 @@ public interface ICaseNotifications
     /// no-op so existing implementers and test doubles need not change.
     /// </summary>
     Task OnImportSubmittedAsync(ImportSubmission submission, CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
+    /// CAP-10: the monthly retention-review notice to the Legal / Privacy distribution: how many closed cases are past
+    /// retention and waiting for an administrator's review. Counts only, no case named (the distribution is addresses,
+    /// not people CaseBook can check need-to-know for). Tells only: nothing is archived or deleted (ADR 0004). A default
+    /// no-op so existing implementers and test doubles need not change.
+    /// </summary>
+    Task OnRetentionReviewDueAsync(Notifications.RetentionReviewCount count, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>

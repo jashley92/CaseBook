@@ -177,8 +177,14 @@ public static class SettingsCatalog
             "Deep-link template for the referenced detection-source case: a full https:// address with {0} where the case id should appear.", "", LinkTemplate: true),
         new SettingDefinition("ExternalLinks:VirusTotalUrlTemplate", "VirusTotal lookup template", "Integrations", SettingKind.Text,
             "Indicator lookup template: a full https:// address with {0} where the indicator value should appear.", "https://www.virustotal.com/gui/search/{0}", LinkTemplate: true),
+        // CAP-10: read by the retention review (Administration › Retention review) and its nightly count. Never purges.
         new SettingDefinition("Retention:CaseYears", "Case retention (years)", "Retention", SettingKind.Int,
-            "How long closed cases are kept before they can be archived. A legal hold always overrides this.", "7", Max: 100),
+            "How long after closing a case is listed under Administration › Retention review, for an administrator to archive. " +
+            "Nothing is archived or deleted automatically, and a case under a legal hold or with a regulatory notice not yet " +
+            "recorded can't be archived. 0 turns the review off. Default 7.", "7", Max: 100),
+        new SettingDefinition("Notifications:RetentionReview:Email", "Monthly retention-review email to Legal", "Retention", SettingKind.Bool,
+            "Once a month, when closed cases are past the case retention period, emails the Legal / Privacy distribution how many " +
+            "are waiting for review (a count only, no case named). Nothing is archived by it.", "false"),
         // PROD-52: the access log (who opened a case, downloaded evidence or a report, exported) is outside the audit chain
         // and grew without limit.
         new SettingDefinition("Retention:AccessLogYears", "Access log retention (years)", "Retention", SettingKind.Int,
@@ -311,6 +317,10 @@ public static class SettingsCatalog
         new SettingDefinition("Security:IdleTimeoutMinutes", "Idle session timeout (minutes)", "Security", SettingKind.Int,
             "Locks the app after this many minutes without keyboard or mouse activity. Works alongside the workstation screen lock, not instead of it. 0 turns it off; at most 1,440 (a day). Applies to new sessions.", "15",
             Min: 0, Max: Security.IdleTimeoutPolicy.MaxMinutes),   // REV-46
+        // CAP-15: the periodic user-access review (NYDFS 500.7), recorded under Roles & access.
+        new SettingDefinition("Governance:AccessReview:ReminderDays", "Access review reminder (days)", "Security", SettingKind.Int,
+            "Diagnostics reminds that the access review is due when none has been recorded under Roles & access in this many days. " +
+            "0 turns the reminder off. Default 90.", "90", Max: AccessReviewService.MaxReminderDays),
         new SettingDefinition("Reporting:RequireSeparateApprover", "Require separate report approver", "Report defaults", SettingKind.Bool,
             "When on, a report must be approved by someone other than the analyst who generated it. The approver is audited either way.", "false"),
         new SettingDefinition("Reporting:LessonsLegend", "Lessons-learned report legend", "Report defaults", SettingKind.Text,

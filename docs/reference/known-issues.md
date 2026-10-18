@@ -21,7 +21,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 |---|---|---|---|
 | Medium | **One reported time stops every jurisdiction's notification clock.** | Multi-jurisdiction cases can't record staggered notifications. | Per-jurisdiction reported times. |
 | Medium | **Blank number settings restore the file value instead of meaning "off"**, contrary to the SLA settings' descriptions. | An admin who clears an SLA target still has one. | Store blank as an explicit "none"; fix the text meanwhile. |
-| Low | `Retention:CaseYears` is editable but nothing reads it; nothing flags cases past retention. | Implies a control that doesn't exist. | Remove the setting, or build the review queue. |
 | Low | The composer doesn't reject a **future** occurred time on the server (only the browser does). | Possible bad data via a crafted request. | Validate in `AddTimelineEntryAsync`/`AddEventStepAsync`. |
 | Low | Import: an **unknown classification** warns "Using Adverse Event instead." but opens a Complex Event. | Misleading message. | Fix the message or the fallback. |
 | Low | Report version numbers are "count + 1" with no unique index. | Two simultaneous generations can share a number. | Unique index or sequence. |
@@ -60,6 +59,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 - No SOAR actions, no SIEM queries, no automatic case creation from alerts.
 - No per-user chat (Slack/Teams app); the webhook is a shared channel.
 - No read-only API for case status back to the detection platform.
-- No retention automation or purge.
+- No retention automation or purge. Closed cases past `Retention:CaseYears` are listed for an administrator to archive
+  (Administration › Retention review, CAP-10); nothing is archived or deleted by a job, and purging waits for two-person control.
 - No configurable severity *levels* (only labels).
 - No case-type-specific workspace layouts.

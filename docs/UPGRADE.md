@@ -212,6 +212,20 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **`Retention:CaseYears` now does something: a retention review (CAP-10).** Administration → Compliance & security →
+  **Retention review** lists closed, not-archived cases closed more than `Retention:CaseYears` ago (default 7) for an
+  administrator to archive, at most 25 at a time after confirming the list. A legal hold or a regulatory notice not yet
+  recorded still stops a case being archived, and nothing is ever deleted. If your installs set the value expecting
+  nothing to happen, check it: after the upgrade, Diagnostics shows how many cases are past it; set `0` to turn the
+  review off. A new setting, **Monthly retention-review email to Legal** (`Notifications:RetentionReview:Email`, off), sends
+  the Legal / Privacy distribution the counts once a month; its wording is the new *Retention review (Legal / Privacy)*
+  email template. No migration; no case is changed by the upgrade.
+- **The access review exports and can be recorded (CAP-15).** Roles & access → Access review now lists the API tokens
+  that work, downloads as CSV (`/export/access-review.csv`, access-logged and SIEM 5304, rate-limited like every export),
+  and has **Record this review**: a note kept as an `AccessReview` entry in the audit trail, shown as "Last reviewed …
+  by …". Diagnostics flags the access review as due when none has been recorded in `Governance:AccessReview:ReminderDays`
+  (new, default 90; 0 turns it off), so on an upgraded install it shows as due until the first review is recorded. No
+  migration.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

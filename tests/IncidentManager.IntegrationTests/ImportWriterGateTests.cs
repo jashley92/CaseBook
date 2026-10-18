@@ -54,7 +54,8 @@ public sealed class ImportWriterGateTests : IDisposable
         [typeof(ConfigBundleService)] = "the import itself",
         [typeof(ComplianceBundleService)] = "reads only",
         [typeof(IAccessLogService)] = "reads only",
-        [typeof(AccessReviewService)] = "reads only",
+        [typeof(AccessReviewService)] = "reads, and CAP-15's recorded review, which is an audit entry, not configuration",
+        [typeof(IncidentManager.Application.Compliance.RetentionReviewService)] = "CAP-10: archives cases (case state), not configuration",
     };
 
     /// <summary>Mapped methods on <see cref="ImportWritten"/> services that write nothing.</summary>

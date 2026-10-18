@@ -600,6 +600,25 @@ public sealed class CaseNotifications : ICaseNotifications
         await _email.SendAsync(message, ct);
     }
 
+    /// <summary>
+    /// CAP-10: the monthly retention-review notice to the Legal / Privacy distribution. Counts only, no case named and no
+    /// link (the review is an administrator's page). No distribution configured isn't a month told: the scan tries again.
+    /// </summary>
+    public async Task OnRetentionReviewDueAsync(RetentionReviewCount count, CancellationToken ct = default)
+    {
+        var legal = _options.CurrentValue.LegalDistribution;
+        if (legal.Length == 0) { DeliveryWatch.ReportFailure(); return; }
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CaseCount"] = Plural.Of(count.Due, "case"),
+            ["Years"] = Plural.Of(count.Years, "year"),
+            ["HeldCount"] = count.UnderHold.ToString("N0", CultureInfo.InvariantCulture),
+            ["CountedAt"] = count.CountedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC",
+        };
+        var message = await _composer.ComposeAsync("retention-review", legal, tokens, null, null, ct);
+        await _email.SendAsync(message, ct);
+    }
+
     private static string OverdueSpan(double hours) =>
         hours >= 48 ? $"{Math.Floor(hours / 24):0} days" : $"{Math.Floor(hours):0} hours";
 

@@ -307,6 +307,27 @@ public static class EmailTemplateCatalog
             CtaLabel: "Review the import",
             CtaUrlToken: "ImportUrl"),
 
+        // CAP-10: the monthly retention-review notice. Counts only: the distribution is addresses, not people CaseBook can
+        // check need-to-know for, so no case is named. Needs Notifications:RetentionReview:Email on.
+        new EmailTemplateDefinition(
+            "retention-review",
+            "Retention review (Legal / Privacy)",
+            "Sent to the Legal / Privacy distribution once a month when closed cases are past the case retention period and waiting for an administrator's review. Needs the retention-review email on.",
+            "Retention review: {{CaseCount}} past retention",
+            """
+            <h1>Closed cases past retention</h1>
+            <p>Closed more than {{Years}} ago and waiting for review in CaseBook: <strong>{{CaseCount}}</strong>.</p>
+            <p class="meta">Of these, under a legal hold (not archived until it's released): {{HeldCount}} &middot; Counted {{CountedAt}}</p>
+            <p>An administrator reviews the list under Administration and archives what can be put away. Nothing is archived or deleted automatically.</p>
+            """,
+            new[]
+            {
+                new EmailToken("CaseCount", "How many closed cases are past retention, for example \"12 cases\"."),
+                new EmailToken("Years", "The case retention period, for example \"7 years\"."),
+                new EmailToken("HeldCount", "How many of them are under a legal hold, for example \"2\"."),
+                new EmailToken("CountedAt", "When they were counted (UTC)."),
+            }),
+
         new EmailTemplateDefinition(
             "audit-chain-alarm",
             "Audit-chain integrity alarm",

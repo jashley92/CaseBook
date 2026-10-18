@@ -938,3 +938,27 @@ refuses to run against a table shape it doesn't expect.
 
 A dropped ledger table isn't deleted: SQL Server keeps it, renamed `MSSQL_DroppedLedgerTable_...`. Nothing in
 CaseBook drops these tables.
+
+---
+
+## 8. Periodic reviews: user access and case retention (CAP-15, CAP-10)
+
+Two reviews a person does on a schedule, which CaseBook reminds about in **Administration → Diagnostics** (Health
+checks) and records, but never does itself.
+
+**User-access review (NYDFS 500.7).** Under **Administration → Roles & access → Access review**, download the CSV
+(`/export/access-review.csv`: broad access, restricted cases, known users and active API tokens; access-logged, SIEM
+5304), review it, make the changes in AD and CaseBook, then **Record this review** with a note. The record is an
+entry in the audit trail (entity type `AccessReview`), chained and sealed with the rest. Diagnostics shows *Access
+review* as a problem when none has been recorded within `Governance:AccessReview:ReminderDays` (default 90; 0 turns
+the reminder off). Like the evidence-key drill (§2), the reminder is worked out from the record when the page opens;
+there's no job to schedule.
+
+**Case retention.** `Retention:CaseYears` (default 7) lists closed cases older than that under **Administration →
+Retention review**, where an administrator archives them, at most 25 at a time. A background count runs a few minutes
+after start-up and then daily (`Notifications:RetentionReview:IntervalHours`, server-side, default 24): Diagnostics'
+*Retention review* row shows how many are waiting and how many are under a legal hold, as of that count (in memory; a
+restart counts again). With `Notifications:RetentionReview:Email` on, the Legal / Privacy distribution
+(`Email:LegalDistribution`) gets the counts once a month. The job only counts (ADR 0004): it never archives or deletes,
+and CaseBook has no purge. Nothing needs scheduling outside CaseBook; to monitor it, watch the Diagnostics row, or the
+app log for "Retention review count failed".

@@ -73,6 +73,7 @@ user by the `downloads` policy.
 | `GET /export/case-audit.csv?case=&actor=&action=&entity=&from=&to=` | ViewCases + can see the case | One case's audit trail (up to 100,000 rows; a cut file says so at the top and the end) | Access log; SIEM 5304 |
 | `GET /export/audit.csv?case=&actor=&action=&entity=&key=&from=&to=` | ViewCases (as `/integrity`) | The audit trail across every case the caller can see (configuration entries for oversight and administrators), filtered as the Integrity page is; `key` is one setting's history (CAP-03). Up to 100,000 rows, a cut file saying so at the top and the end | Access log (against the case when `case` names one); SIEM 5304 |
 | `GET /export/access-log.csv?…` | Administer | The access log (up to 100,000 rows) | none |
+| `GET /export/access-review.csv` | Administer | The access review (CAP-15): broad access, restricted cases, known users and active API tokens, one row each with a `section` column, and the last recorded review | Access log; SIEM 5304 |
 | `GET /export/compliance-bundle.zip?from=&to=` | Administer | Compliance evidence bundle | Audit entry; access log; SIEM 5304 |
 | `GET /export/config-bundle.json` | Administer | Signed configuration bundle | Audit entry |
 | `GET /export/report-template-starter.docx`, `…-lessons.docx` | Administer | Starter Word templates | — |
@@ -117,14 +118,15 @@ means it has no UI coupling and could back another entry point.
 | `IntegrityService` | Verify chain, seal, audit queries | |
 | `EvidenceIntegrityVerifier` | Re-hash evidence | Read-only |
 | `ComplianceBundleService`, `ConfigBundleService`, `LegalRegisterService` | Bundles and register | |
+| `RetentionReviewService` | CAP-10: closed, not-archived cases past `Retention:CaseYears` (the caller's need-to-know view, exercises left out) with hold, open improvement actions and unreported deadlines; archives at most 25 picked cases, each through `CaseService.SetArchivedAsync` | `Administer` (`AdminActionPermissions`); never purges |
 | `NotificationDeadlineService` | Regulatory deadline evaluation per case, open headlines | Pure policy in `NotificationDeadlinePolicy` |
 | `StageGateEvaluator` + `GateCheckRegistry` | Evaluate a gate against persisted case state | |
 | `DashboardService`, `ProgramReportService`, `NeedsActionService`, `VendorCasesService`, `AttackCoverageService`, `IndicatorService`, `IocFeedService`, `StixExportService`, `CampaignService`, `ActivityFeedService` | Read models | Need-to-know scoped; most exclude exercises |
 | `MyWorkService`, `AgendaService`, `AgendaFeedService`, `TeamWorkloadService` | Personal and team work views; calendar | |
 | `SavedViewService`, `UserDisplayPreferenceService`, `UserNotificationPreferenceService` | Per-user state | Not audited |
 | `ApiTokenService` | API tokens | |
-| Admin services (`AdminSettingsService`, `RoleService`, `CaseTemplateService`, `StageGateService`, `DataElementService`, `NotificationRuleService`, `ReportProfileService`, `ReportTemplateService`, `TaxonomyAdminService`, `EmailTemplateAdminService`, `AccessReviewService`) | Administration | Writes guarded by `AdminActionPermissions` |
-| Scanners (`OverdueActionItemScanner`, `DueSoonActionItemScanner`, `NotificationDeadlineScanner`, `StaleCaseScanner`, `DigestScanner`, `ExecutiveReportScanner`) | Decide who to remind; used by the background jobs | Read-only |
+| Admin services (`AdminSettingsService`, `RoleService`, `CaseTemplateService`, `StageGateService`, `DataElementService`, `NotificationRuleService`, `ReportProfileService`, `ReportTemplateService`, `TaxonomyAdminService`, `EmailTemplateAdminService`, `AccessReviewService`) | Administration. `AccessReviewService` also records a review (CAP-15) as an `AccessReview` audit entry through `IAuditWriter`, reads the last one back, and builds the CSV | Writes guarded by `AdminActionPermissions` |
+| Scanners (`OverdueActionItemScanner`, `DueSoonActionItemScanner`, `NotificationDeadlineScanner`, `StaleCaseScanner`, `DigestScanner`, `ExecutiveReportScanner`, `RetentionReviewScanner`) | Decide who to remind; used by the background jobs. `RetentionReviewScanner` (CAP-10) counts the cases past retention into `RetentionReviewState` for Diagnostics, and tells Legal monthly | Read-only |
 | `MarkdownService` | Markdown to sanitized HTML and plain text | |
 
 Infrastructure implementations of the ports include `EmailSender`, `EmailComposer`, `CaseNotifications`,
@@ -151,6 +153,7 @@ chat webhook and the matching `Notifications:Chat:*` switch.
 | Digest (background) | each opted-in user; for someone who can confirm imports, a line for the API imports they could review that have waited longer than `Notifications:DigestScan:ImportWaitingHours` (CAP-01) | — |
 | API import waiting for review (CAP-01) | everyone who can confirm imports (`EditCases`), cut to the target case's audience when it's restricted, if `Notifications:ImportSubmitted:Email` | optional (`ImportSubmissions`; a restricted target's summary and origin left out) |
 | Quarterly executive report (background) | users holding the built-in Manager role | — |
+| Closed cases past retention, monthly (background, CAP-10) | `Email:LegalDistribution`, if `Notifications:RetentionReview:Email`: counts only, no case named | — |
 | Audit-chain break / evidence drift | `Email:IntegrityAlertDistribution` | — |
 
 Users can opt out of assignment, overdue and due-soon emails unless an administrator makes them mandatory.
@@ -173,6 +176,7 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 | `StaleCaseHostedService` | Quiet-case nudges | 5 min poll; 12 h | `Notifications:StaleScan:*` | off |
 | `DigestHostedService` | Per-user digest | 5 min poll; 1 h | `Notifications:DigestScan:*` | off |
 | `ExecutiveReportHostedService` | Quarterly figures to managers, first 7 days of a quarter | hourly | `Notifications:ExecutiveReport:Enabled` | off |
+| `RetentionReviewHostedService` | CAP-10: count closed cases past retention (Diagnostics); once a month, when some are and the email is on, tell Legal. Counts only, never archives | 5 min poll; at start-up, 24 h, and when either setting changes | `Retention:CaseYears`, `Notifications:RetentionReview:*` | count on (off at 0 years); email off |
 | `SecurityEventDispatcher` | Drain the SIEM queue to each enabled transport | continuous | `Siem:*` | idle unless a transport is enabled |
 | `ReportJobs` (RD-23) | Generate a case or lessons-learned report someone asked for, in its own scope with that person's identity (their permissions, need-to-know and audit attribution); one at a time, progress in memory for an hour | on request | none | on |
 
@@ -183,6 +187,8 @@ Caveats:
 - "Already reminded" marks are kept in the `NotificationMarks` table (BUG-95), outside the audit chain, so a restart
   doesn't resend. The mark is the table's key, so if two processes overlap only the first to record it sends. A mark
   still in use is renewed (WF-22), so only marks for reminders that no longer qualify are pruned after 180 days.
+- The retention review's month mark (`retention-review|yyyy-MM`) is taken back when no Legal distribution is set or the
+  send failed, so the next count tries again (CAP-10).
 - The executive report's quarter mark is taken back when nobody was reached or the send failed, so it's tried again
   hourly within the first 7 days of the quarter (WF-17).
 - `CriticalAlertRetryHostedService` retries undelivered breach-escalation and integrity-alarm emails from the alert

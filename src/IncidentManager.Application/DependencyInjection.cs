@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.NotificationRuleService>();          // PROD-07: per-jurisdiction deadline rules
         services.AddScoped<Compliance.NotificationDeadlineService>(); // PROD-07: per-case deadline evaluation
         services.AddScoped<Compliance.LegalRegisterService>();        // PROD-12: Legal/Privacy obligations register export
+        services.AddScoped<Compliance.RetentionReviewService>();      // CAP-10: closed cases past retention, archived by a person
         services.AddScoped<Config.ConfigBundleService>();
         services.AddScoped<Import.CaseImportService>();    // PROD-31: structured case import (schema + importer)
         services.AddScoped<Import.PendingImportQueue>();   // CAP-01: the review queue on the Desk, the badge and the digest
@@ -103,6 +104,10 @@ public static class DependencyInjection
         services.AddSingleton<Notifications.IDigestTracker, Notifications.DigestTracker>();
         services.AddScoped<Notifications.ExecutiveReportScanner>();       // PROD-15: quarterly executive report email
         services.AddSingleton<Notifications.IExecutiveReportTracker, Notifications.ExecutiveReportTracker>();
+        // CAP-10: the nightly retention count (Diagnostics) and the monthly email to Legal; counts only, never archives.
+        services.AddScoped<Notifications.RetentionReviewScanner>();
+        services.AddSingleton<Notifications.RetentionReviewState>();
+        services.AddSingleton<Notifications.IRetentionReviewTracker, Notifications.RetentionReviewTracker>();
 
         services.AddSingleton<IMarkdownService, MarkdownService>();
 

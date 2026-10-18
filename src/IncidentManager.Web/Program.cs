@@ -87,6 +87,13 @@ builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
 // PROD-52: deletes access-log entries older than Retention:AccessLogYears (default 3), keeping legal-hold cases' entries.
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 builder.Services.AddHostedService<AccessLogRetentionHostedService>();
+// CAP-10: the retention review reads Retention:CaseYears; a nightly count feeds Diagnostics and the optional monthly email
+// to Legal (Notifications:RetentionReview:Email). It counts only: nothing is archived or deleted by a job.
+builder.Services.Configure<IncidentManager.Application.Compliance.CaseRetentionOptions>(builder.Configuration.GetSection("Retention"));
+builder.Services.Configure<RetentionReviewScanOptions>(builder.Configuration.GetSection("Notifications:RetentionReview"));
+builder.Services.AddHostedService<RetentionReviewHostedService>();
+// CAP-15: Diagnostics reminds when no access review is recorded within Governance:AccessReview:ReminderDays (default 90).
+builder.Services.Configure<IncidentManager.Application.Admin.AccessReviewOptions>(builder.Configuration.GetSection("Governance:AccessReview"));
 // PROD-56: clears parts of large uploads a restart cut off, and probes the evidence store (a share especially).
 builder.Services.AddSingleton<EvidenceStoreStatus>();
 builder.Services.AddHostedService<EvidenceStoreHostedService>();
@@ -943,6 +950,22 @@ app.MapGet("/export/access-log.csv", async (
     // BUG-132: pulling the access log is itself an access, recorded with the slice that was pulled.
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
         IncidentManager.Application.Access.AccessLogCsv.ExportLabel(fileName, filter), null, ct);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
+
+// --- CAP-15: the access review (Roles & access) as CSV: broad access, restricted cases, known users and working API
+// tokens, with the last recorded review. Administer-gated like the page; the access log and SIEM 5304, rate-limited and
+// refusing passive loads like every export. Plain attachment (no JS). ---
+app.MapGet("/export/access-review.csv", async (
+    IncidentManager.Application.Admin.AccessReviewService review,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var built = await review.BuildAsync(ct);
+    var last = await review.GetLastReviewAsync(ct);
+    var csv = IncidentManager.Application.Admin.AccessReviewService.ToCsv(built, last, clock.UtcNow);
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"access-review-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
