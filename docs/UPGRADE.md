@@ -231,6 +231,18 @@ first with `casebook-keytool export`.
   SIEM 5513 sends `CaseReported` when the last regulator's notice is recorded (as well as that notice's
   `RegulatorNoticeRecorded`), and *Mark reported* sends one `RegulatorNoticeRecorded` per notice it records before
   its `CaseReported`. No migration and nothing to configure.
+- **Full-text search on SQL Server, optional (CAP-22).** Where the SQL Server instance has the Full-Text Search
+  feature, Find and the case-list search match words from full-text indexes instead of reading every row, so the
+  command bar stays fast on a large database. A word then matches the words that **start with** it (`lsa` finds
+  "LSASS", `sass` no longer does); indicators, case numbers and entities still match anywhere in the text, and without
+  the feature everything searches by substring as before. The upgrade adds the migration `FullTextSearch` (SQL Server:
+  catalog `CaseBookText` and indexes on the case, brief, record entry, note, task, task comment and evidence text, made
+  only when the instance has the feature and outside a transaction; SQLite: nothing). Indexes fill in the background
+  after the upgrade, and search uses them once they're filled. Nothing to configure. **Administration › Diagnostics**
+  shows a *Search* row with the mode; if the feature is added later, *Create full-text indexes* there (the app account
+  needs `db_owner`), or in `DbaApplies` mode have the DBA run the new `deploy\sql\03-Enable-FullText.sql`.
+  `Verify-Install.ps1` now reports whether the instance has the feature (information only). A future migration that
+  alters one of the indexed columns must take it out of the full-text index first (docs/OPERATIONS.md §9).
 
 - **Fixes from the regression review (CAP-28, CAP-35, BUG-341).** Possibly related indicators now also find addresses
   not stored in canonical form: an IPv6 address in a URL written with leading zeros (`[2001:0db8:…]`), and an IP address

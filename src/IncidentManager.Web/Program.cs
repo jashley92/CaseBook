@@ -509,6 +509,18 @@ using (var scope = app.Services.CreateScope())
         LogUpkeepFailure(ex, "Couldn't record the deadlines of earlier regulator notices; past quarters' notice figures use today's rules.");
     }
 
+    // CAP-22: how Find and the case list search this database (by word with SQL Server's full-text indexes, else by
+    // substring), said once it's current; the check fills the cache, so the first search doesn't wait for it.
+    try
+    {
+        var search = await scope.ServiceProvider.GetRequiredService<IFullTextSearch>().RefreshAsync();
+        app.Logger.LogInformation("{Search}{Detail}", search.Label, search.Detail is null ? "" : $" ({search.Detail})");
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        app.Logger.LogWarning(ex, "Couldn't check SQL Server's full-text search; Find and the case list search by substring until it can.");
+    }
+
     // C18: after the back-fills above (their writes are audited), RowHashUpgradeHostedService records the hash of every
     // record that matches its trail and makes the record check strict. BUG-644: not here, before the app serves: on a
     // large database it held the first start past IIS's start-up limit.

@@ -173,6 +173,9 @@ public static class DependencyInjection
         services.AddDbContextFactory<AppDbContext>(ConfigureProvider, lifetime: ServiceLifetime.Scoped);
         services.AddScoped<IAppDbContextFactory, Persistence.AppDbContextFactoryAdapter>();
         services.AddScoped<ILedgerStatus, Persistence.SqlLedgerStatus>(); // E-10: shows whether the SQL Server ledger is on
+        // CAP-22: full-text search on SQL Server: the status is kept app-wide, read through each scope's own context factory.
+        services.AddSingleton<Persistence.FullTextStatusCache>();
+        services.AddScoped<IFullTextSearch, Persistence.SqlFullTextSearch>();
 
         // A scoped context bridge for the few Infrastructure consumers that still resolve AppDbContext
         // directly and manage their own short scopes (RoleDirectory/UserDirectory create a scope per

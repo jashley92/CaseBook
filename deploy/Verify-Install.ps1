@@ -237,6 +237,10 @@ if ($ConfigFile) {
                 $dbId = $cmd.ExecuteScalar()
                 if ($dbId -and $dbId -ne [DBNull]::Value) { Info "Database '$dbName' already exists on the instance" }
                 else { Info "Database '$dbName' not yet created - Install-Database.ps1 will create it" }
+                # CAP-22: optional. Information only: without it, Find and the case list search by substring.
+                $cmd.CommandText = "SELECT CAST(ISNULL(SERVERPROPERTY('IsFullTextInstalled'), 0) AS int)"
+                if ([int]$cmd.ExecuteScalar() -eq 1) { Info "Full-Text Search installed: CaseBook searches by word with full-text indexes" }
+                else { Info "Full-Text Search not installed (optional): CaseBook searches by substring. See INSTALL.md" }
             } catch {
                 $first = ($_.Exception.Message -split "`r?`n")[0]
                 Warn "Could not connect to SQL '$($cfg.SqlInstance)' from here: $first"

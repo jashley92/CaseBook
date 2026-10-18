@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<Work.MyWorkService>();
         services.AddScoped<Work.DeskService>();   // RD-16
         services.AddScoped<Search.FindService>();   // RD-20
+        services.AddScoped<Search.FullTextAdminService>();   // CAP-22: Diagnostics' search row and its action
         services.AddScoped<Cases.CaseTabsService>();   // RD-21
         services.AddScoped<Work.TeamWorkloadService>();
         services.AddScoped<Work.AgendaService>();

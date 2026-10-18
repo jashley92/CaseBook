@@ -34,6 +34,7 @@ public static class AdminActionPermissions
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
         typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
         typeof(ApiTokenService), typeof(AccessReviewService), typeof(RetentionReviewService), typeof(OffboardingService),
+        typeof(Search.FullTextAdminService),
     ];
 
     public static readonly IReadOnlyDictionary<string, Permission> Required =
@@ -109,6 +110,8 @@ public static class AdminActionPermissions
             [Key<IAccessLogService>(nameof(IAccessLogService.ActorsAsync))] = Permission.Administer,
             [Key<ApiTokenService>(nameof(ApiTokenService.ListAllAsync))] = Permission.Administer,
             [Key<ApiTokenService>(nameof(ApiTokenService.CreateSystemAsync))] = Permission.Administer,
+            // CAP-22: Diagnostics' "Create full-text indexes" (schema DDL on SQL Server).
+            [Key<Search.FullTextAdminService>(nameof(Search.FullTextAdminService.CreateIndexesAsync))] = Permission.Administer,
         };
 
     /// <summary>

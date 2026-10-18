@@ -255,9 +255,12 @@
         }
         <div class="im-desk-card im-find-limits">
             <h2 class="im-cap">How Find matches</h2>
-            <p>Words must each appear, ignoring case; quote a phrase to keep it together. An indicator matches entities by its
-               exact value; an account and an email address with the same value are one identity. Part of a domain matches the
-               record's text, not related indicators.</p>
+            @* CAP-22: by word prefix where SQL Server's full-text search is set up, by substring elsewhere (Diagnostics says which). *@
+            <p>Words must each appear, ignoring case; quote a phrase to keep it together. Where the server has full-text
+               search, a word matches the words that start with it (<code>lsa</code> finds "LSASS", not "salsa"); otherwise it
+               matches anywhere in the text. An indicator matches entities by its exact value and the text as it's written;
+               an account and an email address with the same value are one identity. Part of a domain matches the record's
+               text, not related indicators.</p>
             <p>Restricted cases you can't see don't appear, and nothing says they exist. Nothing interprets the question
                but the filters listed in <a href="find#find-grammar">the grammar</a>.</p>
         </div>

@@ -91,6 +91,8 @@ Everything else is checked lazily or not at all:
   new RSA-3072 key at startup. In any other environment it refuses to start until the key is provisioned out
   of band ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)), because a generated
   key on the server can't vouch for anything. No setting turns generation on outside Development.
+- Full-text search (CAP-22) is checked, never required: the search mode is logged at startup ("Search: full-text
+  (SQL Server)" or "Search: substring (…)"), and a check that fails means substring search until the next one.
 - Email relay sign-in settings that can't be used together (CAP-05) are logged as an error at startup and shown on
   Diagnostics, but don't stop the app: email stops (held) until they're fixed. A plain-text `Email:SmtpPassword` is
   logged as a warning.
@@ -131,6 +133,11 @@ Columns:
 
 The template ships `TrustServerCertificate=True`. Set it to `False` once SQL Server presents a CA-signed
 certificate.
+
+**Full-text search (CAP-22) has no setting.** On SQL Server the app checks at startup, and again every 5 minutes (30
+seconds while the indexes are filling) and whenever Diagnostics opens, whether the instance has Full-Text Search and
+CaseBook's indexes are there and filled, and searches by word where they are, by substring where not. SQLite always
+searches by substring. See [OPERATIONS.md](../OPERATIONS.md#9-full-text-search-on-sql-server-cap-22).
 
 ### 3.3 Storage paths
 
@@ -399,6 +406,7 @@ first.
 | "Recorded later" threshold 1 hour | `Application/Cases/CaseService.cs` (`BackdateReasonThreshold`) |
 | Audit and access-log CSV exports streamed, up to **1,000,000 rows**, newest kept; a cut file says so on its second line and its last; stopped after 15 minutes plus a second per 1,000 rows, the last line then saying the file is incomplete | `Application/Common/CsvStream.cs` (`MaxRows`, `TimeLimit`); `Web/Program.cs` (`ExportRowLimit`) |
 | Indicator list 300 rows a page (Previous and Next page through the rest); its CSV up to **50,000** indicators, a cut file saying so at the top and the end | `Application/Intel/IndicatorService.cs` (`PageSize`, `ExportLimit`) |
+| Full-text search: status re-checked every **5 minutes** (**30 s** while indexes fill, 1 minute after a failed check), the check limited to **5 s**; English word breaker, no stoplist; a search term over **200** characters matched by substring | `Infrastructure/Persistence/SqlFullTextSearch.cs`, `FullTextSchema.cs`; `Application/Search/FullTextCondition.cs` |
 | Access review "dormant" after 90 days | `Application/Admin/AccessReviewService.cs` |
 | Webhook and chat retry back-off 250 ms × attempt | `Web/Siem/WebhookTransport.cs`, `Web/Notifications/ChatWebhookNotifier.cs` |
 | Seal key RSA-3072, PKCS#1 v1.5 with SHA-256 | `Infrastructure/Security/RsaSealSigner.cs` |

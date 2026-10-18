@@ -160,9 +160,11 @@ public sealed class CaseService
         Notifications.ReminderAudience? audience = null,
         Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? evidenceLimits = null,
         Evidence.EvidencePackageTickets? evidencePackages = null,
-        IRelatedExclusionsProvider? relatedExclusions = null)
+        IRelatedExclusionsProvider? relatedExclusions = null,
+        IFullTextSearch? fullText = null)
     {
         _relatedExclusions = relatedExclusions;
+        _fullText = fullText;
         _evidencePackages = evidencePackages;
         _evidenceLimits = evidenceLimits;
         _audience = audience;
@@ -193,6 +195,7 @@ public sealed class CaseService
     private readonly IRelatedExclusionsProvider? _relatedExclusions;   // CAP-28 exclusions; the shipped defaults without one
     private readonly Accounts.AccountDirectoryService? _accounts;   // BUG-416
     private readonly Notifications.ReminderAudience? _audience;   // BUG-596/597
+    private readonly IFullTextSearch? _fullText;   // CAP-22
 
     /// <summary>
     /// BUG-596/597: of <paramref name="userIds"/>, the people a notification about <paramref name="c"/> may go to: active
@@ -379,8 +382,20 @@ public sealed class CaseService
     internal async Task<(IReadOnlyList<CaseListItem> Items, bool Truncated)> ListAllAsync(CaseFilter filter, int limit, int chunk,
         Func<int, Task>? afterChunk = null, CancellationToken ct = default)
     {
+        // CAP-22: as the list does. The full-text part is in the first query, so a fallback runs before any chunk.
+        if (await SearchPlanAsync(filter, ct) is { } plan)
+        {
+            try { return await ListAllCoreAsync(filter, limit, chunk, afterChunk, plan, ct); }
+            catch (Exception ex) when (_fullText!.IsFullTextFailure(ex)) { _fullText.FellBack(ex, "the case list export"); }
+        }
+        return await ListAllCoreAsync(filter, limit, chunk, afterChunk, null, ct);
+    }
+
+    private async Task<(IReadOnlyList<CaseListItem> Items, bool Truncated)> ListAllCoreAsync(CaseFilter filter, int limit, int chunk,
+        Func<int, Task>? afterChunk, Search.FullTextPlan? plan, CancellationToken ct)
+    {
         using var db = _factory.CreateDbContext();
-        var q = await FilteredAsync(db, filter, ct);
+        var q = await FilteredAsync(db, filter, plan, ct);
         limit = Math.Max(0, limit);
         var ids = filter.Sort == CaseSort.Sla
             ? await SlaOrderedIdsAsync(q, filter.SortDescending, 0, limit + 1, ct)
@@ -401,8 +416,14 @@ public sealed class CaseService
         return (items, truncated);
     }
 
+    // CAP-22: the full-text search a search of the list may use, or null (no search words, or none indexed).
+    private async Task<Search.FullTextPlan?> SearchPlanAsync(CaseFilter filter, CancellationToken ct) =>
+        _fullText is null || string.IsNullOrWhiteSpace(filter.Search) ? null
+        : await _fullText.StatusAsync(ct) is { Any: true } status ? new Search.FullTextPlan(_fullText, status) : null;
+
     // The cases the list's filter matches, need-to-know scoped (ForUser), unordered: the list and its export (CAP-17).
-    private async Task<IQueryable<Case>> FilteredAsync(IAppDbContext db, CaseFilter filter, CancellationToken ct)
+    // CAP-22: the search by word where <paramref name="plan"/> covers a column, else by substring.
+    private async Task<IQueryable<Case>> FilteredAsync(IAppDbContext db, CaseFilter filter, Search.FullTextPlan? plan, CancellationToken ct)
     {
         var q = Scoped(db.Cases.AsNoTracking());
 
@@ -494,17 +515,21 @@ public sealed class CaseService
             // (CA1304/CA1311/CA1862) are false positives here and their suggested fixes must not be applied.
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower()/Contains() to SQL; culture overloads don't translate.
             var s = filter.Search.Trim().ToLower();
+            // CAP-22: words by word prefix where full-text covers the column; an indicator or a case number (by its shape,
+            // as Find reads it) stays a substring match everywhere.
+            var ftc = plan is not null && Search.FindQuery.ReadShape(s).As == Search.FindReadAs.Words ? Search.FullTextCondition.For(s) : null;
+            var words = ftc is null ? null : plan;
             // Match across the case's own fields and its IOCs and notes, so analysts can find a case
             // by an indicator or a note as well as by number/title. HR-09: and across the record itself (timeline
             // entries and decisions, the brief, tasks and their results, the review, phase reasons), so an old case
             // can be found by what happened in it.
-            q = q.Where(SearchMatch(db, s, unlinkedOnly: false));
+            q = q.Where(SearchMatch(db, s, ftc, words, unlinkedOnly: false));
             // BUG-273: as in Find (WF-84), a word that could be part of a link's hidden target (entity:, evidence:, a GUID's
             // hex) counts only where the reader sees it. Cases it matches in text without links stand; the rest (matched
             // only in text holding a link) are read back, at most HiddenText.MaxRecheck, and kept only when it shows.
             if (Search.HiddenText.CouldBeHidden(s))
             {
-                var plain = q.Where(SearchMatch(db, s, unlinkedOnly: true)).Select(c => c.Id);
+                var plain = q.Where(SearchMatch(db, s, ftc, words, unlinkedOnly: true)).Select(c => c.Id);
                 var linkedOnly = await q.Where(c => !plain.Contains(c.Id)).OrderByDescending(c => c.CreatedAtUtc)
                     .Select(c => c.Id).Take(Search.HiddenText.MaxRecheck).ToListAsync(ct);
                 if (linkedOnly.Count > 0)
@@ -521,8 +546,20 @@ public sealed class CaseService
 
     public async Task<CasePage> ListAsync(CaseFilter filter, CancellationToken ct = default)
     {
+        // CAP-22: a search by word where full-text covers the column; a full-text query the server refuses runs again by
+        // substring.
+        if (await SearchPlanAsync(filter, ct) is { } plan)
+        {
+            try { return await ListCoreAsync(filter, plan, ct); }
+            catch (Exception ex) when (_fullText!.IsFullTextFailure(ex)) { _fullText.FellBack(ex, "the case list"); }
+        }
+        return await ListCoreAsync(filter, null, ct);
+    }
+
+    private async Task<CasePage> ListCoreAsync(CaseFilter filter, Search.FullTextPlan? plan, CancellationToken ct)
+    {
         using var db = _factory.CreateDbContext();
-        var q = await FilteredAsync(db, filter, ct);
+        var q = await FilteredAsync(db, filter, plan, ct);
 
         var total = await q.CountAsync(ct);
         var page = filter.Page < 1 ? 1 : filter.Page;
@@ -985,29 +1022,33 @@ public sealed class CaseService
     /// <summary>
     /// The case-list search: the case's own fields, its IOCs and notes, and the record itself (HR-09). With
     /// <paramref name="unlinkedOnly"/>, Markdown text counts only when it holds no link (BUG-273), so what it matches is
-    /// certainly shown.
+    /// certainly shown. CAP-22: the free-text columns go through <see cref="Search.TextMatch"/>, by word where
+    /// <paramref name="plan"/> covers them (<paramref name="condition"/> is the term's full-text condition); the number,
+    /// the entities, phase reasons and the review stay substring matches.
     /// </summary>
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower()/Contains() to SQL; culture overloads don't translate.
-    private static System.Linq.Expressions.Expression<Func<Case, bool>> SearchMatch(IAppDbContext db, string s, bool unlinkedOnly)
+    private static System.Linq.Expressions.Expression<Func<Case, bool>> SearchMatch(IAppDbContext db, string s, string? condition,
+        Search.FullTextPlan? plan, bool unlinkedOnly)
     {
         const string link = Search.HiddenText.LinkMark;
         var comments = db.ActionItemComments;
         var reviews = db.PostIncidentReviews;
-        return c =>
+        var ftc = condition;
+        return Search.TextMatch.Prepare<Case>(c =>
             c.CaseNumber.ToLower().Contains(s) ||
-            c.Title.ToLower().Contains(s) ||
-            (c.Summary != null && c.Summary.ToLower().Contains(s) && (!unlinkedOnly || !c.Summary.Contains(link))) ||
+            Search.TextMatch.Has(c.Title, s, ftc) ||
+            (c.Summary != null && Search.TextMatch.Has(c.Summary, s, ftc) && (!unlinkedOnly || !c.Summary.Contains(link))) ||
             c.Entities.Any(e => e.Value.ToLower().Contains(s) || (e.Label != null && e.Label.ToLower().Contains(s))) ||
-            c.Notes.Any(n => n.IsCurrent && n.Body.ToLower().Contains(s) && (!unlinkedOnly || !n.Body.Contains(link))) ||
+            c.Notes.Any(n => n.IsCurrent && Search.TextMatch.Has(n.Body, s, ftc) && (!unlinkedOnly || !n.Body.Contains(link))) ||
             c.TimelineEntries.Any(e => e.IsCurrent
-                && ((e.Description.ToLower().Contains(s) && (!unlinkedOnly || !e.Description.Contains(link)))
-                    || (e.Rationale != null && e.Rationale.ToLower().Contains(s) && (!unlinkedOnly || !e.Rationale.Contains(link))))) ||
+                && ((Search.TextMatch.Has(e.Description, s, ftc) && (!unlinkedOnly || !e.Description.Contains(link)))
+                    || (e.Rationale != null && Search.TextMatch.Has(e.Rationale, s, ftc) && (!unlinkedOnly || !e.Rationale.Contains(link))))) ||
             c.Briefs.Any(b => b.IsCurrent
-                && ((b.WorkingAssessment != null && b.WorkingAssessment.ToLower().Contains(s) && (!unlinkedOnly || !b.WorkingAssessment.Contains(link)))
-                    || (b.Known != null && b.Known.ToLower().Contains(s) && (!unlinkedOnly || !b.Known.Contains(link)))
-                    || (b.OpenQuestions != null && b.OpenQuestions.ToLower().Contains(s) && (!unlinkedOnly || !b.OpenQuestions.Contains(link))))) ||
-            c.ActionItems.Any(t => t.Title.ToLower().Contains(s)) ||
-            comments.Any(x => x.CaseId == c.Id && x.Body.ToLower().Contains(s) && (!unlinkedOnly || !x.Body.Contains(link))) ||
+                && ((b.WorkingAssessment != null && Search.TextMatch.Has(b.WorkingAssessment, s, ftc) && (!unlinkedOnly || !b.WorkingAssessment.Contains(link)))
+                    || (b.Known != null && Search.TextMatch.Has(b.Known, s, ftc) && (!unlinkedOnly || !b.Known.Contains(link)))
+                    || (b.OpenQuestions != null && Search.TextMatch.Has(b.OpenQuestions, s, ftc) && (!unlinkedOnly || !b.OpenQuestions.Contains(link))))) ||
+            c.ActionItems.Any(t => Search.TextMatch.Has(t.Title, s, ftc)) ||
+            comments.Any(x => x.CaseId == c.Id && Search.TextMatch.Has(x.Body, s, ftc) && (!unlinkedOnly || !x.Body.Contains(link))) ||
             c.StatusChanges.Any(x => x.Reason != null && x.Reason.ToLower().Contains(s) && (!unlinkedOnly || !x.Reason.Contains(link))) ||
             reviews.Any(r => r.CaseId == c.Id && ((r.WhatHappened != null && r.WhatHappened.ToLower().Contains(s))
                                                   || (r.ContributingFactors != null && r.ContributingFactors.ToLower().Contains(s))
@@ -1017,7 +1058,7 @@ public sealed class CaseService
                                              && (!unlinkedOnly || !((r.WhatHappened != null && r.WhatHappened.Contains(link))
                                                                     || (r.ContributingFactors != null && r.ContributingFactors.Contains(link))
                                                                     || (r.WhatWorkedWell != null && r.WhatWorkedWell.Contains(link))
-                                                                    || (r.OpportunitiesToImprove != null && r.OpportunitiesToImprove.Contains(link)))));
+                                                                    || (r.OpportunitiesToImprove != null && r.OpportunitiesToImprove.Contains(link))))), plan);
     }
 
     // BUG-273: of these cases (each matched only in text holding a link), the ones where the word shows in that text.
@@ -2273,7 +2314,7 @@ public sealed class CaseService
             // CAP-28 review: this check's own values are left out in SQL, so copies of them on newer cases (an exact match,
             // never a suggestion) can't fill the scan and hide an older related one. They're read apart, below.
             var own = keyed.Where(k => k.Key == key).Select(k => k.Value.Trim().ToLowerInvariant()).Distinct().ToList();
-#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
+#pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
             var candidates =
                 from e in db.CaseEntities.AsNoTracking()
                 where types.Contains(e.Type) && (notCaseId == null || e.CaseId != notCaseId)
@@ -2308,7 +2349,7 @@ public sealed class CaseService
                 limitHit |= copies.Count >= RelatedScanLimit;
                 rows.AddRange(copies);
             }
-#pragma warning restore CA1304, CA1311
+#pragma warning restore CA1304, CA1311, CA1862
             found.AddRange(rows.Where(r => Domain.Observables.RelatedObservables.KeyOf(r.Type, r.Value, exclusions) == key)
                 .Select(r => (key, r.Id, r.CaseNumber, r.Title, r.Phase, r.Type, r.Value, r.Disposition)));
         }

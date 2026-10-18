@@ -80,6 +80,8 @@ public sealed class AdminActionPermissionsTests
         K<ApiTokenService>(nameof(ApiTokenService.CreatePersonalAsync)),
         K<ApiTokenService>(nameof(ApiTokenService.ListMineAsync)),
         K<ApiTokenService>(nameof(ApiTokenService.RevokeAsync)),
+        // CAP-22: the search mode Diagnostics shows (metadata only; the page is Administer-gated).
+        K<IncidentManager.Application.Search.FullTextAdminService>(nameof(IncidentManager.Application.Search.FullTextAdminService.StatusAsync)),
     };
 
     private static string K<T>(string method) => AdminActionPermissions.Key<T>(method);

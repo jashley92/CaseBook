@@ -73,6 +73,18 @@ public sealed partial class AuditedWriterBypassTests
         AuditChainInterceptor.IsAudited(target!).Should().Be(audited);
     }
 
+    /// <summary>Raw SQL that writes no rows (reviewed): schema statements a migration also runs, named by what's passed.</summary>
+    private static readonly string[] RawSchemaStatements =
+    [
+        "FullTextSchema.Script",   // CAP-22: Diagnostics' "Create full-text indexes" (full-text DDL, as the FullTextSearch migration)
+    ];
+
+    [Fact]
+    public void The_reviewed_schema_statements_write_no_rows()
+    {
+        SqlWrite().IsMatch(FullTextSchema.Script).Should().BeFalse("CAP-22: full-text DDL only");
+    }
+
     [Fact]
     public void No_write_in_src_goes_around_the_audit_on_an_audited_table()
     {
@@ -94,7 +106,8 @@ public sealed partial class AuditedWriterBypassTests
                     offenders.Add($"{rel}:{Line(m.Index)} bulk write on {target.Name}, which is audited: write it through EF so it's hashed and recorded");
             }
             foreach (Match m in RawSqlWrite().Matches(text))
-                offenders.Add($"{rel}:{Line(m.Index)} raw SQL write outside a migration");
+                if (!RawSchemaStatements.Any(r => text.AsSpan(m.Index + m.Length).TrimStart().StartsWith(r, StringComparison.Ordinal)))
+                    offenders.Add($"{rel}:{Line(m.Index)} raw SQL write outside a migration");
         }
         string.Join("\n", offenders).Should().BeEmpty();
     }
