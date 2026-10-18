@@ -84,6 +84,13 @@ Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-Mgmt-Console -IncludeMa
       **version 22 or later** (`Install-Module SqlServer -Scope AllUsers`) **or** `sqlcmd.exe`. The ledger
       scripts need neither.
 - [ ] Decide the data root and backup targets (OPERATIONS.md §1).
+- [ ] **Optional: Full-Text Search** (CAP-22). In SQL Server setup, the feature *Full-Text and Semantic Extractions
+      for Search*. With it, Find and the case-list search match words from full-text indexes, which stays fast on a
+      large database; without it they match by substring, as before, and work the same. Install it **before** the
+      app's first start and CaseBook's migration creates the indexes; added later, create them from
+      **Administration › Diagnostics** (*Search* row, *Create full-text indexes*), or, where the DBA applies the schema
+      (`DbaApplies`), have the DBA run `deploy\sql-Enable-FullText.sql`. `Verify-Install.ps1` says whether the
+      instance has it (information, never a failure).
 
 ### 1.5 Prepare the answers file (recommended)
 
@@ -315,6 +322,8 @@ Then, signed in as a mapped user:
 
 - [ ] The dashboard loads; you can open **Administration** as an App Admin.
 - [ ] **Integrity → "Verify now"** reports the chain **VALID**.
+- [ ] **Diagnostics** shows *Search: full-text (SQL Server)* if you installed Full-Text Search (§1.4), or
+      *Search: substring (full-text not installed)* if not. Either works.
 - [ ] Create a throwaway case; confirm it saves and appears in the audit trail. (Prod does **not**
       seed demo data — an empty case list on a fresh install is expected.)
 - [ ] Generate a report draft and approve it as the final to confirm the reporting stack and store paths.
