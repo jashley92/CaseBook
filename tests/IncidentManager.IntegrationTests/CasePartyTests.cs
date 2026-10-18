@@ -255,8 +255,8 @@ public sealed class CasePartyTests : IDisposable
         var row = (await Register(database, _user).BuildAsync()).Single();
         row.OutsideParties.Should().Be("Outside counsel: Lee & Park LLP (MAT-2026-114); Law enforcement: FBI IC3 (I-2026-5521)");
         var csv = LegalRegisterService.ToCsv([row], _clock.UtcNow);
-        csv.Should().Contain(",notice_references,outside_parties\r\n")
-            .And.Contain(",,Outside counsel: Lee & Park LLP (MAT-2026-114); Law enforcement: FBI IC3 (I-2026-5521)\r\n");
+        csv.Should().Contain(",notice_references,outside_parties,notification_status\r\n")   // CAP-38: the last column now
+            .And.Contain(",,Outside counsel: Lee & Park LLP (MAT-2026-114); Law enforcement: FBI IC3 (I-2026-5521),\r\n");
     }
 
     private LegalRegisterService Register(TestDatabase database, TestCurrentUser user) =>

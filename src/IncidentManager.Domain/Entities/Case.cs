@@ -1474,7 +1474,9 @@ public class Case : AuditableEntity, IHashableEntity
     /// notified to regulators. Sets <see cref="ReportedAtUtc"/> (already part of the tamper-evident canonical),
     /// stopping the per-jurisdiction deadline countdown. Legal owns the actual filing and its per-regulator
     /// timing; the tool records that it happened. May be backdated (Legal often reports before it is entered
-    /// here) but not set in the future or before the matter was detected.
+    /// here) but not set in the future or before the matter was detected. CAP-38: a whole-case time, for a case with no
+    /// jurisdiction in play and no notice (CaseService records a notice per jurisdiction otherwise); every view reads it
+    /// through <see cref="NoticeStanding"/>, as each jurisdiction then in play notified at that time.
     /// </summary>
     public void MarkReported(DateTimeOffset reportedAtUtc, string actor, DateTimeOffset nowUtc,
         IReadOnlyCollection<string>? jurisdictionsInPlay = null)
@@ -1600,15 +1602,14 @@ public class Case : AuditableEntity, IHashableEntity
     public void ReportedFromNotices(IReadOnlyCollection<string> jurisdictionsInPlay, string actor, DateTimeOffset nowUtc)
     {
         if (JurisdictionNotices.Count == 0) return;
-        var byCode = ByNoticeCode(JurisdictionNotices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)));   // BUG-428
-        // BUG-104: with nothing in play any more (the data elements re-scoped), the notices already made still stand.
-        DateTimeOffset? reported = jurisdictionsInPlay.Count == 0 ? byCode.Values.Max()
-            : jurisdictionsInPlay.All(byCode.ContainsKey) ? jurisdictionsInPlay.Max(j => byCode[j])
-            : null;
+        // CAP-38: by the one reading every view uses (BUG-428: a legacy "NY;CA" notice counts for both). BUG-104: with nothing
+        // in play any more (the data elements re-scoped), the notices already made still stand.
+        var standing = NoticeStanding.Of(jurisdictionsInPlay, JurisdictionNotices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)), null);
+        var reported = standing.ReportedAtUtc;
         if (reported == ReportedAtUtc) return;
         ReportedAtUtc = reported;
         // WF-11: what was in play when it became reported (the notices themselves when nothing is in play any more).
-        FreezeJurisdictions(jurisdictionsInPlay.Count > 0 ? jurisdictionsInPlay : byCode.Keys);
+        FreezeJurisdictions(jurisdictionsInPlay.Count > 0 ? jurisdictionsInPlay : standing.Notices.Keys);
         Touch(actor, nowUtc);
     }
 

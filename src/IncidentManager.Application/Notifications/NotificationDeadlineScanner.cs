@@ -43,8 +43,9 @@ public sealed class NotificationDeadlineScanner(
         // just a cheap pre-filter. Elevated-events-only intake keeps this set small.
         var scope = db.Cases.AsNoTracking().ExcludingExercises() // PROD-43: no real-clock reminders for drills
             // INV-43: closed cases stay in — closing doesn't answer a notification, so reminders continue until
-            // the reported time is recorded.
-            .Where(c => !c.IsArchived && c.ReportedAtUtc == null && c.Classification != null);
+            // the reported time is recorded. CAP-38: a case with notices stays in too: whether every regulator in play is
+            // notified is NotificationDeadlineService's call (NoticeStanding), so a notice to NY never silences CA's reminder.
+            .Where(c => !c.IsArchived && (c.ReportedAtUtc == null || c.JurisdictionNotices.Any()) && c.Classification != null);
 
         // BUG-11: every candidate's clock in one pass, then only the ones that need attention are loaded. BUG-191: every
         // jurisdiction's clock, not just the headline's, so a breached one can't hide another's.

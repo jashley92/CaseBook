@@ -212,6 +212,24 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Per-jurisdiction notification clocks (CAP-38).** Each regulator's clock stops only at a notice recorded for it, and
+  a case counts as reported only when every jurisdiction in play has one. Until then the case page, Briefing, report
+  and legal register say **"Partly reported: NY notified …, CA due …"** instead of a single "Reported", and CA's clock,
+  reminders, close-gate check and archive block keep running. Every view reads this one standing (`NoticeStanding`)
+  rather than the stored reported time, so they can't disagree. *Mark reported* records a notice for each regulator in
+  play not yet notified (each its own stop; it never stamps one time over a running clock); with nothing in play it
+  records the case's time alone, as before. **Existing cases are read in place, not rewritten:** a case reported
+  before notices were per jurisdiction (a reported time and no notice rows) counts each jurisdiction that was in play
+  when it was reported (the kept `ReportedJurisdictions`, back-filled at start-up as before) as notified at that time,
+  so it shows no overdue clock and sends no reminder; no notice rows are created, no hashed row changes, and the
+  integrity check is unaffected. Other visible changes: the legal register CSV gains a last column,
+  `notification_status`, and `reported_to_regulators_utc` is filled only for fully reported cases (a reader of columns
+  by position is unaffected); the report's Business Impact adds the standing line, with template field
+  `case.notification_standing`; a single notice on a partly reported case is its own "Notified NY" milestone; and
+  SIEM 5513 sends `CaseReported` when the last regulator's notice is recorded (as well as that notice's
+  `RegulatorNoticeRecorded`), and *Mark reported* sends one `RegulatorNoticeRecorded` per notice it records before
+  its `CaseReported`. No migration and nothing to configure.
+
 - **Fixes from the regression review (CAP-28, CAP-35, BUG-341).** Possibly related indicators now also find addresses
   not stored in canonical form: an IPv6 address in a URL written with leading zeros (`[2001:0db8:…]`), and an IP address
   recorded before v1.5.3 as IPv4-mapped (`::ffff:203.0.113.9`) or written out in full. An import apply whose release

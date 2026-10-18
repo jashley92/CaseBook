@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using static IncidentManager.Application.Common.Csv;
@@ -11,14 +12,15 @@ namespace IncidentManager.Application.Compliance;
 /// <summary>One case carrying a legal / regulatory obligation, flattened for the register. CAP-07:
 /// <paramref name="NoticeReferences"/> is each regulator's reference or confirmation number ("NY: NYDFS-114; CA: 2026-88"). CAP-34:
 /// <paramref name="OutsideParties"/> is each outside party by role, with its reference ("Insurer: Acme Mutual (CLM-2207);
-/// Law enforcement: FBI IC3").</summary>
+/// Law enforcement: FBI IC3"). CAP-38: <paramref name="ReportedAtUtc"/> is set only once every regulator in play has its
+/// notice, and <paramref name="NotificationStanding"/> says where the case stands ("Partly reported: NY notified …, CA due …").</summary>
 public sealed record LegalRegisterRow(
     string CaseNumber, string Title, Classification? Classification, Severity Severity, CasePhase Phase,
     DateTimeOffset OpenedAtUtc, DateTimeOffset? ReferredAtUtc, string? ReferredBy, string? LegalContact,
     string? RelevanceNote, bool LegalHold, MaterialityStatus Materiality, string? MaterialityDecisionMaker,
     DateTimeOffset? MaterialityDecidedOnUtc, int? AffectedIndividuals, string? AffectedJurisdictions,
     DateTimeOffset? ReportedAtUtc, string? DeadlineJurisdiction, DateTimeOffset? DeadlineDueAtUtc, string? DeadlineState,
-    string? NoticeReferences = null, string? OutsideParties = null);
+    string? NoticeReferences = null, string? OutsideParties = null, string? NotificationStanding = null, bool PartlyReported = false);
 
 /// <summary>
 /// PROD-12 (Legal/Privacy half): the obligations register as an <b>export</b> — Legal and Privacy don't use the
@@ -51,6 +53,9 @@ public sealed class LegalRegisterService
                         || c.Materiality.Status != MaterialityStatus.Undetermined);
         // BUG-11: every case's headline deadline in one pass, reported ones included (met or missed).
         var heads = await _deadlines.HeadlinesNowAsync(db, scope, includeReported: true, ct);
+        // CAP-38: which regulators in play are notified, by the reading every view uses, and each outstanding one's deadline.
+        var standings = await NotificationDeadlineService.StandingsAsync(db, scope, ct);
+        var clocks = await _deadlines.AllNowAsync(db, scope, ct);
         var cases = await scope
             .Select(c => new
             {
@@ -70,16 +75,22 @@ public sealed class LegalRegisterService
         {
             // The headline (most urgent) jurisdiction, when the deadline feature is on and a clock applies.
             var h = heads.GetValueOrDefault(c.Id);
+            var standing = standings.GetValueOrDefault(c.Id) ?? NoticeStanding.None;
+            var dues = clocks.GetValueOrDefault(c.Id) ?? [];
             rows.Add(new LegalRegisterRow(
                 c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
                 c.ReferredAtUtc, c.ReferredBy is { } by ? _users.DisplayFor(by) : null, c.ReferredToContact,
                 c.RegulatoryRelevanceNote, c.LegalHold, c.MaterialityStatus, c.DecisionMaker, c.DecidedOnUtc,
-                c.AffectedIndividualsCount, c.AffectedStates, c.ReportedAtUtc,
+                c.AffectedIndividualsCount, c.AffectedStates, standings.ContainsKey(c.Id) ? standing.ReportedAtUtc : c.ReportedAtUtc,
                 h?.JurisdictionLabel, h?.DueAtUtc, h?.State.ToString(),
                 c.References.Count == 0 ? null : string.Join("; ", c.References.OrderBy(n => n.Jurisdiction, StringComparer.Ordinal)
                     .Select(n => $"{n.Jurisdiction}: {n.Reference}")),
                 c.Parties.Count == 0 ? null : string.Join("; ", c.Parties.OrderBy(p => p.EngagedAtUtc ?? p.CreatedAtUtc)
-                    .Select(p => $"{PartyText.Label(p.Role)}: {p.Name}{(p.Reference is null ? "" : $" ({p.Reference})")}"))));
+                    .Select(p => $"{PartyText.Label(p.Role)}: {p.Name}{(p.Reference is null ? "" : $" ({p.Reference})")}")),
+                NoticeDetailText.Standing(standing,
+                    code => dues.FirstOrDefault(x => string.Equals(x.JurisdictionCode, code, StringComparison.OrdinalIgnoreCase))?.DueAtUtc,
+                    t => t.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
+                standing.IsPartlyReported));
         }
         return rows;
     }
@@ -94,7 +105,7 @@ public sealed class LegalRegisterService
         sb.Append("case_number,title,classification,severity,phase,opened_utc,legal_referred_utc,referred_by,legal_contact," +
                   "regulatory_relevance,legal_hold,materiality,materiality_decision_maker,materiality_decided_utc," +
                   "affected_individuals,affected_jurisdictions,reported_to_regulators_utc,deadline_jurisdiction," +
-                  "deadline_due_utc,deadline_status,notice_references,outside_parties\r\n");
+                  "deadline_due_utc,deadline_status,notice_references,outside_parties,notification_status\r\n");
         foreach (var r in rows)
         {
             string[] f =
@@ -104,6 +115,7 @@ public sealed class LegalRegisterService
                 r.LegalHold ? "Yes" : "No", r.Materiality.ToString(), r.MaterialityDecisionMaker ?? "", T(r.MaterialityDecidedOnUtc),
                 r.AffectedIndividuals?.ToString(inv) ?? "", r.AffectedJurisdictions ?? "", T(r.ReportedAtUtc),
                 r.DeadlineJurisdiction ?? "", T(r.DeadlineDueAtUtc), r.DeadlineState ?? "", r.NoticeReferences ?? "", r.OutsideParties ?? "",
+                r.NotificationStanding ?? "",   // CAP-38
             ];
             sb.Append(string.Join(",", f.Select(Escape))).Append("\r\n");
         }

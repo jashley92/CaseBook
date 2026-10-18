@@ -184,6 +184,8 @@ public sealed class CaseLifecycleSiemTests : IDisposable
                 ("CaseReported", SecuritySeverity.Info, null),
                 ("ReportedCleared", SecuritySeverity.Warning, null),
                 ("RegulatorNoticeRecorded", SecuritySeverity.Info, "jurisdiction=NY"),
+                // CAP-38: nothing else was in play, so that notice left the case fully reported, and it says so.
+                ("CaseReported", SecuritySeverity.Info, null),
                 ("RegulatorNoticeRemoved", SecuritySeverity.Warning, "jurisdiction=NY"));
     }
 

@@ -242,8 +242,9 @@ public sealed class NoticeDetailsTests : IDisposable
         var row = (await register.BuildAsync()).Single();
         row.NoticeReferences.Should().Be("NY: NYDFS-2026-114");
         var csv = LegalRegisterService.ToCsv([row], _clock.UtcNow);
-        // CAP-34: outside_parties is the last column now (empty here).
-        csv.Should().Contain(",deadline_status,notice_references,outside_parties\r\n").And.Contain(",NY: NYDFS-2026-114,\r\n");
+        // CAP-34: outside_parties (empty here), then CAP-38's notification_status, the last column now.
+        csv.Should().Contain(",deadline_status,notice_references,outside_parties,notification_status\r\n")
+            .And.Contain(",NY: NYDFS-2026-114,,\"Reported to every regulator in play: NY notified 2026-10-18 12:00, CA notified 2026-10-18 13:00.\"\r\n");
     }
 
     private ReportService NewReportService(TestDatabase database) =>

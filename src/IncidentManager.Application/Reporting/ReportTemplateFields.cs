@@ -63,7 +63,10 @@ public static partial class ReportTemplateFields
         (new("case.materiality_decided_on", "When it was made"), m => Day(m.MaterialityDecidedOnUtc)),
         (new("case.materiality_rationale", "Materiality rationale"), m => m.MaterialityRationale ?? ""),
         (new("case.detected", "Detected (UTC)"), m => D(m.DetectedAtUtc)),
-        (new("case.reported", "Reported (UTC)"), m => D(m.ReportedAtUtc)),
+        (new("case.reported", "Reported to every regulator in play (UTC)"), m => D(m.ReportedAtUtc)),
+        // CAP-38: partly reported says which regulators were notified and which are still due.
+        (new("case.notification_standing", "Where it stands with regulators (\"Partly reported: NY notified …, CA due …\")"),
+            m => m.NotificationStanding ?? ""),
         (new("case.contained", "Contained (UTC), or why containment wasn't needed"),
             m => m.ContainmentNotNeeded is { } why ? $"Not needed: {why}" : D(m.ContainedAtUtc)),
         (new("case.resolved", "Recovery started (UTC)"), m => D(m.ResolvedAtUtc)),

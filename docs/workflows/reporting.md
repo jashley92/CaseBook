@@ -45,7 +45,11 @@ them. Notable behavior:
   in the order given: "Notice to NY: 2026-10-18 10:00 UTC. By portal, reference NYDFS-2026-114, notified by Pat Lee,
   notice file ack.pdf." (how it was given only when recorded; typed text defanged like the rest). Template collection
   `notice`: `jurisdiction`, `notified`, `due` (the deadline kept when it was recorded), `method`, `reference`, `by`,
-  `file` (a table row holding any of them repeats per notice).
+  `file` (a table row holding any of them repeats per notice). CAP-38: then where the case stands with its
+  regulators, by the reading the case page, close gate and reminders use: "Partly reported: NY notified 2026-10-18 10:00
+  UTC, CA due 2026-10-19 00:00 UTC." until every jurisdiction in play has a notice (an outstanding one without a tracked
+  deadline reads "not yet notified"), then "Reported to every regulator in play: …". The Outcome section's "Reported to
+  regulators" stamp and `case.reported` appear only then; template field `case.notification_standing` holds the line.
 - **Outside parties** (CAP-34) print with the legal lines (the referral and the hold): in Business Impact when the
   profile has it, else in the case facts (which then say "Outside parties: see Business Impact." when it does), in the
   order engaged: "Outside counsel: Lee & Park LLP (contact Dana Lee), reference MAT-114, engaged 2026-10-02 14:00
@@ -89,7 +93,7 @@ template filled it (name and hash, by value).
 | Leadership dashboard | Program › Overview, `/program` | Needs action and running notification clocks, open mix, median timings and targets met for a chosen period (30 days, quarter to date, 12 months), phases, notification compliance, 12 months of case activity (new, carried over and closed, optionally by classification); every figure links to the filtered list |
 | Metrics CSV | `/export/metrics.csv` | Dashboard figures with monthly and quarterly rollups. The SLA met/missed counts judge each milestone as the program report judged it in the quarter it was reached (target in force then, severity and class at that quarter's end) |
 | Program report | Program › Program report (`/program/report`), `/export/program-report.csv` | Quarter against the previous quarter: volumes, time to detect, contain and resolve, SLA attainment (each milestone against the target in force then, from the audited settings changes), regulatory notices (each in the quarter it was given), post-incident follow-through, top techniques. A past quarter is figured from the record as it stood at its end: later corrections of when a transition happened, removed or re-dated notices, a review cleared later, and later edits to attack steps and techniques don't move it. Nothing is measured from an approximate start (no time to detect or detection target). Optional quarterly email to managers. |
-| Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines, and each regulator's reference number (`notice_references`, "NY: NYDFS-2026-114; CA: 88-2026", CAP-07), and the outside parties with their references (`outside_parties`, "Insurer: Acme Mutual (CLM-2207); Law enforcement: FBI IC3", CAP-34; the last column) |
+| Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines, and each regulator's reference number (`notice_references`, "NY: NYDFS-2026-114; CA: 88-2026", CAP-07), and the outside parties with their references (`outside_parties`, "Insurer: Acme Mutual (CLM-2207); Law enforcement: FBI IC3", CAP-34), and where each case stands with its regulators (`notification_status`, "Partly reported: NY notified 2026-10-18 10:00, CA due 2026-10-19 00:00.", CAP-38; the last column). `reported_to_regulators_utc` is filled only once every regulator in play has its notice |
 | IOC feed | `/export/iocs.csv` | Malicious indicators across visible cases (a blocklist feed) |
 | Case audit | `/export/case-audit.csv?case=…` | One case's audit trail |
 | Audit trail | Integrity page or `/export/audit.csv` | The audit trail across the cases you can see, filtered as the Integrity page is |

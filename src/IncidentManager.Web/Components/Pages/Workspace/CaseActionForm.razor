@@ -332,7 +332,8 @@
     [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
     [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
 
-    private bool DeadlineBlocksArchive => !Case.IsExercise && Case.ReportedAtUtc is null && Notify is { HasClock: true };
+    // CAP-38: as the service refuses it: a clock with a regulator in play not yet notified.
+    private bool DeadlineBlocksArchive => !Case.IsExercise && Notify is { HasClock: true, Standing.IsFullyReported: false };
 
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>The reclassify or phase target changed ("reclass" or "status"): the workspace loads its gate (and

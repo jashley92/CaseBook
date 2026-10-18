@@ -204,6 +204,12 @@ public sealed record CaseReportModel
     public DateTimeOffset? ReportedAtUtc { get; init; }
     /// <summary>CAP-07: each regulator's notice, in the order given, with how it was given when that's recorded.</summary>
     public IReadOnlyList<ReportNoticeRow> Notices { get; init; } = [];
+    /// <summary>
+    /// CAP-38: where the case stands with its regulators ("Partly reported: NY notified …, CA due …."), by the reading every
+    /// view uses; null when nothing is in play or notified. <see cref="ReportedAtUtc"/> is set only once every regulator in
+    /// play has its notice.
+    /// </summary>
+    public string? NotificationStanding { get; init; }
     /// <summary>CAP-34: the outside parties (counsel, forensics, the insurer, law enforcement), by role and when engaged.</summary>
     public IReadOnlyList<ReportPartyRow> Parties { get; init; } = [];
     public DateTimeOffset? ContainedAtUtc { get; init; }
@@ -345,6 +351,7 @@ public sealed record CaseReportModel
             if (DataElementsSummary is not null) lines.Add($"Data elements: {DataElementsSummary}");
             if (NotificationTriggersSummary is not null) lines.Add($"Notification triggers: {NotificationTriggersSummary}");
             lines.AddRange(Notices.Select(x => x.Line));   // CAP-07: the notification summary
+            if (NotificationStanding is { } standing) lines.Add(standing);   // CAP-38: fully or partly reported
             if (!string.IsNullOrWhiteSpace(AffectedStates)) lines.Add($"Affected jurisdictions: {AffectedStates}");
             if (!string.IsNullOrWhiteSpace(ImpactedAssets)) lines.Add($"Impacted assets: {ImpactedAssets}");
             if (DataTypesInvolved is not null) lines.Add($"Data context (analyst notes): {DataTypesInvolved}");

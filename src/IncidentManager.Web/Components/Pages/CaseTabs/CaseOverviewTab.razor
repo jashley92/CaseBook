@@ -241,10 +241,11 @@
                         impact assessment, so a notice at risk of running late shows here first. CaseBook only tracks the deadline:
                         notifying regulators, and recording it here, is up to your team.
                     </WhyThisMatters>
-                    @if (_deadlines.ReportedAtUtc is { } rep)
+                    @* CAP-38: fully or partly reported, by the reading every view uses; never one "Reported" while a clock runs. *@
+                    @if ((_deadlines.Standing.IsFullyReported || _deadlines.Standing.IsPartlyReported) && StandingLine(_deadlines) is { } standing)
                     {
-                        <p class="small mb-2"><span class="bi bi-check2-circle text-success" aria-hidden="true"></span>
-                            Reported to regulators <strong>@TimeDisp.Short(rep)</strong>.</p>
+                        <p class="small mb-2"><span class="bi @(_deadlines.Standing.IsFullyReported ? "bi-check2-circle text-success" : "bi-hourglass-split text-warning")" aria-hidden="true"></span>
+                            @standing</p>
                     }
                     @if (_deadlines.AwaitingTrigger)
                     {
@@ -332,14 +333,14 @@
 
                     @if (CanEdit)
                     {
-                        @if (_deadlines.ReportedAtUtc is null && !_deadlines.AwaitingTrigger)
+                        @if (!_deadlines.Standing.IsFullyReported && !_deadlines.AwaitingTrigger)
                         {
                             @if (_markingReported)
                             {
                                 @* BUG-425: Ctrl/Cmd+Enter records the reported time, not the case record's details. *@
                                 <div class="d-flex align-items-end gap-2 flex-wrap im-own-keys" @onkeydown="e => SaveOnKey(e, MarkReported)">
                                     <div>
-                                        <label class="form-label small mb-0" for="ov-reported-at">@(_deadlines.Statuses.Count > 1 ? "Every regulator not yet recorded was notified at" : "Reported at") (@TimeDisp.Label)</label>
+                                        <label class="form-label small mb-0" for="ov-reported-at">@(_deadlines.Statuses.Count > 1 || _deadlines.Standing.IsPartlyReported ? "Every regulator not yet recorded was notified at" : "Reported at") (@TimeDisp.Label)</label>
                                         <DateTimeInput Past="true" id="ov-reported-at" class="form-control form-control-sm" @bind-Value="_reportedAt"
                                                title="When regulators were notified. Saving this stops the notification countdown." />
                                     </div>
@@ -351,11 +352,11 @@
                             else
                             {
                                 <button class="btn btn-sm btn-outline-primary" @onclick="BeginMarkReported">
-                                    <span class="bi bi-send-check" aria-hidden="true"></span> @(_deadlines.Statuses.Count > 1 ? "Record notice to all regulators" : "Mark reported to regulators")
+                                    <span class="bi bi-send-check" aria-hidden="true"></span> @(_deadlines.Standing.IsPartlyReported ? "Record notice to the remaining regulators" : _deadlines.Statuses.Count > 1 ? "Record notice to all regulators" : "Mark reported to regulators")
                                 </button>
                             }
                         }
-                        else if (_deadlines.ReportedAtUtc is not null)
+                        else if (_deadlines.Standing.IsFullyReported)
                         {
                             <button class="btn btn-sm btn-link text-danger p-0" @onclick="ClearReported">@(_deadlines.NoticeCodes.Count > 1 ? "Clear all notices" : "Clear reported milestone")</button>
                         }
@@ -839,6 +840,9 @@
     private JurisdictionNotice? OwnNotice(string code) =>
         _deadlines?.NoticeCodes.Contains(code) == true
             ? Case.JurisdictionNotices.FirstOrDefault(n => string.Equals(n.Jurisdiction, code, StringComparison.OrdinalIgnoreCase)) : null;
+
+    // CAP-38: "Partly reported: NY notified …, CA due …", in the wording the Briefing, report and register use.
+    private string? StandingLine(CaseNotificationDeadlines d) => NoticeDetailText.Standing(d, TimeDisp.Short);
 
     // How a regulator was notified, in words (BUG-428: a legacy "NY;CA" notice counts for each code).
     private string? NoticeHow(string code) =>
