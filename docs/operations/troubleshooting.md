@@ -16,7 +16,7 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
 | Windows **Application** event log (app server) | Startup failures (ASP.NET Core Module, .NET Runtime), Critical alarms 5001 and 5003, warnings | Event Viewer → Windows Logs → Application. Filter by level Critical/Error. **Needs verification on your host:** the source name the app's own Critical entries appear under. |
 | `logs\stdout_*.log` in the site folder | Console output when the app can't start | Set `stdoutLogEnabled="true"` in `web.config`, recycle, reproduce. Turn it off again afterwards. (An upgrade replaces `web.config`.) |
 | IIS logs (`%SystemDrive%\inetpub\logs\LogFiles`) | Status code per request (401, 403, 500.x) | |
-| `/health/live`, `/health` | Process up; database reachable and evidence folder present | Anonymous on an installed site (CAP-37); a 401 means the carve-out is missing (below) |
+| `/health/live`, `/health`, `/health/alarms` | Process up; database reachable and evidence folder present; whether any alarm is up (Degraded; Diagnostics says which) | Anonymous on an installed site (CAP-37); a 401 means the carve-out is missing (below) |
 | Administration → **Diagnostics** | Backup freshness, evidence-drift status, CyberArk resolution, writable paths, SIEM test event | Administrators |
 | Administration → **Setting sources** | The effective value of every setting and where it comes from | Administrators |
 | **Integrity & audit** | Chain verdict, first broken sequence, seals, audit trail | *Verify now* |

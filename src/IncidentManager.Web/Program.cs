@@ -375,7 +375,10 @@ builder.Services.AddScoped<Microsoft.AspNetCore.Components.Authorization.Authent
 // Both return status only — no case data, no sensitive detail.
 builder.Services.AddHealthChecks()
     .AddCheck<IncidentManager.Web.HealthChecks.DatabaseHealthCheck>("database", tags: ["ready"])
-    .AddCheck<IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck>("evidence-store", tags: ["ready"]);
+    .AddCheck<IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck>("evidence-store", tags: ["ready"])
+    // CAP-18: the alarms roll-up for /health/alarms. Never tagged "ready", so an alarm never takes the node out of rotation.
+    .AddCheck<IncidentManager.Web.HealthChecks.AlarmsHealthCheck>("alarms", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
+        tags: [IncidentManager.Web.HealthChecks.AlarmsHealthCheck.Tag]);
 
 var app = builder.Build();
 
@@ -602,6 +605,18 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 var readyOptions = new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") };
 app.MapHealthChecks("/health", readyOptions).AllowAnonymous();
 app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous();
+// CAP-18: alarms for a monitoring tool: "Healthy" or "Degraded", always 200 (the word, never the status code, carries
+// it, so nothing reads it as the node being down). No detail: which alarm is up is on Diagnostics and in the SIEM.
+app.MapHealthChecks("/health/alarms", new HealthCheckOptions
+{
+    Predicate = c => c.Tags.Contains(IncidentManager.Web.HealthChecks.AlarmsHealthCheck.Tag),
+    ResultStatusCodes =
+    {
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy] = 200,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = 200,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = 200,
+    },
+}).AllowAnonymous();
 
 // E-03b: the deployment branding logo for branded emails. Anonymous — mail clients fetch it without a
 // session, and it is only the org's branding image (no case data). 404 when no logo is configured.

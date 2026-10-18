@@ -222,6 +222,11 @@ first with `casebook-keytool export`.
   `appcmd set config "CaseBook/health" /section:system.webServer/security/authentication/anonymousAuthentication /enabled:true /commit:apphost`
   and the same with `windowsAuthentication /enabled:false`. A load balancer that authenticated to reach `/health` can
   stop doing so.
+- **`GET /health/alarms` for monitoring tools (CAP-18).** It answers `Healthy`, or `Degraded` while the audit chain is
+  broken, evidence has drifted, the evidence key is unavailable, a seal copy is failing or the backup status file is
+  stale or missing; always 200, with no detail. It is not part of `/health` and never takes a node out of rotation, so
+  point a monitor (not the load balancer) at it and alert on `Degraded`. Anonymous on IIS through the `/health`
+  carve-out above; no setting or migration.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

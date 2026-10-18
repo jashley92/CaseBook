@@ -326,6 +326,7 @@ if ($Url) {
     $siteRoot = ([Uri]$Url).GetLeftPart([UriPartial]::Authority)
     $anonChecks = @(
         @{ Path = '/health/live';     Want = @(200);      What = 'load-balancer and uptime probes' },
+        @{ Path = '/health/alarms';   Want = @(200);      What = 'alarm monitoring (CAP-18)' },
         @{ Path = '/branding/logo';   Want = @(200, 404); What = 'the logo in branded emails' },
         @{ Path = '/agenda/feed.ics'; Want = @(404);      What = 'calendar subscriptions' }
     )
@@ -354,6 +355,12 @@ if ($Url) {
                 elseif ($code -eq 400) { Bad "$($c.Path) answered $hostHint" }
                 elseif ($c.Path -eq '/health/live' -and $code -eq 200 -and $body.Trim() -ne 'Healthy') {
                     Bad "$($c.Path) answered 200 but not CaseBook's status word."
+                }
+                elseif ($c.Path -eq '/health/alarms' -and $code -eq 200 -and $body.Trim() -notin 'Healthy','Degraded') {
+                    Bad "$($c.Path) answered 200 but not CaseBook's status word."
+                }
+                elseif ($c.Path -eq '/health/alarms' -and $code -eq 200 -and $body.Trim() -eq 'Degraded') {
+                    Warn "$($c.Path) reaches CaseBook anonymously, and says Degraded: an alarm is up (Administration -> Diagnostics says which)."
                 }
                 elseif ($code -in $c.Want) { Ok "$($c.Path) reaches CaseBook anonymously ($($c.What))" }
                 else { Bad "$($c.Path) answered $code, not what CaseBook answers there." }

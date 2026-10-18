@@ -55,6 +55,7 @@ user by the `downloads` policy.
 |---|---|---|---|
 | `GET /health/live` | anonymous | `Healthy` (no checks) | — |
 | `GET /health`, `/health/ready` | anonymous | `Healthy` 200 or `Unhealthy` 503 (database reachable, evidence folder exists) | — |
+| `GET /health/alarms` | anonymous | CAP-18: `Healthy` or `Degraded`, always 200, no detail. Degraded while the audit chain is broken, evidence has drifted (or its store or key is unreachable), the evidence key is unavailable, a seal copy's last attempt failed, or the backup status is stale or missing (`Web/HealthChecks/AlarmsHealthCheck.cs`). Not part of readiness | — |
 | `GET /branding/logo` | anonymous | The report and email logo, or 404 | — |
 | `GET /agenda/agenda.ics` | ViewCases (not rate-limited) | Your open dated tasks as an ICS file | — |
 | `GET /agenda/feed.ics?token=` | anonymous; the signed token is the credential | Personal ICS subscription feed; 404 if `Agenda:FeedKey` is blank or the token is invalid, reset or expired | — |

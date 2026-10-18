@@ -477,7 +477,7 @@ the tool on the server, against the site's own keys folder, or the record waits 
   Over budget returns **429** with a `Retry-After` header and emits SIEM **`EventId 5306`** — a spike of
   these from one account is a bulk-exfiltration signal worth a detection rule. The inline timeline
   thumbnail endpoint is intentionally exempt (many load at once; it is image-only and need-to-know scoped).
-- **Health probes (H-09)**: three endpoints the app serves **anonymously** for IIS / a load balancer / uptime
+- **Health probes (H-09)**: four endpoints the app serves **anonymously** for IIS / a load balancer / uptime
   monitoring — they return the status word only (no case data, no paths, no exception text), so they are safe
   to expose to an internal monitor. `Install-CaseBook.ps1` carves `/health` and every path below it out of
   Windows authentication (CAP-37), so a probe needs no sign-in; a site installed before that needs the carve-out
@@ -491,6 +491,15 @@ the tool on the server, against the site's own keys folder, or the record waits 
     evidence volume is pulled from rotation instead of serving 500s. Complements the backup-health (H-04)
     and evidence-drift (F-17) signals on the Diagnostics page, which cover freshness/tamper rather than
     live reachability.
+  - `GET /health/alarms` — **alarms** (CAP-18), for a monitoring tool rather than the load balancer:
+    `200 Healthy`, or `200 Degraded` while any alarm the app otherwise shows only in banners and the SIEM is
+    up: the audit chain broken (5001), evidence drift or its store unreachable (5003), the evidence key
+    unavailable, a seal copy whose last attempt failed (5005), or the backup status file stale or missing
+    (§1.3; not configured isn't an alarm). It never answers 503 and isn't part of readiness, so an alarm
+    never takes a node out of rotation: none of them is fixed by sending traffic elsewhere. The word is all
+    it says; **Administration → Diagnostics** and the Integrity page say which alarm is up. The backup file
+    read is time-limited (5 s), so a share that doesn't answer reads as Degraded rather than hanging the
+    probe. Alert on `Degraded`, not on the status code.
 
 ---
 
@@ -505,7 +514,8 @@ the tool on the server, against the site's own keys folder, or the record waits 
       root (H-07); every store lives under `DataRoot`. No Modify carve-out on the site folder is required.
 - [ ] Load balancer / uptime monitor points at **`/health`** (readiness) and the app-pool/container probe
       at **`/health/live`** (liveness) — H-09. Both are status-only and anonymous on an installed site
-      (CAP-37); `Verify-Install.ps1 -Url` checks it.
+      (CAP-37); `Verify-Install.ps1 -Url` checks it. A monitoring tool alerts on **`Degraded`** from
+      **`/health/alarms`** (CAP-18), which is never a readiness signal.
 - [ ] Signing key provisioned out of band and protected (DPAPI/cert store/HSM); public key + `KeyId`
       archived separately.
 - [ ] `DataProtection:KeyPath` set to an ACL-restricted folder (installer creates `DataRoot\dp-keys`) so

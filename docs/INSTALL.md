@@ -307,7 +307,7 @@ cd <repo>\deploy
 # (or pass -ConfigFile to reuse the answers file's AppPoolName, and/or re-run readiness)
 ```
 
-The smoke test checks the app pool, a signed-in request to the site, and that `/api`, `/health/live`,
+The smoke test checks the app pool, a signed-in request to the site, and that `/api`, `/health/live`, `/health/alarms`,
 `/branding/logo` and `/agenda/feed.ics` reach CaseBook without a sign-in (a 401 or 403 there is IIS refusing first).
 
 Then, signed in as a mapped user:

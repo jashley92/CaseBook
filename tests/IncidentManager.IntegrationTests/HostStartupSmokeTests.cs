@@ -255,6 +255,31 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task Alarms_say_degraded_with_no_detail_and_never_take_the_node_out_of_rotation(/* CAP-18 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            (await client.GetAsync("/health/live")).EnsureSuccessStatusCode();
+            var ready = (await client.GetAsync("/health")).StatusCode;
+
+            var calm = await client.GetAsync("/health/alarms");
+            calm.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await calm.Content.ReadAsStringAsync()).Should().Be("Healthy");
+
+            factory.Services.GetRequiredService<IncidentManager.Application.Integrity.SealCopyStatus>()
+                .Record("export folder", DateTimeOffset.UtcNow, @"Access to the path 'D:\CaseBook\seals' is denied.");
+
+            var alarmed = await client.GetAsync("/health/alarms");
+            alarmed.StatusCode.Should().Be(HttpStatusCode.OK, "a monitor reads the word; nothing reads it as the node being down");
+            (await alarmed.Content.ReadAsStringAsync()).Should().Be("Degraded", "the word only: no source, path or error");
+            (await client.GetAsync("/health")).StatusCode.Should().Be(ready, "readiness doesn't count alarms");
+            (await client.GetAsync("/health/ready")).StatusCode.Should().Be(ready);
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);
