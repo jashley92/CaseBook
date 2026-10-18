@@ -210,6 +210,30 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.8.0
+
+A release with no migration, following up v1.7.0's evidence work. Things to check:
+
+- **New SIEM events: tell the SOC.** 5006 *evidence key unavailable* (High; once per outage), 5007 *evidence key
+  changed* (action `KeyCreated`, `KeyAvailable`, `KeyProtectionChanged`, `SharesIssued`, `RecoveryDrill`, or
+  `KeyRecovered`, which is High: the key moved onto another certificate) and 5307 *evidence exported decrypted* by
+  `casebook-keytool export` (Warning). Ids are only ever appended; see OPERATIONS.md section 5.
+- **What the keytool does is now in the audit trail.** `split`, `verify`, `recover` and `export` each leave a record in
+  the keys folder's `evidence-key.json`; CaseBook writes it to the audit trail and the SIEM within a minute. Run the
+  tool against the site's own keys folder (on the server). Records left by v1.7.0's tool aren't there, so nothing old
+  is replayed.
+- **Installer.** The answers file takes `EvidenceEncryption`, `EvidenceKeyThumbprint` and `RecoveryCertificates`
+  (INSTALL.md section 4), and `Verify-Install` checks them. Re-running the installer still keeps an existing
+  `appsettings.Production.json` unless `-ReplaceSettings`.
+- **The same file twice in one case is refused** (by SHA-256), naming the first copy; in another case it's stored and
+  the uploader is told which other cases they can see hold it.
+- **Hash as IOC** on each evidence row adds the file's SHA-256 to IOCs & entities (unjudged).
+- **Large uploads resume.** One cut off part-way (network, page closed, app restart) is listed under *Unfinished
+  uploads* on the Evidence tab for a day; picking the same file again carries on. Leaving the page now keeps an upload
+  rather than deleting it; only Cancel deletes. Each upload's state is a small `.state.json` beside its parts in
+  `<store>\.incoming`.
+- **A smaller bundle.** SkiaSharp's native debug symbols (about 276 MB unpacked) are no longer shipped.
+
 ### v1.7.0
 
 A feature release with one additive migration (`EvidenceKeyEnvelopes`). Nothing changes until you choose it, except
