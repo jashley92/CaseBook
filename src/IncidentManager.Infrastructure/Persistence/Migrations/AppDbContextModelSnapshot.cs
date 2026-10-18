@@ -1926,10 +1926,16 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<long?>("DueAtUtc")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("EvidenceId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Jurisdiction")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("Method")
+                        .HasColumnType("INTEGER");
 
                     b.Property<long?>("ModifiedAtUtc")
                         .HasColumnType("INTEGER");
@@ -1939,6 +1945,14 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
 
                     b.Property<long>("NotifiedAtUtc")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("NotifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(70)

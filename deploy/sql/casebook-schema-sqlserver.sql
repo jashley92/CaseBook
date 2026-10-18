@@ -4295,7 +4295,52 @@ GO
 BEGIN TRANSACTION;
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261018054235_EvidenceCollection'
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [EvidenceId] uniqueidentifier NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [Method] int NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [NotifiedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [Reference] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261018054208_NoticeDetails'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018062258_EvidenceCollection'
 )
 BEGIN
     ALTER TABLE [Evidence] ADD [CollectedAtUtc] datetimeoffset NULL;
@@ -4303,7 +4348,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261018054235_EvidenceCollection'
+    WHERE [MigrationId] = N'20261018062258_EvidenceCollection'
 )
 BEGIN
     ALTER TABLE [Evidence] ADD [CollectedBy] nvarchar(200) NULL;
@@ -4311,7 +4356,7 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261018054235_EvidenceCollection'
+    WHERE [MigrationId] = N'20261018062258_EvidenceCollection'
 )
 BEGIN
     ALTER TABLE [Evidence] ADD [CollectedFrom] nvarchar(300) NULL;
@@ -4319,11 +4364,11 @@ END;
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261018054235_EvidenceCollection'
+    WHERE [MigrationId] = N'20261018062258_EvidenceCollection'
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261018054235_EvidenceCollection'', N''10.0.13'');');
+    VALUES (N''20261018062258_EvidenceCollection'', N''10.0.13'');');
 END;
 
 COMMIT;

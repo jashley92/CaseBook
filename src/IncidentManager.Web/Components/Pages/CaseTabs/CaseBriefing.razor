@@ -261,6 +261,7 @@
                             <div class="im-bf-sub">
                                 @($"{s.WindowHours} h")@if (s.DueAtUtc is { } due) { <text> · due @TimeDisp.Brief(due, now)</text> }@if ((s.NotifiedAtUtc ?? n.ReportedAtUtc) is { } rep) { <text> · reported @TimeDisp.Brief(rep, now)</text> }
                             </div>
+                            @if (NoticeHow(s.JurisdictionCode) is { } how) { <div class="im-bf-sub">@how</div> }   @* CAP-07 *@
                         </div>
                     }
                 }
@@ -418,6 +419,11 @@
             .OrderByDescending(t => t.IsOpen).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
     }
 
+    // CAP-07: how a regulator was notified, when recorded (a notice coded "NY;CA" before v1.6.10 counts for each, BUG-428).
+    private string? NoticeHow(string code) =>
+        Case.ByNoticeCode(Case.JurisdictionNotices.Select(x => (x.Jurisdiction, x))).GetValueOrDefault(code) is { } notice
+            ? IncidentManager.Application.Compliance.NoticeDetailText.Summary(notice, Case.Evidence) : null;
+
     private string? NoticeLine(DateTimeOffset now) =>
         Notify?.Headline is { IsActive: true, DueAtUtc: { } due } h && Notify.ReportedAtUtc is null
             ? $"Notify {h.JurisdictionLabel} by {TimeDisp.Brief(due, now)}" + (due < now ? " (overdue)" : "") + "." : null;
@@ -502,7 +508,8 @@
         Part("Why", Decisions().Select(d => $"Decision, {TimeDisp.Short(d.OccurredAtUtc)}: {Plain(d.Description)}"
             + (string.IsNullOrWhiteSpace(d.Rationale) ? "" : $" Why: {d.Rationale}")));
         Part("Obligations", (Notify is { HasClock: true } n ? n.Statuses.Select(s => $"Notify {s.JurisdictionLabel}: {s.WindowHours} h"
-            + (s.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : "") + ((s.NotifiedAtUtc ?? n.ReportedAtUtc) is { } r ? $", reported {TimeDisp.Short(r)}" : "")) : []));   // REV-36: each regulator's own notice
+            + (s.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : "") + ((s.NotifiedAtUtc ?? n.ReportedAtUtc) is { } r ? $", reported {TimeDisp.Short(r)}" : "")
+            + (NoticeHow(s.JurisdictionCode) is { } how ? $". {how}" : "")) : []));   // REV-36: each regulator's own notice; CAP-07: how it was given
         Part("Team", Case.Assignments.OrderBy(a => a.Role).Select(a => $"{Users.DisplayFor(a.UserId)}, {Ui.Label(a.Role)}"));
         return sb.ToString().TrimEnd() + "\n";
     }

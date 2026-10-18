@@ -82,11 +82,11 @@ public class Evidence : AuditableEntity, IHashableEntity
             CaseId, Canonical.Text(OriginalFileName), Canonical.Text(ContentType), SizeBytes, Sha256, CreatedBy, CreatedAtUtc.ToString("o"));
         // BUG-316: and its description (C18: an earlier format falls short only of one that's set).
         return content + Canonical.From(3, Description is not null, () => "|" + Canonical.Text(Description))
-            // CAP-08: from format 4, when, where from and by whom it was collected, each only when set (R7), so a file
+            // CAP-08: from format 5, when, where from and by whom it was collected, each only when set (R7), so a file
             // without them builds what it always did.
-            + Canonical.Since(4, CollectedAtUtc is not null, () => "|collectedat|" + Canonical.Time(CollectedAtUtc))
-            + Canonical.Since(4, CollectedFrom is not null, () => "|collectedfrom|" + Canonical.Text(CollectedFrom))
-            + Canonical.Since(4, CollectedBy is not null, () => "|collectedby|" + Canonical.Text(CollectedBy));
+            + Canonical.Since(5, CollectedAtUtc is not null, () => "|collectedat|" + Canonical.Time(CollectedAtUtc))
+            + Canonical.Since(5, CollectedFrom is not null, () => "|collectedfrom|" + Canonical.Text(CollectedFrom))
+            + Canonical.Since(5, CollectedBy is not null, () => "|collectedby|" + Canonical.Text(CollectedBy));
     }
 }
 

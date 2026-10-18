@@ -1363,12 +1363,15 @@ public sealed class CaseService
     /// <param name="expectedNotifiedAtUtc">BUG-594: when the page showed this regulator as notified (<c>Shown.Of(null)</c>:
     /// not yet). Given, the save is refused when that has changed since, so a stale page doesn't overwrite a colleague's
     /// notice (a notice coded "NY;CA" before v1.6.10 counts for NY and CA, as everywhere else, BUG-428).</param>
+    /// <param name="details">CAP-07: how the regulator was notified (method, reference, who, the evidence file holding it),
+    /// when known. Not given, a corrected notice keeps what it had.</param>
     public async Task RecordNoticeAsync(Guid id, string jurisdiction, DateTimeOffset notifiedAtUtc,
-        Shown<DateTimeOffset?>? expectedNotifiedAtUtc = null, CancellationToken ct = default)
+        Shown<DateTimeOffset?>? expectedNotifiedAtUtc = null, NoticeDetails? details = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadWithNoticesAsync(db, id, ct);
+        await EnsureEvidenceOnCaseAsync(db, id, details?.EvidenceId, ct);   // CAP-07: a file on this (visible) case only
         if (expectedNotifiedAtUtc is { } shown)
         {
             var noticed = Case.ByNoticeCode(c.JurisdictionNotices.Select(n => (n.Jurisdiction, (DateTimeOffset?)n.NotifiedAtUtc)));
@@ -1378,11 +1381,39 @@ public sealed class CaseService
                     "Someone else recorded this regulator's notice while you were looking. Review it, then record yours again if it's still needed.");
         }
         var now = _clock.UtcNow;
-        c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now);
+        c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now, details);
         c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
         EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, NoticeCode(jurisdiction), a, u));   // CAP-06
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
+    }
+
+    /// <summary>
+    /// CAP-07: records how one regulator was notified (method, reference, who gave it, the evidence file holding it) on its
+    /// notice, without moving its time. Audited like the notice; the file must be on this case. No SIEM event: the notice
+    /// itself sent one (5513), and these details change no clock.
+    /// </summary>
+    /// <param name="expectedStamp">FR-06 / REL-02: the details as the form showed them
+    /// (<see cref="JurisdictionNotice.DetailsConcurrencyStamp"/>). Given, the save is refused when they changed since, or the
+    /// notice was removed.</param>
+    /// <returns>False when nothing changed, so nothing was saved.</returns>
+    public async Task<bool> UpdateNoticeDetailsAsync(Guid id, string jurisdiction, NoticeDetails details, string? expectedStamp = null,
+        CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadWithNoticesAsync(db, id, ct);
+        var code = NoticeCode(jurisdiction).ToUpperInvariant();
+        var notice = c.JurisdictionNotices.FirstOrDefault(n => n.Jurisdiction == code);
+        if (expectedStamp is not null && notice?.DetailsConcurrencyStamp() != expectedStamp)
+            throw new StaleEditException(notice?.DetailsConcurrencyStamp() ?? "",
+                notice is null
+                    ? "Someone else removed this regulator's notice while you were editing it."
+                    : "Someone else changed how this regulator was notified while you were editing. Review it, then save yours again if it's still needed.");
+        await EnsureEvidenceOnCaseAsync(db, id, details.EvidenceId, ct);
+        if (!c.SetNoticeDetails(code, details, _user.UserId, _clock.UtcNow)) return false;
+        await db.SaveChangesAsync(ct);
+        return true;
     }
 
     // BUG-594: a recorded time as a StaleEditException's stamp ("" for none).

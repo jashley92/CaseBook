@@ -216,9 +216,17 @@ first with `casebook-keytool export`.
   `EvidenceCollection`, adds three nullable columns to `Evidence` (`CollectedAtUtc`, `CollectedFrom`, `CollectedBy`);
   the app applies it on first start, and `DbaApplies` installs run the regenerated
   `deploy/sql/casebook-schema-sqlserver.sql`. Existing rows are untouched and keep their row hashes (the columns join
-  the hash only when set). Nothing to configure. Large uploads in progress across the upgrade still resume (their
+  format 5 of the hash only when set). Nothing to configure. Large uploads in progress across the upgrade still resume (their
   saved state reads without the new fields). Templates can use `evidence.collected`, `evidence.collected_from` and
   `evidence.collected_by`. Browsers pick up the new upload script and styles by their cache version.
+- **How a regulator was notified (CAP-07).** One migration, `NoticeDetails`: four nullable columns on
+  `JurisdictionNotices` (`Method`, `Reference`, `NotifiedBy`, `EvidenceId`); no data moves. Existing notices are
+  unchanged and keep their row hashes. New row hashes are written as `v5:` (canonical format 5), which differs from
+  format 4 only for a notice with these details, so nothing is re-hashed and the integrity upgrade doesn't run again.
+  The case report's Business Impact section now lists each regulator's notice ("Notice to NY: …"), so a regenerated
+  report of a notified case reads differently from an older version. The legal-register CSV gains a last column,
+  `notice_references`: a script that reads columns by position is unaffected, one that checks the header needs it
+  added. No new SIEM event: editing how a regulator was notified sends none (recording the notice still sends 5513).
 
 ### v1.9.0
 

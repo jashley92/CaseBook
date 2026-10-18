@@ -674,7 +674,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5510 | Governance | Case reopened (by *Reopen*, or by moving a closed case to another phase). Info |
 | 5511 | Governance | Case archived (Info), or **restored** from the archive (action `CaseRestored`, Warning) |
 | 5512 | Governance | Materiality recorded. Detail `status=…`; `Material` is a Warning (it can start a disclosure clock), the rest Info |
-| 5513 | Governance | Regulators recorded as notified: the whole case (`CaseReported`) or one regulator (`RegulatorNoticeRecorded`, detail `jurisdiction=<code>`). Info. Taking one back sends `ReportedCleared` or `RegulatorNoticeRemoved` at Warning: the deadline clock runs again |
+| 5513 | Governance | Regulators recorded as notified: the whole case (`CaseReported`) or one regulator (`RegulatorNoticeRecorded`, detail `jurisdiction=<code>`). Info. Taking one back sends `ReportedCleared` or `RegulatorNoticeRemoved` at Warning: the deadline clock runs again. Recording or editing how a regulator was notified (method, reference, who, the file: CAP-07) sends nothing more, and the reference text is never sent |
 | 5514 | Governance | Report approved; target is the report. Info |
 | 5515 | Governance | Case import applied by a reviewer; target is the pending import when it came through the queue (`PendingImport:<id>`), detail `createdCase=true` when it filed a new case. Info |
 | 5901 | Diagnostics | Test event from **Administration → Diagnostics → Send test event**. Safe to ignore; use it to confirm the collector receives the stream |

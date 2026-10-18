@@ -638,6 +638,8 @@ public sealed class JurisdictionNoticeConfiguration : IEntityTypeConfiguration<J
         b.ToTable("JurisdictionNotices");   // BUG-09
         b.Property(x => x.Jurisdiction).HasMaxLength(JurisdictionNotice.MaxJurisdictionLength).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.Reference).HasMaxLength(JurisdictionNotice.MaxReferenceLength);     // CAP-07
+        b.Property(x => x.NotifiedBy).HasMaxLength(JurisdictionNotice.MaxNotifiedByLength);
         b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => new { x.CaseId, x.Jurisdiction }).IsUnique();
     }

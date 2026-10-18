@@ -67,6 +67,7 @@ else
                                 @if (!string.IsNullOrWhiteSpace(r.DeadlineState)) { <div class="text-muted">@Spaced(r.DeadlineState)</div> }
                             }
                             else { <span class="text-muted">—</span> }
+                            @if (r.NoticeReferences is { } refs) { <div class="text-muted" title="The regulators' reference numbers">@refs</div> }   @* CAP-07 *@
                         </td>
                     </tr>
                 }

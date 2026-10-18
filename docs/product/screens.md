@@ -145,10 +145,11 @@ tally, the impact), **What we are doing** (open tasks with owner and due, a Noti
 deadline marked, and what was done this week), **What remains** (each open question and who is answering it, the
 running notification deadline, what the next gate still needs) and **Why** (the latest decisions with why and what
 was considered, the last classification change with its reason, the materiality call). Beside them: obligations
-(each jurisdiction's clock and the SLA clocks), governance (materiality, legal referral, legal hold, access) and the
+(each jurisdiction's clock and the SLA clocks, with how each regulator was notified when that's recorded), governance (materiality, legal referral, legal hold, access) and the
 team. *Open the brief* shows the brief's card (where it's revised or confirmed); *Copy briefing as text* puts the
-same briefing on the clipboard as plain text. Below: the notification deadline table with *Mark reported*,
-readiness for the next stage gate with each check's *Fix*, the case record and access (restriction). Scope and impact (affected individuals, data
+same briefing on the clipboard as plain text. Below: the notification deadline table with *Mark reported*, each
+row's *Record notice* (the time, and optionally the method, reference number, who notified and the notice file) and,
+on a notified row, how it was notified with *Add how notified* / *Edit how notified* (CAP-07), readiness for the next stage gate with each check's *Fix*, the case record and access (restriction). Scope and impact (affected individuals, data
 elements, jurisdictions) is **Things › Impact**; ATT&CK techniques are **Things › ATT&CK**; related cases are
 **Things › Connections**. Change history is in the audit trail (**Paper › Audit trail**).
 

@@ -8,13 +8,15 @@ using static IncidentManager.Application.Common.Csv;
 
 namespace IncidentManager.Application.Compliance;
 
-/// <summary>One case carrying a legal / regulatory obligation, flattened for the register.</summary>
+/// <summary>One case carrying a legal / regulatory obligation, flattened for the register. CAP-07:
+/// <paramref name="NoticeReferences"/> is each regulator's reference or confirmation number ("NY: NYDFS-114; CA: 2026-88").</summary>
 public sealed record LegalRegisterRow(
     string CaseNumber, string Title, Classification? Classification, Severity Severity, CasePhase Phase,
     DateTimeOffset OpenedAtUtc, DateTimeOffset? ReferredAtUtc, string? ReferredBy, string? LegalContact,
     string? RelevanceNote, bool LegalHold, MaterialityStatus Materiality, string? MaterialityDecisionMaker,
     DateTimeOffset? MaterialityDecidedOnUtc, int? AffectedIndividuals, string? AffectedJurisdictions,
-    DateTimeOffset? ReportedAtUtc, string? DeadlineJurisdiction, DateTimeOffset? DeadlineDueAtUtc, string? DeadlineState);
+    DateTimeOffset? ReportedAtUtc, string? DeadlineJurisdiction, DateTimeOffset? DeadlineDueAtUtc, string? DeadlineState,
+    string? NoticeReferences = null);
 
 /// <summary>
 /// PROD-12 (Legal/Privacy half): the obligations register as an <b>export</b> — Legal and Privacy don't use the
@@ -55,6 +57,8 @@ public sealed class LegalRegisterService
                 c.LegalReferral.RegulatoryRelevanceNote, c.LegalHold, MaterialityStatus = c.Materiality.Status,
                 c.Materiality.DecisionMaker, c.Materiality.DecidedOnUtc, c.AffectedIndividualsCount, c.AffectedStates,
                 c.ReportedAtUtc,
+                References = c.JurisdictionNotices.Where(n => n.Reference != null)
+                    .Select(n => new { n.Jurisdiction, n.Reference }).ToList(),   // CAP-07
             })
             .ToListAsync(ct);
 
@@ -68,7 +72,9 @@ public sealed class LegalRegisterService
                 c.ReferredAtUtc, c.ReferredBy is { } by ? _users.DisplayFor(by) : null, c.ReferredToContact,
                 c.RegulatoryRelevanceNote, c.LegalHold, c.MaterialityStatus, c.DecisionMaker, c.DecidedOnUtc,
                 c.AffectedIndividualsCount, c.AffectedStates, c.ReportedAtUtc,
-                h?.JurisdictionLabel, h?.DueAtUtc, h?.State.ToString()));
+                h?.JurisdictionLabel, h?.DueAtUtc, h?.State.ToString(),
+                c.References.Count == 0 ? null : string.Join("; ", c.References.OrderBy(n => n.Jurisdiction, StringComparer.Ordinal)
+                    .Select(n => $"{n.Jurisdiction}: {n.Reference}"))));
         }
         return rows;
     }
@@ -83,7 +89,7 @@ public sealed class LegalRegisterService
         sb.Append("case_number,title,classification,severity,phase,opened_utc,legal_referred_utc,referred_by,legal_contact," +
                   "regulatory_relevance,legal_hold,materiality,materiality_decision_maker,materiality_decided_utc," +
                   "affected_individuals,affected_jurisdictions,reported_to_regulators_utc,deadline_jurisdiction," +
-                  "deadline_due_utc,deadline_status\r\n");
+                  "deadline_due_utc,deadline_status,notice_references\r\n");
         foreach (var r in rows)
         {
             string[] f =
@@ -92,7 +98,7 @@ public sealed class LegalRegisterService
                 T(r.OpenedAtUtc), T(r.ReferredAtUtc), r.ReferredBy ?? "", r.LegalContact ?? "", r.RelevanceNote ?? "",
                 r.LegalHold ? "Yes" : "No", r.Materiality.ToString(), r.MaterialityDecisionMaker ?? "", T(r.MaterialityDecidedOnUtc),
                 r.AffectedIndividuals?.ToString(inv) ?? "", r.AffectedJurisdictions ?? "", T(r.ReportedAtUtc),
-                r.DeadlineJurisdiction ?? "", T(r.DeadlineDueAtUtc), r.DeadlineState ?? "",
+                r.DeadlineJurisdiction ?? "", T(r.DeadlineDueAtUtc), r.DeadlineState ?? "", r.NoticeReferences ?? "",
             ];
             sb.Append(string.Join(",", f.Select(Escape))).Append("\r\n");
         }

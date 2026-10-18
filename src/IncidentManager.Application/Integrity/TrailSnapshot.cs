@@ -98,7 +98,7 @@ public sealed class TrailSnapshot
 
     /// <summary>
     /// Whether <paramref name="row"/> agrees with the trail on everything its hash covers: a copy of the row with each
-    /// value the trail recorded put back builds the same format-4 canonical as the row itself.
+    /// value the trail recorded put back builds the same canonical as the row itself, in the current format.
     /// </summary>
     public bool Agrees(IHashableEntity row)
     {
@@ -134,8 +134,21 @@ public sealed class TrailSnapshot
             catch (Exception e) when (e is JsonException or NotSupportedException or ArgumentException) { continue; }   // a type changed since: unknown
             if (!Equals(recorded, current)) set.Invoke(target, [recorded]);
         }
-        return Canonical.InFormat(4, copy.BuildCanonicalContent) == Canonical.InFormat(4, row.BuildCanonicalContent);
+        // CAP-07: a value format 5 brought in that the trail never recorded wasn't set by CaseBook, which audits each one.
+        if (BroughtInByFormat5.TryGetValue(type, out var later)
+            && later.Any(f => !_fields.ContainsKey(f) && type.GetProperty(f)?.GetValue(row) is not null))
+            return false;
+        return Canonical.InFormat(Canonical.CurrentFormat, copy.BuildCanonicalContent)
+               == Canonical.InFormat(Canonical.CurrentFormat, row.BuildCanonicalContent);
     }
+
+    // CAP-07: the stored values format 5 brought in. Their columns are newer than any trail written before them, so the
+    // trail can't put them back: a row holding one its trail never recorded doesn't agree.
+    private static readonly Dictionary<Type, string[]> BroughtInByFormat5 = new()
+    {
+        [typeof(JurisdictionNotice)] = [nameof(JurisdictionNotice.Method), nameof(JurisdictionNotice.Reference),
+            nameof(JurisdictionNotice.NotifiedBy), nameof(JurisdictionNotice.EvidenceId)],
+    };
 
     /// <summary>The trail of each of <paramref name="ids"/> of <paramref name="entityType"/>, read in batches.</summary>
     public static async Task<Dictionary<string, TrailSnapshot>> ForAsync(IAppDbContext db, string entityType,

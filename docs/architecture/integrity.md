@@ -31,6 +31,13 @@ whether a hash in an older format falls short of a record (it holds a value that
 change; `CanonicalCoverageTests` changes every stored value of every record and requires the hash to change, or the
 value to be listed with the reason it's left out.
 
+**Canonical format 5 (CAP-07).** Format 4 plus how a regulator was notified: a notice's method, reference, who gave it
+and the evidence file holding it, folded in only when one is set. New hashes are stored as `v5:`. A notice without them,
+and every other record, builds exactly what format 4 built, so nothing is re-hashed and the upgrade has nothing to do for
+it (the marker stays `4`). No hash older than format 5 can cover those values, and no trail written before them records
+them, so a notice holding one under an older hash was changed outside CaseBook: the strict check flags it, the upgrade
+leaves it (`TrailSnapshot` disagrees), and upkeep won't re-hash it.
+
 **The upgrade and the strict check (C18).** After the first start of this release, `RowHashUpgrade` looks at every
 record in every hashed table. BUG-644: it runs in the background (`RowHashUpgradeHostedService`), once the app has
 been up and serving for `Integrity:Upgrade:DelayMinutes` (default 15), not during start-up: on a large database it
@@ -45,7 +52,7 @@ updated before v1.5.1), gets its hash recorded as an audited change when it agre
 (`TrailSnapshot`: everything its hash covers that the trail recorded is still as recorded; a case's data elements and a
 step's tactics must be in the trail too) or, with no trail, when it still holds what a released migration wrote
 (`MigrationSeededRows`: the close gate's requirements, the report templates the library migration made). One whose hash
-doesn't cover what it holds is re-hashed in format 4 the same way. Anything else is left, logged, and reported by the
+doesn't cover what it holds is re-hashed in the current format the same way. Anything else is left, logged, and reported by the
 check. Then it writes the AppSetting `Integrity:RowHashFormat` = `4`, and from then on the record check is
 strict: a record with no hash (in any table, planted or with its hash cleared, BUG-620/621), one whose latest entry
 records no hash (rewritten with its hash recomputed, BUG-629), one holding a value its hash's format doesn't cover, a
@@ -65,7 +72,7 @@ sort leave those entries out. Upkeep re-hashes what it fills in, so it never sig
 stored hash, and that hash must be the one its trail last recorded; where the trail records none, the row must agree
 with its trail as the upgrade requires, and the check must not be strict yet; where its hash is in an older format
 (which leaves out values format 4 brought in, such as a case's kept jurisdictions), it must agree with its trail too
-(BUG-646). A row that fails is put back unchanged, so the back-fill skips it and the check keeps reporting it. The
+(BUG-646); one older than format 5 that holds a value format 5 brought in is refused outright (CAP-07). A row that fails is put back unchanged, so the back-fill skips it and the check keeps reporting it. The
 upgrade's own saves change only the hash, and the upgrade has already checked those rows. BUG-657: an upkeep save waits
 for the chain's gate before it checks its rows, and a row whose stored hash isn't the one it was read with (someone saved
 it meanwhile) is put back too, so the upkeep never overwrites a newer save with a hash of the row as it read it.

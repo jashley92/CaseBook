@@ -1934,10 +1934,16 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<DateTimeOffset?>("DueAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("EvidenceId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Jurisdiction")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("Method")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -1947,6 +1953,14 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
 
                     b.Property<DateTimeOffset>("NotifiedAtUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("NotifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(70)
