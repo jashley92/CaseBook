@@ -383,7 +383,7 @@ else
                                            checked="@_picked.Contains(e.Id)" @onchange="ev => Pick(e.Id, e.Disposition, (bool)(ev.Value ?? false))" /></td>
                             }
                             <td class="text-nowrap">@Ui.EntityGlyph(e.Type) @Ui.Label(e.Type)</td>
-                            <td><code class="small">@DisplayValue(e)</code>
+                            <td><code class="small im-entity-value">@DisplayValue(e)</code>
                                 @if (!string.IsNullOrWhiteSpace(e.Description)) { <br /><small class="text-muted">@e.Description</small> }
                                 @if (_overlaps.TryGetValue(e.Id, out var alsoIn) && alsoIn.Count > 0)
                                 {

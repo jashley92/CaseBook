@@ -478,6 +478,9 @@ h1:focus {
 }
 .im-entity-tag:hover { background: color-mix(in srgb, var(--bs-info) 24%, transparent); text-decoration: none; }
 .im-entity-tag .bi { font-size: .82em; opacity: .8; }
+/* CAP-02: a long value in the entity list (a file hash, a URL) wraps, so the verdict column beside the new tick boxes
+   stays in view instead of running off the card. */
+.im-entity-value { overflow-wrap: anywhere; }
 /* BUG-411: a long value (a command line, a URL) wraps inside its chip instead of running past the row: the chip
    flows like text, each line keeping its own edges. A short one stays on one line as before. */
 .im-entity-tag {
