@@ -1017,7 +1017,8 @@ public sealed class ReportService
                 : null,
             Evidence = c.Evidence
                 .OrderBy(x => x.CreatedAtUtc)
-                .Select(x => new ReportEvidenceItem(x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAtUtc, _users.DisplayFor(x.CreatedBy)))
+                .Select(x => new ReportEvidenceItem(x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAtUtc, _users.DisplayFor(x.CreatedBy),
+                    x.CollectedAtUtc, d.NullableText(x.CollectedFrom), d.NullableText(x.CollectedBy)))   // CAP-08
                 .ToList(),
             Notes = c.Notes.Where(x => x.IsCurrent)
                 .OrderBy(x => x.CreatedAtUtc)

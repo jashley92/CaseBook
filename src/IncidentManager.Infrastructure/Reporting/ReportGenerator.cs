@@ -292,8 +292,13 @@ public sealed partial class ReportGenerator : IReportGenerator
             m.SeverityHistory.Select(x => new[] { x.AtUtc.ToString("u"), x.From, x.To, x.Reason, x.By })));
 
         body.AppendChild(SubHeading("F. Evidence index"));
-        body.AppendChild(WordTable(["File", "Size (bytes)", "SHA-256", "Uploaded (UTC)", "By"],
-            m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(CultureInfo.InvariantCulture), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy })));
+        // CAP-08: a Collected column only when a file says how it was collected, so an index without it reads as before.
+        if (m.Evidence.Any(x => x.Collected.Length > 0))
+            body.AppendChild(WordTable(["File", "Size (bytes)", "SHA-256", "Collected", "Uploaded (UTC)", "By"],
+                m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(CultureInfo.InvariantCulture), x.Sha256, x.Collected, x.UploadedAtUtc.ToString("u"), x.UploadedBy })));
+        else
+            body.AppendChild(WordTable(["File", "Size (bytes)", "SHA-256", "Uploaded (UTC)", "By"],
+                m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(CultureInfo.InvariantCulture), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy })));
     }
 
     internal static Paragraph P(string text, bool bold = false, bool italic = false, int size = 22)

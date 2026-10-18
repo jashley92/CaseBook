@@ -139,6 +139,7 @@ the note is marked "On the record".
 | | |
 |---|---|
 | **Trigger** | Evidence tab: choose a file and a description, then *Upload*; or paste a screenshot or drag files onto the tab (uploaded immediately) |
+| **Collection** (CAP-08) | Optional *Collected* (when), *Collected from* (host, mailbox, system or vendor) and *Collected by*, on the upload form. They go with a picked or pasted file, with a large one (kept with the upload's state, so a resume keeps them) and with each dropped file. Checked before any byte is stored: not in the future, not before the case's activity began (its detected time when that isn't recorded). Later, the evidence panel's *Record how it was collected* sets or corrects them (`CaseService.RecordEvidenceCollectionAsync`, `EditCases`): an audited change, refused if someone changed them since the edit opened, and not dated after the upload. The file itself never changes. |
 | **Behind the scenes** | `EvidenceService.UploadAsync` checks `EditCases`, need-to-know and the room left (size, quota, free space) **before** storing; the evidence store writes the bytes under a random name outside the web root while computing SHA-256 (encrypted when evidence encryption is on); an `Evidence` row and an "Uploaded" custody event are saved. Files over 100 MB go up in 8 MB parts (`/evidence/uploads`), each checked again, and are read back before they're recorded. |
 | **Limits** | `Evidence:MaxUploadMB` per file (500 MB by default, up to 64 GB), `Evidence:StorageQuotaGB` in all, and `Evidence:MinFreeSpaceGB` left free (Administration › Governance & security › Evidence storage); 15 MB for timeline screenshots |
 | **Duplicates** | The same file (SHA-256) twice in one case is refused, naming the first copy; in another case it's stored and the uploader is told which other cases they can see hold it. |
@@ -147,6 +148,7 @@ the note is marked "On the record".
 | **Download** | *Download* (the file, sent as plain bytes with a sandboxing CSP) or *As zip* (a zip with the password `infected`). A file that can run downloads first as the zip (*Download safely*), per `Evidence:SafeDownload`. The custody event says which. |
 | **Custody** | *Custody* shows uploaded, viewed (preview; once per person per 10 minutes), downloaded (explicit download only), transferred. **Record transfer** (recipient, method, purpose) attests a hand-off outside CaseBook; it's also written to the audit chain. Thumbnails don't count. |
 | **Integrity** | The file's hash is part of the record. The optional re-hash job alarms if stored bytes change. |
+| **Finding a file** (CAP-25) | A filter over name, description and the start of the SHA-256 (four characters or more), never put in the URL; chips for images, text, can run, cited and not cited (chips of one kind widen, the two kinds narrow); File, Size, Collected and Uploaded sort both ways (newest upload first by default; files with no collection time last). The logic is `EvidenceListView`. |
 | **Removal** | Not possible. Evidence is immutable once attached. |
 
 ## Notes

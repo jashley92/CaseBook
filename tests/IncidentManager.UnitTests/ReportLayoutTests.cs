@@ -65,6 +65,32 @@ public class ReportLayoutTests
     }
 
     [Fact]
+    public void The_evidence_index_says_how_a_file_was_collected_when_one_does(/* CAP-08 */)
+    {
+        var at = new System.DateTimeOffset(2026, 10, 1, 9, 30, 0, System.TimeSpan.Zero);
+        CaseReportModel Model(params ReportEvidenceItem[] evidence) => new()
+        {
+            Sections = [ReportSection.Appendix], CaseNumber = "2026-09", Title = "t", Classification = "Incident", Phase = "Triage",
+            Severity = "Low", Origin = "Internal detection", Summary = "s", Evidence = evidence,
+            GeneratedBy = "tester", GeneratedAtUtc = System.DateTimeOffset.UnixEpoch, ContentHash = new string('a', 64),
+        };
+        var collected = new ReportEvidenceItem("mail.eml", 10, new string('b', 64), at.AddHours(5), "Dana", at, "mx01", "Messaging team");
+        var plain = new ReportEvidenceItem("plain.txt", 5, new string('c', 64), at, "Dana");
+
+        WordXml(new ReportGenerator().GenerateWord(Model(collected, plain)))
+            .Should().Contain("Collected").And.Contain("2026-10-01 09:30 UTC, from mx01 by Messaging team");
+        WordXml(new ReportGenerator().GenerateWord(Model(plain))).Should().NotContain("Collected", "an index without a collection reads as before");
+
+        // The Word template fields, each empty when not recorded.
+        foreach (var f in new[] { "evidence.collected", "evidence.collected_from", "evidence.collected_by" })
+            ReportTemplateFields.CollectionFor(f).Should().Be("evidence", f);
+        var items = ReportTemplateFields.Items(Model(collected, plain), "evidence");
+        (items[0]("evidence.collected"), items[0]("evidence.collected_from"), items[0]("evidence.collected_by"))
+            .Should().Be(("2026-10-01 09:30 UTC", "mx01", "Messaging team"));
+        (items[1]("evidence.collected"), items[1]("evidence.collected_from"), items[1]("evidence.collected_by")).Should().Be(("", "", ""));
+    }
+
+    [Fact]
     public void A_bang_prefix_hides_a_section_but_keeps_its_position()
     {
         var parsed = ReportLayout.Parse("Summary,!BusinessImpact,EventTimeline");

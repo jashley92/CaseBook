@@ -2,7 +2,8 @@
    drag-drop, U-39), the hashed evidence list, per-item chain of custody (U-26), and inline image preview.
    The cross-tab concerns stay in the parent and are threaded in: the screenshot lightbox (OnPreview), the
    live-collab flash (FlashClass/FlashStyle), and a Reload after upload (OnChanged). The paste/drop shim is
-   still registered by the parent against the element IDs kept here (evidence-dropzone / -file-input / -file-drop). *@
+   still registered by the parent against the element IDs kept here (evidence-dropzone / -file-input / -file-drop).
+   CAP-08: an upload can say when, where from and by whom the file was collected; CAP-25: the list filters and sorts. *@
 @using Microsoft.Extensions.Logging
 @inject EvidenceService Evidence
 @inject IncidentManager.Application.Cases.CaseService Cases
@@ -14,6 +15,7 @@
 @inject IJSRuntime JS
 @inject AntiforgeryStateProvider Antiforgery
 @inject NavigationManager Nav
+@inject IClock Clock
 @implements IDisposable
 
 <div id="evidence-dropzone">
@@ -46,9 +48,26 @@
                         </button>
                     </div>
                 </div>
+                @* CAP-08: when, where from and by whom it was collected, each optional (custody otherwise starts at the upload). *@
+                <div class="row g-2 mt-0">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="ev-coll-at">Collected (@TimeDisp.Label) <span class="text-muted">(optional)</span></label>
+                        <DateTimeInput Past="true" TValue="DateTime?" id="ev-coll-at" class="form-control form-control-sm" @bind-Value="_collAt" disabled="@_busy" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="ev-coll-from">Collected from <span class="text-muted">(optional)</span></label>
+                        <input id="ev-coll-from" class="form-control form-control-sm" @bind="_collFrom" @bind:event="oninput" disabled="@_busy"
+                               maxlength="@IncidentManager.Domain.Entities.Evidence.MaxCollectedFromLength" placeholder="e.g. WKS-0142, a mailbox, Okta, the vendor" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="ev-coll-by">Collected by <span class="text-muted">(optional)</span></label>
+                        <input id="ev-coll-by" class="form-control form-control-sm" @bind="_collBy" @bind:event="oninput" disabled="@_busy"
+                               maxlength="@IncidentManager.Domain.Entities.Evidence.MaxCollectedByLength" placeholder="e.g. J. Rivera (EDR live response)" />
+                    </div>
+                </div>
                 <div class="small text-muted mt-2">
                     <span class="bi bi-clipboard me-1"></span>Paste a screenshot or drag files onto this tab. They're hashed and logged to the chain of custody like any upload.
-                    Dropped files upload straight away, without a description; the box above is for the file you pick.
+                    Dropped files upload straight away, without a description but with the collection details above, if any; the description box is for the file you pick.
                     @if (_file is not null && !_busy) { <span class="ms-1">Ready: <strong>@_file.Name</strong>. Add a description and click Upload.</span> }
                 </div>
                 @if (_parts is { } up)
@@ -105,10 +124,37 @@
     }
     else
     {
-        <table class="table table-sm align-middle">
-            <thead><tr><th>File</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr></thead>
+        @* CAP-25: a filter over name, description and hash prefix (kept in the page, never the URL: C7), quick chips, and
+           sortable columns. *@
+        var shown = Shown();
+        <div class="im-ev-bar" role="search" aria-label="Filter the evidence">
+            <input type="search" class="form-control form-control-sm im-ev-filter" placeholder="Filter by name, description or hash"
+                   aria-label="Filter by name, description or hash" @bind="_filter" @bind:event="oninput" />
+            <div class="im-counts" role="group" aria-label="Show only">
+                @foreach (var (chip, label) in ChipLabels)
+                {
+                    <button type="button" class="im-count @(_chips.Contains(chip) ? "on" : "")" aria-pressed="@Ui.Aria(_chips.Contains(chip))"
+                            @onclick="() => ToggleChip(chip)">@label</button>
+                }
+            </div>
+            @if (shown.Count != EvidenceItems.Count)
+            {
+                <span class="small text-muted" role="status">@shown.Count of @EvidenceItems.Count
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ClearFilter">Show all</button></span>
+            }
+        </div>
+        @if (shown.Count == 0)
+        {
+            <p class="small text-muted">No files match. <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ClearFilter">Show all @EvidenceItems.Count</button></p>
+        }
+        else
+        {
+        @* CAP-25: at a narrow width (641 px with the side menu open) the table scrolls in its own box, not the page. *@
+        <div class="table-responsive">
+        <table class="table table-sm align-middle im-ev-table">
+            <thead><tr>@SortTh("File", EvidenceSort.Name)@SortTh("Size", EvidenceSort.Size)<th>SHA-256</th>@SortTh("Collected", EvidenceSort.Collected)@SortTh("Uploaded", EvidenceSort.Uploaded)<th></th></tr></thead>
             <tbody>
-                @foreach (var ev in EvidenceItems.OrderByDescending(x => x.CreatedAtUtc))
+                @foreach (var ev in shown)
                 {
                     <tr class="im-enter @FlashClass?.Invoke(ev.Id)" style="@FlashStyle?.Invoke(ev.Id)" @key="ev.Id" id="ev-@ev.Id">
                         <td>
@@ -147,6 +193,13 @@
                         </td>
                         <td>@FormatSize(ev.SizeBytes)</td>
                         <td><code class="small">@IncidentManager.Application.Common.TextFit.Cap(ev.Sha256, 17)</code></td>
+                        @* CAP-08: when, where from and by whom it was collected, when recorded. *@
+                        <td class="small text-muted im-ev-collected">
+                            @if (ev.CollectedAtUtc is { } collectedAt) { @TimeDisp.Long(collectedAt) }
+                            else if (ev.HasCollection) { <span>Time not recorded</span> }
+                            else { <span aria-label="Not recorded">—</span> }
+                            @if (EvidenceCollection.Source(ev) is { } source) { <br /><span>@source</span> }
+                        </td>
                         <td class="small text-muted">@TimeDisp.Long(ev.CreatedAtUtc)<br />@Users.DisplayFor(ev.CreatedBy)</td>
                         <td>
                             @* PROD-58: the actions wrap (each whole) rather than push the row past its column when the side panel is open. *@
@@ -191,7 +244,7 @@
                     {
                         @* INV-28: the tasks about this file, and a new one. *@
                         <tr class="im-custody-row">
-                            <td colspan="5">
+                            <td colspan="6">
                                 @if (evTasks.Count > 0)
                                 {
                                     <div class="tl-tasks">
@@ -212,7 +265,7 @@
                     @if (_custodyOpen.Contains(ev.Id))
                     {
                         <tr class="im-custody-row">
-                            <td colspan="5" class="bg-body-tertiary">
+                            <td colspan="6" class="bg-body-tertiary">
                                 <div class="small fw-semibold mb-2">
                                     <span class="bi bi-shield-check me-1" aria-hidden="true"></span>Chain of custody
                                 </div>
@@ -290,6 +343,8 @@
                 }
             </tbody>
         </table>
+        </div>
+        }
     }
 </div>
 
@@ -325,7 +380,9 @@
     // the time-display redraw hides it (a picked file alone isn't: picking it again is one click).
     protected override void OnInitialized()
     {
-        Edits.Track(this, "the evidence description you're writing", () => !string.IsNullOrWhiteSpace(_evDesc), Region);
+        // CAP-08: and the collection details typed with it.
+        Edits.Track(this, "the evidence description you're writing", () => !string.IsNullOrWhiteSpace(_evDesc)
+            || _collAt is not null || !string.IsNullOrWhiteSpace(_collFrom) || !string.IsNullOrWhiteSpace(_collBy), Region);
         Edits.Track(this, "the transfer you're recording", () => TransferDirty, Region);
         // PROD-56: leaving mid-way through a large upload stops it, so it asks first.
         Edits.Track(this, "the upload in progress", () => _parts is not null, Region);
@@ -457,9 +514,13 @@
         {
             var name = _file.Name;
             var sentDesc = _evDesc;
-            if (await SendAsync(_file, "evidence-file-input", 0, sentDesc) is not { } recorded) return;
+            var (sentAt, sentFrom, sentBy) = (_collAt, _collFrom, _collBy);
+            if (await SendAsync(_file, "evidence-file-input", 0, sentDesc, Collection()) is not { } recorded) return;
             _file = null;
             _evDesc = DraftText.ClearIfUnchanged(_evDesc, sentDesc, null);   // BUG-601 (the box is disabled while it uploads)
+            if (_collAt == sentAt) _collAt = null;   // CAP-08: likewise the collection
+            _collFrom = DraftText.ClearIfUnchanged(_collFrom, sentFrom, null);
+            _collBy = DraftText.ClearIfUnchanged(_collBy, sentBy, null);
             await OnChanged.InvokeAsync();
             Toasts.Success($"Uploaded {name}");
             await NoteElsewhereAsync(recorded, name);
@@ -480,14 +541,25 @@
     // PROD-56: a file up to 100 MB goes through the page as before; a larger one in parts (chunked-upload.js), with
     // progress. The recorded evidence's id; null when the person cancelled a large upload (nothing was recorded); a
     // failure throws with its reason.
-    private async Task<Guid?> SendAsync(IBrowserFile file, string inputId, int index, string? description)
+    // CAP-08: with when, where from and by whom it was collected, on both paths.
+    private async Task<Guid?> SendAsync(IBrowserFile file, string inputId, int index, string? description, EvidenceCollection? collected)
     {
         if (file.Size <= EvidenceUploadSessions.InPageMaxBytes)
         {
             await using var stream = file.OpenReadStream(EvidenceUploadSessions.InPageMaxBytes); // NOSONAR S5693: evidence up to 100 MB by design (PROD-56); larger goes in 8 MB parts, and EvidenceRoom checks the admin limit first
-            return (await Evidence.UploadAsync(CaseId, file.Name, file.ContentType, stream, description, file.Size)).Id;
+            return (await Evidence.UploadAsync(CaseId, file.Name, file.ContentType, stream, description, file.Size, collected)).Id;
         }
-        return await SendInPartsAsync(file, inputId, index, description);
+        return await SendInPartsAsync(file, inputId, index, description, collected);
+    }
+
+    // CAP-08: the collection typed in the form; the time is a wall-clock time in the viewer's zone.
+    private DateTime? _collAt;
+    private string? _collFrom, _collBy;
+
+    private EvidenceCollection? Collection()
+    {
+        var c = new EvidenceCollection(_collAt is { } at ? WallClock.ToUtc(at, TimeDisp.Zone, Clock.UtcNow) : null, _collFrom, _collBy);
+        return c.IsEmpty ? null : c;
     }
 
     // PROD-59: adds the file's SHA-256 to the case's indicators (or says it's already one), unjudged: the analyst sets the
@@ -547,7 +619,9 @@
     private DotNetObjectReference<CaseEvidenceTab>? _self;
     private bool _disposed;
 
-    private async Task<Guid?> SendInPartsAsync(IBrowserFile file, string inputId, int index, string? description, string? resumeId = null)
+    // CAP-08: a resumed upload carries the collection it began with (the server kept it), so it takes none.
+    private async Task<Guid?> SendInPartsAsync(IBrowserFile file, string inputId, int index, string? description,
+        EvidenceCollection? collected = null, string? resumeId = null)
     {
         var token = Antiforgery.GetAntiforgeryToken()?.Value
                     ?? throw new InvalidOperationException("The page's security token is missing. Reload the page and try again.");
@@ -556,7 +630,9 @@
         StateHasChanged();
         try
         {
-            if (resumeId is null) await JS.InvokeVoidAsync("imChunkedUpload.start", _self, upload.Key, inputId, index, CaseId, description, token);
+            if (resumeId is null)
+                await JS.InvokeVoidAsync("imChunkedUpload.start", _self, upload.Key, inputId, index, CaseId, description, token,
+                    new { collectedAt = collected?.AtUtc, collectedFrom = collected?.From, collectedBy = collected?.By });
             else await JS.InvokeVoidAsync("imChunkedUpload.resume", _self, upload.Key, inputId, index, resumeId, token);
             var failed = await upload.Ended.Task;
             if (failed is null) return upload.RecordedId ?? throw new InvalidOperationException("The upload finished without a record.");
@@ -636,6 +712,9 @@
         _busy = true;
         var uploaded = 0;
         var recorded = new List<(Guid Id, string Name)>();
+        // CAP-08: a drop is usually one collection (the logs pulled from one host), so the collection details typed in the
+        // form go with each file, and stay in the form.
+        var collected = Collection();
         try
         {
             for (var i = 0; i < files.Count; i++)
@@ -645,7 +724,7 @@
                 try
                 {
                     // REV-34: the description box belongs to the file staged in the picker, not to these.
-                    if (await SendAsync(f, "evidence-file-drop", i, description: null) is { } id)
+                    if (await SendAsync(f, "evidence-file-drop", i, description: null, collected) is { } id)
                     {
                         uploaded++;
                         recorded.Add((id, f.Name));
@@ -745,6 +824,49 @@
         {
             _xferBusy = false;
         }
+    }
+
+    // CAP-25: the list's filter, chips and sort (EvidenceListView holds the logic). The filter text stays here, never in
+    // the URL (C7). Newest upload first by default, as before.
+    private string? _filter;
+    private readonly HashSet<EvidenceChip> _chips = [];
+    private EvidenceSort _sort = EvidenceSort.Uploaded;
+    private bool _sortDesc = true;
+
+    private static readonly (EvidenceChip Chip, string Label)[] ChipLabels =
+    [
+        (EvidenceChip.Images, "Images"), (EvidenceChip.Text, "Text"), (EvidenceChip.CanRun, "Can run"),
+        (EvidenceChip.Cited, "Cited"), (EvidenceChip.Uncited, "Not cited"),
+    ];
+
+    private IReadOnlyList<Evidence> Shown() => EvidenceListView.Apply(EvidenceItems, _filter, _chips, IsCited, _sort, _sortDesc);
+
+    // As the row's "Cited by" badge says: a current timeline entry (BUG-443) or the brief (INV-33) cites it.
+    private bool IsCited(Evidence ev) =>
+        Citations.Any(x => x.EvidenceId == ev.Id && _currentEntries.Contains(x.TimelineEntryId))
+        || BriefText?.Contains($"evidence:{ev.Id}", StringComparison.OrdinalIgnoreCase) == true;
+
+    private void ToggleChip(EvidenceChip chip) { if (!_chips.Add(chip)) _chips.Remove(chip); }
+
+    private void ClearFilter()
+    {
+        _filter = null;
+        _chips.Clear();
+    }
+
+    // A header click sorts by that column in its natural direction; clicking the sorted column flips it (as the case list).
+    private void SetSort(EvidenceSort sort)
+    {
+        if (_sort == sort) _sortDesc = !_sortDesc;
+        else (_sort, _sortDesc) = (sort, EvidenceListView.DefaultDescending(sort));
+    }
+
+    private RenderFragment SortTh(string label, EvidenceSort sort)
+    {
+        var on = _sort == sort;
+        var ariaSort = on ? (_sortDesc ? "descending" : "ascending") : "none";
+        var icon = on ? (_sortDesc ? "bi-arrow-down" : "bi-arrow-up") : "bi-arrow-down-up";
+        return @<th aria-sort="@ariaSort"><button type="button" class="im-sort @(on ? "on" : "")" @onclick="() => SetSort(sort)">@label<span class="bi @icon" aria-hidden="true"></span></button></th>;
     }
 
     // Only image evidence can be previewed inline (the /inline endpoint serves image/* only).

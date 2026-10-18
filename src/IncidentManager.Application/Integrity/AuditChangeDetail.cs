@@ -66,6 +66,10 @@ public static class AuditChangeDetail
         ["SourceEntityId"] = "Source entity",
         ["EvidenceId"] = "Attached evidence",
         ["TechniqueId"] = "ATT&CK technique",
+        // CAP-08: an evidence file's collection, recorded on upload or corrected later.
+        ["CollectedAtUtc"] = "Collected",
+        ["CollectedFrom"] = "Collected from",
+        ["CollectedBy"] = "Collected by",
     };
 
     // For the one-line summary, owned value-object fields collapse to their group so a materiality change

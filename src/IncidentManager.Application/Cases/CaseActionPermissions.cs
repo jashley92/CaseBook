@@ -113,6 +113,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.RaiseTaskFromQuestionAsync)] = Permission.EditCases,
             [nameof(CaseService.AddOpenQuestionAsync)] = Permission.EditCases,
             [nameof(CaseService.CiteEvidenceAsync)] = Permission.EditCases,
+            [nameof(CaseService.RecordEvidenceCollectionAsync)] = Permission.EditCases,   // CAP-08
             [nameof(CaseService.HandOffAsync)] = Permission.EditCases,
             [nameof(CaseService.SetActionItemOwnerAsync)] = Permission.EditCases,
             [nameof(CaseService.UpdateActionItemAsync)] = Permission.EditCases,

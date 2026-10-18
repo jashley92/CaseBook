@@ -90,12 +90,18 @@ window.imChunkedUpload = (function () {
         }
     }
 
-    function begin(caseId, file, description, token) {
+    // CAP-08: collection is { collectedAt, collectedFrom, collectedBy }, each optional; the server keeps it with the upload,
+    // so a resume needn't send it again.
+    function begin(caseId, file, description, token, collection) {
+        var c = collection || {};
         return function (signal, fileSample) {
             return withRetry(signal, function () {
                 return fetch('evidence/uploads/', {
                     method: 'POST', credentials: 'same-origin', signal: signal, headers: headers(token, true),
-                    body: JSON.stringify({ caseId: caseId, name: file.name, contentType: file.type || '', size: file.size, description: description, sample: fileSample })
+                    body: JSON.stringify({
+                        caseId: caseId, name: file.name, contentType: file.type || '', size: file.size, description: description, sample: fileSample,
+                        collectedAt: c.collectedAt || null, collectedFrom: c.collectedFrom || null, collectedBy: c.collectedBy || null
+                    })
                 });
             });
         };
@@ -137,9 +143,9 @@ window.imChunkedUpload = (function () {
 
     return {
         // inputId and index name the file input and which of its files to send (the picker's, or one dropped).
-        start: function (dotnet, key, inputId, index, caseId, description, token) {
+        start: function (dotnet, key, inputId, index, caseId, description, token, collection) {
             var file = picked(dotnet, key, inputId, index);
-            if (file) go(dotnet, key, file, token, begin(caseId, file, description, token));
+            if (file) go(dotnet, key, file, token, begin(caseId, file, description, token, collection));
         },
         // PROD-59: carries on an upload the server kept, with the same file picked again.
         resume: function (dotnet, key, inputId, index, uploadId, token) {

@@ -1619,6 +1619,17 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<Guid>("CaseId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("CollectedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CollectedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CollectedFrom")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(200)

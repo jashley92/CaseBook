@@ -274,8 +274,12 @@ Below the list, relationships are added and edited (type, description and direct
 
 1. **Upload**: pick, paste or drag a file (up to the administrator's limit, 500 MB by default; files over 100 MB go
    up in parts with a progress bar). It's hashed (SHA-256) on the way in and stored outside the web root, encrypted
-   when evidence encryption is on.
-2. **An evidence row**: description, size, SHA-256, who uploaded it and when, and what cites it ("Cited by 1
+   when evidence encryption is on. Optionally say when, where from and by whom it was collected; a drop takes those
+   too (not the description).
+2. **Filter and sort** (CAP-25): a filter box (name, description, hash prefix), chips (Images, Text, Can run, Cited,
+   Not cited) and sortable File, Size, Collected and Uploaded headers. "*n* of *m*" and **Show all** appear while
+   anything is hidden. At a narrow width the table scrolls in its own box.
+3. **An evidence row**: description, size, SHA-256, when, where from and by whom it was collected, who uploaded it and when, and what cites it ("Cited by 1
    timeline entry and the brief"). **Custody** shows the chain of custody (uploaded, viewed, downloaded,
    transferred) and records a transfer; **Download** is itself a custody event, and **As zip** gives the file in a
    zip with the password `infected`. A file that can run (a program, script, shortcut, disk image, Office file with
@@ -303,8 +307,9 @@ with the verdict reached there and, for closed ones, how they ended.
 
 An evidence file name, a cited-file chip or a brief citation opens the **evidence panel** (`?evidence=<id>`): a
 preview on request (images, or the first lines of a text file; looking records a "Viewed" custody event), the full
-SHA-256, the chain of custody, what cites it, tasks about it, and *Download* (a custody event), *Task about it* and
-*Record a transfer…*.
+SHA-256, its **Collection** (when, where from and by whom it was collected, and how long after that it was uploaded,
+with *Record how it was collected* to set or correct them: an audited change), the chain of custody, what cites it,
+tasks about it, and *Download* (a custody event), *Task about it* and *Record a transfer…*.
 
 ## Tasks tab
 

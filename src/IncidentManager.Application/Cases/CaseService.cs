@@ -3207,6 +3207,41 @@ public sealed class CaseService
         return moved;
     }
 
+    /// <summary>
+    /// CAP-08: records when, where from and by whom an evidence file was collected, after it was uploaded (from the
+    /// evidence panel). The file itself stays as it is (R3, C3): these are facts about its acquisition, so they may be
+    /// set, corrected or cleared, each change an audited update of the record (the audit trail keeps what they were) that
+    /// its row hash then covers. The time follows the upload's rules (<see cref="Domain.Entities.Evidence.CheckCollection"/>), with the
+    /// upload time as its latest. Need-to-know applies: a file on a case the caller can't see is "not found".
+    /// </summary>
+    /// <param name="expectedCollection">The collection the editor opened with. Given, the save is refused when it has
+    /// changed since, so a stale panel doesn't overwrite a colleague's correction.</param>
+    /// <returns>False when nothing changed, so nothing was saved.</returns>
+    public async Task<bool> RecordEvidenceCollectionAsync(Guid caseId, Guid evidenceId, Evidence.EvidenceCollection collection,
+        Evidence.EvidenceCollection? expectedCollection = null, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var times = await Scoped(db.Cases.AsNoTracking()).Where(c => c.Id == caseId)
+                        .Select(c => new { c.OccurredAtUtc, c.DetectedAtUtc }).FirstOrDefaultAsync(ct)
+                    ?? throw new InvalidOperationException("Case not found or not accessible.");
+        var ev = await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
+                 ?? throw new InvalidOperationException("That evidence isn't on this case.");
+        var current = Evidence.EvidenceCollection.Of(ev);
+        if (expectedCollection is not null && expectedCollection != current)
+            throw new StaleEditException(Evidence.EvidenceCollection.Line(current.AtUtc, current.From, current.By),
+                "Someone else changed how this file was collected while you were editing. Review it, then save yours again if it's still needed.");
+        var now = _clock.UtcNow;
+        var (at, from, by) = Domain.Entities.Evidence.CheckCollection(collection.AtUtc, collection.From, collection.By, now,
+            times.OccurredAtUtc ?? times.DetectedAtUtc, ev.CreatedAtUtc);
+        if (at == ev.CollectedAtUtc && from == ev.CollectedFrom && by == ev.CollectedBy) return false;
+        (ev.CollectedAtUtc, ev.CollectedFrom, ev.CollectedBy) = (at, from, by);
+        ev.ModifiedBy = _user.UserId;
+        ev.ModifiedAtUtc = now;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
     /// <summary>INV-10: sets which evidence a timeline entry cites (replacing its current set).</summary>
     /// <param name="openedWith">BUG-297: the entry's citations when the picker opened. Given, only what changed since then
     /// is applied (files ticked are added, files unticked removed), so a citation a colleague added meanwhile stays.</param>

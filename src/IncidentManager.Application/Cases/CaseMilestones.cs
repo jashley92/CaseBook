@@ -263,9 +263,18 @@ public static class CaseMilestones
         var currentIds = current.Select(e => e.Id).ToHashSet();
         var onEntries = current.Where(e => e.EvidenceId is not null).Select(e => e.EvidenceId!.Value)
             .Concat(c.Citations.Where(x => currentIds.Contains(x.TimelineEntryId)).Select(x => x.EvidenceId)).ToHashSet();
+        // CAP-08: dated when it was collected, when that's recorded, and "recorded later" (at the upload) when the upload
+        // was in a later minute; where from and by whom follow the description.
         foreach (var ev in c.Evidence.Where(ev => !onEntries.Contains(ev.Id)))
-            list.Add(new CaseMilestone($"ev:{ev.Id}", ev.CreatedAtUtc, MilestoneKind.EvidenceAdded,
-                $"Evidence added: {ev.OriginalFileName}", Blank(ev.Description), ev.CreatedBy, "evidence"));
+        {
+            var collected = Evidence.EvidenceCollection.Source(ev) is { } source ? $"Collected {source}." : null;
+            var detail = Blank(ev.Description) is { } d
+                ? collected is null ? d : $"{d}{(d.EndsWith('.') || d.EndsWith('?') || d.EndsWith('!') ? "" : ".")} {collected}"
+                : collected;
+            list.Add(new CaseMilestone($"ev:{ev.Id}", ev.CollectedOrUploadedAtUtc, MilestoneKind.EvidenceAdded,
+                $"Evidence added: {ev.OriginalFileName}", detail, ev.CreatedBy, "evidence",
+                RecordedAtUtc: ev.CollectedAtUtc is { } at ? Later(at, ev.CreatedAtUtc) : null));
+        }
 
         foreach (var r in c.Reports.Where(r => r.IsFinal && r.ApprovedAtUtc is not null))
             list.Add(new CaseMilestone($"report:{r.Id}", r.ApprovedAtUtc!.Value, MilestoneKind.ReportFinal,

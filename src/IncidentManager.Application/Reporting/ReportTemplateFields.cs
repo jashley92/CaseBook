@@ -164,7 +164,11 @@ public static partial class ReportTemplateFields
             ("size", "Size in bytes", x => x.SizeBytes.ToString("N0", CultureInfo.InvariantCulture)),
             ("sha256", "SHA-256", x => x.Sha256),
             ("uploaded", "Uploaded (UTC)", x => D(x.UploadedAtUtc)),
-            ("by", "Uploaded by", x => x.UploadedBy)),
+            ("by", "Uploaded by", x => x.UploadedBy),
+            // CAP-08: how it was collected, each empty when not recorded.
+            ("collected", "Collected (UTC)", x => D(x.CollectedAtUtc)),
+            ("collected_from", "Collected from (host, mailbox, system or vendor)", x => x.CollectedFrom ?? ""),
+            ("collected_by", "Collected by", x => x.CollectedBy ?? "")),
         Coll("note", "Analyst notes (a paragraph containing a note field repeats per note)", m => m.Notes,
             ("when", "When (UTC)", x => D(x.AtUtc)),
             ("author", "Author", x => x.Author),

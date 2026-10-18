@@ -16,7 +16,10 @@ public static class EvidenceUploadEndpoints
     /// <summary>The header the page sends its antiforgery token in (the antiforgery default).</summary>
     public const string TokenHeader = "RequestVerificationToken";
 
-    public sealed record BeginRequest(Guid CaseId, string Name, string? ContentType, long Size, string? Description, string? Sample = null);
+    /// <summary>CAP-08: <paramref name="CollectedAt"/>, <paramref name="CollectedFrom"/> and <paramref name="CollectedBy"/>
+    /// are when, where from and by whom the file was collected, each optional.</summary>
+    public sealed record BeginRequest(Guid CaseId, string Name, string? ContentType, long Size, string? Description, string? Sample = null,
+        DateTimeOffset? CollectedAt = null, string? CollectedFrom = null, string? CollectedBy = null);
 
     /// <summary>PROD-59: carrying on an upload: the file the person picked, to check it's the same one.</summary>
     public sealed record ResumeRequest(string Name, long Size, string? Sample);
@@ -39,7 +42,8 @@ public static class EvidenceUploadEndpoints
             Run(http, async () =>
             {
                 var started = await evidence.BeginUploadAsync(request.CaseId, request.Name ?? "", request.ContentType ?? "",
-                    request.Size, request.Description, request.Sample, ct);
+                    request.Size, request.Description, request.Sample,
+                    new EvidenceCollection(request.CollectedAt, request.CollectedFrom, request.CollectedBy), ct);
                 return Results.Json(new { started.Id, started.PartBytes, started.Parts });
             }));
 

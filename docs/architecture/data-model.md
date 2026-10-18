@@ -228,9 +228,15 @@ nvarchar(200); hashed only when set): the latest "still accurate" confirmation o
 | `SizeBytes` | bigint | |
 | `Sha256` | nvarchar(64) | Hash computed while storing. Indexed, not unique. |
 | `StoragePath` | nvarchar(500) | Where the file is in the evidence store. Not hashed. |
-| `Description` | nvarchar(2000) | Not hashed. |
+| `Description` | nvarchar(2000) | Hashed from canonical format 3 (BUG-316). |
+| `CollectedAtUtc` | datetimeoffset, null | CAP-08: when the file was collected from its source. Null: taken to be the upload (`CreatedAtUtc`). Not in the future, not before the case's activity began (its detected time when that isn't recorded), not after the upload. |
+| `CollectedFrom` | nvarchar(300), null | CAP-08: where it was collected from (a host, mailbox, system or vendor), as written. |
+| `CollectedBy` | nvarchar(200), null | CAP-08: who collected it, as written (not necessarily a CaseBook user). |
 
-Created only by `EvidenceService.UploadAsync`. **No update or delete path exists.**
+Created only by `EvidenceService.UploadAsync` and `CompleteUploadAsync`. The file's columns never change and there's no
+delete path. The three collection columns (CAP-08) are set on upload or later by
+`CaseService.RecordEvidenceCollectionAsync`, an audited update; they're in the row hash (format 5) only when set, so a
+file without them hashes as before.
 
 ### `ChainOfCustodyEvents` (not hashed, not audited; ledger table)
 
