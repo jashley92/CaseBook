@@ -149,6 +149,9 @@ public sealed class EvidenceService
     /// <summary>
     /// PROD-59: other cases holding the same file (by SHA-256), among the cases this person can see (C14: no other case is
     /// named), newest first; at most five. Empty when the evidence isn't theirs to see.
+    /// CAP-21 review: a withdrawn copy isn't on its case's record, so it's never named here (a file withdrawn from one case
+    /// and uploaded to the right one doesn't send the reader back to the wrong one). A withdrawn file still names where
+    /// else it stands, which is where it went.
     /// </summary>
     public async Task<IReadOnlyList<string>> AlsoEvidenceInAsync(Guid evidenceId, CancellationToken ct = default)
     {
@@ -161,7 +164,7 @@ public sealed class EvidenceService
         if (ev is null) return [];
         var hits = await (from e in db.Evidence.AsNoTracking()
                           join c in visible on e.CaseId equals c.Id
-                          where e.Sha256 == ev.Sha256 && e.CaseId != ev.CaseId
+                          where e.Sha256 == ev.Sha256 && e.CaseId != ev.CaseId && e.WithdrawnAtUtc == null
                           select new { c.CaseNumber, e.CreatedAtUtc }).ToListAsync(ct);
         return hits.OrderByDescending(h => h.CreatedAtUtc).Select(h => h.CaseNumber).Distinct().Take(5).ToList();
     }
@@ -533,6 +536,9 @@ public sealed class EvidenceService
 
         using var db = _factory.CreateDbContext();
         var evidence = await LoadScopedAsync(db, evidenceId, ct);
+        // CAP-21 review: a withdrawn file isn't handed over (it can't be packaged either); its custody stays as it was.
+        if (evidence.IsWithdrawn)
+            throw new InvalidOperationException("That file has been withdrawn from the case, so a transfer of it isn't recorded here.");
 
         var custody = new ChainOfCustodyEvent
         {
@@ -555,7 +561,7 @@ public sealed class EvidenceService
     /// (once, and only the person who prepared it), then checks again that they may edit cases and see the case, that
     /// every file is still on it and none has been withdrawn since (CAP-21), and the size. Returns the files as recorded,
     /// in upload order, with their names in the zip and their custody so far. Nothing is recorded here: that's
-    /// <see cref="RecordPackageAsync"/>, once the whole package has been written.
+    /// <see cref="RecordPackageBegunAsync"/>, before the first byte is sent (CAP-12 review).
     /// </summary>
     public async Task<EvidencePackage> OpenPackageAsync(string ticket, CancellationToken ct = default)
     {
@@ -592,32 +598,110 @@ public sealed class EvidenceService
     public Task<Stream> OpenPackagedFileAsync(EvidencePackageFile file, CancellationToken ct = default) =>
         _store.OpenReadAsync(file.Evidence.StoragePath, ct);
 
+    /// <summary>CAP-12 review: the custody actions a package writes (each file's "Transfer begun", then how it ended).</summary>
+    public const string PackageBegunAction = "Transfer begun", PackageSentAction = "Transferred",
+        PackagePartlyAction = "Partly transferred", PackageNotSentAction = "Not transferred",
+        PackageSentNotMatchingAction = "Transferred (SHA-256 mismatch)";
+
     /// <summary>
-    /// CAP-12: records a package once every byte of it has been written (never before, so a store or key outage part-way,
-    /// or a download cut off, records nothing): a "Transferred" custody event on each file naming the package and the
-    /// hand-over, in one save, and one audit-chain entry naming the package, the hand-over, how many files and bytes, the
-    /// package's SHA-256 (of the zip as it was sent) and its manifest's. Recorded whatever the person's access is by now:
-    /// the bytes have gone, and the record must say so.
+    /// CAP-12 review: records a package before its first byte is sent: a "Transfer begun" custody event on each file, naming
+    /// the package (its id) and the hand-over, and one audit-chain entry for the package (its id, the hand-over, the files by
+    /// name and SHA-256, the count and bytes), in one transaction (<see cref="IAppDbContext.PendingAuditNotes"/>), so the
+    /// record is whole or absent. A data-descriptor zip can be read from its local headers without its directory, so any
+    /// byte that leaves must have a record already: a package whose end can't be recorded (the server stops part-way) still
+    /// shows on the record as begun, and is read as partial. Throws when it can't be written; then nothing is sent.
     /// </summary>
-    public async Task RecordPackageAsync(EvidencePackage package, string packageSha256, string manifestSha256, CancellationToken ct = default)
+    public async Task RecordPackageBegunAsync(EvidencePackage package, CancellationToken ct = default)
+    {
+        var listed = string.Join("; ", package.Files.Select(f => $"{f.EntryName} (sha256 {f.Evidence.Sha256})"));
+        await RecordPackageAsync(package, _ => (PackageBegunAction,
+                $"Sending began in evidence package {package.FileName} (id {package.Id}; {Common.Plural.Of(package.Files.Count, "file", "files")}). " +
+                package.HandOver.Sentence),
+            $"Began sending evidence package {package.FileName} (id {package.Id}): {Common.Plural.Of(package.Files.Count, "evidence file", "evidence files")}, " +
+            $"{Bytes(package.TotalBytes)} bytes. {package.HandOver.Sentence.TrimEnd('.')}. How it ends is recorded next; with nothing after " +
+            $"this, the transfer stopped part-way and is partial. Files: {listed}.", ct);
+    }
+
+    /// <summary>
+    /// CAP-12 review: records a package sent in full, before the zip's last bytes (its directory) go out: a "Transferred"
+    /// custody event on each file, and an audit-chain entry with the package's SHA-256 (of the zip as sent) and its
+    /// manifest's, in one transaction. Recorded whatever the person's access is by now: the bytes have gone.
+    /// </summary>
+    public async Task RecordPackageSentAsync(EvidencePackage package, EvidencePackageProgress progress, string packageSha256,
+        string manifestSha256, CancellationToken ct = default)
+    {
+        var where = $"In evidence package {package.FileName} (id {package.Id}; {Common.Plural.Of(package.Files.Count, "file", "files")}; " +
+                    $"package sha256 {Common.ShortHash.Of(packageSha256)})";
+        await RecordPackageAsync(package, i => progress.Files[i] == PackagedFileOutcome.SentNotMatching
+                ? (PackageSentNotMatchingAction, $"{where}: sent, but its bytes didn't match its recorded SHA-256 as they went. {package.HandOver.Sentence}")
+                : (PackageSentAction, $"{where}. {package.HandOver.Sentence}"),
+            $"Sent evidence package {package.FileName} (id {package.Id}) in full: {Common.Plural.Of(package.Files.Count, "evidence file", "evidence files")} " +
+            $"({Bytes(package.TotalBytes)} bytes). {package.HandOver.Sentence.TrimEnd('.')}. Package SHA-256 {packageSha256}; " +
+            $"{EvidencePackage.ManifestName} SHA-256 {manifestSha256}.{Mismatched(package, progress)}", ct);
+    }
+
+    /// <summary>
+    /// CAP-12 review: records a package that stopped before it was sent in full (cut off, out of time, a store or key
+    /// outage, a file that didn't match its record): how far each file got ("Transferred", "Partly transferred", "Not
+    /// transferred") and an audit-chain entry naming which files went out in full, which in part and which not, and
+    /// <paramref name="why"/>, in one transaction. Whatever went out can be read from the zip without its directory, so a
+    /// partial transfer is a transfer.
+    /// </summary>
+    public async Task RecordPackageStoppedAsync(EvidencePackage package, EvidencePackageProgress progress, string why,
+        CancellationToken ct = default)
+    {
+        var where = $"In evidence package {package.FileName} (id {package.Id}), which stopped before it finished ({why})";
+        string Names(params PackagedFileOutcome[] outcomes)
+        {
+            var names = package.Files.Where((_, i) => outcomes.Contains(progress.Files[i])).Select(f => f.EntryName).ToList();
+            return names.Count == 0 ? "none" : string.Join(", ", names);
+        }
+        await RecordPackageAsync(package, i => progress.Files[i] switch
+            {
+                PackagedFileOutcome.Sent => (PackageSentAction, $"{where}: this file was sent in full. {package.HandOver.Sentence}"),
+                PackagedFileOutcome.SentNotMatching => (PackageSentNotMatchingAction,
+                    $"{where}: this file was sent in full, but its bytes didn't match its recorded SHA-256 as they went. {package.HandOver.Sentence}"),
+                PackagedFileOutcome.PartlySent => (PackagePartlyAction, $"{where}: part of this file was sent. {package.HandOver.Sentence}"),
+                PackagedFileOutcome.HeldBack => (PackageNotSentAction, $"{where}: this file wasn't sent; its bytes didn't match its recorded SHA-256."),
+                _ => (PackageNotSentAction, $"{where}: this file wasn't sent."),
+            },
+            $"Evidence package {package.FileName} (id {package.Id}) stopped after {progress.SentInFull} of " +
+            $"{Common.Plural.Of(package.Files.Count, "file", "files")} ({why}). {package.HandOver.Sentence.TrimEnd('.')}. " +
+            $"Sent in full: {Names(PackagedFileOutcome.Sent, PackagedFileOutcome.SentNotMatching)}. Sent in part: {Names(PackagedFileOutcome.PartlySent)}. " +
+            $"Not sent: {Names(PackagedFileOutcome.NotSent, PackagedFileOutcome.HeldBack)}." +
+            $"{(progress.ManifestSent ? "" : $" {EvidencePackage.ManifestName} wasn't sent in full.")}{Mismatched(package, progress)}", ct);
+    }
+
+    // CAP-12 review: one custody event per file and the package's audit entry, in one save (never one without the other).
+    private async Task RecordPackageAsync(EvidencePackage package, Func<int, (string Action, string Details)> custody, string summary,
+        CancellationToken ct)
     {
         var caseId = package.CaseId;
         var ids = package.Files.Select(f => f.Evidence.Id).ToList();
         using var db = _factory.CreateDbContext();
-        var rows = await db.Evidence.Where(e => e.CaseId == caseId && ids.Contains(e.Id)).ToListAsync(ct);
+        var rows = (await db.Evidence.Where(e => e.CaseId == caseId && ids.Contains(e.Id)).ToListAsync(ct)).ToDictionary(e => e.Id);
         var now = _clock.UtcNow;
-        var details = Common.TextFit.Cap($"In evidence package {package.FileName} ({Common.Plural.Of(package.Files.Count, "file", "files")}; " +
-            $"package sha256 {Common.ShortHash.Of(packageSha256)}). {package.HandOver.Sentence}", 2000);
-        foreach (var ev in rows)
+        for (var i = 0; i < package.Files.Count; i++)
+        {
+            if (!rows.TryGetValue(package.Files[i].Evidence.Id, out var ev)) continue;
+            var (action, details) = custody(i);
             ev.CustodyEvents.Add(new ChainOfCustodyEvent
             {
-                EvidenceId = ev.Id, AtUtc = now, Actor = _user.UserId, Action = "Transferred", Details = details
+                EvidenceId = ev.Id, AtUtc = now, Actor = _user.UserId, Action = action, Details = Common.TextFit.Cap(details, 2000)
             });
+        }
+        db.PendingAuditNotes.Add(new AuditNote(AuditAction.EvidenceTransferred, "EvidencePackage", package.Id.ToString(), package.CaseNumber,
+            Common.TextFit.Cap(summary, 2000)!));
         await db.SaveChangesAsync(ct);
-        await _audit.RecordAsync(AuditAction.EvidenceTransferred, "EvidencePackage", package.Id.ToString(), package.CaseNumber,
-            Common.TextFit.Cap($"Packaged {Common.Plural.Of(package.Files.Count, "evidence file", "evidence files")} " +
-                $"({package.TotalBytes.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes) as {package.FileName}. " +
-                $"{package.HandOver.Sentence.TrimEnd('.')}. Package SHA-256 {packageSha256}; {EvidencePackage.ManifestName} SHA-256 {manifestSha256}.", 2000)!, ct);
+    }
+
+    private static string Bytes(long n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Mismatched(EvidencePackage package, EvidencePackageProgress progress)
+    {
+        var names = package.Files.Where((_, i) => progress.Files[i] is PackagedFileOutcome.SentNotMatching or PackagedFileOutcome.HeldBack)
+            .Select(f => f.EntryName).ToList();
+        return names.Count == 0 ? "" : $" Not matching their recorded SHA-256: {string.Join(", ", names)}.";
     }
 
     /// <summary>RD-06: file types whose start can be shown as text in the evidence drawer.</summary>

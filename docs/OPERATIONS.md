@@ -130,19 +130,36 @@ password `infected` (the same encryption as the safe download), streamed from th
 no plain copy is written on the server, holding the files and a `MANIFEST.txt` (the case, the recipient, method and
 purpose, and each file's SHA-256, size, collection, upload and chain of custody so far). It's limited to 500 files and,
 in all, the largest single file the store takes (`Evidence:MaxUploadMB`); a larger hand-over is several packages.
-Each counts against the `downloads` rate limit. **Custody is written only once the whole package has been sent**: one
-"Transferred" event per file, naming the package and the hand-over, and one audit entry with the SHA-256 of the zip
-as sent and of its manifest (the recipient can check the zip they received against it), then an access-log row and
-SIEM 5308. A store or key outage part-way, a file whose bytes no longer match their SHA-256, a database that can't take
-the record, or a download cut off records nothing; the zip's directory is sent last, after the record, so a package
-that failed doesn't open. (A download cut off in those last bytes, after every file and the manifest have gone, keeps
-its record, since the bytes left; the log says so.) A package that failed is prepared again. A download that's sent slower than about 1 MB/s on
-average (after 15 minutes) is stopped. The warning in the log names the package id and the case.
+Each counts against the `downloads` rate limit.
+
+**How a package is recorded: begun, then sent in full or partial.** The zip streams with a data descriptor after each
+file, and such a zip can be read file by file from its local headers even without its closing directory (7-Zip, or any
+streaming unzip, recovers every file that arrived), so a package that stops part-way is still a hand-over of what went
+out. So it's recorded in steps, each step's custody and its audit entry in one transaction (both or neither):
+
+- **Begun**, before the first byte: a "Transfer begun" custody event on every file, naming the package (its id) and
+  the hand-over, and an audit entry with the package id, the hand-over, and each file's name and SHA-256; with it the
+  access-log row and SIEM 5308. If this can't be written, nothing is sent (the download answers 503).
+- **Sent in full**: each file gets "Transferred", and the audit trail an entry with the SHA-256 of the zip as sent and
+  of its manifest (the recipient can check the zip they received against it), written before the zip's directory goes
+  out. (A download cut off in those last bytes keeps this record, since every file and the manifest left; the log says so.)
+- **Stopped part-way** (cut off, past its time limit, a store or key outage, a file that doesn't match): each file gets
+  how far it got, "Transferred" (sent in full), "Partly transferred" or "Not transferred", and the audit trail an entry
+  "stopped after N of M files" naming which went out in full, in part and not at all, and why.
+
+A begun record with nothing after it means the server stopped before it could record the end: treat it as partial
+(every file in it may have gone). The log says which happened, and says so when the end couldn't be recorded. "Sent"
+means written to the connection: what reached the recipient may be less, never more. Each file is checked against its
+SHA-256 before any of it is sent, so a file that no longer matches is never sent ("Not transferred", and the package
+stops; the evidence check reports it); this reads each file twice (see integrity.md for the cost). A package that
+stopped is prepared again. A download that's sent slower than about 1 MB/s on average (after 15 minutes) is stopped.
+The log names the package id and the case.
 
 **Withdrawn evidence (CAP-21).** A file filed on the wrong case is withdrawn from its panel with a reason, not
 deleted: its bytes stay in the store (and in backups), its custody gets a "Withdrawn" event, the audit trail an
 update, and the SIEM 5516. It drops out of the case's report, gates and packages but can still be downloaded, each
-download logged. There's no undo; the right file is uploaded again.
+download logged. A withdrawn copy isn't named as "also evidence in" its case elsewhere; Find still finds it, marked
+*Withdrawn*. No task is added about it and no transfer of it is recorded. There's no undo; the right file is uploaded again.
 
 **Disk encryption.** Turn on BitLocker (or the storage's own encryption) for the data root's volume and the evidence
 store's. With CaseBook's own evidence encryption on (§2, Evidence key) a copied disk or backup no longer exposes
@@ -705,7 +722,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5305 | DataAccess | **Restricted** case accessed (elevated severity) |
 | 5306 | DataAccess | Download/export refused by the per-user rate limit (F-13; possible bulk-scrape) |
 | 5307 | DataAccess | Evidence written out **decrypted** by `casebook-keytool export` (Warning; actor is the Windows account that ran it; detail has the case, count, folder and the manifest's SHA-256) |
-| 5308 | DataAccess | **Evidence package** downloaded for hand-over (CAP-12): many evidence files leaving at once. Warning (High on a restricted case). Target is the package id (`EvidencePackage:<id>`), detail the file count and size; the recipient, method and purpose are in the audit trail, not the stream. Sent once the whole package has gone; a download that failed part-way sends nothing |
+| 5308 | DataAccess | **Evidence package** downloaded for hand-over (CAP-12): many evidence files leaving at once. Warning (High on a restricted case). Target is the package id (`EvidencePackage:<id>`), detail the file count and size; the recipient, method and purpose are in the audit trail, not the stream. Sent as the download begins (with its "begun" record), so a package that stops part-way is in the stream too; how it ended is in the audit trail |
 | 5401 | Admin | Role created / updated / deleted |
 | 5402 | Admin | AD-group → role mapping added / removed |
 | 5403 | Admin | Operational setting changed |

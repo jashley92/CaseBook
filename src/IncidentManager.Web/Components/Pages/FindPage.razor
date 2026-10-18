@@ -170,6 +170,8 @@
                         {
                             <li>
                                 <a href="cases/@x.CaseId?evidence=@x.Id"><span class="bi bi-paperclip" aria-hidden="true"></span> @Mark(x.FileName)</a>
+                                @* CAP-21 review: still held, so still found, but off its case's record. *@
+                                @if (x.IsWithdrawn) { <span class="im-badge im-b-neutral ms-1"><span class="bi bi-slash-circle" aria-hidden="true"></span> Withdrawn</span> }
                                 <div class="im-find-sub">
                                     @if (x.HashMatch) { <span>the file's SHA-256 matches ·</span> }
                                     @if (!string.IsNullOrWhiteSpace(x.Description)) { <span>@Mark(x.Description) ·</span> }

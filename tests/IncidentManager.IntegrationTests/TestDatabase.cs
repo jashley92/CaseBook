@@ -57,6 +57,11 @@ public abstract class TestDatabase : IDisposable
 
     public TestDbContextFactory Factory() => new(Options);
 
+    /// <summary>The same database, with <paramref name="first"/> run ahead of its own interceptors (so a racer in it runs
+    /// before the audit chain takes its gate).</summary>
+    public TestDbContextFactory FactoryWith(params IInterceptor[] first) =>
+        new(Configure(new DbContextOptionsBuilder<AppDbContext>()).AddInterceptors([.. first, .. _interceptors]).Options);
+
     public abstract void Dispose();
 
     private sealed class SqliteDatabase : TestDatabase

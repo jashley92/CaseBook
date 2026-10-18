@@ -1003,7 +1003,7 @@
     // The download has been started (in its own tab): the form closes; what's recorded arrives with the next refresh.
     private void PackageStarted()
     {
-        Toasts.Info("The package is downloading. When it has finished, each file's chain of custody records the transfer.");
+        Toasts.Info("The package is downloading. Each file's chain of custody records the transfer as it starts, and how far it got when it ends.");
         (_pkgOpen, _pkgReady, _pkgTo, _pkgHow, _pkgWhy) = (false, null, null, null, null);
         foreach (var id in _custodyOpen.ToList()) _ = LoadCustodyLater(id);
     }

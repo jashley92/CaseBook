@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using ICSharpCode.SharpZipLib.Zip;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Access;
 using IncidentManager.Application.Evidence;
 using IncidentManager.Application.Security;
@@ -14,10 +15,13 @@ namespace IncidentManager.Web.Security;
 /// CAP-12: the evidence package download. A package prepared on the Evidence tab (<c>CaseService.StageEvidencePackageAsync</c>)
 /// is fetched once, by its ticket, as one zip with the password "infected" (PROD-58's path: ZipCrypto, deflated, a data
 /// descriptor, Zip64 when large) streamed straight from the store, decrypted as it's read (ADR 0017), with a MANIFEST.txt
-/// last. Each file's bytes are checked against its recorded SHA-256 on the way. The custody events, the audit entry, the
-/// access-log row and the SIEM event (5308) are written only once the whole package has been written: a store or key
-/// outage part-way, a file that doesn't match its record, or a download cut off records nothing, and the response is
-/// aborted so no zip that opens arrives without its record (<see cref="EvidencePackageWriter"/>).
+/// last. CAP-12 review: a data-descriptor zip can be read from its local headers without its directory (SharpZipLib's
+/// ZipInputStream, 7-Zip), so every file sent before a cut reaches the recipient. So the transfer is recorded before its
+/// first byte ("Transfer begun" on each file and an audit entry with the package id and the hand-over, with the access-log
+/// row and SIEM 5308), and how it ended after: sent in full (with the package's and the manifest's SHA-256, before the
+/// zip's directory goes out), or stopped after N files, naming which went out in full, in part, or not at all. A begun
+/// record with no end after it (the server stopped) is a partial transfer. Each file is checked against its recorded
+/// SHA-256 before any of it is sent (<see cref="EvidencePackageWriter"/>).
 /// </summary>
 public static class EvidencePackageEndpoints
 {
@@ -36,52 +40,100 @@ public static class EvidencePackageEndpoints
             }
             var manifest = evidence.ManifestOf(package);
             var log = logs.CreateLogger(typeof(EvidencePackageEndpoints));
+            // CAP-12 review: the record comes first. Without it, nothing is sent.
+            try { await evidence.RecordPackageBegunAsync(package, ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogWarning(ex, "Evidence package {PackageId} for case {CaseNumber} wasn't sent: its hand-over couldn't be recorded.",
+                    package.Id, package.CaseNumber);
+                return Results.Problem("The hand-over couldn't be recorded, so nothing was sent. Prepare the package again in a moment.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            // As it begins, so a package cut part-way is in the access log and the SIEM stream too (never throws).
+            await access.RecordArtifactAsync(AccessType.EvidencePackage, package.CaseId,
+                $"Evidence package: {Application.Common.Plural.Of(package.Files.Count, "file", "files")}, {EvidenceRoom.Size(package.TotalBytes)}",
+                package.Id, CancellationToken.None);
             http.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
             // SharpZipLib writes synchronously; the response streams straight from the store (no plain copy on disk).
             if (http.Features.Get<IHttpBodyControlFeature>() is { } body) body.AllowSynchronousIO = true;
             return Results.Stream(async output =>
             {
-                // C10: bounded. A package sent slower than about 1 MB/s on average (after a quarter of an hour) is stopped.
-                using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                limit.CancelAfter(EvidencePackageWriter.TimeLimit(package.TotalBytes));
-                var recorded = false;
-                try
-                {
-                    await EvidencePackageWriter.WriteAsync(package, manifest, evidence.OpenPackagedFileAsync, output,
-                        async (packageSha, manifestSha) =>
-                        {
-                            await evidence.RecordPackageAsync(package, packageSha, manifestSha, CancellationToken.None);
-                            recorded = true;
-                            await access.RecordArtifactAsync(AccessType.EvidencePackage, package.CaseId,
-                                $"Evidence package: {Application.Common.Plural.Of(package.Files.Count, "file", "files")}, {EvidenceRoom.Size(package.TotalBytes)}",
-                                package.Id, CancellationToken.None);
-                        }, limit.Token);
-                }
-                catch (Exception ex) when (!recorded)
-                {
-                    // Nothing was recorded; the browser shows the download as failed rather than saving part of a zip.
-                    log.LogWarning(ex, "Evidence package {PackageId} for case {CaseNumber} stopped before it finished; nothing was recorded.",
-                        package.Id, package.CaseNumber);
-                    http.Abort();
-                }
-                catch (Exception ex)
-                {
-                    // Every file and the manifest went out and the transfer is recorded; only the zip's last bytes (its
-                    // directory) didn't reach the browser, so its copy won't open. The record stands: the bytes left.
-                    log.LogWarning(ex, "Evidence package {PackageId} for case {CaseNumber} was recorded, but its last bytes didn't reach the browser.",
-                        package.Id, package.CaseNumber);
-                    http.Abort();
-                }
+                // The browser shows a download that didn't finish as failed rather than saving part of a zip.
+                if (!await SendAsync(package, manifest, evidence, log, output, ct)) http.Abort();
             }, "application/zip", package.FileName);
         }).RequireAuthorization(Policies.EditCases).RequireRateLimiting("downloads").RefusePassiveLoads();
+    }
+
+    /// <summary>
+    /// CAP-12 review: sends a package whose start is recorded (<see cref="EvidenceService.RecordPackageBegunAsync"/>) and
+    /// records how it ended: sent in full, before the zip's directory; or stopped, as far as it got. The log says which,
+    /// and whether that record was written. False when the zip didn't arrive whole (the caller aborts the response).
+    /// </summary>
+    public static async Task<bool> SendAsync(EvidencePackage package, string manifest, EvidenceService evidence, ILogger log,
+        Stream output, CancellationToken ct)
+    {
+        // C10: bounded. A package sent slower than about 1 MB/s on average (after a quarter of an hour) is stopped.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(EvidencePackageWriter.TimeLimit(package.TotalBytes));
+        var progress = new EvidencePackageProgress(package.Files.Count);
+        bool recording = false, recorded = false;
+        try
+        {
+            await EvidencePackageWriter.WriteAsync(package, manifest, evidence.OpenPackagedFileAsync, output, progress,
+                async (packageSha, manifestSha) =>
+                {
+                    recording = true;
+                    await evidence.RecordPackageSentAsync(package, progress, packageSha, manifestSha, CancellationToken.None);
+                    recorded = true;
+                }, limit.Token);
+            return true;
+        }
+        catch (Exception ex) when (recorded)
+        {
+            // Every file and the manifest went out and the transfer is recorded as sent in full; only the zip's last bytes
+            // (its directory) didn't reach the browser. The record stands: the bytes left.
+            log.LogWarning(ex, "Evidence package {PackageId} for case {CaseNumber} was sent in full and recorded, but its last bytes didn't reach the browser.",
+                package.Id, package.CaseNumber);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            var why = recording ? "its completion couldn't be recorded"
+                : ex switch
+                {
+                    OperationCanceledException when ct.IsCancellationRequested => "the download was cancelled or cut off",
+                    OperationCanceledException => "it ran past its time limit",
+                    InvalidDataException => "a file didn't match its recorded SHA-256",
+                    EvidenceKeyUnavailableException => "the evidence key wasn't available",
+                    IOException => "the evidence store or the connection failed",
+                    _ => "an error stopped it",
+                };
+            var sent = progress.SentInFull;
+            try
+            {
+                await evidence.RecordPackageStoppedAsync(package, progress, why, CancellationToken.None);
+                log.LogWarning(ex, "Evidence package {PackageId} for case {CaseNumber} stopped after {Sent} of {Files} files ({Why}); it's recorded as partial.",
+                    package.Id, package.CaseNumber, sent, package.Files.Count, why);
+            }
+            catch (Exception failed)
+            {
+                log.LogError(failed, "Evidence package {PackageId} for case {CaseNumber} stopped after {Sent} of {Files} files ({Why}), and how far it got " +
+                    "couldn't be recorded: the record shows only that it began, which reads as partial. What stopped it: {Stopped}",
+                    package.Id, package.CaseNumber, sent, package.Files.Count, why, ex.GetType().Name);
+            }
+            return false;
+        }
     }
 }
 
 /// <summary>
-/// CAP-12: writes an evidence package as one password-protected zip, and calls <c>record</c> with the package's SHA-256
-/// (of every byte of the zip, as sent) and the manifest's before the zip's last bytes (its central directory) go out.
-/// A failure before then (a file that can't be read, one whose bytes don't match its record, the record itself) throws,
-/// and the zip sent so far has no central directory, so it doesn't open; nothing is recorded for it.
+/// CAP-12: writes an evidence package as one password-protected zip. CAP-12 review: each file is read and checked against
+/// its recorded SHA-256 (and size) before any of its bytes are written, then read again as it's sent (one more read,
+/// decrypt and hash per file, as the upload's read-back check: integrity.md has the cost), so a file that doesn't match
+/// is never sent; one that changes between the two reads is hashed again as it goes and recorded as sent and not
+/// matching. <paramref name="progress"/> says how far each file got. <c>record</c> is called with the package's SHA-256 (of
+/// every byte of the zip, as sent) and the manifest's before the zip's last bytes (its central directory) go out; a
+/// failure before then throws, and the central directory never goes out.
 /// </summary>
 public static class EvidencePackageWriter
 {
@@ -89,8 +141,8 @@ public static class EvidencePackageWriter
     public static TimeSpan TimeLimit(long bytes) => TimeSpan.FromMinutes(15) + TimeSpan.FromSeconds(bytes / (1024d * 1024));
 
     public static async Task WriteAsync(EvidencePackage package, string manifest,
-        Func<EvidencePackageFile, CancellationToken, Task<Stream>> open, Stream output, Func<string, string, Task> record,
-        CancellationToken ct)
+        Func<EvidencePackageFile, CancellationToken, Task<Stream>> open, Stream output, EvidencePackageProgress progress,
+        Func<string, string, Task> record, CancellationToken ct)
     {
         var manifestBytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(manifest);
         using var whole = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -104,8 +156,28 @@ public static class EvidencePackageWriter
                 // Classic zip encryption (ZipCrypto), as the safe download: Windows Explorer and every zip tool open it.
                 zip.UseZip64 = package.TotalBytes + manifestBytes.Length >= uint.MaxValue - (64L << 20) ? UseZip64.On : UseZip64.Off;
                 zip.SetLevel(1);
-                foreach (var f in package.Files)
+                for (var i = 0; i < package.Files.Count; i++)
                 {
+                    var f = package.Files[i];
+                    // CAP-12 review: checked before any byte of it leaves (a zip that stops can still be read up to there).
+                    using (var check = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+                    {
+                        long seen = 0;
+                        await using (var content = await open(f, ct))
+                        {
+                            int n;
+                            while ((n = await content.ReadAsync(buffer.AsMemory(), ct)) > 0)
+                            {
+                                check.AppendData(buffer, 0, n);
+                                seen += n;
+                            }
+                        }
+                        if (!Matches(f, seen, check))
+                        {
+                            progress.Mark(i, PackagedFileOutcome.HeldBack);
+                            throw Mismatch(f);
+                        }
+                    }
                     using var file = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                     long read = 0;
                     await using (var content = await open(f, ct))
@@ -118,15 +190,18 @@ public static class EvidencePackageWriter
                         while ((n = await content.ReadAsync(buffer.AsMemory(), ct)) > 0)
                         {
                             file.AppendData(buffer, 0, n);
+                            if (read == 0) progress.Mark(i, PackagedFileOutcome.PartlySent);
                             zip.Write(buffer, 0, n);
                             read += n;
                         }
                     }
                     zip.CloseEntry();
-                    if (read != f.Evidence.SizeBytes
-                        || !string.Equals(Convert.ToHexString(file.GetHashAndReset()), f.Evidence.Sha256, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException($"{f.Evidence.OriginalFileName} doesn't match its recorded SHA-256 any more, so the " +
-                            "package was stopped. The evidence check reports it; ask an administrator.");
+                    if (!Matches(f, read, file))
+                    {
+                        progress.Mark(i, PackagedFileOutcome.SentNotMatching);
+                        throw Mismatch(f);
+                    }
+                    progress.Mark(i, PackagedFileOutcome.Sent);
                 }
                 zip.PutNextEntry(new ZipEntry(EvidencePackage.ManifestName)
                 {
@@ -134,6 +209,7 @@ public static class EvidencePackageWriter
                 });
                 zip.Write(manifestBytes, 0, manifestBytes.Length);
                 zip.CloseEntry();
+                progress.ManifestSent = true;
                 tap.Hold();   // the central directory is kept back until the package is recorded
                 zip.Finish();
             }
@@ -154,6 +230,14 @@ public static class EvidencePackageWriter
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
+
+    private static bool Matches(EvidencePackageFile f, long read, IncrementalHash hash) =>
+        read == f.Evidence.SizeBytes
+        && string.Equals(Convert.ToHexString(hash.GetHashAndReset()), f.Evidence.Sha256, StringComparison.OrdinalIgnoreCase);
+
+    private static InvalidDataException Mismatch(EvidencePackageFile f) =>
+        new($"{f.Evidence.OriginalFileName} doesn't match its recorded SHA-256 any more, so the package was stopped. The evidence " +
+            "check reports it; ask an administrator.");
 
     // Passes every byte on (hashing it) until Hold, then keeps the rest until Release: the zip's central directory waits
     // for the package's record.

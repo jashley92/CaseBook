@@ -241,7 +241,11 @@ public sealed class HostStartupSmokeTests : IDisposable
                 .CreateDbContextAsync();
             ctx.Set<IncidentManager.Domain.Entities.ChainOfCustodyEvent>().Where(c => c.EvidenceId == evidence.Id && c.Action == "Transferred").ToList()
                 .Should().ContainSingle().Which.Details.Should().Contain("To Outside counsel. Purpose: Litigation hold");
-            ctx.AuditLog.Where(a => a.EntityType == "EvidencePackage").ToList().Should().ContainSingle();
+            // CAP-12 review: begun before the first byte, then sent in full.
+            ctx.AuditLog.Where(a => a.EntityType == "EvidencePackage").OrderBy(a => a.Sequence).Select(a => a.Summary ?? "").ToList()
+                .Should().SatisfyRespectively(b => b.Should().StartWith("Began sending"), s => s.Should().StartWith("Sent evidence package"));
+            ctx.Set<IncidentManager.Domain.Entities.ChainOfCustodyEvent>().Count(c => c.EvidenceId == evidence.Id && c.Action == "Transfer begun")
+                .Should().Be(1);
             ctx.CaseAccessEvents.Where(a => a.AccessType == IncidentManager.Domain.Enums.AccessType.EvidencePackage).ToList().Should().ContainSingle();
         });
     }

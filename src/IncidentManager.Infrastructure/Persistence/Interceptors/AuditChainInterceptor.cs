@@ -307,7 +307,16 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             }));
         }
 
-        if (auditable.Count == 0) return null;
+        // CAP-12 review: entries for an act that changes no audited row (a package's hand-over), taken now so a retry of a
+        // failed save never sends them twice; chained after the save's own, in its transaction.
+        List<AuditNote> notes = [];
+        if (ctx is AppDbContext { PendingAuditNotes.Count: > 0 } noted)
+        {
+            notes.AddRange(noted.PendingAuditNotes);
+            noted.PendingAuditNotes.Clear();
+        }
+
+        if (auditable.Count == 0 && notes.Count == 0) return null;
 
         // Consume the analyst's optional "reason for change" for this unit of work, then clear it so a
         // later save on the same context doesn't inherit it. Only Update entries carry it (a correction).
@@ -344,7 +353,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 hashable.RowHash = _hasher.ComputeRowHash(hashable);
         }
 
-        return new PreparedAudit(auditable, caseNumbers, evidenceCases, actor, now, reason, replacedOwned);
+        return new PreparedAudit(auditable, caseNumbers, evidenceCases, actor, now, reason, replacedOwned, notes);
     }
 
     /// <summary>
@@ -514,7 +523,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     /// </summary>
     private void AppendChain(DbContext ctx, PreparedAudit p)
     {
-        var (auditable, caseNumbers, evidenceCases, actor, now, reason, replacedOwned) = p;
+        var (auditable, caseNumbers, evidenceCases, actor, now, reason, replacedOwned, notes) = p;
 
         var head = ctx.Set<AuditLogEntry>().AsNoTracking().OrderByDescending(a => a.Sequence).FirstOrDefault();
         var newEntries = new List<AuditLogEntry>(auditable.Count);
@@ -564,6 +573,19 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             newEntries.Add(entry);
         }
 
+        // CAP-12 review: as AuditWriter writes one, but in this save's transaction.
+        foreach (var n in notes)
+        {
+            var entry = new AuditLogEntry
+            {
+                AtUtc = now, Actor = actor, Action = n.Action, EntityType = n.EntityType, EntityId = n.EntityId,
+                CaseNumber = n.CaseNumber, Summary = Cap(n.Summary, MaxSummary)!
+            };
+            _hasher.ChainAppend(entry, head);
+            head = entry;
+            newEntries.Add(entry);
+        }
+
         ctx.Set<AuditLogEntry>().AddRange(newEntries);
     }
 
@@ -575,7 +597,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         string Actor,
         DateTimeOffset Now,
         string? Reason,
-        IReadOnlyList<EntityEntry> ReplacedOwned);
+        IReadOnlyList<EntityEntry> ReplacedOwned,
+        IReadOnlyList<AuditNote> Notes);
 
     private static readonly string[] NoFields = Array.Empty<string>();
 

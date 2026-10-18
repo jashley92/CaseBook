@@ -31,8 +31,11 @@ public sealed record FindEntry(Guid Id, Guid CaseId, string CaseNumber, Timeline
 public sealed record FindTask(Guid Id, Guid CaseId, string CaseNumber, string Title, string? Owner, DateTimeOffset? DueAtUtc,
     ActionItemStatus Status);
 
+/// <param name="IsWithdrawn">CAP-21 review: the file was withdrawn from its case (CAP-21). It's still found, since it's
+/// still held (its bytes, hash and custody), but marked, so a file re-uploaded to the right case isn't taken for evidence
+/// on the wrong one.</param>
 public sealed record FindEvidence(Guid Id, Guid CaseId, string CaseNumber, string FileName, string? Description,
-    DateTimeOffset AddedAtUtc, bool HashMatch);
+    DateTimeOffset AddedAtUtc, bool HashMatch, bool IsWithdrawn = false);
 
 public sealed record FindNote(Guid Id, Guid CaseId, string CaseNumber, DateTimeOffset AtUtc, string By, string Text);
 
@@ -501,10 +504,14 @@ public sealed class FindService
             if (to is not null) xq = xq.Where(x => x.CreatedAtUtc < to);
             counts[FindKind.Evidence] = await xq.CountAsync(ct);
             evidence = (await xq.OrderByDescending(x => x.CreatedAtUtc).Take(limit)   // WF-06
-                    .Join(db.Cases, x => x.CaseId, c => c.Id, (x, c) => new { x.Id, x.CaseId, c.CaseNumber, x.OriginalFileName, x.Description, x.CreatedAtUtc })
+                    .Join(db.Cases, x => x.CaseId, c => c.Id, (x, c) => new
+                    {
+                        x.Id, x.CaseId, c.CaseNumber, x.OriginalFileName, x.Description, x.CreatedAtUtc, Withdrawn = x.WithdrawnAtUtc != null
+                    })
                     .ToListAsync(ct))
                 .OrderByDescending(x => x.CreatedAtUtc)
-                .Select(x => new FindEvidence(x.Id, x.CaseId, x.CaseNumber, x.OriginalFileName, x.Description, x.CreatedAtUtc, hash is not null))
+                .Select(x => new FindEvidence(x.Id, x.CaseId, x.CaseNumber, x.OriginalFileName, x.Description, x.CreatedAtUtc, hash is not null,
+                    x.Withdrawn))
                 .ToList();
         }
 
