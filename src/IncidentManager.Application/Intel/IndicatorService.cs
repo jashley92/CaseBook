@@ -76,11 +76,25 @@ public readonly record struct IndicatorPosition(int CaseCount, DateTimeOffset La
 /// reader, so Next would repeat rows just shown and Previous skip some. <see cref="First"/> is the first page;
 /// <see cref="Next"/> the rows after the last one shown; <see cref="Previous"/> the rows before the first one shown.
 /// </summary>
-public readonly record struct IndicatorPageAt(IndicatorPosition? After, IndicatorPosition? Before)
+/// <remarks>B4 review: <see cref="From"/> is the first row of the page Next left (it's read only when
+/// <see cref="After"/> is null, as the page starting at that row, inclusive). Previous from an empty page past the end goes
+/// back there: going back from Next's own place, exclusively, read the page that ended one row before the page left.</remarks>
+public readonly record struct IndicatorPageAt(IndicatorPosition? After, IndicatorPosition? Before, IndicatorPosition? From = null)
 {
     public static IndicatorPageAt First => default;
-    public static IndicatorPageAt Next(IndicatorRow lastShown) => new(IndicatorPosition.Of(lastShown), null);
+    public static IndicatorPageAt Next(IndicatorRow lastShown, IndicatorRow? firstShown = null) =>
+        new(IndicatorPosition.Of(lastShown), null, firstShown is null ? null : IndicatorPosition.Of(firstShown));
     public static IndicatorPageAt Previous(IndicatorRow firstShown) => new(null, IndicatorPosition.Of(firstShown));
+
+    /// <summary>The page before the one read at this place, which showed <paramref name="shown"/>: the rows before its first,
+    /// or, for an empty page past the end, the page Next left, from its first row.</summary>
+    public IndicatorPageAt PreviousFrom(IReadOnlyList<IndicatorRow> shown)
+    {
+        ArgumentNullException.ThrowIfNull(shown);
+        if (shown.Count > 0) return Previous(shown[0]);
+        if (After is not null && From is { } from) return new(null, null, from);
+        return After is { } after ? new(null, after) : First;
+    }
 }
 
 /// <summary>CAP-27: the library as its CSV reads it: every matching indicator up to the limit, with its cases' numbers.</summary>
@@ -158,6 +172,12 @@ public sealed class IndicatorService
         {
             start = ordered.FindIndex(r => IndicatorPosition.Compare(IndicatorPosition.Of(r), after) > 0);
             if (start < 0) start = ordered.Count;
+        }
+        else if (at.From is { } from)
+        {
+            // B4 review: the page Next left, from its first row (inclusive), wherever that place is now.
+            start = ordered.FindIndex(r => IndicatorPosition.Compare(IndicatorPosition.Of(r), from) >= 0);
+            if (start < 0) start = Math.Max(0, ordered.Count - pageSize);
         }
         else start = 0;
 

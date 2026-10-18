@@ -284,16 +284,15 @@
     private async Task Next()
     {
         if (_library is not { Rows.Count: > 0 } lib) return;
-        _at = IndicatorPageAt.Next(lib.Rows[^1]);
+        _at = IndicatorPageAt.Next(lib.Rows[^1], lib.Rows[0]);   // B4 review: and where the page left starts, for Previous
         await Load();
     }
 
     private async Task Previous()
     {
         if (_library is null) return;
-        // An empty page past the end (the rows after it changed) goes back from the place it started at.
-        _at = _library.Rows.Count > 0 ? IndicatorPageAt.Previous(_library.Rows[0])
-            : _at.After is { } after ? new IndicatorPageAt(null, after) : IndicatorPageAt.First;
+        // An empty page past the end (the rows after it changed) goes back to the page Next left, from its first row.
+        _at = _at.PreviousFrom(_library.Rows);
         await Load();
     }
 

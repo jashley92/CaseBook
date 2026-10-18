@@ -1924,17 +1924,31 @@ else
     private const long MaxComposerFileBytes = 50 * 1024 * 1024;
     private long MaxFileBytes => Math.Min(MaxComposerFileBytes, Evidence.Limits.MaxUploadBytes);
 
-    // CAP-26: staged as it came: an image keeps the screenshot path; anything else is cited by the entry.
-    private bool TlShotIsFile => !_tlShotType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+    // CAP-26: staged as it came: an image keeps the screenshot path; anything else is cited by the entry. CAP-26 review: an
+    // image by its bytes, the raster set the inline endpoint renders (ImageSniffer: PNG, JPEG, GIF, WebP). An SVG, HEIC or
+    // TIFF showed as a broken thumbnail and skipped the duplicate check; it's a cited file now.
+    private bool _tlShotIsRaster;
+    private bool TlShotIsFile => !_tlShotIsRaster;
+
+    // A type the browser says the screenshot path takes (its 15 MB limit applies); the bytes decide in the end.
+    private static bool ClaimsRaster(string contentType) =>
+        contentType.ToLowerInvariant() is "image/png" or "image/jpeg" or "image/jpg" or "image/gif" or "image/webp";
 
     private async Task OnTimelinePasted(InputFileChangeEventArgs e)
     {
+        // CAP-26 review: an entry being edited takes no file (its save doesn't attach one), so a drop or paste is refused
+        // with a word rather than staged out of sight for the next entry.
+        if (_tlEditId is not null)
+        {
+            Toasts.Info("An entry being edited can't take a file. Save or cancel the edit and attach it to a new entry, or upload it on the Evidence tab.");
+            return;
+        }
         _composerOpen = true; // a pasted screenshot is staged in the form, so show it
-        // CAP-26: one file per entry (a drop can carry several; the first is taken).
-        var files = e.GetMultipleFiles(maximumFileCount: 50);
-        if (files.Count == 0) return;
-        var f = files[0];
-        var image = f.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+        // CAP-26: one file per entry (a drop can carry several; the first is taken). B2 review: however many (BUG-341:
+        // GetMultipleFiles threw past 50, outside any catch, and the tab went with it).
+        var (f, count) = DroppedFiles.First(e);
+        if (f is null) return;
+        var image = ClaimsRaster(f.ContentType);
         // WF-31: what the save would refuse is refused before any byte is sent.
         var max = image ? MaxShotBytes : MaxFileBytes;
         if (f.Size > max)
@@ -1953,10 +1967,13 @@ else
             await using var s = f.OpenReadStream(max);
             using var ms = new MemoryStream();
             await s.CopyToAsync(ms);
-            _tlShotBytes = ms.ToArray();
+            var bytes = ms.ToArray();
+            var raster = bytes.Length <= MaxShotBytes ? ImageSniffer.RasterContentType(bytes.AsSpan(0, Math.Min(12, bytes.Length))) : null;
+            _tlShotBytes = bytes;
             _tlShotName = f.Name;
-            _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? (image ? "image/png" : "application/octet-stream") : f.ContentType;
-            if (files.Count > 1)
+            _tlShotIsRaster = raster is not null;
+            _tlShotType = raster ?? (string.IsNullOrWhiteSpace(f.ContentType) ? "application/octet-stream" : f.ContentType);
+            if (count > 1)
                 Toasts.Info($"An entry takes one file, so “{f.Name}” is attached. Upload the others on the Evidence tab.");
         }
         catch (Exception)

@@ -43,6 +43,24 @@ public sealed record RelatedIndicator(string Indicator, EntityType OtherType, st
 }
 
 /// <summary>
+/// CAP-28 review: the possibly related indicators found, and whether a shared part had more candidates than were read
+/// (<see cref="CaseService.RelatedScanLimit"/>, newest cases first): then "none" means none among the newest checked, and
+/// the panel says so rather than that nothing is related.
+/// </summary>
+public sealed class RelatedIndicators(IReadOnlyList<RelatedIndicator> items, bool scanLimitHit) : IReadOnlyList<RelatedIndicator>
+{
+    public static readonly RelatedIndicators None = new([], false);
+
+    /// <summary>A shared part had at least <see cref="CaseService.RelatedScanLimit"/> candidates; only the newest were checked.</summary>
+    public bool ScanLimitHit { get; } = scanLimitHit;
+
+    public int Count => items.Count;
+    public RelatedIndicator this[int index] => items[index];
+    public IEnumerator<RelatedIndicator> GetEnumerator() => items.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
+/// <summary>
 /// HR-03: a visible <em>closed</em> case whose entities include indicators being entered on a new case: what it concluded,
 /// when, and the verdict each shared indicator reached there. Shown at intake as "seen before", beside the open matches.
 /// </summary>
@@ -2161,12 +2179,12 @@ public sealed class CaseService
     /// Need-to-know scoped; exercises take part in none. Suggestions only: nothing is linked, and nothing counts toward a
     /// gate or the Desk (A4).
     /// </summary>
-    public async Task<IReadOnlyList<RelatedIndicator>> FindRelatedIndicatorsAsync(Guid caseId, Guid? entityId = null,
+    public async Task<RelatedIndicators> FindRelatedIndicatorsAsync(Guid caseId, Guid? entityId = null,
         CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<RelatedIndicator>();   // BUG-46
-        if (await IsExerciseAsync(db, caseId, ct)) return Array.Empty<RelatedIndicator>();   // WF-48
+        if (!await CanSeeAsync(db, caseId, ct)) return RelatedIndicators.None;   // BUG-46
+        if (await IsExerciseAsync(db, caseId, ct)) return RelatedIndicators.None;   // WF-48
         var mine = await db.CaseEntities.AsNoTracking()
             .Where(e => e.CaseId == caseId && (entityId == null || e.Id == entityId))
             .Select(e => new { e.Type, e.Value }).ToListAsync(ct);
@@ -2177,42 +2195,61 @@ public sealed class CaseService
     /// CAP-28: the indicators possibly related to those being entered on a new case (detected and normalized as they'll
     /// be filed), on the cases the user can see, by the rules of <see cref="FindRelatedIndicatorsAsync"/>.
     /// </summary>
-    public async Task<IReadOnlyList<RelatedIndicator>> FindRelatedIndicatorsForIocsAsync(IEnumerable<string> rawIndicators,
+    public async Task<RelatedIndicators> FindRelatedIndicatorsForIocsAsync(IEnumerable<string> rawIndicators,
         CancellationToken ct = default)
     {
         var mine = (rawIndicators ?? Enumerable.Empty<string>())
             .Select(r => Domain.Observables.IocObservable.DetectType(r) is var t ? (t, Domain.Observables.IocObservable.Normalize(t, r)) : default)
             .Where(m => m.Item2.Length > 0)
             .ToList();
-        if (mine.Count == 0) return Array.Empty<RelatedIndicator>();
+        if (mine.Count == 0) return RelatedIndicators.None;
         using var db = _factory.CreateDbContext();
         return await RelatedAsync(db, mine, null, ct);
     }
 
     // CAP-28: one bounded query per shared part (a LIKE that narrows; the rule itself is checked here, in one place, C2),
     // joined to the cases the user can see, exercises left out.
-    private async Task<IReadOnlyList<RelatedIndicator>> RelatedAsync(IAppDbContext db, IReadOnlyList<(EntityType Type, string Value)> mine,
+    private async Task<RelatedIndicators> RelatedAsync(IAppDbContext db, IReadOnlyList<(EntityType Type, string Value)> mine,
         Guid? notCaseId, CancellationToken ct)
     {
         var keyed = mine.Select(m => (m.Type, m.Value, Key: Domain.Observables.RelatedObservables.KeyOf(m.Type, m.Value)))
             .Where(m => m.Key is not null).Select(m => (m.Type, m.Value, Key: m.Key!.Value)).ToList();
-        if (keyed.Count == 0) return Array.Empty<RelatedIndicator>();
+        if (keyed.Count == 0) return RelatedIndicators.None;
 
         var found = new List<(Domain.Observables.RelatedKey Key, Guid CaseId, string CaseNumber, string Title, CasePhase Phase,
             EntityType Type, string Value, EntityDisposition Disposition)>();
+        var limitHit = false;
         foreach (var key in keyed.Select(k => k.Key).Distinct().Take(RelatedKeyLimit))
         {
             var types = Domain.Observables.RelatedObservables.TypesFor(key.Rule).ToList();
-            var pattern = RelatedPattern(key);
+            var direct = types[0];
+            var (pDirect, pIn1, pIn2, pIn3) = RelatedPatterns(key);
+            // CAP-28 review: this check's own values are left out in SQL, so copies of them on newer cases (an exact match,
+            // never a suggestion) can't fill the scan and hide an older related one. They're read apart, below.
+            var own = keyed.Where(k => k.Key == key).Select(k => k.Value.Trim().ToLowerInvariant()).Distinct().ToList();
 #pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
-            var rows = await (
+            var candidates =
                 from e in db.CaseEntities.AsNoTracking()
                 where types.Contains(e.Type) && (notCaseId == null || e.CaseId != notCaseId)
-                      && EF.Functions.Like(e.Value.ToLower(), pattern, LikeEscape)
                 join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
-                orderby c.CreatedAtUtc descending
-                select new { c.Id, c.CaseNumber, c.Title, c.Phase, e.Type, e.Value, e.Disposition }
-            ).Take(RelatedScanLimit).ToListAsync(ct);
+                select new { e.Type, e.Value, e.Disposition, c.Id, c.CaseNumber, c.Title, c.Phase, c.CreatedAtUtc };
+            var rows = await candidates
+                .Where(x => !own.Contains(x.Value.ToLower())
+                    && ((x.Type == direct && EF.Functions.Like(x.Value.ToLower(), pDirect, LikeEscape))
+                        || (x.Type != direct && (EF.Functions.Like(x.Value.ToLower(), pIn1, LikeEscape)
+                            || EF.Functions.Like(x.Value.ToLower(), pIn2, LikeEscape)
+                            || EF.Functions.Like(x.Value.ToLower(), pIn3, LikeEscape)))))
+                .OrderByDescending(x => x.CreatedAtUtc).Take(RelatedScanLimit).ToListAsync(ct);
+            limitHit |= rows.Count >= RelatedScanLimit;
+            // Another of this check's values with the same part (evil.example beside portal.evil.example) is related to
+            // the rest, so its copies elsewhere are read too, bounded the same way.
+            if (own.Count > 1)
+            {
+                var copies = await candidates.Where(x => own.Contains(x.Value.ToLower()))
+                    .OrderByDescending(x => x.CreatedAtUtc).Take(RelatedScanLimit).ToListAsync(ct);
+                limitHit |= copies.Count >= RelatedScanLimit;
+                rows.AddRange(copies);
+            }
 #pragma warning restore CA1304, CA1311
             found.AddRange(rows.Where(r => Domain.Observables.RelatedObservables.KeyOf(r.Type, r.Value) == key)
                 .Select(r => (key, r.Id, r.CaseNumber, r.Title, r.Phase, r.Type, r.Value, r.Disposition)));
@@ -2227,24 +2264,45 @@ public sealed class CaseService
                 .Take(RelatedPerIndicator)
                 .Select(f => new RelatedIndicator(m.Value, f.Type, f.Value, f.CaseId, f.CaseNumber, f.Title, f.Phase, f.Disposition, m.Key)));
         }
-        return result;
+        return new RelatedIndicators(result, limitHit);
     }
 
     private const string LikeEscape = "\\";
 
-    // CAP-28: the LIKE that narrows to values that can share the part (lowercase; wildcards in the part escaped).
-    private static string RelatedPattern(Domain.Observables.RelatedKey key)
+    // CAP-28: the LIKEs that narrow to values that can share the part (lowercase; wildcards in the part escaped): one for
+    // the key's own type (a domain, an IP address, an email address), three for the type that carries it (a URL, an account).
+    private static (string Direct, string In1, string In2, string In3) RelatedPatterns(Domain.Observables.RelatedKey key)
     {
         static string Esc(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[");
-        return key.Rule switch
+        switch (key.Rule)
         {
-            Domain.Observables.RelatedRule.Ipv4Slash24 => $"%{Esc(key.Shared)}.%",
-            // An IPv6 address can be written compressed inside its /48 (2001:db8::5 is 2001:db8:0::5), so only the first
-            // hextet narrows.
-            Domain.Observables.RelatedRule.Ipv6Slash48 => $"%{Esc(key.Shared.Split(':')[0])}:%",
-            Domain.Observables.RelatedRule.EmailDomain => $"%@{Esc(key.Shared)}",
-            _ => $"%{Esc(key.Shared)}%",
-        };
+            case Domain.Observables.RelatedRule.Ipv4Slash24:
+            {
+                // CAP-28 review: anchored. "%1.2.3.%" also read 11.2.3.4 and 201.2.3.9, which could fill the scan. An address
+                // is stored as a dotted quad; in a URL it follows the "//", a userinfo "@" or a mapped "[::ffff:".
+                var p = Esc(key.Shared) + ".%";
+                return (p, "%/" + p, "%@" + p, "%:" + p);
+            }
+            case Domain.Observables.RelatedRule.Ipv6Slash48:
+            {
+                // CAP-28 review: an IPv6 address is stored in its canonical form, which starts with the /48's hextets up to
+                // the first zero one (2001:db8:0::5 is "2001:db8::5"), so those narrow, not only the first. A URL carries
+                // the address in brackets.
+                var lead = string.Concat(key.Shared.Split(':').TakeWhile(h => h != "0").Select(h => Esc(h) + ":"));
+                var inUrl = "%\\[" + lead + "%";
+                return (lead.Length == 0 ? "%:%" : lead + "%", inUrl, inUrl, inUrl);
+            }
+            case Domain.Observables.RelatedRule.EmailDomain:
+            {
+                var p = $"%@{Esc(key.Shared)}";
+                return (p, p, p, p);
+            }
+            default:
+            {
+                var p = $"%{Esc(key.Shared)}%";
+                return (p, p, p, p);
+            }
+        }
     }
 
     /// <summary>

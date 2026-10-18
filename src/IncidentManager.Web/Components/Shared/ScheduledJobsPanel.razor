@@ -5,10 +5,12 @@
 @using System.Globalization
 @using IncidentManager.Application.Abstractions
 @using IncidentManager.Web.BackgroundJobs
+@using Microsoft.Extensions.Logging
 @implements IDisposable
 @inject IJobStatus Jobs
 @inject JobRunNowService Runner
 @inject IClock Clock
+@inject ILogger<ScheduledJobsPanel> Logger
 
 <p class="small text-muted mb-2">
     When each background job last ran, how it ended and when it's next due. Errors show their type only; the server's log
@@ -115,6 +117,15 @@
         {
             if (_disposed) return;
             (_message, _problem) = (ex.Message, true);
+            Reload();
+            return;
+        }
+        catch (Exception ex)
+        {
+            // CAP-29 review: anything else (the service words an audit failure) is said, not left to end the circuit.
+            if (_disposed) return;
+            (_message, _problem) = (UserFacingError.Describe(ex, Logger, "starting a job from Diagnostics",
+                $"{name} couldn't be started. Try again; if it keeps failing, the server's log has the detail."), true);
             Reload();
             return;
         }
