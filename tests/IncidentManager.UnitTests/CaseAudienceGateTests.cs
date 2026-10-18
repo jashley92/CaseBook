@@ -136,6 +136,8 @@ public partial class CaseAudienceGateTests
         ["BackgroundJobs/RowHashUpgradeHostedService.cs"] = "the integrity upgrade moved out of start-up (BUG-644): records hashes, shows no case to anyone",
         ["Components/Shared/DeliveryHealthPanel.razor"] = "CAP-04: Diagnostics' delivery card counts the held emails (HeldEmailSummary); no case or recipient is read",
         ["Notifications/SmtpSignInStore.cs"] = "CAP-05: the relay sign-in saved in Administration (SmtpSignIns); no case table read",
+        ["Secrets/StoredSecretStore.cs"] = "CAP-40: the chat webhook URL and SIEM token saved in Administration (StoredSecrets); no case table read",
+        ["Secrets/StoredSecretAdminService.cs"] = "CAP-40: the secret cards' saves (StoredSecrets); no case table read",
     };
 
     [Fact]

@@ -339,10 +339,35 @@ logged today; check the folder's permissions directly.
 - **Fix:** the form now shows what's saved, with your entries kept. Check the username and the password (type it again
   if you're the one changing it), then save again. For the first-save message, reload the page first.
 
+### "Re-enter the team-chat webhook URL" or "the SIEM webhook token" (a saved secret can't be decrypted)
+
+- **Symptom:** the Team chat webhook or SIEM webhook token card, and Diagnostics, say the saved value can't be
+  decrypted on this server; chat isn't posted, or the SIEM webhook sends nothing; Delivery health shows it **Stopped**;
+  the log says "The team-chat webhook URL (or SIEM webhook token) saved in Administration can't be decrypted" once.
+- **Cause:** as for the SMTP password above: the database is on a server without the Data Protection key ring it was
+  saved with (`DataProtection:KeyPath`).
+- **Fix:** restore the key ring from the same backup as the database ([OPERATIONS.md §1](../OPERATIONS.md)), or Replace
+  the value on the card (Settings → Notifications → Team chat webhook; Server configuration → SIEM webhook token).
+  Nothing is sent with it meanwhile (fail closed, CAP-40).
+
+### "Someone changed the team-chat webhook URL (or SIEM webhook token) since you opened it"
+
+- **Symptom:** Save or Clear on a secret card says nothing was saved; or "Someone else saved the … just now; reload to
+  see it."
+- **Cause:** another administrator saved or cleared it after your card loaded it (CAP-40, as the Email sign-in's
+  check). A *Send test* doesn't count as seeing their change.
+- **Fix:** the card now shows what's saved. Decide again, and type the value again if you're replacing it.
+
+### The chat webhook URL is refused on Save
+
+- **Symptom:** saving the Team chat webhook says "The webhook URL was refused (…). Use an https URL."
+- **Cause:** the same check a post makes (S-06): https only, or http only to this server itself (loopback).
+- **Fix:** use the https URL Slack or Teams gave. The URL isn't logged or repeated in the message.
+
 ### A `@protected:` secret doesn't open
 
 - **Symptom:** the log says "A @protected: secret (certificate …) couldn't be opened"; the email is held, the chat post
-  isn't made, or the SIEM webhook is sent without auth.
+  isn't made, or the SIEM webhook stops sending (CAP-40: before, it sent without auth).
 - **Cause:** the certificate it names isn't in `LocalMachine\My`, the app-pool account can't read its private key, the
   value was made for another certificate (a renewal), or it was changed.
 - **Fix:** run `casebook-keytool check-secret <value>` on the server (as an administrator it tells you whether the value
@@ -356,8 +381,10 @@ logged today; check the folder's permissions directly.
 
 1. A transport must be enabled (`Siem:Webhook`, `Siem:Syslog`, `Siem:EventLog`); all are off by default.
 2. Administration → Diagnostics → **Send test event** (5901) reports success per transport.
-3. Webhook URLs must be https (http only to loopback). A token that's a CyberArk reference and fails to resolve
-   is sent without authentication; see Diagnostics → Secret resolution.
+3. Webhook URLs must be https (http only to loopback). A token that's set but won't resolve (a CyberArk reference;
+   see Diagnostics → Secret resolution) or decrypt (one saved in Administration; see the next entry) stops the
+   webhook's sends: nothing goes unauthenticated (CAP-40). Delivery health shows the last error, or **Stopped** for a
+   saved token.
 4. The Event Log transport needs its source registered once (`New-EventLog -LogName Application -Source
    CaseBook`); otherwise it disables itself until restart, and Diagnostics → **Delivery health** shows it as
    **Stopped** ("event source missing").

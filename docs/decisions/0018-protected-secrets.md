@@ -52,10 +52,21 @@ by the text that names it.
   history and audit values unless every one of those paths learned an exception. A table of its own keeps it out by
   construction.
 
+### 4. Follow-up (CAP-40): the chat webhook URL and the SIEM webhook token are entered the same way
+
+Both can be entered in Administration as the SMTP password is: write-only, a Data Protection purpose each
+(`CaseBook.Secrets.ChatWebhookUrl.v1`, `CaseBook.Secrets.SiemWebhookToken.v1`), audited without the value, 5403 on the
+SIEM, and the server's configuration wins. They share one table, `StoredSecrets`, a row per secret keyed by the
+configuration key it stands in for, since each is a single value; the SMTP sign-in keeps its own table, because its
+password is one part of a sign-in with a mode and a username. A SIEM token that's set but won't resolve or decrypt now
+stops the webhook's sends, where before the event went without an auth header: the same rule as the SMTP sign-in (never
+a send without the credential that was asked for), and what §3 already said of the dependent send.
+
 ## Consequences
 
 - The Data Protection key ring must be backed up with the database. Restored without it, the saved password doesn't
-  decrypt, mail is held, and Diagnostics asks for the password again (§1 of OPERATIONS.md).
+  decrypt, mail is held, and Diagnostics asks for the password again (§1 of OPERATIONS.md). The same holds for a saved
+  chat URL (chat isn't posted) and SIEM token (the webhook sends nothing) (CAP-40).
 - A renewed certificate means making the `@protected:` values again before the old certificate leaves the store.
 - The app-pool account needs read on the certificate's private key, as it already does for the integrity
   certificates.

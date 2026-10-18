@@ -10,8 +10,10 @@ public enum ChatWebhookFormat
 /// <summary>
 /// Outbound team-chat webhook configuration (config section <c>Chat:Webhook</c>, PROD-02). The webhook URL
 /// is itself the credential for Slack/Teams incoming webhooks, so — like the SIEM webhook — this lives in
-/// server-side configuration only (never the in-app editable catalog) and is shown read-only in Admin →
-/// Server configuration. Which notification types are posted here is chosen in-app (<c>Notifications:Chat:*</c>).
+/// server-side configuration (never the in-app editable catalog) and is shown read-only in Admin →
+/// Server configuration. CAP-40: when <see cref="WebhookUrl"/> is blank here, an administrator may enter the URL under
+/// Settings → Notifications instead (encrypted with Data Protection; this value wins when set). Which notification types
+/// are posted here is chosen in-app (<c>Notifications:Chat:*</c>).
 /// </summary>
 public sealed class ChatOptions
 {
@@ -20,7 +22,8 @@ public sealed class ChatOptions
 
     /// <summary>
     /// Incoming-webhook URL for the channel (Slack "Incoming Webhooks", or a Teams channel connector/workflow).
-    /// It is the secret, so it may be a literal or an <c>@cyberark:</c> reference resolved at runtime (F-19).
+    /// It is the secret, so it may be a literal, an <c>@cyberark:</c> reference or a <c>@protected:</c> value resolved at
+    /// runtime (F-19, CAP-05). Blank: the URL saved in Administration, if any (CAP-40).
     /// </summary>
     public string WebhookUrl { get; set; } = "";
 

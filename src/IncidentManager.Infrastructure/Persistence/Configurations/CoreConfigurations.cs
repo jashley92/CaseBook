@@ -802,6 +802,20 @@ public sealed class SmtpSignInRecordConfiguration : IEntityTypeConfiguration<Smt
     }
 }
 
+/// <summary>CAP-40: secrets entered in Administration in place of server configuration (a row each; Data Protection ciphertext only).</summary>
+public sealed class StoredSecretRecordConfiguration : IEntityTypeConfiguration<StoredSecretRecord>
+{
+    public void Configure(EntityTypeBuilder<StoredSecretRecord> b)
+    {
+        b.ToTable("StoredSecrets");
+        b.HasKey(x => x.Name);
+        b.Property(x => x.Name).HasMaxLength(StoredSecretRecord.NameMax).IsRequired();
+        b.Property(x => x.ProtectedValue);   // nvarchar(max): Data Protection's payload grows with the value
+        b.Property(x => x.SetBy).HasMaxLength(256);
+        b.Property(x => x.UpdatedBy).HasMaxLength(256).IsRequired();
+    }
+}
+
 public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
 {
     public void Configure(EntityTypeBuilder<UserNotificationPreference> b)

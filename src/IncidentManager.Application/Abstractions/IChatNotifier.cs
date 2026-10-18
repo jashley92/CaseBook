@@ -23,6 +23,12 @@ public interface IChatNotifier
     /// <summary>Whether a chat webhook is configured to deliver right now (read live from options).</summary>
     bool Enabled { get; }
 
+    /// <summary>
+    /// CAP-40: why chat that's switched on won't post (no webhook URL, or a saved one that won't decrypt here), for the
+    /// delivery card; null when it will, or when it's off.
+    /// </summary>
+    string? StoppedReason => null;
+
     /// <summary>Posts one message to the configured channel. A no-op (not an error) when disabled.</summary>
     Task SendAsync(ChatNotification message, CancellationToken ct = default);
 

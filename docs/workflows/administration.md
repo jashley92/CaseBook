@@ -13,7 +13,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 |---|---|---|
 | Identity & branding | `/admin` | Organization and team name, time zone, default jurisdictions, accent and ink colors, report logo |
 | Reports | `/admin/settings/reporting` | Report defaults (TLP, defanging, milestones, late-entry notes, separate approver, lessons legend), the section-layout designer, report profiles, the Word template library |
-| Notifications | `/admin/settings/notifications` | Email on/off, sender, distributions, reminder scans and their timing, mandatory types, chat routing, base URL; the delivery-readiness panel; the **Email sign-in** card (CAP-05: none, username and password, or Windows; the password write-only, encrypted with Data Protection, read-only when the server's configuration sets it) with a test email beside it; and a test email and chat message |
+| Notifications | `/admin/settings/notifications` | Email on/off, sender, distributions, reminder scans and their timing, mandatory types, chat routing, base URL; the delivery-readiness panel; the **Email sign-in** card (CAP-05: none, username and password, or Windows; the password write-only, encrypted with Data Protection, read-only when the server's configuration sets it) with a test email beside it; the **Team chat webhook** card (CAP-40: the URL write-only, https checked before it's saved, "set on … by …" with Replace and Clear, read-only when the server's configuration sets it) with *Send test* beside it; and a test email and chat message |
 | Email templates | `/admin/email-templates` | Subject and body of every notification email, with preview (the branded shell is fixed) |
 | Integrations | `/admin/settings/integrations` | Detection-source label and link template, VirusTotal link template |
 | Regulatory deadlines | `/admin/settings/regulatory-deadlines` | Deadline clock on/off, start basis, default window, per-jurisdiction rules |
@@ -26,11 +26,11 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Response & SLA | `/admin/settings/sla` | SLA targets per severity, breach overrides, at-risk threshold, severity labels |
 | Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings |
 | API tokens | `/admin/api-tokens` | System tokens for machine producers |
-| Server configuration | `/admin/settings/server` | Read-only view of server-side settings (secrets as present or absent) |
+| Server configuration | `/admin/settings/server` | Read-only view of server-side settings (secrets as present or absent, and where from: the server's configuration or Administration); and the **SIEM webhook token** card (CAP-40: write-only, as the chat URL's, with *Send test event* beside it) |
 | Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from |
 | Configuration bundle | `/admin/config-bundle` | Export, diff and import editable configuration |
 | Updates | `/admin/settings/updates` | The running version and the last upgrade; the update check (off by default: one anonymous call a day to the GitHub Releases API) with each newer release's notes; the exact elevated command to upgrade this site |
-| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the email relay sign-in check, SIEM test event, writable-path checks |
+| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the email relay sign-in check, a "re-enter" check for a saved chat URL or SIEM token that can't be decrypted here (CAP-40), SIEM test event, writable-path checks |
 | Style guide | `/admin/style` | Live design-system reference for developers |
 | Access log | `/access-log` (main navigation) | Who read which case or downloaded what |
 

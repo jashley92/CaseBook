@@ -2726,6 +2726,35 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("StatusChanges", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.StoredSecretRecord", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProtectedValue")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SetAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SetBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("StoredSecrets", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.TimelineEntry", b =>
                 {
                     b.Property<Guid>("Id")
