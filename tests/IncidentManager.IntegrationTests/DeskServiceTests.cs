@@ -62,6 +62,30 @@ public sealed class DeskServiceTests : IDisposable
             "a manager can't confirm an import");
     }
 
+    // A database the import count can't be had from (SQL Server reports a cancelled query as a SqlException).
+    private sealed class FailingFactory : IAppDbContextFactory
+    {
+        public IAppDbContext CreateDbContext() => throw new ImportReviewNoticeTests.CancelledBySqlServer();
+    }
+
+    [Fact]
+    public async Task An_import_count_that_fails_leaves_the_item_out_and_the_desk_loads(/* CAP-01 review */)
+    {
+        _db = TestDatabase.Open(TestDatabase.Sqlite);
+        await using (var db = NewContext())
+        {
+            db.PendingImports.Add(new PendingImport { SubmittedBy = "xsiam-svc", SubmittedAtUtc = H(-3), Summary = "New case: Beacon",
+                RawJson = "{}", Status = PendingImportStatus.Pending });
+            await db.SaveChangesAsync();
+        }
+
+        var desk = new DeskService(NewFactory(), _me, _clock, new MyWorkService(NewFactory(), _me, _clock),
+            new NotificationDeadlineService(NewFactory(), new OffSettings(), new NotificationRuleService(NewFactory(), _me, _clock), _clock),
+            new TestSlaTargets(), new IncidentManager.Application.Import.PendingImportQueue(new FailingFactory(), _me));
+
+        (await desk.GetAsync()).Needs.Should().NotContain(n => n.Kind == DeskNeedKind.ImportReview, "as the badge: not shown");
+    }
+
     [Fact]
     public async Task A_running_notification_clock_on_my_case_needs_me(/* BUG-214: read in one pass */)
     {

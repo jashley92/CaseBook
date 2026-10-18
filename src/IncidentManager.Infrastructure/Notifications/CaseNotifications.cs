@@ -833,7 +833,16 @@ public sealed class CaseNotifications : ICaseNotifications
             ["ItemsList"] = RenderDigest(digest),
         };
 
-        var message = await _composer.ComposeAsync("digest", [to], tokens, agendaUrl, htmlTokens, ct);
+        // CAP-01 review: with no open items, only imports waiting, "Your work digest: 0 open" and a lead line about open
+        // follow-up items misdescribed it. That digest has its own template, so an admin's edit of "digest" still applies.
+        var importsOnly = digest.TotalItems == 0 && digest.ImportsWaiting is { Count: > 0 };
+        if (importsOnly)
+        {
+            var waiting = digest.ImportsWaiting!;
+            tokens["Imports"] = waiting.More ? $"More than {waiting.Count} API imports" : Plural.Of(waiting.Count, "API import");
+        }
+        var ctaUrl = importsOnly ? ImportQueueUrl() : agendaUrl;
+        var message = await _composer.ComposeAsync(importsOnly ? "digest-imports" : "digest", [to], tokens, ctaUrl, htmlTokens, ct);
         await _email.SendAsync(message, ct);
     }
 

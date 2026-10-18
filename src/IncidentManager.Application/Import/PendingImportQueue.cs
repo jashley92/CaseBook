@@ -87,7 +87,10 @@ public sealed class PendingImportQueue(IAppDbContextFactory factory, ICurrentUse
             return times.Count == 0 ? PendingImportCount.None
                 : new PendingImportCount(Math.Min(times.Count, CountCap), times.Count > CountCap, times[0]);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        // CAP-01 review: SQL Server reports a query cancelled by the time limit as a SqlException ("Operation cancelled by
+        // user"), not an OperationCanceledException; either is the count running out of time.
+        catch (Exception ex) when (ex is OperationCanceledException or System.Data.Common.DbException
+                                   && limit.IsCancellationRequested && !ct.IsCancellationRequested)
         {
             return null;
         }

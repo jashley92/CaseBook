@@ -181,6 +181,27 @@ public static class EmailTemplateCatalog
             CtaLabel: "Open my work",
             CtaUrlToken: "AgendaUrl"),
 
+        // CAP-01 review: a digest with no open items, only imports waiting, has its own template. "digest" has no way to
+        // leave its count out, and an admin may have customised it, so it isn't given a second meaning.
+        new EmailTemplateDefinition(
+            "digest-imports",
+            "Personal work digest: imports only",
+            "A reviewer's work digest when they have no open follow-up items but API imports have waited too long for review. Sent daily or weekly, as the digest is.",
+            "{{Imports}} waiting for your review",
+            """
+            <h1>Imports waiting for your review</h1>
+            <p>You have no open follow-up items in this {{Cadence}} digest, but imports are waiting for someone to confirm or reject them:</p>
+            {{ItemsList}}
+            """,
+            new[]
+            {
+                new EmailToken("Imports", "How many imports are waiting, for example \"3 API imports\"."),
+                new EmailToken("Cadence", "The digest cadence: \"daily\" or \"weekly\"."),
+                new EmailToken("ItemsList", "The imports waiting and how long they've waited, with a link to the queue. Rendered by the app."),
+            },
+            CtaLabel: "Open the import queue",
+            CtaUrlToken: "ImportQueueUrl"),
+
         new EmailTemplateDefinition(
             "stale-case",
             "Stale-case nudge",

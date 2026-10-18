@@ -7,6 +7,7 @@ using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using IncidentManager.Application.Common;
 
 namespace IncidentManager.Application.Import;
@@ -36,12 +37,14 @@ public sealed class CaseImportService
     private readonly Notifications.ReminderAudience? _audience;
     private readonly PendingImportSignal? _signal;
     private readonly ISecurityEventSink? _siem;
+    private readonly ILogger<CaseImportService>? _log;   // CAP-01 review: the reviewers' notice, told in the background
 
     public CaseImportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, CaseService cases,
         IAuditWriter? audit = null, ICaseNotifications? notifications = null, IUserDirectory? users = null,
         IRoleDirectory? roles = null, Notifications.ReminderAudience? audience = null, PendingImportSignal? signal = null,
-        ISecurityEventSink? siem = null)
+        ISecurityEventSink? siem = null, ILogger<CaseImportService>? log = null)
     {
+        _log = log;
         _audit = audit;
         _factory = factory;
         _user = user;
@@ -423,9 +426,14 @@ public sealed class CaseImportService
     {
         // BUG-236: the look and the insert run one submission at a time, so two identical POSTs a moment apart (two
         // playbook runs for one alert) can't both find nothing and both queue. API submissions are few; one server.
+        (Guid Id, CaseImportPreview Preview, PendingImport? Queued) result;
         await SubmitGate.WaitAsync(ct);
-        try { return await SubmitOnceCoreAsync(rawJson, doc, ct); }
+        try { result = await SubmitOnceCoreAsync(rawJson, doc, ct); }
         finally { SubmitGate.Release(); }
+        // CAP-01 review: the reviewers are told after the gate is released, so a stalled relay or webhook doesn't hold up
+        // every other API submission.
+        if (result.Queued is { } row) await NotifySubmittedAsync(row, result.Preview);
+        return (result.Id, result.Preview, result.Queued is null);
     }
 
     private static readonly SemaphoreSlim SubmitGate = new(1, 1);
@@ -433,7 +441,8 @@ public sealed class CaseImportService
     private static string Sha256(string text) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
-    private async Task<(Guid Id, CaseImportPreview Preview, bool AlreadyQueued)> SubmitOnceCoreAsync(string rawJson, CaseImportDocument doc,
+    // The row queued, or null when an identical one already waited (BUG-217).
+    private async Task<(Guid Id, CaseImportPreview Preview, PendingImport? Queued)> SubmitOnceCoreAsync(string rawJson, CaseImportDocument doc,
         CancellationToken ct)
     {
         using (var db = _factory.CreateDbContext())
@@ -452,14 +461,22 @@ public sealed class CaseImportService
                 .Where(p => string.Equals(p.RawJson, rawJson, StringComparison.Ordinal))
                 .OrderByDescending(p => p.SubmittedAtUtc).Select(p => (Guid?)p.Id).FirstOrDefault();
             if (same is { } id0)
-                return (id0, await BuildPreviewAsync(doc, ct: ct), true);
+                return (id0, await BuildPreviewAsync(doc, ct: ct), null);
         }
-        var (id, preview) = await SubmitAsync(rawJson, doc, ct);
-        return (id, preview, false);
+        var (row, preview) = await QueueAsync(rawJson, doc, ct);
+        return (row.Id, preview, row);
     }
 
     public async Task<(Guid Id, CaseImportPreview Preview)> SubmitAsync(string rawJson, CaseImportDocument doc,
         CancellationToken ct = default)
+    {
+        var (row, preview) = await QueueAsync(rawJson, doc, ct);
+        await NotifySubmittedAsync(row, preview);
+        return (row.Id, preview);
+    }
+
+    private async Task<(PendingImport Row, CaseImportPreview Preview)> QueueAsync(string rawJson, CaseImportDocument doc,
+        CancellationToken ct)
     {
         var preview = await BuildPreviewAsync(doc, ct: ct);
 
@@ -484,9 +501,11 @@ public sealed class CaseImportService
             await db.SaveChangesAsync(ct);
         }
         _signal?.Raise();
-        await NotifySubmittedAsync(row, preview);
-        return (row.Id, preview);
+        return (row, preview);
     }
+
+    /// <summary>CAP-01 review: the longest the reviewers' notice (chat post, then an email each) may take in the background.</summary>
+    internal static readonly TimeSpan NotifyTimeLimit = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// CAP-01: tells the reviewers a submission is waiting (the email and chat toggles decide whether anything is sent).
@@ -494,41 +513,76 @@ public sealed class CaseImportService
     /// queue is (<see cref="PendingImportQueue.Visible"/>). The submission is queued already, so nothing here fails it:
     /// the API answers as it always has, and the queue, the Desk and the badge show it whatever happens to the email.
     /// </summary>
+    /// <remarks>
+    /// CAP-01 review: only the target case is read here, with this request's scoped services (its database factory and the
+    /// submitter, for <see cref="CaseQueryExtensions.ForUser"/>). Working out who is told, and telling them (a chat post
+    /// tried three times, then an email each), runs in the background with singletons only, so it may outlive the request:
+    /// the response doesn't wait for it, the caller's cancellation doesn't reach it, it stops after
+    /// <see cref="NotifyTimeLimit"/>, and whatever goes wrong is logged, never thrown.
+    /// </remarks>
     private async Task NotifySubmittedAsync(PendingImport row, CaseImportPreview preview)
     {
         if (_notifications is null) return;
+        var restricted = false;   // a document can't file a new case restricted; only its target can be
+        var exercise = preview.NewCase?.IsExercise == true;
+        string? commander = null;
+        IReadOnlyCollection<string> team = [];
         try
         {
-            // Not the caller's token: the submission is saved, and telling people of it shouldn't stop because the
-            // producer stopped waiting for the response.
-            var ct = CancellationToken.None;
-            var restricted = false;   // a document can't file a new case restricted; only its target can be
-            var exercise = preview.NewCase?.IsExercise == true;
-            string? commander = null;
-            IReadOnlyCollection<string> team = [];
             if (row.TargetCaseId is { } caseId)
             {
-                // The target as the submitter's preview resolved it (BUG-279): one they can see.
+                // The target as the submitter's preview resolved it (BUG-279): one they can see. Not the caller's token:
+                // the submission is saved, and telling people of it shouldn't stop because the producer stopped waiting.
                 using var db = _factory.CreateDbContext();
                 var target = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == caseId)
                     .Select(c => new { c.IsRestricted, c.IsExercise, c.IncidentCommander, Team = c.Assignments.Select(a => a.UserId).ToList() })
-                    .FirstOrDefaultAsync(ct);
+                    .FirstOrDefaultAsync(CancellationToken.None);
                 if (target is not null)
                     (restricted, exercise, commander, team) = (target.IsRestricted, target.IsExercise, target.IncidentCommander, target.Team);
             }
-            var reviewers = (_users?.All() ?? [])
-                .Where(u => _roles is not null && _roles.PermissionsForRoles(Domain.Common.RoleList.Split(u.RolesCsv, _roles.IsRole))
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Deliberately not thrown (CAP-01): the submission is queued, and the queue, the Desk and the badge show it.
+            _log?.LogWarning(ex, "Couldn't tell the reviewers that import {PendingImportId} is waiting. It's in the review queue.", row.Id);
+            return;
+        }
+
+        var draft = new ImportSubmission(row.Id, row.SubmittedBy, row.Origin, row.Summary, preview.IncludedItemCount,
+            row.TargetCaseId, restricted, exercise, []);
+        var (notifications, users, roles, audience, log) = (_notifications, _users, _roles, _audience, _log);
+        // Not awaited, and without this request's execution context (its HttpContext, a caller's delivery watch).
+        using (ExecutionContext.SuppressFlow())
+            _ = Task.Run(() => TellReviewersAsync(draft, commander, team, notifications, users, roles, audience, log), CancellationToken.None);
+    }
+
+    // CAP-01 review: the background half. Static, so it uses only what it's handed: singletons (the notifier, the user and
+    // role directories) and the audience, whose own dependencies are singletons. Never the request's scope.
+    private static async Task TellReviewersAsync(ImportSubmission draft, string? commander, IReadOnlyCollection<string> team,
+        ICaseNotifications notifications, IUserDirectory? users, IRoleDirectory? roles, Notifications.ReminderAudience? audience,
+        ILogger? log)
+    {
+        using var limit = new CancellationTokenSource(NotifyTimeLimit);
+        try
+        {
+            var reviewers = (users?.All() ?? [])
+                .Where(u => roles is not null && roles.PermissionsForRoles(Domain.Common.RoleList.Split(u.RolesCsv, roles.IsRole))
                     .Contains(Permission.EditCases))
                 .Select(u => u.UserId)
                 .ToList();
-            var recipients = await (_audience ?? new Notifications.ReminderAudience(_users, _roles))
-                .RecipientsAsync(reviewers, restricted, commander, team, ct);
-            await _notifications.OnImportSubmittedAsync(new ImportSubmission(row.Id, row.SubmittedBy, row.Origin, row.Summary,
-                preview.IncludedItemCount, row.TargetCaseId, restricted, exercise, recipients), ct);
+            var recipients = await (audience ?? new Notifications.ReminderAudience(users, roles))
+                .RecipientsAsync(reviewers, draft.IsRestricted, commander, team, limit.Token);
+            await notifications.OnImportSubmittedAsync(draft with { ReviewerUserIds = recipients }, limit.Token);
+        }
+        catch (OperationCanceledException) when (limit.IsCancellationRequested)
+        {
+            log?.LogWarning("Gave up telling the reviewers that import {PendingImportId} is waiting after {Minutes} minutes. It's in the review queue.",
+                draft.PendingImportId, NotifyTimeLimit.TotalMinutes);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Deliberately swallowed (CAP-01): the submission is queued, and the queue, the Desk and the badge show it.
+            log?.LogWarning(ex, "Couldn't tell the reviewers that import {PendingImportId} is waiting. It's in the review queue.", draft.PendingImportId);
         }
     }
 
