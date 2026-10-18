@@ -212,6 +212,10 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **The last handover's "watch for" stays on Now (CAP-20).** After a handoff with a *Watch for* part, Now shows it above
+  the brief until the person it was handed to revises the brief or marks it still accurate. It's read from the handoff
+  entries already on the timeline, so an open case handed off before the upgrade shows its card too. No migration and
+  nothing to configure.
 - **A finding can answer an open question directly (CAP-23).** In the timeline composer's *Finding* mode, *Then* →
   *Answers an open question* picks one of the brief's open questions; saving completes the question's task with the
   finding as its result, or raises and completes one when none followed it up, in the entry's save. No migration and

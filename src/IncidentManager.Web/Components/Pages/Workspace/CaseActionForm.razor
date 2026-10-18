@@ -717,20 +717,21 @@
         else D.Error = message;
     }
 
-    // The handoff as Markdown: the same text goes on the timeline and, if chosen, in the email to the recipient.
+    // The handoff as Markdown: the same text goes on the timeline and, if chosen, in the email to the recipient. CAP-20:
+    // HandoffNote reads it back (the watch-for card on Now), so the lines are its.
     private string HandoffBody()
     {
         var sb = new System.Text.StringBuilder();
-        sb.Append("**Handed to ").Append(Users.DisplayFor(D.HandoffTo)).Append("**\n\n");
+        sb.Append(HandoffNote.HandedToLine(Users.DisplayFor(D.HandoffTo))).Append("\n\n");
         void Part(string label, string? text)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
-            sb.Append("**").Append(label).Append("**\n\n").Append(text.Trim()).Append("\n\n");
+            sb.Append(HandoffNote.Heading(label)).Append("\n\n").Append(text.Trim()).Append("\n\n");
         }
-        Part("Where it stands", D.HandoffState);
-        Part("Done since the last handoff", D.HandoffDone);
-        Part("Still open", D.HandoffOpen);
-        Part("Watch for", D.HandoffWatch);
+        Part(HandoffNote.WhereItStands, D.HandoffState);
+        Part(HandoffNote.DoneSince, D.HandoffDone);
+        Part(HandoffNote.StillOpen, D.HandoffOpen);
+        Part(HandoffNote.WatchFor, D.HandoffWatch);
         return sb.ToString().TrimEnd();
     }
 }

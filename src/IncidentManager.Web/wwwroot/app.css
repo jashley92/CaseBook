@@ -2818,6 +2818,12 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-nn-head { display: flex; align-items: center; gap: .4rem .5rem; margin-bottom: .5rem; }
 .im-nn-h { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--im-text); margin: 0; }
 .im-nn-sub { font-size: .78rem; color: var(--im-text-muted); }
+/* CAP-20: the last handover's "watch for", above the brief until the person who took the case takes stock. */
+.im-nn-handover { margin: .8rem 1rem 0; padding: .55rem .75rem; border-radius: var(--im-radius); border: 1px solid var(--im-border);
+    border-left: 3px solid var(--im-accent-strong); background: var(--im-accent-bg); overflow-wrap: anywhere; }
+.im-nn-handover .im-nn-h { display: flex; align-items: center; gap: .35rem; margin-bottom: .2rem; }
+.im-nn-handover .md-body { margin: .25rem 0; }
+.im-nn-handover .md-body > :last-child { margin-bottom: 0; }
 .im-nn-empty { font-size: .8rem; color: var(--im-text-muted); margin: .2rem 0; }
 .im-nn-ob { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .5rem; padding: .4rem 0; border-bottom: 1px solid var(--im-border); }
 .im-nn-ob .im-nn-sub, .im-nn-mark { flex-basis: 100%; }
