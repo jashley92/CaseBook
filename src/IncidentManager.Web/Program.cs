@@ -132,6 +132,8 @@ builder.Services.AddHostedService<ExecutiveReportHostedService>();
 // RD-23: case and lessons-learned reports generate in the background, as the person who asked.
 builder.Services.AddSingleton<ReportJobs>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ReportJobs>());
+// CAP-29: Diagnostics' Run now for the read-only scans (Administer; the jobs' registry keeps two runs from overlapping).
+builder.Services.AddScoped<JobRunNowService>();
 
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");

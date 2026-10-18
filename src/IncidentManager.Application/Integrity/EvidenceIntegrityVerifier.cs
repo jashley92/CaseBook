@@ -71,6 +71,10 @@ public sealed class EvidenceIntegrityVerifier
     public static long Slot(DateTimeOffset now, TimeSpan interval) =>
         (now.UtcTicks - Epoch.UtcTicks) / Math.Max(1, interval.Ticks);
 
+    /// <summary>CAP-29: when interval <paramref name="slot"/> begins (Diagnostics' next due).</summary>
+    public static DateTimeOffset SlotStart(long slot, TimeSpan interval) =>
+        Common.Instants.AddClamped(Epoch, TimeSpan.FromTicks(slot * Math.Max(1, interval.Ticks)));
+
     private static readonly DateTimeOffset Epoch = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>

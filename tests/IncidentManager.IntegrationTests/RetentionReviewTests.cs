@@ -12,7 +12,10 @@ using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
 using IncidentManager.Infrastructure.Realtime;
 using IncidentManager.Infrastructure.Security;
+using IncidentManager.Web.BackgroundJobs;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace IncidentManager.IntegrationTests;
@@ -436,8 +439,45 @@ public sealed class RetentionReviewTests
     {
         var email = SettingsCatalog.Editable.Single(d => d.Key == "Notifications:RetentionReview:Email");
         (email.Kind, email.Default).Should().Be((SettingKind.Bool, "false"));
-        new IncidentManager.Web.BackgroundJobs.RetentionReviewScanOptions().Email.Should().BeFalse("the bound default matches");
+        new RetentionReviewScanOptions().Email.Should().BeFalse("the bound default matches");
         SettingsCatalog.Editable.Single(d => d.Key == "Retention:CaseYears").Description.Should().Contain("0 turns the review off");
         EmailTemplateCatalog.ById("retention-review").Should().NotBeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Run_now_from_Diagnostics_counts_sends_nothing_and_never_overlaps_the_nightly_count(string provider)
+    {
+        // CAP-29: the job is listed with its Run now when it's built; the pass only counts (ADR 0004), even with the email on.
+        using var database = Open(provider);
+        await SeedAsync(database);
+        var notifications = new CapturingNotifications();
+        var state = new RetentionReviewState();
+        var services = new ServiceCollection();
+        services.AddScoped(_ => Scanner(database, notifications, new RetentionReviewTracker(), state));
+        await using var container = services.BuildServiceProvider();
+        var jobs = new JobStatus(_clock);
+        using var job = new RetentionReviewHostedService(container.GetRequiredService<IServiceScopeFactory>(), _retention,
+            new TestOptionsMonitor<RetentionReviewScanOptions>(new() { Email = true }), NullLogger<RetentionReviewHostedService>.Instance, jobs);
+        var audit = new ScheduledJobsTests.CapturingAudit();
+        var runner = new JobRunNowService(jobs, _admin, audit, new ScheduledJobsTests.Lifetime(), NullLogger<JobRunNowService>.Instance);
+        var definition = RetentionReviewHostedService.Job;
+        runner.CanRunNow(definition).Should().BeTrue("listed when built, before its first pass");
+        int entries;
+        await using (var db = database.NewContext()) entries = await db.AuditLog.CountAsync();
+
+        // While the nightly count holds the job, Run now is refused.
+        var nightly = jobs.TryStart(definition)!;
+        await FluentActions.Awaiting(() => runner.RunNowAsync(definition.Key)).Should().ThrowAsync<InvalidOperationException>();
+        nightly.Dispose();
+
+        await (await runner.RunNowAsync(definition.Key)).WaitAsync(TimeSpan.FromSeconds(30));
+        var row = jobs.Snapshot().Single();
+        (row.Outcome, row.Items, row.LastRunManual).Should().Be((JobOutcome.Succeeded, 4L, true));
+        state.Last!.Due.Should().Be(4, "the Retention card shows the new count");
+        notifications.Sent.Should().BeEmpty("Run now never sends the monthly email");
+        await using (var db = database.NewContext())
+            (await db.AuditLog.CountAsync()).Should().Be(entries, "nothing but the Run now's own entry (captured here) is written");
+        audit.Entries.Should().ContainSingle();
     }
 }

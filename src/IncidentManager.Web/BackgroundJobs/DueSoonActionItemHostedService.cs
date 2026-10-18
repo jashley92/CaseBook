@@ -1,3 +1,4 @@
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Notifications;
 using Microsoft.Extensions.Options;
 
@@ -22,11 +23,18 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
     private readonly IOptionsMonitor<DueSoonScanOptions> _options;
     private readonly ILogger<DueSoonActionItemHostedService> _logger;
 
+    private readonly IJobStatus? _jobs;   // CAP-29: last run, next due and last error, for Diagnostics
+
     private DateTimeOffset _lastRunUtc = DateTimeOffset.MinValue;
 
+    /// <summary>CAP-29: this job's row on Diagnostics.</summary>
+    public static readonly JobDefinition Job = new("due-soon-actions", "Due-soon after-action reminders", "every IntervalHours (default 6 h), when on");
+
     public DueSoonActionItemHostedService(IServiceScopeFactory scopeFactory,
-        IOptionsMonitor<DueSoonScanOptions> options, ILogger<DueSoonActionItemHostedService> logger)
+        IOptionsMonitor<DueSoonScanOptions> options, ILogger<DueSoonActionItemHostedService> logger, IJobStatus? jobs = null)
     {
+        _jobs = jobs;
+        jobs?.Register(Job);
         _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
@@ -42,6 +50,7 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
                 var options = _options.CurrentValue;
                 if (options.Enabled && IsDue(options))
                     await RunCycleAsync(options, stoppingToken);
+                _jobs?.Scheduled(Job, options.Enabled, NextDue(options));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -59,6 +68,10 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
         return DateTimeOffset.UtcNow - _lastRunUtc >= interval;
     }
 
+    // CAP-29: when the next pass is due (it runs at the first poll after); the first runs at once.
+    private DateTimeOffset NextDue(DueSoonScanOptions options) =>
+        _lastRunUtc == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : _lastRunUtc + JobSchedule.Hours(options.IntervalHours, 6);
+
     private static async Task DelayAsync(TimeSpan delay, CancellationToken ct)
     {
         try { await Task.Delay(delay, ct).ConfigureAwait(false); }
@@ -67,6 +80,8 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
 
     private async Task RunCycleAsync(DueSoonScanOptions options, CancellationToken ct)
     {
+        using var run = _jobs.Begin(Job);   // CAP-29
+        if (run is null) return;
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -74,6 +89,7 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
 
             var notified = await scanner.ScanAndNotifyAsync(options.LeadHours, ct);
             _lastRunUtc = DateTimeOffset.UtcNow;
+            run.Succeeded(notified);
 
             if (notified > 0)
                 _logger.LogInformation("Due-soon after-action scan: sent {Count} reminder(s).", notified);
@@ -84,6 +100,7 @@ public sealed class DueSoonActionItemHostedService : BackgroundService
         }
         catch (Exception ex)
         {
+            run.Failed(ex);
             _logger.LogError(ex, "Due-soon after-action scan cycle failed.");
         }
     }

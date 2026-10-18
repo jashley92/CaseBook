@@ -727,6 +727,10 @@
             <h6 class="text-uppercase small text-muted mt-3">Delivery health</h6>
             <IncidentManager.Web.Components.Shared.DeliveryHealthPanel />
 
+            @* CAP-29: every background job's last run, next due and last error; Run now for the read-only scans. *@
+            <h6 class="text-uppercase small text-muted mt-3">Scheduled jobs</h6>
+            <IncidentManager.Web.Components.Shared.ScheduledJobsPanel />
+
             <h6 class="text-uppercase small text-muted mt-3">Backup &amp; restore health</h6>
             @if (_backup is null)
             {

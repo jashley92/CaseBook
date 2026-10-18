@@ -26,19 +26,33 @@ public sealed class RowHashUpgradeOptions
 /// </summary>
 public sealed class RowHashUpgradeHostedService(
     IServiceScopeFactory scopes, IHostApplicationLifetime lifetime, IOptions<RowHashUpgradeOptions> options,
-    ILogger<RowHashUpgradeHostedService> logger) : BackgroundService
+    ILogger<RowHashUpgradeHostedService> logger, IJobStatus? jobs = null) : BackgroundService
 {
+    /// <summary>CAP-29: this job's row on Diagnostics: off once the upgrade's marker is written.</summary>
+    public static readonly JobDefinition Job = new("integrity-upgrade", "Integrity upgrade (one time)",
+        "once, Integrity:Upgrade:DelayMinutes after start-up, until done");
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        jobs?.Register(Job);
+        JobRun? run = null;
         try
         {
             await StartedAsync(stoppingToken);
-            if (await UpgradedAsync(stoppingToken)) return;
+            if (await UpgradedAsync(stoppingToken))
+            {
+                jobs?.Scheduled(Job, false, null);
+                return;
+            }
             var delay = TimeSpan.FromMinutes(Math.Max(0, options.Value.DelayMinutes));
+            jobs?.Scheduled(Job, true, DateTimeOffset.UtcNow + delay);
             logger.LogInformation("The integrity upgrade starts in {Minutes:0.#} minute(s); until it finishes the record check is as before.",
                 delay.TotalMinutes);
             await Task.Delay(delay, stoppingToken);
-            await RunAsync(stoppingToken);
+            run = jobs.Begin(Job);
+            var recorded = await RunAsync(stoppingToken);
+            run?.Succeeded(recorded);
+            jobs?.Scheduled(Job, false, null);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -47,7 +61,13 @@ public sealed class RowHashUpgradeHostedService(
         // A background service's exception would stop the app: every failure is logged instead, and tried at the next start.
         catch (Exception ex)
         {
+            run?.Failed(ex);
+            jobs?.Scheduled(Job, true, null);   // the next start tries again
             Log(ex);
+        }
+        finally
+        {
+            run?.Dispose();
         }
     }
 
@@ -64,7 +84,7 @@ public sealed class RowHashUpgradeHostedService(
         return await RowIntegrityVerifier.UpgradedAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), ct);
     }
 
-    private async Task RunAsync(CancellationToken ct)
+    private async Task<long> RunAsync(CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var started = DateTimeOffset.UtcNow;
@@ -81,6 +101,7 @@ public sealed class RowHashUpgradeHostedService(
         // BUG-641: one it couldn't save keeps the check as it was until a later start records it.
         if (!upgrade.Marked && upgrade.Left.Count > 0)
             logger.LogWarning("The integrity upgrade couldn't record every record; the record check stays as before and the upgrade runs again at the next start.");
+        return upgrade.Recorded;
     }
 
     private void Log(Exception ex)

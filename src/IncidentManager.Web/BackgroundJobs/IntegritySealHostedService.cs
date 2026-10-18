@@ -1,3 +1,4 @@
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Integrity;
 using Microsoft.Extensions.Options;
 
@@ -26,11 +27,18 @@ public sealed class IntegritySealHostedService : BackgroundService
     private readonly IOptionsMonitor<AutoSealOptions> _options;
     private readonly ILogger<IntegritySealHostedService> _logger;
     private readonly IntegrityCheckState _state;
+    private readonly IJobStatus? _jobs;   // CAP-29: last run, next due and last error, for Diagnostics
+
+    /// <summary>CAP-29: this job's row on Diagnostics (it may seal, so no Run now: Integrity's Verify now is the read).</summary>
+    public static readonly JobDefinition Job = new("integrity", "Integrity check and seal",
+        "check every 10 minutes (longer after a slow run); seal every AutoSeal:IntervalHours, when on");
 
     public IntegritySealHostedService(IServiceScopeFactory scopeFactory, IOptionsMonitor<AutoSealOptions> options,
-        ILogger<IntegritySealHostedService> logger, IntegrityCheckState state)
+        ILogger<IntegritySealHostedService> logger, IntegrityCheckState state, IJobStatus? jobs = null)
     {
         _state = state;
+        _jobs = jobs;
+        jobs?.Register(Job);
         _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
@@ -50,6 +58,7 @@ public sealed class IntegritySealHostedService : BackgroundService
             }
             // A slow check stretches the wait (IntegrityCheckState.NextWait), so it never takes most of the database's time.
             var wait = _state.NextWait(VerifyPoll);
+            _jobs?.Scheduled(Job, true, DateTimeOffset.UtcNow + wait);   // CAP-29
             if (wait > VerifyPoll)
                 _logger.LogWarning("The integrity check took {Seconds:N0} s, so the next one runs in {Minutes:N0} minutes instead of " +
                                    "{Poll:N0}: a change made outside CaseBook may take that long to be found.",
@@ -66,6 +75,8 @@ public sealed class IntegritySealHostedService : BackgroundService
 
     private async Task RunCycleAsync(AutoSealOptions options, CancellationToken ct)
     {
+        using var run = _jobs.Begin(Job);   // CAP-29
+        if (run is null) return;
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -74,12 +85,17 @@ public sealed class IntegritySealHostedService : BackgroundService
             // Always verify (chain + most-covering seal), record the app-wide status, and fire the F-16
             // alarm once on a fresh break. Never seal over a broken chain.
             var verification = await integrity.MonitorAndTrackAsync(ct);
-            if (!verification.IsValid || !options.Enabled) return;
+            if (!verification.IsValid || !options.Enabled)
+            {
+                run.Succeeded(_state.LastCycle?.RecordsChecked);   // the check ran; a break is the integrity card's
+                return;
+            }
 
             // Seal only when the interval has elapsed since the last seal; the verify cadence above is
             // independent, so a longer interval just widens the (DB-write-only forgeable) unsealed tail.
             var interval = JobSchedule.Hours(options.IntervalHours, 6);
             var seal = await integrity.SealIfDueAsync(interval, ct);
+            run.Succeeded(_state.LastCycle?.RecordsChecked);
             if (seal is not null)
                 _logger.LogInformation("Recorded integrity seal up to sequence {UpToSequence}.", seal.UpToSequence);
         }
@@ -89,6 +105,7 @@ public sealed class IntegritySealHostedService : BackgroundService
         }
         catch (Exception ex)
         {
+            run.Failed(ex);
             _logger.LogError(ex, "Auto-seal background job cycle failed.");
         }
     }

@@ -212,6 +212,12 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Diagnostics lists the scheduled jobs (CAP-29).** Administration → Diagnostics → *Scheduled jobs* shows each
+  background job's last run (when, how long, how it ended, items processed), when it's next due and its last error by
+  type only. It's held in memory, so after the upgrade (a restart) every row starts at "Not run yet" and fills in as the
+  jobs run. **Run now** is offered for the two read-only scans (the evidence re-verification and the retention review's
+  count); it needs Administer, won't start while that job runs, and is recorded in the audit trail. No migration and
+  nothing to configure.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

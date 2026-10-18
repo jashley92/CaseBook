@@ -201,6 +201,19 @@ Caveats:
   outbox (BUG-101), holding them while email is off; `UpdateCheckHostedService` runs the update check (PROD-49, off by
   default).
 
+**Status on Diagnostics (CAP-29).** Each scheduled job reports into `IJobStatus` (`Application/Abstractions/IJobStatus.cs`,
+a singleton held in memory, reset at restart): it registers a `JobDefinition` (a static `Job` on its class) when it's
+built or starts, reports on each poll whether it's on and when it's next due (`Scheduled`), and wraps each pass in `TryStart`
+(`jobs.Begin(Job)`), recording `Succeeded(items)`, `Failed(exception)` (the type only, never the message) or, when a
+shutdown cuts it off, stopped. `TryStart` hands a job's slot to one run at a time, so a pass that finds its job running
+skips until its next poll. Administration › Diagnostics › **Scheduled jobs** lists them (`ScheduledJobsPanel`). **Run now**
+is offered only for a job whose definition says `RunNow: true` and that registered a pass, which only the read-only
+scans do (ADR 0004): the evidence re-verification (this interval's share) and the retention review's count (never its
+email). `JobRunNowService.RunNowAsync` checks `Administer`, refuses while the job runs, records an `Access` audit entry
+(`ScheduledJob`, the job's key), and runs the pass in the background until it ends or the app stops; the schedule isn't
+moved. `ReportJobs` and `SecurityEventDispatcher` are queues, not schedules, and aren't listed (delivery health covers the
+SIEM). A new job joins with the three calls above; `IJobStatus` describes them.
+
 ## Real-time
 
 `CaseChangeNotifier` (singleton) publishes "case X changed by Y" after each commit; the workspace, the activity

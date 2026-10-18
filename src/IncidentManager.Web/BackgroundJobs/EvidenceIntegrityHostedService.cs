@@ -1,3 +1,4 @@
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Integrity;
 using Microsoft.Extensions.Options;
 
@@ -23,14 +24,25 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
     private readonly IOptionsMonitor<EvidenceVerifyOptions> _options;
     private readonly ILogger<EvidenceIntegrityHostedService> _logger;
 
+    private readonly IJobStatus? _jobs;   // CAP-29: last run, next due and last error, for Diagnostics
+
     private long? _lastSlot;   // the interval the last run was in (PROD-53: one run per interval)
 
+    /// <summary>
+    /// CAP-29: this job's row on Diagnostics. Run now re-hashes the current interval's share again: a read-only scan (it
+    /// raises the drift alarm as a scheduled run would), and the schedule stays as it was.
+    /// </summary>
+    public static readonly JobDefinition Job = new("evidence-verify", "Evidence re-verification",
+        "one share every IntervalHours (default 24 h), when on", RunNow: true);
+
     public EvidenceIntegrityHostedService(IServiceScopeFactory scopeFactory,
-        IOptionsMonitor<EvidenceVerifyOptions> options, ILogger<EvidenceIntegrityHostedService> logger)
+        IOptionsMonitor<EvidenceVerifyOptions> options, ILogger<EvidenceIntegrityHostedService> logger, IJobStatus? jobs = null)
     {
         _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
+        _jobs = jobs;
+        jobs?.Register(Job, RunNowAsync);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -45,6 +57,9 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
                 var slot = EvidenceIntegrityVerifier.Slot(DateTimeOffset.UtcNow, interval);
                 if (options.Enabled && slot != _lastSlot)   // the first run after startup, then one per interval
                     await RunCycleAsync(options, interval, slot, stoppingToken);
+                // CAP-29: the next interval's start (counted from midnight UTC), or now while this one's run is owed.
+                _jobs?.Scheduled(Job, options.Enabled,
+                    slot == _lastSlot ? EvidenceIntegrityVerifier.SlotStart(slot + 1, interval) : DateTimeOffset.UtcNow);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -63,7 +78,22 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
         catch (OperationCanceledException) { /* shutting down */ }
     }
 
+    // CAP-29: Diagnostics' Run now: this interval's share, as the scheduled run checks it; _lastSlot is left alone.
+    private async Task RunNowAsync(JobRun run, CancellationToken ct)
+    {
+        var options = _options.CurrentValue;
+        var interval = JobSchedule.Hours(options.IntervalHours, 24);
+        await VerifyAsync(run, options, interval, EvidenceIntegrityVerifier.Slot(DateTimeOffset.UtcNow, interval), manual: true, ct);
+    }
+
     private async Task RunCycleAsync(EvidenceVerifyOptions options, TimeSpan interval, long slot, CancellationToken ct)
+    {
+        using var run = _jobs.Begin(Job);   // CAP-29: skipped while a Run now re-hashes
+        if (run is null) return;
+        await VerifyAsync(run, options, interval, slot, manual: false, ct);
+    }
+
+    private async Task VerifyAsync(JobRun run, EvidenceVerifyOptions options, TimeSpan interval, long slot, bool manual, CancellationToken ct)
     {
         try
         {
@@ -73,7 +103,8 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
             var shares = EvidenceIntegrityVerifier.Shares(options.PassDays, interval);
             var share = (int)(slot % shares);
             var result = await verifier.VerifyAndTrackAsync(share, shares, ct);
-            _lastSlot = slot;
+            if (!manual) _lastSlot = slot;
+            run.Succeeded(result.CheckedCount);
 
             if (result.IsClean)
                 _logger.LogInformation("Evidence-at-rest verification passed: {CheckedCount} of {TotalCount} item(s) checked " +
@@ -87,6 +118,7 @@ public sealed class EvidenceIntegrityHostedService : BackgroundService
         }
         catch (Exception ex)
         {
+            run.Failed(ex);
             _logger.LogError(ex, "Evidence-at-rest verification background job cycle failed.");
         }
     }

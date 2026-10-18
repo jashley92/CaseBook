@@ -557,6 +557,15 @@ the tool on the server, against the site's own keys folder, or the record waits 
     (logged, SIEM 5306). If every monitor arrives through one proxy address, raise the limit there. The
     readiness probes (`/health`, `/health/ready`, `/health/live`) are never limited: behind a proxy every probe
     shares one address, and a 429 would take the node out of rotation.
+- **Scheduled jobs (CAP-29)**: **Administration → Diagnostics → Scheduled jobs** lists every background job (the
+  integrity check and seal, the evidence re-check, store upkeep and key, access-log retention, the retention review count,
+  the reminder scans, the digest, the executive report, the alert-email retry, the update check and the one-time integrity
+  upgrade) with its last run (when, how long, how it ended, how many items), when it's next due, and its last error by
+  type only; the server's log has the detail. The figures are held in memory and reset when the app restarts, so an empty
+  row after a recycle is expected. **Run now** is offered only for the read-only scans (the evidence re-verification of
+  this interval's share, and the retention review's count, which never sends its email); it needs `Administer`, is
+  refused while that job is running, is in the audit trail, and doesn't move the schedule. A job that shows **Failed**
+  again and again, or a next due that stays in the past, is worth a look in the Windows Event Log.
 
 ---
 
