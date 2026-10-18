@@ -950,6 +950,16 @@ public sealed class ReportService
             MaterialityRationale = d.NullableText(c.Materiality.Rationale),
             DetectedAtUtc = c.DetectedAtUtc,
             ReportedAtUtc = c.ReportedAtUtc,
+            // CAP-07: each regulator's notice and how it was given (typed text defanged like the rest).
+            Notices = c.JurisdictionNotices.OrderBy(n => n.NotifiedAtUtc).ThenBy(n => n.Jurisdiction, StringComparer.Ordinal)
+                .Select(n =>
+                {
+                    var (reference, by, file) = (d.NullableText(n.Reference), d.NullableText(n.NotifiedBy), Compliance.NoticeDetailText.FileName(n, c.Evidence));
+                    return new ReportNoticeRow(n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc,
+                        n.Method is { } m ? Compliance.NoticeDetailText.Label(m) : null, reference, by, file,
+                        Compliance.NoticeDetailText.Summary(n.Method, reference, by, file));
+                })
+                .ToList(),
             ContainedAtUtc = c.ContainmentNotNeededReason is null ? c.ContainedAtUtc : null,
             ContainmentNotNeeded = d.NullableText(c.ContainmentNotNeededReason),
             ContainmentDecidedAtUtc = c.ContainmentNotNeededReason is null ? null : c.ContainedAtUtc,

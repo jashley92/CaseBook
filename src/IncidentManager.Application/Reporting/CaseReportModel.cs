@@ -63,6 +63,18 @@ public sealed record ReportActionItemRow(string Title, string? Owner, DateTimeOf
         : Status;
 }
 public sealed record ReportAssignmentRow(string User, string Role);
+/// <summary>
+/// CAP-07: one regulator's notice, as the notification summary (Business Impact) and the <c>notice.*</c> template fields
+/// print it: when, and how it was given when that's recorded. <paramref name="Method"/> is its label, <paramref name="File"/>
+/// the evidence file's name, and <paramref name="How"/> all of it in words, as the timeline milestone says it.
+/// </summary>
+public sealed record ReportNoticeRow(string Jurisdiction, DateTimeOffset NotifiedAtUtc, DateTimeOffset? DueAtUtc, string? Method,
+    string? Reference, string? NotifiedBy, string? File, string? How)
+{
+    /// <summary>"Notice to NY: 2026-10-02 14:00 UTC. By portal, reference NYDFS-114, notified by Pat Lee, notice file ack.pdf."</summary>
+    public string Line => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+        $"Notice to {Jurisdiction}: {NotifiedAtUtc.UtcDateTime:yyyy-MM-dd HH:mm} UTC.{(How is null ? "" : $" {How}.")}");
+}
 /// <summary>E-26: the post-incident review, as printed in the lessons-learned report (Markdown kept as blocks).</summary>
 public sealed record ReportReview(IReadOnlyList<RichBlock> WhatHappened, IReadOnlyList<RichBlock> ContributingFactors,
     IReadOnlyList<RichBlock> WhatWorkedWell, IReadOnlyList<RichBlock> OpportunitiesToImprove, bool NoActionsIdentified);
@@ -176,6 +188,8 @@ public sealed record CaseReportModel
     public DateTimeOffset? DetectedAtUtc { get; init; }
     /// <summary>PROD-07: the regulatory-notification milestone, when set. Legal reads the report, not the app.</summary>
     public DateTimeOffset? ReportedAtUtc { get; init; }
+    /// <summary>CAP-07: each regulator's notice, in the order given, with how it was given when that's recorded.</summary>
+    public IReadOnlyList<ReportNoticeRow> Notices { get; init; } = [];
     public DateTimeOffset? ContainedAtUtc { get; init; }
     /// <summary>BUG-165: why containment wasn't needed (then <see cref="ContainedAtUtc"/> is null, and this was decided
     /// at <see cref="ContainmentDecidedAtUtc"/>).</summary>
@@ -311,6 +325,7 @@ public sealed record CaseReportModel
             if (AffectedIndividualsCount is { } n) lines.Add(string.Create(ic, $"Affected individuals: {n:N0}"));
             if (DataElementsSummary is not null) lines.Add($"Data elements: {DataElementsSummary}");
             if (NotificationTriggersSummary is not null) lines.Add($"Notification triggers: {NotificationTriggersSummary}");
+            lines.AddRange(Notices.Select(x => x.Line));   // CAP-07: the notification summary
             if (!string.IsNullOrWhiteSpace(AffectedStates)) lines.Add($"Affected jurisdictions: {AffectedStates}");
             if (!string.IsNullOrWhiteSpace(ImpactedAssets)) lines.Add($"Impacted assets: {ImpactedAssets}");
             if (DataTypesInvolved is not null) lines.Add($"Data context (analyst notes): {DataTypesInvolved}");

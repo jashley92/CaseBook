@@ -231,16 +231,19 @@ public static class CaseMilestones
                     c.DetectedAtUtc is { } det ? $"{Span(det - began)} before detection" : null, null, "case record"));
 
         // BUG-09: with more than one regulator, each notice is its own milestone; the case is reported when the last is.
+        // CAP-07: its detail says how the regulator was notified, when that's recorded.
         if (c.JurisdictionNotices.Count > 1)
             foreach (var n in c.JurisdictionNotices.OrderBy(n => n.NotifiedAtUtc))
                 list.Add(new CaseMilestone($"notice:{n.Id}", n.NotifiedAtUtc, MilestoneKind.Reported,
-                    $"Notified {n.Jurisdiction}", null, n.CreatedBy, "notice", RecordedAtUtc: Later(n.NotifiedAtUtc, n.CreatedAtUtc)));
+                    $"Notified {n.Jurisdiction}", Compliance.NoticeDetailText.Summary(n, c.Evidence), n.CreatedBy, "notice",
+                    RecordedAtUtc: Later(n.NotifiedAtUtc, n.CreatedAtUtc)));
         // BUG-364: dated when it happened, recorded when the (last) notice was entered, so a backdated notice still counts
-        // as new in the "since" windows.
+        // as new in the "since" windows. CAP-07: with one notice, this milestone tells it, so it carries how it was given.
         if (c.ReportedAtUtc is { } reported)
             list.Add(new CaseMilestone($"reported:{c.Id}", reported, MilestoneKind.Reported,
                 c.JurisdictionNotices.Count > 1 ? "Reported to every regulator in play" : "Reported to regulators",
-                null, null, "reported milestone",
+                c.JurisdictionNotices.Count == 1 ? Compliance.NoticeDetailText.Summary(c.JurisdictionNotices[0], c.Evidence) : null,
+                null, "reported milestone",
                 RecordedAtUtc: c.JurisdictionNotices.Count > 0 ? Later(reported, c.JurisdictionNotices.Max(n => n.CreatedAtUtc)) : null));
 
         // A task whose result was logged on the timeline (INV-08) is told by that entry; don't say it twice.
