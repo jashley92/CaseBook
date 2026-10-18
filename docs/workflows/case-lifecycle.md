@@ -70,7 +70,8 @@ each counting only the submissions they'd see in the queue. Two notifications, b
 arrives: an email to each reviewer (`Notifications:ImportSubmitted:Email`; one into a restricted case goes only to
 those who can see that case) and a team chat post (`Notifications:Chat:ImportSubmissions`; for a restricted case it
 says only that one is waiting). A reviewer's digest also says how many have waited longer than
-`Notifications:DigestScan:ImportWaitingHours` (24 by default). None of this applies anything (ADR 0004), and a failed
+`Notifications:DigestScan:ImportWaitingHours` (24 by default); a digest with only that to say uses its own email
+template, *Personal work digest: imports only*. None of this applies anything (ADR 0004), and a failed
 email or post never fails the submission. Applying one sends SIEM event 5515, naming the pending import.
 
 ## 3. Promoting and reclassifying

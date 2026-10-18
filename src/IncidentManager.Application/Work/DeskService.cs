@@ -225,7 +225,7 @@ public sealed class DeskService
         }
         // CAP-01: for someone who can confirm imports, the API submissions waiting in the queue they'd see (its own scope),
         // after the people who asked for them by name and before work merely due soon.
-        if (_imports is not null && await _imports.WaitingAsync(ct) is { Count: > 0 } waiting)
+        if (await ImportsWaitingAsync(ct) is { Count: > 0 } waiting)
             needs.Add(new DeskNeed(DeskNeedKind.ImportReview, Guid.Empty, "",
                 waiting.More ? $"More than {waiting.Count} imports" : Common.Plural.Of(waiting.Count, "import"), null, waiting.OldestUtc));
         foreach (var t in next.Where(t => t.DueAtUtc is { } due && due >= now && due < now.AddDays(1)).OrderBy(t => t.DueAtUtc))
@@ -235,6 +235,19 @@ public sealed class DeskService
         return new Desk(needs, cases, next.OrderBy(t => t.DueAtUtc ?? DateTimeOffset.MaxValue).ThenBy(t => t.Title).ToList(),
             clocks.OrderBy(k => k.Notify is null).ThenBy(k => (k.Notify?.DueAtUtc ?? k.Sla?.DueAtUtc) ?? DateTimeOffset.MaxValue).ToList(),
             cases.Sum(c => c.ChangesSince), changedBy, work.RecentEscalations);
+    }
+
+    // CAP-01 review: as the sidebar badge, a count that can't be had (the database busy, a time limit SQL Server reports as
+    // a SqlException) leaves the item out; it never fails the Desk.
+    private async Task<Import.PendingImportCount?> ImportsWaitingAsync(CancellationToken ct)
+    {
+        if (_imports is null) return null;
+        try { return await _imports.WaitingAsync(ct); }
+        catch (Exception ex) when (ex is System.Data.Common.DbException or InvalidOperationException or TimeoutException
+                                   && !ct.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 
     private static (string Kind, Guid Id)? ParseAbout(string? aboutRef)

@@ -93,7 +93,8 @@ flowchart LR
   Pending imports*. Reviewers find it on the Desk ("Waiting for review") and by the count beside *Import* in the
   sidebar, and, when turned on, by email (`Notifications:ImportSubmitted:Email`), a chat post
   (`Notifications:Chat:ImportSubmissions`) and a line in their digest once it has waited a day (CAP-01). A failure to
-  tell them never fails the submission; the response is unchanged.
+  tell them never fails the submission; the response is unchanged, and it doesn't wait for the email or post, which
+  go out in the background (given up, and logged, after 5 minutes).
 - **Failure:** 400 with an `error` message for invalid documents; 401/403/413/429 as documented; a server error is a
   JSON 500 (`{ "error", "ref" }`, the ref matching the server log), as in [API.md](../API.md).
 - **Retry:** none on the server; the caller decides.

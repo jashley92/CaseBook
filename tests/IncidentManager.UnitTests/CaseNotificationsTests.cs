@@ -1112,4 +1112,30 @@ public class CaseNotificationsTests
         await n.OnDigestAsync(new UserDigest("rev1", DigestCadence.Daily, [], [], []));
         sender.Sent.Should().BeEmpty("nothing to say");
     }
+
+    [Fact]
+    public async Task A_digest_of_imports_only_says_so_and_a_digest_with_items_is_as_before(/* CAP-01 review */)
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("rev1", "Robin", "robin@insurer.example");
+        var n = Build(sender, new EmailOptions(), users);
+        var waiting = new IncidentManager.Application.Import.PendingImportCount(3, false, Now.AddHours(-30));
+
+        await n.OnDigestAsync(new UserDigest("rev1", DigestCadence.Daily, [], [], [], waiting, 24));
+
+        var importsOnly = sender.Sent.Should().ContainSingle().Subject;
+        importsOnly.Subject.Should().Be("3 API imports waiting for your review").And.NotContain("0 open");
+        importsOnly.HtmlBody.Should().NotContain("open follow-up items across", "it has none")
+            .And.Contain("3 imports have waited more than 24 hours");
+        importsOnly.TextBody.Should().Contain("no open follow-up items");
+
+        sender.Sent.Clear();
+        var item = new DigestItem("2026-01_Phishing_Wave", "Reset credentials", Severity.High, Now.AddHours(-2));
+        await n.OnDigestAsync(new UserDigest("rev1", DigestCadence.Daily, [item], [], [], waiting, 24));
+
+        var normal = sender.Sent.Should().ContainSingle().Subject;
+        normal.Subject.Should().Be("Your CaseBook work digest: 1 open");
+        normal.HtmlBody.Should().Contain("Here are your open follow-up items across the cases you're working")
+            .And.Contain("Reset credentials").And.Contain("3 imports have waited more than 24 hours");
+    }
 }

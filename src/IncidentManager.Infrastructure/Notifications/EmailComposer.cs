@@ -268,6 +268,7 @@ public sealed partial class EmailComposer : IEmailComposer
             ["Summary"] = "New case: Suspicious OAuth consent grant (14 items)",
             ["Origin"] = "XSIAM",
             ["SubmittedBy"] = "XSIAM playbook token",
+            ["Imports"] = "3 API imports",   // CAP-01 review: digest-imports
         };
         var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
