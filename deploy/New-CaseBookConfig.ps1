@@ -155,6 +155,21 @@ Write-Host ""
 Write-Host "Email (optional - stays disabled until enabled in-app)" -ForegroundColor Cyan
 $SmtpHost   = Ask -Prompt 'SMTP host' -Default ''
 $MailDomain = Ask -Prompt 'Mail domain (From = casebook@<domain>)' -Default ''
+# CAP-05: 'App' sets the sign-in later in Administration (the password encrypted there; the usual choice).
+$SmtpSignIn = 'App'; $SmtpUsername = ''; $SmtpPasswordSource = 'Protected'; $SmtpPasswordSecret = ''; $SmtpPasswordThumbprint = ''
+if ($SmtpHost) {
+    $SmtpSignIn = Ask-Choice -Prompt 'Relay sign-in (App = set it in Administration after install)' -Options @('App','Windows','Password') -Default 'App'
+    if ($SmtpSignIn -eq 'Password') {
+        $SmtpUsername = Ask -Prompt 'SMTP username' -Required
+        $SmtpPasswordSource = Ask-Choice -Prompt 'Password from (Protected = prompted at install and encrypted to a certificate)' -Options @('Protected','CyberArk','Literal') -Default 'Protected'
+        if ($SmtpPasswordSource -eq 'CyberArk') {
+            $SmtpPasswordSecret = Ask -Prompt 'CyberArk reference to the password (@cyberark:Safe=...;Object=...)' -Required -Pattern '^@cyberark:' -PatternHint 'Start with @cyberark:'
+        } elseif ($SmtpPasswordSource -eq 'Protected') {
+            $SmtpPasswordThumbprint = Ask -Prompt 'Certificate to encrypt it to (thumbprint; blank = the integrity certificate)' -Default ''
+        }
+        Write-Host "  (The password itself is asked for by Install-CaseBook.ps1 and never written to this file.)" -ForegroundColor Gray
+    }
+}
 
 # --- Integrity keys (ADR 0016; OPERATIONS.md section 2) -----------------------
 Write-Host ""
@@ -228,6 +243,11 @@ $body = @"
 
     SmtpHost    = $(Q $SmtpHost)
     MailDomain  = $(Q $MailDomain)
+    SmtpSignIn             = $(Q $SmtpSignIn)
+    SmtpUsername           = $(Q $SmtpUsername)
+    SmtpPasswordSource     = $(Q $SmtpPasswordSource)
+    SmtpPasswordSecret     = $(Q $SmtpPasswordSecret)
+    SmtpPasswordThumbprint = $(Q $SmtpPasswordThumbprint)
 
     SigningKeySource     = $(Q $SigningKeySource)
     SigningKeyThumbprint = $(Q $SigningKeyThumbprint)

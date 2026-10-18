@@ -116,7 +116,8 @@ this host" (e.g. the web-host cert when run on the SQL box).
 > The answers file names AD groups, hosts, and the service account — treat it as sensitive and
 > don't commit it. It holds **no passwords**: a gMSA is passwordless, and for a normal service
 > account you pass `-AppPoolCredential (Get-Credential)` to the installer. Without it, the installer asks for the
-> password before it changes anything, and stops if none is given (REV-70).
+> password before it changes anything, and stops if none is given (REV-70). The same goes for an SMTP password
+> (below).
 
 ---
 
@@ -215,6 +216,18 @@ Or pass every value directly instead of a config file:
   additions (SIEM, CyberArk, `App:BaseUrl`, `Agenda:FeedKey`). Back it up first, or make later changes by hand.
 - `-SitePath` (web root) and `-DataRoot` are **deliberately separate**; keep the data root off the web root and
   in the backup and EDR scope.
+- **Email sign-in (CAP-05)**: `SmtpSignIn` in the answers file (or `-SmtpSignIn`) says how CaseBook signs in to the
+  relay. **`App` (the default) is the usual choice:** after install, an administrator enters the username and
+  password under **Administration → Settings → Notifications → Email sign-in**, where the password is encrypted with
+  Data Protection and never shown again, and sends a test email beside it. `Windows` signs in as the app-pool account
+  (on-premises Exchange; no password). `Password` writes `SmtpUsername` and a password into
+  `appsettings.Production.json`, which then wins over the form, as `SmtpPasswordSource` says: `Protected` (the
+  installer prompts for the password, or takes `-SmtpPassword` as a SecureString, runs the bundled
+  `deploy\keytool\casebook-keytool protect-secret`, and writes only the `@protected:` value, encrypted to
+  `SmtpPasswordThumbprint` or the integrity certificate, whose private key it lets the app account read), `CyberArk`
+  (`SmtpPasswordSecret` = an `@cyberark:` reference) or `Literal` (plain text; not recommended). Without the keytool
+  (a repo clone), run `casebook-keytool protect-secret --cert <thumbprint>` by hand later and paste the value into
+  `Email:SmtpPassword`. See [OPERATIONS.md §6](OPERATIONS.md#6-secret-management-f-19).
 - The template doesn't set `App:BaseUrl` (email links and logo; set it in Administration → Notifications),
   `Agenda:FeedKey` (calendar subscriptions), or any SIEM, chat or CyberArk endpoint. See
   [operations/configuration.md](operations/configuration.md).
@@ -270,10 +283,13 @@ private key, or that the CyberArk reference is well formed. After first start, *
 copies** shows what's in force.
 
 **Evidence encryption at rest** (off unless set; read OPERATIONS.md §2, *Evidence key*, first: losing the key loses the
-encrypted files). In the answers file: `EvidenceEncryption = $true`, `RecoveryCertificates = @('…ecovery-a.cer',
-'…ecovery-b.cer')` (the public parts; their private keys stay offline with two custodians) and, optionally,
+encrypted files). In the answers file: `EvidenceEncryption = $true`, `RecoveryCertificates = @('…
+ecovery-a.cer',
+'…
+ecovery-b.cer')` (the public parts; their private keys stay offline with two custodians) and, optionally,
 `EvidenceKeyThumbprint` for a certificate of its own (blank uses the integrity certificate above, or the CyberArk chain
-key). The installer copies the `.cer` files to `<DataRoot>\keysecovery` and refuses one that holds a private key.
+key). The installer copies the `.cer` files to `<DataRoot>\keys
+ecovery` and refuses one that holds a private key.
 `Verify-Install` checks that something can protect the key and that each recovery certificate is a public RSA
 certificate. With no recovery certificate, nothing is encrypted until shares are issued
 (`deploy\keytool\casebook-keytool split`). After first start, **Administration → Diagnostics → Evidence encryption**
@@ -308,7 +324,11 @@ Then, signed in as a mapped user:
 - [ ] Wire the **backup-status JSON** so Diagnostics → Backup &amp; restore health reads *Fresh* — §1.3.1.
 - [ ] Perform one **restore rehearsal** and confirm chain + prior-seal verification on the copy — §1.3.
 - [ ] Confirm the evidence/seal/report dirs are in the **EDR** monitoring policy — §3.
-- [ ] *(Optional)* Externalize secrets to **CyberArk CCP** — see §6.1 below and OPERATIONS.md §6.
+- [ ] Set the **email sign-in** under Administration → Settings → Notifications → Email sign-in (unless the answers
+      file set it), turn email on and *Send a test email*. Back up `<DataRoot>\dp-keys` with the database: it decrypts
+      that password (OPERATIONS.md §1).
+- [ ] *(Optional)* Keep the SIEM token, chat webhook URL or SMTP password out of plain text: `@protected:` values with
+      `casebook-keytool protect-secret` (no CyberArk needed), or **CyberArk CCP**; see §6.1 below and OPERATIONS.md §6.
 - [ ] *(Recommended)* Turn on the **SQL Server ledger** for the audit trail, seals and custody events with
       `deploy\Enable-Ledger.ps1`, and schedule `Export-LedgerDigest.ps1` to an immutable share. One-way: take a
       full backup first. See OPERATIONS.md §7.
