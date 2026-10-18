@@ -24,6 +24,16 @@ Three data sets must be backed up **in lockstep** so they stay mutually consiste
 | Report branding logo | `ReportBranding:RootPath` (`DataRoot\branding`, H-07) | File backup (single small image; low churn) |
 | Word report templates | `ReportTemplates:RootPath` (`DataRoot\report-templates`, PROD-47; when unset, a `report-templates` folder beside `ReportBranding:RootPath`, so upgraded servers need no config change) | File backup (one .docx per library template, named by its id; low churn) |
 
+**What this server holds (CAP-19).** Administration → Diagnostics → **Backup set** lists the database's name and each
+of these paths as this server resolves them (key files set outside the keys folder are listed on their own), with
+whether it's there, whether CaseBook's account can write it, its size and its last write. The seal export folder is
+judged writable by its last seal copy, never by a test file (it may be WORM), and the evidence store by its own probe.
+Each folder's walk is limited to 5 seconds and 200,000 entries, so a share that's down says "didn't answer" and a very
+large store says "at least". **`GET /export/backup-manifest.json`** (Administer; access-logged, SIEM 5304) gives the same
+as JSON for a backup job to read its folder list from, or a restore drill to compare against: paths and metadata only,
+never a key or the connection string. Pull it with the job's Windows account, for example
+`Invoke-WebRequest https://casebook.contoso.com/export/backup-manifest.json -UseDefaultCredentials -OutFile manifest.json`.
+
 ### 1.1 SQL Server backup schedule (recommended baseline)
 
 - **Full** backup nightly.

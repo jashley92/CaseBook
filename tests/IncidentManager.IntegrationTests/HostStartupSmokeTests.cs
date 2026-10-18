@@ -280,6 +280,33 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task The_backup_manifest_downloads_as_json_is_access_logged_and_refuses_a_passive_load(/* CAP-19 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            using var asImage = new HttpRequestMessage(HttpMethod.Get, "/export/backup-manifest.json");
+            asImage.Headers.Add("Sec-Fetch-Dest", "image");
+            (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var manifest = await client.GetAsync("/export/backup-manifest.json");
+            manifest.StatusCode.Should().Be(HttpStatusCode.OK);
+            manifest.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            using var doc = System.Text.Json.JsonDocument.Parse(await manifest.Content.ReadAsStringAsync());
+            doc.RootElement.GetProperty("paths").EnumerateArray().Select(p => p.TryGetProperty("path", out var path) ? path.GetString() : null)
+                .Should().Contain(Path.Combine(_dir, "evidence")).And.Contain(Path.Combine(_dir, "seals")).And.Contain(Path.Combine(_dir, "keys"));
+
+            using var scope = factory.Services.CreateScope();
+            await using var db = await scope.ServiceProvider
+                .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                .CreateDbContextAsync();
+            db.CaseAccessEvents.AsEnumerable().Should().Contain(e => e.TargetLabel != null && e.TargetLabel.StartsWith("backup-manifest-"));
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);

@@ -227,6 +227,13 @@ first with `casebook-keytool export`.
   stale or missing; always 200, with no detail. It is not part of `/health` and never takes a node out of rotation, so
   point a monitor (not the load balancer) at it and alert on `Degraded`. Anonymous on IIS through the `/health`
   carve-out above; no setting or migration.
+- **Diagnostics lists the backup set, and `backup-manifest.json` gives it to backup jobs (CAP-19).** Administration →
+  Diagnostics → *Backup set* shows the database's name and every path OPERATIONS.md §1 says to back up (evidence,
+  report output, seal exports, the keys folder, the Data Protection keys, report templates, branding), each with
+  whether it's there and writable, its size and last write. `GET /export/backup-manifest.json` (Administer) is the same
+  as JSON, paths only, never key material; it's access-logged and SIEM 5304. Setting sources now also show
+  `Integrity:ExportPath`, `DataProtection:KeyPath`, `ReportTemplates:RootPath` and `ReportBranding:RootPath`. No setting
+  or migration. Compare the card with your backup job's folder list once after upgrading.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

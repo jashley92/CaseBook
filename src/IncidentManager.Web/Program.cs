@@ -294,6 +294,7 @@ builder.Services.AddScoped<IncidentManager.Web.Realtime.PresenceCircuitTracker>(
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(
     sp => sp.GetRequiredService<IncidentManager.Web.Realtime.PresenceCircuitTracker>());
 builder.Services.AddScoped<IncidentManager.Web.Ops.BackupHealthReader>();
+builder.Services.AddSingleton<IncidentManager.Web.Ops.BackupSetReader>();   // CAP-19: a singleton, so its walks are one per path
 builder.Services.Configure<DevAuthOptions>(builder.Configuration.GetSection("DevAuth"));
 
 // Idle-session timeout (F-15). Bound to the "Security" section; the value is administered in-app and
@@ -1007,6 +1008,21 @@ app.MapGet("/export/config-bundle.json", async (
 {
     var export = await config.ExportAsync(ct);
     return Results.File(export.Content, "application/json", export.FileName);
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
+
+// CAP-19: the backup set (OPERATIONS.md §1) as JSON for backup jobs and restore drills: the database's name and every path
+// with what was found there. Paths and metadata only, never key material. Administer, like Diagnostics; access-logged.
+app.MapGet("/export/backup-manifest.json", async (
+    IncidentManager.Web.Ops.BackupSetReader backupSet,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var set = await backupSet.ReadAsync(ct);
+    var json = IncidentManager.Web.Ops.BackupManifest.Build(set, Environment.MachineName,
+        IncidentManager.Application.Updates.AppVersionInfo.Display);
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"backup-manifest-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.json");
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
+    return Results.File(json, "application/json", fileName);
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // PROD-47: Word report templates — the starter template, and a profile's uploaded template (to edit and re-upload).

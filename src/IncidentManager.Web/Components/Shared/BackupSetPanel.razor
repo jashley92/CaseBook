@@ -1,0 +1,122 @@
+@* CAP-19: the backup set on Diagnostics, every path OPERATIONS.md §1 lists, each with whether it's there, whether CaseBook
+   can write it, its size and its newest write; and backup-manifest.json, the same as a file for backup jobs and restore
+   drills. Paths and file metadata only: no file is opened, so no key is read. Each walk is bounded (C10), so a share that
+   doesn't answer says so rather than holding the page. *@
+@using IncidentManager.Web.Ops
+@inject BackupSetReader Reader
+@inject TimeDisplay TimeDisp
+@implements IDisposable
+
+<p class="small text-muted mb-2">
+    Everything to back up together, as this server is configured (<code>docs/OPERATIONS.md §1</code>). Back up the
+    database and these folders in the same window, so restored evidence, seals and keys match the restored database.
+    Sizes come from a walk limited in time and files, and say "at least" when it stopped early.
+</p>
+<div class="d-flex flex-wrap gap-2 mb-2">
+    <a class="btn btn-sm btn-outline-primary" href="/export/backup-manifest.json" download
+       aria-label="Download the backup manifest (JSON): every path in the backup set, no keys">
+        <span class="bi bi-download me-1" aria-hidden="true"></span>backup-manifest.json
+    </a>
+    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Refresh" disabled="@_reading.Busy"
+            aria-label="Check the backup set's paths again">
+        <span class="bi bi-arrow-clockwise me-1" aria-hidden="true"></span>Check again
+    </button>
+</div>
+<table class="table table-sm im-backupset">
+    <tbody>
+        @if (_set is null)
+        {
+            <tr><td><em>Checking paths&hellip;</em></td></tr>
+        }
+        else
+        {
+            <tr>
+                <td style="width:32%">Database <code class="small text-muted d-block">ConnectionStrings:Default</code></td>
+                <td class="small">
+                    <code>@(_set.DatabaseName ?? "(not named)")</code> <span class="text-muted ms-1">@_set.Provider</span>
+                    @if (_set.Provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <div class="text-muted">Native SQL Server backups (full, differential and log; §1.1).</div>
+                    }
+                </td>
+            </tr>
+            @foreach (var p in _set.Paths)
+            {
+                <tr>
+                    <td>@p.Label <code class="small text-muted d-block">@p.Key</code></td>
+                    <td class="small">
+                        @if (p.Path is null)
+                        {
+                            <span class="im-badge im-b-warn">Not set</span>
+                        }
+                        else
+                        {
+                            <code style="word-break:break-all">@p.Path</code>
+                            @if (p.Facts is { } f)
+                            {
+                                <div class="mt-1">
+                                    @switch (f.Exists)
+                                    {
+                                        case true: <span class="im-badge im-b-ok">There</span> break;
+                                        case false: <span class="im-badge im-b-danger">Not there</span> break;
+                                        default: <span class="im-badge im-b-warn">Didn't answer</span> break;
+                                    }
+                                    @if (f.Exists == true)
+                                    {
+                                        @switch (f.Writable)
+                                        {
+                                            case true: <span class="im-badge im-b-ok ms-1">Writable</span> break;
+                                            case false: <span class="im-badge im-b-danger ms-1" title="@f.WritableDetail">Not writable</span> break;
+                                        }
+                                        <span class="ms-2">@(f.Complete ? "" : "at least ")@FormatSize(f.SizeBytes) in @(f.Complete ? "" : "at least ")@f.Files.ToString("N0") file@(f.Files == 1 ? "" : "s")</span>
+                                        @if (f.LastWriteUtc is { } w) { <span class="text-muted ms-2">last write @TimeDisp.Short(w)</span> }
+                                    }
+                                </div>
+                                @if (f.Writable is null && f.WritableDetail is { } unknown && f.Exists == true) { <div class="text-muted">Writable: @unknown</div> }
+                                @if (f.Writable == false && f.WritableDetail is { } why) { <div class="text-danger">Not writable: @why</div> }
+                                @if (f.Problem is { } problem) { <div class="text-warning-emphasis">@problem</div> }
+                            }
+                        }
+                        @if (p.Note is { } note) { <div class="text-muted">@note</div> }
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</table>
+
+@code {
+    private BackupSet? _set;
+    private readonly InFlight _reading = new();
+    private readonly CancellationTokenSource _gone = new();
+    private int _load;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task Refresh() => _reading.Run(LoadAsync);
+
+    // C5: a load that a newer one overtook, or that ends after the page closed, is dropped.
+    private async Task LoadAsync()
+    {
+        var mine = ++_load;
+        BackupSet set;
+        try { set = await Reader.ReadAsync(_gone.Token); }
+        catch (OperationCanceledException) { return; }
+        if (_gone.IsCancellationRequested || mine != _load) return;
+        _set = set;
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1024L * 1024 * 1024 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024 * 1024):0.0} GB"),
+        >= 1024 * 1024 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024):0.0} MB"),
+        >= 1024 => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / 1024.0:0.0} KB"),
+        _ => $"{bytes} B"
+    };
+
+    public void Dispose()
+    {
+        _gone.Cancel();
+        _gone.Dispose();
+    }
+}

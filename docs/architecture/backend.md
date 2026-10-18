@@ -76,6 +76,7 @@ user by the `downloads` policy.
 | `GET /export/access-log.csv?…` | Administer | The access log (up to 100,000 rows) | none |
 | `GET /export/compliance-bundle.zip?from=&to=` | Administer | Compliance evidence bundle | Audit entry; access log; SIEM 5304 |
 | `GET /export/config-bundle.json` | Administer | Signed configuration bundle | Audit entry |
+| `GET /export/backup-manifest.json` | Administer | CAP-19: the backup set (OPERATIONS.md §1) as JSON: the database's provider and name, and each path with its setting, whether it exists and is writable, size, file count and last write (`complete: false` when the bounded walk stopped early). Paths and metadata only: no file is opened, never a key or the connection string (`Web/Ops/BackupSetReader.cs`) | Access log; SIEM 5304 |
 | `GET /export/report-template-starter.docx`, `…-lessons.docx` | Administer | Starter Word templates | — |
 | `GET /export/report-templates/{id}` | Administer | An uploaded template | — |
 | `GET /export/report-templates/{id}/preview?caseId=` | Administer | The template filled with a real case (not stored) | Access log |
