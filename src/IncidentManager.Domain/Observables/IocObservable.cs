@@ -111,7 +111,12 @@ public static partial class IocObservable
         if (v.IndexOf(':') < 0 || !IpText.TryParse(v, out var ip)
             || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
             return v;
-        return ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString() : ip.ToString();
+        if (ip.IsIPv4MappedToIPv6) return ip.MapToIPv4().ToString();
+        // A named zone ("%eth0") resolves to whatever interface index this machine has (Linux: %2, Windows: none), so the
+        // canonical form would depend on the host: keep a numeric zone as written, drop a named one.
+        var zone = v.IndexOf('%') is var at and >= 0 ? v[(at + 1)..] : "";
+        if (zone.Length > 0 && !zone.All(char.IsAsciiDigit)) ip.ScopeId = 0;
+        return ip.ToString();
     }
 
     private static int CountDots(string s)

@@ -22,7 +22,9 @@ namespace IncidentManager.IntegrationTests;
 public sealed class SyslogTlsTests : IDisposable
 {
     private readonly X509Certificate2 _server = SelfSigned("CN=localhost", serverAuth: true);
-    private readonly X509Certificate2 _other = SelfSigned("CN=localhost", serverAuth: true);
+    // Same host name (in its SAN), but its own subject: with two roots of one subject, Linux's chain builder may take the
+    // wrong one as the issuer and call a trusted certificate untrusted.
+    private readonly X509Certificate2 _other = SelfSigned("CN=localhost, O=Other collector", serverAuth: true);
     private readonly X509Certificate2 _client = SelfSigned("CN=casebook-client", serverAuth: false);
     private readonly DeliveryHealth _health = new(new FixedClock(DateTimeOffset.UtcNow));
 
