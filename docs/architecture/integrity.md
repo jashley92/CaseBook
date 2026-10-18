@@ -148,7 +148,7 @@ is never earlier than the one before it (BUG-167), so a time range is a run of c
 | `ChainOfCustodyEvents` | Has its own record; transfers are additionally chained. |
 | `CaseAccessEvents` (the read log) | High volume, and deleted after `Retention:AccessLogYears` (except a legal-hold case's); must not disturb the record. Each prune is itself an audit-trail entry. |
 | `Users` (mirror), `EntityLayout` (graph positions), `SavedViews`, `PinnedCases`, display and notification preferences | Cosmetic or per-user state. |
-| `PendingImports` | Staging; applying an import goes through normal audited writes. |
+| `PendingImports` | Staging; applying an import goes through normal audited writes. A decided import's stored document is cleared after `Retention:DecidedImportDays` (CAP-31); each run is an audit-trail entry. |
 
 Some fields are also deliberately left out of row hashes: a case's custom-number flag, number parts and report
 profile; evidence and report storage paths (the file there is checked against its SHA-256); a report profile's

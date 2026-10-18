@@ -210,6 +210,7 @@ process's working directory, which under IIS is the site folder.
 | `Evidence:SafeDownload` | Which evidence files the Evidence tab downloads first inside a zip with the password "infected" (PROD-58): `RiskyTypes` (programs, scripts, shortcuts, disk images, Office files with macros, web pages), `Always` or `Off`. The zip and the plain file are always both available. | `RiskyTypes` | App |
 | `Evidence:ReadBackCheck` | A file uploaded in parts is read back and its SHA-256 checked before it's recorded (catches a write damaged on its way to a share; doubles the reads for large files). | `true` | App |
 | `Retention:AccessLogYears` | Years the access log is kept. Older entries are deleted nightly (and after a restart), except a legal-hold case's; each prune is an audit-trail entry. `0` keeps it forever. | `3` | App |
+| `Retention:DecidedImportDays` | Days an applied or rejected API import keeps the document it was sent with (CAP-31). After that it's cleared nightly (and after a restart); the decision row (sender, decider, times, reason, the case) stays, and each run is an audit-trail entry. Imports waiting for review or being applied keep theirs. `0` keeps every document; at most 3650. | `90` | App |
 
 ### 3.8 Response SLAs
 

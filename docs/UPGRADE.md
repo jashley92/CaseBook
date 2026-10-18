@@ -220,6 +220,15 @@ first with `casebook-keytool export`.
   it's held for you for an hour, as the Cases export does. Recorded in the access log and as SIEM 5304, like every
   export. No migration and nothing to configure. The order now breaks ties between equally shared, equally recent
   indicators by value and type, so a few rows may sit in a different order than before.
+- **Decided imports' stored documents are cleared after 90 days (CAP-31).** New setting
+  `Retention:DecidedImportDays` (Administration › Retention, default **90**; `0` keeps every document). Nightly, as a
+  second step of the access-log retention job, an import applied or rejected longer ago than that loses the JSON it
+  was sent with (up to 5 MB each) and any saved part-way preview; who sent it, who decided, when, why and the case it
+  went into stay, and the API's status call answers as before. Imports waiting for review or being applied are
+  untouched. **On the first night after upgrading, and at the first start, documents of imports decided more than 90
+  days ago are cleared**, recorded as one audit-trail entry. No migration. To keep them, set
+  `"Retention": { "DecidedImportDays": 0 }` in `appsettings.Production.json` (or change it in Administration) before
+  upgrading.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.StageGateService>();
         services.AddScoped<Admin.AccessReviewService>();
         services.AddScoped<Access.AccessLogRetention>();      // PROD-52: deletes access-log entries past retention
+        services.AddScoped<Import.DecidedImportRetention>();  // CAP-31: clears decided imports' stored documents
         // BUG-591: finds role names with a comma at start-up, so every role list reads them whole.
         services.AddSingleton<Admin.LegacyRoleNameCheck>();
         services.AddHostedService(sp => sp.GetRequiredService<Admin.LegacyRoleNameCheck>());

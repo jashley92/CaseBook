@@ -84,7 +84,8 @@ builder.Services.AddHostedService<RowHashUpgradeHostedService>();
 // --- F-17: periodic evidence-at-rest re-verification (re-hash stored bytes, alarm on drift) ---
 builder.Services.Configure<EvidenceVerifyOptions>(builder.Configuration.GetSection("Integrity:EvidenceVerify"));
 builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
-// PROD-52: deletes access-log entries older than Retention:AccessLogYears (default 3), keeping legal-hold cases' entries.builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
+// PROD-52: deletes access-log entries older than Retention:AccessLogYears (default 3), keeping legal-hold cases' entries.
+// CAP-31: and clears decided imports' stored documents after Retention:DecidedImportDays (default 90), keeping the decision.builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 builder.Services.AddHostedService<AccessLogRetentionHostedService>();
 // CAP-10: the retention review reads Retention:CaseYears; a nightly count feeds Diagnostics and the optional monthly email
 // to Legal (Notifications:RetentionReview:Email). It counts only: nothing is archived or deleted by a job.
