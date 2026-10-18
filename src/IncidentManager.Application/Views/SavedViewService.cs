@@ -41,7 +41,7 @@ public sealed class SavedViewService
         var me = _user.UserId;
         using var db = _factory.CreateDbContext();
         // CAP-36: the teams I'm in (any, retired too: a view already shared with one stays with its members).
-        var mine = await db.TeamMembers.AsNoTracking().Where(m => m.UserId == me).Select(m => m.TeamId).ToListAsync(ct);
+        var mine = await Admin.TeamService.TeamsOfAsync(db, me, ct);   // CAP-36 review: ignoring case, as everywhere
         var rows = await db.SavedViews.AsNoTracking()
             .Where(v => v.OwnerUserId == me || (v.IsShared && (v.TeamId == null || mine.Contains(v.TeamId.Value))))
             .ToListAsync(ct);
@@ -132,7 +132,8 @@ public sealed class SavedViewService
         {
             // CAP-36: shared with a team the sharer is in (and an active one), never one they'd only name.
             using var check = _factory.CreateDbContext();
-            if (!await check.TeamMembers.AsNoTracking().AnyAsync(m => m.TeamId == team && m.UserId == me, ct)
+            // CAP-36 review: membership ignoring case, as the list above and the Teams page read it.
+            if (!(await Admin.TeamService.TeamsOfAsync(check, me, ct)).Contains(team)
                 || !await check.Teams.AsNoTracking().AnyAsync(t => t.Id == team && t.IsActive, ct))
                 throw new InvalidOperationException("You can share a view only with an active team you're in.");
         }

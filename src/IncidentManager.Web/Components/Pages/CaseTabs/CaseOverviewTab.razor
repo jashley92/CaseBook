@@ -347,7 +347,9 @@
                                     <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="MarkReported">Save</button>
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _markingReported = false">Cancel</button>
                                 </div>
-                                @if (_reportedError is not null) { <p class="text-danger small mt-1 mb-0">@_reportedError</p> }
+                                @* CAP-38 review: the regulators a save records, as read when the form opened (or after a refusal). *@
+                                @if (_outstandingShown.Count > 0) { <p class="small text-muted mt-1 mb-0">Records a notice to @string.Join(", ", _outstandingShown).</p> }
+                                @if (_reportedError is not null) { <p class="text-danger small mt-1 mb-0" role="alert">@_reportedError</p> }
                             }
                             else
                             {
@@ -936,6 +938,7 @@
 
     private DateTime? _reportedAt, _reportedSeed;
     private DateTimeOffset? _reportedShown;   // BUG-594: the reported time the page showed when the form opened
+    private IReadOnlyList<string> _outstandingShown = [];   // CAP-38 review: the regulators it showed as still owed
     private string? _reportedError;
 
     // Related cases (E-14)
@@ -1012,8 +1015,16 @@
         // Initial-activity), not raw UTC — so an analyst who types local everywhere can't mis-stop the
         // highest-stakes regulatory clock by their zone offset. WallClock.ToUtc converts on save.
         _reportedAt = _reportedSeed = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
-        _reportedShown = _deadlines?.ReportedAtUtc;
+        TakeReportedStamps();
         _markingReported = true;
+    }
+
+    // BUG-594 / CAP-38 review (C9): what the form shows, read when it opens and again after a refusal: the stored time, and
+    // the regulators still owed a notice (the ones a save records).
+    private void TakeReportedStamps()
+    {
+        _reportedShown = _deadlines?.ReportedAtUtc;
+        _outstandingShown = _deadlines?.Standing.Outstanding ?? [];
     }
 
     private Task MarkReported() => _saving.Run(MarkReportedCore);
@@ -1025,8 +1036,9 @@
         try
         {
             var utc = WallClock.ToUtc(dt, TimeDisp.Zone); // FR-09: wall-clock (display zone) → UTC, matching every other datetime field
-            // BUG-594: refused when someone recorded a reported time after the form opened.
-            await Cases.MarkReportedAsync(CaseId, utc, Shown.Of(_reportedShown));
+            // BUG-594: refused when someone recorded a reported time after the form opened. CAP-38 review: or when the
+            // regulators still owed changed (one brought into play, a notice removed), so none gets a notice nobody saw.
+            await Cases.MarkReportedAsync(CaseId, utc, Shown.Of(_reportedShown), _outstandingShown);
             _markingReported = false;
             await LoadDeadlines();
             await OnChanged.InvokeAsync();
@@ -1034,9 +1046,11 @@
         }
         catch (StaleEditException ex)
         {
-            _markingReported = false;
-            Toasts.Error(ex.Message);
+            // CAP-38 review (C7, C9): the time typed stays, the form shows who is owed now, and a deliberate save again works.
+            _reportedError = ex.Message;
             await LoadDeadlines();
+            TakeReportedStamps();
+            if (_deadlines?.Standing.IsFullyReported != false) _markingReported = false;
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1208,7 +1222,7 @@
     {
         var labels = new MilestoneLabels(c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
             k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k),
-            d => Ui.Label(d), t => TimeDisp.DateOnly(t));
+            d => Ui.Label(d), t => TimeDisp.DateOnly(t), _deadlines?.Standing);   // CAP-38 review: reported by the standing
         var milestones = CaseMilestones.Project(Case, labels)
             .Where(m => RecentMilestones.Contains(m.Kind))
             .Select(m => new RecentItem(m.AtUtc, m.Flagged ? "bi-flag-fill im-ov-flag" : "bi-flag", "Milestone",

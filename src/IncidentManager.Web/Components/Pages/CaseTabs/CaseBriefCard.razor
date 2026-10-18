@@ -177,6 +177,8 @@
 
 @code {
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    /// <summary>CAP-38 review: the case's clocks, for its standing with its regulators (the reported milestone follows it).</summary>
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
     /// <summary>HR-02: each task's latest recorded result.</summary>
     [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     [Parameter] public bool CanEdit { get; set; }
@@ -190,7 +192,8 @@
 
     // INV-27: how far the record has moved on since the current version (null without one).
     private BriefFreshness.Result? Freshness => Current is { } cur
-        ? BriefFreshness.Since(Case, cur, new MilestoneLabels(c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)))
+        ? BriefFreshness.Since(Case, cur, new MilestoneLabels(c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
+            Standing: Notify?.Standing))   // CAP-38 review: reported by the standing
         : null;
 
     private sealed record Part(string Key, string Label, string Hint, int Rows, Func<CaseBrief, string?> Get, bool Editable = true);

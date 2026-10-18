@@ -39,8 +39,9 @@ public sealed record ImprovementActionInput(
 /// <summary>Which actions the cross-case register lists.</summary>
 public enum RegisterScope { Open, PastTarget, Closed, All }
 
+// CAP-36 review: Team is a team= value as read (TeamService.ScopeAsync), so the Program page's link lands on that team's actions.
 public sealed record RegisterFilter(
-    RegisterScope Scope = RegisterScope.Open, string? Search = null, bool IncludeExercises = false);
+    RegisterScope Scope = RegisterScope.Open, string? Search = null, bool IncludeExercises = false, TeamScope? Team = null);
 
 /// <summary>A register row: the action plus the case it came from.</summary>
 public sealed record ImprovementActionRegisterRow(
@@ -106,7 +107,9 @@ public sealed class LessonsService
             .FirstOrDefaultAsync(x => x.Id == caseId, ct)
             ?? throw new InvalidOperationException("Case not found.");
         var labels = c.Entities.ToDictionary(e => e.Id, e => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!);
-        return CaseNarrative.Draft(c, id => labels.GetValueOrDefault(id), severityLabel, _clock.UtcNow);
+        // CAP-38 review: "Reported to regulators" by the standing (every regulator in play notified), as the report says it.
+        var standing = await Compliance.NotificationDeadlineService.StandingAsync(db, c.Id, ct);
+        return CaseNarrative.Draft(c, id => labels.GetValueOrDefault(id), severityLabel, _clock.UtcNow, standing);
     }
 
     public async Task<CaseLessonsView> GetForCaseAsync(Guid caseId, CancellationToken ct = default)
@@ -264,6 +267,7 @@ public sealed class LessonsService
         using var db = _factory.CreateDbContext();
         var cases = db.Cases.AsNoTracking().ForUser(_user);
         if (!filter.IncludeExercises) cases = cases.ExcludingExercises();
+        if (filter.Team is { } team) cases = cases.InTeam(team);   // CAP-36 review: the Program page's team, carried through
 
         var rows = await (
                 from a in db.ImprovementActions.AsNoTracking()

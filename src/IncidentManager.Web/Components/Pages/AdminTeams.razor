@@ -156,6 +156,9 @@ else
     private sealed class Editor(TeamView t)
     {
         public TeamView Original { get; } = t;
+        // CAP-36 review (C9): the stamp a save sends: the one it opened with, moved on by this page's own retire or restore of
+        // the team and by a refused save (so a deliberate save again works), while what's typed stays.
+        public string Stamp { get; set; } = t.Stamp;
         public string Name { get; set; } = t.Name;
         public string? Label { get; set; } = t.DetectionSourceLabel;
         public string? Link { get; set; } = t.DetectionLinkTemplate;
@@ -245,13 +248,15 @@ else
         if (_edit is not { } e) return;
         try
         {
-            await Teams.UpdateAsync(e.Original.Id, new TeamEdit(e.Name, e.Label, e.Link, e.Members.ToList()), e.Original.Stamp);
+            await Teams.UpdateAsync(e.Original.Id, new TeamEdit(e.Name, e.Label, e.Link, e.Members.ToList()), e.Stamp);
         }
         catch (IncidentManager.Application.Cases.StaleEditException ex)
         {
-            // C9: someone changed it since this opened; what was typed stays, and the list shows theirs.
+            // C9: someone changed it since this opened; what was typed stays, and the list shows theirs. CAP-36 review: the
+            // editor takes the stamp of what the list now shows, so saving again (having looked) is a deliberate overwrite.
             Toasts.Error(ex.Message);
             await LoadAsync();
+            RestampEditor(e.Original.Id);
             return;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -281,12 +286,23 @@ else
                 return;
             }
             Toasts.Info(active ? $"{t.Name} restored." : $"{t.Name} retired. It stays on the cases that name it.");
-            // An open editor for it keeps what's typed but takes the new stamp only through a reload of the list.
+            // CAP-36 review (C9): an open editor for it takes the new stamp and keeps what's typed, when it stood on the same
+            // stamp this change was made over (so only this page's own change is taken in, never a colleague's it hasn't
+            // seen); one with nothing typed starts again from the team as it is now.
+            var editorWasOn = _edit is { } ed && ed.Original.Id == t.Id ? ed.Stamp : null;
             await LoadAsync();
             if (_edit is { Dirty: false } open && open.Original.Id == t.Id && _teams?.FirstOrDefault(x => x.Id == t.Id) is { } fresh)
                 _edit = new Editor(fresh);
+            else if (editorWasOn == t.Stamp) RestampEditor(t.Id);
         }
         finally { _changing.Remove(t.Id); }
+    }
+
+    // CAP-36 review: the open editor for team <paramref name="id"/>, if any, takes the stamp of the team as the list now shows it.
+    private void RestampEditor(Guid id)
+    {
+        if (_edit is { } open && open.Original.Id == id && _teams?.FirstOrDefault(x => x.Id == id) is { } fresh)
+            open.Stamp = fresh.Stamp;
     }
 
     public void Dispose() => Edits.Forget(this);

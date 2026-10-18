@@ -902,15 +902,16 @@ app.MapGet("/export/program-report.csv", async (
 // page's scope + exercise filters (free-text search is deliberately not a URL parameter — it would land in
 // request logs). Need-to-know scoped by LessonsService; access-logged like every export. Plain attachment.
 app.MapGet("/export/improvement-actions.csv", async (
-    string? scope, bool? exercises,
+    string? scope, bool? exercises, string? team,
     IncidentManager.Application.Lessons.LessonsService lessons,
+    IncidentManager.Application.Admin.TeamService teams,
     IncidentManager.Application.Access.IAccessLogService access,
     IClock clock, CancellationToken ct) =>
 {
     var filter = new IncidentManager.Application.Lessons.RegisterFilter(
         IncidentManager.Domain.Common.EnumNames.TryParse<IncidentManager.Application.Lessons.RegisterScope>(scope, out var s, ignoreCase: true)   // BUG-592
             ? s : IncidentManager.Application.Lessons.RegisterScope.Open,
-        null, exercises ?? false);
+        null, exercises ?? false, await teams.ScopeAsync(team, ct));   // CAP-36 review: the page's team filter
     var csv = await lessons.ExportRegisterCsvAsync(filter, ct);
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"improvement-actions-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);

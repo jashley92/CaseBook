@@ -231,6 +231,24 @@ first with `casebook-keytool export`.
   SIEM 5513 sends `CaseReported` when the last regulator's notice is recorded (as well as that notice's
   `RegulatorNoticeRecorded`), and *Mark reported* sends one `RegulatorNoticeRecorded` per notice it records before
   its `CaseReported`. No migration and nothing to configure.
+- **Per-jurisdiction clocks, review fixes (CAP-38).** *Mark reported* now names the regulators it will record ("Records
+  a notice to CA, TX.") and records only those: if the set changed after the form opened (a colleague added an element
+  that brings a regulator in, or removed a notice) the save is refused, the time typed stays, and the form shows who is
+  owed now. The report's "Reported to regulators" stamp, `case.reported`, the timeline's reported milestone, the
+  brief's and handoff's "since", the review's narrative draft and the Cases list CSV's `reported_utc` now read the same
+  standing as the "Partly reported" line, so a reported time stored over a clock still running (an older build, a
+  restore, a hand edit) no longer prints "Reported" there. SIEM 5513 `CaseReported` is now sent whenever a case becomes
+  fully reported, also when the element that brought in the last regulator owed is removed, or a data element's
+  jurisdictions change (the Data elements page or a configuration import); *Mark reported* that records nothing sends
+  nothing. A case with too many data elements to keep beside its regulators is judged the same way by an impact edit as
+  by every view (every element counts as had), so the edit can no longer blank its reported time while the clocks say
+  reported. The dashboard's mean time to report, the program report's figures and period history still read the stored
+  reported time and the audit trail as before. No migration and nothing to configure.
+- **Teams, review fixes (CAP-36).** Retiring or restoring a team while editing it on the Teams page no longer makes the
+  open edit unsaveable (and a save refused over a colleague's change can be saved again deliberately); giving a case a
+  team checks the team is active inside the same gate a retire takes; team membership is matched ignoring case when a
+  view is shared or listed (it was case-sensitive on SQLite); and **Program › Improvement actions** gains a team
+  picker (`?team=`), which its CSV and the Program overview's link and tabs carry. Nothing to configure.
 - **Full-text search on SQL Server, optional (CAP-22).** Where the SQL Server instance has the Full-Text Search
   feature, Find and the case-list search match words from full-text indexes instead of reading every row, so the
   command bar stays fast on a large database. A word then matches the words that **start with** it (`lsa` finds

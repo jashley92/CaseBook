@@ -21,7 +21,11 @@ public static class CaseNarrative
     /// <param name="c">The case with its timeline entries (and their tactics) and change histories loaded.</param>
     /// <param name="entityLabel">Resolves an entity id to a short label for actor/target attribution.</param>
     /// <param name="severityLabel">The org's display label for a severity.</param>
-    public static string Draft(Case c, Func<Guid, string?> entityLabel, Func<Severity, string> severityLabel, DateTimeOffset nowUtc)
+    /// <param name="standing">CAP-38 review: the case's standing with its regulators (<see cref="NoticeStanding"/>); given,
+    /// "Reported to regulators" is when the last regulator in play was notified, and absent while one is still owed. Without
+    /// it, the stored reported time.</param>
+    public static string Draft(Case c, Func<Guid, string?> entityLabel, Func<Severity, string> severityLabel, DateTimeOffset nowUtc,
+        NoticeStanding? standing = null)
     {
         var sb = new StringBuilder();
         sb.Append(CultureInfo.InvariantCulture, $"_Drafted from the case record on {Day(nowUtc)}. Review and edit before saving._\n\n");
@@ -51,7 +55,7 @@ public static class CaseNarrative
                 ? $"- **Containment not needed:** {why}"
                 : Time("Contained", c.ContainedAtUtc, c.DetectedAtUtc, "detection"),
             Time("Resolved", c.ResolvedAtUtc, c.DetectedAtUtc, "detection"),
-            Time("Reported to regulators", c.ReportedAtUtc, c.DetectedAtUtc, "detection"),
+            Time("Reported to regulators", standing is null ? c.ReportedAtUtc : standing.ReportedAtUtc, c.DetectedAtUtc, "detection"),
             Time("Closed", c.ClosedAtUtc)
         }.OfType<string>().ToList();
         if (times.Count > 0)

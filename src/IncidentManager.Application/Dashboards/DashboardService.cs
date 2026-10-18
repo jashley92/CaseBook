@@ -207,6 +207,9 @@ public sealed class DashboardService
             notifyBreached = heads.Values.Count(h => h.State == Sla.SlaState.Breached);
             notifyAtRisk = heads.Values.Count(h => h.State == Sla.SlaState.AtRisk);
 
+            // CAP-38 review: on the stored reported time, kept as the last notice to a regulator in play by every notice path
+            // and the recheck, and averaged in the database; reading every reported case's standing on each dashboard load
+            // isn't cheap, and only a stored time set around CaseService (a restore, a hand edit) could differ.
             meanHoursToReport = MeanHours(await cases
                 .Where(c => c.ReportedAtUtc != null && c.DetectedAtUtc != null)
                 .Select(c => (double?)DbTime.TicksBetween(c.DetectedAtUtc, c.ReportedAtUtc))

@@ -831,12 +831,13 @@ public sealed partial class ConfigBundleService
         var now = _clock.UtcNow;
         var actor = _user.UserId;
         var run = new ImportRun();
+        IReadOnlyList<Case> reported;
         try
         {
             await ApplyAsync(db, bundle, templateFiles, run, dryRun: false, ct);
             // WF-11: as the Data elements page: cases not yet reported are judged on the imported jurisdictions. BUG-390: in
             // the import's own save, so a recheck that fails can't leave the import saved and the cases never rechecked.
-            await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, run.Rescoped, db.DataElements.Local, actor, now, ct);
+            reported = await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, run.Rescoped, db.DataElements.Local, actor, now, ct);
             await db.SaveChangesAsync(ct);
         }
         catch
@@ -891,6 +892,8 @@ public sealed partial class ConfigBundleService
                 _siem?.Emit(SecurityEvents.RoleChanged("RoleImported", _user.UserId, _user.UserPrincipalName, role));
             foreach (var mapping in addedMappings)
                 _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
+            // CAP-38 review: a case the imported jurisdictions left fully reported says so, as on the Data elements page.
+            foreach (var c in reported) _siem.CaseFullyReported(c, _user.UserId, _user.UserPrincipalName);
             // CAP-06: the reference data it replaced (gates, templates, rules, outcomes...), as one event with the counts and the
             // signing key; the audit trail has each row.
             if (added + updated > 0)

@@ -172,14 +172,15 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>
     /// WF-11 / BUG-284: the jurisdictions in play on a case holding <paramref name="kept"/>: those kept when it was reported,
     /// plus those today's settings give the elements added since (<paramref name="live"/>). Without a kept value, today's
-    /// settings for every element. A kept value without its elements (from before they were recorded) counts the elements
-    /// in <paramref name="elementsIfUnknown"/> as the ones it had (the elements before an edit), or else just what was kept.
+    /// settings for every element. A kept value without its elements (from before they were recorded, or too long to hold
+    /// them) is just what was kept: every element counts as had (BUG-618). CAP-38 review: the one reading, so an edit can't
+    /// judge a case one way and the views another.
     /// </summary>
     public static IReadOnlyList<string> KeptInPlay(string? kept, IReadOnlyCollection<string> currentKeys,
-        Func<IEnumerable<string>, IReadOnlyList<string>> live, IEnumerable<string>? elementsIfUnknown = null)
+        Func<IEnumerable<string>, IReadOnlyList<string>> live)
     {
         if (KeptJurisdictions(kept) is not { } jurisdictions) return live(currentKeys);
-        if ((KeptElementKeys(kept) ?? elementsIfUnknown?.ToList()) is not { } had) return jurisdictions;
+        if (KeptElementKeys(kept) is not { } had) return jurisdictions;
         var added = currentKeys.Where(k => !had.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList();
         return added.Count == 0 ? jurisdictions
             : jurisdictions.Union(live(added), StringComparer.OrdinalIgnoreCase).ToList();

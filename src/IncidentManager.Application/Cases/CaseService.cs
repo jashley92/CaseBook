@@ -410,7 +410,12 @@ public sealed class CaseService
             var part = ids.GetRange(i, Math.Min(size, ids.Count - i));
             var rows = (await Scoped(db.Cases.AsNoTracking()).Where(c => part.Contains(c.Id)).Select(ListItem).ToListAsync(ct))
                 .ToDictionary(r => r.Id);
-            items.AddRange(part.Where(rows.ContainsKey).Select(id => rows[id]));
+            // CAP-38 review: reported_utc is when every regulator in play was notified (the standing), blank while one is
+            // still owed, not a stored time set over a clock still running.
+            var standings = await Compliance.NotificationDeadlineService.StandingsAsync(db,
+                Scoped(db.Cases.AsNoTracking()).Where(c => part.Contains(c.Id)), ct);
+            items.AddRange(part.Where(rows.ContainsKey).Select(id => standings.TryGetValue(id, out var s)
+                ? rows[id] with { ReportedAtUtc = s.ReportedAtUtc } : rows[id]));
             if (afterChunk is not null) await afterChunk(i / size + 1);
         }
         return (items, truncated);
@@ -1512,8 +1517,12 @@ public sealed class CaseService
     /// </summary>
     /// <param name="expectedReportedAtUtc">BUG-594: the reported time the page showed (<c>Shown.Of(null)</c>: not reported).
     /// Given, the save is refused when it has changed since, so a stale page doesn't overwrite a colleague's time.</param>
+    /// <param name="expectedOutstanding">CAP-38 review: the regulators the form showed as still owed a notice
+    /// (<see cref="NoticeStanding.Outstanding"/>), the ones this records. Given, the save is refused when that set has changed
+    /// since (compared in any order, ignoring case), so a regulator brought into play meanwhile (an element a colleague
+    /// added) isn't given a notice nobody gave it, and a notice a colleague removed isn't made again.</param>
     public async Task MarkReportedAsync(Guid id, DateTimeOffset reportedAtUtc, Shown<DateTimeOffset?>? expectedReportedAtUtc = null,
-        CancellationToken ct = default)
+        IReadOnlyCollection<string>? expectedOutstanding = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -1523,9 +1532,17 @@ public sealed class CaseService
                 "Someone else recorded when regulators were notified while you were looking. Review it, then record yours again if it's still needed.");
         var now = _clock.UtcNow;
         var inPlay = await InPlayAsync(db, c, ct);
+        var before = StandingOf(c, inPlay);
+        if (expectedOutstanding is not null && !SameCodes(expectedOutstanding, before.Outstanding))
+            throw new StaleEditException(string.Join(',', before.Outstanding),
+                "The regulators still owed a notice changed while you were looking" +
+                (before.Outstanding.Count == 0 ? "; none is owed now." : $"; now {string.Join(", ", before.Outstanding)}.") +
+                " Review them, then record yours again if it's still needed.");
         var recorded = new List<string>();
+        var wholeBefore = c.ReportedAtUtc;
+        var whole = inPlay.Count == 0 && c.JurisdictionNotices.Count == 0;
         // CAP-38: notices already made (none in play now) keep the case's time following them, as everywhere else.
-        if (inPlay.Count == 0 && c.JurisdictionNotices.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
+        if (whole) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
         else
         {
             // BUG-428: a legacy notice coded "NY;CA" already covers NY and CA, so neither gets a second notice.
@@ -1538,12 +1555,33 @@ public sealed class CaseService
             c.ReportedFromNotices(inPlay, _user.UserId, now);
         }
         await db.SaveChangesAsync(ct);
-        // CAP-06 / CAP-38: one 5513 per notice it recorded (each regulator's own stop), then the case as fully reported.
+        // CAP-06 / CAP-38: one 5513 per notice it recorded (each regulator's own stop), then the case as fully reported once it
+        // is; nothing more when it recorded nothing (every regulator was notified already). A whole-case time corrected is a
+        // report of the case itself.
         foreach (var code in recorded)
             EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, code, a, u));
-        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, null, a, u));
+        if (whole && wholeBefore is not null && wholeBefore != c.ReportedAtUtc) EmitCaseReported(c);
+        else EmitIfNowFullyReported(c, before, inPlay);
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
+
+    // CAP-38: the case's standing as it is in memory (the one reading every view uses), with what's in play.
+    private static NoticeStanding StandingOf(Case c, IReadOnlyCollection<string> inPlay) =>
+        NoticeStanding.Of(inPlay, c.JurisdictionNotices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)), c.ReportedAtUtc);
+
+    // CAP-38 review: two sets of jurisdiction codes are the same, in any order and ignoring case.
+    private static bool SameCodes(IEnumerable<string> a, IEnumerable<string> b) =>
+        a.Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            .SetEquals(b.Select(x => (x ?? "").Trim()).Where(x => x.Length > 0));
+
+    // CAP-38 review: 5513 CaseReported for the case as a whole when a save leaves it fully reported (every regulator in play
+    // has its notice) where it wasn't, whichever path did it: a notice, Mark reported, an element removed.
+    private void EmitIfNowFullyReported(Case c, NoticeStanding before, IReadOnlyCollection<string> inPlayAfter)
+    {
+        if (!before.IsFullyReported && StandingOf(c, inPlayAfter).IsFullyReported) EmitCaseReported(c);
+    }
+
+    private void EmitCaseReported(Case c) => _siem.CaseFullyReported(c, _user.UserId, _user.UserPrincipalName);
 
     /// <summary>BUG-09: records (or corrects) when one regulator was notified; the case counts as reported once all in play are.</summary>
     /// <param name="expectedNotifiedAtUtc">BUG-594: when the page showed this regulator as notified (<c>Shown.Of(null)</c>:
@@ -1567,15 +1605,15 @@ public sealed class CaseService
                     "Someone else recorded this regulator's notice while you were looking. Review it, then record yours again if it's still needed.");
         }
         var now = _clock.UtcNow;
-        var wasReported = c.ReportedAtUtc is not null;
+        var inPlay = await InPlayAsync(db, c, ct);
+        var before = StandingOf(c, inPlay);
         c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now, details);
-        c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
+        c.ReportedFromNotices(inPlay, _user.UserId, now);
         await db.SaveChangesAsync(ct);
         EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, NoticeCode(jurisdiction), a, u));   // CAP-06
         // CAP-38: the notice that leaves no regulator in play outstanding makes the case fully reported, and says so; until
         // then the case is partly reported and sends only the regulator's own event.
-        if (!wasReported && c.ReportedAtUtc is not null)
-            EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, null, a, u));
+        EmitIfNowFullyReported(c, before, inPlay);
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
 
@@ -1767,13 +1805,19 @@ public sealed class CaseService
         var kept = c.ReportedJurisdictions;   // BUG-284: kept once reported, also while a later element is outstanding
         var keysBefore = c.DataElements.Select(d => d.ElementKey).ToList();
         var live = Compliance.NotificationDeadlineService.Live(await Compliance.NotificationDeadlineService.ElementJurisdictionsAsync(db, ct));
-        var before = Case.KeptInPlay(kept, keysBefore, live, elementsIfUnknown: keysBefore);
+        var before = Case.KeptInPlay(kept, keysBefore, live);
+        var standingBefore = StandingOf(c, before);   // CAP-38 review: for the 5513 when this edit leaves it fully reported
         c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, now);
         // WF-65: and for a reported case only an element added since it was reported brings in a jurisdiction; the elements
         // it had keep the ones kept at notice time (editing the count must not reopen it after an admin change), and
-        // removing one added since takes its jurisdictions out again (BUG-284).
-        var after = Case.KeptInPlay(kept, c.DataElements.Select(d => d.ElementKey).ToList(), live, elementsIfUnknown: keysBefore);
-        var wasReported = c.ReportedAtUtc is not null;   // BUG-570: before the BUG-555 branch can unreport it
+        // removing one added since takes its jurisdictions out again (BUG-284). CAP-38 review: read from the kept value as
+        // it now stands, the way every view reads it (NoticeStanding): BUG-563 has just given an old value its elements when
+        // they fit; when they don't, just the codes are kept and every element counts as had (BUG-618) here as in the views,
+        // so this edit can't unreport a case the clocks, reminders and close gate still see as fully reported.
+        var after = Case.KeptInPlay(c.ReportedJurisdictions, c.DataElements.Select(d => d.ElementKey).ToList(), live);
+        // BUG-570: before the BUG-555 branch can unreport it. CAP-38 review: by the standing, so a stored time over a clock
+        // already running (reminded) doesn't have its reminders forgotten and sent again.
+        var wasReported = standingBefore.IsFullyReported;
         // BUG-104: a case reported as a whole (no notice per jurisdiction: reported before notices were per jurisdiction,
         // or when none was in play) covered the jurisdictions in play then, and no others. Those become notices at that
         // time, so one that comes into play now is outstanding until its regulator is notified.
@@ -1795,8 +1839,10 @@ public sealed class CaseService
         // BUG-618: still reported (with notices or as a whole), so an element added counts as had.
         c.KeepElementsWhileReported();
         await db.SaveChangesAsync(ct);
+        // CAP-38 review: removing the element that brought in the one regulator still owed leaves the case fully reported.
+        EmitIfNowFullyReported(c, standingBefore, after);
         await FreezeNoticeDuesAsync(id, ct);   // WF-77: notices a BUG-104 conversion recorded
-        if (wasReported && c.ReportedAtUtc is null) _deadlineReminders?.ForgetCase(id);   // BUG-156: reminded again
+        if (wasReported && !StandingOf(c, after).IsFullyReported) _deadlineReminders?.ForgetCase(id);   // BUG-156: reminded again
     }
 
     public async Task AssignAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
@@ -3571,6 +3617,9 @@ public sealed class CaseService
     public async Task SetTeamAsync(Guid id, Guid? teamId, string? expectedStamp = null, CancellationToken ct = default)
     {
         Require();
+        // CAP-36 review (C1): the active-team check and the save run together, inside the gate a team's retire takes, so a
+        // retire landing between them can't leave the case on a retired team.
+        using var guard = await Admin.GuardGate.EnterAsync(ct);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         if (expectedStamp is not null && c.TeamConcurrencyStamp() != expectedStamp)

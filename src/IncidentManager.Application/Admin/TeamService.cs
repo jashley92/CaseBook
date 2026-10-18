@@ -70,9 +70,8 @@ public sealed class TeamService
     /// <summary>The active teams the current user is a member of, by name: the New case form's default and a view's share.</summary>
     public async Task<List<TeamView>> MineAsync(CancellationToken ct = default)
     {
-        var me = _user.UserId;
         using var db = _factory.CreateDbContext();
-        var ids = await db.TeamMembers.AsNoTracking().Where(m => m.UserId == me).Select(m => m.TeamId).ToListAsync(ct);
+        var ids = await TeamsOfAsync(db, _user.UserId, ct);
         var teams = await db.Teams.AsNoTracking().Where(t => t.IsActive && ids.Contains(t.Id)).ToListAsync(ct);
         var members = await MembersAsync(db, ids, ct);
         return Ordered(teams).Select(t => Project(t, members, 0)).ToList();
@@ -234,6 +233,16 @@ public sealed class TeamService
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n',
             new[] { t.RowHash ?? "", t.Name, t.IsActive ? "1" : "0", t.DetectionSourceLabel ?? "", t.DetectionLinkTemplate ?? "" }
                 .Concat(members.Order(StringComparer.OrdinalIgnoreCase))))));
+
+    /// <summary>
+    /// CAP-36 review: the teams <paramref name="userId"/> is a member of (active and retired), matching the id ignoring case
+    /// as every other membership check does (the page, the stamp, the editor), not as the database's collation would (SQLite
+    /// compares case-sensitively, SQL Server usually not). Teams and their members are few, so they're matched here.
+    /// </summary>
+    internal static async Task<List<Guid>> TeamsOfAsync(IAppDbContext db, string userId, CancellationToken ct) =>
+        (await db.TeamMembers.AsNoTracking().Select(m => new { m.TeamId, m.UserId }).ToListAsync(ct))
+            .Where(m => string.Equals(m.UserId, userId, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.TeamId).Distinct().ToList();
 
     private static async Task<Dictionary<Guid, List<string>>> MembersAsync(IAppDbContext db, List<Guid>? only, CancellationToken ct)
     {

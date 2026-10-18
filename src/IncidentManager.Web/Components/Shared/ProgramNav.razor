@@ -1,13 +1,24 @@
 @* RD-17 (Casefile): Program, the cross-case view for leadership, in one place. The overview (dashboard), team
    workload and due work are for roles that see every case; improvement actions, the legal register and the
-   program report are open to anyone with case access (need-to-know scoped by their services). *@
+   program report are open to anyone with case access (need-to-know scoped by their services). CAP-36 review (C15):
+   the team a page is filtered to stays on the links to the pages that filter by team (overview, team workload,
+   improvement actions). *@
 <nav class="im-program-nav" aria-label="Program">
     <AuthorizeView Policy="@Policies.ViewAllCases">
-        <NavLink class="im-part" href="program" Match="NavLinkMatch.All">Overview</NavLink>
-        <NavLink class="im-part" href="program/team" Match="NavLinkMatch.All">Team</NavLink>
+        <NavLink class="im-part" href="@WithTeam("program", Team)" Match="NavLinkMatch.All">Overview</NavLink>
+        <NavLink class="im-part" href="@WithTeam("program/team", Team)" Match="NavLinkMatch.All">Team</NavLink>
         <NavLink class="im-part" href="program/due" Match="NavLinkMatch.All">Due work</NavLink>
     </AuthorizeView>
-    <NavLink class="im-part" href="program/improvement-actions" Match="NavLinkMatch.All">Improvement actions</NavLink>
+    <NavLink class="im-part" href="@WithTeam("program/improvement-actions", Team)" Match="NavLinkMatch.All">Improvement actions</NavLink>
     <NavLink class="im-part" href="program/legal" Match="NavLinkMatch.All">Legal register</NavLink>
     <NavLink class="im-part" href="program/report" Match="NavLinkMatch.All">Program report</NavLink>
 </nav>
+
+@code {
+    /// <summary>CAP-36 review: the team= value of the page showing this (a team key, or none), carried onto its links.</summary>
+    [Parameter] public string? Team { get; set; }
+
+    /// <summary>CAP-36 review (C15): <paramref name="path"/> with <c>team=</c> when a team is picked.</summary>
+    public static string WithTeam(string path, string? team) =>
+        string.IsNullOrWhiteSpace(team) ? path : $"{path}?team={Uri.EscapeDataString(team.Trim())}";
+}

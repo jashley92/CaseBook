@@ -73,9 +73,11 @@ public sealed class NotificationDeadlineService
     public async Task<CaseNotificationDeadlines> EvaluateAsync(Guid caseId, CancellationToken ct = default)
     {
         var settings = _settings.Current;
-        if (!settings.Enabled) return CaseNotificationDeadlines.Disabled;
-
         using var db = _factory.CreateDbContext();
+        // CAP-38 review: with the clocks off a case's notices still say whether it's reported, so the standing is read either
+        // way (the timeline, the brief and the handoff say "reported" from it, not from the stored time).
+        if (!settings.Enabled) return CaseNotificationDeadlines.Disabled with { Standing = await StandingAsync(db, caseId, ct) };
+
         var c = await db.Cases.AsNoTracking()
             .Where(x => x.Id == caseId)
             .Select(x => new
@@ -260,10 +262,13 @@ public sealed class NotificationDeadlineService
     /// BUG-390: judged on <paramref name="elements"/> (the elements as the caller is about to save them) and left for the
     /// caller's own save, so the element change and the recheck are saved together or not at all.
     /// </summary>
-    public static async Task RecheckUnreportedAsync(IAppDbContext db, IReadOnlyCollection<string> elementKeys,
+    /// <returns>CAP-38 review: the cases the change leaves fully reported where they weren't (judged on the elements as
+    /// saved before it), for the caller to send each one's 5513 CaseReported once its save has landed
+    /// (<see cref="Security.SecurityEventEmit.CaseFullyReported"/>).</returns>
+    public static async Task<IReadOnlyList<Case>> RecheckUnreportedAsync(IAppDbContext db, IReadOnlyCollection<string> elementKeys,
         IEnumerable<DataElement> elements, string actor, DateTimeOffset now, CancellationToken ct = default)
     {
-        if (elementKeys.Count == 0) return;
+        if (elementKeys.Count == 0) return [];
         var cases = await db.Cases.AsSplitQuery()   // S8733: two collections, one query each
             .Include(c => c.DataElements).Include(c => c.JurisdictionNotices)
             .Where(c => c.ReportedAtUtc == null && !c.IsArchived && c.JurisdictionNotices.Any()
@@ -273,8 +278,18 @@ public sealed class NotificationDeadlineService
         var live = Live(elements.Where(e => !string.IsNullOrEmpty(e.NotificationJurisdictions))
             .GroupBy(e => e.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().NotificationJurisdictions!, StringComparer.OrdinalIgnoreCase));
+        var saved = Live(await ElementJurisdictionsAsync(db, ct));   // the elements as saved, before this change
+        var became = new List<Case>();
         foreach (var c in cases)
-            c.ReportedFromNotices(Case.KeptInPlay(c.ReportedJurisdictions, c.DataElements.Select(d => d.ElementKey).ToList(), live), actor, now);
+        {
+            var keys = c.DataElements.Select(d => d.ElementKey).ToList();
+            var notices = c.JurisdictionNotices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)).ToList();
+            var was = Standing(c.ReportedJurisdictions, c.ReportedAtUtc, keys, notices, saved).IsFullyReported;
+            var inPlay = Case.KeptInPlay(c.ReportedJurisdictions, keys, live);
+            c.ReportedFromNotices(inPlay, actor, now);
+            if (!was && NoticeStanding.Of(inPlay, notices, c.ReportedAtUtc).IsFullyReported) became.Add(c);
+        }
+        return became;
     }
 
     /// <summary>

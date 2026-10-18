@@ -450,7 +450,8 @@ public partial class CaseWorkspace
         a.HandoffState = _case.Summary;   // INV-36: the summary is the brief's first part
         // INV-21: the team's work and response milestones, not the adversary's steps.
         a.HandoffDone = HandoffDraft.DoneSince(_case, new MilestoneLabels(
-            c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m), Day: t => TimeDisp.DateOnly(t)), OneLine);
+            c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m), Day: t => TimeDisp.DateOnly(t),
+            Standing: _notifyDeadlines?.Standing), OneLine);   // CAP-38 review: reported by the standing
         // INV-25: the same "next" list the brief and the context panel show.
         var open = CaseNext.Open(_case, Clock.UtcNow)
             .Select(t => $"- {t.Title}" + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({Users.DisplayFor(t.Owner)})"))

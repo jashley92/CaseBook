@@ -122,16 +122,25 @@ flowchart LR
   CA's. *Record notice to all regulators* (*Record notice to the remaining regulators* once one is notified; Next →
   *Mark reported…* too) records a notice at the time given for every jurisdiction in play not yet notified, so each
   clock still has its own stop and one already notified keeps its time; with no jurisdiction in play (and no notice) it
-  records the case's reported time alone, since no clock runs. Until every jurisdiction in play has a notice the case
+  records the case's reported time alone, since no clock runs. The form names the regulators it will record ("Records a
+  notice to CA, TX."), and the save carries that set: if it changed since the form opened (a colleague added an element
+  that brings TX into play, or removed NY's notice) it's refused ("The regulators still owed a notice changed while you
+  were looking; now CA, TX. …"), the time typed stays, the form shows who is owed now, and Save again records those, so
+  no regulator gets a notice nobody saw. Until every jurisdiction in play has a notice the case
   is **partly reported**: the Notification section, the Briefing's obligations and the report say "Partly reported:
   NY notified 2026-10-18 10:00, CA due 2026-10-19 00:00.", never a bare "Reported". It counts as **reported**
   (`ReportedAtUtc`) once every jurisdiction in play has a notice, at the latest notice's time ("Reported to every
   regulator in play: …"). Every view reads that through one function (CAP-38: `NoticeStanding`, via
-  `NotificationDeadlineService.Standing`), not the stored time: the case page, Briefing and Next, the report, the close
-  gate, the archive check, the reminder scan, the dashboard and Desk, the legal register and the retention review, so
-  they can't disagree. A data element that brings a new jurisdiction into play makes it partly reported again until
+  `NotificationDeadlineService.Standing`), not the stored time: the case page, Briefing and Next, the report (its
+  standing line, its "Reported to regulators" stamp, `case.reported` and its timeline), the timeline's reported
+  milestone, the brief's and handoff's "since", the review's narrative draft, the Cases list CSV's `reported_utc`, the
+  close gate, the archive check, the reminder scan, the dashboard and Desk, the legal register and the retention review,
+  so they can't disagree, even where a stored time was set over a clock still running (an older build, a restore, a
+  hand edit). A data element that brings a new jurisdiction into play makes it partly reported again until
   that regulator is notified (a case reported as a whole with nothing in play goes back to unreported, BUG-555); one
-  added that brings none in counts as one the case had, so a later admin change to it doesn't bring a regulator in. A
+  added that brings none in counts as one the case had, so a later admin change to it doesn't bring a regulator in.
+  A case with so many elements that they can't be kept beside its regulators keeps just the regulators, and then every
+  element counts as had, in the edit as in every view (BUG-618). A
   row's × removes a mis-entered notice and that clock runs again (the others keep theirs); *Clear all notices* removes
   them all. Milestones "Notified NY" (one per regulator, and for a single notice while the case is partly reported)
   and "Reported to every regulator in play". A case reported before notices were per jurisdiction (a reported time, no
@@ -154,9 +163,12 @@ flowchart LR
   as a deadline becomes at-risk and once when it passes, for each jurisdiction (regulators on the same deadline share
   one email; one that joins a deadline already reminded is reminded too). A notice stops only its own regulator's
   reminders: after NY is notified, CA is still reminded until its notice is recorded.
-- **SIEM** (5513): each notice sends `RegulatorNoticeRecorded` (`jurisdiction=NY`), and the notice that leaves no
-  regulator in play outstanding also sends `CaseReported` (no detail), so a partly reported case has only the
-  regulators' own events. *Mark reported* sends one `RegulatorNoticeRecorded` per notice it records, then `CaseReported`.
+- **SIEM** (5513): each notice sends `RegulatorNoticeRecorded` (`jurisdiction=NY`), and whatever leaves the case fully
+  reported where it wasn't also sends `CaseReported` (no detail), once: the last notice, *Mark reported*, removing the
+  element that brought in the one regulator still owed, or an administrator's change to a data element's jurisdictions
+  (the Data elements page or a configuration import). A partly reported case has only the regulators' own events.
+  *Mark reported* sends one `RegulatorNoticeRecorded` per notice it records, then `CaseReported`; when every regulator
+  was already notified it records nothing and sends nothing.
   Removing a notice sends `RegulatorNoticeRemoved` (Warning); *Clear all notices* sends `ReportedCleared`.
 - **Closing doesn't stop the clock.** Closed cases with an unrecorded notification keep appearing as "awaiting
   report" until it's recorded. The `NotificationsRecorded` check on the close gate makes recording it a
