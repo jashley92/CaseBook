@@ -210,6 +210,60 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.9.0
+
+One migration: the new `SmtpSignIns` table (one row; the app applies it on first start). Things to check:
+
+- **New SIEM events: tell the SOC.**
+  - **What's new:** 5405 *reference data changed* (stage gates, data elements, deadline rules, templates, outcomes,
+    taxonomy, report profiles, Word and email templates; one event for a configuration-bundle import), and 5506-5515
+    for the case lifecycle: created, phase changed, reclassified, closed, reopened, archived or restored, materiality,
+    reported or a notice recorded, report approved, import applied.
+  - **What they carry:** each holds the case number, the actor and, when the case has one, `detection=<id>` at the end
+    of the detail. Exercises are sent too, with detail starting `EXERCISE:`.
+  - **Worth a rule:**
+    - 5508 `CaseDowngraded`;
+    - 5509 with `gateOverridden=true`;
+    - 5511 `CaseRestored`;
+    - 5512 `status=Material`;
+    - 5513 `ReportedCleared` or `RegulatorNoticeRemoved` (a clock running again);
+    - 5405 for a `StageGate` or `DeadlineRule`.
+  - **Where to look:** OPERATIONS.md section 5. Ids are only ever appended.
+- **Email can sign in to the mail relay.** Set it under **Administration → Settings → Notifications → Email sign-in**:
+  - **Modes:** no sign-in (as before), a username and password, or the server's Windows account (the gMSA).
+  - **Storing the password:** it's never shown again. CaseBook encrypts it with the Data Protection keys
+    (`DataProtection:KeyPath`). **Back that folder up with the database:** without it, a restored or moved database
+    can't open the password, so email is held and Diagnostics asks for it again.
+  - **Server configuration instead:** `Email:SmtpUsername`, `Email:SmtpPassword`, `Email:SmtpUseDefaultCredentials` and
+    `Email:SmtpTimeoutSeconds` (default 30) also work, and win over the form. `Email:SmtpPassword` may be a CyberArk
+    reference or a `@protected:` value (below).
+  - **When the relay refuses the sign-in:** a 530 or 535 isn't tried again for an hour (to spare the account a
+    lockout), and held mail is given up after 24 hours.
+  - **Existing installs:** nothing changes until you set a sign-in.
+- **`@protected:` secrets (ADR 0018).** `casebook-keytool protect-secret` encrypts a secret to a certificate in the
+  machine store. CaseBook opens it, with or without CyberArk, for `Email:SmtpPassword`, `Chat:Webhook:WebhookUrl` and
+  `Siem:Webhook:Token`. The app-pool account needs read on that certificate's private key. After renewing the
+  certificate, make the values again before removing the old one.
+- **Installer.** New options for how email signs in:
+  - `-SmtpSignIn App|Windows|Password`, with `-SmtpUsername` and `-SmtpPasswordSource Protected|CyberArk|Literal`;
+  - matching answers-file keys (INSTALL.md section 4);
+  - the installer prompts for the password and never reads it from the answers file.
+- **API imports are announced.** Reviewers (EditCases) see waiting imports:
+  - on the Desk;
+  - on a new **Import** entry in the side menu, with a count;
+  - in their digest (`Notifications:DigestScan:ImportWaitingHours`, 24). A digest with nothing else in it uses the new
+    *digest-imports* email template.
+
+  Email and chat notices are off until turned on under Notifications. An import aimed at a restricted case shows only
+  to that case's audience. The API's response is unchanged.
+- **Set a verdict on several entities at once** on the Entities tab: up to 2,000, all or nothing, each with its own
+  verdict record. The Closure gate's *Assess* opens the tab with the Unknown ones ticked.
+- **The Integrity page searches the whole audit trail.** Filter by actor, action, entity type, case, setting and dates,
+  page through the results, and export them (`/export/audit.csv`). Each setting on Administration has a *History*
+  link. A truncated audit export now says so at its end as well as its top.
+- **Diagnostics → Delivery health** shows email, chat and each SIEM transport: held mail, last failure by type or code,
+  dropped events. Held mail comes from the database; the rest resets at restart.
+
 ### v1.8.0
 
 A release with no migration, following up v1.7.0's evidence work. Things to check:
