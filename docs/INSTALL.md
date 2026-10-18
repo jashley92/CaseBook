@@ -283,13 +283,9 @@ private key, or that the CyberArk reference is well formed. After first start, *
 copies** shows what's in force.
 
 **Evidence encryption at rest** (off unless set; read OPERATIONS.md §2, *Evidence key*, first: losing the key loses the
-encrypted files). In the answers file: `EvidenceEncryption = $true`, `RecoveryCertificates = @('…
-ecovery-a.cer',
-'…
-ecovery-b.cer')` (the public parts; their private keys stay offline with two custodians) and, optionally,
+encrypted files). In the answers file: `EvidenceEncryption = $true`, `RecoveryCertificates = @('…\recovery-a.cer', '…\recovery-b.cer')` (the public parts; their private keys stay offline with two custodians) and, optionally,
 `EvidenceKeyThumbprint` for a certificate of its own (blank uses the integrity certificate above, or the CyberArk chain
-key). The installer copies the `.cer` files to `<DataRoot>\keys
-ecovery` and refuses one that holds a private key.
+key). The installer copies the `.cer` files to `<DataRoot>\keys\recovery` and refuses one that holds a private key.
 `Verify-Install` checks that something can protect the key and that each recovery certificate is a public RSA
 certificate. With no recovery certificate, nothing is encrypted until shares are issued
 (`deploy\keytool\casebook-keytool split`). After first start, **Administration → Diagnostics → Evidence encryption**

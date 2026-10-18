@@ -288,7 +288,7 @@ scans read case data only. All deliver only when `Email:Enabled` is on (or to ch
 | `Notifications:StaleScan:Days:{Critical,High,Medium,Low}` | Quiet days before a nudge (`0` = never) | `2` / `5` / `10` / `21` | App |
 | `Notifications:StaleScan:Days:Informational` | As above | `0` | Server |
 | `Notifications:DigestScan:Enabled` / `IntervalHours` | Master switch for the per-user work digest (users opt in from the account menu) | `false` / `1` | App |
-| `Notifications:DigestScan:ImportWaitingHours` | A digest for someone who can confirm imports (`EditCases`) says how many API imports they could review have waited longer than this (CAP-01). `0` leaves the line out | `24` | App |
+| `Notifications:DigestScan:ImportWaitingHours` | A digest for someone who can confirm imports (`EditCases`) says how many API imports they could review have waited longer than this (CAP-01). `0` leaves the line out; at most 8,784 (a year) | `24` | App |
 | `Notifications:ImportSubmitted:Email` | Email everyone who can confirm imports when a document arrives through the import API; one into a restricted case goes only to those who can see it (CAP-01). Nothing is applied until someone confirms it | `false` | App |
 | `Notifications:ExecutiveReport:Enabled` | Quarterly program-report email to managers, sent in the first 7 days of a quarter | `false` | App |
 | `Notifications:Mandatory:{Assignment,Overdue,DueSoon}` | Users can't opt out of that type | `false` | App |
@@ -346,7 +346,7 @@ tokens and refuses to write the file if any remain:
 | `__SQL_INSTANCE__`, `__DB_NAME__` | `-SqlInstance`, `-DbName` | `ConnectionStrings:Default` |
 | `__DATA_ROOT__` | `-DataRoot` | every storage path, the key paths, `DataProtection:KeyPath`, `BackupStatus:FilePath` |
 | `__SMTP_HOST__`, `__MAIL_DOMAIN__` | `-SmtpHost`, `-MailDomain` | `Email:SmtpHost`, `Email:From` |
-| `__SMTP_USERNAME__`, `__SMTP_PASSWORD__`, `__SMTP_INTEGRATED__` | `-SmtpUsername` with `-SmtpPasswordSource` (`Protected`, `CyberArk` or `Literal`), or `-SmtpIntegratedAuth` | `Email:SmtpUsername`, `Email:SmtpPassword` (for `Protected`, the `@protected:` value only), `Email:SmtpUseDefaultCredentials` |
+| `__SMTP_USERNAME__`, `__SMTP_PASSWORD__`, `__SMTP_INTEGRATED__` | `-SmtpSignIn`: `Windows` sets the third; `Password` sets the first two, with `-SmtpUsername` and `-SmtpPasswordSource` (`Protected`, `CyberArk` or `Literal`) | `Email:SmtpUsername`, `Email:SmtpPassword` (for `Protected`, the `@protected:` value only), `Email:SmtpUseDefaultCredentials` |
 | `__AD_GROUP_ANALYSTS__` … `__AD_GROUP_APPADMINS__` | the five AD groups | `RoleMapping:Groups:*` |
 
 The template also fixes `Auth:Mode=Windows`, `Database:Provider=SqlServer`, auto-seal on every 24 hours,
