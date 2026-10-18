@@ -5,6 +5,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.ILedgerStatus Ledger
 @inject ICurrentUser CurrentUser
+@implements IDisposable
 
 <PageTitle>Integrity &amp; audit</PageTitle>
 
@@ -158,41 +159,102 @@ else
     </table>
 }
 
-<h4>Recent audit trail</h4>
+@* CAP-03: the whole trail, searchable and exportable: the filter row a case's Audit tab has, plus a case number, paged.
+   Need-to-know scoped by the service (ScopedAuditLog), so the list and the export hold only cases the viewer can see. *@
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+    <h4 id="audit-trail" class="mb-0">Audit trail</h4>
+    <a class="btn btn-sm btn-outline-secondary" href="@AuditExportHref()"
+       title="The filtered trail as CSV, newest first (up to 100,000 rows)">
+        <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
+    </a>
+</div>
 @if (!CurrentUser.Has(Permission.ViewAllCases) && !CurrentUser.Has(Permission.Administer))
 {
     <p class="text-muted small">Showing entries for the cases you can see.</p>
 }
-@if (_recent is null)
+<AuditFilterRow State="_filter" OnChanged="ApplyFilter" ShowCase="true" IdPrefix="trail" />
+@if (_page is null)
 {
     <LoadingBlock />
 }
 else
 {
-    <table class="table table-sm">
-        <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Case</th><th>Entry hash</th></tr></thead>
-        <tbody>
-            @foreach (var a in _recent)
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+        <span class="small text-muted" aria-live="polite">@PageSummary()</span>
+        <span class="d-flex align-items-center gap-2">
+            @if (Filtered)
             {
-                <tr>
-                    <td>@a.Sequence</td>
-                    <td class="small im-data">@a.AtUtc.ToString("u")</td>
-                    <td>@Users.DisplayFor(a.Actor)</td>
-                    <td>@AuditLabels.Label(a.Action)</td>
-                    <td>@AuditLabels.Entity(a.EntityType)</td>
-                    <td class="small">@a.CaseNumber</td>
-                    @* BUG-573: a tampered row's hash can be shorter; the page that shows the break mustn't throw on it. *@
-                    <td><code class="small">@IncidentManager.Application.Common.ShortHash.Of(a.EntryHash)</code></td>
-                </tr>
+                <button type="button" class="btn btn-sm btn-link p-0" @onclick="ClearFilter">Clear filters</button>
             }
-        </tbody>
-    </table>
+            <span class="btn-group btn-group-sm" role="group" aria-label="Pages of the audit trail">
+                <button type="button" class="btn btn-outline-secondary" disabled="@(_pageIndex == 0)" @onclick="() => GoToPage(_pageIndex - 1)">
+                    <span class="bi bi-chevron-left" aria-hidden="true"></span> Newer
+                </button>
+                <button type="button" class="btn btn-outline-secondary" disabled="@(!_page.HasOlder)" @onclick="() => GoToPage(_pageIndex + 1)">
+                    Older <span class="bi bi-chevron-right" aria-hidden="true"></span>
+                </button>
+            </span>
+        </span>
+    </div>
+    @if (_page.Entries.Count == 0)
+    {
+        <p class="text-muted">No audit entries match the current filters.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Case</th><th>What changed</th><th>Entry hash</th></tr></thead>
+                <tbody>
+                    @foreach (var a in _page.Entries)
+                    {
+                        <tr @key="a.Sequence">
+                            <td>@a.Sequence</td>
+                            <td class="small im-data text-nowrap">@a.AtUtc.ToString("u")</td>
+                            <td>@Users.DisplayFor(a.Actor)</td>
+                            <td>@AuditLabels.Label(a.Action)</td>
+                            <td>
+                                @AuditLabels.Entity(a.EntityType)
+                                @if (!string.IsNullOrWhiteSpace(a.EntityLabel))
+                                {
+                                    <div class="small text-muted" title="@a.EntityLabel">@Trunc(a.EntityLabel!, 40)</div>
+                                }
+                            </td>
+                            <td class="small">@a.CaseNumber</td>
+                            <td class="small">@ChangeLine(a)</td>
+                            @* BUG-573: a tampered row's hash can be shorter; the page that shows the break mustn't throw on it. *@
+                            <td><code class="small">@IncidentManager.Application.Common.ShortHash.Of(a.EntryHash)</code></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 
 @code {
     private int _count;
     private ChainVerificationResult? _result;
-    private List<AuditLogEntry>? _recent;
+    // CAP-03: the cross-case trail's filter (seeded from the address, so Administration's "History" link and a shared link
+    // open it filtered), the page shown and the filter it was loaded with (BUG-388: the count and the CSV link describe
+    // the table, not controls a load hasn't caught up with).
+    private const int PageSize = 100;
+    private readonly AuditFilterState _filter = new();
+    private AuditPage? _page;
+    private int _pageIndex;
+    private AuditQueryFilter? _shownFilter;
+    private DateTime? _shownFrom, _shownTo;
+    private CancellationTokenSource? _loadCts;
+    private int _loadSeq;
+
+    // Never personal data in these (an actor is picked on the page, not carried in the address): a case number, an action,
+    // a record type, a setting key and dates.
+    [SupplyParameterFromQuery(Name = "case")] public string? QCase { get; set; }
+    [SupplyParameterFromQuery(Name = "action")] public string? QAction { get; set; }
+    [SupplyParameterFromQuery(Name = "entity")] public string? QEntity { get; set; }
+    [SupplyParameterFromQuery(Name = "key")] public string? QKey { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? QFrom { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? QTo { get; set; }
     private List<IntegritySeal>? _seals;
     private readonly Dictionary<Guid, SealVerificationResult> _sealResults = new();
     private string? _sealMessage;
@@ -207,10 +269,105 @@ else
     protected override async Task OnInitializedAsync()
     {
         _count = await IntegritySvc.AuditCountAsync();
-        _recent = await IntegritySvc.RecentAsync(null, 100);
+        SeedFilterFromAddress();
+        await LoadTrail();
         _seals = await IntegritySvc.RecentSealsAsync();
         _ledger = await Ledger.GetAsync();
     }
+
+    // CAP-03: what the address asks for; a value that doesn't parse is ignored (BUG-31), not an error.
+    private void SeedFilterFromAddress()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        _filter.Case = QCase?.Trim() ?? "";
+        _filter.Action = IncidentManager.Domain.Common.EnumNames.OrNull<AuditAction>(QAction)?.ToString() ?? "";   // BUG-592
+        _filter.Entity = QEntity?.Trim() ?? "";
+        _filter.SettingKey = QKey?.Trim() ?? "";
+        _filter.From = DateOnly.TryParse(QFrom, inv, System.Globalization.DateTimeStyles.None, out var f) ? f.ToDateTime(TimeOnly.MinValue) : null;
+        _filter.To = DateOnly.TryParse(QTo, inv, System.Globalization.DateTimeStyles.None, out var t) ? t.ToDateTime(TimeOnly.MinValue) : null;
+    }
+
+    private bool Filtered => (_shownFilter ?? _filter.ToQuery(_filter.Case)) is { } f && (!f.IsEmpty || f.CaseNumber is not null);
+
+    private string PageSummary()
+    {
+        if (_page is null || _page.Entries.Count == 0) return Filtered ? "No entries (filtered)" : "No entries";
+        var first = _pageIndex * PageSize + 1;
+        return $"Entries {first:N0}–{first + _page.Entries.Count - 1:N0}, newest first{(Filtered ? " (filtered)" : "")}";
+    }
+
+    private async Task ApplyFilter()
+    {
+        _pageIndex = 0;
+        await LoadTrail();
+    }
+
+    private async Task ClearFilter()
+    {
+        _filter.Clear();
+        await ApplyFilter();
+    }
+
+    private async Task GoToPage(int page)
+    {
+        _pageIndex = Math.Max(0, page);
+        await LoadTrail();
+    }
+
+    // BUG-388 (as the case Audit tab): a newer load supersedes the one before it, which is cancelled, and its rows are
+    // dropped if they land anyway.
+    private async Task LoadTrail()
+    {
+        var previous = _loadCts;
+        var seq = ++_loadSeq;
+        var cts = _loadCts = new CancellationTokenSource();
+        var ct = cts.Token;
+        if (previous is not null)
+        {
+            await previous.CancelAsync();
+            previous.Dispose();
+        }
+        var filter = _filter.ToQuery(_filter.Case);
+        var (from, to, index) = (_filter.From, _filter.To, _pageIndex);
+        try
+        {
+            if (!_filter.FacetsLoaded)
+            {
+                var facets = await IntegritySvc.AuditFacetsAsync(null, ct);
+                if (seq != _loadSeq) return;
+                (_filter.Actors, _filter.EntityTypes) = facets;
+                _filter.FacetsLoaded = true;
+            }
+            var page = await IntegritySvc.QueryPageAsync(filter, index, PageSize, ct);
+            if (seq != _loadSeq) return;
+            (_page, _shownFilter, _shownFrom, _shownTo) = (page, filter, from, to);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* superseded */ }
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+
+    // CAP-03: the CSV of the filter the table was loaded with.
+    private string AuditExportHref()
+    {
+        var (f, fromDay, toDay) = _shownFilter is { } shown ? (shown, _shownFrom, _shownTo) : (_filter.ToQuery(_filter.Case), _filter.From, _filter.To);
+        var qs = AuditFilterState.QueryString(f, fromDay, toDay);
+        return qs.Length == 0 ? "export/audit.csv" : "export/audit.csv?" + qs;
+    }
+
+    // What moved, in one line (the case Audit tab shows it field by field, with the raw JSON).
+    private static string ChangeLine(AuditLogEntry a)
+    {
+        var line = AuditChangeDetail.ToLine(AuditChangeDetail.Changes(a));
+        if (!string.IsNullOrWhiteSpace(line)) return Trunc(line, 120);
+        return a.Action switch { AuditAction.Create => "created", AuditAction.Delete => "removed", _ => a.Summary is { } s ? Trunc(s, 120) : "" };
+    }
+
+    private static string Trunc(string value, int max) => IncidentManager.Application.Common.TextFit.Cap(value, max) ?? "";   // C12
 
     private IncidentManager.Application.Abstractions.LedgerStatus? _ledger;
 
@@ -245,7 +402,7 @@ else
                 ? "Nothing to seal yet."
                 : $"Sealed through sequence {seal.UpToSequence} at {seal.SealedAtUtc:u} (key {seal.KeyId}).";
             _count = await IntegritySvc.AuditCountAsync();
-            _recent = await IntegritySvc.RecentAsync(null, 100);
+            await LoadTrail();
             _seals = await IntegritySvc.RecentSealsAsync();
         }
         finally { _sealing = false; }

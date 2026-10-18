@@ -140,6 +140,17 @@ public class ExportCsvTests
     }
 
     [Fact]
+    public void An_audit_export_cut_at_its_limit_says_so_at_the_end_too(/* CAP-03, CAP-32 */)
+    {
+        var cut = Lines(AuditCsv.Build([Entry(9, "Newest"), Entry(8, "Older")], Generated, truncatedAt: 2));
+        cut[^1].Should().Be("# Truncated at 2 rows: narrow the range to export the rest.");
+        cut[^1].Should().NotContainAny([",", ";"], "the line stays one cell in any spreadsheet locale (BUG-516, BUG-543)");
+        cut.Should().HaveCount(6, "the two comment lines, the header and the two rows");
+
+        Lines(AuditCsv.Build([Entry(9, "Newest")], Generated))[^1].Should().StartWith("9,", "an export that wasn't cut ends on its last row");
+    }
+
+    [Fact]
     public void Access_log_csv_with_no_rows_is_just_the_preamble_and_header()
     {
         Lines(AccessLogCsv.Build([], Generated)).Should().HaveCount(2);

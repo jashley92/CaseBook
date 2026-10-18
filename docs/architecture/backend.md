@@ -70,7 +70,8 @@ user by the `downloads` policy.
 | `GET /export/program-report.csv?year=&quarter=&exercises=` | ViewCases | Program report; 400 "Unknown quarter." | Access log; SIEM 5304 |
 | `GET /export/improvement-actions.csv?scope=&exercises=` | ViewCases | Improvement-action register | Access log; SIEM 5304 |
 | `GET /export/iocs.csv` | ViewCases | Malicious IOCs across visible cases (a blocklist feed) | Access log; SIEM 5304 |
-| `GET /export/case-audit.csv?case=&actor=&action=&entity=&from=&to=` | ViewCases + can see the case | One case's audit trail (up to 100,000 rows) | Access log; SIEM 5304 |
+| `GET /export/case-audit.csv?case=&actor=&action=&entity=&from=&to=` | ViewCases + can see the case | One case's audit trail (up to 100,000 rows; a cut file says so at the top and the end) | Access log; SIEM 5304 |
+| `GET /export/audit.csv?case=&actor=&action=&entity=&key=&from=&to=` | ViewCases (as `/integrity`) | The audit trail across every case the caller can see (configuration entries for oversight and administrators), filtered as the Integrity page is; `key` is one setting's history (CAP-03). Up to 100,000 rows, a cut file saying so at the top and the end | Access log (against the case when `case` names one); SIEM 5304 |
 | `GET /export/access-log.csv?…` | Administer | The access log (up to 100,000 rows) | none |
 | `GET /export/compliance-bundle.zip?from=&to=` | Administer | Compliance evidence bundle | Audit entry; access log; SIEM 5304 |
 | `GET /export/config-bundle.json` | Administer | Signed configuration bundle | Audit entry |

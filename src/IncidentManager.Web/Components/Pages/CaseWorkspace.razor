@@ -377,7 +377,7 @@ else
 
     // Audit (UX-13: the tab is extracted to CaseAuditTab; this state persists its filters across re-mounts).
     private bool _canViewAll;
-    private CaseAuditFilter _auditFilter = new();
+    private AuditFilterState _auditFilter = new();
     // Bumped whenever a collaborator changes the case, so extracted tabs (audit) re-query live.
     private int _liveRefresh;
 

@@ -130,7 +130,14 @@ On the **Integrity & audit** page (any `ViewCases` user can verify; sealing need
 - **Verify now**: checks the whole chain and the latest seal (shared, at most once a minute).
 - **Seal chain head**: verifies the whole chain and its records, then signs the current head. It refuses while the chain
   doesn't verify, since a seal would make a rewritten history read as authentic (REV-04).
-- **Audit trail**: filter by case, actor, action, entity and date; export a case's trail.
+- **Audit trail**: the whole trail, newest first, 100 entries a page (*Newer* / *Older*). Filter by case number, actor,
+  action, entity type (configuration such as Setting, Role, AD group mapping and Stage gate is grouped apart in the
+  list) and UTC dates; *Export CSV* downloads what the filter shows (`/export/audit.csv`, up to 100,000 rows; a cut file
+  says so at the top and on its last line). Need-to-know applies as on a case's Audit tab: someone who can't see a
+  restricted case doesn't see its entries, and only oversight and administrators see configuration entries. The
+  filters come from the address too (`?case=`, `?action=`, `?entity=`, `?key=`, `?from=`, `?to=`; never the actor), so
+  a link can open it filtered: **History** beside each setting in Administration opens that setting's changes
+  (`?entity=AppSetting&key=Email:From`), across a reset and the next change.
 - **Compliance bundle**: for a date range.
 - SQL Server ledger status, when enabled.
 

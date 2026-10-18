@@ -23,8 +23,6 @@ public partial class EnumParsingTests
     // Sites not fixed in this wave, each with its reason. A count, so a second call in a listed file still fails.
     private static readonly Dictionary<string, int> Allowed = new(StringComparer.Ordinal)
     {
-        // Wave 2: UI (.razor) files, owned by the UI fixers. Each reads a select or query value.
-        ["IncidentManager.Web/Components/Pages/CaseTabs/CaseAuditTab.razor"] = 1,
         // Wave 2: files outside this wave's list (reported). Each reads text the app itself wrote, or startup config.
         ["IncidentManager.Domain/Entities/Role.cs"] = 1,                       // letters only and IsDefined (WF-45)
         ["IncidentManager.Application/Mitre/AttackCatalog.cs"] = 1,            // the embedded ATT&CK catalog

@@ -1,3 +1,4 @@
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 
 namespace IncidentManager.Application.Integrity;
@@ -25,7 +26,19 @@ public sealed record AuditQueryFilter
     /// <summary>Inclusive upper bound (UTC).</summary>
     public DateTimeOffset? ToUtc { get; init; }
 
+    /// <summary>
+    /// CAP-03: one administered setting's history (e.g. "Email:From"): the <c>AppSetting</c> entries for that key,
+    /// across every row that has held it (a reset removes the row, and the next change adds a new one).
+    /// </summary>
+    public string? SettingKey { get; init; }
+
     public bool IsEmpty =>
         string.IsNullOrWhiteSpace(Actor) && Action is null &&
-        string.IsNullOrWhiteSpace(EntityType) && FromUtc is null && ToUtc is null;
+        string.IsNullOrWhiteSpace(EntityType) && FromUtc is null && ToUtc is null && string.IsNullOrWhiteSpace(SettingKey);
 }
+
+/// <summary>CAP-03: one page of the filtered trail, newest first, and whether older entries follow it.</summary>
+public sealed record AuditPage(IReadOnlyList<AuditLogEntry> Entries, bool HasOlder);
+
+/// <summary>CAP-03: an audit-trail CSV and how many entries it holds (at most the limit it was built with).</summary>
+public sealed record AuditExport(string Csv, int Rows, bool Truncated);

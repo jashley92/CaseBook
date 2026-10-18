@@ -831,15 +831,47 @@ app.MapGet("/export/case-audit.csv", async (
             ? new DateTimeOffset(td.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero) : null
     };
 
-    var rows = await integrity.QueryAsync(filter, take: ExportRowLimit + 1, ct);   // REV-65: one more, to know it was cut
-    var csv = IncidentManager.Application.Integrity.AuditCsv.Build(rows.Take(ExportRowLimit).ToList(), clock.UtcNow, @case,
-        rows.Count > ExportRowLimit ? ExportRowLimit : null);
+    var export = await integrity.ExportCsvAsync(filter, ExportRowLimit, ct);   // REV-65: says so when it's cut (CAP-03: at the end too)
     var safe = @case.Replace('/', '-').Replace('\\', '-');
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"case-audit-{safe}-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     // BUG-155: logged against the case, so the access log's case and "restricted only" filters find it.
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, await cases.FindIdByNumberAsync(@case, ct),
         fileName, null, ct);
-    return Results.File(ExcelCsv(csv), "text/csv", fileName);
+    return Results.File(ExcelCsv(export.Csv), "text/csv", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
+
+// --- CAP-03: the whole audit trail (every case the caller can see, and configuration for oversight), filtered, as CSV ---
+// The Integrity page's export, as the per-case one: the same policy as the page, need-to-know scoped by the service
+// (ScopedAuditLog), the 100,000-row cut said at the top and the end, the access log and SIEM 5304. `key` is one setting's
+// history (Administration's "History" link). UTC; `to` inclusive to the end of that day. Plain attachment (no JS).
+app.MapGet("/export/audit.csv", async (
+    string? @case, string? actor, string? action, string? entity, string? key, string? from, string? to,
+    IncidentManager.Application.Cases.CaseService cases, IncidentManager.Application.Integrity.IntegrityService integrity,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var styles = System.Globalization.DateTimeStyles.None;
+
+    var filter = new IncidentManager.Application.Integrity.AuditQueryFilter
+    {
+        CaseNumber = string.IsNullOrWhiteSpace(@case) ? null : @case.Trim(),
+        Actor = string.IsNullOrWhiteSpace(actor) ? null : actor,
+        Action = IncidentManager.Domain.Common.EnumNames.OrNull<IncidentManager.Domain.Enums.AuditAction>(action),   // BUG-592
+        EntityType = string.IsNullOrWhiteSpace(entity) ? null : entity,
+        SettingKey = string.IsNullOrWhiteSpace(key) ? null : key,
+        FromUtc = DateOnly.TryParse(from, inv, styles, out var fd)
+            ? new DateTimeOffset(fd.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : null,
+        ToUtc = DateOnly.TryParse(to, inv, styles, out var td)
+            ? new DateTimeOffset(td.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero) : null
+    };
+
+    var export = await integrity.ExportCsvAsync(filter, ExportRowLimit, ct);
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"audit-trail-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
+    // BUG-155: one case's slice is logged against it (a case the caller can't see has no id, and its file holds nothing).
+    var caseId = filter.CaseNumber is { } number ? await cases.FindIdByNumberAsync(number, ct) : null;
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, caseId, fileName, null, ct);
+    return Results.File(ExcelCsv(export.Csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Access-log export (C-05): the out-of-chain read/access telemetry, filtered, as CSV ---

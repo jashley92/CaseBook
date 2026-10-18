@@ -226,7 +226,10 @@
                                                        @oninput="e => _form[def.Key] = e.Value?.ToString()" />
                                                 break;
                                         }
-                                        <div class="form-text"><code class="small">@def.Key</code></div>
+                                        <div class="form-text"><code class="small">@def.Key</code>
+                                            @* CAP-03: who changed it and when, on the Integrity page's trail (the key isn't personal data). *@
+                                            <a class="ms-2" href="@($"integrity?entity=AppSetting&key={Uri.EscapeDataString(def.Key)}#audit-trail")"
+                                               aria-label="@($"History of {DisplayLabel(def)}")">History</a></div>
                                     </div>
                                 </div>
                             }

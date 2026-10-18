@@ -47,6 +47,11 @@ public static class AuditCsv
               .Append(Escape(a.EntryHash)).Append("\r\n");
         }
 
+        // CAP-03 (CAP-32): and again at the end, where someone reading to the bottom would take the last row for the oldest.
+        // No comma or semicolon in it (BUG-516, BUG-543): it stays one cell.
+        if (truncatedAt is { } cut)
+            sb.Append("# Truncated at ").Append(cut.ToString(inv)).Append(" rows: narrow the range to export the rest.\r\n");
+
         return sb.ToString();
     }
 

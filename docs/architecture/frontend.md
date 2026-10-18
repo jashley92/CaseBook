@@ -43,7 +43,7 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/intel/campaigns`, `/intel/campaigns/{Id}` | `CampaignsPage`, `CampaignPage` | ViewCases | Intel › Campaigns: list and rollup (`/campaigns/{id}/rollup.json` is the export) |
 | `/intel/attack` | `AttackCoveragePage` | ViewCases | Intel › ATT&CK coverage heatmap. Every Intel page carries `Shared/IntelNav` |
 | `/program/improvement-actions` | `ImprovementActionsPage` | ViewCases | Program › Improvement actions |
-| `/integrity` | `Integrity` | ViewCases | Verify chain, seals, audit trail, compliance bundle |
+| `/integrity` | `Integrity` | ViewCases | Verify chain, seals, the audit trail (filtered and paged, with `/export/audit.csv`), compliance bundle. `?case=`, `?action=`, `?entity=`, `?key=` (a setting's history), `?from=`, `?to=` (yyyy-MM-dd, UTC) seed the filter; `#audit-trail` is the trail |
 | `/access-log` | `AccessLogPage` | Administer | Read and download log |
 | `/exports` | `Exports` | ViewCases | Download CSVs and bundles |
 | `/program/report` | `ProgramReportPage` | ViewCases | Program › Program report: quarterly program metrics |

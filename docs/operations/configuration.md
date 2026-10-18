@@ -358,7 +358,7 @@ first.
 | User directory refresh 30 minutes | `Infrastructure/Security/UserDirectory.cs` |
 | API token maximum lifetime 90 days (personal) / 365 days (system) | `Application/ApiTokens/ApiTokenService.cs` |
 | "Recorded later" threshold 1 hour | `Application/Cases/CaseService.cs` (`BackdateReasonThreshold`) |
-| Audit and access-log CSV exports capped at **100,000 rows** (silently) | `Web/Program.cs` |
+| Audit and access-log CSV exports capped at **100,000 rows**, newest kept; a cut file says so on its second line (and an audit export on its last line too) | `Web/Program.cs` (`ExportRowLimit`) |
 | Indicator list 300 rows | `Application/Intel/IndicatorService.cs` |
 | Access review "dormant" after 90 days | `Application/Admin/AccessReviewService.cs` |
 | Webhook and chat retry back-off 250 ms × attempt | `Web/Siem/WebhookTransport.cs`, `Web/Notifications/ChatWebhookNotifier.cs` |

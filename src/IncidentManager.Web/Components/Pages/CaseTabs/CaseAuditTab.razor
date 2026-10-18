@@ -16,47 +16,9 @@
     </a>
 </div>
 
-@* E-24: filter the hash-chained trail by actor / action / entity / date range (server-side). *@
-<div class="row g-2 align-items-end mb-3">
-    <div class="col-6 col-md-3">
-        <label class="form-label small mb-0" for="audit-actor">Actor</label>
-        <select id="audit-actor" class="form-select form-select-sm" @bind="State.Actor" @bind:after="ApplyAuditFilter">
-            <option value="">Any</option>
-            @foreach (var actor in State.Actors)
-            {
-                <option value="@actor">@Users.DisplayFor(actor)</option>
-            }
-        </select>
-    </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label small mb-0" for="audit-action">Action</label>
-        <select id="audit-action" class="form-select form-select-sm" @bind="State.Action" @bind:after="ApplyAuditFilter">
-            <option value="">Any</option>
-            @foreach (var act in Enum.GetValues<AuditAction>())
-            {
-                <option value="@act">@AuditLabels.Label(act)</option>
-            }
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-0" for="audit-entity">Entity</label>
-        <select id="audit-entity" class="form-select form-select-sm" @bind="State.Entity" @bind:after="ApplyAuditFilter">
-            <option value="">Any</option>
-            @foreach (var et in State.EntityTypes)
-            {
-                <option value="@et">@AuditLabels.Entity(et)</option>
-            }
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-0" for="audit-from">From (UTC)</label>
-        <DateInput Past="true" id="audit-from" class="form-control form-control-sm" @bind-Value="State.From" @bind-Value:after="ApplyAuditFilter" />
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-0" for="audit-to">To (UTC)</label>
-        <DateInput Past="true" id="audit-to" class="form-control form-control-sm" @bind-Value="State.To" @bind-Value:after="ApplyAuditFilter" />
-    </div>
-</div>
+@* E-24: filter the hash-chained trail by actor / action / entity / date range (server-side). CAP-03: the row is shared
+   with the Integrity page's cross-case trail. *@
+<AuditFilterRow State="State" OnChanged="ApplyAuditFilter" />
 
 @if (_audit is null)
 {
@@ -183,7 +145,7 @@ else
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter] public bool CanViewAll { get; set; }
     /// <summary>Filter selections + facet cache, held by the parent so they survive this tab's re-mount.</summary>
-    [Parameter, EditorRequired] public CaseAuditFilter State { get; set; } = new();
+    [Parameter, EditorRequired] public AuditFilterState State { get; set; } = new();
     /// <summary>The parent bumps this when a collaborator changes the case, to re-query the trail live.</summary>
     [Parameter] public int RefreshToken { get; set; }
 
@@ -258,24 +220,14 @@ else
         _loadCts?.Dispose();
     }
 
-    // E-24: build the server-side filter from the tab's controls. "To" is inclusive to the end of the day.
-    private AuditQueryFilter BuildAuditFilter() => new()
-    {
-        CaseNumber = CaseNumber,
-        Actor = string.IsNullOrWhiteSpace(State.Actor) ? null : State.Actor,
-        Action = Enum.TryParse<AuditAction>(State.Action, out var a) ? a : null,
-        EntityType = string.IsNullOrWhiteSpace(State.Entity) ? null : State.Entity,
-        FromUtc = State.From is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
-        // BUG-463: the end of the day without AddDays(1), which threw for 9999-12-31 (as the CSV export does it).
-        ToUtc = State.To is { } t ? new DateTimeOffset(DateOnly.FromDateTime(t).ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero) : null
-    };
+    // E-24: build the server-side filter from the tab's controls (always this case).
+    private AuditQueryFilter BuildAuditFilter() => State.ToQuery(CaseNumber);
 
     private async Task ApplyAuditFilter() => await LoadAudit();
 
     private async Task ClearAuditFilter()
     {
-        State.Actor = State.Action = State.Entity = "";
-        State.From = State.To = null;
+        State.Clear();
         await LoadAudit();
     }
 
@@ -284,14 +236,7 @@ else
     {
         // BUG-388: the filter the table was loaded with (the controls can be ahead of it while a load runs).
         var (f, fromDay, toDay) = _shownFilter is { } shown ? (shown, _shownFrom, _shownTo) : (BuildAuditFilter(), State.From, State.To);
-        var qs = new List<string> { $"case={Uri.EscapeDataString(CaseNumber)}" };
-        if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
-        if (f.Action is { } act) qs.Add($"action={act}");
-        if (f.EntityType is { } et) qs.Add($"entity={Uri.EscapeDataString(et)}");
-        // BUG-511: Gregorian whatever the server culture, as the endpoint reads it.
-        if (fromDay is { } from) qs.Add($"from={from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
-        if (toDay is { } to) qs.Add($"to={to.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}");
-        return "export/case-audit.csv?" + string.Join("&", qs);
+        return "export/case-audit.csv?" + AuditFilterState.QueryString(f with { CaseNumber = CaseNumber }, fromDay, toDay);
     }
 
     // The "what changed" cell: the field-level before/after diff parsed from the entry's captured snapshots

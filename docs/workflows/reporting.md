@@ -78,6 +78,7 @@ template filled it (name and hash, by value).
 | Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines |
 | IOC feed | `/export/iocs.csv` | Malicious indicators across visible cases (a blocklist feed) |
 | Case audit | `/export/case-audit.csv?case=…` | One case's audit trail |
+| Audit trail | Integrity page or `/export/audit.csv` | The audit trail across the cases you can see, filtered as the Integrity page is |
 | Compliance bundle | Integrity page or `/export/compliance-bundle.zip` | Audit segment, seals, public key and verification instructions ([integrity.md](../architecture/integrity.md#the-compliance-evidence-bundle)) |
 | STIX graph | Entities tab or `/cases/{id}/graph.stix.json` | The case's entities and relationships as STIX 2.1 |
 

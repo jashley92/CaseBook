@@ -65,4 +65,12 @@ public static class AuditLabels
         "EmailTemplate" => "Email template",
         _ => type
     };
+
+    /// <summary>
+    /// CAP-03: the record types that are configuration rather than case work (settings, roles, AD group mappings, gates,
+    /// templates…), grouped apart in the cross-case trail's entity list so they're easy to pick.
+    /// </summary>
+    public static bool IsConfiguration(string? type) => type is "AppSetting" or "Role" or "AdGroupRoleMapping" or "StageGate"
+        or "StageGateRequirement" or "NotificationRule" or "CaseTemplate" or "CaseTemplateStep" or "ReportProfile" or "ReportTemplate"
+        or "DataElement" or "CaseOutcome" or "ApiToken" or "EmailTemplate" or "IntegritySeal";
 }

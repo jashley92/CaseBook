@@ -315,6 +315,39 @@ public sealed class IntegrityService
     public async Task<List<AuditLogEntry>> QueryAsync(AuditQueryFilter filter, int take = 500, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        return await (await FilteredAsync(db, filter, ct)).OrderByDescending(a => a.Sequence).Take(take).ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// CAP-03: one page of <see cref="QueryAsync"/>'s result for the cross-case trail on <c>/integrity</c> (page 0 is the
+    /// newest), scoped the same way.
+    /// </summary>
+    public async Task<AuditPage> QueryPageAsync(AuditQueryFilter filter, int page, int pageSize, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(page);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        using var db = _factory.CreateDbContext();
+        var rows = await (await FilteredAsync(db, filter, ct)).OrderByDescending(a => a.Sequence)
+            .Skip(page * pageSize).Take(pageSize + 1).ToListAsync(ct);   // one more, to know there's an older page
+        return new AuditPage(rows.Take(pageSize).ToList(), rows.Count > pageSize);
+    }
+
+    /// <summary>
+    /// CAP-03: the filtered trail as the examiner's CSV (<see cref="AuditCsv"/>), at most <paramref name="rowLimit"/>
+    /// entries, newest first; one cut at the limit says so at the top and at the end (REV-65, CAP-32). The same scoping as
+    /// <see cref="QueryAsync"/>, so a case the caller can't see is in neither the page nor the file.
+    /// </summary>
+    public async Task<AuditExport> ExportCsvAsync(AuditQueryFilter filter, int rowLimit, CancellationToken ct = default)
+    {
+        var rows = await QueryAsync(filter, rowLimit + 1, ct);   // REV-65: one more, to know it was cut
+        var truncated = rows.Count > rowLimit;
+        var kept = truncated ? rows.Take(rowLimit).ToList() : rows;
+        return new AuditExport(AuditCsv.Build(kept, _clock.UtcNow, filter.CaseNumber, truncated ? rowLimit : null), kept.Count, truncated);
+    }
+
+    // E-24: the filter's fields AND together over the caller's scoped trail.
+    private async Task<IQueryable<AuditLogEntry>> FilteredAsync(IAppDbContext db, AuditQueryFilter filter, CancellationToken ct)
+    {
         var q = string.IsNullOrWhiteSpace(filter.CaseNumber) ? ScopedAuditLog(db) : await ForCaseAsync(db, filter.CaseNumber, ct);
 
         if (!string.IsNullOrWhiteSpace(filter.Actor))
@@ -327,8 +360,19 @@ public sealed class IntegrityService
             q = q.Where(a => a.AtUtc >= from);
         if (filter.ToUtc is { } to)
             q = q.Where(a => a.AtUtc <= to);
-
-        return await q.OrderByDescending(a => a.Sequence).Take(take).ToListAsync(ct);
+        if (!string.IsNullOrWhiteSpace(filter.SettingKey))
+        {
+            // CAP-03: an update's snapshot holds only what moved, so the key is found in the row's create and delete
+            // snapshots, and its updates by the row's id. Serialized as the audit interceptor serializes it, so the token
+            // matches exactly ("Key":"Email:From", not "Email:FromName").
+            var token = "\"Key\":" + System.Text.Json.JsonSerializer.Serialize(filter.SettingKey.Trim());
+            var rowsForKey = db.AuditLog.AsNoTracking()
+                .Where(a => a.EntityType == nameof(AppSetting)
+                    && ((a.AfterJson != null && a.AfterJson.Contains(token)) || (a.BeforeJson != null && a.BeforeJson.Contains(token))))
+                .Select(a => a.EntityId);
+            q = q.Where(a => a.EntityType == nameof(AppSetting) && rowsForKey.Contains(a.EntityId));
+        }
+        return q;
     }
 
     /// <summary>

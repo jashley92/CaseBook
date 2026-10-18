@@ -1,0 +1,101 @@
+@* E-24 / CAP-03: the audit-trail filter row: actor, action, entity type and a UTC date range, and on the cross-case
+   trail (the Integrity page) a case number too. Shared by a case's Audit tab and the Integrity page, so both filter
+   alike. Each change raises OnChanged; the host re-queries (server-side) with State.ToQuery. A setting's history
+   (State.SettingKey, from Administration's "History" link) has no control of its own, only a chip that clears it. *@
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+
+<div class="row g-2 align-items-end mb-3" role="group" aria-label="Filter the audit trail">
+    @if (ShowCase)
+    {
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-0" for="@($"{IdPrefix}-case")">Case</label>
+            <input id="@($"{IdPrefix}-case")" class="form-control form-control-sm" maxlength="200" placeholder="Any case"
+                   @bind="State.Case" @bind:after="Changed" />
+        </div>
+    }
+    <div class="col-6 @(ShowCase ? "col-md-2" : "col-md-3")">
+        <label class="form-label small mb-0" for="@($"{IdPrefix}-actor")">Actor</label>
+        <select id="@($"{IdPrefix}-actor")" class="form-select form-select-sm" @bind="State.Actor" @bind:after="Changed">
+            <option value="">Any</option>
+            @foreach (var actor in State.Actors)
+            {
+                <option value="@actor">@Users.DisplayFor(actor)</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 @(ShowCase ? "col-md-2" : "col-md-3")">
+        <label class="form-label small mb-0" for="@($"{IdPrefix}-action")">Action</label>
+        <select id="@($"{IdPrefix}-action")" class="form-select form-select-sm" @bind="State.Action" @bind:after="Changed">
+            <option value="">Any</option>
+            @foreach (var act in Enum.GetValues<AuditAction>())
+            {
+                <option value="@act">@AuditLabels.Label(act)</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0" for="@($"{IdPrefix}-entity")">Entity</label>
+        <select id="@($"{IdPrefix}-entity")" class="form-select form-select-sm" @bind="State.Entity" @bind:after="Changed">
+            <option value="">Any</option>
+            @* CAP-03: configuration (settings, roles, AD group mappings, gates…) apart from case records, so it's easy to pick. *@
+            @{ var (caseTypes, configTypes) = Types(); }
+            @if (configTypes.Count > 0 && caseTypes.Count > 0)
+            {
+                <optgroup label="Case records">
+                    @foreach (var et in caseTypes) { <option value="@et">@AuditLabels.Entity(et)</option> }
+                </optgroup>
+                <optgroup label="Configuration">
+                    @foreach (var et in configTypes) { <option value="@et">@AuditLabels.Entity(et)</option> }
+                </optgroup>
+            }
+            else
+            {
+                @foreach (var et in caseTypes.Concat(configTypes)) { <option value="@et">@AuditLabels.Entity(et)</option> }
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0" for="@($"{IdPrefix}-from")">From (UTC)</label>
+        <DateInput Past="true" id="@($"{IdPrefix}-from")" class="form-control form-control-sm" @bind-Value="State.From" @bind-Value:after="Changed" />
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0" for="@($"{IdPrefix}-to")">To (UTC)</label>
+        <DateInput Past="true" id="@($"{IdPrefix}-to")" class="form-control form-control-sm" @bind-Value="State.To" @bind-Value:after="Changed" />
+    </div>
+    @if (!string.IsNullOrWhiteSpace(State.SettingKey))
+    {
+        <div class="col-12">
+            <span class="im-badge im-b-info">Setting <code class="small">@State.SettingKey</code></span>
+            <button type="button" class="btn btn-sm btn-link p-0 ms-2 align-baseline" @onclick="ClearSettingKey"
+                    aria-label="@($"Show every setting, not only {State.SettingKey}")">Every setting</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AuditFilterState State { get; set; } = new();
+    /// <summary>Raised after any filter changes, for the host to re-query.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>CAP-03: offer the case-number field (the cross-case trail).</summary>
+    [Parameter] public bool ShowCase { get; set; }
+    /// <summary>Prefix for the controls' ids, unique on the page.</summary>
+    [Parameter] public string IdPrefix { get; set; } = "audit";
+
+    private Task Changed() => OnChanged.InvokeAsync();
+
+    private Task ClearSettingKey()
+    {
+        State.SettingKey = "";
+        return Changed();
+    }
+
+    // The facet's types by label, case records then configuration; a type chosen by a link but not (yet) in the trail is
+    // still listed, so the select shows what the table is filtered by.
+    private (List<string> Case, List<string> Config) Types()
+    {
+        var all = State.EntityTypes.ToList();
+        if (!string.IsNullOrWhiteSpace(State.Entity) && !all.Contains(State.Entity, StringComparer.Ordinal)) all.Add(State.Entity);
+        var sorted = all.OrderBy(t => AuditLabels.Entity(t), StringComparer.CurrentCultureIgnoreCase).ToList();
+        return (sorted.Where(t => !AuditLabels.IsConfiguration(t)).ToList(), sorted.Where(AuditLabels.IsConfiguration).ToList());
+    }
+}
