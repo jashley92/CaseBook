@@ -41,6 +41,11 @@ them. Notable behavior:
 - An attack step's time prints **as it was stated**: "Between 2026-09-02 and 2026-09-05", "2026-09-08 · time not
   stated", "On or before …", "Time not stated" (template field `step.when` does the same), the diagram labels it the
   same way, and a note under the table says the times are as reported. Steps are in their stated order.
+- **Notification summary** (CAP-07): Business Impact lists each regulator's notice after the notification triggers,
+  in the order given: "Notice to NY: 2026-10-18 10:00 UTC. By portal, reference NYDFS-2026-114, notified by Pat Lee,
+  notice file ack.pdf." (how it was given only when recorded; typed text defanged like the rest). Template collection
+  `notice`: `jurisdiction`, `notified`, `due` (the deadline kept when it was recorded), `method`, `reference`, `by`,
+  `file` (a table row holding any of them repeats per notice).
 - Indicators are listed apart from everything examined and **defanged** (`Reporting:DefangIndicators`).
 - A TLP 2.0 marking is printed on every page.
 - People appear by display name and enums by their labels; no raw ids or code names.
@@ -75,7 +80,7 @@ template filled it (name and hash, by value).
 | Leadership dashboard | Program › Overview, `/program` | Needs action and running notification clocks, open mix, median timings and targets met for a chosen period (30 days, quarter to date, 12 months), phases, notification compliance, 12 months of case activity (new, carried over and closed, optionally by classification); every figure links to the filtered list |
 | Metrics CSV | `/export/metrics.csv` | Dashboard figures with monthly and quarterly rollups. The SLA met/missed counts judge each milestone as the program report judged it in the quarter it was reached (target in force then, severity and class at that quarter's end) |
 | Program report | Program › Program report (`/program/report`), `/export/program-report.csv` | Quarter against the previous quarter: volumes, time to detect, contain and resolve, SLA attainment (each milestone against the target in force then, from the audited settings changes), regulatory notices (each in the quarter it was given), post-incident follow-through, top techniques. A past quarter is figured from the record as it stood at its end: later corrections of when a transition happened, removed or re-dated notices, a review cleared later, and later edits to attack steps and techniques don't move it. Nothing is measured from an approximate start (no time to detect or detection target). Optional quarterly email to managers. |
-| Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines |
+| Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines, and each regulator's reference number (`notice_references`, "NY: NYDFS-2026-114; CA: 88-2026", CAP-07; the last column) |
 | IOC feed | `/export/iocs.csv` | Malicious indicators across visible cases (a blocklist feed) |
 | Case audit | `/export/case-audit.csv?case=…` | One case's audit trail |
 | Audit trail | Integrity page or `/export/audit.csv` | The audit trail across the cases you can see, filtered as the Integrity page is |
