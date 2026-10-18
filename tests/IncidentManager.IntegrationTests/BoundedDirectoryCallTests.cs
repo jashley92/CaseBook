@@ -209,6 +209,7 @@ public sealed class BoundedDirectoryCallTests
         "src/IncidentManager.Web/Security/WindowsNames.cs::ResolveOnWindows",              // BUG-565
         "src/IncidentManager.Web/Security/SidNames.cs::TranslateOnWindows",                // BUG-565
         "src/IncidentManager.Web/Security/RoleClaimsTransformer.cs::FindServerDomainSid",  // BUG-565 (the server's domain)
+        "src/IncidentManager.Web/Security/AdDomainDiscoverySource.cs::ReadOnWindows",      // CAP-28 discovery (OrganizationDomains)
     ];
 
     // The directory APIs, and the role checks that reach the directory through a WindowsPrincipal (BUG-574): IsInRole,

@@ -11,10 +11,17 @@ namespace IncidentManager.Application.Admin;
 /// <param name="ServerValue">BUG-245: what it is without an in-app change (the server's settings file, else the
 /// catalog default): what "Reset" returns it to.</param>
 /// <param name="ServerValueFromFile">Whether <paramref name="ServerValue"/> comes from the server's settings file.</param>
+/// <param name="Discovered">CAP-28 discovery: the domains found on the server's network, when they're in force because the
+/// setting isn't set anywhere. <paramref name="Value"/> stays what is saved (blank), so the page's field shows what an
+/// administrator saves; "Use these" fills it from here.</param>
 public sealed record EffectiveSetting(SettingDefinition Definition, string? Value, bool IsOverridden,
-    string? ServerValue = null, bool ServerValueFromFile = false)
+    string? ServerValue = null, bool ServerValueFromFile = false, IReadOnlyList<DiscoveredDomain>? Discovered = null)
 {
-    public string Source => IsOverridden ? "Database" : ServerValueFromFile ? "Server settings file" : "Default";
+    public string Source => IsOverridden ? "Database" : ServerValueFromFile ? "Server settings file"
+        : Discovered is not null ? "Discovered" : "Default";
+
+    /// <summary>The value in force: <see cref="Value"/>, or the discovered domains one per line.</summary>
+    public string? InForce => Discovered is { Count: > 0 } d ? string.Join("\n", d.Select(x => x.Name)) : Value;
 }
 
 /// <summary>
@@ -31,9 +38,12 @@ public sealed class AdminSettingsService
     private readonly ISettingsReloader _reloader;
     private readonly ISecurityEventSink? _siem;
     private readonly IServerSettingValues? _server;
+    private readonly IRelatedExclusionsProvider? _exclusions;   // CAP-28 discovery: whether the found domains are in force
+    private readonly IOrganizationDomains? _domains;
 
     public AdminSettingsService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        ISettingsReloader reloader, ISecurityEventSink? siem = null, IServerSettingValues? server = null)
+        ISettingsReloader reloader, ISecurityEventSink? siem = null, IServerSettingValues? server = null,
+        IRelatedExclusionsProvider? exclusions = null, IOrganizationDomains? domains = null)
     {
         _factory = factory;
         _user = user;
@@ -41,6 +51,8 @@ public sealed class AdminSettingsService
         _reloader = reloader;
         _siem = siem;
         _server = server;
+        _exclusions = exclusions;
+        _domains = domains;
     }
 
     /// <summary>Every editable setting with its current effective value: the in-app change, else the server's settings
@@ -59,7 +71,9 @@ public sealed class AdminSettingsService
                 var server = file ?? d.Default;
                 return overrides.TryGetValue(d.Key, out var v)
                     ? new EffectiveSetting(d, v, true, server, file is not null)
-                    : new EffectiveSetting(d, server, false, server, file is not null);
+                    : new EffectiveSetting(d, server, false, server, file is not null,
+                        // CAP-28 discovery: never stored, so a bundle or a save of another setting never carries it.
+                        d.Key == RelatedExclusionSettings.DomainsKey && file is null ? _exclusions?.DiscoveredInForce : null);
             })
             .ToList();
     }
@@ -153,6 +167,16 @@ public sealed class AdminSettingsService
     /// <see cref="SettingsNotInEffectException"/>, so the page can tell it from a save that didn't happen.
     /// </summary>
     private static void ThrowIfNotInEffect(string? reloadError) => SettingsReloads.ThrowIfNotInEffect(reloadError);
+
+    /// <summary>
+    /// CAP-28 discovery: looks for the organization's domains on the server's network again (Administration's "Look
+    /// again"), within the discovery's time limit; joins a look under way. Nothing is saved: the page offers what's found.
+    /// </summary>
+    public async Task<DomainDiscovery> DiscoverDomainsAsync(CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<AdminSettingsService>(_user, _siem);
+        return _domains is null ? DomainDiscovery.NotYet : await _domains.DiscoverAsync(ct);
+    }
 
     /// <summary>
     /// Removes the DB override for a setting so it reverts to its server-side/catalog default. The

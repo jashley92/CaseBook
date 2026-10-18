@@ -228,8 +228,12 @@ first with `casebook-keytool export`.
   labelled as suggestions. Nothing is linked and gates and the Desk are unchanged. No migration; the registrable
   domain is a built-in approximation (no Public Suffix List is downloaded). Each shared part reads the newest 500
   candidates; when that limit is reached, the panel says only the newest 500 were checked. Under Administration ›
-  Integrations › Related indicators, enter **your organization's domains** (blank by default, so set them after the
-  upgrade) so internal accounts and hosts aren't suggested across cases; **excluded address ranges** default to the
+  Integrations › Related indicators, **your organization's domains** keep internal accounts and hosts from being
+  suggested across cases. Until you save them, the domains found on the server's network are used: the AD domain it's
+  joined to, its forest root and other domains, and its trusted domains, looked up once in the background after start-up
+  (5 s limit), shown beside the field with their source, never stored and never exported in a config bundle; **Use these**
+  fills the field for you to review and save, and a saved value (blank included) always wins. A server not on a domain
+  finds none (Diagnostics says why), so enter them yourself; **excluded address ranges** default to the
   private, loopback, link-local and unique local ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`,
   `169.254.0.0/16`, `::1/128`, `fe80::/10`, `fc00::/7`), editable; and free mail addresses stay left out unless you turn
   that off. What's left out is never suggested and suggests nothing, and the panel says why. The three settings travel

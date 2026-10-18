@@ -63,6 +63,8 @@ public sealed class ImportWriterGateTests : IDisposable
     private static readonly HashSet<string> Reads = new(StringComparer.Ordinal)
     {
         AdminActionPermissions.Key<ApiTokenService>(nameof(ApiTokenService.ListAllAsync)),
+        // CAP-28 discovery: looks in the directory and keeps what it finds in memory; nothing is saved.
+        AdminActionPermissions.Key<AdminSettingsService>(nameof(AdminSettingsService.DiscoverDomainsAsync)),
     };
 
     public void Dispose()

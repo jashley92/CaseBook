@@ -295,6 +295,13 @@ logged today; check the folder's permissions directly.
 
 ## Notifications and integrations
 
+### No organization domains were found (CAP-28)
+
+- **Symptom:** beside *Your organization's domains* (Administration › Integrations) it says *Nothing found on this server's network*, and Diagnostics › *Organization domains found* says not on a domain, timed out, or failed.
+- **Cause:** the server isn't joined to an Active Directory domain (a workgroup server, or not Windows); a domain controller didn't answer within 5 seconds; or the app pool's account couldn't read the domain, forest or trusts (the error's type is shown). Trusted domains known only by a NetBIOS name (downlevel trusts) are dropped, as a single-label name isn't a domain.
+- **Where to look:** the Diagnostics row (what, when and why), and the application log at start-up: "Found this server's organization domains", "isn't joined to an Active Directory domain", or a warning naming the error type.
+- **Fix:** nothing is required: the setting is optional. Enter the domains yourself and save, or fix the directory and press *Look again* (a look still blocked after its time limit isn't repeated until it returns). A saved value, blank included, always wins over what's found.
+
 ### Emails aren't arriving
 
 1. Administration → Notifications → **Delivery readiness**: email on, sender set, triggers enabled.

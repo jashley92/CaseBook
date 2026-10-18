@@ -72,6 +72,13 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.PostConfigure<IncidentManager.Infrastructure.Security.SealSigningOptions>(
     o => o.AllowKeyGeneration = builder.Environment.IsDevelopment());
 builder.Services.AddApplication();
+// CAP-28 discovery: the organization's domains found in Active Directory once, in the background after start-up (bounded),
+// offered for "Your organization's domains" and in force while no administrator has set them.
+builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IDomainDiscoverySource, IncidentManager.Web.Security.AdDomainDiscoverySource>();
+builder.Services.AddSingleton<IncidentManager.Application.Admin.OrganizationDomains>();
+builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IOrganizationDomains>(
+    sp => sp.GetRequiredService<IncidentManager.Application.Admin.OrganizationDomains>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<IncidentManager.Application.Admin.OrganizationDomains>());
 
 // --- Scheduled audit-chain verify/seal job ---
 builder.Services.Configure<AutoSealOptions>(builder.Configuration.GetSection("Integrity:AutoSeal"));
