@@ -5,6 +5,7 @@
    records "Downloaded" and says so before you click. *@
 @using Microsoft.Extensions.Logging
 @inject EvidenceService Evidence
+@inject IncidentManager.Application.Cases.CaseService Cases
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject TimeDisplay TimeDisp
@@ -107,6 +108,46 @@
                 }
             </section>
 
+            @* CAP-08: when, where from and by whom it was collected: facts about how it was acquired, so they can be set or
+               corrected here (an audited change); the file itself never changes. *@
+            <section class="im-evp-collect">
+                <h3 class="im-entity-panel-h">Collection</h3>
+                @if (_collEditing)
+                {
+                    <label class="form-label small mb-0" for="evp-coll-at">Collected (@TimeDisp.Label)</label>
+                    <DateTimeInput Past="true" TValue="DateTime?" id="evp-coll-at" class="form-control form-control-sm mb-2" @bind-Value="_collAt" disabled="@_collBusy" />
+                    <label class="form-label small mb-0" for="evp-coll-from">Collected from</label>
+                    <input id="evp-coll-from" class="form-control form-control-sm mb-2" maxlength="@IncidentManager.Domain.Entities.Evidence.MaxCollectedFromLength"
+                           @bind="_collFrom" @bind:event="oninput" disabled="@_collBusy" placeholder="e.g. WKS-0142, a mailbox, Okta, the vendor" />
+                    <label class="form-label small mb-0" for="evp-coll-by">Collected by</label>
+                    <input id="evp-coll-by" class="form-control form-control-sm mb-2" maxlength="@IncidentManager.Domain.Entities.Evidence.MaxCollectedByLength"
+                           @bind="_collBy" @bind:event="oninput" disabled="@_collBusy" placeholder="e.g. J. Rivera (EDR live response)" />
+                    <div class="small text-muted mb-2">Not after it was uploaded (@TimeDisp.Long(ev.CreatedAtUtc)), or before the case's activity began. The change is kept in the audit trail.</div>
+                    @if (_collError is not null) { <div class="text-danger small mb-2" role="alert">@_collError</div> }
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _collEditing = false">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-primary" disabled="@_collBusy" @onclick="() => SaveCollection(ev)">Save</button>
+                    </div>
+                }
+                else
+                {
+                    <dl>
+                        <dt>Collected</dt>
+                        <dd>@(ev.CollectedAtUtc is { } at ? TimeDisp.Long(at) : "Not recorded: taken to be the upload")</dd>
+                        @if (ev.CollectedFrom is { } from) { <dt>From</dt><dd class="im-data">@from</dd> }
+                        @if (ev.CollectedBy is { } by) { <dt>By</dt><dd>@by</dd> }
+                        <dt>Uploaded</dt>
+                        <dd>@TimeDisp.Long(ev.CreatedAtUtc)@if (ev.CollectedAtUtc is { } c && IncidentManager.Domain.Entities.Case.ToMinute(c) < IncidentManager.Domain.Entities.Case.ToMinute(ev.CreatedAtUtc)) { <span class="text-muted"> · recorded @Ui.Hours((ev.CreatedAtUtc - c).TotalHours) after collection</span> }</dd>
+                    </dl>
+                    @if (CanEdit)
+                    {
+                        <button type="button" class="btn btn-sm btn-link p-0 mt-1" @onclick="() => StartCollection(ev)">
+                            <span class="bi bi-pencil" aria-hidden="true"></span> @(ev.HasCollection ? "Correct how it was collected" : "Record how it was collected")
+                        </button>
+                    }
+                }
+            </section>
+
             <section>
                 <h3 class="im-entity-panel-h">Integrity</h3>
                 <div class="im-data im-evp-hash">@ev.Sha256</div>
@@ -205,10 +246,74 @@
     private LoadSequence.Ticket _shown;
     private readonly LoadSequence _custodyLoad = new();
 
-    // BUG-578: a transfer typed and not recorded is asked about before the panel closes or moves on.
-    protected override void OnInitialized() =>
+    // BUG-578: a transfer typed and not recorded is asked about before the panel closes or moves on. CAP-08 (C7): so is
+    // a collection edit changed and not saved.
+    protected override void OnInitialized()
+    {
         Edits.Track(this, "the transfer you're recording", () => _transferOpen
             && (!string.IsNullOrWhiteSpace(_xferTo) || !string.IsNullOrWhiteSpace(_xferHow) || !string.IsNullOrWhiteSpace(_xferWhy)), Region);
+        Edits.Track(this, "how the file was collected", () => _collEditing && CollectionDirty, Region);
+    }
+
+    // CAP-08: the collection being edited, with what it was when the edit opened (the stamp the save sends, so a
+    // colleague's correction meanwhile isn't overwritten) and the time as shown (kept as recorded when left alone, C3).
+    private bool _collEditing, _collBusy;
+    private DateTime? _collAt, _collAtShown;
+    private string? _collFrom, _collBy, _collError;
+    private EvidenceCollection _collOpenedWith = EvidenceCollection.None;
+
+    private void StartCollection(Evidence ev)
+    {
+        _collOpenedWith = EvidenceCollection.Of(ev);
+        _collAt = _collAtShown = ev.CollectedAtUtc is { } at ? WallClock.ToMinute(WallClock.ToWall(at, TimeDisp.Zone)) : null;
+        (_collFrom, _collBy, _collError) = (ev.CollectedFrom, ev.CollectedBy, null);
+        _collEditing = true;
+    }
+
+    private DateTimeOffset? CollectedAtUtc() => _collAt is { } typed
+        ? WallClock.Kept(typed, _collAtShown, _collOpenedWith.AtUtc, TimeDisp.Zone)
+        : null;
+
+    private bool CollectionDirty =>
+        CollectedAtUtc() != _collOpenedWith.AtUtc
+        || !string.Equals((_collFrom ?? "").Trim(), _collOpenedWith.From ?? "", StringComparison.Ordinal)
+        || !string.Equals((_collBy ?? "").Trim(), _collOpenedWith.By ?? "", StringComparison.Ordinal);
+
+    private async Task SaveCollection(Evidence ev)
+    {
+        if (_collBusy) return;   // C8
+        var shown = _shown;
+        _collError = null;
+        _collBusy = true;
+        try
+        {
+            var changed = await Cases.RecordEvidenceCollectionAsync(Case.Id, ev.Id,
+                new EvidenceCollection(CollectedAtUtc(), _collFrom, _collBy), _collOpenedWith);
+            if (!_showing.IsCurrent(shown)) return;   // BUG-601: the panel moved on meanwhile
+            _collEditing = false;
+            if (changed)
+            {
+                Toasts.Success("Collection recorded. The change is in the audit trail.");
+                await OnChanged.InvokeAsync();
+            }
+        }
+        catch (StaleEditException ex)
+        {
+            // As a verdict's refusal (CAP-02): the edit stays open with what was typed, and expects what's there now, so
+            // saving again records it knowingly over the colleague's change.
+            if (!_showing.IsCurrent(shown)) { Toasts.Error(ex.Message); return; }
+            _collError = ex.Message;
+            await OnChanged.InvokeAsync();
+            if (File is { } now && now.Id == ev.Id) _collOpenedWith = EvidenceCollection.Of(now);
+        }
+        catch (Exception ex)
+        {
+            var problem = UserFacingError.Describe(ex, Logger, "recording how evidence was collected", "Couldn't save how it was collected. Try again.");
+            if (_showing.IsCurrent(shown)) _collError = problem;
+            else Toasts.Error(problem);
+        }
+        finally { _collBusy = false; }
+    }
 
     public void Dispose() => Edits.Forget(this);
 
@@ -220,8 +325,8 @@
         _custodyLoad.Invalidate();
         _custody = null;
         _preview = null;
-        _previewLoading = _previewMissing = _addingTask = _transferOpen = false;
-        _xferTo = _xferHow = _xferWhy = _xferError = null;
+        _previewLoading = _previewMissing = _addingTask = _transferOpen = _collEditing = false;
+        _xferTo = _xferHow = _xferWhy = _xferError = _collError = null;
         if (EvidenceId is { } id) await LoadCustody(id);
     }
 

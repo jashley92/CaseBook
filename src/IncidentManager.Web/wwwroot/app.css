@@ -2887,6 +2887,18 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-evp-dot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--im-text-muted); margin-top: .25rem; }
 .im-evp-uploaded { background: var(--im-ok); border-color: var(--im-ok); }
 .im-evp-transferred { border-color: var(--im-accent); }
+/* CAP-25: the Evidence list's filter and chips, on one wrapping row; CAP-08: the collected column wraps its source. */
+.im-ev-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; margin-bottom: .6rem; }
+.im-ev-filter { width: 17rem; max-width: 100%; }
+.im-ev-collected { min-width: 8rem; overflow-wrap: anywhere; }
+.im-ev-table > thead > tr > th { white-space: nowrap; vertical-align: bottom; }
+.im-ev-table > tbody > tr > td:first-child { min-width: 11rem; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+    .im-ev-filter { width: 100%; }
+}
+.im-evp-collect dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .15rem .75rem; margin: 0; font-size: .82rem; }
+.im-evp-collect dt { font-weight: 400; color: var(--im-text-muted); }
+.im-evp-collect dd { margin: 0; overflow-wrap: anywhere; }
 .im-evp-open { font-size: inherit; color: var(--im-text); text-decoration: none; }
 .im-evp-open:hover { color: var(--im-accent-text); text-decoration: underline; }
 
