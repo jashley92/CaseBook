@@ -343,8 +343,8 @@ first with `casebook-keytool export`.
   *Outside parties* (*Add a party*, needing `EditCases`). Each row is audited and hashed from its first row, so the
   record check flags one without a hash. The case report prints them with the legal lines (Business Impact, or the case
   facts), Word templates get a `party` list (`party.role`, `name`, `contact`, `reference`, `engaged`, `notes`), and the
-  legal register CSV gains a last column, `outside_parties`: a script reading the register by position still reads the
-  columns before it as before. The configuration bundle is unchanged.
+  legal register CSV gains a column, `outside_parties`, after `notice_references` (CAP-38 then adds
+  `notification_status` last): a script reading the register by position still reads the columns before them as before. The configuration bundle is unchanged.
 - **An offboarding page for a person who leaves (CAP-30).** In Administration › Roles & access, each name under *Known
   users* opens a page with their roles at last sign-in, the open cases they command or are on, their open tasks, their
   working API tokens and whether their calendar link works, with **Revoke** for the tokens and **Void the calendar link**
@@ -470,7 +470,7 @@ first with `casebook-keytool export`.
 - **IOC feeds a machine can pull (CAP-09).** `GET /api/export/iocs.csv` and `GET /api/export/iocs.stix.json` give a
   firewall, an EDR or a threat-intel platform the malicious-IOC feed with a **system API token** whose role grants
   `ViewCases`, no Windows sign-in. No migration and no new setting is needed; the installer's anonymous carve-out for
-  `/api` already covers the new paths (check with `Verify-Install.ps1`, which tests `/api`).
+  `/api` already covers the new paths (check with `Verify-Install.ps1 -Url`, which tests each carve-out, `/api` included).
   - **Give a feed token a role with `ViewCases` alone.** The feed holds what the token's owner may see, so one holding
     `ViewRestricted` or `ViewAllCases` feeds restricted matters' indicators to the consumer. Exercises never appear.
   - Pulls are rate-limited per token (a burst of 20, then one a minute; `RateLimiting:ApiFeeds:*`, restart to change).
@@ -503,9 +503,9 @@ first with `casebook-keytool export`.
   (CAP-21), so nothing is re-hashed
   and the integrity upgrade doesn't run again. Templates can use the new `notice` collection (`jurisdiction`,
   `notified`, `due`, `method`, `reference`, `by`, `file`). The case report's Business Impact section now lists each regulator's notice ("Notice to NY: …"), so a regenerated
-  report of a notified case reads differently from an older version. The legal-register CSV gains two columns after
-  `deadline_status`: `notice_references` (this item) and `outside_parties` (CAP-34, the last). A script that reads
-  columns by position is unaffected; one that checks the header needs both added. No new SIEM event: editing how a regulator was notified sends none (recording the notice still sends 5513).
+  report of a notified case reads differently from an older version. The legal-register CSV gains three columns after
+  `deadline_status`: `notice_references` (this item), `outside_parties` (CAP-34) and `notification_status` (CAP-38,
+  the last). A script that reads columns by position is unaffected; one that checks the header needs all three added. No new SIEM event: editing how a regulator was notified sends none (recording the notice still sends 5513).
 
 ### v1.9.0
 

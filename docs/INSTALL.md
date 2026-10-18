@@ -89,7 +89,7 @@ Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-Mgmt-Console -IncludeMa
       large database; without it they match by substring, as before, and work the same. Install it **before** the
       app's first start and CaseBook's migration creates the indexes; added later, create them from
       **Administration › Diagnostics** (*Search* row, *Create full-text indexes*), or, where the DBA applies the schema
-      (`DbaApplies`), have the DBA run `deploy\sql-Enable-FullText.sql`. `Verify-Install.ps1` says whether the
+      (`DbaApplies`), have the DBA run `deploy\sql\03-Enable-FullText.sql`. `Verify-Install.ps1` says whether the
       instance has it (information, never a failure).
 
 ### 1.5 Prepare the answers file (recommended)

@@ -190,7 +190,7 @@ second also blocks downgrades: you can't deploy an older build over a newer data
 ### "A full-text search (…) failed with SQL Server error …" in the log (CAP-22)
 
 - **Symptom:** a warning naming error 7601 (not full-text indexed), 7609 (not installed), 7630 (syntax) or another in
-  the 7600s or 30000s; the *Search* row counts searches that "ran again by substring".
+  the 7600s, 9900s or 30000-30099; the *Search* row counts searches that "ran again by substring".
 - **Cause:** a full-text query the server refused: an index or the catalog was dropped, or the feature removed, since
   the last check; or a search the word breaker can't read. The person searching got their results by substring.
 - **Where to look:** the first of each error number is a warning, later ones Debug. The status is checked again at the
