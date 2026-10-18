@@ -33,7 +33,7 @@ public static class AdminActionPermissions
         typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService), typeof(ReportTemplateService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
         typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
-        typeof(ApiTokenService), typeof(AccessReviewService), typeof(RetentionReviewService),
+        typeof(ApiTokenService), typeof(AccessReviewService), typeof(RetentionReviewService), typeof(OffboardingService),
     ];
 
     public static readonly IReadOnlyDictionary<string, Permission> Required =
@@ -100,6 +100,10 @@ public static class AdminActionPermissions
             // CAP-10: the retention review and its archive batch (each case through CaseService.SetArchivedAsync too).
             [Key<RetentionReviewService>(nameof(RetentionReviewService.BuildAsync))] = Permission.Administer,
             [Key<RetentionReviewService>(nameof(RetentionReviewService.ArchiveAsync))] = Permission.Administer,
+            // CAP-30: the offboarding page: what a leaver holds, their tokens revoked, their calendar link voided.
+            [Key<OffboardingService>(nameof(OffboardingService.BuildAsync))] = Permission.Administer,
+            [Key<OffboardingService>(nameof(OffboardingService.RevokeTokensAsync))] = Permission.Administer,
+            [Key<OffboardingService>(nameof(OffboardingService.VoidCalendarLinkAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.QueryAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.ActorsAsync))] = Permission.Administer,
             [Key<ApiTokenService>(nameof(ApiTokenService.ListAllAsync))] = Permission.Administer,

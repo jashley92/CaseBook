@@ -212,6 +212,12 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **An offboarding page for a person who leaves (CAP-30).** In Administration › Roles & access, each name under *Known
+  users* opens a page with their roles at last sign-in, the open cases they command or are on, their open tasks, their
+  working API tokens and whether their calendar link works, with **Revoke** for the tokens and **Void the calendar link**
+  (a new administrator action; the link is never shown). Both are confirmed and recorded in the audit trail; reassign
+  their cases in Program › Team workload. The page's address carries an opaque reference, not the person's name or
+  account. AD stays the source of roles. No migration and nothing to configure.
 - **Syslog can go over TLS (CAP-33).** Set `Siem:Syslog:Protocol` to `Tls` (and usually `Port` to 6514) to send the
   SIEM stream per RFC 5425, with the collector's certificate checked against this server's trusted roots and its name,
   an optional pinned thumbprint (`ServerCertificateThumbprint`) and an optional client certificate from

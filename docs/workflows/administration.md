@@ -18,6 +18,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Integrations | `/admin/settings/integrations` | Detection-source label and link template, VirusTotal link template |
 | Regulatory deadlines | `/admin/settings/regulatory-deadlines` | Deadline clock on/off, start basis, default window, per-jurisdiction rules |
 | Governance & security | `/admin/settings/governance` | Retention (case retention for the retention review, the monthly retention email to Legal, access-log retention), integrity (auto-seal, evidence re-hash), access logging scope and coalescing, idle timeout, the access-review reminder, two-person legal-hold release |
+| Offboarding | `/admin/users/{reference}` (from Known users) | CAP-30: one person who leaves: their roles at last sign-in (AD stays the source; remove their groups there), the open cases they command or are on (restricted ones counted unless you're cleared for them), their open tasks, their working API tokens and whether their calendar link works. **Revoke** their tokens and **Void the calendar link** (each confirmed and audited; the link is never shown); reassign their cases with **Reassign…** in Program › Team workload |
 | Retention review | `/admin/retention` | CAP-10: closed cases past case retention, with each one's legal hold, open improvement actions and regulatory notices not recorded; archive up to 25 at a time after seeing them listed. Nothing is purged |
 | Case templates | `/admin/templates` | Playbooks: defaults for the new-case form and steps that become tasks |
 | Stage gates | `/admin/gates` | One gate per trigger: requirements, blocking or advisory, minimum reason length |
@@ -25,7 +26,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Data elements | `/admin/data-elements` | Personal-data categories and their notification jurisdictions; archive or (if unused) delete |
 | Case outcomes | `/admin/outcomes` | What a case can conclude when it closes; add, relabel, describe, reorder, archive or (if unused) delete |
 | Response & SLA | `/admin/settings/sla` | SLA targets per severity, breach overrides, at-risk threshold, severity labels |
-| Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings; the access review (broad access, restricted cases, known users, active API tokens) with its CSV, and **Record this review** (CAP-15) |
+| Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings; the access review (broad access, restricted cases, known users, each opening their offboarding page (CAP-30), active API tokens) with its CSV, and **Record this review** (CAP-15) |
 | API tokens | `/admin/api-tokens` | System tokens for machine producers |
 | Server configuration | `/admin/settings/server` | Read-only view of server-side settings (secrets as present or absent, and where from: the server's configuration or Administration); and the **SIEM webhook token** card (CAP-40: write-only, as the chat URL's, with *Send test event* beside it) |
 | Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from |

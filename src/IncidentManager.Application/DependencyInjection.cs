@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.ReportTemplateService>();   // PROD-47: the Word template library
         services.AddScoped<Admin.StageGateService>();
         services.AddScoped<Admin.AccessReviewService>();
+        services.AddScoped<Admin.OffboardingService>();   // CAP-30: one page per leaver (Administer)
         services.AddScoped<Access.AccessLogRetention>();      // PROD-52: deletes access-log entries past retention
         // BUG-591: finds role names with a comma at start-up, so every role list reads them whole.
         services.AddSingleton<Admin.LegacyRoleNameCheck>();

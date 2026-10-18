@@ -20,8 +20,9 @@ public sealed record RestrictedCaseRow(string CaseNumber, string Title, string? 
 /// A person CaseBook has seen sign in (the <c>AppUser</c> mirror), with the roles AD granted them at that
 /// sign-in. <see cref="IsDormant"/> flags accounts idle past <see cref="AccessReviewService.DormantAfter"/>.
 /// </summary>
+/// <remarks>CAP-30: <see cref="UserRef"/> is the mirror row's id, the opaque reference the offboarding page is opened by.</remarks>
 public sealed record KnownUserRow(string DisplayName, string? UserPrincipalName, IReadOnlyList<string> Roles,
-    DateTimeOffset LastSeenUtc, bool IsDormant);
+    DateTimeOffset LastSeenUtc, bool IsDormant, Guid UserRef = default);
 
 /// <summary>CAP-15: an API token that works now (not revoked, not expired), with the roles it was granted. A personal
 /// token also acts only within its owner's current roles.</summary>
@@ -154,7 +155,8 @@ public sealed class AccessReviewService
                 string.IsNullOrWhiteSpace(u.UserPrincipalName) ? null : u.UserPrincipalName,
                 Domain.Common.RoleList.Split(u.RolesCsv, roleNames.Contains),   // BUG-591: a legacy name with a comma is one role
                 u.LastSeenUtc,
-                now - u.LastSeenUtc > DormantAfter))
+                now - u.LastSeenUtc > DormantAfter,
+                u.Id))
             .OrderByDescending(u => u.IsDormant)
             .ThenBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
