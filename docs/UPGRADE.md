@@ -28,7 +28,9 @@ recommended path.
 and `appsettings.Production.json`, preflights (including a **migration-compatibility check**), backs
 up the DB + config + current binaries, swaps in the new binaries **without touching your config or
 data root**, and warms the app so pending EF migrations apply — rolling back automatically if the
-new build fails to start.
+new build fails to start. In IIS it changes only what a newer release needs and an older site lacks: the app pool's
+recycle settings and the anonymous carve-outs (`/api`, `/health`, `/branding/logo`, `/agenda/feed.ics`), each checked
+first and set only when it differs.
 
 On the web host, **elevated**:
 
@@ -331,9 +333,15 @@ first with `casebook-keytool export`.
   `/health` (with `/health/live`, `/health/ready` and everything else below it), `/branding/logo` and
   `/agenda/feed.ics` out of Windows Authentication, as it always has `/api`; `Verify-Install.ps1 -Url` checks each
   answers anonymously. The app still decides what each gives away: a status word, the logo or a 404, and a feed only
-  for a valid signed token. `/agenda/agenda.ics` and the rest of the site stay signed in. `Upgrade-CaseBook.ps1`
-  doesn't change IIS authentication, so on an existing site either re-run `Install-CaseBook.ps1` or apply the carve-out
-  by hand, elevated, for each of `health`, `branding/logo` and `agenda/feed.ics` (with your site's name):
+  for a valid signed token. `/agenda/agenda.ics` and the rest of the site stay signed in. **`Upgrade-CaseBook.ps1`
+  checks and configures the carve-outs on an existing site:** its preflight reads IIS's authentication settings for
+  `<site>/api`, `<site>/health`, `<site>/branding/logo` and `<site>/agenda/feed.ics`, says which are already right
+  (anonymous on, Windows off) and which it will change, and after the backup, before the new build starts, sets the
+  ones that differ exactly as the installer does, logging each change. `-WhatIf` reports them and changes nothing. If
+  IIS refuses a change the upgrade stops before deploying, with the current build still running, and says what to fix
+  (run elevated; the IIS authentication role services: `Install-WindowsFeature Web-Server, Web-Windows-Auth
+  -IncludeManagementTools`). The installer and the upgrade share the list (`deploy/lib/CaseBookIis.ps1`). Only as a
+  fallback, by hand, elevated, for each path (with your site's name):
   `appcmd set config "CaseBook/health" /section:system.webServer/security/authentication/anonymousAuthentication /enabled:true /commit:apphost`
   and the same with `windowsAuthentication /enabled:false`. A load balancer that authenticated to reach `/health` can
   stop doing so.

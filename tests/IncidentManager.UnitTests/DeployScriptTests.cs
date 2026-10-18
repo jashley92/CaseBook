@@ -70,10 +70,11 @@ public partial class DeployScriptTests
     }
 
     [Fact]
-    public void Every_anonymous_endpoint_the_app_maps_is_carved_out_of_windows_auth_by_the_installer(/* CAP-37 */)
+    public void Every_anonymous_endpoint_the_app_maps_is_carved_out_of_windows_auth_by_the_install_and_upgrade_scripts(/* CAP-37 */)
     {
         // IIS answers 401 before the app runs on any path that isn't carved out, so an endpoint the app maps anonymous
-        // (a probe, the email logo, the calendar feed) only works on an installed site if the installer opens its path.
+        // (a probe, the email logo, the calendar feed) only works on an installed site if the installer opens its path,
+        // and on a site upgraded from before the path was added only if the upgrade opens it too.
         var program = File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Web", "Program.cs"));
         var maps = MappedRoute().Matches(program).ToList();
         var anonymous = maps
@@ -84,14 +85,27 @@ public partial class DeployScriptTests
             .ToList();
         anonymous.Should().Contain(["/health", "/health/live", "/branding/logo", "/agenda/feed.ics"]);
 
-        var install = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "Install-CaseBook.ps1"));
-        var carved = AnonymousPaths().Match(install);
-        carved.Success.Should().BeTrue("the installer lists the carved-out paths in $anonymousPaths");
-        var paths = Regex.Matches(carved.Groups[1].Value, "'([^']+)'").Select(m => "/" + m.Groups[1].Value).Append("/api").ToList();
+        // The paths live in one list in lib\CaseBookIis.ps1, which the installer sets and the upgrade checks and repairs.
+        var lib = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "lib", "CaseBookIis.ps1"));
+        var carved = AnonymousPaths().Match(lib);
+        carved.Success.Should().BeTrue(@"lib\CaseBookIis.ps1 lists the carved-out paths in Get-CaseBookAnonymousPaths");
+        var paths = Regex.Matches(carved.Groups[1].Value, "'([^']+)'").Select(m => "/" + m.Groups[1].Value).ToList();
+        paths.Should().Contain("/api", "the token-authenticated API is carved out with the rest");
         paths.Should().NotContain("/agenda", "the signed-in /agenda/agenda.ics download stays Windows-authenticated");
 
         anonymous.Where(a => !paths.Any(p => a == p || a.StartsWith(p + "/", StringComparison.Ordinal)))
-            .Should().BeEmpty("every anonymous endpoint needs its path carved out in Install-CaseBook.ps1");
+            .Should().BeEmpty("every anonymous endpoint needs its path carved out in Get-CaseBookAnonymousPaths");
+
+        // Both scripts load that module and apply the carve-outs through it, and neither keeps a list of its own to drift.
+        foreach (var script in new[] { "Install-CaseBook.ps1", "Upgrade-CaseBook.ps1" })
+        {
+            var text = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", script));
+            text.Should().Contain(@"lib\CaseBookIis.ps1", script + " loads the shared module");
+            text.Should().MatchRegex(@"Sync-CaseBookAnonymousCarveOuts\s+-SiteName", script + " applies the shared carve-outs");
+            text.Should().NotMatchRegex(@"\$anonymousPaths\s*=", script + " has no list of its own");
+            text.Should().NotContain(@"set config ""$SiteName/", script + " writes no carve-out by hand");
+        }
+        lib.Should().Contain("/commit:apphost", "the sections are locked at server scope, so the carve-out is a <location> entry");
 
         var verify = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "Verify-Install.ps1"));
         verify.Should().Contain("'/health/live'").And.Contain("'/branding/logo'").And.Contain("'/agenda/feed.ics'");
@@ -100,7 +114,7 @@ public partial class DeployScriptTests
     [GeneratedRegex(@"app\.Map(Get|Post|HealthChecks)\(\s*""(?<path>/[^""]*)""", RegexOptions.None, 1000)]
     private static partial Regex MappedRoute();
 
-    [GeneratedRegex(@"\$anonymousPaths\s*=\s*@\(([^)]*)\)", RegexOptions.None, 1000)]
+    [GeneratedRegex(@"function\s+Get-CaseBookAnonymousPaths\s*\{\s*return\s+@\(([^)]*)\)", RegexOptions.None, 1000)]
     private static partial Regex AnonymousPaths();
 
     [GeneratedRegex(@"sqlcmd(\.exe)?\b.*\s-i\s", RegexOptions.None)]

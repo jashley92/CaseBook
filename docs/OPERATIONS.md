@@ -527,7 +527,8 @@ the tool on the server, against the site's own keys folder, or the record waits 
 - **Health probes (H-09)**: four endpoints the app serves **anonymously** for IIS / a load balancer / uptime
   monitoring — they return the status word only (no case data, no paths, no exception text), so they are safe
   to expose to an internal monitor. `Install-CaseBook.ps1` carves `/health` and every path below it out of
-  Windows authentication (CAP-37), so a probe needs no sign-in; a site installed before that needs the carve-out
+  Windows authentication (CAP-37), so a probe needs no sign-in; on a site installed before that,
+  `Upgrade-CaseBook.ps1` checks for the carve-out and adds it
   (see [operations/troubleshooting.md](operations/troubleshooting.md#health-probe-returns-401)):
   - `GET /health/live` — **liveness**: the process is up and the pipeline responds. Runs no dependency
     checks. `200 Healthy`. Use this for the app-pool / container "is it running" probe.

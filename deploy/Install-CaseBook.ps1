@@ -665,40 +665,12 @@ foreach ($s in $authSections) {
     }
 }
 
-# PROD-34: the API-token endpoints under /api authenticate with a bearer token, not Windows. Carve out just
-# that path as Anonymous (the rest of the site stays Windows-authenticated) so a tokenless request reaches
-# the app, where the ApiKey scheme validates the token. Scoped to "<site>/api" via a <location> entry.
-$apiAuthSections = @(
-    @{ Name = 'anonymousAuthentication'; Enabled = 'true'  },
-    @{ Name = 'windowsAuthentication';   Enabled = 'false' }
-)
-foreach ($s in $apiAuthSections) {
-    $out = & $appcmd set config "$SiteName/api" `
-        "/section:system.webServer/security/authentication/$($s.Name)" `
-        "/enabled:$($s.Enabled)" /commit:apphost 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw ("Failed to set $($s.Name) on '$SiteName/api' (appcmd exit $LASTEXITCODE): $out. This carves the " +
-               "token-authenticated API path out of Windows Auth; confirm you are running elevated.")
-    }
-}
-
-# CAP-37: the app's other anonymous endpoints, carved out the same way as /api. Without this IIS answers them 401
-# before the app runs, so load-balancer probes, the email logo and calendar subscriptions fail. The app still enforces
-# each one: /health (and /health/live, /health/ready, /health/alarms below it) answers a status word only, with no
-# detail; /branding/logo is the branding image only; the agenda feed is 404 without a valid signed token in its URL.
-# Only these paths: /agenda/agenda.ics (the signed-in download) and the rest of the site stay Windows-authenticated.
-$anonymousPaths = @('health', 'branding/logo', 'agenda/feed.ics')
-foreach ($p in $anonymousPaths) {
-    foreach ($s in $apiAuthSections) {
-        $out = & $appcmd set config "$SiteName/$p" `
-            "/section:system.webServer/security/authentication/$($s.Name)" `
-            "/enabled:$($s.Enabled)" /commit:apphost 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw ("Failed to set $($s.Name) on '$SiteName/$p' (appcmd exit $LASTEXITCODE): $out. This opens the " +
-                   "app's anonymous endpoint /$p to monitors, mail clients and calendar apps; confirm you are running elevated.")
-        }
-    }
-}
+# PROD-34 / CAP-37: the app's anonymous paths (/api, which authenticates with a bearer token, and the probes, the email
+# logo and the calendar feed) are carved out as Anonymous on, Windows off, each scoped to "<site>/<path>" by a <location>
+# entry, so IIS doesn't answer them 401 before the app runs. The rest of the site stays Windows-authenticated. The paths
+# and the settings live in lib\CaseBookIis.ps1, which Upgrade-CaseBook.ps1 uses to check and repair existing sites.
+$carved = Sync-CaseBookAnonymousCarveOuts -SiteName $SiteName -Appcmd $appcmd -SetAlways
+Write-Host "    Anonymous (Windows Auth off) under: $(($carved | ForEach-Object { $_.Path }) -join ', ')" -ForegroundColor Gray
 
 # REV-71: a re-run stopped the pool before publishing, and Restart-WebAppPool doesn't start a stopped one.
 if ((Get-WebAppPoolState -Name $AppPoolName).Value -eq 'Stopped') { Start-WebAppPool -Name $AppPoolName }

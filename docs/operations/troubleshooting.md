@@ -92,10 +92,11 @@ set it to `Dev` on a server. The same check stops any other non-Development envi
 
 - **Cause:** the site has no anonymous carve-out for the path, so IIS rejects the request before the app sees it,
   even though `/health*`, `/branding/logo` and `/agenda/feed.ics` are anonymous in the app. Sites installed before
-  CAP-37 had a carve-out for `/api` only, and `Upgrade-CaseBook.ps1` doesn't change IIS authentication.
+  CAP-37 had a carve-out for `/api` only, until an upgrade to a release with CAP-37 adds the rest.
 - **Where to look:** `Verify-Install.ps1 -Url <site>` names each path IIS refuses.
-- **Fix:** re-run `Install-CaseBook.ps1`, or add the `<location>` entries by hand with `appcmd` (anonymous on, Windows
-  off, for `<site>/health`, `<site>/branding/logo` and `<site>/agenda/feed.ics`; the commands are in
+- **Fix:** run `Upgrade-CaseBook.ps1` (it checks each carve-out and sets any that differ; its output says which) or
+  re-run `Install-CaseBook.ps1`. As a fallback, add the `<location>` entries by hand with `appcmd` (anonymous on,
+  Windows off, for `<site>/health`, `<site>/branding/logo` and `<site>/agenda/feed.ics`; the commands are in
   [UPGRADE.md](../UPGRADE.md), *Unreleased*). The email logo and calendar feed need the same carve-out to work for
   mail clients and calendar apps.
 

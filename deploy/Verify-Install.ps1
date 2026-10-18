@@ -314,7 +314,7 @@ if ($Url) {
                  "wraps its handler in <location inheritInChildApplications=""false"">; upgrade to v1.6.2 or later, or set it to ""true"".")
         }
         elseif ($code -eq 400) { Bad "/api answered $hostHint" }
-        elseif ($code -in 401,403) { Bad "/api answered ${code}: it isn't open to anonymous requests, so API tokens can't sign in (re-run Install-CaseBook.ps1)." }
+        elseif ($code -in 401,403) { Bad "/api answered ${code}: it isn't open to anonymous requests, so API tokens can't sign in (Upgrade-CaseBook.ps1 or Install-CaseBook.ps1 sets the carve-out)." }
         else { Bad "/api answered $code, not the import schema." }
     } catch { Bad "/api request failed: $($_.Exception.Message)" }
     finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCallback }
@@ -350,7 +350,7 @@ if ($Url) {
                 } finally { $r.Close() }
                 if ($code -in 401,403) {
                     Bad ("$($c.Path) answered ${code}: IIS isn't letting anonymous requests through, so $($c.What) fail. " +
-                         "Re-run Install-CaseBook.ps1 (it carves the path out of Windows Auth).")
+                         "Run Upgrade-CaseBook.ps1 or re-run Install-CaseBook.ps1 (each carves the path out of Windows Auth).")
                 }
                 elseif ($code -eq 400) { Bad "$($c.Path) answered $hostHint" }
                 elseif ($c.Path -eq '/health/live' -and $code -eq 200 -and $body.Trim() -ne 'Healthy') {

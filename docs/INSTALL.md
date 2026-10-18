@@ -237,7 +237,8 @@ Or pass every value directly instead of a config file:
   mail clients and calendar apps reach them without a sign-in. The app still enforces each: the probes answer a
   status word only, the logo is the branding image or a 404, and the feed is a 404 without a valid signed token.
   `Verify-Install.ps1 -Url` checks all five paths (`/api`, `/health/live`, `/health/alarms`, `/branding/logo` and
-  `/agenda/feed.ics`).
+  `/agenda/feed.ics`). The list lives in `deploy/lib/CaseBookIis.ps1`, which `Upgrade-CaseBook.ps1` also uses: an
+  upgrade checks each carve-out and sets any that a site installed before CAP-37 is missing.
 
 ### Publishing / NuGet restore
 
@@ -391,8 +392,8 @@ The full guide is [operations/troubleshooting.md](operations/troubleshooting.md)
 | `500.30` / `500.31` on first hit | The app couldn't start: usually the connection string or SQL login, a store path the app pool can't write (the data folders, not the web root), or a migration failure. Check the Application event log and `logs\stdout`. |
 | The app pool stops immediately | A non-gMSA account installed without `-AppPoolCredential`: the password is blank. Set it in IIS Manager. |
 | `401 Unauthorized` for everyone | Windows Auth isn't negotiating: missing **SPN** for the hostname, or the site isn't in the browser's intranet zone. |
-| `401` on `/health`, the email logo or the calendar feed | The anonymous carve-out for that path is missing (a site installed before CAP-37, or changed since). Re-run the installer or apply it with `appcmd` ([UPGRADE.md](UPGRADE.md), *Unreleased*). |
-| `401` calling **`POST /api/import/cases`** | Send `Authorization: Bearer <token>`. If a valid token still gets 401, the `/api` anonymous carve-out is missing (re-run the installer or apply it with `appcmd`). A token without `EditCases` gets **403**. |
+| `401` on `/health`, the email logo or the calendar feed | The anonymous carve-out for that path is missing (a site installed before CAP-37, or changed since). `Upgrade-CaseBook.ps1` checks and sets it; so does re-running the installer. As a fallback, apply it with `appcmd` ([UPGRADE.md](UPGRADE.md), *Unreleased*). |
+| `401` calling **`POST /api/import/cases`** | Send `Authorization: Bearer <token>`. If a valid token still gets 401, the `/api` anonymous carve-out is missing (`Upgrade-CaseBook.ps1` or the installer sets it; or apply it with `appcmd`). A token without `EditCases` gets **403**. |
 | `400 Bad Request` | The hostname used isn't in `AllowedHosts`. |
 | Login OK but *access denied* everywhere | The user isn't in any mapped AD group, or the group names in the answers file don't match AD. After first start, manage mappings in Administration → Roles & access. |
 | DB error at startup: *CREATE TABLE permission denied* | The app account lacks DDL under `-SchemaMode AppMigrates`. Re-run the DB step, or switch to `DbaApplies` and apply `sql/casebook-schema-sqlserver.sql`. |

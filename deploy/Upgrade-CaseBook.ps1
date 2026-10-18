@@ -11,6 +11,8 @@
     release added a data-folder setting (e.g. ReportTemplates:RootPath) that the deployed
     appsettings.Production.json lacks, it adds that setting under the data root (after backing the config
     up) and creates the folder, so the store doesn't fall back to App_Data in the read-only web root. It also snapshots the current binaries so a failed upgrade rolls back.
+    And in IIS it checks the anonymous carve-outs (/api, /health, /branding/logo, /agenda/feed.ics: anonymous on,
+    Windows off), which a site installed before a release added one lacks, and sets any that differ, as the installer does.
 
     Stages:
       1. Resolve the live deployment from IIS + the deployed appsettings.Production.json
@@ -19,9 +21,10 @@
          and a MIGRATION-COMPATIBILITY check: compare the target DB's __EFMigrationsHistory with
          the release's migration manifest and STOP on a lineage mismatch (the state that makes the
          app fail on startup with "There is already an object named ..."). No blind migrate.
+         It also reads the site's anonymous carve-outs and reports any to configure (-WhatIf stops here).
       3. Back up -- a server-side full DB backup, a copy of appsettings.Production.json, and a
          snapshot of the current site binaries (the rollback point).
-      4. Deploy -- stop the app pool, mirror the new binaries into the site (preserving
+      4. Deploy -- configure any missing carve-out, stop the app pool, mirror the new binaries into the site (preserving
          appsettings.Production.json and logs), start the pool.
       5. Migrate + warm -- the first request applies pending EF migrations; poll until the app
          responds. On failure, roll the binaries back automatically.
@@ -627,6 +630,28 @@ if ($inSite) {
     }
 }
 
+# 3g. CAP-37: ANONYMOUS CARVE-OUTS. IIS answers 401, before the app runs, on any path the app serves anonymously that
+# isn't carved out of Windows Auth: a site installed before CAP-37 has /api only, so its probes, email logo and calendar
+# feed fail. Read each now; any that differs is set after the backup, before the new build starts (and the warm-up asks
+# /api). Read only here: -WhatIf stops at the confirmation having reported them.
+$appcmd = Join-Path $env:WINDIR 'System32\inetsrv\appcmd.exe'
+$carveOuts = @(Sync-CaseBookAnonymousCarveOuts -SiteName $SiteName -Appcmd $appcmd -DryRun)
+$carveOutsToSet = @($carveOuts | Where-Object { $_.State -ne 'ok' })
+if ($carveOutsToSet.Count -eq 0) {
+    Write-Info "Anonymous carve-outs: all set ($(($carveOuts | ForEach-Object { $_.Path }) -join ', '): anonymous on, Windows off)."
+} else {
+    if (-not (Test-Path $appcmd)) {
+        throw ("The site's anonymous carve-outs need configuring ($(($carveOutsToSet | ForEach-Object { $_.Path }) -join ', ')), " +
+               "but appcmd.exe isn't at $appcmd. Nothing has been changed. Install the IIS management tools " +
+               "(Install-WindowsFeature Web-Server -IncludeManagementTools), then run it again.")
+    }
+    $carvedOk = @($carveOuts | Where-Object { $_.State -eq 'ok' } | ForEach-Object { $_.Path })
+    if ($carvedOk.Count -gt 0) { Write-Info "Anonymous carve-outs already set: $($carvedOk -join ', ')." }
+    foreach ($c in $carveOutsToSet) {
+        Write-Warn2 "Anonymous carve-out for $($c.Path) to configure after the backup: $($c.Changes -join '; ')"
+    }
+}
+
 # BUG-314: the warm-up decides whether the new build started, by asking the site at $ProbeUrl. Asked now, before anything
 # is stopped: any HTTP answer (even an error page) shows this host can reach it. No answer at all would make the warm-up
 # roll back a build that started, after its migrations, leaving the pool stopped until the database is restored.
@@ -768,6 +793,22 @@ if ($missingData.Count -gt 0 -or $keyMoves.Count -gt 0) {
     $liveCfg | ConvertTo-Json -Depth 32 | Set-Content -Path $prodSettings -Encoding UTF8
 }
 
+# --- 5c. CAP-37: set any anonymous carve-out the preflight found missing or wrong ---------
+# Before the pool stops, so a failure leaves the current build running and nothing deployed, as a preflight failure does.
+if ($carveOutsToSet.Count -gt 0) {
+    Write-Step "Configuring the anonymous carve-outs (anonymous on, Windows off)"
+    try {
+        $carveOuts = @(Sync-CaseBookAnonymousCarveOuts -SiteName $SiteName -Appcmd $appcmd)
+    } catch {
+        throw ("$($_.Exception.Message) The upgrade stopped before deploying: the current build is still running and " +
+               "its binaries are unchanged. Backups are in $BackupRoot.")
+    }
+    foreach ($c in $carveOuts) {
+        if ($c.State -eq 'ok') { Write-Info "$($c.Path): already set." }
+        else { Write-Info "$($c.Path): configured ($($c.Changes -join '; '))." }
+    }
+}
+
 # --- 6. Deploy ---------------------------------------------------------------
 Write-Step "Stopping app pool '$AppPoolName'"
 # REV-72: until the worker has exited and let go of the DLLs, not a fixed few seconds: a busy server's worker can take
@@ -827,7 +868,8 @@ while ((Get-Date) -lt $deadline) {
 }
 if ($verdict -in 'auth','other') {
     if ($verdict -eq 'auth') {
-        # /api isn't anonymous on this site (installed before the API carve-out, or changed since), so IIS answered.
+        # /api isn't anonymous on this site although the carve-out above is set (a web.config or delegated setting
+        # overrides it, or it was changed during the run), so IIS answered.
         Write-Warn2 "$ProbeUrl answered $lastStatus (Windows authentication, not the app)."
     } else {
         Write-Warn2 ("$ProbeUrl answered '$lastDetail', which isn't CaseBook: IIS isn't passing /api to the app, so API " +
