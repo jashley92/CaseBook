@@ -110,7 +110,7 @@ public sealed class BackupSetReader(
         // One walk per path at a time: a later caller joins it, and it's forgotten when it ends, so the next look is fresh.
         var walk = _walking.GetOrAdd(path, p => new Lazy<Task<BackupPathFacts>>(() =>
         {
-            var started = Task.Run(() => Walk(p, writable));
+            var started = Task.Run(() => Walk(p, writable), CancellationToken.None);   // shared: one caller leaving doesn't stop it
             _ = started.ContinueWith(_ => _walking.TryRemove(p, out var _), CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             return started;

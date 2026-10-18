@@ -76,7 +76,7 @@ public sealed class OrganizationDomains : IOrganizationDomains, IHostedService
         {
             var reading = Task.Factory.StartNew(() => ReadOnItsThread(read), CancellationToken.None,
                 TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            result = await reading.WaitAsync(TimeLimit, _time);
+            result = await reading.WaitAsync(TimeLimit, _time, CancellationToken.None);   // bounded by the time limit, not by a caller
         }
         catch (TimeoutException)
         {
