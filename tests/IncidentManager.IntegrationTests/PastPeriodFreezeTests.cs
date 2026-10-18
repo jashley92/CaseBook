@@ -273,6 +273,7 @@ public sealed class PastPeriodFreezeTests : IDisposable
         ["PlaceNewEventStep"] = "places a step being added (AddEventStep's own rule, covered there)",
         ["MoveEventStep"] = "reorders steps through OccurredAtUtc/StepOrder, which EditEventStep's undo covers",
         ["EditNote"] = "analyst notes",
+        ["SetNoticeDetails"] = "CAP-07: how a regulator was notified (method, reference, who, the file); no figure reads it, and the notice's time doesn't move",
         ["NoticesFromWholeReport"] = "only converts a whole-case report into notices dated at the reported time (no notice moves)",
         ["KeepElementsWhileReported"] = "adds elements to those a reported case had (BUG-618); the codes kept, notices and reported time don't move",
         ["Restrict"] = "visibility, as Assign",

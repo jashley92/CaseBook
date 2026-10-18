@@ -341,7 +341,7 @@ public sealed class RowHashUpgradeTests
         result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(StageGateRequirement)} {weakened}");
         await using (var db = database.NewContext())
             (await db.StageGateRequirements.AsNoTracking().SingleAsync(r => r.Id == honest)).RowHash.Should()
-                .StartWith(Canonical.V4Prefix, "the requirement as the migration wrote it is recorded");
+                .StartWith(Canonical.PrefixOf(Canonical.CurrentFormat), "the requirement as the migration wrote it is recorded");
         var bad = await VerifyRecordsAsync(database);
         bad!.Id.Should().Be(weakened);
         bad.Detail.Should().Contain("has no hash");
@@ -410,7 +410,7 @@ public sealed class RowHashUpgradeTests
         bad!.Id.Should().Be(renamed);
         bad.Detail.Should().Contain("has no hash");
         await using (var db = database.NewContext())
-            (await db.Reports.AsNoTracking().SingleAsync(r => r.Id == honest)).RowHash.Should().StartWith(Canonical.V4Prefix);
+            (await db.Reports.AsNoTracking().SingleAsync(r => r.Id == honest)).RowHash.Should().StartWith(Canonical.PrefixOf(Canonical.CurrentFormat));
     }
 
     // A row hashed in format 3, as v1.6.3-v1.6.12 left it: its hash, and its latest entry's, in that format.
@@ -456,9 +456,55 @@ public sealed class RowHashUpgradeTests
         var result = await UpgradeAsync(database);
         result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(JurisdictionNotice)} {moved}");
         await using (var db = database.NewContext())
-            (await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.Id == kept)).RowHash.Should().StartWith(Canonical.V4Prefix);
+            (await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.Id == kept)).RowHash.Should().StartWith(Canonical.PrefixOf(Canonical.CurrentFormat));
         var bad = await VerifyRecordsAsync(database);
         bad!.Id.Should().Be(moved);
+        bad.Detail.Should().Contain("doesn't cover");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_value_format_5_brought_in_set_under_an_older_hash_is_caught_at_the_upgrade(string provider /* CAP-07 */)
+    {
+        using var database = Seeded(provider);
+        Guid kept, planted;
+        await using (var db = database.NewContext())
+        {
+            var caseId = await db.Cases.Select(c => c.Id).FirstAsync();
+            JurisdictionNotice Notice(string code) => new()
+            {
+                CaseId = caseId, Jurisdiction = code, NotifiedAtUtc = _clock.UtcNow.AddHours(-2), CreatedBy = "alice", CreatedAtUtc = _clock.UtcNow,
+            };
+            var (a, b) = (Notice("NY"), Notice("CA"));
+            db.JurisdictionNotices.AddRange(a, b);
+            await db.SaveChangesAsync();
+            (kept, planted) = (a.Id, b.Id);
+        }
+        foreach (var id in new[] { kept, planted })
+            await AsFormat3Async(database, nameof(JurisdictionNotice), id, async raw => await raw.JurisdictionNotices.SingleAsync(n => n.Id == id));
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            // The trail as v1.9.0 wrote it, before the columns: it doesn't name them at all.
+            var keys = new[] { kept.ToString(), planted.ToString() };
+            foreach (var entry in await raw.AuditLog.Where(a => a.EntityType == nameof(JurisdictionNotice) && keys.Contains(a.EntityId) && a.AfterJson != null).ToListAsync())
+            {
+                var after = JsonNode.Parse(entry.AfterJson!)!.AsObject();
+                foreach (var f in new[] { nameof(JurisdictionNotice.Method), nameof(JurisdictionNotice.Reference), nameof(JurisdictionNotice.NotifiedBy), nameof(JurisdictionNotice.EvidenceId) })
+                    after.Remove(f);
+                entry.AfterJson = after.ToJsonString();
+            }
+            await raw.SaveChangesAsync();
+            // A reference number written into the database: no hash before format 5 can show it, and no trail recorded it.
+            await raw.JurisdictionNotices.Where(n => n.Id == planted).ExecuteUpdateAsync(s => s.SetProperty(n => n.Reference, "PLANTED-1"));
+        }
+
+        var result = await UpgradeAsync(database);
+        result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(JurisdictionNotice)} {planted}");
+        await using (var db = database.NewContext())
+            (await db.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.Id == planted)).RowHash.Should().StartWith(Canonical.V3Prefix,
+                "it isn't signed off with what was planted");
+        var bad = await VerifyRecordsAsync(database);
+        bad!.Id.Should().Be(planted);
         bad.Detail.Should().Contain("doesn't cover");
     }
 

@@ -18,7 +18,7 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// upkeep) when it agrees with what its trail last recorded (<see cref="TrailSnapshot.Agrees"/>), its child rows (a
 /// case's data elements, a step's tactics) are in the trail too, or, with no trail, when it holds what a released
 /// migration wrote (<see cref="MigrationSeededRows"/>);</item>
-/// <item>one whose hash doesn't cover what it holds (a value format 4 brought in) is re-hashed in format 4 the same way,
+/// <item>one whose hash doesn't cover what it holds (a value format 4 brought in) is re-hashed in the current format the same way,
 /// only when it agrees with its trail;</item>
 /// <item>anything else (it disagrees with its trail, it's in none, its hash was cleared or no longer matches) is left as
 /// it is and named in the result, and the check reports it.</item>
@@ -183,7 +183,7 @@ public static class RowHashUpgrade
         return ChildOutsideTheTrail(row, now);
     }
 
-    // Records each row's hash as an audited update (CaseBook's upkeep): the interceptor computes it in format 4 and the
+    // Records each row's hash as an audited update (CaseBook's upkeep): the interceptor computes it in the current format and the
     // entry carries it. The hash is marked changed, so the entry is written even when it was already the format-4 one.
     // BUG-641: a batch whose save fails is saved one row at a time, so one row that won't save doesn't stop every other
     // being recorded; each that still fails is named in <paramref name="unsaved"/>.

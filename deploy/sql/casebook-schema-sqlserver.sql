@@ -4292,3 +4292,48 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [EvidenceId] uniqueidentifier NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [Method] int NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [NotifiedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [Reference] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261018054208_NoticeDetails'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

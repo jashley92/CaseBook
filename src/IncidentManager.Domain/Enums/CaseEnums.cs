@@ -59,3 +59,13 @@ public enum CaseOrigin
     /// <summary>A third-party/vendor event we are managing (e.g., a vendor data breach).</summary>
     ThirdParty = 1
 }
+
+/// <summary>CAP-07: how a regulator was notified. Stored as its number (R8: append only); read from text by name only.</summary>
+public enum NoticeMethod
+{
+    Portal = 0,
+    Letter = 1,
+    Email = 2,
+    Phone = 3,
+    Other = 4
+}
