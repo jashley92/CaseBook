@@ -192,8 +192,14 @@ public sealed class StixExportService
         }));
     }
 
-    /// <summary>CAP-09: <see cref="IocFeed.Fingerprint"/> for this format, which also names the organization.</summary>
-    public string Fingerprint(IocFeed feed) => feed.Fingerprint("stix|" + OrgName);
+    /// <summary>
+    /// CAP-09: <see cref="IocFeed.Fingerprint"/> for this format, which also names the organization. CAP-09 review: and the
+    /// default marking, which the bundle always lists (and which marks the report when it's the strictest), so changing it
+    /// isn't answered 304 even where every indicator carries a marking of its own.
+    /// </summary>
+    public string Fingerprint(IocFeed feed) =>
+        feed.Fingerprint(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"stix|{OrgName}|{(int)_reporting.CurrentValue.EffectiveDefaultTlp}"));
 
     private static string FeedDescription(IocFeed feed)
     {
@@ -202,7 +208,7 @@ public sealed class StixExportService
             text += $" Only those added or changed since {Ts(since)}; indicators that left the feed aren't listed.";
         if (feed.Cut)
             text += string.Create(CultureInfo.InvariantCulture,
-                $" Cut: more than {feed.Limit:N0} indicator occurrences match, so this holds the {feed.Limit:N0} most recently changed.");
+                $" Cut: more than {feed.Limit:N0} indicator occurrences match, so this holds the most recently changed indicators, each whole, up to {feed.Limit:N0} occurrences.");
         return text;
     }
 

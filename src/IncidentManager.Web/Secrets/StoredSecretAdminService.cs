@@ -127,7 +127,7 @@ public sealed class StoredSecretAdminService(
         else
         {
             change = row.ProtectedValue is null ? "set" : "replaced";
-            row.ProtectedValue = store.Protect(kind, value);
+            row.ProtectedValue = Protect(kind, value);
             row.SetAtUtc = now;
             row.SetBy = who;
         }
@@ -150,6 +150,21 @@ public sealed class StoredSecretAdminService(
         await audit.RecordAsync(adding ? AuditAction.Create : AuditAction.Update, AuditEntity, d.Name, null,
             $"{char.ToUpperInvariant(d.Label[0])}{d.Label[1..]} {change} in Administration.", ct);
         siem?.Emit(SecurityEvents.SettingChanged(d.Name, user.UserId, user.UserPrincipalName));
+    }
+
+    // CAP-40 review: Data Protection wraps a key ring it can't read or write (DataProtection:KeyPath unwritable, a key it
+    // can't create) in a CryptographicException, which the card didn't catch: the circuit died. Worded, as a refusal is, so
+    // the card says what to fix; nothing is written. Never the value.
+    private string Protect(StoredSecretKind kind, string value)
+    {
+        try { return store.Protect(kind, value); }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            throw new InvalidOperationException(
+                $"The {StoredSecretDefinition.For(kind).Label} couldn't be encrypted on this server ({(ex.InnerException ?? ex).GetType().Name}), so nothing " +
+                "was saved. Check that the Data Protection key ring (DataProtection:KeyPath) is there and the app pool can write to it; " +
+                "see Diagnostics.", ex);
+        }
     }
 
     // As AdminActionPermissions.Require does for the Application services: Administer, a refusal streamed to the SIEM.

@@ -662,7 +662,7 @@ public class Case : AuditableEntity, IHashableEntity
             AddBriefVersion(summary, cur?.WorkingAssessment, cur?.Known, cur?.OpenQuestions, cur?.NextSteps,
                 actor, nowUtc, requireContent: false, appended: true);   // WF-30
         }
-        DetectionCaseId = detectionCaseId;
+        DetectionCaseId = detectionCaseId?.Trim();   // CAP-14 review: trimmed, as the import matches it
         DataTypesInvolved = dataTypesInvolved;
         ImpactedAssets = impactedAssets;
         DetectedAtUtc = detectedAtUtc;

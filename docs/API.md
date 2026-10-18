@@ -149,14 +149,21 @@ with **ViewCases**.
 - **`?since=<ISO 8601>`**: only indicators with an occurrence added or changed (a verdict, a marking, an edit) at or
   after that time, for example `?since=2026-10-18T00:00:00Z` (a time without an offset is UTC; write a `+` offset as
   `%2B`). A delta can't list what **left** the feed, so take a full pull (no `since`) now and then to drop those. The
-  CSV says the delta's start in a comment line, the STIX report in `x_casebook_since`.
+  CSV says the delta's start in a comment line, the STIX report in `x_casebook_since`. `since` picks **which**
+  indicators are in the delta, never what a row says: each one is aggregated over all its occurrences, as in a full
+  pull, so an indicator marked TLP:RED on an old case and TLP:GREEN on a case changed since comes back TLP:RED, with
+  both cases and the old first-seen. The ETag also covers the default TLP (`Reporting:DefaultTlp`) for STIX, so
+  changing the default isn't answered `304`.
 
-**Bounds.** A feed reads at most **100,000** indicator occurrences, the most recently changed first. Past that it holds
-those 100,000 and says it was cut: the `X-CaseBook-Truncated: true` header, a `# Cut: …` line at the top and the end of
-the CSV, and `x_casebook_truncated: true` with a sentence in the STIX report's description. A blocklist that size
-needs curating in CaseBook.
+**Bounds.** A feed reads at most **100,000** indicator occurrences, cut by whole indicators: the most recently changed
+indicators first (by their latest change), each with all its occurrences, as many as fit. An indicator is never cut
+part-way, so a cut can't loosen its marking or drop one of its cases. Past the bound the feed says it was cut: the
+`X-CaseBook-Truncated: true` header, a `# Cut: …` line at the top and the end of the CSV, and
+`x_casebook_truncated: true` with a sentence in the STIX report's description. A blocklist that size needs curating in
+CaseBook.
 
-**Rate limit.** Per token, separately from the other endpoints: a burst of 20 pulls, then one a minute
+**Rate limit.** Per token (by the token itself, not its owner, so two personal tokens of one user each have their own
+budget), separately from the other endpoints: a burst of 20 pulls, then one a minute
 (`RateLimiting:ApiFeeds`, see [configuration](operations/configuration.md)). Both formats share it. A pull every
 few minutes in both formats stays well inside it.
 

@@ -213,7 +213,15 @@ public sealed class SmtpSignInAdminService(
         {
             storedChange = row.ProtectedPassword is null ? "set" : "replaced";
             row.Username = name;
-            row.ProtectedPassword = store.Protect(newPassword);
+            // CAP-40 review (as StoredSecretAdminService): a key ring Data Protection can't use is a worded refusal the form
+            // shows, not a CryptographicException that ends the circuit. Nothing is written.
+            try { row.ProtectedPassword = store.Protect(newPassword); }
+            catch (CryptographicException ex)
+            {
+                throw new InvalidOperationException(
+                    $"The password couldn't be encrypted on this server ({(ex.InnerException ?? ex).GetType().Name}), so nothing was saved. " +
+                    "Check that the Data Protection key ring (DataProtection:KeyPath) is there and the app pool can write to it; see Diagnostics.", ex);
+            }
             row.PasswordSetAtUtc = now;
             row.PasswordSetBy = who;
         }

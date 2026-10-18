@@ -1333,6 +1333,7 @@
         {
             null => ("im-badge im-b-ok", $"{what} set in server configuration"),
             { Unreadable: true } => ("im-badge im-b-danger", $"{what} saved in Administration can't be decrypted: re-enter it"),
+            { Unread: true } => ("im-badge im-b-warn", $"{what}: can't tell, the database isn't answering"),   // CAP-40 review
             { Set: true } => ("im-badge im-b-ok", $"{what} saved in Administration"),
             _ => ("im-badge im-b-warn", none),
         };

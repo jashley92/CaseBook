@@ -159,6 +159,38 @@ public sealed class ImportTargetingTests : IDisposable
         review.ExistingCaseId.Should().BeNull();
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_stored_id_with_a_stray_space_or_a_non_ascii_letter_matches_once_and_as_the_target_check_does(string provider)
+    {
+        // CAP-14 review: ids saved before CaseService trimmed them (set here directly, as an old row holds them), and a
+        // non-ASCII one. Each resolves to exactly one case on either database, and CheckTargetAsync agrees.
+        _db = TestDatabase.Open(provider);
+        var svc = Import(_reviewer);
+        var leading = Add(1, " INC-1001");
+        var trailing = Add(2, "INC-1002 ");
+        var accented = Add(3, "Café-1003");
+
+        foreach (var (search, expected) in new[] { ("inc-1001", leading), ("INC-1002", trailing), ("CAFé-1003", accented), (" café-1003 ", accented) })
+        {
+            var found = await svc.FindOpenByDetectionIdAsync(search);
+            found.Should().ContainSingle(search).Which.Id.Should().Be(expected.Id);
+            (await svc.CheckTargetAsync(Doc(search, expected.Id))).Should().BeNull($"\"{search}\" is the id {expected.CaseNumber} carries");
+        }
+
+        // ASCII letters fold, others are compared as written, on SQL Server (whose UPPER folds É) as on SQLite (whose doesn't).
+        (await svc.FindOpenByDetectionIdAsync("CAFÉ-1003")).Should().BeEmpty();
+        (await svc.CheckTargetAsync(Doc("CAFÉ-1003", accented.Id))).Should().Contain("name different cases");
+    }
+
+    [Fact]
+    public void A_detection_id_is_trimmed_when_a_case_is_edited()
+    {
+        var now = _clock.UtcNow;
+        var c = Case.Open(2026, 1, "case1", "Case 1", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", now.AddDays(-1));
+        c.UpdateDetails(c.Title, c.Summary, "  INC-2001 ", null, null, c.DetectedAtUtc ?? now, null, "ic1", now);
+        c.DetectionCaseId.Should().Be("INC-2001");
+    }
+
     // ── CAP-13 ───────────────────────────────────────────────────────────────────────────────────
 
     [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]

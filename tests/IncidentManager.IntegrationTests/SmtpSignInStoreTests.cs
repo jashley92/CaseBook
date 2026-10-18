@@ -145,6 +145,29 @@ public sealed class SmtpSignInStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task A_key_ring_that_cant_protect_is_a_worded_refusal_not_a_dead_circuit()
+    {
+        // CAP-40 review: Data Protection wraps a key ring it can't write in a CryptographicException, which the form didn't catch.
+        var broken = new SmtpSignInStore(_services.GetRequiredService<IServiceScopeFactory>(), new ThrowingProtection(), _log);
+        var admin = new SmtpSignInAdminService(broken, Factory, new TestOptionsMonitor<EmailOptions>(_email), _admin, _audit, _clock, _siem);
+        var secret = NewSecret();
+        var save = () => admin.SaveAsync(SmtpSignInMode.Password, "casebook@contoso.example", secret);
+        var refused = (await save.Should().ThrowAsync<InvalidOperationException>()).Which;
+        refused.Message.Should().Contain("couldn't be encrypted").And.Contain("DataProtection:KeyPath").And.NotContain(secret);
+        (await RowAsync()).Should().BeNull("nothing was written");
+        _audit.Summaries.Should().BeEmpty();
+    }
+
+    private sealed class ThrowingProtection : IDataProtectionProvider, IDataProtector
+    {
+        public IDataProtector CreateProtector(string purpose) => this;
+        public byte[] Protect(byte[] plaintext) =>
+            throw new System.Security.Cryptography.CryptographicException("An error occurred during a cryptographic operation.",
+                new UnauthorizedAccessException("Access to the key ring path is denied (test)."));
+        public byte[] Unprotect(byte[] protectedData) => throw new System.Security.Cryptography.CryptographicException("test");
+    }
+
+    [Fact]
     public async Task Only_an_administrator_may_save_it()
     {
         var save = () => Admin(new TestCurrentUser { UserId = "analyst1" }).SaveAsync(SmtpSignInMode.Password, "u", NewSecret());
