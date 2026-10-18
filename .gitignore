@@ -38,6 +38,7 @@ BUG-BACKLOG.md
 REDESIGN-BACKLOG.md
 REVIEW-BACKLOG.md
 WORKFLOW-BACKLOG.md
+CAPABILITY-BACKLOG.md
 
 # Filled-in install answers file (names AD groups/hosts/account) — the *.template.psd1 stays tracked.
 casebook.config.psd1
