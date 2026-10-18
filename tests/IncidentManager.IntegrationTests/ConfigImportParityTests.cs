@@ -99,6 +99,11 @@ public sealed class ConfigImportParityTests : IDisposable
             { Settings = Set(b.Settings, s => s.Key == "Reporting:OrganizationName", s => s with { Value = "Contoso" }) }),
         ["setting added"] = new(nameof(ConfigBundle.Settings), b => b with
             { Settings = [.. b.Settings, new ConfigSetting("Taxonomy:Classification:Label:Breach", "Major incident")] }),
+        // CAP-10 and CAP-15: the retention-review email and the access-review reminder travel in a bundle as settings.
+        ["retention email turned on"] = new(nameof(ConfigBundle.Settings), b => b with
+            { Settings = [.. b.Settings, new ConfigSetting("Notifications:RetentionReview:Email", "true"), new ConfigSetting("Retention:CaseYears", "10")] }),
+        ["access review reminder set"] = new(nameof(ConfigBundle.Settings), b => b with
+            { Settings = [.. b.Settings, new ConfigSetting("Governance:AccessReview:ReminderDays", "30")] }),
         ["role changed"] = new(nameof(ConfigBundle.Roles), b => b with
             { Roles = Set(b.Roles, r => r.Name == "IR Lead", r => r with { PermissionsCsv = "EditCases,ViewCases,ViewAllCases" }) }),
         ["role permissions reordered"] = new(nameof(ConfigBundle.Roles), b => b with

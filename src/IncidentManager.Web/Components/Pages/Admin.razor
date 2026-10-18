@@ -32,6 +32,8 @@
 @inject IncidentManager.Web.Secrets.StoredSecretAdminService StoredSecretAdmin
 @inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Infrastructure.Notifications.EmailOptions> EmailOptions
 @inject ISeverityLabels SevLabels
+@inject IncidentManager.Application.Notifications.RetentionReviewState RetentionCount
+@inject AccessReviewService AccessReviews
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IDisposable
@@ -1405,8 +1407,35 @@
         checks.Add(new HealthCheck("Schema up to date", _pendingMigrations is { Count: 0 },
             _pendingMigrations is { Count: > 0 } ? $"{_pendingMigrations.Count} pending" : "no pending migrations"));
 
+        // CAP-10: the nightly retention count (every case but exercises). A reminder only: the review archives nothing itself.
+        checks.Add(RetentionCount.Last switch
+        {
+            null => new HealthCheck("Retention review", true, "not counted yet (it's counted within minutes of start-up, then daily)"),
+            { Years: 0 } => new HealthCheck("Retention review", true, "off (case retention is 0 years)"),
+            { Due: 0 } c => new HealthCheck("Retention review", true,
+                $"no closed case is past {IncidentManager.Application.Common.Plural.Of(c.Years, "year")} · counted {c.CountedAtUtc:u}"),
+            var c => new HealthCheck("Retention review", false,
+                $"{IncidentManager.Application.Common.Plural.Of(c.Due, "closed case")} past {IncidentManager.Application.Common.Plural.Of(c.Years, "year")} waiting for review ({c.UnderHold:N0} under a legal hold), " +
+                $"counted {c.CountedAtUtc:u}. Review them under Retention review."),
+        });
+        // CAP-15: the periodic access review, recorded under Roles & access, reminded as the evidence-key drill is.
+        var lastReview = await AccessReviews.GetLastReviewAsync();
+        var reminder = AccessReviewService.ReminderFor(lastReview, AccessReviews.ReminderDays, DateTimeOffset.UtcNow);
+        checks.Add(new HealthCheck("Access review", !reminder.Due, reminder switch
+        {
+            { Off: true } => "reminder off" + (lastReview is { } l0 ? $" · last recorded {Day(l0.AtUtc)} by {l0.Reviewer}" : ""),
+            _ when lastReview is null => "No access review has been recorded. Review Roles & access and record it there.",
+            { Due: true } => $"Last recorded {Day(lastReview.AtUtc)} by {lastReview.Reviewer}, more than {IncidentManager.Application.Common.Plural.Of(AccessReviews.ReminderDays, "day")} ago: " +
+                             "review Roles & access and record it there.",
+            _ => $"last recorded {Day(lastReview.AtUtc)} by {lastReview.Reviewer} · next due {Day(reminder.DueAtUtc)}",
+        }));
+
         return checks;
     }
+
+    // BUG-531: a date in Diagnostics is Gregorian whatever the server culture.
+    private static string Day(DateTimeOffset? at) =>
+        at?.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "";
 
     private HealthCheck WritableCheck(string label, string? path)
     {

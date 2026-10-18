@@ -33,7 +33,7 @@ public static class AdminActionPermissions
         typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService), typeof(ReportTemplateService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
         typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
-        typeof(ApiTokenService), typeof(AccessReviewService),
+        typeof(ApiTokenService), typeof(AccessReviewService), typeof(RetentionReviewService),
     ];
 
     public static readonly IReadOnlyDictionary<string, Permission> Required =
@@ -95,6 +95,11 @@ public static class AdminActionPermissions
             [Key<ComplianceBundleService>(nameof(ComplianceBundleService.BuildAsync))] = Permission.Administer,
             [Key<ComplianceBundleService>(nameof(ComplianceBundleService.WriteAsync))] = Permission.Administer,   // BUG-256
             [Key<AccessReviewService>(nameof(AccessReviewService.BuildAsync))] = Permission.Administer,
+            [Key<AccessReviewService>(nameof(AccessReviewService.GetLastReviewAsync))] = Permission.Administer,   // CAP-15
+            [Key<AccessReviewService>(nameof(AccessReviewService.RecordReviewAsync))] = Permission.Administer,    // CAP-15
+            // CAP-10: the retention review and its archive batch (each case through CaseService.SetArchivedAsync too).
+            [Key<RetentionReviewService>(nameof(RetentionReviewService.BuildAsync))] = Permission.Administer,
+            [Key<RetentionReviewService>(nameof(RetentionReviewService.ArchiveAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.QueryAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.ActorsAsync))] = Permission.Administer,
             [Key<ApiTokenService>(nameof(ApiTokenService.ListAllAsync))] = Permission.Administer,

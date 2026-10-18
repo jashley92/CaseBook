@@ -199,7 +199,10 @@ process's working directory, which under IIS is the site folder.
 | Key | Purpose | Default | Edit |
 |---|---|---|---|
 | `Governance:LegalHoldRelease:RequireSecondApprover` | Two-person control for releasing a legal hold | `false` | App |
-| `Retention:CaseYears` | Described as "years before a closed case can be archived". **Nothing reads it** ([known issues](../reference/known-issues.md)). | `7` | App |
+| `Retention:CaseYears` | Years after closing before a case is listed under Administration › Retention review for an administrator to archive (CAP-10). Nothing is archived or deleted automatically. `0` turns the review (and its nightly count) off; at most 100 (a larger value in the file counts as 100). | `7` | App |
+| `Notifications:RetentionReview:Email` | Once a calendar month (organization time zone), when cases are past `Retention:CaseYears`, email the Legal / Privacy distribution how many are waiting and how many are under a hold: counts only, no case named (CAP-10). Needs `Email:LegalDistribution`; a month whose email fails goes again on the next nightly count | `false` | App |
+| `Notifications:RetentionReview:IntervalHours` | Hours between the retention review's counts (`0` also means 24; at most 744) | `24` | Server |
+| `Governance:AccessReview:ReminderDays` | Diagnostics flags the access review as due when none has been recorded under Roles & access in this many days, or none ever has (CAP-15). `0` turns the reminder off; at most 730 | `90` | App |
 | `Evidence:MaxUploadMB` | The largest single evidence file, in MB (1 to 65,536). Files over 100 MB upload in 8 MB parts with a progress bar (PROD-56). | `500` | App |
 | `Evidence:StorageQuotaGB` | The most all stored evidence may take, in GB; an upload that would pass it is refused and uploaders are warned at 90 %. `0` is no limit. Two uploads at once may together go slightly over. | `0` | App |
 | `Evidence:MinFreeSpaceGB` | An upload is refused if it would leave less than this free on the evidence store's volume or share. | `10` | App |

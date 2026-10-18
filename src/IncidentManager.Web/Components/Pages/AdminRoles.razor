@@ -5,6 +5,7 @@
 @inject AccessReviewService AccessReview
 @inject ToastService Toasts
 @inject TimeDisplay TimeDisp
+@inject IClock Clock
 
 <PageTitle>Roles &amp; access</PageTitle>
 
@@ -174,9 +175,48 @@ else
 }
 
 @* ---------- Access review ---------- *@
-<h4 class="mt-4 mb-2">Access review</h4>
-<p class="text-muted small">Who can see restricted cases and why, and who holds each role.
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-4 mb-2">
+    <h4 class="mb-0">Access review</h4>
+    @* CAP-15: the review as a file for the auditor (the access log and SIEM 5304, like every export). *@
+    <a class="btn btn-sm btn-outline-secondary" href="export/access-review.csv" download>
+        <span class="bi bi-download" aria-hidden="true"></span> Download (CSV)
+    </a>
+</div>
+<p class="text-muted small">Who can see restricted cases and why, who holds each role, and which API tokens work.
 Broad access comes from roles and their AD groups. Case-level access goes to the incident commander and assignees.</p>
+
+@* CAP-15: that the periodic user-access review (NYDFS 500.7) was done, and when it's next due. *@
+<div class="im-card nc-card mb-3" role="region" aria-labelledby="ar-record-title">
+    <div class="fw-semibold mb-1" id="ar-record-title"><span class="bi bi-clipboard-check me-1" aria-hidden="true"></span>Record this review</div>
+    <p class="small mb-2" aria-live="polite">
+        @if (_lastReview is { } last)
+        {
+            <span>Last reviewed <strong>@TimeDisp.DateOnly(last.AtUtc)</strong> by <strong>@last.Reviewer</strong>.</span>
+            <span class="text-muted d-block im-clamp-2" title="@last.Note">@last.Note</span>
+        }
+        else if (_lastLoaded)
+        {
+            <span class="text-muted">No access review has been recorded yet.</span>
+        }
+        @if (_reminder is { Off: false, Due: true })
+        {
+            <span class="im-badge im-b-warn ms-1">Due</span>
+        }
+        else if (_reminder is { Off: false, DueAtUtc: { } next })
+        {
+            <span class="text-muted ms-1">Next due @TimeDisp.DateOnly(next).</span>
+        }
+    </p>
+    <label class="form-label small mb-1" for="ar-note">What you reviewed, and what came of it</label>
+    <textarea id="ar-note" class="form-control form-control-sm mb-2" rows="2" maxlength="@AccessReviewService.MaxNoteLength"
+              @bind="_reviewNote" @bind:event="oninput"
+              placeholder="For example: checked the roles, AD groups, dormant accounts and API tokens; removed two leavers' groups."></textarea>
+    <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-primary" @onclick="RecordReview"
+                disabled="@(_recording.Busy || string.IsNullOrWhiteSpace(_reviewNote))">Record review</button>
+        <span class="small text-muted">Recorded as you, now, in the audit trail. It can't be edited afterwards.</span>
+    </div>
+</div>
 
 @if (_review is null)
 {
@@ -261,6 +301,36 @@ else
             </tbody>
         </table>
     }
+
+    @* CAP-15: the API tokens that work now, standing access that no sign-in shows. *@
+    <h6 class="text-uppercase small text-muted mt-3">Active API tokens</h6>
+    @if (_review.ApiTokens.Count == 0)
+    {
+        <p class="text-muted">No API token is active.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead><tr><th>Token</th><th>Roles granted</th><th>Last used (@TimeDisp.Label)</th><th>Expires</th></tr></thead>
+                <tbody>
+                    @foreach (var t in _review.ApiTokens)
+                    {
+                        <tr>
+                            <td>
+                                @t.Name <code class="small ms-1">@t.Prefix…</code>
+                                <div class="small text-muted">@(t.Kind == ApiTokenKind.System ? "System token" : $"Personal token of {t.Owner}")</div>
+                            </td>
+                            <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> }</td>
+                            <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "Never")</td>
+                            <td class="small">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="small text-muted">A personal token acts only within its owner's current roles. Revoke tokens under <a href="admin/api-tokens">API tokens</a>.</p>
+    }
 }
 
 
@@ -314,9 +384,40 @@ else
         var roles = await Roles.ListRolesAsync();
         var mappings = await Roles.ListMappingsAsync();
         var review = await AccessReview.BuildAsync();
+        var last = await AccessReview.GetLastReviewAsync();   // CAP-15
         if (!_load.IsCurrent(t)) return;
         (_roles, _mappings, _review) = (roles, mappings, review);
+        ShowLastReview(last);
         if (string.IsNullOrEmpty(_newRole) && _roles.Count > 0) _newRole = _roles[0].Name;
+    }
+
+    // CAP-15: the last recorded review and when the next is due (Governance:AccessReview:ReminderDays).
+    private AccessReviewRecord? _lastReview;
+    private bool _lastLoaded;
+    private AccessReviewReminder? _reminder;
+    private string _reviewNote = "";
+    private readonly InFlight _recording = new();
+
+    private void ShowLastReview(AccessReviewRecord? last)
+    {
+        (_lastReview, _lastLoaded) = (last, true);
+        _reminder = AccessReviewService.ReminderFor(last, AccessReview.ReminderDays, Clock.UtcNow);
+    }
+
+    private Task RecordReview() => _recording.Run(RecordReviewCore);
+
+    private async Task RecordReviewCore()
+    {
+        var note = _reviewNote;
+        try { await AccessReview.RecordReviewAsync(note); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        _reviewNote = DraftText.ClearIfUnchanged(_reviewNote, note);   // C7: text typed meanwhile stays
+        Toasts.Success("Access review recorded");
+        await LoadAsync();
     }
 
     private void BeginCreate() => _editing = new RoleEdit { IsNew = true };

@@ -104,6 +104,7 @@ public partial class CaseAudienceGateTests
         ["EvidenceKeyring.cs:EncryptedFileKeyIdAsync"] = (1, "PROD-57 review finding 3: before a new evidence key is made, every stored file's path and recorded size, to tell plain files from encrypted ones without opening them; its result is a key id or nothing"),
         ["EvidenceConversion.cs:RunAsync"] = (2, "PROD-57: the background encryption of files stored before, over every evidence file and report; it reads storage paths and hashes only, and its result is counts"),
         ["EvidenceIntegrityVerifier.cs:VerifyShareAsync"] = (2, "the evidence integrity sweep over every file (or a share of them, PROD-53); its result is counts and alerts, not case content"),
+        ["RetentionReviewScanner.cs:CountAsync"] = (1, "CAP-10: the nightly retention count over every case; its result is two numbers (due, under hold), no case named"),
         ["AccessLogRetention.cs:PruneAsync"] = (2, "PROD-52: the nightly access-log prune deletes old rows and reads a case only for its legal hold; nothing is shown to anyone"),
         ["RowIntegrityVerifier.cs:Tables"] = (26, "the list of hashed tables the integrity check verifies, every row"),
         ["RowIntegrityVerifier.cs:ReplacedButCurrentAsync"] = (7, "the integrity check's version-lineage test over every row"),
@@ -126,6 +127,7 @@ public partial class CaseAudienceGateTests
     {
         ["OnReclassifiedAsync"] = "goes to the configured Legal distribution and the shared channel, not to a person on the case",
         ["OnExecutiveReportAsync"] = "a program-wide quarterly report (no one case's), sent to the Managers (CaseNotifications.ManagersAsync)",
+        ["OnRetentionReviewDueAsync"] = "CAP-10: counts only, no case named, to the configured Legal distribution (not a person on a case)",
     };
 
     // Web files that may use the database context, with why.

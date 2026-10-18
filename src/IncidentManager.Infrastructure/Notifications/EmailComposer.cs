@@ -269,6 +269,11 @@ public sealed partial class EmailComposer : IEmailComposer
             ["Origin"] = "XSIAM",
             ["SubmittedBy"] = "XSIAM playbook token",
             ["Imports"] = "3 API imports",   // CAP-01 review: digest-imports
+            // CAP-10: retention-review
+            ["CaseCount"] = "12 cases",
+            ["Years"] = "7 years",
+            ["HeldCount"] = "2",
+            ["CountedAt"] = "2026-10-01 02:00 UTC",
         };
         var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

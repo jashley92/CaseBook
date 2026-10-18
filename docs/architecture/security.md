@@ -118,7 +118,7 @@ ones ([decision 0003](../decisions/0003-permissions-as-code-atoms.md)).
 | `ApproveReports` | Approve a report as final |
 | `ViewRestricted` | See every restricted case; lift a restriction |
 | `ManageLegal` | Legal referral, legal hold and its release |
-| `Administer` | Administration, access log, integrity sealing, exports of configuration and compliance bundles, archive |
+| `Administer` | Administration, access log, integrity sealing, exports of configuration and compliance bundles, archive, the retention review (CAP-10), the access review's CSV and recording a review (CAP-15) |
 
 ### System roles
 
@@ -149,7 +149,7 @@ Consequences worth knowing:
 | Pages | `@attribute [Authorize(Policy = "<Permission>")]` | each `Components/Pages/*.razor` |
 | HTTP endpoints | `.RequireAuthorization("<Permission>")` | `Web/Program.cs` |
 | Case actions | `CaseService.Require()` looks up the calling method in `CaseActionPermissions`; **a method with no entry fails closed**; a unit test checks every mutating method is listed; a refusal emits SIEM 5202 | `Application/Cases/CaseService.cs`, `CaseActionPermissions.cs` |
-| Admin actions | `AdminActionPermissions.Require<TService>()`, all `Administer`, fails closed; also the administrator-only reads (compliance bundle, access-log query and actors, every API token) | `Application/Security/AdminActionPermissions.cs` |
+| Admin actions | `AdminActionPermissions.Require<TService>()`, all `Administer`, fails closed; also the administrator-only reads (compliance bundle, access-log query and actors, every API token, the access review and its last recorded review, the retention review) | `Application/Security/AdminActionPermissions.cs` |
 | Other services | Direct checks: evidence upload and transfer (`EditCases`), report generate (`EditCases`) and approve (`ApproveReports`), lessons, import decisions, API tokens | each service |
 | Data visibility | `ForUser()` on every case query (below) | `Application/Cases/CaseQueryExtensions.cs` |
 | UI | `AuthorizeView` and `CanEdit` flags hide controls | components (cosmetic) |

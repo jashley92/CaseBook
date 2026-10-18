@@ -17,20 +17,21 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Email templates | `/admin/email-templates` | Subject and body of every notification email, with preview (the branded shell is fixed) |
 | Integrations | `/admin/settings/integrations` | Detection-source label and link template, VirusTotal link template |
 | Regulatory deadlines | `/admin/settings/regulatory-deadlines` | Deadline clock on/off, start basis, default window, per-jurisdiction rules |
-| Governance & security | `/admin/settings/governance` | Retention (shown, unused), integrity (auto-seal, evidence re-hash), access logging scope and coalescing, idle timeout, two-person legal-hold release |
+| Governance & security | `/admin/settings/governance` | Retention (case retention for the retention review, the monthly retention email to Legal, access-log retention), integrity (auto-seal, evidence re-hash), access logging scope and coalescing, idle timeout, the access-review reminder, two-person legal-hold release |
+| Retention review | `/admin/retention` | CAP-10: closed cases past case retention, with each one's legal hold, open improvement actions and regulatory notices not recorded; archive up to 25 at a time after seeing them listed. Nothing is purged |
 | Case templates | `/admin/templates` | Playbooks: defaults for the new-case form and steps that become tasks |
 | Stage gates | `/admin/gates` | One gate per trigger: requirements, blocking or advisory, minimum reason length |
 | Taxonomy labels | `/admin/taxonomy` | Rename, hide or reorder display labels for six lists: classifications, phases, entity types, dispositions, timeline entry types and relationship types (display only; stored values don't change). Severity labels are under Response & SLA |
 | Data elements | `/admin/data-elements` | Personal-data categories and their notification jurisdictions; archive or (if unused) delete |
 | Case outcomes | `/admin/outcomes` | What a case can conclude when it closes; add, relabel, describe, reorder, archive or (if unused) delete |
 | Response & SLA | `/admin/settings/sla` | SLA targets per severity, breach overrides, at-risk threshold, severity labels |
-| Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings |
+| Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings; the access review (broad access, restricted cases, known users, active API tokens) with its CSV, and **Record this review** (CAP-15) |
 | API tokens | `/admin/api-tokens` | System tokens for machine producers |
 | Server configuration | `/admin/settings/server` | Read-only view of server-side settings (secrets as present or absent, and where from: the server's configuration or Administration); and the **SIEM webhook token** card (CAP-40: write-only, as the chat URL's, with *Send test event* beside it) |
 | Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from |
 | Configuration bundle | `/admin/config-bundle` | Export, diff and import editable configuration |
 | Updates | `/admin/settings/updates` | The running version and the last upgrade; the update check (off by default: one anonymous call a day to the GitHub Releases API) with each newer release's notes; the exact elevated command to upgrade this site |
-| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the email relay sign-in check, a "re-enter" check for a saved chat URL or SIEM token that can't be decrypted here (CAP-40), SIEM test event, writable-path checks |
+| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the email relay sign-in check, a "re-enter" check for a saved chat URL or SIEM token that can't be decrypted here (CAP-40), SIEM test event, writable-path checks, the retention review's nightly count (CAP-10) and the access-review reminder (CAP-15) |
 | Style guide | `/admin/style` | Live design-system reference for developers |
 | Access log | `/access-log` (main navigation) | Who read which case or downloaded what |
 
@@ -61,6 +62,53 @@ with `{0}` where the value goes.
 - The installer seeds mappings from `RoleMapping:Groups` only on first start; afterwards they're managed here.
 
 ![Roles](../screenshots/roles-access.png)
+
+## Access review (CAP-15)
+
+Below the roles and mappings, **Access review** shows who can see across cases (roles granting all cases or restricted
+cases, and the AD groups that confer them), each restricted case's incident commander and assignees, everyone who has
+signed in with their roles at that sign-in (idle more than 90 days is flagged dormant), and the **API tokens** that work
+now (not revoked, not expired) with the roles each was granted, when it was last used and when it expires. A personal
+token acts only within its owner's current roles.
+
+- **Download (CSV)** (`/export/access-review.csv`): the same review, one row per role, case, user and token with a
+  `section` column, and the last recorded review on the second line. It's recorded in the access log and sent as SIEM
+  5304, like every export.
+- **Record this review**: say what you reviewed and what came of it (up to 1,000 characters), then *Record review*. It's
+  recorded as you, now, as an entry in the audit trail (entity type `AccessReview`), not as case data, so it's chained,
+  sealed and can't be edited. The card shows **Last reviewed … by …** and when the next is due.
+- **Reminder**: Diagnostics flags *Access review* when none has been recorded in `Governance:AccessReview:ReminderDays`
+  (default 90; 0 turns it off), or when none has ever been recorded. It's worked out when the page opens, from the audit
+  trail, as the evidence-key drill's reminder is from the key's record.
+
+To find past reviews, filter the audit trail (Integrity & audit) by the entity type *AccessReview*.
+
+## Retention review (CAP-10)
+
+`Retention:CaseYears` (Governance & security, default 7) decides when a closed case is listed under **Retention review**:
+closed more than that many years ago and not archived. 0 turns the review off. Exercises aren't listed. The list is your
+own need-to-know view: an administrator without the clearance for a restricted case doesn't see it.
+
+Each row shows the case, when it closed, its **legal hold** (and a release requested), its **open improvement actions**
+(they don't stop archiving; they're tracked under Program whatever their case's state) and each **regulatory notice not
+recorded** with its due date. A case under a legal hold, or with a notice not recorded while the deadline clock is on,
+can't be archived, and says so instead of offering *Archive*.
+
+1. Tick the cases to archive (at most 25; the header box ticks the first 25 that can be archived), or use a row's
+   *Archive*.
+2. *Archive selected* lists the cases by number and asks you to confirm.
+3. Each is archived through the case's own archive action, as you, one save each: the case still refuses a hold or a
+   running deadline, and a case reopened or archived since the list loaded is left alone. The page says what happened to
+   each.
+
+Archiving takes a case off the lists, dashboards and reminders; it stays in the record and the audit trail and can be
+restored from its page. **Nothing is deleted.** Purging stays out of CaseBook until it can have two-person control.
+
+A job counts the cases past retention once a day (and a few minutes after start-up, or after the setting changes) for
+Diagnostics, across every case but exercises, so it can count cases your list doesn't show. With
+**Monthly retention-review email to Legal** on (off by default), the Legal / Privacy distribution is told once a calendar
+month how many cases are waiting and how many are under a hold: counts only, no case named, no link. The email's wording
+is the *Retention review (Legal / Privacy)* email template. The job only counts and tells (ADR 0004): it never archives.
 
 **Reference data in the SIEM (CAP-06).** Every save on the pages below (case templates, stage gates, taxonomy labels,
 data elements and their regulatory deadline rules, case outcomes, report profiles, Word and email templates), and a configuration
