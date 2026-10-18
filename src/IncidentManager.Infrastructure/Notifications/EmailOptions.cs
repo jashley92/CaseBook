@@ -17,6 +17,28 @@ public sealed class EmailOptions
     /// </summary>
     public bool EnableSsl { get; set; } = true;
 
+    /// <summary>
+    /// CAP-05: the account to sign in to the relay as (AUTH), e.g. <c>casebook@contoso.com</c>. Blank (the default) sends
+    /// without signing in, as before. Server-side config only (ADR 0007), with <see cref="SmtpPassword"/>.
+    /// </summary>
+    public string SmtpUsername { get; set; } = "";
+
+    /// <summary>
+    /// CAP-05: <see cref="SmtpUsername"/>'s password, resolved through the secret provider at each send: a
+    /// <c>@protected:</c> value (encrypted to a certificate in the store, ADR 0018), an <c>@cyberark:</c> reference, or a
+    /// literal (plain text in the file; Diagnostics warns). Never logged or shown.
+    /// </summary>
+    public string SmtpPassword { get; set; } = "";
+
+    /// <summary>
+    /// CAP-05: sign in as the app-pool account (a gMSA) with integrated Windows authentication (NTLM/Kerberos), with no
+    /// password anywhere: for on-premises Exchange. Off by default; can't be used with <see cref="SmtpUsername"/>.
+    /// </summary>
+    public bool SmtpUseDefaultCredentials { get; set; }
+
+    /// <summary>CAP-05: how long a send may take before it's given up as not reached (BUG-99); 5 to 300, default 30.</summary>
+    public int SmtpTimeoutSeconds { get; set; } = 30;
+
     public string From { get; set; } = "incident-manager@localhost";
 
     /// <summary>Recipients notified when a case is escalated to a Breach (Legal/Privacy distribution).</summary>

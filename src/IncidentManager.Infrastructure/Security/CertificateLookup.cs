@@ -46,6 +46,38 @@ public static class CertificateLookup
         return cert;
     }
 
+    /// <summary>
+    /// CAP-05: the certificate with <paramref name="thumbprint"/> in <paramref name="storeLocation"/>\My for its RSA public key
+    /// only (encrypting to it, as <c>casebook-keytool protect-secret</c> does, needs no private key, so an administrator can
+    /// protect a secret for a key only the app-pool account may read). Throws as <see cref="FindRsa"/> does. The caller
+    /// disposes it.
+    /// </summary>
+    public static X509Certificate2 FindPublic(string thumbprint, string storeLocation, string setting)
+    {
+        var normalized = Normalize(thumbprint);
+        if (normalized.Length == 0) throw new InvalidOperationException($"{setting} is empty.");
+        // C16: by name only (a number isn't a store).
+        if (!IncidentManager.Domain.Common.EnumNames.TryParse<StoreLocation>(storeLocation, out var location, ignoreCase: true))
+            throw new InvalidOperationException($"'{storeLocation}' isn't LocalMachine or CurrentUser.");
+        using var store = new X509Store(StoreName.My, location);
+        try { store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly); }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            throw new InvalidOperationException($"The {location}\\My certificate store can't be opened here ({ex.Message}).", ex);
+        }
+        var found = store.Certificates.Find(X509FindType.FindByThumbprint, normalized, validOnly: false);
+        var cert = found.Count > 0 ? found[0] : null;
+        foreach (var other in found.Skip(1)) other.Dispose();
+        if (cert is null) throw new InvalidOperationException($"No certificate with thumbprint {normalized} in {location}\\My ({setting}).");
+        using var probe = cert.GetRSAPublicKey();
+        if (probe is null)
+        {
+            cert.Dispose();
+            throw new InvalidOperationException($"The certificate {normalized} isn't an RSA certificate.");
+        }
+        return cert;
+    }
+
     public static string Normalize(string thumbprint) =>
         new string(thumbprint.Where(char.IsAsciiHexDigit).ToArray()).ToUpperInvariant();
 }

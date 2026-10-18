@@ -4261,3 +4261,34 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018035849_SmtpSignIn'
+)
+BEGIN
+    CREATE TABLE [SmtpSignIns] (
+        [Id] int NOT NULL,
+        [Mode] nvarchar(16) NOT NULL,
+        [Username] nvarchar(256) NOT NULL,
+        [ProtectedPassword] nvarchar(max) NULL,
+        [PasswordSetAtUtc] datetimeoffset NULL,
+        [PasswordSetBy] nvarchar(256) NULL,
+        [UpdatedAtUtc] datetimeoffset NOT NULL,
+        [UpdatedBy] nvarchar(256) NOT NULL,
+        CONSTRAINT [PK_SmtpSignIns] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018035849_SmtpSignIn'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261018035849_SmtpSignIn'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

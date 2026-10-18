@@ -17,6 +17,12 @@ internal static class KeyToolProgram
                        Rebuild the server's copy of the key onto another certificate.
           export       --site <folder> (--case <number> | --all) --out <folder> [--pfx <file> | --cert <thumbprint> | --shares]
                        Write evidence out as the original files, with a manifest of their SHA-256s.
+          protect-secret [--cert <thumbprint> [--store LocalMachine|CurrentUser] | --site <folder>]
+                       Read a secret (the SMTP password, a webhook token) from the console without echo, or from stdin, and
+                       print it as a @protected: value for appsettings.Production.json. Without --cert, the site's
+                       integrity certificate. Nothing else is printed to stdout.
+          check-secret [<@protected: value>]
+                       Check a @protected: value opens on this machine, as this account. Prints OK or why not; never the secret.
 
           --site is the CaseBook site folder (where appsettings.Production.json is).
           --pfx asks for the PFX's password; --shares asks for the shares one per line.
@@ -69,6 +75,15 @@ internal static class KeyToolProgram
                     var (_, mismatched) = KeyToolCommands.Export(SiteArg(), caseNumber, Opt("--out") ?? throw new ArgumentException("--out is needed."),
                         OpeningArg(), Console.Out);
                     return mismatched == 0 ? 0 : 2;
+                case "protect-secret":
+                    // CAP-05: the prompt and the note go to stderr, so stdout carries the value alone (the installer reads it).
+                    var site = Opt("--site") is { } folder ? Site.Load(folder) : null;
+                    var secret = ReadSecretOnce("Secret to protect: ", confirm: true);
+                    Console.Out.WriteLine(KeyToolCommands.ProtectSecret(secret, Opt("--cert"), Opt("--store") ?? "LocalMachine", site, Console.Error));
+                    return 0;
+                case "check-secret":
+                    var value = rest.Length > 0 && !rest[0].StartsWith("--", StringComparison.Ordinal) ? rest[0] : ReadSecretOnce("@protected: value: ", confirm: false);
+                    return KeyToolCommands.CheckSecret(value, Console.Out) ? 0 : 1;
                 default:
                     Console.Error.WriteLine($"Unknown command '{command}'.");
                     Console.Error.WriteLine(Usage);
@@ -89,6 +104,32 @@ internal static class KeyToolProgram
         var shares = new List<string>();
         while (Console.ReadLine() is { Length: > 0 } line) shares.Add(line.Trim());
         return shares;
+    }
+
+    // CAP-05: a secret read without echo (prompted on stderr), or the first line of stdin when it's redirected (an installer
+    // piping it in). Asked twice when typed, so a typo isn't protected.
+    private static string ReadSecretOnce(string prompt, bool confirm)
+    {
+        if (Console.IsInputRedirected) return (Console.In.ReadLine() ?? "").TrimEnd('\r', '\n');
+        var first = ReadHidden(prompt, Console.Error);
+        if (confirm && ReadHidden("Again, to confirm: ", Console.Error) != first)
+            throw new ArgumentException("The two entries differ; nothing was protected.");
+        return first;
+    }
+
+    private static string ReadHidden(string prompt, TextWriter to)
+    {
+        to.Write(prompt);
+        var secret = new System.Text.StringBuilder();
+        while (true)
+        {
+            var k = Console.ReadKey(intercept: true);
+            if (k.Key == ConsoleKey.Enter) break;
+            if (k.Key == ConsoleKey.Backspace) { if (secret.Length > 0) secret.Length--; continue; }
+            secret.Append(k.KeyChar);
+        }
+        to.WriteLine();
+        return secret.ToString();
     }
 
     private static string ReadSecret(string prompt)

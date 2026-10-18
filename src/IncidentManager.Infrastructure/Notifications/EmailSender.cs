@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Mail;
 using System.Net.Mime;
 using IncidentManager.Application.Abstractions;
@@ -27,14 +28,21 @@ public sealed class EmailSender : IEmailSender, IDisposable
     private readonly ILogger<EmailSender> _log;
     private readonly OutboundCircuit _circuit;
     private readonly IServiceScopeFactory? _scopes;   // BUG-617: where held mail is kept; without it, none can be
+    private readonly ISecretProvider? _secrets;       // CAP-05: resolves Email:SmtpPassword; without it, only a literal works
+    private readonly IDeliveryHealth? _health;        // CAP-04: what Diagnostics shows of the relay
+    private readonly ISmtpSignInSource? _signIns;     // CAP-05: the sign-in saved in Administration, when the server sets none
 
     public EmailSender(IOptionsMonitor<EmailOptions> options, ILogger<EmailSender> log, OutboundCircuit? circuit = null,
-        IServiceScopeFactory? scopes = null)
+        IServiceScopeFactory? scopes = null, ISecretProvider? secrets = null, IDeliveryHealth? health = null,
+        ISmtpSignInSource? signIns = null)
     {
         _options = options;
         _log = log;
         _circuit = circuit ?? new OutboundCircuit();
         _scopes = scopes;
+        _secrets = secrets;
+        _health = health;
+        _signIns = signIns;
         // BUG-617: mail held before a restart is still in its table, so the first drain looks for it.
         if (scopes is not null)
         {
@@ -77,7 +85,8 @@ public sealed class EmailSender : IEmailSender, IDisposable
         }
         try
         {
-            await DeliverAsync(_options.CurrentValue, message.To, message.Subject, message.TextBody, message.HtmlBody, ct);
+            // CAP-05: the admin's test always tries the sign-in, even one refused a moment ago (it's what they're checking).
+            await DeliverAsync(_options.CurrentValue, message.To, message.Subject, message.TextBody, message.HtmlBody, ct, test: true);
             DrainHeldSoon();   // BUG-608: it answers, so the back-off is over
             return new EmailSendOutcome(EmailSendStatus.Sent);
         }
@@ -86,10 +95,19 @@ public sealed class EmailSender : IEmailSender, IDisposable
         catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException or IOException or ArgumentException)
         {
             _log.LogError("Test email to {RecipientCount} recipient(s) failed: {Failure}.", message.To.Count, Failure(ex));   // BUG-657
-            // The innermost message names the actual cause (connection refused, auth required, bad address).
+            // CAP-05: a refused sign-in is named by its code, and the relay's reply isn't echoed (BUG-657 style): it's a
+            // setting to fix, not a relay that's down.
+            if (SignInRefused(ex)) return new EmailSendOutcome(EmailSendStatus.Failed, SignInRefusedText(StatusOf(ex)));
+            // The innermost message names the actual cause (connection refused, bad address, a sign-in setting).
             return new EmailSendOutcome(EmailSendStatus.Failed, ex.GetBaseException().Message);
         }
     }
+
+    // CAP-05: what the admin is told of a refused sign-in: the code and what to check, never the relay's own words.
+    internal static string SignInRefusedText(int? code) =>
+        $"The mail relay refused the sign-in (SMTP {code?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "5xx"}). " +
+        "Check Email:SmtpUsername and its password, or Email:SmtpUseDefaultCredentials and that the relay accepts the " +
+        "app-pool account. Until it's fixed, other sends don't try that sign-in again for an hour, so the account isn't locked out.";
 
     private async Task SendCoreAsync(IReadOnlyCollection<string> to, string subject,
         string textBody, string? htmlBody, CancellationToken ct, CaseAddressees? about = null)
@@ -130,7 +148,8 @@ public sealed class EmailSender : IEmailSender, IDisposable
         if (outcome == SendOutcome.Delivered) DrainHeldSoon();
         // BUG-617: nor would anyone try one the relay didn't take, or turned away only for now (BUG-626). A watched send
         // is tried again by its caller, and a refusal would only be refused again.
-        else if ((outcome is SendOutcome.NotReached or SendOutcome.Transient or SendOutcome.Blocked) && !DeliveryWatch.Watching)   // BUG-652
+        else if ((outcome is SendOutcome.NotReached or SendOutcome.Transient or SendOutcome.Blocked or SendOutcome.SignInRefused)   // BUG-652, CAP-05
+                 && !DeliveryWatch.Watching)
             await HoldAsync(to, subject, textBody, htmlBody, attempts: outcome == SendOutcome.Transient ? 1 : 0, target, about);   // BUG-640
     }
 
@@ -278,6 +297,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
             _drainTimer ??= CreateDrainTimer();
             _drainTimer.Change(delay, Timeout.InfiniteTimeSpan);
         }
+        _health?.RecordNextAttempt(DeliveryHealth.Smtp, due);   // CAP-04
     }
 
     // Created without the caller's context: a scan's delivery watch mustn't count the held mail's failures as its own.
@@ -326,6 +346,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                         Volatile.Write(ref _draining, 0);
                         emptied = true;
                     }
+                    _health?.RecordNextAttempt(DeliveryHealth.Smtp, null);   // CAP-04: nothing waits
                     continue;
                 }
                 var o = _options.CurrentValue;
@@ -345,17 +366,29 @@ public sealed class EmailSender : IEmailSender, IDisposable
                     return;
                 }
                 var outcome = await DeliverHeldAsync(o, target, next);
-                if (outcome != SendOutcome.Blocked) lock (_gate) _blockedDrains = 0;
-                if (outcome is not (SendOutcome.Blocked or SendOutcome.Withdrawn)) putBack = null;   // the session took a message
+                if (outcome is not (SendOutcome.Blocked or SendOutcome.SignInRefused)) lock (_gate) _blockedDrains = 0;
+                if (outcome is not (SendOutcome.Blocked or SendOutcome.SignInRefused or SendOutcome.Withdrawn)) putBack = null;   // the session took a message
                 // BUG-617: it stays first until that's final, so it isn't lost to a relay still down and the order holds.
                 // BUG-640: a relay that's down says nothing about the email, so it isn't a try; only age gives it up.
                 // BUG-652: nor does a refusal of the session or a setting that stops every send; it's waited out the same way,
                 // with its own back-off, as the relay answers and isn't backed off.
-                if (outcome is SendOutcome.NotReached or SendOutcome.Blocked)
+                if (outcome is SendOutcome.NotReached or SendOutcome.Blocked or SendOutcome.SignInRefused)
                 {
                     if (_circuit.Time.GetUtcNow() - next.HeldAtUtc < HeldEmail.GiveUpUnreachedAfter)
                     {
-                        if (outcome == SendOutcome.Blocked)
+                        if (outcome == SendOutcome.SignInRefused)
+                        {
+                            // CAP-05: a refused sign-in is the settings' for certain, so the next email isn't tried to find
+                            // out whose it was (BUG-659), and nothing is put back: every email waits, as it was, for the fix.
+                            if (putBack is not null) await PutBackAsync(putBack.Id, putBack.Attempts, putBack.NextAttemptAtUtc);
+                            int refused;
+                            lock (_gate) refused = ++_blockedDrains;
+                            _log.LogError("The held notification emails can't be sent until the mail relay's sign-in is fixed: it " +
+                                "refused CaseBook's. They're kept; check Email:SmtpUsername and its password, or " +
+                                "Email:SmtpUseDefaultCredentials, then send a test email.");
+                            ScheduleDrain(BackOff(refused));
+                        }
+                        else if (outcome == SendOutcome.Blocked)
                         {
                             // BUG-659: a 5xx to the message itself (550 5.7.1 from a DLP rule, 554 content) is about that
                             // email only: it's put back, as after a 4xx, and the ones behind it go on. Only when the next is
@@ -378,7 +411,7 @@ public sealed class EmailSender : IEmailSender, IDisposable
                         else ScheduleDrain(_circuit.RetryIn(target));
                         return;
                     }
-                    if (outcome == SendOutcome.Blocked)
+                    if (outcome is SendOutcome.Blocked or SendOutcome.SignInRefused)
                         _log.LogError("A held email to {RecipientCount} recipient(s) still wasn't sent after {Hours} hours with the mail " +
                             "relay refusing it or the email settings stopping it; it's given up.", next.RecipientList.Count,
                             HeldEmail.GiveUpUnreachedAfter.TotalHours);
@@ -402,6 +435,8 @@ public sealed class EmailSender : IEmailSender, IDisposable
                 }
                 else if (outcome == SendOutcome.Refused)
                     _log.LogError("The mail relay refused a held email to {RecipientCount} recipient(s); it isn't tried again.", next.RecipientList.Count);
+                // CAP-04: one deleted without being sent (not one withdrawn on purpose) is counted on Diagnostics, not just logged.
+                if (outcome is not (SendOutcome.Delivered or SendOutcome.Withdrawn)) _health?.RecordGivenUp(DeliveryHealth.Smtp);
                 var done = next.Id;
                 await WithDbAsync(db => db.HeldEmails.Where(h => h.Id == done).ExecuteDeleteAsync());
             }
@@ -502,25 +537,68 @@ public sealed class EmailSender : IEmailSender, IDisposable
     }
 
     private async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
-        string textBody, string? htmlBody, CancellationToken ct)
+        string textBody, string? htmlBody, CancellationToken ct, bool test = false)
     {
         var target = Target(o);
-        using var message = NotYetSent(target, () => Compose(o, to, subject, textBody, htmlBody));
+        try
+        {
+            await DeliverCoreAsync(o, target, to, subject, textBody, htmlBody, test, ct);
+            _health?.RecordSuccess(DeliveryHealth.Smtp);   // CAP-04
+        }
+        catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
+        {
+            // CAP-04: the type and status only (BUG-657), and whether the relay is now backed off.
+            _health?.RecordFailure(DeliveryHealth.Smtp, Failure(ex), StatusOf(ex));
+            if (_circuit.RetryIn(target) is var wait && wait > TimeSpan.Zero)
+                _health?.RecordBackOff(DeliveryHealth.Smtp, _circuit.Time.GetUtcNow() + wait);
+            throw;
+        }
+    }
 
-        using var client = NotYetSent(target, () => SmtpClientFactory.Create(o));   // BUG-657: TLS per Email:EnableSsl (S4423)
+    private async Task DeliverCoreAsync(EmailOptions o, string target, IReadOnlyCollection<string> to, string subject,
+        string textBody, string? htmlBody, bool test, CancellationToken ct)
+    {
+        using var message = NotYetSent(target, () => Compose(o, to, subject, textBody, htmlBody));
+        // CAP-05: the sign-in, read now so a change applies to the next send: server configuration's when it sets one
+        // (its password a @protected: value, a @cyberark: reference or a literal), else the one saved in Administration.
+        // One that won't resolve, or settings that conflict, stop the send before the relay is asked (fail closed).
+        SmtpSignInMode mode;
+        NetworkCredential? credentials;
+        try
+        {
+            if (_signIns is null || SmtpSignIn.InServerConfig(o))
+                (mode, credentials) = (SmtpSignIn.Mode(o), await SmtpSignIn.CredentialsAsync(o, _secrets, ct));
+            else (mode, credentials) = await _signIns.ResolveAsync(ct);
+        }
+        catch
+        {
+            _circuit.Release(target);   // BUG-607: nothing was sent
+            throw;
+        }
+        var signIn = SignInPrint(o, mode, credentials);
+        if (!test && HeldSignIn(signIn) is { } refusedWith)
+        {
+            _circuit.Release(target);
+            throw new SmtpSignInHeldException(refusedWith);
+        }
+
+        using var client = NotYetSent(target, () => SmtpClientFactory.Create(o, credentials, mode == SmtpSignInMode.Integrated));   // BUG-657: TLS per Email:EnableSsl (S4423)
         // BUG-99: SmtpClient.Timeout covers only the synchronous Send. A relay that accepts the connection and then stalls
-        // would otherwise hold a reminder scan, or a user's assign or reclassify, until the app shut down.
+        // would otherwise hold a reminder scan, or a user's assign or reclassify, until the app shut down. CAP-05: as long
+        // as Email:SmtpTimeoutSeconds (5 to 300).
+        var limit = SendTimeoutOverride ?? SmtpSignIn.Timeout(o);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(SendTimeout);
+        timeout.CancelAfter(limit);
         try
         {
             await client.SendMailAsync(message, timeout.Token);
             _circuit.Succeeded(target);
+            ClearSignInHold();
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _circuit.Failed(target);   // BUG-576
-            throw new SmtpException($"The mail relay didn't finish accepting the message within {SendTimeout.TotalSeconds:0} seconds.");
+            throw new SmtpException($"The mail relay didn't finish accepting the message within {limit.TotalSeconds:0} seconds.");
         }
         catch (OperationCanceledException)
         {
@@ -532,6 +610,13 @@ public sealed class EmailSender : IEmailSender, IDisposable
             _circuit.Failed(target);   // BUG-576: couldn't reach it, or it dropped the session
             throw;
         }
+        catch (Exception ex) when (SignInRefused(ex))
+        {
+            // CAP-05: it answered, so it isn't backed off (BUG-607); but the same sign-in isn't tried again for a while.
+            _circuit.Succeeded(target);
+            HoldSignIn(signIn, StatusOf(ex));
+            throw;
+        }
         catch
         {
             // BUG-607: it answered (refused an address, wanted authentication, a mailbox busy), so it isn't backed off.
@@ -540,6 +625,85 @@ public sealed class EmailSender : IEmailSender, IDisposable
             throw;
         }
     }
+
+    // CAP-05: a sign-in the relay refused isn't tried again by every send and every drain: each try with a wrong password
+    // counts towards the account's lockout. Until the settings change (or the password CyberArk gives), a test email gets
+    // through, or SignInRetryAfter passes, a send is refused here as the relay would refuse it. An anonymous session locks
+    // nothing out, so it isn't held (BUG-652's back-off covers it).
+    internal static readonly TimeSpan SignInRetryAfter = TimeSpan.FromHours(1);
+    private readonly byte[] _printKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    private byte[]? _refusedSignIn;   // the print of the sign-in refused, under _gate
+    private DateTimeOffset _refusedAt;
+    private int? _refusedCode;
+
+    // Which sign-in a send makes (relay, mode, account and password), as a keyed hash, so the password itself isn't kept.
+    private byte[]? SignInPrint(EmailOptions o, SmtpSignInMode mode, NetworkCredential? credentials)
+    {
+        if (mode == SmtpSignInMode.None) return null;
+        var text = string.Join('\0', o.SmtpHost, o.SmtpPort, mode, credentials?.UserName, credentials?.Password);
+        return System.Security.Cryptography.HMACSHA256.HashData(_printKey, System.Text.Encoding.UTF8.GetBytes(text));
+    }
+
+    // The code the relay refused this sign-in with, while it's held; null when it may be tried.
+    private int? HeldSignIn(byte[]? print)
+    {
+        if (print is null) return null;
+        lock (_gate)
+        {
+            if (_refusedSignIn is null || !print.AsSpan().SequenceEqual(_refusedSignIn)) return null;
+            if (_circuit.Time.GetUtcNow() - _refusedAt >= SignInRetryAfter) return null;   // one try an hour
+            return _refusedCode ?? 535;
+        }
+    }
+
+    private void HoldSignIn(byte[]? print, int? code)
+    {
+        if (print is null) return;
+        lock (_gate)
+        {
+            _refusedSignIn = print;
+            _refusedAt = _circuit.Time.GetUtcNow();
+            _refusedCode = code;
+        }
+    }
+
+    private void ClearSignInHold()
+    {
+        lock (_gate) _refusedSignIn = null;
+    }
+
+    /// <summary>CAP-05: a send not made because the relay refused this sign-in a moment ago (<see cref="SignInRetryAfter"/>).</summary>
+    internal sealed class SmtpSignInHeldException(int code) : InvalidOperationException(
+        $"The mail relay refused this sign-in (SMTP {code}); it isn't tried again until the sign-in settings change, a test " +
+        "email gets through, or an hour has passed.")
+    {
+        public int Code { get; } = code;
+    }
+
+    /// <summary>
+    /// CAP-05: whether the relay refused the sign-in (530 authentication required, 534 mechanism too weak, 535 credentials
+    /// invalid, 538 encryption required for it), or one it refused is being held. A setting to fix, not a relay that's
+    /// down: it isn't backed off, and held mail waits for the fix. SmtpClient carries on unsigned after a refused AUTH, so a
+    /// wrong password usually shows as the 530 to MAIL FROM; some relays answer 535 instead, or drop the session.
+    /// </summary>
+    internal static bool SignInRefused(Exception ex) => ex switch
+    {
+        SmtpSignInHeldException => true,
+        SmtpFailedRecipientsException many => many.InnerExceptions.Length > 0 && many.InnerExceptions.All(r => SignInCode((int)r.StatusCode)),
+        SmtpException s => SignInCode((int)s.StatusCode),
+        _ => false,
+    };
+
+    private static bool SignInCode(int code) => code is 530 or 534 or 535 or 538;
+
+    // CAP-04: the SMTP status an exception carries, for Diagnostics (none for a socket or a setting).
+    internal static int? StatusOf(Exception ex) => ex switch
+    {
+        SmtpSignInHeldException held => held.Code,
+        SmtpFailedRecipientsException { InnerExceptions.Length: > 0 } many => (int)many.InnerExceptions[0].StatusCode,
+        SmtpException s when (int)s.StatusCode > 0 => (int)s.StatusCode,
+        _ => null,
+    };
 
     // BUG-607: a send that fails before anything reaches the relay (no valid address, a bad From or port) hands back the
     // probe's turn it may hold.
@@ -611,5 +775,6 @@ public sealed class EmailSender : IEmailSender, IDisposable
         _ => ex is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException,
     };
 
-    internal static TimeSpan SendTimeout { get; set; } = TimeSpan.FromSeconds(30);   // settable for a test
+    // CAP-05: the send's time limit is Email:SmtpTimeoutSeconds (5 to 300); a test sets a shorter one here.
+    internal static TimeSpan? SendTimeoutOverride { get; set; }
 }

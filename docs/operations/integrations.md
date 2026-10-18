@@ -114,8 +114,24 @@ schema, for use in the organization's own approved AI tool.
 - **What:** breach escalation to Legal, assignment, mentions, handoff, reminders (overdue, due soon, deadlines,
   stale cases), digests, the quarterly executive report, integrity alarms
   ([who gets what](../architecture/backend.md#who-gets-notified-about-what)).
-- **Auth:** none. `SmtpClient` with host, port and STARTTLS (`Email:EnableSsl`). The relay must accept the server
-  anonymously or by IP.
+- **Auth (CAP-05):** `SmtpClient` with host, port and STARTTLS (`Email:EnableSsl`), signing in one of three ways:
+  - **None:** the relay accepts the server anonymously or by IP (the default).
+  - **Username and password** (SMTP AUTH, for Exchange Online or a SASL relay). Enter them under **Administration →
+    Settings → Notifications → Email sign-in**. The password is write-only: it's encrypted with ASP.NET Core Data
+    Protection (purpose `CaseBook.Secrets.Smtp.v1`, key ring in `DataProtection:KeyPath`) and stored in the
+    `SmtpSignIns` table; the form shows only "set on <date> by <user>", with Replace and Clear. A change applies to
+    the next email, without a restart, and is recorded in the audit trail (who, when, the mode, and whether the
+    password was set, replaced or cleared; never the password) and on the SIEM stream as 5403. Back up the key ring
+    with the database ([OPERATIONS.md §1](../OPERATIONS.md)): restored without it, the password can't be decrypted, the
+    mail is held, and Diagnostics says to re-enter it.
+  - **Windows:** integrated authentication as the app-pool account (a gMSA), with no password anywhere: for
+    on-premises Exchange with a receive connector that accepts it.
+
+  The server's configuration can set the sign-in instead (`Email:SmtpUsername` with `Email:SmtpPassword` as a
+  `@protected:` value, an `@cyberark:` reference or a literal, or `Email:SmtpUseDefaultCredentials`;
+  [configuration.md §3.12](configuration.md#312-email)). When it sets any of them it wins, and the form is read-only.
+  Username and password and Windows are mutually exclusive: a mix stops every email (held) until fixed, and startup
+  and Diagnostics say so. A send is limited to `Email:SmtpTimeoutSeconds` (30; 5 to 300).
 - **Data:** branded HTML plus a text part; subject and body from editable templates; links and logo only when
   `App:BaseUrl` is set. Restricted-case details only go to people who can see the case.
 - **Failure:** a scheduled reminder that wasn't delivered isn't marked sent, so the next scan tries it again (BUG-08); a
@@ -140,15 +156,25 @@ schema, for use in the organization's own approved AI tool.
   or refusing every email (a relay outage doesn't use up the tries; each give-up is logged as an error); past 500
   the newest is dropped and logged (BUG-576, BUG-608, BUG-617, BUG-626, BUG-640). The log names SMTP failures by
   their type and status code, never the relay's reply, which can echo an address (BUG-657).
-- **Testing:** Administration → Notifications → *Send a test email*. Locally, run an SMTP sink such as smtp4dev
-  on localhost:25 with `Email:EnableSsl=false`.
+- **A refused sign-in (CAP-05):** 530, 534, 535 or 538 is a setting to fix, not a relay that's down. `SmtpClient`
+  carries on unsigned after a refused AUTH, so a wrong password usually shows as the 530 the relay gives MAIL FROM.
+  The relay isn't backed off; held mail is kept for the fix (the drain doesn't try the next email to find out whose
+  fault it was); and the same sign-in isn't tried again by later sends and drains for an hour, unless the settings
+  change or a test email gets through, because every try with a wrong password counts towards the account's lockout.
+  It's still given up after 24 hours. The test email names the code ("The mail relay refused the sign-in (SMTP 535)")
+  and never the relay's reply.
+- **Health (CAP-04):** Administration → Diagnostics → Delivery health shows the relay's back-off, the held emails
+  (how many and since when), the last error by type and code, the next try, and the emails given up since start;
+  in memory, reset at restart.
+- **Testing:** *Send a test email*, beside the sign-in form and under Notifications. Locally, run an SMTP sink such as
+  smtp4dev on localhost:25 with `Email:EnableSsl=false`.
 
 ## Team chat (Slack or Teams)
 
 - **What:** a shared channel broadcast for selected events (breach escalations, assignments, mentions, reminder
   summaries), chosen per type under Notifications.
-- **Auth:** the incoming-webhook URL is the credential (`Chat:Webhook:WebhookUrl`, literal or a CyberArk
-  reference). Must be https (http only to loopback).
+- **Auth:** the incoming-webhook URL is the credential (`Chat:Webhook:WebhookUrl`: a literal, a `@protected:` value or a
+  CyberArk reference). Must be https (http only to loopback).
 - **Data:** Slack mrkdwn or a Teams MessageCard; restricted cases are redacted ("Breach escalation (restricted
   case)").
 - **Failure and retry:** up to `MaxAttempts` (3) with a 250 ms × attempt back-off. A scheduled reminder's post that still
@@ -156,6 +182,8 @@ schema, for use in the organization's own approved AI tool.
   A webhook that fails to answer (or answers 5xx/429) three posts in a row within two minutes is backed off like the
   mail relay; event posts made meanwhile are dropped and logged.
 - **Limits:** a broadcast channel, not per-user messaging.
+- **Health (CAP-04):** Diagnostics → Delivery health: back-off, last good post and last failure (an HTTP status or an
+  exception's type; never the URL).
 - **Testing:** point the URL at `http://localhost:<port>/` with any request-capture tool.
 
 ## SIEM security-event stream
@@ -163,17 +191,22 @@ schema, for use in the organization's own approved AI tool.
 - **What:** a structured stream of security-relevant actions for detection rules. Full reference, payload and
   event-id catalog: [OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18).
 - **Transports:** webhook (JSON over https, optional bearer or API-key header; token may be a CyberArk
-  reference), syslog (RFC 5424 with a CEF payload, UDP or TCP), Windows Event Log (event id = catalog id).
+  reference or a `@protected:` value), syslog (RFC 5424 with a CEF payload, UDP or TCP), Windows Event Log (event id =
+  catalog id).
 - **Delivery:** events go into a bounded in-memory queue (`Siem:QueueCapacity`, 2048) and a background dispatcher
   sends each to every enabled transport. Never blocks a user action. Webhook retries up to 3 times; syslog and
   Event Log don't retry. Overflow and anything queued at shutdown is lost; the audit chain remains the record.
+- **Health (CAP-04):** Diagnostics → Delivery health shows, for each transport that's on, its last good send, its queue
+  depth and the events it dropped since start (and any dropped before reaching a transport). In memory, reset at
+  restart.
 - **Testing:** Administration → Diagnostics → *Send test event* (id 5901) reports per-transport success.
   Locally, a webhook to `http://localhost:<port>` or syslog to a local UDP listener.
 
 ## CyberArk Central Credential Provider
 
-- **What:** fetches secrets at runtime instead of keeping them in configuration. **Only `Siem:Webhook:Token` and
-  `Chat:Webhook:WebhookUrl` are resolved this way today.**
+- **What:** fetches secrets at runtime instead of keeping them in configuration: `Siem:Webhook:Token`,
+  `Chat:Webhook:WebhookUrl` and `Email:SmtpPassword` (and the integrity keys, [OPERATIONS.md §2](../OPERATIONS.md)).
+  Optional: a site without CyberArk writes the same values as `@protected:` values (below).
 - **Auth:** the CCP Application ID, plus whatever the CyberArk administrator requires: a client certificate
   (`ClientCertificateThumbprint`, in `LocalMachine\My`), allowed machines (source IP), and/or the OS user (the
   app pool identity).
@@ -183,6 +216,23 @@ schema, for use in the organization's own approved AI tool.
   feature degrades, for example the webhook sends without auth), `false` serves the last good value. Health in
   Diagnostics → Secret resolution.
 - **Config needs a recycle.** Full guide: [OPERATIONS.md §6](../OPERATIONS.md#6-secret-management-f-19).
+
+## Protected secrets (`@protected:`, without CyberArk)
+
+- **What (CAP-05, [ADR 0018](../decisions/0018-protected-secrets.md)):** a secret written in
+  `appsettings.Production.json` encrypted to a certificate in `LocalMachine\My`, for `Siem:Webhook:Token`,
+  `Chat:Webhook:WebhookUrl` and `Email:SmtpPassword`. Works with CyberArk on or off: the provider opens `@protected:`
+  values itself and hands everything else to CyberArk or the passthrough.
+- **Format:** `@protected:v1:<thumbprint>:<base64>`: a random AES-256-GCM key wrapped to the certificate with
+  RSA-OAEP-SHA256, then the nonce, tag and ciphertext; the version and thumbprint are authenticated.
+- **Make one:** `deploy\keytool\casebook-keytool protect-secret --cert <thumbprint>` (or `--site <folder>` for the
+  site's integrity certificate). It asks for the secret twice without echo (or reads it from stdin) and prints only
+  the value. `casebook-keytool check-secret <value>` says OK or why it doesn't open, never the secret.
+- **Needs:** the app-pool account must read the certificate's private key (the installer grants it for the
+  integrity certificates). Only its public key is needed to make a value.
+- **Failure:** fail closed. A value that won't open (the certificate gone, its key unreadable, the value changed)
+  resolves to nothing, logged once by thumbprint, never its content: the email is held, the chat post isn't made, the
+  SIEM webhook sends without auth.
 
 ## Calendar feed
 

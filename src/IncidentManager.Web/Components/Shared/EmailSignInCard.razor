@@ -1,0 +1,211 @@
+@* CAP-05: the mail relay sign-in, entered here (Administer only, as the page is) and kept with its password encrypted by
+   Data Protection. The password is write-only: typed into a field that is never filled from the server, sent once on
+   Save, and shown afterwards only as "set on <date> by <user>". When the server's configuration sets the sign-in, it
+   wins, and this card shows it read-only. A test email sits beside it, through the saved settings. *@
+@using IncidentManager.Application.Abstractions
+@using IncidentManager.Infrastructure.Notifications
+@using IncidentManager.Web.Notifications
+@using Microsoft.Extensions.Options
+@inject SmtpSignInAdminService SignIns
+@inject IOptionsMonitor<EmailOptions> EmailOptions
+@inject IEmailSender Email
+@inject ICurrentUser User
+@inject ToastService Toasts
+
+<div class="card mb-3">
+    <div class="card-header">Email sign-in</div>
+    <div class="card-body">
+        @if (SignIns.SetInServerConfiguration)
+        {
+            <p class="mb-1"><span class="im-badge im-b-neutral">Set in server configuration</span>
+                <span class="ms-2">@SmtpSignIn.Describe(EmailOptions.CurrentValue)</span></p>
+            <p class="form-text mb-0">
+                The server's configuration sets how CaseBook signs in to the mail relay (Email:SmtpUsername, Email:SmtpPassword
+                or Email:SmtpUseDefaultCredentials in appsettings.Production.json), and it wins over this form, so it's read-only
+                here. Change it on the server, or clear it there to manage the sign-in here.
+            </p>
+        }
+        else if (_status is null)
+        {
+            <LoadingBlock />
+        }
+        else
+        {
+            @if (_status.PasswordUnreadable)
+            {
+                <div class="alert alert-warning py-2 small" role="alert">
+                    The saved password can't be decrypted on this server (its Data Protection keys aren't here, as after a database
+                    restored elsewhere). Email that signs in is held. Re-enter the SMTP password.
+                </div>
+            }
+            <fieldset class="mb-2" style="max-width:38rem">
+                <legend class="form-label mb-1 fs-6">Sign in to the mail relay</legend>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="adm-smtp-mode" id="adm-smtp-none"
+                           checked="@(_mode == SmtpSignInMode.None)" @onchange="() => _mode = SmtpSignInMode.None" />
+                    <label class="form-check-label" for="adm-smtp-none">None (the relay takes mail from this server as it is)</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="adm-smtp-mode" id="adm-smtp-password"
+                           checked="@(_mode == SmtpSignInMode.Password)" @onchange="() => _mode = SmtpSignInMode.Password" />
+                    <label class="form-check-label" for="adm-smtp-password">Username and password</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="adm-smtp-mode" id="adm-smtp-windows"
+                           checked="@(_mode == SmtpSignInMode.Integrated)" @onchange="() => _mode = SmtpSignInMode.Integrated" />
+                    <label class="form-check-label" for="adm-smtp-windows">Windows: the app-pool account (on-premises Exchange; no password)</label>
+                </div>
+            </fieldset>
+
+            @if (_mode == SmtpSignInMode.Password)
+            {
+                <div class="row g-2 mb-2" style="max-width:38rem">
+                    <div class="col-sm-6">
+                        <label class="form-label mb-0" for="adm-smtp-user">Username</label>
+                        <input id="adm-smtp-user" class="form-control" autocomplete="off" maxlength="256" @bind="_username" />
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label mb-0" for="adm-smtp-password-new">Password</label>
+                        @if (_status.PasswordSet && !_replacing)
+                        {
+                            <div class="small mt-1">
+                                <span class="im-badge im-b-ok">Set</span>
+                                <span class="text-muted ms-1">on @_status.PasswordSetAtUtc?.ToString("yyyy-MM-dd") by @(_status.PasswordSetBy ?? "an administrator")</span>
+                            </div>
+                            <div class="mt-1">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _replacing = true">Replace</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger ms-1" @onclick="Clear" disabled="@_clearing.Busy">Clear</button>
+                            </div>
+                        }
+                        else
+                        {
+                            @* Write-only: no value is ever rendered into this field; what's typed is read on change and sent once. *@
+                            <input id="adm-smtp-password-new" class="form-control" type="password" autocomplete="new-password"
+                                   @key="_passwordFieldKey" @onchange="e => _newPassword = e.Value as string" />
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_saving.Busy">Save sign-in</button>
+                @if (_status.UpdatedAtUtc is { } at)
+                {
+                    <span class="small text-muted">Last changed @at.ToString("yyyy-MM-dd HH:mm") UTC by @_status.UpdatedBy</span>
+                }
+            </div>
+            <div class="form-text">
+                The password is encrypted on this server (Data Protection) and never shown again. Changes apply to the next email,
+                without a restart. To keep it in the server's configuration instead, see OPERATIONS.md section 6.
+            </div>
+        }
+
+        <hr class="my-3" />
+        <div class="row g-2 align-items-end" style="max-width:38rem">
+            <div class="col-sm-8">
+                <label class="form-label mb-0" for="adm-smtp-test-to">Send a test email to</label>
+                <input id="adm-smtp-test-to" class="form-control" type="email" @bind="_testTo" placeholder="you@insurer.example" />
+            </div>
+            <div class="col-sm-4">
+                <button type="button" class="btn btn-outline-primary w-100" @onclick="SendTest" disabled="@_testing.Busy">Send test email</button>
+            </div>
+        </div>
+        <div class="form-text">Uses the saved sign-in. A refused sign-in is named by its code (530 or 535) so you can fix it here.</div>
+    </div>
+</div>
+
+@code {
+    private SmtpSignInStatus? _status;
+    private SmtpSignInMode _mode;
+    private string? _username;
+    private string? _newPassword;   // held only between typing and Save; never rendered
+    private bool _replacing;
+    private int _passwordFieldKey;
+    private string? _testTo;
+
+    // BUG-603 (C8): one save, clear or test at a time.
+    private readonly InFlight _saving = new();
+    private readonly InFlight _clearing = new();
+    private readonly InFlight _testing = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _testTo = User.Email;
+        await LoadAsync();
+    }
+
+    // BUG-601 (C5): a save's reload and a test's can overlap; only the newest lands.
+    private readonly LoadSequence _load = new();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var status = await SignIns.GetAsync();
+        if (!_load.IsCurrent(t)) return;
+        _status = status;
+        _mode = _status.Mode is SmtpSignInMode.Invalid ? SmtpSignInMode.None : _status.Mode;
+        _username = _status.Username;
+        _replacing = !_status.PasswordSet;
+        ForgetPassword();
+    }
+
+    // Drops what was typed, and gives the field a new key so the browser's copy goes too.
+    private void ForgetPassword()
+    {
+        _newPassword = null;
+        _passwordFieldKey++;
+    }
+
+    private Task Save() => _saving.Run(SaveCore);
+
+    private async Task SaveCore()
+    {
+        try
+        {
+            await SignIns.SaveAsync(_mode, _username, _newPassword);
+            Toasts.Success("Email sign-in saved. The next email uses it.");
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            ForgetPassword();
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private Task Clear() => _clearing.Run(ClearCore);
+
+    private async Task ClearCore()
+    {
+        try
+        {
+            await SignIns.ClearAsync();
+            Toasts.Info("The saved password is cleared, and email is sent without a sign-in.");
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private Task SendTest() => _testing.Run(SendTestCore);
+
+    private async Task SendTestCore()
+    {
+        var to = _testTo?.Trim();
+        if (string.IsNullOrWhiteSpace(to)) { Toasts.Warning("Enter a recipient address."); return; }
+        var outcome = await Email.SendTestAsync(new EmailMessage([to], "[CaseBook] Test notification",
+            "<p>This is a test notification from CaseBook confirming the email sign-in.</p>",
+            "This is a test notification from CaseBook confirming the email sign-in."));
+        switch (outcome.Status)
+        {
+            case EmailSendStatus.Sent: Toasts.Success($"Test email sent to {to}."); break;
+            case EmailSendStatus.Disabled: Toasts.Info($"Email delivery is off. Logged a test message for {to} instead."); break;
+            default: Toasts.Error($"Couldn't send the test email. {outcome.Error}"); break;
+        }
+        var t = _load.Begin();
+        var status = await SignIns.GetAsync();
+        if (_load.IsCurrent(t)) _status = status;   // a password that won't decrypt shows at once (the form keeps what was typed)
+    }
+}

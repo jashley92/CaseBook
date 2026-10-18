@@ -296,10 +296,49 @@ logged today; check the folder's permissions directly.
 1. Administration → Notifications → **Delivery readiness**: email on, sender set, triggers enabled.
 2. *Send a test email*: confirms the relay end to end.
 3. With email off, the log shows "Email delivery disabled; not sending to N recipient(s)".
-4. The SMTP client doesn't authenticate; the relay must accept the app server anonymously or by IP.
+4. If the relay wants a sign-in, set one under **Email sign-in** (Settings → Notifications), or in the server's
+   configuration ([integrations.md, Email](integrations.md#email-smtp)); see the next entry for a refused one.
+   Diagnostics → **Delivery health** shows how many emails are held, the last error by type and code, and when
+   they're next tried.
 5. Blank `App:BaseUrl` means emails send without links or the logo.
 6. Reminder scans are off by default; check each `Notifications:*Scan:Enabled`.
 7. Users can opt out of assignment, overdue and due-soon emails unless they're mandatory.
+
+### The relay refuses the sign-in (SMTP 530 or 535)
+
+- **Symptom:** *Send a test email* says "The mail relay refused the sign-in (SMTP 535)" (or 530, 534, 538); the log
+  says "The held notification emails can't be sent until the mail relay's sign-in is fixed"; Diagnostics → Delivery
+  health shows held emails and that code.
+- **Cause:** a wrong username or password, an expired password, an account the relay doesn't allow to send (Exchange
+  Online: SMTP AUTH turned off for the mailbox or the tenant), or Windows sign-in to a receive connector that doesn't
+  accept the app-pool account. A wrong password usually shows as 530 at MAIL FROM: `SmtpClient` carries on unsigned
+  after a refused AUTH.
+- **Where to look:** the *Email relay sign-in* row in Server configuration (how it signs in, and from where: the form
+  or the server's file), the health check of the same name on Diagnostics, and the relay's own log.
+- **Fix:** correct it on the Email sign-in form (or in `Email:SmtpUsername`/`Email:SmtpPassword`, which win), then
+  *Send a test email*. It's not a relay outage, so nothing is backed off, and the held mail goes once the fix lands.
+  CaseBook doesn't try a refused sign-in again for an hour (unless the settings change or a test gets through), so a
+  wrong password doesn't lock the account out; unlock it in the directory if it already is. Held mail is given up
+  after 24 hours.
+
+### "Re-enter the SMTP password" (the saved password can't be decrypted)
+
+- **Symptom:** the Email sign-in form and Diagnostics say the saved password can't be decrypted on this server; email
+  that signs in is held; the log says "The SMTP password saved in Administration can't be decrypted" once.
+- **Cause:** the database was restored, or the site moved, to a server without the Data Protection key ring it was
+  saved with (`DataProtection:KeyPath`), or that folder was lost or replaced.
+- **Fix:** restore the key ring folder from the same backup as the database ([OPERATIONS.md §1](../OPERATIONS.md)), or
+  re-enter the password on the form. Nothing is sent with a password that isn't the one saved (fail closed).
+
+### A `@protected:` secret doesn't open
+
+- **Symptom:** the log says "A @protected: secret (certificate …) couldn't be opened"; the email is held, the chat post
+  isn't made, or the SIEM webhook is sent without auth.
+- **Cause:** the certificate it names isn't in `LocalMachine\My`, the app-pool account can't read its private key, the
+  value was made for another certificate (a renewal), or it was changed.
+- **Fix:** run `casebook-keytool check-secret <value>` on the server (as an administrator it tells you whether the value
+  itself is good), grant the app-pool account read on the private key (certlm.msc → Manage Private Keys), or make the
+  value again with `casebook-keytool protect-secret` and recycle the app pool.
 
 ### The SIEM isn't receiving events
 
@@ -310,7 +349,8 @@ logged today; check the folder's permissions directly.
 4. The Event Log transport needs its source registered once (`New-EventLog -LogName Application -Source
    CaseBook`); otherwise it disables itself until restart.
 5. The queue (`Siem:QueueCapacity`) drops events under a flood; delivery is best effort and events in the queue
-   are lost on restart. The audit chain remains the record.
+   are lost on restart. The audit chain remains the record. Diagnostics → **Delivery health** shows each transport's
+   last good send, queue depth and drops since start.
 6. 5101 only appears with Windows authentication.
 
 ### CyberArk secret not resolving

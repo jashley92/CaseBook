@@ -56,7 +56,8 @@ public static class DependencyInjection
             sp.GetServices<Siem.ISecurityEventTransport>(),
             sp.GetRequiredService<IClock>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Siem.SecurityEventQueue>>(),
-            config.GetValue("Siem:QueueCapacity", 2048)));
+            config.GetValue("Siem:QueueCapacity", 2048),
+            sp.GetService<IDeliveryHealth>()));
         services.AddSingleton<Application.Security.ISecurityEventSink>(
             sp => sp.GetRequiredService<Siem.SecurityEventQueue>());
 
@@ -67,10 +68,19 @@ public static class DependencyInjection
         services.Configure<Secrets.CyberArkOptions>(config.GetSection("Secrets:CyberArk"));
         // Always registered so the Admin health panel can read it even when CyberArk is disabled.
         services.AddSingleton<ISecretResolutionHealth, SecretResolutionHealth>();
+        // CAP-05 (ADR 0018): @protected: values (encrypted to a certificate in the store) open in front of either, so
+        // a site without CyberArk still keeps its secrets out of plain text, and one with it can use both.
         if (config.GetValue("Secrets:CyberArk:Enabled", false))
-            services.AddSingleton<ISecretProvider, Secrets.CyberArkCcpSecretProvider>();
+            services.AddSingleton<Secrets.CyberArkCcpSecretProvider>();
         else
-            services.AddSingleton<ISecretProvider, Secrets.PassthroughSecretProvider>();
+            services.AddSingleton<Secrets.PassthroughSecretProvider>();
+        services.AddSingleton<ISecretProvider>(sp => new Secrets.ProtectedSecretProvider(
+            config.GetValue("Secrets:CyberArk:Enabled", false)
+                ? sp.GetRequiredService<Secrets.CyberArkCcpSecretProvider>()
+                : sp.GetRequiredService<Secrets.PassthroughSecretProvider>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Secrets.ProtectedSecretProvider>>()));
+        // CAP-04: what each outbound channel's senders saw since start, for the Diagnostics card.
+        services.AddSingleton<IDeliveryHealth, DeliveryHealth>();
 
         // Lets a settings write signal the configuration root to re-read the DB provider (A-08).
         services.AddSingleton<ISettingsReloader, Configuration.ConfigurationReloader>();

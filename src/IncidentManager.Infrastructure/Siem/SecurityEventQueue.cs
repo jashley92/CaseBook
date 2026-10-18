@@ -21,13 +21,15 @@ public sealed class SecurityEventQueue : ISecurityEventSink
     private readonly string _host = Environment.MachineName;
 
     private long _dropped;
+    private readonly IDeliveryHealth? _health;   // CAP-04: the shared queue's drops, for Diagnostics
 
     public SecurityEventQueue(IEnumerable<ISecurityEventTransport> transports, IClock clock,
-        ILogger<SecurityEventQueue> logger, int capacity = 2048)
+        ILogger<SecurityEventQueue> logger, int capacity = 2048, IDeliveryHealth? health = null)
     {
         _transports = transports.ToList();
         _clock = clock;
         _logger = logger;
+        _health = health;
 
         var cap = Math.Max(16, capacity);
         // Bounded + FullMode.Wait so a full queue makes TryWrite return false (never blocks the caller) —
@@ -60,6 +62,7 @@ public sealed class SecurityEventQueue : ISecurityEventSink
             if (!_channel.Writer.TryWrite(stamped))
             {
                 var n = Interlocked.Increment(ref _dropped);
+                _health?.RecordQueue(DeliveryHealth.SiemQueue, n, _channel.Reader.Count);
                 if (n == 1 || n % 100 == 0)
                     _logger.LogWarning("SIEM stream queue full — dropped {Dropped} event(s); last id {EventId}.", n, e.EventId);
             }

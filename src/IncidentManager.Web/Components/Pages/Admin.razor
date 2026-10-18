@@ -27,6 +27,8 @@
 @inject IncidentManager.Web.BackgroundJobs.EvidenceStoreStatus EvidenceStoreProbe
 @inject IncidentManager.Application.Abstractions.IEvidenceStore EvidenceStoreFiles
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
+@inject IncidentManager.Web.Notifications.SmtpSignInStore SmtpSignIns
+@inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Infrastructure.Notifications.EmailOptions> EmailOptions
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -398,6 +400,12 @@
                         <UpdatesPanel />
                     }
 
+                    @* CAP-05: how CaseBook signs in to the relay, entered here (server configuration wins when it sets one). *@
+                    @if (group == "Notifications")
+                    {
+                        <IncidentManager.Web.Components.Shared.EmailSignInCard />
+                    }
+
                     @* Send-a-test-email sits with the notification settings it exercises. *@
                     @if (group == "Notifications")
                     {
@@ -498,6 +506,32 @@
                         </td>
                     </tr>
                     <tr><td>AD group → role mapping</td><td><span class="im-badge im-b-neutral">DB-managed</span> <span class="small text-muted ms-2">edit under Roles &amp; access</span></td></tr>
+                    <tr>
+                        <td>Email relay sign-in</td>
+                        <td>
+                            @* CAP-05: how, never with what: no username's password, reference or value is shown. *@
+                            @if (IncidentManager.Infrastructure.Notifications.SmtpSignIn.InServerConfig(EmailOptions.CurrentValue))
+                            {
+                                var o = EmailOptions.CurrentValue;
+                                var mode = IncidentManager.Infrastructure.Notifications.SmtpSignIn.Mode(o);
+                                @StatusBadge(mode != IncidentManager.Infrastructure.Notifications.SmtpSignInMode.Invalid, "Server configuration", "Not usable")
+                                <span class="small ms-2">@IncidentManager.Infrastructure.Notifications.SmtpSignIn.Describe(o)</span>
+                            }
+                            else if (_smtpSignIn is { } saved)
+                            {
+                                <span class="im-badge im-b-neutral">@(saved.Mode == IncidentManager.Infrastructure.Notifications.SmtpSignInMode.None ? "None" : "Set in Administration")</span>
+                                <span class="small ms-2">@(saved.Mode switch
+                                {
+                                    IncidentManager.Infrastructure.Notifications.SmtpSignInMode.Password => saved.PasswordUnreadable
+                                        ? "Username, with a saved password that can't be decrypted here: re-enter it"
+                                        : "Username, with a password saved in Administration (encrypted with Data Protection)",
+                                    IncidentManager.Infrastructure.Notifications.SmtpSignInMode.Integrated => "Integrated Windows authentication, as the app-pool account",
+                                    _ => "The relay takes mail from this host without a sign-in",
+                                })</span>
+                            }
+                            <span class="small text-muted ms-2">time limit @IncidentManager.Infrastructure.Notifications.SmtpSignIn.Timeout(EmailOptions.CurrentValue).TotalSeconds s</span>
+                        </td>
+                    </tr>
                     <tr>
                         <td>SIEM stream (webhook)</td>
                         <td>
@@ -662,6 +696,9 @@
                     }
                 </tbody>
             </table>
+
+            <h6 class="text-uppercase small text-muted mt-3">Delivery health</h6>
+            <IncidentManager.Web.Components.Shared.DeliveryHealthPanel />
 
             <h6 class="text-uppercase small text-muted mt-3">Backup &amp; restore health</h6>
             @if (_backup is null)
@@ -1196,7 +1233,7 @@
         {
             case EmailSendStatus.Sent: Toasts.Success($"Test email sent to {to}."); break;
             case EmailSendStatus.Disabled: Toasts.Info($"Email delivery is off. Logged a test message for {to} instead."); break;
-            default: Toasts.Error($"Couldn't send the test email. {outcome.Error} Check the relay host, port and sender address."); break;
+            default: Toasts.Error($"Couldn't send the test email. {outcome.Error} Check the relay host, port, sender address and sign-in."); break;
         }
     }
 
@@ -1252,11 +1289,14 @@
             _dbProvider = db.Database.ProviderName;
             _pendingMigrations = (await db.Database.GetPendingMigrationsAsync()).ToList();
         }
+        _smtpSignIn = await SmtpSignIns.StatusAsync();   // CAP-05: status only, never the password
         _health = await RunHealthChecksAsync();
         _backup = Backup.Read();
         try { _evidenceUse = await EvidenceStorage.StorageUseAsync(); }
         catch (Exception ex) when (ex is not OperationCanceledException) { _evidenceUseError = ex.Message; }
     }
+
+    private IncidentManager.Web.Notifications.SmtpSignInStatus? _smtpSignIn;
 
     // PROD-55/56: what evidence takes against its limits, read when Diagnostics opens.
     private IncidentManager.Application.Evidence.EvidenceStorageUse? _evidenceUse;
@@ -1283,6 +1323,21 @@
         checks.Add(new HealthCheck("Settings within limits", invalid.Count == 0, invalid.Count == 0
             ? "every setting passes its rules"
             : string.Join(" ", invalid.Select(i => $"{i.Problem} It's currently {i.Value}."))));
+        // CAP-05: a relay sign-in that can't be used stops every email; a plain-text password is said too.
+        var mail = EmailOptions.CurrentValue;
+        if (IncidentManager.Infrastructure.Notifications.SmtpSignIn.InServerConfig(mail))
+        {
+            var problem = IncidentManager.Infrastructure.Notifications.SmtpSignIn.Problem(mail);
+            var warnings = IncidentManager.Infrastructure.Notifications.SmtpSignIn.Warnings(mail);
+            checks.Add(new HealthCheck("Email relay sign-in", problem is null && warnings.Count == 0,
+                problem ?? (warnings.Count > 0 ? string.Join(" ", warnings) : IncidentManager.Infrastructure.Notifications.SmtpSignIn.Describe(mail))));
+        }
+        else if (_smtpSignIn is { } saved)
+        {
+            checks.Add(new HealthCheck("Email relay sign-in", !saved.PasswordUnreadable, saved.PasswordUnreadable
+                ? "The SMTP password saved in Administration can't be decrypted on this server: re-enter the SMTP password (Settings, Notifications, Email sign-in)."
+                : saved.Mode == IncidentManager.Infrastructure.Notifications.SmtpSignInMode.None ? "none (the relay takes mail without a sign-in)" : "set in Administration"));
+        }
         checks.Add(new HealthCheck("Schema up to date", _pendingMigrations is { Count: 0 },
             _pendingMigrations is { Count: > 0 } ? $"{_pendingMigrations.Count} pending" : "no pending migrations"));
 

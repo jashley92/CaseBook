@@ -429,7 +429,7 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
     [InlineData(System.Net.Mail.SmtpStatusCode.ExceededStorageAllocation, "Refused")]   // 552: too large for the relay
     [InlineData(System.Net.Mail.SmtpStatusCode.MailboxUnavailable, "Blocked")]          // 550: at MAIL FROM it's the session's
     [InlineData(System.Net.Mail.SmtpStatusCode.TransactionFailed, "Blocked")]           // 554: may be the greeting's
-    [InlineData(System.Net.Mail.SmtpStatusCode.MustIssueStartTlsFirst, "Blocked")]      // 530
+    [InlineData(System.Net.Mail.SmtpStatusCode.MustIssueStartTlsFirst, "SignInRefused")]   // 530: CAP-05, the sign-in the session needs
     [InlineData(System.Net.Mail.SmtpStatusCode.MailboxNameNotAllowed, "Blocked")]       // 553: the sender
     public void A_refusal_of_the_message_itself_is_final_only_when_its_code_says_so(System.Net.Mail.SmtpStatusCode code, string expected /* BUG-659 */) =>
         SendOutcomes.Of(new System.Net.Mail.SmtpException(code, "refused")).ToString().Should().Be(expected);

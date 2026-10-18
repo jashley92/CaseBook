@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using System.Text;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,11 +17,13 @@ public sealed class SyslogTransport : ISecurityEventTransport
 {
     private readonly IOptionsMonitor<SiemSyslogOptions> _options;
     private readonly ILogger<SyslogTransport> _logger;
+    private readonly IDeliveryHealth? _health;   // CAP-04
 
-    public SyslogTransport(IOptionsMonitor<SiemSyslogOptions> options, ILogger<SyslogTransport> logger)
+    public SyslogTransport(IOptionsMonitor<SiemSyslogOptions> options, ILogger<SyslogTransport> logger, IDeliveryHealth? health = null)
     {
         _options = options;
         _logger = logger;
+        _health = health;
     }
 
     public string Name => "syslog";
@@ -43,14 +46,17 @@ public sealed class SyslogTransport : ISecurityEventTransport
         {
             if (o.Protocol.Equals("Tcp", StringComparison.OrdinalIgnoreCase)) await SendTcpAsync(o, bytes, ct);
             else await SendUdpAsync(o, bytes, ct);
+            _health?.RecordSuccess(DeliveryHealth.Siem(Name));
             return null;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            _health?.RecordFailure(DeliveryHealth.Siem(Name), "timed out");
             return $"{o.Host}:{o.Port} didn't accept a connection in time.";
         }
         catch (Exception ex) when (ex is SocketException or IOException or ArgumentException)
         {
+            _health?.RecordFailure(DeliveryHealth.Siem(Name), ex.GetBaseException().GetType().Name);
             return ex.GetBaseException().Message;
         }
     }
@@ -69,6 +75,7 @@ public sealed class SyslogTransport : ISecurityEventTransport
                 await SendTcpAsync(o, bytes, ct);
             else
                 await SendUdpAsync(o, bytes, ct);
+            _health?.RecordSuccess(DeliveryHealth.Siem(Name));   // CAP-04 (UDP: handed to the network, as far as can be known)
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -77,6 +84,7 @@ public sealed class SyslogTransport : ISecurityEventTransport
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Syslog delivery failed for event {EventId} to {Host}:{Port}.", e.EventId, o.Host, o.Port);
+            _health?.RecordFailure(DeliveryHealth.Siem(Name), ex is OperationCanceledException ? "timed out" : ex.GetBaseException().GetType().Name);
         }
     }
 

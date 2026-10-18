@@ -20,6 +20,7 @@ Three data sets must be backed up **in lockstep** so they stay mutually consiste
 | Integrity seals | `Integrity:ExportPath` (out-of-band seal exports) | File backup (append-only) |
 | Generated reports | `ReportOutput:RootPath` | File backup |
 | Keys folder | `<DataRoot>\keys` (the seal-signing key, `chain-key.json`, `evidence-key.json`) | File backup with tighter access; the evidence key's envelope is useless without a certificate or the shares, but keep it with the rest ([§2, Evidence key](#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)) |
+| Data Protection key ring | `DataProtection:KeyPath` (`DataRoot\dp-keys`) | File backup **with the database**, tight access. Besides keeping sessions across recycles, it decrypts the SMTP password saved under Administration (CAP-05). A database restored without it can't open that password: email that signs in is held, and Diagnostics says to re-enter the SMTP password ([troubleshooting](operations/troubleshooting.md)). The keys are DPAPI-protected to the machine, so on a new server the password is re-entered anyway. |
 | Report branding logo | `ReportBranding:RootPath` (`DataRoot\branding`, H-07) | File backup (single small image; low churn) |
 | Word report templates | `ReportTemplates:RootPath` (`DataRoot\report-templates`, PROD-47; when unset, a `report-templates` folder beside `ReportBranding:RootPath`, so upgraded servers need no config change) | File backup (one .docx per library template, named by its id; low churn) |
 
@@ -707,20 +708,36 @@ broken (the job won't seal over a break, and 5001 should have fired), or the str
 
 ## 6. Secret Management (F-19)
 
-App secrets read from configuration (today the SIEM webhook `Token` and the chat `Chat:Webhook:WebhookUrl`;
-nothing else is resolved through CyberArk — connection strings, `Agenda:FeedKey` and SMTP settings must be
-literals or environment variables) can be **kept out of config entirely** and fetched at runtime from
-**CyberArk Central Credential Provider (CCP / AIMWebService)**. It is **opt-in and per-secret**: a value
-is used literally unless it is written as a reference, so nothing changes until you choose to move a
-specific secret to CyberArk.
+App secrets read from configuration (the SIEM webhook `Token`, the chat `Chat:Webhook:WebhookUrl` and, CAP-05, the
+SMTP password `Email:SmtpPassword`; connection strings, `Agenda:FeedKey` and the other SMTP settings must be
+literals or environment variables) needn't be kept in plain text. Each is resolved at runtime through one seam, so a
+value may be written three ways, chosen per value:
+
+**The SMTP password is usually entered in the app instead** (Administration → Settings → Notifications → Email
+sign-in): it's encrypted with Data Protection and kept in the database, with no keytool step. It's write-only, its
+changes are audited, and it needs the Data Protection key ring backed up with the database (§1). Setting
+`Email:SmtpUsername`/`SmtpPassword` or `Email:SmtpUseDefaultCredentials` in the file, as below, overrides the form
+([integrations.md, Email](operations/integrations.md#email-smtp)). Integrated Windows sign-in as the app-pool gMSA
+(`Email:SmtpUseDefaultCredentials`, or *Windows* on the form) needs no password at all.
 
 **How a secret is selected**
 
-- **Literal (default):** the configured value is the secret, exactly as before.
+- **Literal (default):** the configured value is the secret, exactly as before. For the SMTP password,
+  Diagnostics warns that it's plain text.
+- **Protected (`@protected:`, CAP-05, [ADR 0018](decisions/0018-protected-secrets.md)):** the secret encrypted to a
+  certificate in `LocalMachine\My` whose private key the app-pool account can read: no CyberArk, and no new key
+  material in the file. Make the value on the server with `deploy\keytool\casebook-keytool protect-secret --cert
+  <thumbprint>` (or `--site <site folder>` to use the site's evidence, chain-key or signing certificate); it asks for
+  the secret twice without echo and prints only `@protected:v1:<thumbprint>:<data>`. Check one with
+  `casebook-keytool check-secret <value>` (OK or why not; never the secret). It works whether CyberArk is on or off.
+  A value that won't open (the certificate removed or renewed, its key unreadable, the value changed) is unavailable:
+  logged once by thumbprint, never the content. When the certificate is renewed, make the values again for the new
+  one before removing the old.
 - **Reference:** a value of the form `@cyberark:Safe=<safe>;Object=<object>` (any `;`-separated CCP query
-  parameters — `Safe`, `Folder`, `Object`, …) is fetched from CCP by **AppID + query**. The install-wide
-  **AppID** comes from config, not the reference, so a reference names only *where* the secret is, never a
-  credential.
+  parameters — `Safe`, `Folder`, `Object`, …) is fetched from **CyberArk Central Credential Provider (CCP /
+  AIMWebService)** by **AppID + query**. The install-wide **AppID** comes from config, not the reference, so a
+  reference names only *where* the secret is, never a credential. The rest of this section is about CyberArk; it's
+  opt-in, and nothing changes until you move a specific secret to it.
 
 Example — move the SIEM webhook token to CyberArk:
 
@@ -792,8 +809,8 @@ Two read-only views help operators confirm it is wired up and working:
   success/failure counts. It is in-memory and resets on restart. A persistent *Last attempt failed* here is
   the first place to look if an integration that depends on a CyberArk-backed secret stops authenticating.
 
-**Candidates.** Applied to `Siem:Webhook:Token` and `Chat:Webhook:WebhookUrl`. Any future config-borne credential (e.g. E-03 SMTP)
-should resolve through the same seam. The **seal signing key** (F-05b) and **Always-Encrypted column keys**
+**Candidates.** Applied to `Siem:Webhook:Token`, `Chat:Webhook:WebhookUrl` and `Email:SmtpPassword` (CAP-05). Any future
+config-borne credential should resolve through the same seam, which gives it `@protected:` too. The **seal signing key** (F-05b) and **Always-Encrypted column keys**
 (F-14) are noted as candidates but generally prefer the Windows certificate store / HSM over CCP.
 
 ## 7. SQL Server Ledger (E-10)

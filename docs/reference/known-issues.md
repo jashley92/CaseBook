@@ -40,7 +40,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Low | Upgrades never add new non-path settings to `appsettings.Production.json`. | New server-side settings take their `appsettings.json` defaults. | List new settings in release notes (done in UPGRADE notes). |
 | Low | The 5002 rejected-setting log line has no event id, and the check runs only at startup. | Harder to alert on from the Windows log. | Add the event id; re-check on reload. |
 | Low | Unknown or hidden evidence and report ids return 500 and the error page rather than 404; API errors redirect to an HTML page. | Noise in monitoring; unhelpful for API callers. | Map not-found to 404; JSON errors under `/api`. |
-| Low | SMTP has no authentication or timeout settings. | Needs an anonymous or IP-allowed relay. | Credential support via the secret provider. |
 
 ## Architecture and debt
 

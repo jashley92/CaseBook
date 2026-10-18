@@ -786,6 +786,22 @@ public sealed class KeyEnvelopeRecordConfiguration : IEntityTypeConfiguration<Ke
     }
 }
 
+/// <summary>CAP-05: the mail relay sign-in saved in Administration (one row; the password Data Protection ciphertext only).</summary>
+public sealed class SmtpSignInRecordConfiguration : IEntityTypeConfiguration<SmtpSignInRecord>
+{
+    public void Configure(EntityTypeBuilder<SmtpSignInRecord> b)
+    {
+        b.ToTable("SmtpSignIns");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Id).ValueGeneratedNever();
+        b.Property(x => x.Mode).HasMaxLength(16).IsRequired();
+        b.Property(x => x.Username).HasMaxLength(SmtpSignInRecord.UsernameMax).IsRequired();
+        b.Property(x => x.ProtectedPassword);   // nvarchar(max): Data Protection's payload grows with the password
+        b.Property(x => x.PasswordSetBy).HasMaxLength(256);
+        b.Property(x => x.UpdatedBy).HasMaxLength(256).IsRequired();
+    }
+}
+
 public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
 {
     public void Configure(EntityTypeBuilder<UserNotificationPreference> b)

@@ -18,6 +18,12 @@ internal enum SendOutcome
     Blocked,
     /// <summary>BUG-654: a held email nobody it was for may still receive (the case is gone, or they lost access): not sent.</summary>
     Withdrawn,
+    /// <summary>
+    /// CAP-05: the relay refused the sign-in (530, 534, 535, 538), or one it refused isn't tried again yet. Kept, as
+    /// Blocked is, but certain to be the settings' and not one email's, so the drain doesn't try the next to find out
+    /// (BUG-659): each try with a wrong password counts towards locking the account out.
+    /// </summary>
+    SignInRefused,
 }
 
 internal static class SendOutcomes
@@ -26,6 +32,9 @@ internal static class SendOutcomes
     public static SendOutcome Of(Exception ex) => ex switch
     {
         OperationCanceledException => SendOutcome.NotReached,
+        // CAP-05: first, as some relays refuse an unsigned session at RCPT (530 5.7.1), which would otherwise read as
+        // the addresses refused for good and delete the email.
+        _ when EmailSender.SignInRefused(ex) => SendOutcome.SignInRefused,
         _ when EmailSender.Unreachable(ex) => SendOutcome.NotReached,
         // BUG-626: 450/451/452 (and any other 4xx) say "not now", not "never": the same mail may go on a later try. When
         // several addresses were refused, one refused only for now is worth the retry (the rest were refused, not sent).

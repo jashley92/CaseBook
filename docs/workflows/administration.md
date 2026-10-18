@@ -13,7 +13,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 |---|---|---|
 | Identity & branding | `/admin` | Organization and team name, time zone, default jurisdictions, accent and ink colors, report logo |
 | Reports | `/admin/settings/reporting` | Report defaults (TLP, defanging, milestones, late-entry notes, separate approver, lessons legend), the section-layout designer, report profiles, the Word template library |
-| Notifications | `/admin/settings/notifications` | Email on/off, sender, distributions, reminder scans and their timing, mandatory types, chat routing, base URL; the delivery-readiness panel and a test email |
+| Notifications | `/admin/settings/notifications` | Email on/off, sender, distributions, reminder scans and their timing, mandatory types, chat routing, base URL; the delivery-readiness panel; the **Email sign-in** card (CAP-05: none, username and password, or Windows; the password write-only, encrypted with Data Protection, read-only when the server's configuration sets it) with a test email beside it; and a test email and chat message |
 | Email templates | `/admin/email-templates` | Subject and body of every notification email, with preview (the branded shell is fixed) |
 | Integrations | `/admin/settings/integrations` | Detection-source label and link template, VirusTotal link template |
 | Regulatory deadlines | `/admin/settings/regulatory-deadlines` | Deadline clock on/off, start basis, default window, per-jurisdiction rules |
@@ -30,7 +30,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from |
 | Configuration bundle | `/admin/config-bundle` | Export, diff and import editable configuration |
 | Updates | `/admin/settings/updates` | The running version and the last upgrade; the update check (off by default: one anonymous call a day to the GitHub Releases API) with each newer release's notes; the exact elevated command to upgrade this site |
-| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, SIEM test event, writable-path checks |
+| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the email relay sign-in check, SIEM test event, writable-path checks |
 | Style guide | `/admin/style` | Live design-system reference for developers |
 | Access log | `/access-log` (main navigation) | Who read which case or downloaded what |
 

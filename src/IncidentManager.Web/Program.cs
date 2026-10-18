@@ -151,6 +151,12 @@ builder.Services.AddHttpClient("updates").ConfigurePrimaryHttpMessageHandler(() 
 builder.Services.AddSingleton<IncidentManager.Web.Updates.UpdateCheckService>();
 builder.Services.AddHostedService<IncidentManager.Web.Updates.UpdateCheckHostedService>();
 builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IChatNotifier, IncidentManager.Web.Notifications.ChatWebhookNotifier>();
+// CAP-05: the relay sign-in saved in Administration (its password under Data Protection), read by the email sender per
+// send when the server's configuration sets none; and the form's service, which acts as the signed-in administrator.
+builder.Services.AddSingleton<IncidentManager.Web.Notifications.SmtpSignInStore>();
+builder.Services.AddSingleton<IncidentManager.Infrastructure.Notifications.ISmtpSignInSource>(
+    sp => sp.GetRequiredService<IncidentManager.Web.Notifications.SmtpSignInStore>());
+builder.Services.AddScoped<IncidentManager.Web.Notifications.SmtpSignInAdminService>();
 
 // --- F-13: per-user rate limit on the download/export endpoints, so a compromised account can't bulk-
 // scrape evidence/reports/exports. A token bucket keyed on the caller's id — bursts are fine, sustained
@@ -475,6 +481,17 @@ using (var scope = app.Services.CreateScope())
             sink?.Emit(IncidentManager.Application.Security.SecurityEvents.RejectedSettingOverride(key));
         }
     }
+}
+
+// CAP-05: relay sign-in settings that can't be used together (or half a username and password) stop every email until
+// fixed; say so at startup as well as on Diagnostics, and warn of a password left in plain text.
+{
+    var email = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<IncidentManager.Infrastructure.Notifications.EmailOptions>>().Value;
+    var mailLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Email.SignIn");
+    if (IncidentManager.Infrastructure.Notifications.SmtpSignIn.Problem(email) is { } problem)
+        mailLog.LogError("The mail relay sign-in can't be used, so no email is sent until it's fixed: {Problem}", problem);
+    foreach (var warning in IncidentManager.Infrastructure.Notifications.SmtpSignIn.Warnings(email))
+        mailLog.LogWarning("{Warning}", warning);
 }
 
 // --- HTTP pipeline ---

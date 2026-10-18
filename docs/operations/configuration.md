@@ -90,8 +90,11 @@ Everything else is checked lazily or not at all:
   new RSA-3072 key at startup. In any other environment it refuses to start until the key is provisioned out
   of band ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)), because a generated
   key on the server can't vouch for anything. No setting turns generation on outside Development.
-- Not validated at all: whether storage paths are outside the web root, `AllowedHosts`, email settings, the
-  format of `App:BaseUrl`. SIEM URLs are validated each time an event is sent.
+- Email relay sign-in settings that can't be used together (CAP-05) are logged as an error at startup and shown on
+  Diagnostics, but don't stop the app: email stops (held) until they're fixed. A plain-text `Email:SmtpPassword` is
+  logged as a warning.
+- Not validated at all: whether storage paths are outside the web root, `AllowedHosts`, the other email settings,
+  the format of `App:BaseUrl`. SIEM URLs are validated each time an event is sent.
 
 ## 3. Key reference
 
@@ -242,8 +245,14 @@ Classification, phase and other labels are under Administration → Taxonomy (`T
 
 ### 3.12 Email
 
-The SMTP client has **no username/password support and no timeout setting**: use an anonymous or
-IP-allow-listed relay.
+CaseBook signs in to the relay one of three ways (CAP-05): **none** (an anonymous or IP-allow-listed relay, the
+default), a **username and password**, or **Windows**: integrated authentication as the app-pool account (a gMSA), with
+no password anywhere, for on-premises Exchange. The usual place to set it is **Administration → Settings →
+Notifications → Email sign-in**: the password is encrypted with ASP.NET Core Data Protection and kept in the
+database (`SmtpSignIns`), never shown again ([integrations.md](integrations.md#email-smtp)). The server's
+configuration can set it instead, with the keys below; when it sets any of them it wins, and the form shows the
+sign-in read-only. Username and password, and Windows, can't be used together: a mix, or a username without a
+password (or the reverse), stops every email until it's fixed, and startup and Diagnostics say so.
 
 | Key | Purpose | Default | Edit | Sens |
 |---|---|---|---|---|
@@ -251,6 +260,10 @@ IP-allow-listed relay.
 | `Email:SmtpHost` | Relay host | blank; installer `-SmtpHost` | Server | ⚠ |
 | `Email:SmtpPort` | Relay port | `25` | Server | |
 | `Email:EnableSsl` | STARTTLS | `true` | Server | |
+| `Email:SmtpUsername` | Account to sign in to the relay as. Blank: the form's sign-in applies (or none). | blank | Server | ⚠ |
+| `Email:SmtpPassword` | Its password: a `@protected:` value (`casebook-keytool protect-secret`, [ADR 0018](../decisions/0018-protected-secrets.md)), an `@cyberark:` reference, or a literal (plain text in the file: Diagnostics warns). Resolved at each send; one that won't resolve stops the send, and the mail is held. Never logged or shown. | blank | Server | 🔒 |
+| `Email:SmtpUseDefaultCredentials` | Sign in as the app-pool account (integrated Windows authentication). Not with `SmtpUsername`/`SmtpPassword`. | `false` | Server | |
+| `Email:SmtpTimeoutSeconds` | How long a send may take before it counts as not reached (held to 5 to 300) | `30` | Server | |
 | `Email:From` | Sender address: one address, optionally with a name (`CaseBook <casebook@contoso.com>`). The settings page and a config-bundle import refuse a blank value, a name alone or a list; a bad value in the file (a blank installer mail domain produces `casebook@`, which fails every send once email is on) is flagged by the "Settings within limits" health check in Administration. | `incident-manager@localhost`; template `casebook@<domain>` | App | |
 | `Email:LegalDistribution` | Who is emailed when a case escalates to Breach | empty | App | ⚠ |
 | `Email:IntegrityAlertDistribution` | Who receives audit-chain and evidence-drift alarms | empty | App | ⚠ |
@@ -302,8 +315,10 @@ The full SIEM reference, including the event catalog, is in [OPERATIONS.md §5](
 | `Chat:Webhook:Enabled`, `WebhookUrl` (https), `Format` (`Slack`/`Teams`), `TimeoutSeconds`, `MaxAttempts` | off, blank, `Slack`, `5`, `3` | `WebhookUrl` 🔒 |
 | `Secrets:CyberArk:Enabled`, `BaseUrl`, `AppId`, `ClientCertificateThumbprint`, `CacheTtlSeconds`, `TimeoutSeconds`, `FailClosed` (all restart) | off, blank, blank (template `CaseBook`), blank, `300`, `5`, `true` | `BaseUrl`, `AppId` ⚠ |
 
-**Only two values can be `@cyberark:` references:** `Siem:Webhook:Token` and `Chat:Webhook:WebhookUrl`.
-Connection strings, `Agenda:FeedKey` and SMTP settings must be literals or come from environment variables.
+**Three values can be `@cyberark:` references or `@protected:` values** (CAP-05, ADR 0018): `Siem:Webhook:Token`,
+`Chat:Webhook:WebhookUrl` and `Email:SmtpPassword`. A `@protected:` value works with CyberArk on or off. The
+integrity keys take `@cyberark:` references of their own (§3.4). Connection strings, `Agenda:FeedKey` and the other
+SMTP settings must be literals or come from environment variables.
 
 ### 3.16 Role mapping (first run only)
 
@@ -329,6 +344,7 @@ tokens and refuses to write the file if any remain:
 | `__SQL_INSTANCE__`, `__DB_NAME__` | `-SqlInstance`, `-DbName` | `ConnectionStrings:Default` |
 | `__DATA_ROOT__` | `-DataRoot` | every storage path, the key paths, `DataProtection:KeyPath`, `BackupStatus:FilePath` |
 | `__SMTP_HOST__`, `__MAIL_DOMAIN__` | `-SmtpHost`, `-MailDomain` | `Email:SmtpHost`, `Email:From` |
+| `__SMTP_USERNAME__`, `__SMTP_PASSWORD__`, `__SMTP_INTEGRATED__` | `-SmtpUsername` with `-SmtpPasswordSource` (`Protected`, `CyberArk` or `Literal`), or `-SmtpIntegratedAuth` | `Email:SmtpUsername`, `Email:SmtpPassword` (for `Protected`, the `@protected:` value only), `Email:SmtpUseDefaultCredentials` |
 | `__AD_GROUP_ANALYSTS__` … `__AD_GROUP_APPADMINS__` | the five AD groups | `RoleMapping:Groups:*` |
 
 The template also fixes `Auth:Mode=Windows`, `Database:Provider=SqlServer`, auto-seal on every 24 hours,
