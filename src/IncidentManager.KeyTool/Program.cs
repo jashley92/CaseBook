@@ -110,11 +110,22 @@ internal static class KeyToolProgram
     // piping it in). Asked twice when typed, so a typo isn't protected.
     private static string ReadSecretOnce(string prompt, bool confirm)
     {
-        if (Console.IsInputRedirected) return (Console.In.ReadLine() ?? "").TrimEnd('\r', '\n');
+        if (Console.IsInputRedirected) return ReadRedirectedLine(Console.OpenStandardInput());
         var first = ReadHidden(prompt, Console.Error);
         if (confirm && ReadHidden("Again, to confirm: ", Console.Error) != first)
             throw new ArgumentException("The two entries differ; nothing was protected.");
         return first;
+    }
+
+    /// <summary>
+    /// CAP-05 review: the first line of redirected stdin, read as UTF-8 (a BOM, if any, is dropped). Not through
+    /// <see cref="Console.In"/>, which decodes in the console's OEM code page and would turn an accented letter into
+    /// something else, so the value protected wouldn't be the password typed. The installer pipes it as UTF-8 to match.
+    /// </summary>
+    internal static string ReadRedirectedLine(Stream input)
+    {
+        using var reader = new StreamReader(input, new System.Text.UTF8Encoding(false), detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        return (reader.ReadLine() ?? "").TrimEnd('\r', '\n');
     }
 
     private static string ReadHidden(string prompt, TextWriter to)

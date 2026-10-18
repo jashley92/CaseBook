@@ -330,6 +330,15 @@ logged today; check the folder's permissions directly.
 - **Fix:** restore the key ring folder from the same backup as the database ([OPERATIONS.md §1](../OPERATIONS.md)), or
   re-enter the password on the form. Nothing is sent with a password that isn't the one saved (fail closed).
 
+### "Someone changed the email sign-in since you opened it" (Save refused)
+
+- **Symptom:** Save sign-in (or Clear) on the Email sign-in form says nothing was saved because someone changed it since
+  you opened it; or, on a first save, "Someone else saved the email sign-in just now; reload to see it."
+- **Cause:** another administrator saved the sign-in after your form loaded it. Saving over it could have paired your
+  old username with the password they just set (CAP-05 review), so the save is refused instead.
+- **Fix:** the form now shows what's saved, with your entries kept. Check the username and the password (type it again
+  if you're the one changing it), then save again. For the first-save message, reload the page first.
+
 ### A `@protected:` secret doesn't open
 
 - **Symptom:** the log says "A @protected: secret (certificate …) couldn't be opened"; the email is held, the chat post
@@ -338,7 +347,10 @@ logged today; check the folder's permissions directly.
   value was made for another certificate (a renewal), or it was changed.
 - **Fix:** run `casebook-keytool check-secret <value>` on the server (as an administrator it tells you whether the value
   itself is good), grant the app-pool account read on the private key (certlm.msc → Manage Private Keys), or make the
-  value again with `casebook-keytool protect-secret` and recycle the app pool.
+  value again with `casebook-keytool protect-secret` and recycle the app pool. A value that opens but whose password
+  the relay refuses (535), for a password with accented or other non-ASCII letters, was likely piped in from a script
+  in the console's code page: the keytool reads piped input as UTF-8, so in Windows PowerShell set
+  `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)` before piping (the installer does), or type it at the prompt.
 
 ### The SIEM isn't receiving events
 

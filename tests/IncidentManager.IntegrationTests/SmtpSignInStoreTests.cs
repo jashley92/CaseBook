@@ -113,7 +113,9 @@ public sealed class SmtpSignInStoreTests : IDisposable
         status.PasswordSet.Should().BeTrue();
         status.PasswordUnreadable.Should().BeFalse();
         typeof(SmtpSignInStatus).GetProperties().Where(p => p.PropertyType == typeof(string)).Select(p => p.Name)
-            .Should().BeEquivalentTo(["Username", "PasswordSetBy", "UpdatedBy"], "what the page is given carries no password or ciphertext");
+            .Should().BeEquivalentTo(["Username", "PasswordSetBy", "UpdatedBy", "Stamp"], "what the page is given carries no password or ciphertext");
+        // CAP-05 review: the stale-edit stamp is a hash of the row, not the row: neither the password nor its ciphertext.
+        status.Stamp.Should().MatchRegex("^[0-9A-F]{64}$").And.NotContain(secret).And.NotContain(row.ProtectedPassword!);
     }
 
     [Fact]
@@ -173,6 +175,111 @@ public sealed class SmtpSignInStoreTests : IDisposable
         (await _store.ResolveAsync(CancellationToken.None)).Mode.Should().Be(SmtpSignInMode.Integrated);   // read and kept
         await Admin().SaveAsync(SmtpSignInMode.None, null, null);
         (await _store.ResolveAsync(CancellationToken.None)).Mode.Should().Be(SmtpSignInMode.None, "the save drops what was kept");
+    }
+
+    [Fact]
+    public async Task A_save_from_a_form_loaded_before_another_save_is_refused_and_changes_nothing(/* CAP-05 review */)
+    {
+        var first = NewSecret();
+        await Admin().SaveAsync(SmtpSignInMode.Password, "casebook@contoso.example", first, expectedStamp: "");
+        var loaded = await Admin().GetAsync();   // A opens the form
+
+        // B saves a new username and a new password.
+        var second = NewSecret();
+        var other = new TestCurrentUser { UserId = "admin2", RoleSet = [AppRole.SysAdmin] };
+        await Admin(other).SaveAsync(SmtpSignInMode.Password, "relay-b@contoso.example", second, (await Admin(other).GetAsync()).Stamp);
+        var afterB = await RowAsync();
+
+        // A saves without typing a password: "keep it" would pair A's old username with B's password.
+        var save = () => Admin().SaveAsync(SmtpSignInMode.Password, loaded.Username, null, loaded.Stamp);
+        var refused = (await save.Should().ThrowAsync<IncidentManager.Application.Cases.StaleEditException>()).Which;
+        refused.Message.Should().Be(SmtpSignInAdminService.ChangedSinceOpened);
+        refused.CurrentStamp.Should().Be((await Admin().GetAsync()).Stamp);
+
+        (await RowAsync()).Should().BeEquivalentTo(afterB, "nothing was written");
+        var (_, credentials) = await _store.ResolveAsync(CancellationToken.None);
+        credentials!.UserName.Should().Be("relay-b@contoso.example");
+        credentials.Password.Should().Be(second);
+        _audit.Summaries.Should().HaveCount(2, "the refused save isn't audited as a change");
+
+        // Clear from the stale form is refused too; with the stamp reloaded, Save goes through and the stamp moves on.
+        var clear = () => Admin().ClearAsync(loaded.Stamp);
+        await clear.Should().ThrowAsync<IncidentManager.Application.Cases.StaleEditException>();
+        var reloaded = await Admin().GetAsync();
+        await Admin().SaveAsync(SmtpSignInMode.Password, "casebook@contoso.example", null, reloaded.Stamp);
+        (await Admin().GetAsync()).Stamp.Should().NotBe(reloaded.Stamp);
+    }
+
+    [Fact]
+    public async Task A_first_save_from_a_form_that_saw_no_row_is_refused_once_one_is_saved(/* CAP-05 review */)
+    {
+        (await Admin().GetAsync()).Stamp.Should().BeEmpty("no row yet: a first save expects none");
+        await Admin().SaveAsync(SmtpSignInMode.Integrated, null, null, expectedStamp: "");
+        var late = () => Admin().SaveAsync(SmtpSignInMode.Password, "u@contoso.example", NewSecret(), expectedStamp: "");
+        await late.Should().ThrowAsync<IncidentManager.Application.Cases.StaleEditException>();
+        (await RowAsync())!.Mode.Should().Be(nameof(SmtpSignInMode.Integrated));
+    }
+
+    // Plays the other administrator: their whole first save runs, and commits, just as this save is about to write.
+    private sealed class OtherFirstSave(Func<Task> save) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor,
+        Microsoft.EntityFrameworkCore.Diagnostics.IDbTransactionInterceptor
+    {
+        public bool Ran { get; private set; }
+
+        private async Task RaceAsync()
+        {
+            if (Ran) return;
+            Ran = true;
+            await save();
+        }
+
+        public async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbTransaction>> TransactionStartingAsync(
+            System.Data.Common.DbConnection connection, Microsoft.EntityFrameworkCore.Diagnostics.TransactionStartingEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbTransaction> result, CancellationToken cancellationToken = default)
+        {
+            await RaceAsync();
+            return result;
+        }
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("INSERT INTO \"SmtpSignIns\"", StringComparison.Ordinal)) await RaceAsync();
+            return result;
+        }
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("INSERT INTO \"SmtpSignIns\"", StringComparison.Ordinal)) await RaceAsync();
+            return result;
+        }
+    }
+
+    [Fact]
+    public async Task Two_first_saves_at_once_one_lands_and_the_other_is_told_instead_of_an_error_page(/* CAP-05 review */)
+    {
+        var b = NewSecret();
+        var other = new TestCurrentUser { UserId = "admin2", RoleSet = [AppRole.SysAdmin] };
+        // Both forms opened on no row; B's save lands between A's read and A's insert.
+        var race = new OtherFirstSave(() => Admin(other).SaveAsync(SmtpSignInMode.Password, "relay-b@contoso.example", b, expectedStamp: ""));
+        var racing = new ServiceCollection()
+            .AddDbContextFactory<AppDbContext>(o => o.UseSqlite($"Data Source={_dbPath};Pooling=False").AddInterceptors(race))
+            .BuildServiceProvider();
+        await using var _ = racing;
+        var a = new SmtpSignInAdminService(_store, racing.GetRequiredService<IDbContextFactory<AppDbContext>>(),
+            new TestOptionsMonitor<EmailOptions>(_email), _admin, _audit, _clock, _siem);
+
+        var save = () => a.SaveAsync(SmtpSignInMode.Password, "relay-a@contoso.example", NewSecret(), expectedStamp: "");
+
+        (await save.Should().ThrowAsync<InvalidOperationException>()).Which.Message
+            .Should().Be("Someone else saved the email sign-in just now; reload to see it.");
+        race.Ran.Should().BeTrue();
+        var (_, credentials) = await _store.ResolveAsync(CancellationToken.None);
+        credentials!.UserName.Should().Be("relay-b@contoso.example", "the first to land is the one kept");
+        credentials.Password.Should().Be(b);
     }
 
     [Fact]
