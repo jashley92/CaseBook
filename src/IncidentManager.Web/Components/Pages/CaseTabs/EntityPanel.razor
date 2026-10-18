@@ -233,6 +233,40 @@
                     <a class="small" href="intel/indicators?entity=@en.Id">Compare verdicts across cases</a>
                 }
             </section>
+
+            @* CAP-28: not the same value, but close to it by fixed rules (domain, /24 or /48, email domain), on cases you can
+               see. Suggestions only: nothing is linked, and no value goes in a link (C7). *@
+            <section aria-labelledby="ep-related-h">
+                <h3 class="im-entity-panel-h" id="ep-related-h">Possibly related@(_related is null or { Count: 0 } ? "" : $" · {_related.Count}")</h3>
+                @if (IncidentManager.Domain.Observables.RelatedObservables.KeyOf(en.Type, en.Value) is not { } key)
+                {
+                    <p class="small text-muted mb-0">Suggested for domains, URLs, IP addresses and email addresses only.</p>
+                }
+                else if (_related is null)
+                {
+                    <p class="small text-muted mb-0">Checking…</p>
+                }
+                else if (_related.Count == 0)
+                {
+                    <p class="small text-muted mb-0">Nothing on other cases you can see has the @key.Describe().</p>
+                }
+                else
+                {
+                    @foreach (var r in _related)
+                    {
+                        <div class="im-seen">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <VerdictMark Value="r.DispositionThere" />
+                                <a href="cases/@r.OtherCaseId" class="im-data small">@r.OtherCaseNumber</a>
+                                <span class="small text-muted ms-auto">@(r.IsClosed ? "closed" : $"open · {Ui.Label(r.OtherPhase)}")</span>
+                            </div>
+                            <div class="small im-ellipsis" title="@r.OtherValue"><code>@r.OtherValue</code></div>
+                            <div class="small text-muted">@r.Why</div>
+                        </div>
+                    }
+                    <p class="small text-muted mb-0">A suggestion by a fixed rule, not a match. Nothing is linked.</p>
+                }
+            </section>
         </div>
     </aside>
 }
@@ -370,6 +404,7 @@
     private CaseEntity? Entity => EntityId is { } id ? Case.Entities.FirstOrDefault(e => e.Id == id) : null;
 
     private IReadOnlyList<EntityOverlap>? _otherCases;
+    private IReadOnlyList<RelatedIndicator>? _related;   // CAP-28
     private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
     private string? OutcomeLabel(string? key) => key is null ? null
         : _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);
@@ -388,6 +423,7 @@
         _verdictError = null;
         _copied = false;
         _otherCases = null;
+        _related = null;
         if (EntityId is { } id)
         {
             // BUG-342: a quick switch to another entity starts its own load; drop this one's results once it has.
@@ -396,6 +432,9 @@
                 .DistinctBy(o => o.OtherCaseId).ToList();
             if (!_showing.IsCurrent(t)) return;   // BUG-601: an A, B, A switch doesn't let the first A load land
             _otherCases = overlaps;
+            var related = await Cases.FindRelatedIndicatorsAsync(caseId, entityId: id);   // CAP-28
+            if (!_showing.IsCurrent(t)) return;
+            _related = related;
             if (overlaps.Any(o => o.IsClosed) && _outcomeLabels.Count == 0)
             {
                 var labels = await Outcomes.LabelsAsync();

@@ -212,6 +212,10 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Possibly related indicators (CAP-28).** The entity panel and the New case form's indicator check now also list
+  indicators on other cases you can see that share a registrable domain, a /24 (or /48) or an email domain, clearly
+  labelled as suggestions. Nothing is linked and gates and the Desk are unchanged. No migration and nothing to
+  configure; the registrable domain is a built-in approximation (no Public Suffix List is downloaded).
 - **The note box takes any file, not only screenshots (CAP-26).** Paste a file, or drop one on the timeline composer,
   and it's stored as evidence with the entry and cited by it ("Evidence: file.csv"), checked as an Evidence tab upload
   is before anything is stored (the same file already on the case is refused). Up to 50 MB, or the evidence limit if

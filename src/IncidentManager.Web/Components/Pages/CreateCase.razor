@@ -311,6 +311,31 @@
                     }
                 </div>
             }
+            @* CAP-28: not these values, but close to them by fixed rules, on cases you can see. A suggestion, never a link. *@
+            @if (!_checking && _related.Count > 0 && _checkedInput == _indicators)
+            {
+                <div class="im-seen-box mt-2" role="region" aria-label="Possibly related indicators">
+                    <div class="fw-semibold small mb-1">
+                        <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>
+                        Possibly related: @(_related.Select(r => r.OtherCaseId).Distinct().Count() is 1 ? "1 case has" : $"{_related.Select(r => r.OtherCaseId).Distinct().Count()} cases have") indicators close to these
+                    </div>
+                    @foreach (var g in _related.GroupBy(r => r.OtherCaseId))
+                    {
+                        <div class="im-seen">
+                            <div class="im-seen-h">
+                                <a href="cases/@g.Key" target="_blank" rel="noopener noreferrer" class="im-data">@g.First().OtherCaseNumber</a>
+                                <span class="im-seen-title">@g.First().OtherTitle</span>
+                                <span class="small text-muted">@(g.First().IsClosed ? "closed" : $"open · {Ui.Label(g.First().OtherPhase)}")</span>
+                            </div>
+                            @foreach (var r in g)
+                            {
+                                <div class="im-seen-meta text-break"><code>@r.OtherValue</code> <span class="text-muted">· @r.Why as @r.Indicator · @Ui.Label(r.DispositionThere) there</span></div>
+                            }
+                        </div>
+                    }
+                    <div class="small text-muted">A suggestion by a fixed rule (domain, /24 or /48, email domain), not a match. Nothing is linked.</div>
+                </div>
+            }
         </div>
 
         @* FR-04: the check ran on Create and surfaced related cases the analyst hadn't seen — pause once so
@@ -404,6 +429,7 @@
     private string? _indicators;
     private List<CaseIocMatch> _matches = new();
     private IReadOnlyList<CaseHistoryMatch> _history = [];   // HR-03
+    private IReadOnlyList<RelatedIndicator> _related = [];   // CAP-28: possibly related, a suggestion only
     private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
     private string? OutcomeLabel(string? key) => key is null ? null
         : _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);
@@ -456,6 +482,7 @@
         _checkedInput = null;
         _matches = new();
         _history = [];
+        _related = [];   // CAP-28
         _linkChoice.Clear();
         if (IndicatorLines(_indicators).Any()) await CheckOverlaps();
         else { ++_checkSeq; _checking = false; }
@@ -508,20 +535,22 @@
         var lines = IndicatorLines(_indicators).ToList();
         _checkedInput = _indicators;
         // WF-48: a drill is checked against no live case (and links to none).
-        if (lines.Count == 0 || _request.IsExercise) { _matches = new(); _history = []; _linkChoice.Clear(); _checking = false; return; }
+        if (lines.Count == 0 || _request.IsExercise) { _matches = new(); _history = []; _related = []; _linkChoice.Clear(); _checking = false; return; }
         _checking = true;
         List<CaseIocMatch> matches;
         IReadOnlyList<CaseHistoryMatch> history;
+        IReadOnlyList<RelatedIndicator> related;
         IReadOnlyDictionary<string, string>? labels = null;
         try
         {
             matches = (await Cases.FindOpenCaseMatchesForIocsAsync(lines)).ToList();
             history = await Cases.FindCaseHistoryForIocsAsync(lines);
+            related = await Cases.FindRelatedIndicatorsForIocsAsync(lines);   // CAP-28
             if (history.Count > 0 && _outcomeLabels.Count == 0) labels = await Outcomes.LabelsAsync();
         }
         finally { if (seq == _checkSeq) _checking = false; }
         if (seq != _checkSeq) return;
-        (_matches, _history) = (matches, history);
+        (_matches, _history, _related) = (matches, history, related);
         if (labels is not null) _outcomeLabels = labels;   // BUG-601: with the check they came with, as the rest
         // Drop choices for cases that are no longer matched (indicators edited).
         foreach (var id in _linkChoice.Keys.Where(k => _matches.All(m => m.CaseId != k)).ToList())

@@ -108,7 +108,8 @@ A single page, not a wizard.
 4. **Detected / Initial activity**: entered in your display time zone and stored as UTC.
 5. **Indicators**: one per line, defanged input accepted. **Check now** looks for open cases you can see
    that already carry them, and lists closed ones as **Seen before**, with each one's outcome, closing line and the
-   verdict the indicator reached there. You can mark matches as related, duplicate or same campaign. A match pauses the
+   verdict the indicator reached there, then **Possibly related** cases with indicators close to these by the same
+   fixed rules as the entity panel's (CAP-28; a suggestion, never a link). You can mark matches as related, duplicate or same campaign. A match pauses the
    first *Create* but never blocks it: **Create anyway** on the pause files the case (a second *Create* doesn't).
 6. **Vendor name** (third-party origin, CAP-24): offers the vendor names on cases you can see (exercises left out), but
    any name can be typed. Picking or typing one already known shows **Seen before**: how many earlier cases name it (and
@@ -325,7 +326,9 @@ Any entity chip, tag or row opens the **entity panel** over the current tab (`?e
 copy of its defanged form, type, source and TLP; the **verdict on this case** as five shapes to choose from (a
 change asks why, required for Malicious or Compromised, and shows on the timeline); where the case refers to it;
 tasks about it; relationships; and **Seen before**, the open and closed cases where the same value appears, each
-with the verdict reached there and, for closed ones, how they ended.
+with the verdict reached there and, for closed ones, how they ended. Under it, **Possibly related** (CAP-28): indicators
+on other cases you can see that aren't the same value but share its registrable domain, /24 (or /48) or email domain,
+each with its case, the verdict there and the rule ("same /24 (203.0.113.0/24)"). A suggestion only; nothing is linked.
 
 An evidence file name, a cited-file chip or a brief citation opens the **evidence panel** (`?evidence=<id>`): a
 preview on request (images, or the first lines of a text file; looking records a "Viewed" custody event), the full

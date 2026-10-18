@@ -28,6 +28,21 @@ public sealed record EntityOverlap(Guid EntityId, Guid OtherCaseId, string Other
 }
 
 /// <summary>
+/// CAP-28: an indicator on another case the user can see that's possibly related to <paramref name="Indicator"/> (one of
+/// this case's, or one being entered): not the same value, but the same registrable domain, /24 or /48, or email domain
+/// (<see cref="Key"/>). A suggestion, never a link.
+/// </summary>
+public sealed record RelatedIndicator(string Indicator, EntityType OtherType, string OtherValue, Guid OtherCaseId,
+    string OtherCaseNumber, string OtherTitle, CasePhase OtherPhase, EntityDisposition DispositionThere,
+    IncidentManager.Domain.Observables.RelatedKey Key)
+{
+    public bool IsClosed => OtherPhase == CasePhase.Closed;
+
+    /// <summary>Why it's suggested: "same registrable domain evil.example".</summary>
+    public string Why => Key.Describe();
+}
+
+/// <summary>
 /// HR-03: a visible <em>closed</em> case whose entities include indicators being entered on a new case: what it concluded,
 /// when, and the verdict each shared indicator reached there. Shown at intake as "seen before", beside the open matches.
 /// </summary>
@@ -2127,6 +2142,108 @@ public sealed class CaseService
             }
         }
         return result;
+    }
+
+    /// <summary>CAP-28: at most this many shared parts (domains, /24s, email domains) are looked up per check.</summary>
+    public const int RelatedKeyLimit = 50;
+
+    /// <summary>CAP-28: each shared part reads at most this many candidate indicators, newest cases first (C10).</summary>
+    public const int RelatedScanLimit = 500;
+
+    /// <summary>CAP-28: at most this many possibly related indicators are listed per indicator.</summary>
+    public const int RelatedPerIndicator = 20;
+
+    /// <summary>
+    /// CAP-28: the indicators on <em>other</em> cases the user can see that are possibly related to this case's (or just
+    /// <paramref name="entityId"/>'s) by the fixed rules of <see cref="Domain.Observables.RelatedObservables"/>: the same
+    /// registrable domain, /24 or /48, or email domain, never the identical value (that's <see cref="FindEntityOverlapsAsync"/>).
+    /// Need-to-know scoped; exercises take part in none. Suggestions only: nothing is linked, and nothing counts toward a
+    /// gate or the Desk (A4).
+    /// </summary>
+    public async Task<IReadOnlyList<RelatedIndicator>> FindRelatedIndicatorsAsync(Guid caseId, Guid? entityId = null,
+        CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<RelatedIndicator>();   // BUG-46
+        if (await IsExerciseAsync(db, caseId, ct)) return Array.Empty<RelatedIndicator>();   // WF-48
+        var mine = await db.CaseEntities.AsNoTracking()
+            .Where(e => e.CaseId == caseId && (entityId == null || e.Id == entityId))
+            .Select(e => new { e.Type, e.Value }).ToListAsync(ct);
+        return await RelatedAsync(db, mine.Select(m => (m.Type, m.Value)).ToList(), caseId, ct);
+    }
+
+    /// <summary>
+    /// CAP-28: the indicators possibly related to those being entered on a new case (detected and normalized as they'll
+    /// be filed), on the cases the user can see, by the rules of <see cref="FindRelatedIndicatorsAsync"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<RelatedIndicator>> FindRelatedIndicatorsForIocsAsync(IEnumerable<string> rawIndicators,
+        CancellationToken ct = default)
+    {
+        var mine = (rawIndicators ?? Enumerable.Empty<string>())
+            .Select(r => Domain.Observables.IocObservable.DetectType(r) is var t ? (t, Domain.Observables.IocObservable.Normalize(t, r)) : default)
+            .Where(m => m.Item2.Length > 0)
+            .ToList();
+        if (mine.Count == 0) return Array.Empty<RelatedIndicator>();
+        using var db = _factory.CreateDbContext();
+        return await RelatedAsync(db, mine, null, ct);
+    }
+
+    // CAP-28: one bounded query per shared part (a LIKE that narrows; the rule itself is checked here, in one place, C2),
+    // joined to the cases the user can see, exercises left out.
+    private async Task<IReadOnlyList<RelatedIndicator>> RelatedAsync(IAppDbContext db, IReadOnlyList<(EntityType Type, string Value)> mine,
+        Guid? notCaseId, CancellationToken ct)
+    {
+        var keyed = mine.Select(m => (m.Type, m.Value, Key: Domain.Observables.RelatedObservables.KeyOf(m.Type, m.Value)))
+            .Where(m => m.Key is not null).Select(m => (m.Type, m.Value, Key: m.Key!.Value)).ToList();
+        if (keyed.Count == 0) return Array.Empty<RelatedIndicator>();
+
+        var found = new List<(Domain.Observables.RelatedKey Key, Guid CaseId, string CaseNumber, string Title, CasePhase Phase,
+            EntityType Type, string Value, EntityDisposition Disposition)>();
+        foreach (var key in keyed.Select(k => k.Key).Distinct().Take(RelatedKeyLimit))
+        {
+            var types = Domain.Observables.RelatedObservables.TypesFor(key.Rule).ToList();
+            var pattern = RelatedPattern(key);
+#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
+            var rows = await (
+                from e in db.CaseEntities.AsNoTracking()
+                where types.Contains(e.Type) && (notCaseId == null || e.CaseId != notCaseId)
+                      && EF.Functions.Like(e.Value.ToLower(), pattern, LikeEscape)
+                join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
+                orderby c.CreatedAtUtc descending
+                select new { c.Id, c.CaseNumber, c.Title, c.Phase, e.Type, e.Value, e.Disposition }
+            ).Take(RelatedScanLimit).ToListAsync(ct);
+#pragma warning restore CA1304, CA1311
+            found.AddRange(rows.Where(r => Domain.Observables.RelatedObservables.KeyOf(r.Type, r.Value) == key)
+                .Select(r => (key, r.Id, r.CaseNumber, r.Title, r.Phase, r.Type, r.Value, r.Disposition)));
+        }
+
+        var result = new List<RelatedIndicator>();
+        foreach (var m in keyed.DistinctBy(m => (Domain.Observables.IocObservable.MatchFamily(m.Type), m.Value.ToLowerInvariant())))
+        {
+            result.AddRange(found
+                .Where(f => f.Key == m.Key && Domain.Observables.RelatedObservables.AreRelated(m.Type, m.Value, f.Type, f.Value))
+                .DistinctBy(f => (f.CaseId, f.Value.ToLowerInvariant()))
+                .Take(RelatedPerIndicator)
+                .Select(f => new RelatedIndicator(m.Value, f.Type, f.Value, f.CaseId, f.CaseNumber, f.Title, f.Phase, f.Disposition, m.Key)));
+        }
+        return result;
+    }
+
+    private const string LikeEscape = "\\";
+
+    // CAP-28: the LIKE that narrows to values that can share the part (lowercase; wildcards in the part escaped).
+    private static string RelatedPattern(Domain.Observables.RelatedKey key)
+    {
+        static string Esc(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[");
+        return key.Rule switch
+        {
+            Domain.Observables.RelatedRule.Ipv4Slash24 => $"%{Esc(key.Shared)}.%",
+            // An IPv6 address can be written compressed inside its /48 (2001:db8::5 is 2001:db8:0::5), so only the first
+            // hextet narrows.
+            Domain.Observables.RelatedRule.Ipv6Slash48 => $"%{Esc(key.Shared.Split(':')[0])}:%",
+            Domain.Observables.RelatedRule.EmailDomain => $"%@{Esc(key.Shared)}",
+            _ => $"%{Esc(key.Shared)}%",
+        };
     }
 
     /// <summary>

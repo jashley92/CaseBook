@@ -38,7 +38,7 @@ making touches one of these, read the linked page first and add a test that woul
 | A1 | **No job or API changes case state.** Jobs read and notify; the API stages a pending import for a person to confirm; gates block or warn. | Every transition must be an attributable human act. [Decision 0004](../decisions/0004-human-gated-automation.md) | Scanners; `CaseImportService.SubmitAsync` |
 | A2 | **No calls to AI services.** | Regulated data stays inside. [Decision 0005](../decisions/0005-no-outbound-ai.md) | — |
 | A3 | **Side effects never fail the user's action.** Email, chat, SIEM, access log and seal export are best effort. | A slow collector mustn't block an incident response. The audit chain is the system of record. | Notifiers, transports |
-| A4 | **Suggestions never act on their own** (related cases, duplicate checks, entity review, brief freshness, narrative drafts, the playbook offered after an escalation, CAP-11). | Same as A1. | |
+| A4 | **Suggestions never act on their own** (related cases, duplicate checks, entity review, brief freshness, narrative drafts, the playbook offered after an escalation, CAP-11; possibly related indicators, CAP-28, which also stay off the gates and the Desk). | Same as A1. | |
 | A5 | **Multi-step flows are resumable** (creating a case with its setup, applying an import). | A retry after a partial failure must not duplicate. | `CreateCase.razor`, `CaseImportService` |
 
 ## Case lifecycle
