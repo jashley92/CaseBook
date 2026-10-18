@@ -606,8 +606,9 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
     }
 
     /// <summary>How long the check before a new key may take: it runs only when no envelope exists anywhere (encryption
-    /// turned on for the first time, or a disaster), so it can afford to be thorough.</summary>
-    internal static TimeSpan ScanTimeLimit { get; set; } = TimeSpan.FromMinutes(2);
+    /// turned on for the first time, or a disaster), so it can afford to be thorough. Per keyring, so a test that shortens
+    /// it can't cut short another test's check running alongside.</summary>
+    internal TimeSpan ScanTimeLimit { get; set; } = TimeSpan.FromMinutes(2);
 
     private string? ScanForKeyId(Dictionary<string, long> recorded, CancellationToken ct)
     {
