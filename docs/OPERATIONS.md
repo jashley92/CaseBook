@@ -401,8 +401,9 @@ casebook-keytool verify --site C:\inetpub\casebook --pfx E:\casebook-recovery-a.
 casebook-keytool verify --site C:\inetpub\casebook --shares                           # asks for the shares
 ```
 
-**Turning it on.** Configure the backups, set `Enabled` to `true`, restart the app pool, and check Diagnostics shows
-**On**. New files are encrypted from then on. Files stored before are converted in the background, starting 15
+**Turning it on.** Configure the backups, set `Enabled` to `true` (or, at install, the answers file's
+`EvidenceEncryption`, `RecoveryCertificates` and `EvidenceKeyThumbprint`: INSTALL.md §4), restart the app pool, and
+check Diagnostics shows **On**. New files are encrypted from then on. Files stored before are converted in the background, starting 15
 minutes after start-up (after `Upgrade-CaseBook.ps1`'s warm-up), or at once with **Convert now** on Diagnostics. Each
 is checked against its recorded hash before and after, and only then replaces the original; one that doesn't match
 is left as it is and reported. Conversion needs free space for the largest file. **It's one-way:** an earlier

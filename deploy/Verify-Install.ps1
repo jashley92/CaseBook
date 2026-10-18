@@ -173,6 +173,35 @@ if ($ConfigFile) {
             default       { Bad "ChainKeySource '$chainSource' isn't '', CyberArk or Certificate" }
         }
 
+        # --- Evidence encryption at rest (PROD-57) ---
+        $encOn = $cfg.ContainsKey('EvidenceEncryption') -and [bool]$cfg.EvidenceEncryption
+        $recList = @()
+        if ($cfg.ContainsKey('RecoveryCertificates')) { $recList = @($cfg.RecoveryCertificates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) }
+        if (-not $encOn) { Info "Evidence encryption: off (the default)" }
+        else {
+            # What protects the key: its own certificate, else the integrity certificate, else the CyberArk chain key.
+            $ownThumb = if ($cfg.ContainsKey('EvidenceKeyThumbprint')) { [string]$cfg.EvidenceKeyThumbprint } else { '' }
+            if ($ownThumb -replace '[^0-9A-Fa-f]','') { Test-KeyCert $ownThumb 'Evidence key' }
+            elseif ($chainSource -eq 'Certificate') { Ok "Evidence key: protected by the audit chain key's certificate (checked above)" }
+            elseif ($sigSource -eq 'CertificateStore') { Ok "Evidence key: protected by the seal-signing certificate (checked above)" }
+            elseif ($chainSource -eq 'CyberArk') { Ok "Evidence key: protected by a key derived from the CyberArk chain key" }
+            else { Bad "Evidence encryption is on but nothing can protect its key: set EvidenceKeyThumbprint, or use a certificate (or CyberArk) for the signing or chain key" }
+            if (-not $recList.Count) { Warn "Evidence encryption is on with no RecoveryCertificates: nothing is encrypted until shares are issued (casebook-keytool split) after install" }
+            $evPath = if ($cfg.ContainsKey('EvidencePath') -and $cfg.EvidencePath) { [string]$cfg.EvidencePath } else { '' }
+            if ($evPath.StartsWith('\\')) { Info "Evidence store on a share: the key's envelope copy is kept there too (.key folder); back the share up with the database and the keys folder" }
+        }
+        foreach ($rp in $recList) {
+            if (-not (Test-Path $rp)) { Bad "Recovery certificate '$rp' not found"; continue }
+            try { $rc = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList (Resolve-Path $rp).Path }
+            catch { Bad "Recovery certificate '$rp' couldn't be read as a public certificate (a password-protected .pfx holds the private key: give the exported .cer instead)"; continue }
+            if ($rc.HasPrivateKey) { Bad "Recovery certificate '$rp' contains its private key: give the public part only (.cer) and keep the private key offline"; continue }
+            if (-not [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($rc)) { Bad "Recovery certificate '$rp' isn't RSA"; continue }
+            $days = ($rc.NotAfter - (Get-Date)).TotalDays
+            if ($days -lt 0) { Warn "Recovery certificate $($rc.Thumbprint) expired $($rc.NotAfter.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)) (it still recovers the key; renew it when convenient)" }
+            else { Ok "Recovery certificate $($rc.Thumbprint) ($($rc.Subject)), public part only" }
+        }
+        if ($recList.Count -eq 1) { Warn "One recovery certificate: two, with two custodians, is the recommended setup" }
+
         # --- TLS certificate ---
         if ($cfg.ContainsKey('CertificateThumbprint') -and -not [string]::IsNullOrWhiteSpace([string]$cfg.CertificateThumbprint)) {
             $tp = (([string]$cfg.CertificateThumbprint) -replace '\s','').ToUpper()

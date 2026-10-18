@@ -130,6 +130,12 @@ param(
     [string] $ChainKeySecret = '',
     [string] $ChainKeyThumbprint = '',
 
+    # Evidence encryption at rest (PROD-57; OPERATIONS.md section 2, Evidence key). Off unless set.
+    [bool] $EvidenceEncryption = $false,
+    [string] $EvidenceKeyThumbprint = '',
+    # Recovery certificates: paths to .cer files (public part only). Copied to <DataRoot>\keys\recovery.
+    [string[]] $RecoveryCertificates = @(),
+
     [string] $PublishConfiguration = 'Release',
 
     # Air-gapped / no nuget.org on this host: publish on a machine WITH internet
@@ -178,6 +184,9 @@ if ($ConfigFile) {
         ChainKeySource        = 'ChainKeySource'
         ChainKeySecret        = 'ChainKeySecret'
         ChainKeyThumbprint    = 'ChainKeyThumbprint'
+        EvidenceEncryption    = 'EvidenceEncryption'
+        EvidenceKeyThumbprint = 'EvidenceKeyThumbprint'
+        RecoveryCertificates  = 'RecoveryCertificates'
     }
     foreach ($key in $mapping.Keys) {
         $var = $mapping[$key]
@@ -337,6 +346,31 @@ $AdGroupLeadership = ConvertTo-CaseBookGroupName 'Leadership'          $AdGroupL
 $AdGroupLegal      = ConvertTo-CaseBookGroupName 'Legal/Privacy'       $AdGroupLegal      -OnWebServer
 $AdGroupAppAdmins  = ConvertTo-CaseBookGroupName 'App Admins'          $AdGroupAppAdmins  -OnWebServer
 
+# --- 2b. Recovery certificates for evidence encryption (PROD-57) ---------------
+# Only the public part: a .cer holding a private key would put the offline backup on the server.
+$recoveryOnServer = @()
+$recoveryList = @($RecoveryCertificates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+if ($recoveryList.Count) {
+    $recoveryDir = Join-Path $DataRoot 'keys\recovery'
+    Write-Step "Copying $($recoveryList.Count) recovery certificate(s) to $recoveryDir"
+    New-Item -ItemType Directory -Force -Path $recoveryDir | Out-Null
+    foreach ($src in $recoveryList) {
+        if (-not (Test-Path $src)) { throw "Recovery certificate '$src' not found." }
+        try { $rc = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList (Resolve-Path $src).Path }
+        catch { throw "Recovery certificate '$src' couldn't be read as a public certificate (a password-protected .pfx holds the private key: give the exported .cer instead)." }
+        if ($rc.HasPrivateKey) { throw "Recovery certificate '$src' contains its private key. Export the public part only (a .cer) and keep the private key offline." }
+        if (-not [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($rc)) { throw "Recovery certificate '$src' isn't RSA." }
+        $dest = Join-Path $recoveryDir ("casebook-recovery-" + $rc.Thumbprint + ".cer")
+        Copy-Item -Path $src -Destination $dest -Force
+        $recoveryOnServer += $dest
+        Write-Host "    $($rc.Thumbprint)  $($rc.Subject)  (expires $($rc.NotAfter.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)))"
+    }
+}
+if ($EvidenceEncryption -and -not $recoveryOnServer.Count) {
+    Write-Warning ("Evidence encryption is turned on with no recovery certificate. Nothing is encrypted until a backup exists: " +
+        "after install, run deploy\keytool\casebook-keytool split --site $SitePath (OPERATIONS.md section 2).")
+}
+
 # --- 3. appsettings.Production.json from template -----------------------------
 Write-Step "Writing appsettings.Production.json"
 $json = Get-Content $template -Raw
@@ -360,6 +394,8 @@ $map = @{
     '__CHAIN_KEY_SOURCE__'     = $(if ($ChainKeySource) { $ChainKeySource } else { 'CyberArk' })
     '__CHAIN_KEY_SECRET__'     = $ChainKeySecret
     '__CHAIN_KEY_THUMBPRINT__' = ($ChainKeyThumbprint -replace '\s','')
+    '__EVIDENCE_ENCRYPTION__'  = $(if ($EvidenceEncryption) { 'true' } else { 'false' })
+    '__EVIDENCE_KEY_THUMBPRINT__' = ($EvidenceKeyThumbprint -replace '\s','')
 }
 # Every placeholder sits inside a JSON string, so every value is JSON-escaped. A named instance (SQLHOST\PROD) or a
 # DOMAIN\Group name would otherwise be an invalid escape, or silently turn into a tab or carriage return.
@@ -373,7 +409,11 @@ function ConvertTo-JsonStringBody([string] $v) {
     }
     $sb.ToString()
 }
+# The recovery certificates are a JSON array, not one string: the placeholder and its quotes become the whole list.
+$recoveryJson = '[' + ((@($recoveryOnServer) | ForEach-Object { '"' + (ConvertTo-JsonStringBody $_) + '"' }) -join ', ') + ']'
+$json = $json.Replace('["__RECOVERY_CERTIFICATES__"]', $recoveryJson)
 foreach ($k in $map.Keys) { $json = $json.Replace($k, (ConvertTo-JsonStringBody ([string]$map[$k]))) }
+if ($json.Contains('__RECOVERY_CERTIFICATES__')) { throw "Unsubstituted placeholder remains in the config: __RECOVERY_CERTIFICATES__" }
 # Guard against a genuinely-unsubstituted value: check only the known placeholder keys, so descriptive
 # text in the template (which may itself mention the token format) can never false-positive.
 $leftover = @($map.Keys | Where-Object { $json.Contains($_) })

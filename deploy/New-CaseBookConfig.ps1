@@ -175,6 +175,23 @@ if ($ChainKeySource -eq 'CyberArk') {
 }
 if ($ChainKeySource -eq 'Off') { $ChainKeySource = '' }
 
+# --- Evidence encryption at rest (PROD-57) ---------------------------------------
+Write-Host ""
+Write-Host "Evidence encryption at rest (off unless chosen; read OPERATIONS.md section 2, Evidence key, first)" -ForegroundColor Cyan
+$enc = Ask-Choice -Prompt 'Encrypt evidence and reports at rest' -Options @('n','y') -Default 'n'
+$EvidenceEncryption = $enc -eq 'y'
+$EvidenceKeyThumbprint = ''; $RecoveryCertificates = @()
+if ($EvidenceEncryption) {
+    $EvidenceKeyThumbprint = Ask -Prompt 'Own certificate for the evidence key (blank = the integrity certificate)' -Default ''
+    Write-Host "  Recovery certificates: paths to .cer files (public part only), one per line; blank to finish."
+    while ($true) {
+        $rc = Ask -Prompt '  Recovery certificate (.cer)' -Default ''
+        if ([string]::IsNullOrWhiteSpace($rc)) { break }
+        $RecoveryCertificates += $rc
+    }
+    if (-not $RecoveryCertificates.Count) { Write-Host "  None given: nothing is encrypted until shares are issued (casebook-keytool split)." -ForegroundColor Yellow }
+}
+
 # --- Optional SQL Server ledger (E-10) ------------------------------------------
 Write-Host ""
 Write-Host "SQL Server ledger digests (optional - used by Enable-Ledger.ps1 / Export-LedgerDigest.ps1)" -ForegroundColor Cyan
@@ -218,6 +235,10 @@ $body = @"
     ChainKeySource       = $(Q $ChainKeySource)
     ChainKeySecret       = $(Q $ChainKeySecret)
     ChainKeyThumbprint   = $(Q $ChainKeyThumbprint)
+
+    EvidenceEncryption    = $(if ($EvidenceEncryption) { '$true' } else { '$false' })
+    EvidenceKeyThumbprint = $(Q $EvidenceKeyThumbprint)
+    RecoveryCertificates  = @($((@($RecoveryCertificates) | ForEach-Object { Q $_ }) -join ', '))
 
     LedgerDigestPath = $(Q $LedgerDigestPath)
 }

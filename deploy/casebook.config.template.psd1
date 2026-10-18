@@ -83,6 +83,14 @@
     ChainKeySecret       = ''
     ChainKeyThumbprint   = ''
 
+    # --- Evidence encryption at rest (PROD-57; off unless set; OPERATIONS.md section 2, Evidence key) ---
+    # Losing the key loses every encrypted file. Make the recovery certificates first (two, two custodians), keep their
+    # private keys offline, and list the public .cer files here: the installer copies them to <DataRoot>\keys\recovery.
+    # EvidenceKeyThumbprint is optional: blank protects the key with the integrity certificate (chain key's or signing).
+    EvidenceEncryption    = $false
+    EvidenceKeyThumbprint = ''
+    RecoveryCertificates  = @()       # e.g. @('C:\setup\casebook-recovery-a.cer', 'C:\setup\casebook-recovery-b.cer')
+
     # --- Optional SQL Server ledger (E-10; Enable-Ledger.ps1, Export-LedgerDigest.ps1, Verify-LedgerDigests.ps1) ---
     LedgerDigestPath = ''             # e.g. '\\worm01\casebook-ledger' - an immutable share the DBA can't modify
 }
