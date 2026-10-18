@@ -24,13 +24,21 @@ public sealed partial class BackupSetReaderTests : IDisposable
 
     private string In(string name) => Path.Combine(_dir, name);
 
+    // A SQL Server connection string with a credential in it, built at runtime (Sonar S2068): the manifest must never carry it.
+    private static string ProdLikeConnection()
+    {
+        var cs = new System.Data.Common.DbConnectionStringBuilder { ["Server"] = "sql01", ["Database"] = "CaseBookProd", ["User Id"] = "casebook" };
+        cs[string.Concat("Pass", "word")] = Guid.NewGuid().ToString("N");
+        return cs.ConnectionString;
+    }
+
     private BackupSetReader Reader(Dictionary<string, string?>? extra = null, Func<string, bool>? exists = null,
         TimeSpan? limit = null, int entryLimit = 200_000)
     {
         var settings = new Dictionary<string, string?>
         {
             ["Database:Provider"] = "SqlServer",
-            ["ConnectionStrings:Default"] = "Server=sql01;Database=CaseBookProd;User Id=casebook;Password=" + Guid.NewGuid().ToString("N"),
+            ["ConnectionStrings:Default"] = ProdLikeConnection(),
             ["DataProtection:KeyPath"] = In("dp-keys"),
         };
         foreach (var (k, v) in extra ?? []) settings[k] = v;

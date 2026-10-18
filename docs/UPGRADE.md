@@ -212,7 +212,15 @@ first with `casebook-keytool export`.
 
 ## Notes
 
-### Unreleased
+### v1.10.0
+
+A large release: everything below lands at once. Eight migrations, applied on first start: `StoredSecrets`, `NoticeDetails`,
+`EvidenceCollection`, `EvidenceWithdrawal`, `HandoffRecipient`, `AddCaseParties`, `AddTeams` and `FullTextSearch`
+(its indexes only where SQL Server has Full-Text Search; a no-op on SQLite). DBA-applied installs run the
+regenerated `deploy/sql/casebook-schema-sqlserver.sql`. Run `Upgrade-CaseBook.ps1` as usual: it now also checks and sets
+the IIS anonymous carve-outs. **Tell the SOC** about the new SIEM events (5308, 5516) and the changed 5513 sequence; **back
+up the Data Protection key folder** with the database (in-app secrets depend on it); and **fill in your organization's
+domains** under Integrations if the server isn't on the domain. Things to check:
 
 - **Per-jurisdiction notification clocks (CAP-38).** Each regulator's clock stops only at a notice recorded for it, and
   a case counts as reported only when every jurisdiction in play has one. Until then the case page, Briefing, report
