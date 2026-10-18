@@ -299,4 +299,25 @@ public sealed class KeyToolTests : IDisposable
         var none = () => KeyToolCommands.ProtectSecret(secret, null, "LocalMachine", null, new StringWriter());
         none.Should().Throw<ArgumentException>().WithMessage("*--cert*");
     }
+
+    [Fact]
+    public void Protect_secret_reads_piped_stdin_as_utf8_so_a_non_ascii_password_round_trips(/* CAP-05 review */)
+    {
+        // As the installer pipes it: UTF-8 without a BOM, one line. Console.In would decode it in the OEM code page.
+        var secret = "pé-über-" + Guid.NewGuid().ToString("N")[..8];   // S2068: made at run time
+        using var piped = new MemoryStream(new System.Text.UTF8Encoding(false).GetBytes(secret + "\r\n"));
+        var read = KeyToolProgram.ReadRedirectedLine(piped);
+        read.Should().Be(secret);
+
+        // A BOM (a UTF8Encoding(true) on the sending side) is dropped, not taken as part of the password.
+        using var withBom = new MemoryStream([.. System.Text.Encoding.UTF8.GetPreamble(), .. System.Text.Encoding.UTF8.GetBytes(secret)]);
+        KeyToolProgram.ReadRedirectedLine(withBom).Should().Be(secret);
+
+        using var rsa = RSA.Create(3072);
+        using var cert = new CertificateRequest("CN=CaseBook protect-secret UTF-8", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pss)
+            .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+        var value = IncidentManager.Infrastructure.Secrets.ProtectedSecret.Protect(read, cert);
+        IncidentManager.Infrastructure.Secrets.ProtectedSecret.TryOpen(value, _ => cert, out var opened, out _).Should().BeTrue();
+        opened.Should().Be(secret, "the password protected is exactly the one piped in, accents included");
+    }
 }

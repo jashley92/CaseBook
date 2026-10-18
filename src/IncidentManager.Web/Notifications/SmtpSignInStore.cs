@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Common;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Common;
@@ -18,9 +19,10 @@ namespace IncidentManager.Web.Notifications;
 /// <summary>
 /// CAP-05: the saved sign-in as Administration shows it. Never the password: whether one is set, when and by whom, and
 /// whether it opens on this server (<see cref="PasswordUnreadable"/>: a database restored without its Data Protection keys).
+/// CAP-05 review: <see cref="Stamp"/> is the row as it was read ("" for none), for the form to hand back on Save.
 /// </summary>
 public sealed record SmtpSignInStatus(SmtpSignInMode Mode, string Username, bool PasswordSet, DateTimeOffset? PasswordSetAtUtc,
-    string? PasswordSetBy, DateTimeOffset? UpdatedAtUtc, string? UpdatedBy, bool PasswordUnreadable)
+    string? PasswordSetBy, DateTimeOffset? UpdatedAtUtc, string? UpdatedBy, bool PasswordUnreadable, string Stamp = "")
 {
     public static readonly SmtpSignInStatus None = new(SmtpSignInMode.None, "", false, null, null, null, null, false);
 }
@@ -59,14 +61,26 @@ public sealed class SmtpSignInStore : ISmtpSignInSource
     /// <summary>Drops what's kept, so the next send reads the row the form just saved.</summary>
     public void Invalidate() => _order.TryPublish(_order.Begin(), () => { lock (_gate) _cached = null; });
 
-    public async Task<SmtpSignInStatus> StatusAsync(CancellationToken ct = default)
+    /// <summary>
+    /// The saved sign-in. <paramref name="fresh"/> reads the row now rather than what's kept (the form: its stamp must be
+    /// the row's, or a save from it would be refused as stale on a server that didn't make the change).
+    /// </summary>
+    public async Task<SmtpSignInStatus> StatusAsync(bool fresh = false, CancellationToken ct = default)
     {
-        var row = await RowAsync(ct);
+        var row = await RowAsync(ct, fresh);
         if (row is null) return SmtpSignInStatus.None;
         return new SmtpSignInStatus(ModeOf(row) ?? SmtpSignInMode.Invalid, row.Username, row.ProtectedPassword is not null,
             row.PasswordSetAtUtc, row.PasswordSetBy, row.UpdatedAtUtc, row.UpdatedBy,
-            row.ProtectedPassword is { } p && Open(p) is null);
+            row.ProtectedPassword is { } p && Open(p) is null, StampOf(row));
     }
+
+    /// <summary>
+    /// CAP-05 review: what the form writes back over (the mode, the username, the password's ciphertext) and when, hashed
+    /// so the page never holds the ciphertext. "" when there's no row: a first save expects none.
+    /// </summary>
+    internal static string StampOf(SmtpSignInRecord? row) => row is null ? "" :
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join('\n', row.Mode, row.Username,
+            row.ProtectedPassword ?? "", row.UpdatedAtUtc.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture), row.UpdatedBy))));
 
     public async Task<(SmtpSignInMode Mode, NetworkCredential? Credentials)> ResolveAsync(CancellationToken ct)
     {
@@ -110,10 +124,10 @@ public sealed class SmtpSignInStore : ISmtpSignInSource
     internal static SmtpSignInMode? ModeOf(SmtpSignInRecord row) =>
         EnumNames.TryParse<SmtpSignInMode>(row.Mode, out var m) && m != SmtpSignInMode.Invalid ? m : null;
 
-    private async Task<SmtpSignInRecord?> RowAsync(CancellationToken ct)
+    private async Task<SmtpSignInRecord?> RowAsync(CancellationToken ct, bool fresh = false)
     {
         lock (_gate)
-            if (_cached is { } c && Environment.TickCount64 - c.At < Keep.TotalMilliseconds) return c.Row;
+            if (!fresh && _cached is { } c && Environment.TickCount64 - c.At < Keep.TotalMilliseconds) return c.Row;
         var ticket = _order.Begin();
         await using var scope = _scopes.CreateAsyncScope();
         await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct);
@@ -144,13 +158,23 @@ public sealed class SmtpSignInAdminService(
     /// <summary>Whether server configuration sets the sign-in, so the form is read-only.</summary>
     public bool SetInServerConfiguration => SmtpSignIn.InServerConfig(email.CurrentValue);
 
-    public Task<SmtpSignInStatus> GetAsync(CancellationToken ct = default) => store.StatusAsync(ct);
+    /// <summary>The saved sign-in, read now (not what the sender keeps), with the stamp a save hands back.</summary>
+    public Task<SmtpSignInStatus> GetAsync(CancellationToken ct = default) => store.StatusAsync(fresh: true, ct);
+
+    /// <summary>CAP-05 review: the words for a save refused because the sign-in changed since the form loaded it.</summary>
+    public const string ChangedSinceOpened =
+        "Someone changed the email sign-in since you opened it, so nothing was saved: it would have undone that. What's " +
+        "saved now is shown, with your entries kept; check them, then save again.";
 
     /// <summary>
     /// Saves the sign-in. <paramref name="newPassword"/> replaces the saved one when given; otherwise a password sign-in
     /// keeps the one saved. None and Windows clear the username and password (they're different ways to sign in).
+    /// CAP-05 review: <paramref name="expectedStamp"/> is the <see cref="SmtpSignInStatus.Stamp"/> the form loaded ("" when
+    /// there was no row). A row changed since is refused (<see cref="StaleEditException"/>): otherwise a stale form's Save
+    /// that keeps the password would pair its old username with the password someone else just saved. Null skips the check.
     /// </summary>
-    public async Task SaveAsync(SmtpSignInMode mode, string? username, string? newPassword, CancellationToken ct = default)
+    public async Task SaveAsync(SmtpSignInMode mode, string? username, string? newPassword, string? expectedStamp = null,
+        CancellationToken ct = default)
     {
         Require();
         if (SetInServerConfiguration)
@@ -167,6 +191,9 @@ public sealed class SmtpSignInAdminService(
 
         await using var context = await db.CreateDbContextAsync(ct);
         var row = await context.SmtpSignIns.FirstOrDefaultAsync(r => r.Id == SmtpSignInRecord.SingletonId, ct);
+        var current = SmtpSignInStore.StampOf(row);
+        if (expectedStamp is not null && !string.Equals(current, expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(current, ChangedSinceOpened);
         var adding = row is null;
         row ??= new SmtpSignInRecord();
         var before = adding ? SmtpSignInMode.None : SmtpSignInStore.ModeOf(row) ?? SmtpSignInMode.Invalid;
@@ -200,7 +227,16 @@ public sealed class SmtpSignInAdminService(
         row.UpdatedAtUtc = now;
         row.UpdatedBy = who;
         if (adding) context.SmtpSignIns.Add(row);
-        await context.SaveChangesAsync(ct);
+        try { await context.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (adding)
+        {
+            // CAP-05 review (as BUG-459): another administrator's first save landed between the read above and this insert
+            // (the primary key refused it). Worded, so the card says so instead of the circuit failing.
+            await using var recheck = await db.CreateDbContextAsync(ct);
+            if (await recheck.SmtpSignIns.AnyAsync(r => r.Id == SmtpSignInRecord.SingletonId, ct))
+                throw new InvalidOperationException("Someone else saved the email sign-in just now; reload to see it.", ex);
+            throw;
+        }
         store.Invalidate();   // the next send uses it: no restart
 
         // Who, when (the entry's own), the mode and what became of the password: never the password or its ciphertext.
@@ -210,8 +246,9 @@ public sealed class SmtpSignInAdminService(
         siem?.Emit(SecurityEvents.SettingChanged(SettingKey, user.UserId, user.UserPrincipalName));
     }
 
-    /// <summary>Clears the saved password and signs in with none: the form's Clear.</summary>
-    public Task ClearAsync(CancellationToken ct = default) => SaveAsync(SmtpSignInMode.None, null, null, ct);
+    /// <summary>Clears the saved password and signs in with none: the form's Clear (with the stamp it loaded, as for Save).</summary>
+    public Task ClearAsync(string? expectedStamp = null, CancellationToken ct = default) =>
+        SaveAsync(SmtpSignInMode.None, null, null, expectedStamp, ct);
 
     private static string Label(SmtpSignInMode m) => m switch
     {

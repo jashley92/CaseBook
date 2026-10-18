@@ -440,7 +440,15 @@ if ($EvidenceEncryption -and -not $recoveryOnServer.Count) {
 # CAP-05: a Protected SMTP password becomes its @protected: value here; the plain text goes to the keytool's stdin only.
 if ($smtpProtectThumbprint) {
     Write-Step "Encrypting the SMTP password to certificate $smtpProtectThumbprint"
-    $protectedValue = @($smtpPlain | & $keytool protect-secret --cert $smtpProtectThumbprint --store LocalMachine) | Select-Object -Last 1
+    # CAP-05 review: Windows PowerShell pipes to a native exe in $OutputEncoding, US-ASCII by default, which turns a
+    # non-ASCII password into '?'. Pipe it as UTF-8 (no BOM; the keytool reads redirected stdin as UTF-8), then restore.
+    $previousOutputEncoding = $OutputEncoding
+    try {
+        $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+        $protectedValue = @($smtpPlain | & $keytool protect-secret --cert $smtpProtectThumbprint --store LocalMachine) | Select-Object -Last 1
+    } finally {
+        $OutputEncoding = $previousOutputEncoding
+    }
     if ($LASTEXITCODE -ne 0 -or "$protectedValue" -notmatch '^@protected:v1:') {
         throw "casebook-keytool protect-secret didn't produce a @protected: value (exit $LASTEXITCODE). Is certificate $smtpProtectThumbprint in LocalMachine\My?"
     }

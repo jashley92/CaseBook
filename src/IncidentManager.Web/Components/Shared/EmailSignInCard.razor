@@ -162,9 +162,15 @@
     {
         try
         {
-            await SignIns.SaveAsync(_mode, _username, _newPassword);
+            // CAP-05 review: with the stamp it loaded ("" for no row), so a sign-in changed since isn't written over.
+            await SignIns.SaveAsync(_mode, _username, _newPassword, _status?.Stamp ?? "");
             Toasts.Success("Email sign-in saved. The next email uses it.");
-            await LoadAsync();
+            await LoadAsync();   // the stamp of what was just saved, for the next Save
+        }
+        catch (IncidentManager.Application.Cases.StaleEditException ex)
+        {
+            Toasts.Error(ex.Message);
+            await ReloadStatusAsync();   // what's saved now; the entries (and a typed password) stay for the admin to re-decide
         }
         catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
         {
@@ -179,9 +185,14 @@
     {
         try
         {
-            await SignIns.ClearAsync();
+            await SignIns.ClearAsync(_status?.Stamp ?? "");
             Toasts.Info("The saved password is cleared, and email is sent without a sign-in.");
             await LoadAsync();
+        }
+        catch (IncidentManager.Application.Cases.StaleEditException ex)
+        {
+            Toasts.Error(ex.Message);
+            await ReloadStatusAsync();
         }
         catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
         {
@@ -204,8 +215,14 @@
             case EmailSendStatus.Disabled: Toasts.Info($"Email delivery is off. Logged a test message for {to} instead."); break;
             default: Toasts.Error($"Couldn't send the test email. {outcome.Error}"); break;
         }
+        await ReloadStatusAsync();   // a password that won't decrypt shows at once (the form keeps what was typed)
+    }
+
+    // The saved status (and its stamp) only: what the admin has entered stays as it is.
+    private async Task ReloadStatusAsync()
+    {
         var t = _load.Begin();
         var status = await SignIns.GetAsync();
-        if (_load.IsCurrent(t)) _status = status;   // a password that won't decrypt shows at once (the form keeps what was typed)
+        if (_load.IsCurrent(t)) _status = status;
     }
 }
