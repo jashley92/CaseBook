@@ -243,7 +243,8 @@ Actions → *Archive case…* / *Restore from archive* (needs `Administer`). Arc
 list, duplicate-check suggestions and notification headlines. **Refused under legal hold** ("This case is under
 legal hold and can't be archived. Release the hold first."). **Also refused while a regulatory notification deadline is
 running with no notice recorded** (drills excepted), since archiving would stop its reminders; the dialog says so and
-the button is disabled. Archiving doesn't depend on phase, and an archived
+the button is disabled. A notice to one regulator doesn't lift it while another in play is still owed (CAP-38: the case
+is partly reported until every one has its notice, [governance](governance.md#regulatory-notification-deadlines)). Archiving doesn't depend on phase, and an archived
 case can still be edited.
 
 `Retention:CaseYears` is shown as a setting but no code uses it; nothing flags cases for archiving

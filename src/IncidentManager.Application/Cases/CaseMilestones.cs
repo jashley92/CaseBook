@@ -233,8 +233,9 @@ public static class CaseMilestones
                     c.DetectedAtUtc is { } det ? $"{Span(det - began)} before detection" : null, null, "case record"));
 
         // BUG-09: with more than one regulator, each notice is its own milestone; the case is reported when the last is.
-        // CAP-07: its detail says how the regulator was notified, when that's recorded.
-        if (c.JurisdictionNotices.Count > 1)
+        // CAP-07: its detail says how the regulator was notified, when that's recorded. CAP-38: and while the case is partly
+        // reported (a regulator in play still owed), even one notice is its own "Notified NY": the case isn't reported yet.
+        if (c.JurisdictionNotices.Count > 1 || (c.JurisdictionNotices.Count == 1 && c.ReportedAtUtc is null))
             foreach (var n in c.JurisdictionNotices.OrderBy(n => n.NotifiedAtUtc))
                 list.Add(new CaseMilestone($"notice:{n.Id}", n.NotifiedAtUtc, MilestoneKind.Reported,
                     $"Notified {n.Jurisdiction}", Compliance.NoticeDetailText.Summary(n, c.Evidence), n.CreatedBy, "notice",

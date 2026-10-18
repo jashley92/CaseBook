@@ -32,6 +32,13 @@ public sealed record CaseNotificationDeadlines(
     /// <summary>BUG-09: the jurisdictions with a recorded notice (empty for a case reported before notices were per jurisdiction).</summary>
     public IReadOnlySet<string> NoticeCodes { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// CAP-38: which jurisdictions in play are notified and which are outstanding, by the one reading every view uses
+    /// (<see cref="NoticeStanding"/>). Whether the case is fully or partly reported is read from here, not from
+    /// <see cref="ReportedAtUtc"/> (the stored time, kept as the stale-edit stamp).
+    /// </summary>
+    public NoticeStanding Standing { get; init; } = NoticeStanding.None;
+
     /// <summary>There is a live countdown to show (feature on, clock started, at least one jurisdiction).</summary>
     public bool HasClock => Enabled && StartInstant is not null && Statuses.Count > 0;
     /// <summary>Feature is on and the obligation is triggered, but no jurisdiction is in play yet.</summary>
@@ -91,6 +98,10 @@ public sealed class NotificationDeadlineService
 
         var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc,
             c.MatStatus, c.MatDecidedOn, c.MatRecordedAt);
+        // WF-11 / BUG-284: what was in play when it was reported, and what elements added since bring in. CAP-38: and which of
+        // them are notified, by the one reading every view uses.
+        var standing = Standing(c.ReportedJurisdictions, c.ReportedAtUtc, c.Keys,
+            c.Notices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)), Live(await ElementJurisdictionsAsync(db, ct)));
 
         // WF-12: the first Material call, when the clock now runs from a later one (or not at all, back under review).
         // WF-66: a Material call revised while still Material (a corrected decision date) is the same call, so each call's
@@ -108,25 +119,23 @@ public sealed class NotificationDeadlineService
             earlier = calls[0];
 
         var empty = new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
-            Array.Empty<NotificationDeadlineStatus>(), null) { EarlierMaterialUtc = earlier };
+            Array.Empty<NotificationDeadlineStatus>(), null) { EarlierMaterialUtc = earlier, Standing = standing };
         if (start is null) return empty;
 
-        // WF-11 / BUG-284: what was in play when it was reported, and what elements added since bring in.
-        var jurisdictions = Case.KeptInPlay(c.ReportedJurisdictions, c.Keys, Live(await ElementJurisdictionsAsync(db, ct)));
+        var jurisdictions = standing.InPlay;
         if (jurisdictions.Count == 0) return empty;
 
         var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
-        // BUG-428: a legacy notice coded "NY;CA" counts for each code it names.
-        var notices = Case.ByNoticeCode(c.Notices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)));
         var kept = Case.ByNoticeCode(c.Notices.Where(n => n.DueAtUtc is not null).Select(n => (n.Jurisdiction, n.DueAtUtc!.Value)));
-        var statuses = NotificationDeadlinePolicy.EvaluateByJurisdiction(start, NotifiedAt(notices, c.ReportedAtUtc), jurisdictions, ruleSet,
+        var statuses = NotificationDeadlinePolicy.EvaluateByJurisdiction(start, standing.NotifiedAt, jurisdictions, ruleSet,
             settings.AtRiskThresholdPercent, _clock.UtcNow, KeptDue(kept));
 
         return new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
             statuses, NotificationDeadlinePolicy.Headline(statuses))
         // BUG-428: only the codes with a notice of their own, which can be removed one by one; a combined legacy notice is
         // cleared with the rest.
-        { NoticeCodes = c.Notices.Select(n => n.Jurisdiction).ToHashSet(StringComparer.OrdinalIgnoreCase), EarlierMaterialUtc = earlier };
+        { NoticeCodes = c.Notices.Select(n => n.Jurisdiction).ToHashSet(StringComparer.OrdinalIgnoreCase), EarlierMaterialUtc = earlier,
+          Standing = standing };
     }
 
     /// <summary>
@@ -271,22 +280,41 @@ public sealed class NotificationDeadlineService
     /// <summary>
     /// BUG-625: whether a case has a jurisdiction in play with no notice, by the rule every view uses (what was kept when it
     /// was reported, plus what elements added since bring in: <see cref="Case.KeptInPlay"/>). The close gate's question;
-    /// the caller checks the trigger and the reported time.
+    /// the caller checks the trigger. CAP-38: through <see cref="StandingAsync"/>, so a case reported as a whole counts its
+    /// jurisdictions as notified, as the clocks do.
     /// </summary>
-    public static async Task<bool> AnyUnnotifiedAsync(IAppDbContext db, Guid caseId, CancellationToken ct = default)
+    public static async Task<bool> AnyUnnotifiedAsync(IAppDbContext db, Guid caseId, CancellationToken ct = default) =>
+        (await StandingAsync(db, caseId, ct)).Outstanding.Count > 0;
+
+    /// <summary>
+    /// CAP-38: the one reading of a case's notices against the jurisdictions in play (<see cref="NoticeStanding"/>): what was
+    /// kept when it was reported plus what elements added since bring in (<see cref="Case.KeptInPlay"/>), and each one's
+    /// notice; a case reported as a whole (no notice rows) counts each as notified at its reported time.
+    /// </summary>
+    public static NoticeStanding Standing(string? reportedJurisdictions, DateTimeOffset? reportedAtUtc, IReadOnlyCollection<string> elementKeys,
+        IEnumerable<(string Jurisdiction, DateTimeOffset NotifiedAtUtc)> notices, Func<IEnumerable<string>, IReadOnlyList<string>> live) =>
+        NoticeStanding.Of(Case.KeptInPlay(reportedJurisdictions, elementKeys, live), notices, reportedAtUtc);
+
+    /// <summary>CAP-38: <see cref="Standing"/> for one case as saved (<see cref="NoticeStanding.None"/> when it isn't there).</summary>
+    public static async Task<NoticeStanding> StandingAsync(IAppDbContext db, Guid caseId, CancellationToken ct = default) =>
+        (await StandingsAsync(db, db.Cases.AsNoTracking().Where(x => x.Id == caseId), ct)).GetValueOrDefault(caseId) ?? NoticeStanding.None;
+
+    /// <summary>CAP-38: <see cref="Standing"/> for each case in <paramref name="cases"/>, in one pass (the caller scopes them).</summary>
+    public static async Task<Dictionary<Guid, NoticeStanding>> StandingsAsync(IAppDbContext db, IQueryable<Case> cases,
+        CancellationToken ct = default)
     {
-        var c = await db.Cases.AsNoTracking().Where(x => x.Id == caseId)
+        var rows = await cases
             .Select(x => new
             {
-                x.ReportedJurisdictions,
+                x.Id, x.ReportedJurisdictions, x.ReportedAtUtc,
                 Keys = x.DataElements.Select(d => d.ElementKey).ToList(),
-                Notices = x.JurisdictionNotices.Select(n => n.Jurisdiction).ToList(),
+                Notices = x.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList(),
             })
-            .FirstOrDefaultAsync(ct);
-        if (c is null) return false;
-        var noticed = Case.ByNoticeCode(c.Notices.Select(n => (n, true)));   // BUG-428
-        return Case.KeptInPlay(c.ReportedJurisdictions, c.Keys, Live(await ElementJurisdictionsAsync(db, ct)))
-            .Any(j => !noticed.ContainsKey(j));
+            .ToListAsync(ct);
+        if (rows.Count == 0) return [];
+        var live = Live(await ElementJurisdictionsAsync(db, ct));
+        return rows.ToDictionary(r => r.Id, r => Standing(r.ReportedJurisdictions, r.ReportedAtUtc, r.Keys,
+            r.Notices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)), live));
     }
 
     /// <summary>Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.</summary>
@@ -305,13 +333,6 @@ public sealed class NotificationDeadlineService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
-
-    /// <summary>
-    /// BUG-09: when a jurisdiction was notified: its own notice; for a case reported before notices were recorded per
-    /// jurisdiction (none recorded), the case's reported time, which meant every regulator.
-    /// </summary>
-    private static Func<string, DateTimeOffset?> NotifiedAt(IReadOnlyDictionary<string, DateTimeOffset> notices, DateTimeOffset? reportedAtUtc) =>
-        code => notices.TryGetValue(code, out var at) ? at : notices.Count == 0 ? reportedAtUtc : null;
 
     // BUG-286: each notice's kept deadline (WF-77), so every reader judges a notice as the program report does.
     private static Func<string, DateTimeOffset?> KeptDue(IReadOnlyDictionary<string, DateTimeOffset> kept) =>
@@ -439,8 +460,11 @@ public sealed class NotificationDeadlineService
     {
         var live = Live(await ElementJurisdictionsAsync(db, ct));
 
+        // CAP-38: reported means every jurisdiction in play has its notice (NoticeStanding), judged below; the stored time is
+        // only the cheap pre-filter. A case with notices is read either way, so one whose stored time disagrees with its
+        // notices (an element's jurisdictions changed outside a recheck) is still watched while a clock runs.
         var rows = await cases
-            .Where(c => reported ? c.ReportedAtUtc != null : c.ReportedAtUtc == null) // a recorded report stops the clock
+            .Where(c => (reported ? c.ReportedAtUtc != null : c.ReportedAtUtc == null) || c.JurisdictionNotices.Any())
             .Select(c => new
             {
                 c.Id, c.Classification, c.DetectedAtUtc, c.ReportedAtUtc, c.ReportedJurisdictions,
@@ -456,12 +480,12 @@ public sealed class NotificationDeadlineService
             var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
             if (start is null) continue; // obligation not triggered yet
 
-            var jurisdictions = Case.KeptInPlay(c.ReportedJurisdictions, c.Keys, live);   // WF-11, BUG-284
-            if (jurisdictions.Count == 0) continue;
+            // WF-11, BUG-284: what's in play; CAP-38: and each one's notice, by the one reading.
+            var standing = Standing(c.ReportedJurisdictions, c.ReportedAtUtc, c.Keys, c.Notices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)), live);
+            if (standing.IsFullyReported != reported || standing.InPlay.Count == 0) continue;
 
-            result[c.Id] = NotificationDeadlinePolicy.EvaluateByJurisdiction(start,
-                NotifiedAt(Case.ByNoticeCode(c.Notices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc))), c.ReportedAtUtc),   // BUG-428
-                jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now,
+            result[c.Id] = NotificationDeadlinePolicy.EvaluateByJurisdiction(start, standing.NotifiedAt,
+                standing.InPlay, ruleSet, settings.AtRiskThresholdPercent, now,
                 KeptDue(Case.ByNoticeCode(c.Notices.Where(n => n.DueAtUtc is not null).Select(n => (n.Jurisdiction, n.DueAtUtc!.Value)))));
         }
         return result;

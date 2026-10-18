@@ -103,3 +103,69 @@ public sealed record NoticeDetails(NoticeMethod? Method = null, string? Referenc
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }
+
+/// <summary>
+/// CAP-38: a case's notices against the jurisdictions in play. Each jurisdiction's clock stops only at a notice recorded
+/// for it (a notice to NY never stops CA's), and the case counts as reported only when every jurisdiction in play has one;
+/// until then it is partly reported. The one reading behind the case's own reported time (<see cref="Case.ReportedFromNotices"/>)
+/// and every view of it: the deadlines, the reminders, the close gate, the archive check, the report, the register and the
+/// case pages, so none of them can say "reported" while another regulator's clock runs. A case reported as a whole (no
+/// notice rows: reported before notices were kept per jurisdiction, or while none was in play) counts each jurisdiction in
+/// play as notified at its reported time; no notice row is invented for it.
+/// </summary>
+public sealed class NoticeStanding
+{
+    /// <summary>Nothing in play, nothing notified.</summary>
+    public static readonly NoticeStanding None = new([], new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase), null);
+
+    private NoticeStanding(IReadOnlyList<string> inPlay, IReadOnlyDictionary<string, DateTimeOffset> notices, DateTimeOffset? wholeReportUtc)
+    {
+        InPlay = inPlay;
+        Notices = notices;
+        WholeReportUtc = wholeReportUtc;
+    }
+
+    /// <summary>
+    /// The standing of a case with <paramref name="inPlay"/> (<see cref="Case.KeptInPlay"/>), its notices, and its reported
+    /// time as stored (read only when it has no notice: a whole-case report).
+    /// </summary>
+    public static NoticeStanding Of(IEnumerable<string> inPlay, IEnumerable<(string Jurisdiction, DateTimeOffset NotifiedAtUtc)> notices,
+        DateTimeOffset? reportedAtUtc)
+    {
+        var rows = notices.ToList();
+        var codes = inPlay.Where(j => !string.IsNullOrWhiteSpace(j)).Select(j => j.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal).ToList();
+        return new NoticeStanding(codes, Case.ByNoticeCode(rows), rows.Count == 0 ? reportedAtUtc : null);   // BUG-428
+    }
+
+    /// <summary>The jurisdictions in play, upper case, in code order.</summary>
+    public IReadOnlyList<string> InPlay { get; }
+
+    /// <summary>Each notice's time under every code it covers (a legacy "NY;CA" notice counts for both, BUG-428).</summary>
+    public IReadOnlyDictionary<string, DateTimeOffset> Notices { get; }
+
+    /// <summary>A whole-case report's time: the case has a reported time and no notice row. Null otherwise.</summary>
+    public DateTimeOffset? WholeReportUtc { get; }
+
+    /// <summary>When <paramref name="code"/> was notified: its own notice, else a whole-case report's time; null while it
+    /// hasn't been, so its clock runs.</summary>
+    public DateTimeOffset? NotifiedAt(string code) =>
+        Notices.TryGetValue((code ?? "").Trim(), out var at) ? at : WholeReportUtc;
+
+    /// <summary>The jurisdictions in play with no notice: their clocks run.</summary>
+    public IReadOnlyList<string> Outstanding => InPlay.Where(j => NotifiedAt(j) is null).ToList();
+
+    /// <summary>
+    /// When the case became reported: the last notice to a jurisdiction in play once every one has its notice (with none in
+    /// play, the last notice, or a whole-case report's time); null while any is outstanding.
+    /// </summary>
+    public DateTimeOffset? ReportedAtUtc =>
+        InPlay.Count == 0 ? (Notices.Count > 0 ? Notices.Values.Max() : WholeReportUtc)
+        : InPlay.All(j => NotifiedAt(j) is not null) ? InPlay.Max(j => NotifiedAt(j)!.Value) : null;
+
+    /// <summary>Every jurisdiction in play has its notice (or the case was reported as a whole).</summary>
+    public bool IsFullyReported => ReportedAtUtc is not null;
+
+    /// <summary>A notice is recorded but a jurisdiction in play is still outstanding.</summary>
+    public bool IsPartlyReported => !IsFullyReported && Notices.Count > 0;
+}

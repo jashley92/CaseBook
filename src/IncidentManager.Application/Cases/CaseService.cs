@@ -1453,11 +1453,12 @@ public sealed class CaseService
         }
     }
 
-    /// <summary>Records the regulatory-notification milestone (PROD-07): sets <c>ReportedAtUtc</c>, stopping the
-    /// per-jurisdiction deadline countdown. Backdatable but not future / pre-detection (enforced in the domain).</summary>
     /// <summary>
-    /// Records that regulators were notified. BUG-09: with jurisdictions in play, this records a notice for each one not
-    /// yet notified (all at once); otherwise it sets the reported time directly, as before.
+    /// Records that regulators were notified (PROD-07). Backdatable but not future / pre-detection (enforced in the domain).
+    /// BUG-09 / CAP-38: with jurisdictions in play, this records a notice for each one not yet notified (all at the time
+    /// given), so each clock has its own stop and the case is reported because every regulator in play has its notice;
+    /// it never sets a reported time over a clock that's still running. With none in play (and no notice), it sets the
+    /// case's reported time directly (no clock to contradict; a jurisdiction that comes into play later reopens it, BUG-555).
     /// </summary>
     /// <param name="expectedReportedAtUtc">BUG-594: the reported time the page showed (<c>Shown.Of(null)</c>: not reported).
     /// Given, the save is refused when it has changed since, so a stale page doesn't overwrite a colleague's time.</param>
@@ -1472,17 +1473,25 @@ public sealed class CaseService
                 "Someone else recorded when regulators were notified while you were looking. Review it, then record yours again if it's still needed.");
         var now = _clock.UtcNow;
         var inPlay = await InPlayAsync(db, c, ct);
-        if (inPlay.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
+        var recorded = new List<string>();
+        // CAP-38: notices already made (none in play now) keep the case's time following them, as everywhere else.
+        if (inPlay.Count == 0 && c.JurisdictionNotices.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
         else
         {
             // BUG-428: a legacy notice coded "NY;CA" already covers NY and CA, so neither gets a second notice.
             var noticed = Case.ByNoticeCode(c.JurisdictionNotices.Select(n => (n.Jurisdiction, n.NotifiedAtUtc)));
             foreach (var code in inPlay.Where(j => !noticed.ContainsKey(j)))
+            {
                 c.RecordNotice(code, reportedAtUtc, _user.UserId, now);
+                recorded.Add(code.ToUpperInvariant());
+            }
             c.ReportedFromNotices(inPlay, _user.UserId, now);
         }
         await db.SaveChangesAsync(ct);
-        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, null, a, u));   // CAP-06
+        // CAP-06 / CAP-38: one 5513 per notice it recorded (each regulator's own stop), then the case as fully reported.
+        foreach (var code in recorded)
+            EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, code, a, u));
+        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, null, a, u));
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
 
@@ -1508,10 +1517,15 @@ public sealed class CaseService
                     "Someone else recorded this regulator's notice while you were looking. Review it, then record yours again if it's still needed.");
         }
         var now = _clock.UtcNow;
+        var wasReported = c.ReportedAtUtc is not null;
         c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now, details);
         c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
         EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, NoticeCode(jurisdiction), a, u));   // CAP-06
+        // CAP-38: the notice that leaves no regulator in play outstanding makes the case fully reported, and says so; until
+        // then the case is partly reported and sends only the regulator's own event.
+        if (!wasReported && c.ReportedAtUtc is not null)
+            EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, null, a, u));
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
 
@@ -3519,10 +3533,12 @@ public sealed class CaseService
             throw new Compliance.CaseNoLongerDueException();
         // BUG-10: archiving drops a case from the deadline scan and the "awaiting report" count, so a case whose
         // notification clock is running can't be archived until the notice is recorded (INV-43). Drills are exempt.
-        if (archived && !c.IsArchived && !c.IsExercise && c.ReportedAtUtc is null
+        // CAP-38: "reported" is every regulator in play notified (the shared reading), so a notice to one doesn't let a case
+        // with another's clock running be archived.
+        if (archived && !c.IsArchived && !c.IsExercise
             && _notifySettings is not null && _notifyRules is not null
-            && (await new Compliance.NotificationDeadlineService(_factory, _notifySettings, _notifyRules, _clock)
-                .EvaluateAsync(id, ct)).HasClock)
+            && await new Compliance.NotificationDeadlineService(_factory, _notifySettings, _notifyRules, _clock)
+                .EvaluateAsync(id, ct) is { HasClock: true, Standing.IsFullyReported: false })
             throw new InvalidOperationException("This case has a regulatory notification deadline running and no notice recorded. " +
                 "Record when regulators were notified before archiving it, so the deadline isn't silenced.");
         var wasArchived = c.IsArchived;

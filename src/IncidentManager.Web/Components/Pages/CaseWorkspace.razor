@@ -659,7 +659,7 @@ else
 
     // RD-19: the most urgent notification deadline still running (not yet reported).
     private IncidentManager.Application.Compliance.NotificationDeadlineStatus? RunningNotice =>
-        _notifyDeadlines is { ReportedAtUtc: null, Headline: { IsActive: true } h } ? h : null;
+        _notifyDeadlines is { Standing.IsFullyReported: false, Headline: { IsActive: true } h } ? h : null;   // CAP-38
 
     // PROD-07: the case's evaluated regulatory-notification deadlines (null when the feature is off).
     private IncidentManager.Application.Compliance.CaseNotificationDeadlines? _notifyDeadlines;

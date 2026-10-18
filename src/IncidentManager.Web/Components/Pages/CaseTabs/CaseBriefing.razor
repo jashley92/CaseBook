@@ -254,12 +254,14 @@
                 }
                 @if (Notify is { HasClock: true } n)
                 {
+                    @* CAP-38: fully or partly reported, in the wording every view uses. *@
+                    @if (StandingLine(n, now) is { } standing) { <div class="im-bf-sub mb-1">@standing</div> }
                     @foreach (var s in n.Statuses)
                     {
                         <div class="im-bf-ob">
                             <ClockMark State="s.State" Label="@($"Notify {s.JurisdictionLabel}")" />
                             <div class="im-bf-sub">
-                                @($"{s.WindowHours} h")@if (s.DueAtUtc is { } due) { <text> · due @TimeDisp.Brief(due, now)</text> }@if ((s.NotifiedAtUtc ?? n.ReportedAtUtc) is { } rep) { <text> · reported @TimeDisp.Brief(rep, now)</text> }
+                                @($"{s.WindowHours} h")@if (s.DueAtUtc is { } due) { <text> · due @TimeDisp.Brief(due, now)</text> }@if (s.NotifiedAtUtc is { } rep) { <text> · reported @TimeDisp.Brief(rep, now)</text> }
                             </div>
                             @if (NoticeHow(s.JurisdictionCode) is { } how) { <div class="im-bf-sub">@how</div> }   @* CAP-07 *@
                         </div>
@@ -424,8 +426,13 @@
         Case.ByNoticeCode(Case.JurisdictionNotices.Select(x => (x.Jurisdiction, x))).GetValueOrDefault(code) is { } notice
             ? IncidentManager.Application.Compliance.NoticeDetailText.Summary(notice, Case.Evidence) : null;
 
+    // CAP-38: "Partly reported: NY notified …, CA due …" once a notice is recorded (shown brief on the page, short in the copy).
+    private string? StandingLine(CaseNotificationDeadlines n, DateTimeOffset? now) =>
+        n.Standing.IsFullyReported || n.Standing.IsPartlyReported
+            ? NoticeDetailText.Standing(n, t => now is { } at ? TimeDisp.Brief(t, at) : TimeDisp.Short(t)) : null;
+
     private string? NoticeLine(DateTimeOffset now) =>
-        Notify?.Headline is { IsActive: true, DueAtUtc: { } due } h && Notify.ReportedAtUtc is null
+        Notify?.Headline is { IsActive: true, DueAtUtc: { } due } h && !Notify.Standing.IsFullyReported   // CAP-38
             ? $"Notify {h.JurisdictionLabel} by {TimeDisp.Brief(due, now)}" + (due < now ? " (overdue)" : "") + "." : null;
 
     /// <summary>Opens the page's full gate card, when it has one; "What remains" then points to it instead of
@@ -507,9 +514,9 @@
             .Append(NoticeLine(now) ?? "").Append(GateLine() ?? ""));
         Part("Why", Decisions().Select(d => $"Decision, {TimeDisp.Short(d.OccurredAtUtc)}: {Plain(d.Description)}"
             + (string.IsNullOrWhiteSpace(d.Rationale) ? "" : $" Why: {d.Rationale}")));
-        Part("Obligations", (Notify is { HasClock: true } n ? n.Statuses.Select(s => $"Notify {s.JurisdictionLabel}: {s.WindowHours} h"
-            + (s.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : "") + ((s.NotifiedAtUtc ?? n.ReportedAtUtc) is { } r ? $", reported {TimeDisp.Short(r)}" : "")
-            + (NoticeHow(s.JurisdictionCode) is { } how ? $". {how}" : "")) : []));   // REV-36: each regulator's own notice; CAP-07: how it was given
+        Part("Obligations", (Notify is { HasClock: true } n ? (StandingLine(n, null) is { } standing ? [standing] : Array.Empty<string>()).Concat(n.Statuses.Select(s => $"Notify {s.JurisdictionLabel}: {s.WindowHours} h"
+            + (s.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : "") + (s.NotifiedAtUtc is { } r ? $", reported {TimeDisp.Short(r)}" : "")
+            + (NoticeHow(s.JurisdictionCode) is { } how ? $". {how}" : ""))) : []));   // REV-36: each regulator's own notice; CAP-07: how it was given
         Part("Team", Case.Assignments.OrderBy(a => a.Role).Select(a => $"{Users.DisplayFor(a.UserId)}, {Ui.Label(a.Role)}"));
         return sb.ToString().TrimEnd() + "\n";
     }

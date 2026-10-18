@@ -115,7 +115,6 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
                 MaterialityDetermined = x.Materiality.Status == MaterialityStatus.Material
                                         || x.Materiality.Status == MaterialityStatus.NotMaterial,
                 x.DetectedAtUtc,
-                x.ReportedAtUtc,
                 MatStatus = x.Materiality.Status,
                 MatDecidedOn = x.Materiality.DecidedOnUtc,
                 MatRecordedAt = x.Materiality.RecordedAtUtc
@@ -154,8 +153,10 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         // jurisdiction test as the on-case countdown (NotificationDeadlineService), without the windows. BUG-625: the
         // jurisdictions in play by the same rule as every other view (what was kept when it was reported), not today's
         // mapping of every element, which closed a case with a kept regulator still owed and blocked one owing none.
+        // CAP-38: whether a regulator in play is still owed a notice is the shared reading (NoticeStanding), not the stored
+        // reported time, so the gate agrees with the clocks, reminders and report.
         var notificationPending = false;
-        if (_deadlines?.Current is { Enabled: true } nd && c.ReportedAtUtc is null
+        if (_deadlines?.Current is { Enabled: true } nd
             && Compliance.NotificationDeadlineService.ResolveStart(nd.StartBasis, c.Classification, c.DetectedAtUtc,
                 c.MatStatus, c.MatDecidedOn, c.MatRecordedAt) is not null)
         {

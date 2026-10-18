@@ -57,7 +57,8 @@
         </div>
 
         @* Obligations first: a notification deadline is a legal clock; then the response SLA. *@
-        @if (Notify?.Headline is { } nh && (nh.IsActive || Notify.ReportedAtUtc is not null))
+        @* CAP-38: reported only once every regulator in play has its notice (the shared reading), else the clock still running. *@
+        @if (Notify?.Headline is { } nh && (nh.IsActive || Notify.Standing.IsFullyReported))
         {
             <div class="im-nn-ob">
                 <ClockMark State="nh.State" Label="@($"Notify {nh.JurisdictionLabel}")" />
@@ -66,7 +67,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="BeginMarkReported">Mark reported…</button>
                 }
                 <div class="im-nn-sub">
-                    @if (Notify.ReportedAtUtc is { } rep)
+                    @if (!nh.IsActive && Notify.Standing.ReportedAtUtc is { } rep)
                     {
                         <text>Reported @TimeDisp.Brief(rep, now) · @nh.WindowHours h window</text>
                     }
@@ -74,6 +75,7 @@
                     {
                         <span title="@TimeDisp.Long(due)">@(nh.Remaining is { } r && r < TimeSpan.Zero ? $"{Ui.Hours(-r.TotalHours)} over" : nh.Remaining is { } r2 ? $"{Ui.Hours(r2.TotalHours)} left" : "") · due @TimeDisp.Brief(due, now)</span>
                         @if (Notify.Statuses.Count > 1) { <text> · @Notify.Statuses.Count jurisdictions</text> }
+                        @if (Notify.Standing.IsPartlyReported) { <text> · partly reported</text> }
                     }
                 </div>
                 @if (_marking)

@@ -47,4 +47,34 @@ public static class NoticeDetailText
     /// <summary>The summary of one notice, its file named from <paramref name="evidence"/>.</summary>
     public static string? Summary(JurisdictionNotice n, IEnumerable<Domain.Entities.Evidence> evidence) =>
         Summary(n.Method, n.Reference, n.NotifiedBy, FileName(n, evidence));
+
+    /// <summary>
+    /// CAP-38: where the case stands with its regulators, in one wording for the case page, the Briefing, the report and the
+    /// register: "Partly reported: NY notified 2026-10-02 14:00, CA due 2026-10-05 09:00." until every jurisdiction in play
+    /// has its notice, then "Reported to every regulator in play: …". Never a bare "Reported" while a clock runs.
+    /// <paramref name="dueOf"/> gives an outstanding jurisdiction's deadline (null when none is tracked: "CA not yet
+    /// notified"); <paramref name="time"/> formats an instant for the sink. Null when nothing is in play or notified.
+    /// </summary>
+    public static string? Standing(NoticeStanding s, Func<string, DateTimeOffset?> dueOf, Func<DateTimeOffset, string> time)
+    {
+        // The jurisdictions in play, then any notice given to one no longer in play (it was still given).
+        var notified = s.InPlay.Where(j => s.NotifiedAt(j) is not null)
+            .Concat(s.Notices.Keys.Where(k => !s.InPlay.Contains(k, StringComparer.OrdinalIgnoreCase)).OrderBy(k => k, StringComparer.Ordinal))
+            .Select(j => $"{j} notified {time(s.NotifiedAt(j)!.Value)}").ToList();
+        var outstanding = s.Outstanding.Select(j => dueOf(j) is { } due ? $"{j} due {time(due)}" : $"{j} not yet notified").ToList();
+        if (s.IsFullyReported)
+            return s.InPlay.Count == 0 && s.WholeReportUtc is { } whole ? $"Reported to regulators {time(whole)}."
+                : s.InPlay.Count == 0 ? $"Reported to regulators: {string.Join(", ", notified)}."
+                : $"Reported to every regulator in play: {string.Join(", ", notified)}.";
+        if (outstanding.Count == 0) return null;
+        return s.IsPartlyReported
+            ? $"Partly reported: {string.Join(", ", notified.Concat(outstanding))}."
+            : $"Not yet reported: {string.Join(", ", outstanding)}.";
+    }
+
+    /// <summary>CAP-38: <see cref="Standing(NoticeStanding, Func{string, DateTimeOffset?}, Func{DateTimeOffset, string})"/>
+    /// for an evaluated case, each outstanding regulator's deadline taken from its clock.</summary>
+    public static string? Standing(CaseNotificationDeadlines d, Func<DateTimeOffset, string> time) =>
+        Standing(d.Standing, code => d.Statuses.FirstOrDefault(x => string.Equals(x.JurisdictionCode, code, StringComparison.OrdinalIgnoreCase))?.DueAtUtc,
+            time);
 }
