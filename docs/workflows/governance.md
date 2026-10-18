@@ -126,6 +126,18 @@ flowchart LR
   mis-entered notice; *Clear all notices* removes them all. Milestones "Notified NY" (one per regulator) and
   "Reported to every regulator in play". A case reported before notices were per jurisdiction keeps its single
   reported time, which counts for every jurisdiction.
+- **How a regulator was notified** (CAP-07): the *Record notice* form also takes, all optional, the method (Portal,
+  Letter, Email, Phone or Other), the regulator's reference or confirmation number, who gave the notice (free text: a
+  person, or counsel) and the evidence file holding it (only a file on this case; a file from another case, or one no
+  longer there, is refused). On a recorded notice, *Add how notified* / *Edit how notified* changes them without moving
+  the notice's time (`CaseService.UpdateNoticeDetailsAsync`, audited like the notice, `EditCases`). A form opened before
+  a colleague changed them is refused ("Someone else changed how this regulator was notified while you were editing…"),
+  keeps what was typed, and a second Save overwrites. They show under the notice on the Briefing table and in the
+  Briefing's obligations, in the milestone's detail ("By portal, reference NYDFS-2026-114, notified by Pat Lee, notice
+  file ack.pdf"; on the "Reported to regulators" milestone when there's one notice), in the report's notification
+  summary and `notice.*` template fields ([reporting](reporting.md#the-case-report)), and the reference in the legal register's
+  `notice_references` column. Editing them sends no SIEM event: recording the notice already sent 5513, and they move
+  no clock. A legacy notice coded `NY;CA` shows its details under each code but isn't edited here.
 - **Reminders**: when `Notifications:DeadlineScan` is on, the incident commander and assignees are emailed once
   as a deadline becomes at-risk and once when it passes, for each jurisdiction (regulators on the same deadline share
   one email; one that joins a deadline already reminded is reminded too).

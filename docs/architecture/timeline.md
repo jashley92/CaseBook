@@ -77,7 +77,8 @@ From `Application/Cases/CaseMilestones.cs`:
 | *Name* is incident commander / joined as … / is no longer on the case | `AssignmentChange` (an IC handover is one line) | when recorded | |
 | Materiality *X → Y* (decided by, on, rationale) | `MaterialityChange` | when recorded | |
 | *Gate* gate **overridden** (with justification; flagged). A passed gate isn't a row: it shows as a note ("Incident escalation gate passed") on the transition it guarded | `GatePassage` | the guarded transition's effective time (recorded time shown when different) | |
-| Reported to regulators | `Case.ReportedAtUtc` | that time | none recorded |
+| Notified *NY* (one per regulator, when more than one has a notice), with how it was given when recorded (CAP-07: "By portal, reference NYDFS-2026-114, notified by Pat Lee, notice file ack.pdf") | `JurisdictionNotice` | when notified (recorded time shown when later) | who recorded it |
+| Reported to regulators / Reported to every regulator in play; with a single notice, how it was given (CAP-07) | `Case.ReportedAtUtc` | that time | none recorded |
 | Task done: *title* (unless a stored entry already logs that task's result) | `ActionItem` with status Done | completion time | |
 | Evidence added: *file* (unless it's a screenshot shown on an entry, or a file an entry cites) | `Evidence` | upload time | uploader |
 | Case / lessons-learned report *vN* approved as final | `Report` | approval time | approver |

@@ -1477,10 +1477,14 @@ public class Case : AuditableEntity, IHashableEntity
 
     /// <summary>
     /// BUG-09: records when one regulator was notified (or corrects the time). Validated like the reported time.
-    /// Call <see cref="ReportedFromNotices"/> afterwards, with the jurisdictions in play.
+    /// Call <see cref="ReportedFromNotices"/> afterwards, with the jurisdictions in play. CAP-07: <paramref name="details"/>,
+    /// when given, records how it was notified too (the caller checks its evidence file is on the case); not given, a
+    /// corrected notice keeps what it had.
     /// </summary>
-    public JurisdictionNotice RecordNotice(string jurisdiction, DateTimeOffset notifiedAtUtc, string actor, DateTimeOffset nowUtc)
+    public JurisdictionNotice RecordNotice(string jurisdiction, DateTimeOffset notifiedAtUtc, string actor, DateTimeOffset nowUtc,
+        NoticeDetails? details = null)
     {
+        var how = details?.Normalized();   // CAP-07: refused before anything changes
         var code = (jurisdiction ?? "").Trim().ToUpperInvariant();
         if (code.Length == 0) throw new ArgumentException("Say which jurisdiction was notified.");
         if (code.Length > JurisdictionNotice.MaxJurisdictionLength) throw new ArgumentException("That jurisdiction code is too long.");
@@ -1497,8 +1501,24 @@ public class Case : AuditableEntity, IHashableEntity
             JurisdictionNotices.Add(notice);
         }
         else notice.NotifiedAtUtc = notifiedAtUtc;
+        if (how is not null) notice.SetDetails(how);
         Touch(actor, nowUtc);
         return notice;
+    }
+
+    /// <summary>
+    /// CAP-07: records how one regulator was notified (the method, reference, who gave it, the file holding it), on the
+    /// notice already recorded for that code; its time doesn't move. The caller checks the evidence file is on the case.
+    /// False when nothing changed.
+    /// </summary>
+    public bool SetNoticeDetails(string jurisdiction, NoticeDetails details, string actor, DateTimeOffset nowUtc)
+    {
+        var code = (jurisdiction ?? "").Trim().ToUpperInvariant();
+        var notice = JurisdictionNotices.FirstOrDefault(n => n.Jurisdiction == code)
+                     ?? throw new InvalidOperationException("That regulator has no notice recorded. Record the notice first.");
+        if (!notice.SetDetails(details)) return false;
+        Touch(actor, nowUtc);
+        return true;
     }
 
     /// <summary>

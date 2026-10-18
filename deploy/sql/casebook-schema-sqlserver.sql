@@ -4295,27 +4295,43 @@ GO
 BEGIN TRANSACTION;
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261018053605_StoredSecrets'
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
 )
 BEGIN
-    CREATE TABLE [StoredSecrets] (
-        [Name] nvarchar(64) NOT NULL,
-        [ProtectedValue] nvarchar(max) NULL,
-        [SetAtUtc] datetimeoffset NULL,
-        [SetBy] nvarchar(256) NULL,
-        [UpdatedAtUtc] datetimeoffset NOT NULL,
-        [UpdatedBy] nvarchar(256) NOT NULL,
-        CONSTRAINT [PK_StoredSecrets] PRIMARY KEY ([Name])
-    );
+    ALTER TABLE [JurisdictionNotices] ADD [EvidenceId] uniqueidentifier NULL;
 END;
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20261018053605_StoredSecrets'
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [Method] int NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [NotifiedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
+)
+BEGIN
+    ALTER TABLE [JurisdictionNotices] ADD [Reference] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018054208_NoticeDetails'
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261018053605_StoredSecrets'', N''10.0.13'');');
+    VALUES (N''20261018054208_NoticeDetails'', N''10.0.13'');');
 END;
 
 COMMIT;

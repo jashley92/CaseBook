@@ -282,6 +282,25 @@
                                                     <button type="button" class="im-rail-x ms-1" aria-label="Remove the notice to @s.JurisdictionLabel"
                                                             title="Remove this notice (a mis-entry)" @onclick="() => RemoveNotice(s.JurisdictionCode, s.JurisdictionLabel)">×</button>
                                                 }
+                                                @* CAP-07: how the regulator was notified, shown and edited on the row; the time stays. *@
+                                                @if (CanEdit && _noticeEditing && _notice.IsOpenFor(s.JurisdictionCode))
+                                                {
+                                                    <div class="d-flex align-items-center gap-1 flex-wrap im-own-keys mt-1"
+                                                         @onkeydown="e => SaveOnKey(e, SaveNoticeDetails)">
+                                                        @NoticeFields(s.JurisdictionLabel)
+                                                        <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveNoticeDetails">Save</button>
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="_notice.Close">Cancel</button>
+                                                    </div>
+                                                    @if (_noticeError is not null) { <div class="text-danger small">@_noticeError</div> }
+                                                }
+                                                else
+                                                {
+                                                    @if (NoticeHow(s.JurisdictionCode) is { } how) { <div class="text-muted">@how</div> }
+                                                    @if (CanEdit && OwnNotice(s.JurisdictionCode) is { } own)
+                                                    {
+                                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => BeginNoticeDetails(s.JurisdictionCode, own)">@(own.HasDetails ? "Edit how notified" : "Add how notified")</button>
+                                                    }
+                                                }
                                             }
                                             else if (CanEdit && _notice.IsOpenFor(s.JurisdictionCode))
                                             {
@@ -290,6 +309,7 @@
                                                      @onkeydown="e => SaveOnKey(e, SaveNotice)">
                                                     <DateTimeInput Past="true" class="form-control form-control-sm" style="max-width: 13rem" @bind-Value="_noticeAt"
                                                            aria-label="@($"When {s.JurisdictionLabel} was notified ({TimeDisp.Label})")" />
+                                                    @NoticeFields(s.JurisdictionLabel)   @* CAP-07: optional *@
                                                     <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveNotice">Save</button>
                                                     <button class="btn btn-sm btn-outline-secondary" @onclick="_notice.Close">Cancel</button>
                                                 </div>
@@ -724,8 +744,12 @@
         var deadlines = await Deadlines.EvaluateAsync(CaseId);
         if (!_deadlineLoad.IsCurrent(t)) return;
         _deadlines = deadlines;
-        // A notice a colleague recorded meanwhile hides its form; the slot is let go so another row's can open.
-        if (_notice.Current is { } open && !deadlines.Statuses.Any(s => s.JurisdictionCode == open.Key && s.NotifiedAtUtc is null))
+        // A notice a colleague recorded meanwhile hides its form; the slot is let go so another row's can open. CAP-07: an
+        // edit of how one was notified stays open while its notice does (a save over a colleague's change is refused, and
+        // what's typed is kept); a notice removed meanwhile takes its form with it.
+        if (_notice.Current is { } open && (_noticeEditing
+                ? !deadlines.NoticeCodes.Contains(open.Key) || !deadlines.Statuses.Any(s => s.JurisdictionCode == open.Key && s.NotifiedAtUtc is not null)
+                : !deadlines.Statuses.Any(s => s.JurisdictionCode == open.Key && s.NotifiedAtUtc is null)))
             _notice.Close();
     }
 
@@ -739,22 +763,27 @@
     private void BeginNotice(string code, DateTimeOffset? shown)
     {
         if (!_notice.TryOpen(code, Toasts, "notice")) return;
+        _noticeEditing = false;
         _noticeError = null;
         _noticeAt = _noticeSeed = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
         _noticeShown = shown;
+        SeedNoticeDetails(null);
     }
 
     private Task SaveNotice() => _saving.Run(SaveNoticeCore);
 
     private async Task SaveNoticeCore()
     {
-        if (_notice.Current is not { } open) return;
+        if (_notice.Current is not { } open || _noticeEditing) return;
         _noticeError = null;
         if (_noticeAt is not { } at) { _noticeError = "Enter when they were notified."; return; }
         try
         {
-            // BUG-594: refused when someone recorded this regulator's notice after the form opened.
-            await Cases.RecordNoticeAsync(CaseId, open.Key, WallClock.ToUtc(at, TimeDisp.Zone), Shown.Of(_noticeShown));
+            // BUG-594: refused when someone recorded this regulator's notice after the form opened. CAP-07: with how it
+            // was notified, when any of that was given.
+            var how = TypedNoticeDetails();
+            await Cases.RecordNoticeAsync(CaseId, open.Key, WallClock.ToUtc(at, TimeDisp.Zone), Shown.Of(_noticeShown),
+                how.IsEmpty ? null : how);
             _notice.CloseIf(open);
             await LoadDeadlines();
             await OnChanged.InvokeAsync();
@@ -772,6 +801,113 @@
             if (_notice.IsCurrent(open)) _noticeError = ex.Message;
         }
     }
+
+    // CAP-07: how the regulator was notified (method, reference, who, the notice file), typed with a new notice or edited on
+    // one already recorded (_noticeEditing). It shares the notice slot, so one notice form is open at a time (BUG-578).
+    private bool _noticeEditing;
+    private string _nMethod = "", _nReference = "", _nBy = "", _nEvidence = "";
+    private string? _noticeDetailsSeed;
+    private string? _noticeStamp;   // FR-06 / REL-02: the details as the form opened with them
+
+    private string NoticeDetailsInput() => string.Join("\u001f", _nMethod, _nReference, _nBy, _nEvidence);
+
+    private void SeedNoticeDetails(JurisdictionNotice? n)
+    {
+        _nMethod = n?.Method?.ToString() ?? "";
+        _nReference = n?.Reference ?? "";
+        _nBy = n?.NotifiedBy ?? "";
+        _nEvidence = n?.EvidenceId?.ToString() ?? "";
+        _noticeDetailsSeed = NoticeDetailsInput();
+    }
+
+    // C16: the method is read by name only.
+    private NoticeDetails TypedNoticeDetails()
+    {
+        NoticeMethod? method = null;
+        if (_nMethod.Length > 0)
+            method = IncidentManager.Domain.Common.EnumNames.TryParse<NoticeMethod>(_nMethod, out var m) ? m
+                : throw new ArgumentException("Choose how the regulator was notified from the list.");
+        Guid? file = null;
+        if (_nEvidence.Length > 0)
+            file = Guid.TryParse(_nEvidence, out var g) ? g : throw new ArgumentException("Choose the notice file from the case's evidence.");
+        return new NoticeDetails(method, _nReference, _nBy, file);
+    }
+
+    // The notice recorded for exactly this code (a legacy "NY;CA" one is shown under each code, but edited as a whole: not here).
+    private JurisdictionNotice? OwnNotice(string code) =>
+        _deadlines?.NoticeCodes.Contains(code) == true
+            ? Case.JurisdictionNotices.FirstOrDefault(n => string.Equals(n.Jurisdiction, code, StringComparison.OrdinalIgnoreCase)) : null;
+
+    // How a regulator was notified, in words (BUG-428: a legacy "NY;CA" notice counts for each code).
+    private string? NoticeHow(string code) =>
+        Case.ByNoticeCode(Case.JurisdictionNotices.Select(n => (n.Jurisdiction, n))).GetValueOrDefault(code) is { } notice
+            ? NoticeDetailText.Summary(notice, Case.Evidence) : null;
+
+    private void BeginNoticeDetails(string code, JurisdictionNotice n)
+    {
+        if (!_notice.TryOpen(code, Toasts, "notice")) return;
+        _noticeEditing = true;
+        _noticeError = null;
+        _noticeAt = _noticeSeed = null;   // no time on this form
+        _noticeStamp = n.DetailsConcurrencyStamp();
+        SeedNoticeDetails(n);
+    }
+
+    private Task SaveNoticeDetails() => _saving.Run(SaveNoticeDetailsCore);
+
+    private async Task SaveNoticeDetailsCore()
+    {
+        if (_notice.Current is not { } open || !_noticeEditing) return;
+        _noticeError = null;
+        try
+        {
+            if (await Cases.UpdateNoticeDetailsAsync(CaseId, open.Key, TypedNoticeDetails(), _noticeStamp))
+            {
+                await LoadDeadlines();
+                await OnChanged.InvokeAsync();
+                Toasts.Success("Notice details saved");
+            }
+            _notice.CloseIf(open);
+        }
+        catch (StaleEditException ex)   // FR-06: a colleague changed (or removed) it while this was open
+        {
+            if (!_notice.IsCurrent(open)) return;
+            _noticeStamp = ex.CurrentStamp;   // re-baselined, so a deliberate second Save overwrites theirs
+            _noticeError = ex.Message;
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            if (_notice.IsCurrent(open)) _noticeError = ex.Message;
+        }
+    }
+
+    // CAP-07: the optional fields, in the record form and the edit form alike.
+    private RenderFragment NoticeFields(string label) => __builder =>
+    {
+        <select class="form-select form-select-sm" style="max-width: 9rem" @bind="_nMethod" aria-label="@($"How {label} was notified")">
+            <option value="">Method…</option>
+            @foreach (var m in Enum.GetValues<NoticeMethod>())
+            {
+                <option value="@m.ToString()">@NoticeDetailText.Label(m)</option>
+            }
+        </select>
+        <input class="form-control form-control-sm" style="max-width: 12rem" @bind="_nReference" @bind:event="oninput"
+               maxlength="@JurisdictionNotice.MaxReferenceLength" placeholder="Reference number" aria-label="@($"{label}'s reference or confirmation number")" />
+        <input class="form-control form-control-sm" style="max-width: 12rem" @bind="_nBy" @bind:event="oninput"
+               maxlength="@JurisdictionNotice.MaxNotifiedByLength" placeholder="Notified by" aria-label="@($"Who notified {label}")" />
+        <select class="form-select form-select-sm" style="max-width: 14rem" @bind="_nEvidence" aria-label="@($"The evidence file holding the notice to {label}")">
+            <option value="">Notice file…</option>
+            @foreach (var ev in Case.Evidence.OrderBy(e => e.OriginalFileName, StringComparer.OrdinalIgnoreCase))
+            {
+                <option value="@ev.Id.ToString()">@ev.OriginalFileName</option>
+            }
+            @if (_nEvidence.Length > 0 && !Case.Evidence.Any(e => e.Id.ToString() == _nEvidence))
+            {
+                <option value="@_nEvidence">@NoticeDetailText.MissingFile</option>
+            }
+        </select>
+    };
 
     private Task RemoveNotice(string code, string label) =>
         RequestConfirm.InvokeAsync(($"Remove the notice to {label}? Its countdown resumes.", "Remove",
@@ -838,7 +974,7 @@
         Edits.Track(this, "the case details you're editing", () => DetailsDirty, Region);
         Edits.Track(this, "the impact assessment you're editing", () => ImpactDirty, Region);
         Edits.Track(this, "the case link you're adding", () => LinkDirty, Region);
-        Edits.Track(this, "the notice time you're recording", () => NoticeDirty, Region);
+        Edits.Track(this, "the notice you're recording", () => NoticeDirty, Region);
         // X-03: the data-element reference set — active options for editing, plus a key→label map (incl.
         // inactive) so already-recorded elements always render with their current label.
         _dataElements = await Cases.ListActiveDataElementsAsync();
@@ -1042,7 +1178,8 @@
     private bool DetailsDirty => _editingDetails && DetailsInput() != _detailsSeed;
     private bool ImpactDirty => _editingImpact && ImpactInput() != _impactSeed;
     private bool LinkDirty => _addingLink && (_linkTargetId is not null || !string.IsNullOrWhiteSpace(_linkQuery) || !string.IsNullOrWhiteSpace(_linkDesc));
-    private bool NoticeDirty => (_notice.IsOpen && Moved(_noticeAt, _noticeSeed)) || (_markingReported && Moved(_reportedAt, _reportedSeed));
+    private bool NoticeDirty => (_notice.IsOpen && (Moved(_noticeAt, _noticeSeed) || NoticeDetailsInput() != _noticeDetailsSeed))   // CAP-07
+                                || (_markingReported && Moved(_reportedAt, _reportedSeed));
     private static bool Moved(DateTime? now, DateTime? seed) =>
         (now is { } n ? WallClock.ToMinute(n) : (DateTime?)null) != (seed is { } s ? WallClock.ToMinute(s) : null);
     private string? _detailsSeed, _impactSeed;

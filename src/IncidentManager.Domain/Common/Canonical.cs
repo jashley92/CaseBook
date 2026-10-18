@@ -33,8 +33,15 @@ public static class Canonical
     /// </summary>
     public const string V4Prefix = "v4:";
 
+    /// <summary>
+    /// CAP-07: starts a row hash over a format-5 canonical: format 4 plus how a regulator was notified (a notice's method,
+    /// reference, who gave it and the file holding it), folded in only when set, so a record without them builds what
+    /// format 4 built and keeps its hash. No row written before format 5 can hold them, so there's nothing to upgrade.
+    /// </summary>
+    public const string V5Prefix = "v5:";
+
     /// <summary>The format row hashes are written in.</summary>
-    public const int CurrentFormat = 4;
+    public const int CurrentFormat = 5;
 
     /// <summary>Whether the canonical being built is in <paramref name="format"/> or later (an entity adds the fields
     /// that format brought in only then).</summary>
@@ -67,7 +74,7 @@ public static class Canonical
     /// a record without it builds the same canonical in that format as before it.</summary>
     public static string Since(int format, bool isSet, Func<string> part) => isSet ? From(format, true, part) : "";
 
-    /// <summary>Builds a canonical in the given format (1 to 4). Canonicals are built synchronously, so the format is
+    /// <summary>Builds a canonical in the given format (1 to 5). Canonicals are built synchronously, so the format is
     /// per thread.</summary>
     public static string InFormat(int format, Func<string> build)
     {
@@ -96,13 +103,14 @@ public static class Canonical
 
     /// <summary>The format a stored row hash was written in, from its prefix (none: the first).</summary>
     public static int FormatOf(string storedHash) =>
-        storedHash.StartsWith(V4Prefix, StringComparison.Ordinal) ? 4
+        storedHash.StartsWith(V5Prefix, StringComparison.Ordinal) ? 5
+        : storedHash.StartsWith(V4Prefix, StringComparison.Ordinal) ? 4
         : storedHash.StartsWith(V3Prefix, StringComparison.Ordinal) ? 3
         : storedHash.StartsWith(V2Prefix, StringComparison.Ordinal) ? 2
         : 1;
 
     /// <summary>The prefix a row hash in <paramref name="format"/> starts with.</summary>
-    public static string PrefixOf(int format) => format switch { 4 => V4Prefix, 3 => V3Prefix, 2 => V2Prefix, _ => "" };
+    public static string PrefixOf(int format) => format switch { 5 => V5Prefix, 4 => V4Prefix, 3 => V3Prefix, 2 => V2Prefix, _ => "" };
 
     public static string Time(DateTimeOffset t) => t.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 

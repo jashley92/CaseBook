@@ -436,8 +436,11 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         if (last.Hash is not null)
             // BUG-646: a hash in an older format leaves out values format 4 brought in (a case's kept jurisdictions), so a
             // row matching it may still have been changed there; it must agree with its trail too, as the upgrade asks.
+            // CAP-07: from format 4 on, the hash vouches when it covers what the row holds; no row hashed before format 5
+            // can hold a value format 5 brought in (how a regulator was notified), as CaseBook hashes it with what it sets.
             return stored is { Length: > 0 } && string.Equals(last.Hash, stored, StringComparison.OrdinalIgnoreCase)
-                   && (Canonical.FormatOf(stored) >= Canonical.CurrentFormat || trail?.Agrees(asRead) == true);
+                   && Canonical.Covers(Math.Max(Canonical.FormatOf(stored), 4), asRead.BuildCanonicalContent)
+                   && (Canonical.FormatOf(stored) >= 4 || trail?.Agrees(asRead) == true);
         if (strict.Value || trail is null || !trail.Agrees(asRead)) return false;
         var children = RowHashUpgrade.HashedChildren(asRead).ToList();
         if (children.Count == 0) return true;

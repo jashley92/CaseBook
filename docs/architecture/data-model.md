@@ -16,7 +16,7 @@ Sources of truth: entity classes in `src/IncidentManager.Domain/Entities`, EF ma
 | **Enums are integers** | No value conversions anywhere: enums are stored as `int`, folded into row hashes as numbers, and serialized as numbers in audit JSON. **Append new members; never renumber or remove one.** Exception: `Permission` is stored by *name* inside `Roles.PermissionsCsv`, so never rename a `Permission` member. |
 | **Times are UTC** | `datetimeoffset` on SQL Server; UTC ticks on SQLite (offset lost). Domain code always writes UTC. The UTC/local toggle in the UI is display only. |
 | **Audit columns** | `CreatedAtUtc`/`CreatedBy` (required), `ModifiedAtUtc`/`ModifiedBy` (nullable) on `AuditableEntity` types. **Code sets them**; the interceptor doesn't. |
-| **Row hash** | Types implementing `IHashableEntity` have `RowHash nvarchar(70)`: a format prefix (`v2:` to `v4:`, none for the first) and the SHA-256 of `BuildCanonicalContent()` in that format, recomputed on every save. See [integrity.md](integrity.md). |
+| **Row hash** | Types implementing `IHashableEntity` have `RowHash nvarchar(70)`: a format prefix (`v2:` to `v5:`, none for the first) and the SHA-256 of `BuildCanonicalContent()` in that format, recomputed on every save. See [integrity.md](integrity.md). |
 | **Audit chain** | Every insert, update and delete of every type *not* in the interceptor's `NotAudited` list writes a chained `AuditLog` row in the same transaction. |
 | **No soft-delete column** | Nothing has `IsDeleted`. Records are either append-only (never removed), archived (`IsArchived`, `IsActive=false`), or hard-deleted (audited with action `Delete`). **Cases, timeline entries, notes, evidence, tasks and comments are never deleted.** |
 | **No query filters, no rowversion** | Need-to-know is applied explicitly by services (`ForUser`). Concurrency uses field "stamps" computed by the domain, compared before saving. |
@@ -36,6 +36,8 @@ erDiagram
     CASES ||--o{ ASSIGNMENT_CHANGES : "team history"
     CASES ||--o{ GATE_PASSAGES : "stage gates"
     CASES ||--o{ TRANSITION_TIME_CORRECTIONS : corrections
+    CASES ||--o{ JURISDICTION_NOTICES : "regulator notices"
+    EVIDENCE |o..o{ JURISDICTION_NOTICES : "notice file"
     CASES ||--o{ TIMELINE_ENTRIES : timeline
     TIMELINE_ENTRIES ||--o{ EVENT_STEP_TACTICS : tactics
     CASE_ENTITIES |o--o{ TIMELINE_ENTRIES : "actor / target (restrict)"
@@ -150,6 +152,24 @@ recorded correction.
 **Effective time.** `ChangedAtUtc` is when the change was entered and never moves. `EffectiveAtUtc` is when it
 actually happened, and is **NULL when the two are equal**. Always read the computed `EffectiveAt`
 (`EffectiveAtUtc ?? ChangedAtUtc`).
+
+### `JurisdictionNotices` (H, A)
+
+One row per regulator notified about a case (BUG-09). Unique on `(CaseId, Jurisdiction)`; cascades from `Cases`.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Jurisdiction` | nvarchar(50) | no | The jurisdiction code, upper case. A notice from before v1.6.10 may name two (`NY;CA`) and counts for each (BUG-428). |
+| `NotifiedAtUtc` | datetimeoffset | no | When the regulator was notified. Its clock stops here; corrected in place (audited). |
+| `DueAtUtc` | datetimeoffset | yes | The deadline as it stood when the notice was recorded (WF-77). In the row hash from format 4, when set (BUG-630). |
+| `Method` | int | yes | CAP-07: how it was given: 0 Portal, 1 Letter, 2 Email, 3 Phone, 4 Other (`NoticeMethod`). |
+| `Reference` | nvarchar(200) | yes | CAP-07: the regulator's reference or confirmation number, as typed. |
+| `NotifiedBy` | nvarchar(200) | yes | CAP-07: who gave the notice, as typed (a person, or counsel). Free text, not a user id. |
+| `EvidenceId` | uniqueidentifier | yes | CAP-07: the evidence file holding the notice. No foreign key; the service accepts only a file on the same case. |
+| `CreatedAtUtc`, `CreatedBy`, `ModifiedAtUtc`, `ModifiedBy`, `RowHash` | | | |
+
+CAP-07's four columns are in the row hash from canonical format 5, only when one is set, so a notice without them
+keeps the hash it had. They're edited without moving `NotifiedAtUtc` (`CaseService.UpdateNoticeDetailsAsync`).
 
 ## The investigation record
 

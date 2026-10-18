@@ -618,7 +618,7 @@ public sealed class RowIntegrityTests
             db.Reports.Add(report);
             await db.SaveChangesAsync();
             id = report.Id;
-            report.RowHash.Should().StartWith(Canonical.V4Prefix);
+            report.RowHash.Should().StartWith(Canonical.PrefixOf(Canonical.CurrentFormat));
         }
         (await VerifyAsync(database))?.Detail.Should().BeNull();
 

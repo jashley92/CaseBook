@@ -33,6 +33,7 @@ public sealed class HashChainService : IHashChainService
 
     // BUG-24: new row hashes are over the escaped canonical and say which format; older ones are checked as written.
     // BUG-316: format 3 adds the fields the earlier formats left out. C18: format 4 the stored values they still did.
+    // CAP-07: format 5 how a regulator was notified.
     public string ComputeRowHash(IHashableEntity entity) =>
         Canonical.PrefixOf(Canonical.CurrentFormat) + Hash(Canonical.InFormat(Canonical.CurrentFormat, entity.BuildCanonicalContent));
 
