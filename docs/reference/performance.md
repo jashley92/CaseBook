@@ -29,7 +29,7 @@ worse.
 | **Evidence re-hash** | Reads every stored file on its interval. | I/O heavy; off by default; schedule it for quiet hours via the interval. |
 | **Report generation** | Builds the model, renders diagrams with SkiaSharp, writes Word. | A case with very large timelines or graphs takes seconds. It runs in the background (`ReportJobs`, one at a time), so nobody waits on the page; a queue of many large reports finishes in order. |
 | **Indicators page** | Every visible occurrence is read and grouped in memory for each load (the summary counts the whole library); 300 rows a page, paged by keyset (CAP-27). The CSV reads the same way, up to 50,000 indicators. | Linear in recorded entities; a library of hundreds of thousands of occurrences makes each page a second or more. |
-| **Audit and access-log CSV** | Capped at 100,000 rows, silently. | Large ranges are truncated. |
+| **Audit and access-log CSV** | Streamed to the response as they're read (CAP-32): one statement, written out 64 KB at a time, so memory stays flat. Up to 1,000,000 rows (what one spreadsheet sheet opens); a cut file says so at the top and the end. A time limit of 15 minutes plus a second per 1,000 rows (C10), past which the file's last line says it's incomplete and the download fails. Measured in the test suite: about 100,000 access-log rows in a few seconds on SQLite and SQL Server. | The statement holds a database connection for the length of the download; under read-committed snapshot (set by the installer) it doesn't block writers. A slow client can reach the time limit on a very large range. |
 | **Graph** | vis-network in the browser; positions saved per drag. | Hundreds of nodes get slow to lay out. |
 
 ## Database

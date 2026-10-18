@@ -394,7 +394,7 @@ first.
 | User directory refresh 30 minutes | `Infrastructure/Security/UserDirectory.cs` |
 | API token maximum lifetime 90 days (personal) / 365 days (system) | `Application/ApiTokens/ApiTokenService.cs` |
 | "Recorded later" threshold 1 hour | `Application/Cases/CaseService.cs` (`BackdateReasonThreshold`) |
-| Audit and access-log CSV exports capped at **100,000 rows**, newest kept; a cut file says so on its second line (and an audit export on its last line too) | `Web/Program.cs` (`ExportRowLimit`) |
+| Audit and access-log CSV exports streamed, up to **1,000,000 rows**, newest kept; a cut file says so on its second line and its last; stopped after 15 minutes plus a second per 1,000 rows, the last line then saying the file is incomplete | `Application/Common/CsvStream.cs` (`MaxRows`, `TimeLimit`); `Web/Program.cs` (`ExportRowLimit`) |
 | Indicator list 300 rows a page (Previous and Next page through the rest); its CSV up to **50,000** indicators, a cut file saying so at the top and the end | `Application/Intel/IndicatorService.cs` (`PageSize`, `ExportLimit`) |
 | Access review "dormant" after 90 days | `Application/Admin/AccessReviewService.cs` |
 | Webhook and chat retry back-off 250 ms × attempt | `Web/Siem/WebhookTransport.cs`, `Web/Notifications/ChatWebhookNotifier.cs` |

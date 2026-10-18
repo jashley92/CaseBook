@@ -458,6 +458,41 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task The_audit_and_access_log_csvs_stream_as_attachments_and_are_recorded(/* CAP-32 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            foreach (var (url, prefix, header) in new[]
+                     {
+                         ("/export/audit.csv", "audit-trail-", "sequence,at_utc,"),
+                         ("/export/access-log.csv", "access-log-", "actor,access_type,"),
+                     })
+            {
+                using var asImage = new HttpRequestMessage(HttpMethod.Get, url);
+                asImage.Headers.Add("Sec-Fetch-Dest", "image");
+                (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+                var response = await client.GetAsync(url);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+                var fileName = response.Content.Headers.ContentDisposition!.FileName!.Trim('"');
+                fileName.Should().StartWith(prefix);
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                bytes[..3].Should().Equal(System.Text.Encoding.UTF8.GetPreamble(), "Excel reads it as UTF-8");
+                System.Text.Encoding.UTF8.GetString(bytes).Split("\r\n")[1].Should().StartWith(header);
+
+                using var scope = factory.Services.CreateScope();
+                await using var db = await scope.ServiceProvider
+                    .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                    .CreateDbContextAsync();
+                db.CaseAccessEvents.AsEnumerable().Should().Contain(e => e.TargetLabel != null && e.TargetLabel.StartsWith(fileName));
+            }
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);

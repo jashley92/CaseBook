@@ -203,8 +203,8 @@ On the **Integrity & audit** page (any `ViewCases` user can verify; sealing need
   number, so entries written while you page neither repeat on *Older* nor go missing on *Newer*; the summary shows the
   page's range by sequence (`#1,000 to #901`, the **#** column) and says when it's the latest. Filter by case number, actor,
   action, entity type (configuration such as Setting, Role, AD group mapping and Stage gate is grouped apart in the
-  list) and UTC dates; *Export CSV* downloads what the filter shows (`/export/audit.csv`, up to 100,000 rows; a cut file
-  says so at the top and on its last line). Need-to-know applies as on a case's Audit tab: someone who can't see a
+  list) and UTC dates; *Export CSV* downloads what the filter shows (`/export/audit.csv`, streamed, up to 1,000,000 rows; a cut file
+  says so at the top and on its last line; a very long one stops at its time limit and the download fails). Need-to-know applies as on a case's Audit tab: someone who can't see a
   restricted case doesn't see its entries, and only oversight and administrators see configuration entries. The
   filters come from the address too (`?case=`, `?action=`, `?entity=`, `?key=`, `?from=`, `?to=`; the page's address never
   carries the actor, though the *Export CSV* link does, as a case's Audit tab export does), so a link can open it

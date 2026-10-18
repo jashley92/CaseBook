@@ -169,7 +169,7 @@ return query.Where(c => !c.IsRestricted
 
 - Applied to lists, search, the workspace, every write (a case is loaded through it before changing), downloads,
   report hash verification, exports, dashboards, indicators, campaigns (a restricted case can't bridge two campaigns), pins and recents.
-- Audit-trail reads (`IntegrityService.RecentAsync`, `QueryAsync`, `QueryPageAsync`, `ExportCsvAsync`, `AuditFacetsAsync`:
+- Audit-trail reads (`IntegrityService.RecentAsync`, `QueryAsync`, `QueryPageAsync`, `ExportCsvAsync`, `WriteCsvAsync`, `AuditFacetsAsync`:
   `/integrity`, a case's Audit tab, both audit CSVs) show `ViewAllCases` and `Administer` the whole trail. Everyone else sees only entries
   for cases they can see; case-less entries (configuration, roles) are left out. Filtered to one case (the Audit
   tab, the audit CSV), the trail includes the entries made under every number the case has held, such as its

@@ -229,6 +229,14 @@ first with `casebook-keytool export`.
   days ago are cleared**, recorded as one audit-trail entry. No migration. To keep them, set
   `"Retention": { "DecidedImportDays": 0 }` in `appsettings.Production.json` (or change it in Administration) before
   upgrading.
+- **Audit and access-log CSVs stream, up to 1,000,000 rows (CAP-32).** `/export/audit.csv`, `/export/case-audit.csv`
+  and `/export/access-log.csv` are written to the browser as they're read instead of built in memory, so the bound
+  rises from 100,000 rows to 1,000,000 (what one spreadsheet sheet opens). A cut file says so on its second line and
+  its last (the access-log CSV used to say it only at the top). A very long export stops after 15 minutes plus a
+  second per 1,000 rows: its last line says the file is incomplete and the download shows as failed; narrow the range.
+  The access log and SIEM 5304 entry are now written as the download begins. Scoping, permissions and the downloads
+  rate limit are unchanged. No migration and nothing to configure. An export holds a database connection while it
+  downloads; with read-committed snapshot on (the installer sets it) it doesn't hold up other work.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

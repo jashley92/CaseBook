@@ -370,7 +370,7 @@ lessons-learned report.
 | Screen | What it's for | Image |
 |---|---|---|
 | Integrity & audit | Verify the audit chain, see seals, search the whole audit trail (case, actor, action, entity type, dates; paged by sequence, so new entries don't shift the pages) and export it as CSV, export a compliance bundle. A setting's *History* link in Administration opens it filtered to that setting | ![](../screenshots/integrity-audit.png) |
-| Access log | Who read which case or downloaded which artifact (administrators) | ![](../screenshots/access-log.png) |
+| Access log | Who read which case or downloaded which artifact (administrators). Its CSV, like the audit trail's, holds up to 1,000,000 rows of the filter, streamed; a cut file says so (CAP-32) | ![](../screenshots/access-log.png) |
 | Administration | Settings by section, with a left rail of every admin area. *Diagnostics* includes the **Backup set** (CAP-19): the database's name and every path to back up, each with whether it's there and writable, its size and last write, and `backup-manifest.json` to download | ![](../screenshots/admin-settings.png) |
 | Roles & access | System and custom roles, AD group mappings, and the access review: who sees across cases, restricted cases' teams, known users and active API tokens, with a CSV and **Record this review** ("Last reviewed … by …", CAP-15) | ![](../screenshots/roles-access.png) |
 | Retention review | Closed cases past case retention with their legal hold, open improvement actions and unrecorded regulatory notices; archive up to 25 at a time after confirming the list (CAP-10). No screenshot yet | — |

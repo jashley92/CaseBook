@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Common;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -360,10 +361,41 @@ public sealed class IntegrityService
     /// </summary>
     public async Task<AuditExport> ExportCsvAsync(AuditQueryFilter filter, int rowLimit, CancellationToken ct = default)
     {
-        var rows = await QueryAsync(filter, rowLimit + 1, ct);   // REV-65: one more, to know it was cut
-        var truncated = rows.Count > rowLimit;
-        var kept = truncated ? rows.Take(rowLimit).ToList() : rows;
-        return new AuditExport(AuditCsv.Build(kept, _clock.UtcNow, filter.CaseNumber, truncated ? rowLimit : null), kept.Count, truncated);
+        // CAP-32: the streamed export, gathered: the same file, without its byte-order mark.
+        using var ms = new MemoryStream();
+        var written = await WriteCsvAsync(filter, ms, rowLimit, started: null, timeLimit: null, ct);
+        var text = new System.Text.UTF8Encoding(false).GetString(ms.GetBuffer(), 3, (int)ms.Length - 3);
+        return new AuditExport(text, written.Rows, written.Truncated);
+    }
+
+    /// <summary>
+    /// CAP-32: the filtered trail as the examiner's CSV (<see cref="AuditCsv"/>), streamed to <paramref name="output"/> as it's
+    /// read (<see cref="CsvStream"/>), newest first, at most <paramref name="rowLimit"/> entries; a cut says so at the top and
+    /// the end. The same scoping as <see cref="QueryAsync"/>. The entries are those up to the newest one when the export
+    /// began (its sequence read first), so the count that decides the top line and the rows written agree, and entries
+    /// written meanwhile aren't in it. <paramref name="started"/> is told how many rows will be written and whether the file
+    /// is cut, before the first byte (the endpoint records the access there). Past <paramref name="timeLimit"/>
+    /// (<see cref="CsvStream.TimeLimit"/> for the rows by default) it stops, says so, and reports it (C10).
+    /// </summary>
+    public async Task<CsvStreamResult> WriteCsvAsync(AuditQueryFilter filter, Stream output, int rowLimit,
+        Func<int, bool, Task>? started, TimeSpan? timeLimit, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(rowLimit, 1);
+        using var db = _factory.CreateDbContext();
+        var q = await FilteredAsync(db, filter, ct);
+        var upTo = await q.MaxAsync(a => (long?)a.Sequence, ct) ?? 0;
+        var bounded = q.Where(a => a.Sequence <= upTo);
+        var matched = upTo == 0 ? 0 : await bounded.CountAsync(ct);
+        var truncated = matched > rowLimit;
+        var rows = Math.Min(matched, rowLimit);
+        if (started is not null) await started(rows, truncated);
+        return await CsvStream.WriteAsync(output,
+            bounded.OrderByDescending(a => a.Sequence).Take(rowLimit + 1).AsAsyncEnumerable(), rowLimit,
+            sb => AuditCsv.AppendHeader(sb, _clock.UtcNow, filter.CaseNumber, truncated ? rowLimit : null),
+            AuditCsv.AppendRow,
+            // The count read first decides the top line; the rows read decide the end one (they agree: the bound holds both).
+            (sb, cutAt) => AuditCsv.AppendTail(sb, cutAt ?? (truncated ? rowLimit : null)),
+            timeLimit ?? CsvStream.TimeLimit(rows), ct);
     }
 
     // E-24: the filter's fields AND together over the caller's scoped trail.
