@@ -238,7 +238,8 @@ schema, for use in the organization's own approved AI tool.
 
 - **What:** a structured stream of security-relevant actions for detection rules: reads, downloads and exports,
   refusals, role, mapping, setting and token changes, reference-data changes (5405), legal holds, restrictions, and the
-  case lifecycle from filing to archive, including an applied import (5506-5515, CAP-06). Full reference, payload and
+  case lifecycle from filing to archive, including an applied import and a withdrawn evidence file (5506-5516, CAP-06,
+  CAP-21), and evidence packages handed over (5308, CAP-12). Full reference, payload and
   event-id catalog: [OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18).
 - **XSIAM:** the lifecycle events end their `detail` with `detection=<id>` when the case records the detection
   platform's incident id (an elevation from `CaseBookElevate.py` sets it), so a correlation rule can join a CaseBook

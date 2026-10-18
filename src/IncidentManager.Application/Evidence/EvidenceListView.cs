@@ -12,7 +12,9 @@ public enum EvidenceChip
     /// <summary>Files a current timeline entry or the brief cites.</summary>
     Cited,
     /// <summary>Files nothing cites yet.</summary>
-    Uncited
+    Uncited,
+    /// <summary>CAP-21: also show the files withdrawn from the case (hidden otherwise).</summary>
+    Withdrawn
 }
 
 /// <summary>CAP-25: a sortable column of the Evidence tab's list.</summary>
@@ -29,7 +31,9 @@ public enum EvidenceSort
 /// description (anywhere, ignoring case) or the start of its SHA-256; it stays in the component, never the URL (a file
 /// name or a hash can be sensitive, as an indicator is: C7). Chips of one kind widen each other (images or text or
 /// can-run; cited or uncited), and the two kinds narrow each other. Ties sort newest upload first, so the order is
-/// stable; files with no collection time recorded sort after those with one, whichever way.
+/// stable; files with no collection time recorded sort after those with one, whichever way. CAP-21: a withdrawn file is
+/// listed only while the Withdrawn chip is on, as a retracted timeline entry is shown only on request; that chip widens
+/// the list rather than narrowing it (the other chips and the filter apply to withdrawn files as to the rest).
 /// </summary>
 public static class EvidenceListView
 {
@@ -46,7 +50,9 @@ public static class EvidenceListView
         var text = filter?.Trim() ?? "";
         var kinds = KindChips.Where(chips.Contains).ToList();
         var citations = CitationChips.Where(chips.Contains).ToList();
-        var shown = items.Where(ev => (text.Length == 0 || Matches(ev, text))
+        var withdrawn = chips.Contains(EvidenceChip.Withdrawn);
+        var shown = items.Where(ev => (withdrawn || !ev.IsWithdrawn)
+                                      && (text.Length == 0 || Matches(ev, text))
                                       && (kinds.Count == 0 || kinds.Any(k => Is(ev, k, isCited)))
                                       && (citations.Count == 0 || citations.Any(k => Is(ev, k, isCited))));
         return Sorted(shown, sort, descending).ToList();
@@ -66,6 +72,7 @@ public static class EvidenceListView
         EvidenceChip.CanRun => EvidenceRisk.IsRisky(ev.OriginalFileName, ev.ContentType),
         EvidenceChip.Cited => isCited(ev),
         EvidenceChip.Uncited => !isCited(ev),
+        EvidenceChip.Withdrawn => ev.IsWithdrawn,
         _ => false
     };
 

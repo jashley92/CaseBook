@@ -106,8 +106,10 @@ public sealed class CaseService
         IEvidenceStore? evidenceStore = null,
         Accounts.AccountDirectoryService? accounts = null,
         Notifications.ReminderAudience? audience = null,
-        Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? evidenceLimits = null)
+        Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? evidenceLimits = null,
+        Evidence.EvidencePackageTickets? evidencePackages = null)
     {
+        _evidencePackages = evidencePackages;
         _evidenceLimits = evidenceLimits;
         _audience = audience;
         _accounts = accounts;
@@ -133,6 +135,7 @@ public sealed class CaseService
 
     private readonly IEvidenceStore? _evidenceStore;   // WF-31
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? _evidenceLimits;   // PROD-55
+    private readonly Evidence.EvidencePackageTickets? _evidencePackages;   // CAP-12
     private readonly Accounts.AccountDirectoryService? _accounts;   // BUG-416
     private readonly Notifications.ReminderAudience? _audience;   // BUG-596/597
 
@@ -1691,10 +1694,14 @@ public sealed class CaseService
     }
 
     // BUG-05: an entry's attached file must be this case's evidence (a screenshot staged on another case mustn't link).
+    // CAP-21: and one that stands: a withdrawn file isn't attached to an entry or named as a notice's file (CAP-07).
     private static async Task EnsureEvidenceOnCaseAsync(IAppDbContext db, Guid caseId, Guid? evidenceId, CancellationToken ct)
     {
-        if (evidenceId is { } eid && !await db.Evidence.AnyAsync(e => e.Id == eid && e.CaseId == caseId, ct))
-            throw new InvalidOperationException("Only evidence on this case can be attached to its record.");
+        if (evidenceId is not { } eid) return;
+        var withdrawn = await db.Evidence.Where(e => e.Id == eid && e.CaseId == caseId)
+            .Select(e => (bool?)(e.WithdrawnAtUtc != null)).FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException("Only evidence on this case can be attached to its record.");
+        if (withdrawn) throw new InvalidOperationException("That file has been withdrawn from the case, so it can't be attached to its record.");
     }
 
     public async Task<Guid> AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
@@ -3292,6 +3299,7 @@ public sealed class CaseService
                     ?? throw new InvalidOperationException("Case not found or not accessible.");
         var ev = await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
                  ?? throw new InvalidOperationException("That evidence isn't on this case.");
+        if (ev.IsWithdrawn) throw new InvalidOperationException("That file has been withdrawn, so how it was collected stays as it was.");   // CAP-21
         var current = Evidence.EvidenceCollection.Of(ev);
         if (expectedCollection is not null && expectedCollection != current)
             throw new StaleEditException(Evidence.EvidenceCollection.Line(current.AtUtc, current.From, current.By),
@@ -3305,6 +3313,73 @@ public sealed class CaseService
         ev.ModifiedAtUtc = now;
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    /// <summary>
+    /// CAP-21: withdraws an evidence file filed on the wrong case, with a reason. Nothing is deleted (R3): the bytes, the
+    /// hash and the chain of custody stay, a "Withdrawn" custody event records why, and the file can still be downloaded
+    /// for the record (each download logged as before). It leaves the case report, the gates' evidence count, citing and
+    /// evidence packages (CAP-12), and its "Evidence added" milestone becomes "Evidence withdrawn". Final, as a retraction
+    /// is (BUG-413). Refused while a regulator's notice names it as the file holding the notice (CAP-07), or a current
+    /// timeline entry shows it as its screenshot, so nothing on the record points at a withdrawn file: change the notice,
+    /// or retract the entry, first. Audited (the reason is the audit entry's), and sent to the SIEM (5516).
+    /// </summary>
+    /// <param name="expectedStamp">The file's row hash when the dialog opened (empty for one without). Given, a file whose
+    /// record changed since is refused with <see cref="StaleEditException"/>.</param>
+    public async Task WithdrawEvidenceAsync(Guid caseId, Guid evidenceId, string reason, string? expectedStamp = null,
+        CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var head = await Scoped(db.Cases.AsNoTracking()).Where(c => c.Id == caseId)
+                       .Select(c => new { c.CaseNumber, c.DetectionCaseId, c.IsExercise }).FirstOrDefaultAsync(ct)
+                   ?? throw new InvalidOperationException("Case not found or not accessible.");
+        var subject = new Security.CaseSubject(head.CaseNumber, head.DetectionCaseId, head.IsExercise);
+        var ev =await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
+                 ?? throw new InvalidOperationException("That evidence isn't on this case.");
+        if (expectedStamp is not null && !string.Equals(ev.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(ev.RowHash ?? "", "Someone changed this file's record since you opened it, so it wasn't " +
+                "withdrawn. Look at it again before withdrawing it.");
+        if (await db.JurisdictionNotices.AnyAsync(n => n.CaseId == caseId && n.EvidenceId == evidenceId, ct))
+            throw new InvalidOperationException("A regulator's notice names this file as the one holding the notice. Change that notice's file first.");
+        if (await db.TimelineEntries.AnyAsync(t => t.CaseId == caseId && t.EvidenceId == evidenceId && t.IsCurrent, ct))
+            throw new InvalidOperationException("This file is the screenshot on a timeline entry. Retract that entry first if it belongs to another case too.");
+        ev.Withdraw(reason, _user.UserId, _clock.UtcNow);
+        db.PendingChangeReason = reason?.Trim();
+        await db.SaveChangesAsync(ct);
+        Security.SecurityEventEmit.EmitSafely(_siem,
+            () => Security.SecurityEvents.EvidenceWithdrawn(subject, ev.Id, _user.UserId, _user.UserPrincipalName));
+    }
+
+    /// <summary>
+    /// CAP-12: prepares a package of a case's evidence for hand-over: the files picked (every file that stands when none
+    /// are named; a withdrawn one is refused, CAP-21), and who it's for, how and why, named once. Checks the permission, the
+    /// case (need-to-know), that each file is on it, and the package's size (<see cref="Evidence.EvidencePackage.CheckSize"/>),
+    /// and returns a ticket for the download (<c>/evidence/package/{ticket}</c>), so nothing picked or typed goes in a
+    /// URL. Records nothing: each file's "Transferred" custody event and the audit entry are written when the download
+    /// has sent the whole package (<see cref="Evidence.EvidenceService.RecordPackageAsync"/>).
+    /// </summary>
+    public async Task<Evidence.EvidencePackageStaged> StageEvidencePackageAsync(Guid caseId, IReadOnlyCollection<Guid>? evidenceIds,
+        string recipient, string? method, string purpose, CancellationToken ct = default)
+    {
+        Require();
+        if (_evidencePackages is null) throw new InvalidOperationException("Evidence packages aren't available on this server.");
+        var handOver = Evidence.EvidenceHandOver.Checked(recipient, method, purpose);
+        using var db = _factory.CreateDbContext();
+        if (!await CanSeeAsync(db, caseId, ct)) throw new InvalidOperationException("Case not found or not accessible.");
+        var files = await db.Evidence.AsNoTracking().Where(e => e.CaseId == caseId)
+            .Select(e => new { e.Id, e.SizeBytes, e.CreatedAtUtc, Withdrawn = e.WithdrawnAtUtc != null }).ToListAsync(ct);
+        var picked = evidenceIds is null
+            ? files.Where(f => !f.Withdrawn).ToList()
+            : evidenceIds.Distinct().Select(id => files.FirstOrDefault(f => f.Id == id)
+                                                  ?? throw new InvalidOperationException("Only evidence on this case can be packaged.")).ToList();
+        if (picked.Any(f => f.Withdrawn)) throw new InvalidOperationException("A withdrawn file can't be packaged.");
+        var bytes = picked.Sum(f => f.SizeBytes);
+        Evidence.EvidencePackage.CheckSize(picked.Count, bytes, _evidenceLimits?.CurrentValue ?? new());
+        var now = _clock.UtcNow;
+        var ticket = _evidencePackages.Stage(_user.UserId, caseId,
+            picked.OrderBy(f => f.CreatedAtUtc).Select(f => f.Id).ToList(), handOver, now);
+        return new Evidence.EvidencePackageStaged(ticket, picked.Count, bytes, now + Evidence.EvidencePackageTickets.Lifetime);
     }
 
     /// <summary>INV-10: sets which evidence a timeline entry cites (replacing its current set).</summary>

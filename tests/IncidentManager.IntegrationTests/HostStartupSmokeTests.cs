@@ -196,6 +196,57 @@ public sealed class HostStartupSmokeTests : IDisposable
     }
 
     [Fact]
+    public async Task An_evidence_package_downloads_once_as_a_zip_with_its_manifest_and_refuses_a_passive_load(/* CAP-12 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+            (await client.GetAsync("/health/live")).EnsureSuccessStatusCode();   // starts the host (and its demo seed)
+            IncidentManager.Domain.Entities.Evidence evidence;
+            using (var scope = factory.Services.CreateScope())
+            {
+                await using var db = await scope.ServiceProvider
+                    .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                    .CreateDbContextAsync();
+                evidence = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(db.Evidence);
+            }
+            // As the Evidence tab's "Prepare the package" leaves it, for the signed-in (development) user.
+            var me = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<IncidentManager.Web.Security.DevAuthOptions>>().Value.UserId;
+            var ticket = factory.Services.GetRequiredService<IncidentManager.Application.Evidence.EvidencePackageTickets>().Stage(me, evidence.CaseId,
+                [evidence.Id], new IncidentManager.Application.Evidence.EvidenceHandOver("Outside counsel", null, "Litigation hold"), DateTimeOffset.UtcNow);
+
+            using (var asImage = new HttpRequestMessage(HttpMethod.Get, $"/evidence/package/{ticket}"))
+            {
+                asImage.Headers.Add("Sec-Fetch-Dest", "image");
+                (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden, "and the ticket isn't spent");
+            }
+            var zipped = await client.GetAsync($"/evidence/package/{ticket}");
+            zipped.StatusCode.Should().Be(HttpStatusCode.OK);
+            zipped.Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
+            zipped.Headers.GetValues("Content-Security-Policy").Single().Should().StartWith("sandbox");
+            await using var body = new MemoryStream(await zipped.Content.ReadAsByteArrayAsync());
+            using (var zip = new ICSharpCode.SharpZipLib.Zip.ZipFile(body) { Password = "infected" })
+            {
+                zip.Cast<ICSharpCode.SharpZipLib.Zip.ZipEntry>().Select(e => e.Name).Should().Equal(
+                    IncidentManager.Application.Evidence.EvidenceRisk.EntryName(evidence.OriginalFileName), "MANIFEST.txt");
+                await using var inside = zip.GetInputStream(zip[0]);
+                Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(inside)).ToLowerInvariant().Should().Be(evidence.Sha256);
+            }
+            (await client.GetAsync($"/evidence/package/{ticket}")).StatusCode.Should().Be(HttpStatusCode.NotFound, "a ticket downloads once");
+
+            using var check = factory.Services.CreateScope();
+            await using var ctx = await check.ServiceProvider
+                .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                .CreateDbContextAsync();
+            ctx.Set<IncidentManager.Domain.Entities.ChainOfCustodyEvent>().Where(c => c.EvidenceId == evidence.Id && c.Action == "Transferred").ToList()
+                .Should().ContainSingle().Which.Details.Should().Contain("To Outside counsel. Purpose: Litigation hold");
+            ctx.AuditLog.Where(a => a.EntityType == "EvidencePackage").ToList().Should().ContainSingle();
+            ctx.CaseAccessEvents.Where(a => a.AccessType == IncidentManager.Domain.Enums.AccessType.EvidencePackage).ToList().Should().ContainSingle();
+        });
+    }
+
+    [Fact]
     public async Task Refused_passive_loads_dont_spend_the_download_budget(/* REV-61 */)
     {
         await RunWithin(Limit, async () =>

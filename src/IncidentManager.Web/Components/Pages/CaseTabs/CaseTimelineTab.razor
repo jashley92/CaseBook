@@ -636,7 +636,7 @@ else
             if (row.Milestone is { } m)
             {
                 @* INV-01: a milestone derived from the case record. Read-only; its source record is the thing to change. *@
-                <li class="tl-item @BandClass(row.At) tl-kind-ms @(m.Flagged ? "tl-ms-flagged" : "")" id="tl-@m.Key" @key="m.Key">
+                <li class="tl-item @BandClass(row.At) tl-kind-ms @(m.Flagged ? "tl-ms-flagged" : "") @(m.Kind == MilestoneKind.EvidenceWithdrawn ? "tl-ms-withdrawn" : "")" id="tl-@m.Key" @key="m.Key">
                     <span class="tl-dot" aria-hidden="true"><span class="bi @MilestoneGlyph(m.Kind)"></span></span>
                     <div class="tl-body">
                         <div class="tl-head">
@@ -2449,7 +2449,7 @@ else
     </text>;
 
     private RenderFragment CiteButton(TimelineEntry e) => @<text>
-        @if (CanEdit && Case.Evidence.Count > 0)
+        @if (CanEdit && Case.Evidence.Any(x => !x.IsWithdrawn || Case.Citations.Any(c => c.TimelineEntryId == e.Id && c.EvidenceId == x.Id)))
         {
             <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartCite(e)">
                 <span class="bi bi-paperclip" aria-hidden="true"></span> Cite evidence
@@ -2464,7 +2464,14 @@ else
             <div class="tl-cites" aria-label="Evidence cited">
                 @foreach (var ev in cited)
                 {
-                    @if (IsImage(ev))
+                    @if (ev.IsWithdrawn)
+                    {
+                        @* CAP-21: cited before it was withdrawn: struck through, and its panel says why. *@
+                        <a class="tl-cite tl-cite-withdrawn" href="cases/@CaseId?evidence=@ev.Id" title="@ev.OriginalFileName was withdrawn from this case">
+                            <span class="bi bi-slash-circle" aria-hidden="true"></span> @ev.OriginalFileName <span class="visually-hidden">(withdrawn)</span>
+                        </a>
+                    }
+                    else if (IsImage(ev))
                     {
                         <button type="button" class="tl-cite" @onclick="() => OnPreview.InvokeAsync(ev.Id)" title="Preview @ev.OriginalFileName">
                             <span class="bi bi-image" aria-hidden="true"></span> @ev.OriginalFileName
@@ -2485,13 +2492,14 @@ else
             @* BUG-425: im-own-keys: Ctrl/Cmd+Enter in the picker does nothing, rather than add the composer's entry. *@
             <div class="tl-cite-pick border rounded p-2 mt-2 bg-body-tertiary im-own-keys">
                 <div class="small fw-semibold mb-1">Evidence that supports this entry</div>
-                @foreach (var ev in Case.Evidence.OrderByDescending(x => x.CreatedAtUtc))
+                @* CAP-21: a withdrawn file isn't offered; one the entry already cites is listed so it can be taken off. *@
+                @foreach (var ev in Case.Evidence.Where(x => !x.IsWithdrawn || _citeOpened.Contains(x.Id)).OrderByDescending(x => x.CreatedAtUtc))
                 {
                     <div class="form-check small">
                         <input class="form-check-input" type="checkbox" id="@($"cite-{e.Id}-{ev.Id}")" checked="@_citeSel.Contains(ev.Id)"
                                @onchange="x => ToggleCite(ev.Id, (bool)(x.Value ?? false))" />
                         <label class="form-check-label" for="@($"cite-{e.Id}-{ev.Id}")">
-                            @ev.OriginalFileName <span class="text-muted">· @TimeDisp.Short(ev.CreatedAtUtc)@(string.IsNullOrWhiteSpace(ev.Description) ? "" : $" · {ev.Description}")</span>
+                            <span class="@(ev.IsWithdrawn ? "tl-cite-withdrawn" : "")">@ev.OriginalFileName</span>@(ev.IsWithdrawn ? " (withdrawn)" : "") <span class="text-muted">· @TimeDisp.Short(ev.CreatedAtUtc)@(string.IsNullOrWhiteSpace(ev.Description) ? "" : $" · {ev.Description}")</span>
                         </label>
                     </div>
                 }
@@ -2989,7 +2997,7 @@ else
     private static bool IsKeyEntry(TimelineEntry e) =>
         e.Kind == TimelineKind.Event || e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff;
     private static bool IsKeyMilestone(CaseMilestone m) =>
-        m.Kind is not (MilestoneKind.TaskDone or MilestoneKind.EvidenceAdded);
+        m.Kind is not (MilestoneKind.TaskDone or MilestoneKind.EvidenceAdded or MilestoneKind.EvidenceWithdrawn);
 
     // --- RD-08: the Working notes lens ---
     private bool _notesOnly;
@@ -3215,6 +3223,7 @@ else
         MilestoneKind.Reported => "bi-send-check",
         MilestoneKind.TaskDone => "bi-check2-square",
         MilestoneKind.EvidenceAdded => "bi-paperclip",
+        MilestoneKind.EvidenceWithdrawn => "bi-slash-circle",   // CAP-21
         MilestoneKind.ReportFinal => "bi-file-earmark-lock",
         MilestoneKind.Command => "bi-person-badge",
         MilestoneKind.Verdict => "bi-bullseye",   // HR-05

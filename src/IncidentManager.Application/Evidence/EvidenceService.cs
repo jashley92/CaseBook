@@ -22,11 +22,15 @@ public sealed class EvidenceService
     private readonly IAuditWriter _audit;
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<EvidenceStorageOptions>? _limits;   // PROD-55
     private readonly EvidenceUploadSessions? _uploads;   // PROD-56
+    private readonly EvidencePackageTickets? _packages;   // CAP-12
+    private readonly IUserDirectory? _users;   // CAP-12: names in a package's manifest
 
     public EvidenceService(IAppDbContextFactory factory, IEvidenceStore store, ICurrentUser user, IClock clock,
         IAuditWriter audit, Microsoft.Extensions.Options.IOptionsMonitor<EvidenceStorageOptions>? limits = null,
-        EvidenceUploadSessions? uploads = null)
+        EvidenceUploadSessions? uploads = null, EvidencePackageTickets? packages = null, IUserDirectory? users = null)
     {
+        _packages = packages;
+        _users = users;
         _limits = limits;
         _uploads = uploads;
         _factory = factory;
@@ -102,8 +106,9 @@ public sealed class EvidenceService
         string? description, EvidenceCollection collected, StoredEvidence stored, CancellationToken ct)
     {
         // PROD-59: the same file again in this case isn't stored twice: the first copy holds its chain of custody. The
-        // case was checked by the caller (CheckCanUploadAsync), so this reads only its own evidence.
-        var already = await db.Evidence.AsNoTracking().Where(e => e.CaseId == caseId && e.Sha256 == stored.Sha256)
+        // case was checked by the caller (CheckCanUploadAsync), so this reads only its own evidence. CAP-21: a withdrawn copy
+        // doesn't count, so a file withdrawn by mistake can be uploaded again (withdrawing is final).
+        var already = await db.Evidence.AsNoTracking().Where(e => e.CaseId == caseId && e.Sha256 == stored.Sha256 && e.WithdrawnAtUtc == null)
             .OrderBy(e => e.CreatedAtUtc).Select(e => new { e.OriginalFileName, e.CreatedAtUtc }).FirstOrDefaultAsync(ct);
         if (already is not null)
         {
@@ -543,6 +548,76 @@ public sealed class EvidenceService
         await _audit.RecordAsync(AuditAction.EvidenceTransferred, nameof(Domain.Entities.Evidence), evidence.Id.ToString(),
             caseNumber, $"Transferred {evidence.OriginalFileName} (sha256 {Common.ShortHash.Of(evidence.Sha256)}). {custody.Details}", ct);
         return custody;
+    }
+
+    /// <summary>
+    /// CAP-12: opens a package prepared with <c>CaseService.StageEvidencePackageAsync</c> for download: takes its ticket
+    /// (once, and only the person who prepared it), then checks again that they may edit cases and see the case, that
+    /// every file is still on it and none has been withdrawn since (CAP-21), and the size. Returns the files as recorded,
+    /// in upload order, with their names in the zip and their custody so far. Nothing is recorded here: that's
+    /// <see cref="RecordPackageAsync"/>, once the whole package has been written.
+    /// </summary>
+    public async Task<EvidencePackage> OpenPackageAsync(string ticket, CancellationToken ct = default)
+    {
+        if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, nameof(OpenPackageAsync));
+        var request = _packages?.Take(ticket, _user.UserId, _clock.UtcNow)
+                      ?? throw new Common.NotFoundException("That package has already been downloaded, or it has expired. Prepare it again.");
+        var caseId = request.CaseId;
+        using var db = _factory.CreateDbContext();
+        var caseNumber = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == caseId).Select(c => c.CaseNumber)
+                             .FirstOrDefaultAsync(ct)
+                         ?? throw new Common.NotFoundException("Case not found or not accessible.");
+        var ids = request.EvidenceIds.ToList();
+        var rows = await db.Evidence.AsNoTracking().Where(e => e.CaseId == caseId && ids.Contains(e.Id)).ToListAsync(ct);
+        if (rows.Count != ids.Count) throw new InvalidOperationException("A file in the package is no longer on this case. Prepare it again.");
+        if (rows.Any(e => e.IsWithdrawn))
+            throw new InvalidOperationException("A file in the package has been withdrawn since it was prepared. Prepare it again.");
+        EvidencePackage.CheckSize(rows.Count, rows.Sum(e => e.SizeBytes), Limits);
+        var custody = (await db.CustodyEvents.AsNoTracking().Where(x => ids.Contains(x.EvidenceId)).ToListAsync(ct))
+            .ToLookup(x => x.EvidenceId);
+        var ordered = rows.OrderBy(e => e.CreatedAtUtc).ThenBy(e => e.Id).ToList();
+        var names = EvidencePackage.EntryNames(ordered.Select(e => e.OriginalFileName));
+        return new EvidencePackage
+        {
+            Id = Guid.NewGuid(), CaseId = caseId, CaseNumber = caseNumber, HandOver = request.HandOver,
+            Files = ordered.Select((e, i) => new EvidencePackageFile(e, names[i], custody[e.Id].OrderBy(x => x.AtUtc).ToList())).ToList(),
+            PreparedAtUtc = _clock.UtcNow, PreparedBy = _user.UserId,
+        };
+    }
+
+    /// <summary>CAP-12: a package's MANIFEST.txt, with people by name.</summary>
+    public string ManifestOf(EvidencePackage package) => package.Manifest(u => _users?.DisplayFor(u) ?? u ?? "");
+
+    /// <summary>The bytes of one packaged file, decrypted from the store (ADR 0017), for the package's zip.</summary>
+    public Task<Stream> OpenPackagedFileAsync(EvidencePackageFile file, CancellationToken ct = default) =>
+        _store.OpenReadAsync(file.Evidence.StoragePath, ct);
+
+    /// <summary>
+    /// CAP-12: records a package once every byte of it has been written (never before, so a store or key outage part-way,
+    /// or a download cut off, records nothing): a "Transferred" custody event on each file naming the package and the
+    /// hand-over, in one save, and one audit-chain entry naming the package, the hand-over, how many files and bytes, the
+    /// package's SHA-256 (of the zip as it was sent) and its manifest's. Recorded whatever the person's access is by now:
+    /// the bytes have gone, and the record must say so.
+    /// </summary>
+    public async Task RecordPackageAsync(EvidencePackage package, string packageSha256, string manifestSha256, CancellationToken ct = default)
+    {
+        var caseId = package.CaseId;
+        var ids = package.Files.Select(f => f.Evidence.Id).ToList();
+        using var db = _factory.CreateDbContext();
+        var rows = await db.Evidence.Where(e => e.CaseId == caseId && ids.Contains(e.Id)).ToListAsync(ct);
+        var now = _clock.UtcNow;
+        var details = Common.TextFit.Cap($"In evidence package {package.FileName} ({Common.Plural.Of(package.Files.Count, "file", "files")}; " +
+            $"package sha256 {Common.ShortHash.Of(packageSha256)}). {package.HandOver.Sentence}", 2000);
+        foreach (var ev in rows)
+            ev.CustodyEvents.Add(new ChainOfCustodyEvent
+            {
+                EvidenceId = ev.Id, AtUtc = now, Actor = _user.UserId, Action = "Transferred", Details = details
+            });
+        await db.SaveChangesAsync(ct);
+        await _audit.RecordAsync(AuditAction.EvidenceTransferred, "EvidencePackage", package.Id.ToString(), package.CaseNumber,
+            Common.TextFit.Cap($"Packaged {Common.Plural.Of(package.Files.Count, "evidence file", "evidence files")} " +
+                $"({package.TotalBytes.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes) as {package.FileName}. " +
+                $"{package.HandOver.Sentence.TrimEnd('.')}. Package SHA-256 {packageSha256}; {EvidencePackage.ManifestName} SHA-256 {manifestSha256}.", 2000)!, ct);
     }
 
     /// <summary>RD-06: file types whose start can be shown as text in the evidence drawer.</summary>

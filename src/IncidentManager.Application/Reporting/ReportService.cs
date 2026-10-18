@@ -111,7 +111,8 @@ public sealed class ReportService
             // A report listing its own earlier versions reads oddly, so final-report milestones stay out; so do
             // staffing changes (INV-31), which are the team's working record rather than findings.
             foreach (var m in Cases.CaseMilestones.Project(c, labels)
-                         .Where(m => m.Kind is not (Cases.MilestoneKind.ReportFinal or Cases.MilestoneKind.Command))
+                         // CAP-21: a withdrawn file leaves the report, as a retracted entry does (BUG-413).
+                         .Where(m => m.Kind is not (Cases.MilestoneKind.ReportFinal or Cases.MilestoneKind.Command or Cases.MilestoneKind.EvidenceWithdrawn))
                          // WF-34: each brief version's working assessment is the working brief (decision 0012): in the report
                          // only when the profile prints the Case Brief.
                          .Where(m => withBrief || m.Kind != Cases.MilestoneKind.Assessment))
@@ -166,11 +167,11 @@ public sealed class ReportService
     private string? BriefText(string? markdown, ReportDefanger d) =>
         string.IsNullOrWhiteSpace(markdown) ? null : d.Text(_markdown.ToPlainText(markdown).Trim());
 
-    // INV-10: the evidence an entry cites, by file name.
+    // INV-10: the evidence an entry cites, by file name. CAP-21: a withdrawn file is left out, as from the evidence list.
     private static string Cited(Case c, TimelineEntry e)
     {
         var files = c.Citations.Where(x => x.TimelineEntryId == e.Id)
-            .Select(x => c.Evidence.FirstOrDefault(ev => ev.Id == x.EvidenceId)?.OriginalFileName)
+            .Select(x => c.Evidence.FirstOrDefault(ev => ev.Id == x.EvidenceId && !ev.IsWithdrawn)?.OriginalFileName)
             .Where(n => n is not null).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
         return files.Count == 0 ? "" : $" Evidence: {string.Join(", ", files)}.";
     }
@@ -1016,6 +1017,7 @@ public sealed class ReportService
                     BriefText(brief.OpenQuestions, d), BriefText(brief.NextSteps, d))
                 : null,
             Evidence = c.Evidence
+                .Where(x => !x.IsWithdrawn)   // CAP-21: a withdrawn file isn't the case's evidence
                 .OrderBy(x => x.CreatedAtUtc)
                 .Select(x => new ReportEvidenceItem(x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAtUtc, _users.DisplayFor(x.CreatedBy),
                     x.CollectedAtUtc, d.NullableText(x.CollectedFrom), d.NullableText(x.CollectedBy)))   // CAP-08

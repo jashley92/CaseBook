@@ -92,7 +92,7 @@ public sealed record CaseViewFacts(Case Case, CaseNotificationDeadlines? Notify,
         {
             "Timeline" => Case.TimelineEntries.Count,
             "Entities" => Case.Entities.Count,
-            "Evidence" => Case.Evidence.Count,
+            "Evidence" => Case.Evidence.Count(e => !e.IsWithdrawn),   // CAP-21: a withdrawn file isn't counted
             "Tasks" => Case.ActionItems.Count(a => a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled),
             _ => -1
         };

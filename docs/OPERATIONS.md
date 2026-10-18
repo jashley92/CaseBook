@@ -125,6 +125,25 @@ by its name; choose `Always` to wrap every file. The chain of custody records wh
 evidence download is sent as plain bytes (never the type its uploader's browser claimed) with a sandboxing
 `Content-Security-Policy`.
 
+**Evidence packages (CAP-12).** *Package evidence…* on the Evidence tab hands many files over at once: one zip with the
+password `infected` (the same encryption as the safe download), streamed from the store and decrypted as it's read, so
+no plain copy is written on the server, holding the files and a `MANIFEST.txt` (the case, the recipient, method and
+purpose, and each file's SHA-256, size, collection, upload and chain of custody so far). It's limited to 500 files and,
+in all, the largest single file the store takes (`Evidence:MaxUploadMB`); a larger hand-over is several packages.
+Each counts against the `downloads` rate limit. **Custody is written only once the whole package has been sent**: one
+"Transferred" event per file, naming the package and the hand-over, and one audit entry with the SHA-256 of the zip
+as sent and of its manifest (the recipient can check the zip they received against it), then an access-log row and
+SIEM 5308. A store or key outage part-way, a file whose bytes no longer match their SHA-256, a database that can't take
+the record, or a download cut off records nothing; the zip's directory is sent last, after the record, so a package
+that failed doesn't open. (A download cut off in those last bytes, after every file and the manifest have gone, keeps
+its record, since the bytes left; the log says so.) A package that failed is prepared again. A download that's sent slower than about 1 MB/s on
+average (after 15 minutes) is stopped. The warning in the log names the package id and the case.
+
+**Withdrawn evidence (CAP-21).** A file filed on the wrong case is withdrawn from its panel with a reason, not
+deleted: its bytes stay in the store (and in backups), its custody gets a "Withdrawn" event, the audit trail an
+update, and the SIEM 5516. It drops out of the case's report, gates and packages but can still be downloaded, each
+download logged. There's no undo; the right file is uploaded again.
+
 **Disk encryption.** Turn on BitLocker (or the storage's own encryption) for the data root's volume and the evidence
 store's. With CaseBook's own evidence encryption on (§2, Evidence key) a copied disk or backup no longer exposes
 evidence or reports, but the database and the logs are still on those volumes.
@@ -677,6 +696,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5305 | DataAccess | **Restricted** case accessed (elevated severity) |
 | 5306 | DataAccess | Download/export refused by the per-user rate limit (F-13; possible bulk-scrape) |
 | 5307 | DataAccess | Evidence written out **decrypted** by `casebook-keytool export` (Warning; actor is the Windows account that ran it; detail has the case, count, folder and the manifest's SHA-256) |
+| 5308 | DataAccess | **Evidence package** downloaded for hand-over (CAP-12): many evidence files leaving at once. Warning (High on a restricted case). Target is the package id (`EvidencePackage:<id>`), detail the file count and size; the recipient, method and purpose are in the audit trail, not the stream. Sent once the whole package has gone; a download that failed part-way sends nothing |
 | 5401 | Admin | Role created / updated / deleted |
 | 5402 | Admin | AD-group → role mapping added / removed |
 | 5403 | Admin | Operational setting changed |
@@ -697,6 +717,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5513 | Governance | Regulators recorded as notified: the whole case (`CaseReported`) or one regulator (`RegulatorNoticeRecorded`, detail `jurisdiction=<code>`). Info. Taking one back sends `ReportedCleared` or `RegulatorNoticeRemoved` at Warning: the deadline clock runs again. Recording or editing how a regulator was notified (method, reference, who, the file: CAP-07) sends nothing more, and the reference text is never sent |
 | 5514 | Governance | Report approved; target is the report. Info |
 | 5515 | Governance | Case import applied by a reviewer; target is the pending import when it came through the queue (`PendingImport:<id>`), detail `createdCase=true` when it filed a new case. Info |
+| 5516 | Governance | **Evidence withdrawn** from a case (CAP-21); target is the file (`Evidence:<id>`). Warning: the file leaves the case's report and gate counts. Ids only: the file's name and the reason are in the audit trail |
 | 5901 | Diagnostics | Test event from **Administration → Diagnostics → Send test event**. Safe to ignore; use it to confirm the collector receives the stream |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never
@@ -708,7 +729,7 @@ hides what a user can't do, so this marks a stale session (access removed while 
 Today it's emitted by case actions and by the role, settings and configuration-bundle services; refusals in other
 services (evidence, reports, lessons, imports, tokens) aren't streamed.
 
-**Case lifecycle and reference data (CAP-06).** 5506-5515 carry the case number (`caseNumber` / CEF `cs1`), the actor
+**Case lifecycle and reference data (CAP-06).** 5506-5516 carry the case number (`caseNumber` / CEF `cs1`), the actor
 and, when the case records one, the detection platform's incident id as `detection=<id>` at the end of `detail`, so a
 rule can join CaseBook's record to the platform's incident. They carry ids and labels only (enum names, outcome keys,
 jurisdiction codes), never a reason, a summary or any other text from the case. An exercise's `detail` starts

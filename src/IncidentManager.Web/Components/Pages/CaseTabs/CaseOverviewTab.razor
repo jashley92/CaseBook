@@ -898,7 +898,8 @@
                maxlength="@JurisdictionNotice.MaxNotifiedByLength" placeholder="Notified by" aria-label="@($"Who notified {label}")" />
         <select class="form-select form-select-sm" style="max-width: 14rem" @bind="_nEvidence" aria-label="@($"The evidence file holding the notice to {label}")">
             <option value="">Notice file…</option>
-            @foreach (var ev in Case.Evidence.OrderBy(e => e.OriginalFileName, StringComparer.OrdinalIgnoreCase))
+            @* CAP-21: a withdrawn file isn't offered (the notice's own, if it were one, still shows as chosen). *@
+            @foreach (var ev in Case.Evidence.Where(e => !e.IsWithdrawn || e.Id.ToString() == _nEvidence).OrderBy(e => e.OriginalFileName, StringComparer.OrdinalIgnoreCase))
             {
                 <option value="@ev.Id.ToString()">@ev.OriginalFileName</option>
             }

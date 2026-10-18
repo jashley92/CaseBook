@@ -70,6 +70,10 @@ public static class AuditChangeDetail
         ["CollectedAtUtc"] = "Collected",
         ["CollectedFrom"] = "Collected from",
         ["CollectedBy"] = "Collected by",
+        // CAP-21: an evidence file's withdrawal.
+        ["WithdrawnAtUtc"] = "Withdrawn",
+        ["WithdrawnBy"] = "Withdrawn by",
+        ["WithdrawnReason"] = "Why it was withdrawn",
     };
 
     // For the one-line summary, owned value-object fields collapse to their group so a materiality change

@@ -46,6 +46,7 @@ public class StaleEditStampTests
         ["SetReportProfileAsync"] = Pick, ["RenumberAsync"] = Pick, ["MoveEventStepAsync"] = "moves one step one place, relative to where it is now",
         ["SaveGraphLayoutAsync"] = "cosmetic node positions, not case content",
         ["CorrectTransitionTimeAsync"] = Pick,
+        ["StageEvidencePackageAsync"] = "CAP-12: changes nothing stored; it holds a single-use ticket, and the download checks the files again (a file withdrawn since is refused)",
         // Not yet stamped: clearing the reported state from a stale page also clears a notice a colleague just recorded.
         // Left for the page change that would pass it (reported with BUG-594).
         ["ClearReportedAsync"] = "a deliberate reset of every notice, confirmed by the user; see the note above",

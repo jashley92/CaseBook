@@ -84,6 +84,27 @@ public sealed class SecurityEventCatalogTests
     }
 
     [Fact]
+    public void A_withdrawal_is_a_Warning_naming_the_file_by_id_only(/* CAP-21 */)
+    {
+        var id = Guid.NewGuid();
+        var e = SecurityEvents.EvidenceWithdrawn(Subject, id, "u1", null);
+        (e.EventId, e.Category, e.Action, e.Severity).Should().Be((SecurityEventIds.EvidenceWithdrawn, "Governance", "EvidenceWithdrawn", SecuritySeverity.Warning));
+        (e.CaseNumber, e.TargetType, e.TargetId).Should().Be(("2026-07_Takeover", "Evidence", id.ToString()));
+        e.Detail.Should().Be("detection=XSIAM-4412", "no file name or reason");
+    }
+
+    [Theory]
+    [InlineData(false, SecuritySeverity.Warning)]
+    [InlineData(true, SecuritySeverity.High)]
+    public void An_evidence_package_is_a_Warning_and_High_on_a_restricted_case(bool restricted, SecuritySeverity severity /* CAP-12 */)
+    {
+        var id = Guid.NewGuid();
+        var e = SecurityEvents.CaseAccess(AccessType.EvidencePackage, restricted, "u1", null, "2026-07_Takeover", id, "Evidence package: 3 files, 2.0 MB");
+        (e.EventId, e.Category, e.Action, e.Severity).Should().Be((SecurityEventIds.EvidencePackaged, "DataAccess", "EvidencePackaged", severity));
+        (e.TargetType, e.TargetId, e.Detail).Should().Be(("EvidencePackage", id.ToString(), "Evidence package: 3 files, 2.0 MB"));
+    }
+
+    [Fact]
     public void A_null_sink_or_a_failing_build_is_never_an_error()
     {
         ISecurityEventSink? none = null;

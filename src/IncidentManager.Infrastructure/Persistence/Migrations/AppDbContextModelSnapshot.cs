@@ -1669,6 +1669,17 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("WithdrawnAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WithdrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WithdrawnReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CaseId");

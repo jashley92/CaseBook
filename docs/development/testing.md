@@ -131,7 +131,8 @@ To check a commit by hand: `SONAR_TOKEN=... SONAR_WAIT_SECONDS=0 bash tools/ci/c
 
 - **The browser.** No end-to-end tests; no component tests. UI logic in `.razor` files (dialogs, forms, the
   workspace) is exercised only through its services.
-- **HTTP endpoints**, mostly. `HostStartupSmokeTests` covers a few downloads (passive loads, the download budget, 404s)
+- **HTTP endpoints**, mostly. `HostStartupSmokeTests` covers a few downloads (passive loads, the download budget, 404s,
+  CAP-12's evidence package once by its ticket)
   and `ApiEndpointTests` the `/api` endpoints of CAP-09, CAP-13 and CAP-14 (token sign-in, scoping, the 304 and
   `since`, the feed's rate limit, the access log and SIEM 5304). The import POST's 5 MB limit, security headers and
   the page redirects have no request-level tests; their services do.

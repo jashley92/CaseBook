@@ -232,16 +232,23 @@ nvarchar(200); hashed only when set): the latest "still accurate" confirmation o
 | `CollectedAtUtc` | datetimeoffset, null | CAP-08: when the file was collected from its source. Null: taken to be the upload (`CreatedAtUtc`). Not in the future, not before the case's activity began (its detected time when that isn't recorded), not after the upload. |
 | `CollectedFrom` | nvarchar(300), null | CAP-08: where it was collected from (a host, mailbox, system or vendor), as written. |
 | `CollectedBy` | nvarchar(200), null | CAP-08: who collected it, as written (not necessarily a CaseBook user). |
+| `WithdrawnAtUtc` | datetimeoffset, null | CAP-21: when the file was withdrawn from the case (filed on the wrong one). Null while it stands. |
+| `WithdrawnBy` | nvarchar(200), null | CAP-21: who withdrew it. |
+| `WithdrawnReason` | nvarchar(2000), null | CAP-21: why (required). |
 
 Created only by `EvidenceService.UploadAsync` and `CompleteUploadAsync`. The file's columns never change and there's no
 delete path. The three collection columns (CAP-08) are set on upload or later by
 `CaseService.RecordEvidenceCollectionAsync`, an audited update; they're in the row hash (format 5) only when set, so a
-file without them hashes as before.
+file without them hashes as before. The three withdrawal columns (CAP-21) are set once, by
+`CaseService.WithdrawEvidenceAsync` (an audited update with the reason as the audit entry's), and never cleared; they're
+in the row hash (format 5) only when set. A withdrawn file's row, bytes and custody stay.
 
 ### `ChainOfCustodyEvents` (not hashed, not audited; ledger table)
 
-`EvidenceId` (foreign key), `Action` ("Uploaded", "Viewed", "Downloaded", "Transferred"), `Actor`, `AtUtc`,
-`Details`. "Viewed" is recorded once per person per 10 minutes. A transfer is also written to the audit chain.
+`EvidenceId` (foreign key), `Action` ("Uploaded", "Viewed", "Downloaded", "Transferred", "Withdrawn"), `Actor`, `AtUtc`,
+`Details`. "Viewed" is recorded once per person per 10 minutes. A transfer is also written to the audit chain; an
+evidence package (CAP-12) records one "Transferred" per file in it and one audit entry for the package. "Withdrawn"
+(CAP-21) carries the reason.
 
 ### `EvidenceCitations` (A)
 
@@ -383,7 +390,7 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 | `KeyEnvelopes` | `KeyId` (key), `EnvelopeJson`, `UpdatedAtUtc` | PROD-57: the database copy of the evidence key's envelope (the key only in encrypted forms, plus the shares-issued and last-drill records). Written by the keyring through an audited path; one of three copies ([0017](../decisions/0017-evidence-encryption-and-key-recovery.md)). |
 | `SmtpSignIns` | `Id` (key, always 1), `Mode` (`None`/`Password`/`Integrated`, by name), `Username`, `ProtectedPassword` (Data Protection ciphertext, nullable), `PasswordSetAtUtc`, `PasswordSetBy`, `UpdatedAtUtc`, `UpdatedBy` | CAP-05: the mail relay sign-in entered under Administration, used when the server's configuration sets none. Outside the audit chain and the configuration bundle; each change is recorded in the audit trail by the service (who, when, the mode, the password set/replaced/cleared, never its value) ([0018](../decisions/0018-protected-secrets.md)). Needs the Data Protection key ring to decrypt. |
 | `StoredSecrets` | `Name` (key: the configuration key the value stands in for, `Chat:Webhook:WebhookUrl` or `Siem:Webhook:Token`), `ProtectedValue` (Data Protection ciphertext, nullable once cleared), `SetAtUtc`, `SetBy`, `UpdatedAtUtc`, `UpdatedBy` | CAP-40: the team-chat webhook URL and the SIEM webhook token entered under Administration, used when the server's configuration sets none; each under its own Data Protection purpose. Outside the audit chain, the settings list and the configuration bundle; each change is recorded in the audit trail by the service (entity `StoredSecret`: who, when, which secret, set/replaced/cleared, never the value). A cleared row stays, so a card loaded before it is still refused as stale. Needs the Data Protection key ring to decrypt. |
-| `CaseAccessEvents` | `ActorUserId`, `CaseId`, `CaseNumber`, `AccessType` (0 case open, 1 evidence download, 2 report download, 3 export), `TargetId`, `TargetLabel`, `WasRestricted`, `FirstSeenUtc`, `LastSeenUtc`, `Count` | The read log. Outside the audit chain; repeated access within the coalesce window increments `Count` (not exports: each is a row). Entries older than `Retention:AccessLogYears` (default 3; 0 keeps all) are deleted nightly, except a legal-hold case's; each prune is recorded in the audit trail (PROD-52). |
+| `CaseAccessEvents` | `ActorUserId`, `CaseId`, `CaseNumber`, `AccessType` (0 case open, 1 evidence download, 2 report download, 3 export, 4 evidence package (CAP-12)), `TargetId`, `TargetLabel`, `WasRestricted`, `FirstSeenUtc`, `LastSeenUtc`, `Count` | The read log. Outside the audit chain; repeated access within the coalesce window increments `Count` (not exports: each is a row). Entries older than `Retention:AccessLogYears` (default 3; 0 keeps all) are deleted nightly, except a legal-hold case's; each prune is recorded in the audit trail (PROD-52). |
 
 ## Per-user state and staging (not hashed, not audited)
 

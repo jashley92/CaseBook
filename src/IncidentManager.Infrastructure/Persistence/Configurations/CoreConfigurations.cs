@@ -120,6 +120,8 @@ public sealed class EvidenceConfiguration : IEntityTypeConfiguration<Evidence>
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.CollectedFrom).HasMaxLength(Evidence.MaxCollectedFromLength);   // CAP-08
         b.Property(x => x.CollectedBy).HasMaxLength(Evidence.MaxCollectedByLength);
+        b.Property(x => x.WithdrawnBy).HasMaxLength(200);   // CAP-21
+        b.Property(x => x.WithdrawnReason).HasMaxLength(Evidence.MaxWithdrawnReasonLength);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);

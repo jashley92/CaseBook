@@ -64,5 +64,7 @@ public enum AccessType
     /// <summary>A download of a generated case report (Word/PDF).</summary>
     ReportDownload = 2,
     /// <summary>A data export (metrics CSV, IOC feed, compliance bundle, audit CSV…).</summary>
-    Export = 3
+    Export = 3,
+    /// <summary>CAP-12: a package of a case's evidence files, downloaded for hand-over.</summary>
+    EvidencePackage = 4
 }
