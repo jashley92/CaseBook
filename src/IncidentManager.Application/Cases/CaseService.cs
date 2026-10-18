@@ -50,9 +50,11 @@ public sealed record RelatedIndicator(string Indicator, EntityType OtherType, st
 public sealed class RelatedIndicators(IReadOnlyList<RelatedIndicator> items, bool scanLimitHit,
     IReadOnlyDictionary<string, string>? excluded = null) : IReadOnlyList<RelatedIndicator>
 {
-    public static readonly RelatedIndicators None = new([], false);
-
+    // Declared before None: static fields initialise in order, and None built first read this as null (its Excluded was
+    // null, and the New case page failed to render on every first visit).
     private static readonly IReadOnlyDictionary<string, string> NoneExcluded = new Dictionary<string, string>();
+
+    public static readonly RelatedIndicators None = new([], false);
 
     /// <summary>A shared part had at least <see cref="CaseService.RelatedScanLimit"/> candidates; only the newest were checked.</summary>
     public bool ScanLimitHit { get; } = scanLimitHit;

@@ -65,6 +65,37 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    // Every page with no route parameter, as a first visit prerenders it. The New case page once failed to prerender
+    // ("The renderer does not have a component with ID …") and every first visit got the error page.
+    private static readonly string[] Pages =
+    [
+        "/", "/access-log", "/account/access", "/account/api-tokens", "/account/keyboard", "/account/notifications",
+        "/admin", "/admin/api-tokens", "/admin/config-bundle", "/admin/data-elements", "/admin/email-templates",
+        "/admin/gates", "/admin/outcomes", "/admin/retention", "/admin/roles", "/admin/taxonomy", "/admin/teams",
+        "/admin/templates", "/admin/settings/notifications", "/admin/settings/integrations", "/admin/settings/diagnostics",
+        "/cases", "/cases/import", "/cases/mine", "/cases/new", "/desk", "/exports", "/find", "/integrity",
+        "/intel/attack", "/intel/campaigns", "/intel/indicators", "/program", "/program/due", "/program/improvement-actions",
+        "/program/legal", "/program/report", "/program/team",
+    ];
+
+    [Fact]
+    public async Task Every_page_prerenders_on_a_first_visit()
+    {
+        await RunWithin(TimeSpan.FromMinutes(4), async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+            var failed = new List<string>();
+            foreach (var path in Pages)
+            {
+                var r = await client.GetAsync(path);
+                if (r.StatusCode != HttpStatusCode.OK && !(path == "/" && r.StatusCode == HttpStatusCode.Redirect))
+                    failed.Add($"{path}: {(int)r.StatusCode}");
+            }
+            failed.Should().BeEmpty("each page renders on a first visit");
+        });
+    }
+
     [Fact]
     public async Task Downloads_refuse_a_passive_load_but_answer_a_request()
     {
