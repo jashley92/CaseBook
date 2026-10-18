@@ -189,6 +189,38 @@ public sealed class SyslogTlsTests : IDisposable
         (await collector.Received.WaitAsync(TimeSpan.FromSeconds(15))).ClientThumbprint.Should().Be(_client.Thumbprint);
     }
 
+    // CAP-33 review: the certificate a re-read replaces was never disposed. It is now, but only once no send holds it.
+    [Fact]
+    public void A_client_certificate_replaced_on_the_re_read_is_disposed_once_no_send_holds_it()
+    {
+        var o = Tls(6514);
+        o.ClientCertificateThumbprint = _client.Thumbprint;
+        var read = new List<X509Certificate2>();
+        var now = DateTimeOffset.UtcNow;
+        var transport = new SyslogTransport(new TestOptionsMonitor<SiemSyslogOptions>(o), NullLogger<SyslogTransport>.Instance,
+            _health, _ => { var c = SelfSigned("CN=casebook-client", serverAuth: false); read.Add(c); return c; })
+        {
+            Now = () => now,
+        };
+
+        var inFlight = transport.LeaseClientCertificate(o);   // a send under way presents the first one read
+        inFlight.Certificate.Should().BeSameAs(read[0]);
+        now += SyslogTransport.ClientCertificateRecheck + TimeSpan.FromSeconds(1);
+        using (var next = transport.LeaseClientCertificate(o))
+        {
+            next.Certificate.Should().BeSameAs(read[1], "the store is read again after the recheck");
+        }
+        read[0].Handle.Should().NotBe(IntPtr.Zero, "the send under way still holds it");
+
+        inFlight.Dispose();
+        read[0].Handle.Should().Be(IntPtr.Zero, "the replaced certificate is disposed when its last send is done");
+        inFlight.Dispose();   // once only
+        read[1].Handle.Should().NotBe(IntPtr.Zero, "the current one stays, held by the cache");
+        transport.Enabled.Should().BeTrue();
+        read.Should().HaveCount(2);
+        read[1].Dispose();
+    }
+
     [Fact]
     public void A_misconfiguration_stops_the_transport_with_a_reason()
     {

@@ -131,6 +131,43 @@ public sealed class IndicatorPagingExportTests : IDisposable
         page.FirstIndex.Should().Be(0);
     }
 
+    // B4 review: Previous from an empty page past the end went back from Next's place exclusively, so it showed the page
+    // ending one row before the page left (its last row gone, the row before it in).
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Previous_from_an_empty_page_past_the_end_is_the_page_left(string provider)
+    {
+        _db = TestDatabase.Open(provider);
+        Seed();
+        var svc = Service();
+        var filter = new IndicatorFilter();
+        var at = IndicatorPageAt.First;
+        var page = await svc.SearchAsync(filter, at, pageSize: 10);
+        at = IndicatorPageAt.Next(page.Rows[^1], page.Rows[0]);
+        var pageN = await svc.SearchAsync(filter, at, pageSize: 10);
+        pageN.Rows.Should().HaveCount(10);
+        pageN.HasNext.Should().BeTrue();
+
+        // The rows after page N's last go (their cases were closed off, or the indicators removed).
+        var all = (await svc.SearchAsync(filter, IndicatorPageAt.First, pageSize: 1000)).Rows;
+        var after = all.SkipWhile(r => Key(r) != Key(pageN.Rows[^1])).Skip(1).Select(r => r.Value).ToList();
+        after.Should().NotBeEmpty();
+        using (var db = _db.NewContext())
+        {
+            db.CaseEntities.RemoveRange(db.CaseEntities.Where(e => after.Contains(e.Value)));
+            db.SaveChanges();
+        }
+
+        at = IndicatorPageAt.Next(pageN.Rows[^1], pageN.Rows[0]);
+        var past = await svc.SearchAsync(filter, at, pageSize: 10);
+        past.Rows.Should().BeEmpty();
+        past.HasPrevious.Should().BeTrue();
+
+        at = at.PreviousFrom(past.Rows);
+        var back = await svc.SearchAsync(filter, at, pageSize: 10);
+        back.Rows.Select(Key).Should().Equal(pageN.Rows.Select(Key), "Previous returns to the page Next left");
+        back.FirstIndex.Should().Be(pageN.FirstIndex);
+    }
+
     [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
     public async Task The_export_holds_every_verdict_with_case_counts_and_numbers_within_need_to_know(string provider)
     {

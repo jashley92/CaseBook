@@ -1,5 +1,6 @@
 using FluentAssertions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
 using IncidentManager.Infrastructure.Persistence;
@@ -101,5 +102,64 @@ public sealed class RelatedIndicatorTests
             "the identical value is a match (Seen before), not a suggestion");
         related.Where(r => r.Indicator.StartsWith("https://portal", StringComparison.Ordinal)).Select(r => r.OtherValue)
             .Should().BeEquivalentTo(["mail.evil.example", "evil.example"]);
+    }
+
+    // CAP-28 review: the scan reads the newest RelatedScanLimit candidates, and copies of the value being checked (a match,
+    // never a suggestion) used to fill it, so an older related indicator was missed and the panel said nothing was related.
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Copies_of_the_checked_value_do_not_fill_the_scan_and_a_full_scan_is_reported(string provider)
+    {
+        using var database = Open(provider);
+        var svc = NewService(database);
+        var now = _clock.UtcNow;
+        await using (var db = database.NewContext())
+        {
+            Case NewCase(int seq, DateTimeOffset opened, string value)
+            {
+                var c = Case.Open(2026, seq, $"C{seq}", $"Case {seq}", Classification.Incident, Severity.High,
+                    CaseOrigin.InternalDetection, "ic2", opened);
+                c.Entities.Add(new CaseEntity { CaseId = c.Id, Type = EntityType.Domain, Value = value });
+                return c;
+            }
+            var older = NewCase(1, now.AddDays(-30), "a.evil.example");
+            db.Cases.Add(older);
+            db.Cases.AddRange(Enumerable.Range(0, CaseService.RelatedScanLimit + 1)
+                .Select(i => NewCase(i + 2, now.AddDays(-20).AddMinutes(i), "evil.example")));
+            await db.SaveChangesAsync();
+        }
+
+        var related = await svc.FindRelatedIndicatorsForIocsAsync(["evil.example"]);
+        related.Should().ContainSingle().Which.OtherValue.Should().Be("a.evil.example",
+            "the newer identical copies are left out of the scan, so the older related one is found");
+        related.ScanLimitHit.Should().BeFalse();
+
+        // A value the copies are candidates for: the scan fills with them, and the result says only the newest were read.
+        var crowded = await svc.FindRelatedIndicatorsForIocsAsync(["b.evil.example"]);
+        crowded.ScanLimitHit.Should().BeTrue();
+        crowded.Should().OnlyContain(r => r.OtherValue == "evil.example");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Addresses_narrow_by_their_own_prefix(string provider)
+    {
+        using var database = Open(provider);
+        var svc = NewService(database);
+        var other = await CaseWithAsync(svc, "Other", false,
+            (EntityType.IpAddress, "203.0.113.77"), (EntityType.IpAddress, "13.0.113.8"),
+            (EntityType.Url, "http://203.0.113.9/x"), (EntityType.IpAddress, "2001:db8:0:1::7"),
+            (EntityType.IpAddress, "2001:db8:1::7"), (EntityType.Url, "http://[2001:db8::9]/y"));
+
+        var related = await svc.FindRelatedIndicatorsForIocsAsync(["203.0.113.5", "2001:db8::5"]);
+
+        related.Should().OnlyContain(r => r.OtherCaseId == other);
+        related.Select(r => (r.Indicator, r.OtherValue)).Should().BeEquivalentTo(new[]
+        {
+            ("203.0.113.5", "203.0.113.77"),
+            ("203.0.113.5", "http://203.0.113.9/x"),
+            ("2001:db8::5", "2001:db8:0:1::7"),
+            ("2001:db8::5", "http://[2001:db8::9]/y"),
+        }, "13.0.113.8 isn't in 203.0.113.0/24, nor 2001:db8:1::7 in 2001:db8::/48");
     }
 }

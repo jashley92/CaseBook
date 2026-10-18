@@ -76,6 +76,29 @@ public sealed class ScheduledJobsTests
         await FluentActions.Awaiting(() => runner.RunNowAsync("nope")).Should().ThrowAsync<InvalidOperationException>();
     }
 
+    private sealed class FailingAudit : IAuditWriter
+    {
+        public Task RecordAsync(AuditAction action, string entityType, string? entityId, string? caseNumber, string summary,
+            CancellationToken ct = default) => throw new Microsoft.EntityFrameworkCore.DbUpdateException("disk I/O error");
+    }
+
+    // CAP-29 review: the panel catches InvalidOperationException and ForbiddenException; a failed audit write threw a
+    // DbUpdateException past it and ended the circuit.
+    [Fact]
+    public async Task A_run_now_the_audit_trail_cannot_record_is_refused_in_words_and_frees_the_job()
+    {
+        var jobs = new JobStatus(_clock);
+        var ran = false;
+        jobs.Register(Scan, (run, _) => { ran = true; run.Succeeded(); return Task.CompletedTask; });
+
+        var thrown = await FluentActions.Awaiting(() => Runner(jobs, audit: new FailingAudit()).RunNowAsync("scan"))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("The scan wasn't started: the audit trail couldn't record it.*");
+        thrown.Which.InnerException.Should().BeOfType<Microsoft.EntityFrameworkCore.DbUpdateException>();
+        thrown.Which.Message.Should().NotContain("disk", "the database's words stay in the log");
+        ran.Should().BeFalse("not recorded, so not run");
+        jobs.TryStart(Scan).Should().NotBeNull("the job is free again");
+    }
+
     [Fact]
     public async Task Run_now_never_overlaps_a_run_of_the_same_job()
     {

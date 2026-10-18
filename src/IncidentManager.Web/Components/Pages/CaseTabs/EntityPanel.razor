@@ -248,7 +248,10 @@
                 }
                 else if (_related.Count == 0)
                 {
-                    <p class="small text-muted mb-0">Nothing on other cases you can see has the @key.Describe().</p>
+                    @* CAP-28 review: past the scan limit, "nothing" is only for the newest checked. *@
+                    <p class="small text-muted mb-0">@(_related.ScanLimitHit
+                        ? $"Checked the newest {CaseService.RelatedScanLimit} candidates for the {key.Describe()}: none on other cases you can see has it. Older ones weren't checked."
+                        : $"Nothing on other cases you can see has the {key.Describe()}.")</p>
                 }
                 else
                 {
@@ -264,7 +267,7 @@
                             <div class="small text-muted">@r.Why</div>
                         </div>
                     }
-                    <p class="small text-muted mb-0">A suggestion by a fixed rule, not a match. Nothing is linked.</p>
+                    <p class="small text-muted mb-0">A suggestion by a fixed rule, not a match. Nothing is linked.@(_related.ScanLimitHit ? $" Checked the newest {CaseService.RelatedScanLimit} candidates only." : "")</p>
                 }
             </section>
         </div>
@@ -404,7 +407,7 @@
     private CaseEntity? Entity => EntityId is { } id ? Case.Entities.FirstOrDefault(e => e.Id == id) : null;
 
     private IReadOnlyList<EntityOverlap>? _otherCases;
-    private IReadOnlyList<RelatedIndicator>? _related;   // CAP-28
+    private RelatedIndicators? _related;   // CAP-28
     private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
     private string? OutcomeLabel(string? key) => key is null ? null
         : _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);

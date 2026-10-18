@@ -746,11 +746,8 @@
         // REL-03: ignore a drop while an upload batch is already streaming. BUG-483: say so; it was dropped without a word.
         if (_busy) { Toasts.Warning("An upload is still running. Drop the files again once it's finished."); return; }
         _uploadError = null;
-        // BUG-341: GetMultipleFiles throws past its limit, outside the per-file catch, so check the count first.
-        if (e.FileCount > MaxDropFiles) { _uploadError = $"Drop up to {MaxDropFiles} files at a time."; return; }
-        IReadOnlyList<IBrowserFile> files;
-        try { files = e.GetMultipleFiles(maximumFileCount: MaxDropFiles); }
-        catch (InvalidOperationException) { _uploadError = $"Drop up to {MaxDropFiles} files at a time."; return; }
+        // BUG-341: GetMultipleFiles throws past its limit, outside the per-file catch; DroppedFiles answers null instead.
+        if (DroppedFiles.UpTo(e, MaxDropFiles) is not { } files) { _uploadError = $"Drop up to {MaxDropFiles} files at a time."; return; }
         _busy = true;
         var uploaded = 0;
         var recorded = new List<(Guid Id, string Name)>();

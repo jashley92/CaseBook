@@ -37,7 +37,7 @@ public sealed class SyslogTransport : ISecurityEventTransport
     private readonly IDeliveryHealth? _health;   // CAP-04
     private readonly Func<string, X509Certificate2> _findClientCertificate;
     private readonly object _clientGate = new();
-    private (string Thumbprint, X509Certificate2? Certificate, string? Problem, DateTimeOffset At)? _client;
+    private (string Thumbprint, HeldCertificate? Held, string? Problem, DateTimeOffset At)? _client;
 
     public SyslogTransport(IOptionsMonitor<SiemSyslogOptions> options, ILogger<SyslogTransport> logger, IDeliveryHealth? health = null)
         : this(options, logger, health, null) { }
@@ -55,6 +55,9 @@ public sealed class SyslogTransport : ISecurityEventTransport
 
     /// <summary>For tests: roots trusted for the collector's chain on top of the machine's (a self-signed test collector).</summary>
     internal X509Certificate2Collection? ExtraTrustedRoots { get; init; }
+
+    /// <summary>For tests: the time the client certificate's re-read is measured by.</summary>
+    internal Func<DateTimeOffset> Now { get; init; } = () => DateTimeOffset.UtcNow;
 
     public string Name => "syslog";
 
@@ -115,14 +118,20 @@ public sealed class SyslogTransport : ISecurityEventTransport
 
     // The client certificate named in the options, read from the store at most every few minutes (a missing one is
     // looked for again then, so installing it needs no restart). Null certificate and problem: none is configured.
-    private (X509Certificate2? Certificate, string? Problem) ClientCertificate(SiemSyslogOptions o)
+    // CAP-33 review: with hold, the certificate is held for a send (dispose the lease when it's done). One replaced on the
+    // re-read was never disposed; it's disposed now once nothing holds it, so a handshake under way keeps its own.
+    private (HeldCertificate? Held, string? Problem) ClientCertificate(SiemSyslogOptions o, bool hold = false)
     {
         var thumb = CertificateLookup.Normalize(o.ClientCertificateThumbprint ?? "");
         if (thumb.Length == 0) return (null, null);
-        var now = DateTimeOffset.UtcNow;
+        var now = Now();
         lock (_clientGate)
         {
-            if (_client is { } c && c.Thumbprint == thumb && now - c.At < ClientCertificateRecheck) return (c.Certificate, c.Problem);
+            if (_client is { } c && c.Thumbprint == thumb && now - c.At < ClientCertificateRecheck)
+            {
+                if (hold) c.Held?.Hold();
+                return (c.Held, c.Problem);
+            }
         }
         X509Certificate2? cert = null;
         string? problem = null;
@@ -131,9 +140,48 @@ public sealed class SyslogTransport : ISecurityEventTransport
         {
             problem = ex is InvalidOperationException ? ex.Message.TrimEnd('.') : $"the client certificate can't be read ({ex.GetType().Name})";
         }
-        lock (_clientGate) _client = (thumb, cert, problem, now);
-        return (cert, problem);
+        HeldCertificate? held, replaced;
+        lock (_clientGate)
+        {
+            replaced = _client?.Held;
+            // The same instance found again keeps its holder (and its holds); a new one replaces it.
+            held = replaced is not null && ReferenceEquals(replaced.Certificate, cert) ? replaced
+                : cert is null ? null : new HeldCertificate(cert);
+            if (ReferenceEquals(held, replaced)) replaced = null;
+            _client = (thumb, held, problem, now);
+            if (hold) held?.Hold();
+        }
+        replaced?.Release();   // the cache's own hold: disposed now, or when the last send presenting it is done
+        return (held, problem);
     }
+
+    // CAP-33 review: a client certificate counted while sends present it; the cache holds it once while it's current.
+    internal sealed class HeldCertificate(X509Certificate2 certificate)
+    {
+        private int _holds = 1;   // the cache's
+
+        public X509Certificate2 Certificate { get; } = certificate;
+
+        internal void Hold() => Interlocked.Increment(ref _holds);
+
+        internal void Release()
+        {
+            if (Interlocked.Decrement(ref _holds) == 0) Certificate.Dispose();
+        }
+    }
+
+    /// <summary>CAP-33 review: the client certificate held for one send; disposing it lets go (once).</summary>
+    internal sealed class ClientCertificateLease(HeldCertificate? held) : IDisposable
+    {
+        private HeldCertificate? _held = held;
+
+        public X509Certificate2? Certificate => _held?.Certificate;
+
+        public void Dispose() => Interlocked.Exchange(ref _held, null)?.Release();
+    }
+
+    /// <summary>The client certificate held for a send (none when none is configured or it can't be read).</summary>
+    internal ClientCertificateLease LeaseClientCertificate(SiemSyslogOptions o) => new(ClientCertificate(o, hold: true).Held);
 
     public async Task<string?> SendTestAsync(SecurityEvent e, CancellationToken ct)
     {
@@ -240,13 +288,15 @@ public sealed class SyslogTransport : ISecurityEventTransport
     // CAP-33: RFC 5425. One limit over connect, handshake and send (C10); the certificate is checked in Validate.
     private async Task SendTlsAsync(SiemSyslogOptions o, byte[] bytes, TlsOutcome tls, CancellationToken ct)
     {
+        // CAP-33 review: held for the whole send (declared first, let go last), so a re-read can't dispose it under it.
+        using var lease = LeaseClientCertificate(o);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(Timeout(o));
 
         using var tcp = new TcpClient();
         await tcp.ConnectAsync(o.Host, o.Port, timeoutCts.Token);
         await using var ssl = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false);
-        var client = ClientCertificate(o).Certificate;
+        var client = lease.Certificate;
         var pin = o.ServerCertificateThumbprint;
         await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
         {

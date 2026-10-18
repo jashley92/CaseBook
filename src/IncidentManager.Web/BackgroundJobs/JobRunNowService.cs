@@ -43,9 +43,18 @@ public sealed class JobRunNowService(
         {
             await audit.RecordAsync(AuditAction.Access, AuditEntity, job.Key, null, $"{job.Name} run now from Diagnostics.", ct);
         }
-        catch
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             run.Dispose();   // not recorded, so not run
+            // CAP-29 review: a failed audit write (a DbUpdateException) reached the panel unworded, past its catch, and
+            // took the circuit with it. It's said in words now; the detail is in the log.
+            logger.LogError(ex, "{Job} (run now from Diagnostics) wasn't started: the audit trail couldn't record it.", job.Name);
+            throw new InvalidOperationException(
+                $"{job.Name} wasn't started: the audit trail couldn't record it. Try again; if it keeps failing, the server's log has the detail.", ex);
+        }
+        catch
+        {
+            run.Dispose();
             throw;
         }
         var stopping = lifetime.ApplicationStopping;
