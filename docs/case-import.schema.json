@@ -26,7 +26,8 @@
               "outcome": false,
               "conclusion": false,
               "incidentCommander": false,
-              "assignments": false
+              "assignments": false,
+              "team": false
             }
           }
         }
@@ -217,6 +218,11 @@
           },
           "maxItems": 50,
           "description": "v2: the rest of the case team."
+        },
+        "team": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "v2: the team that owns the case, by its key or name (Administration \u203A Teams), matched when it\u0027s reviewed; one that isn\u0027t an active team is a warning, and the case is opened without one."
         }
       }
     },

@@ -36,10 +36,11 @@ public static class CaseListCsv
         cases.ListAllAsync(filter, limit, pageSize, afterPage, ct);
 
     /// <summary>The file. The label functions give the names the list shows (configured taxonomy and severity labels);
-    /// <paramref name="sla"/> the SLA word the list shows for a row, or blank where it shows none.</summary>
+    /// <paramref name="sla"/> the SLA word the list shows for a row, or blank where it shows none. CAP-36: <paramref name="team"/>
+    /// names a case's team (blank for none), in the last column.</summary>
     public static string Build(IReadOnlyList<CaseListItem> items, DateTimeOffset generatedAtUtc, bool truncated,
         Func<Classification?, string> classification, Func<CasePhase, string> phase, Func<Severity, string> severity,
-        Func<CaseListItem, string> sla)
+        Func<CaseListItem, string> sla, Func<Guid?, string>? team = null)
     {
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
@@ -50,7 +51,7 @@ public static class CaseListCsv
         if (truncated) sb.Append(cut);
 
         sb.Append("case_number,title,classification,phase,severity,sla,owner,other_assignees,origin,restricted,legal_referral,")
-          .Append("legal_hold,exercise,opened_utc,detected_utc,contained_utc,resolved_utc,closed_utc,reported_utc\r\n");
+          .Append("legal_hold,exercise,opened_utc,detected_utc,contained_utc,resolved_utc,closed_utc,reported_utc,team\r\n");
         foreach (var c in items)
         {
             sb.Append(Escape(c.CaseNumber)).Append(',')
@@ -71,7 +72,8 @@ public static class CaseListCsv
               .Append(Time(c.ContainedAtUtc)).Append(',')
               .Append(Time(c.ResolvedAtUtc)).Append(',')
               .Append(Time(c.ClosedAtUtc)).Append(',')
-              .Append(Time(c.ReportedAtUtc)).Append("\r\n");
+              .Append(Time(c.ReportedAtUtc)).Append(',')
+              .Append(Escape(c.TeamId is null ? "" : team?.Invoke(c.TeamId) ?? "")).Append("\r\n");   // CAP-36
         }
         if (truncated) sb.Append(cut);   // CAP-03: at the end too, where a reader scrolling down meets it
         return sb.ToString();

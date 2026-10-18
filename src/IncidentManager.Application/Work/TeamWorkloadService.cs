@@ -27,11 +27,14 @@ public sealed class TeamWorkloadService
         _sla = sla;
     }
 
-    public async Task<TeamWorkload> GetAsync(CancellationToken ct = default)
+    public async Task<TeamWorkload> GetAsync(CancellationToken ct = default) => await GetAsync(TeamScope.Any, ct);
+
+    /// <summary>CAP-36: the workload over one team's open cases (or those with none), after need-to-know.</summary>
+    public async Task<TeamWorkload> GetAsync(TeamScope team, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
 
-        var rows = (await db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() // PROD-43: exclude drills
+        var rows = (await db.Cases.AsNoTracking().ForUser(_user).InTeam(team).ExcludingExercises() // PROD-43: exclude drills
             .Where(c => c.Phase != CasePhase.Closed && !c.IsArchived)
             .Select(c => new
             {

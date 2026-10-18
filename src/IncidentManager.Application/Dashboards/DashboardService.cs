@@ -124,10 +124,17 @@ public sealed class DashboardService
     /// <param name="includeExercises">As above.</param>
     /// <param name="withSlaHistory">BUG-612: false for a page that shows only the open-case figures (the Cases page's
     /// counts): the all-time SLA met/missed, which loads every case's history, is left at zero.</param>
-    public async Task<DashboardMetrics> GetAsync(bool includeExercises, bool withSlaHistory, CancellationToken ct = default)
+    public async Task<DashboardMetrics> GetAsync(bool includeExercises, bool withSlaHistory, CancellationToken ct = default) =>
+        await GetAsync(includeExercises, withSlaHistory, TeamScope.Any, ct);
+
+    /// <param name="includeExercises">As above.</param>
+    /// <param name="withSlaHistory">As above.</param>
+    /// <param name="team">CAP-36: only one team's cases (or those with none), by the team each case belongs to now; applied
+    /// after need-to-know, so it never shows a figure from a case the caller can't see.</param>
+    public async Task<DashboardMetrics> GetAsync(bool includeExercises, bool withSlaHistory, TeamScope team, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var cases = db.Cases.AsNoTracking().ForUser(_user);
+        var cases = db.Cases.AsNoTracking().ForUser(_user).InTeam(team);
         if (!includeExercises) cases = cases.ExcludingExercises();
 
         var open = cases.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
@@ -273,10 +280,14 @@ public sealed class DashboardService
     /// Where open cases stand: per phase, the count by severity, how long the longest-waiting case has been in that
     /// phase (since it entered it, by the effective time of the change), and how many are past a response target.
     /// </summary>
-    public async Task<IReadOnlyList<PhaseAging>> PhaseAgingAsync(bool includeExercises = false, CancellationToken ct = default)
+    public async Task<IReadOnlyList<PhaseAging>> PhaseAgingAsync(bool includeExercises = false, CancellationToken ct = default) =>
+        await PhaseAgingAsync(includeExercises, TeamScope.Any, ct);
+
+    /// <summary>As above, for one team's cases (CAP-36).</summary>
+    public async Task<IReadOnlyList<PhaseAging>> PhaseAgingAsync(bool includeExercises, TeamScope team, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var cases = db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
+        var cases = db.Cases.AsNoTracking().ForUser(_user).InTeam(team).Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
         if (!includeExercises) cases = cases.ExcludingExercises();
         var now = _clock.UtcNow;
         var targets = _sla.Current;

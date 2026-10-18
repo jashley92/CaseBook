@@ -58,6 +58,8 @@ From top to bottom:
   months, the default, or a **Custom** range of dates, both included, up to five years) and **Include exercises**
   (exercise cases are left out unless included). A custom range is compared with the same number of days just
   before it. All of it lives in the URL (`/program?period=quarter&exercises=true`, `/program?from=2026-07-01&to=2026-09-30`). **Export metrics (CSV)** downloads the figures.
+  A **team** picker (CAP-36, shown once teams exist) cuts every figure to one team's cases, or those with no team, by
+  the team each case belongs to now (`&team=SocTier1`, `&team=none`); its drill-ins to the case list and the CSV keep it.
 - **Needs action**: what someone should act on now. Regulatory notices at risk of or past their window come first,
   then whatever fell due earliest: cases past or near a response target, briefs that predate a decision, handoff,
   phase, classification or materiality change, overdue tasks, and improvement actions past their target date.
@@ -90,9 +92,11 @@ From top to bottom:
    and the record: timeline entries and decisions, the brief, notes, tasks and their results, the review; a row
    says where it matched). *More filters* adds closed, exercises, notify state, legal referral, legal hold, assignee and opened
    window. A vendor filter (`?vendor=`, shown as a *Vendor:* chip) comes from the New case form's *Seen before* link
-   (CAP-24). All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export CSV**, beside
+   (CAP-24). A **team** filter (CAP-36, shown once teams exist: *Any team*, *No team*, or one team; `?team=SocTier1`)
+   narrows to a team's cases after need-to-know; a row names its team. Saved under **Views**, a view is *Only me*,
+   *Everyone*, or one of your teams (`<team> only`), which only that team's members see. All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export CSV**, beside
    Views, downloads every case the filters match (not only the page shown), with the list's columns and the detected,
-   contained, resolved, closed and reported times (CAP-17; up to 10,000 cases).
+   contained, resolved, closed and reported times (CAP-17; up to 10,000 cases) and, last, the case's team (CAP-36).
 4. **A case row.** The left edge is marked for High or Critical cases. In the list, `j`/`k` move, `p` opens a
    read-only preview beside the list, and `Enter` opens the case.
 
@@ -118,6 +122,9 @@ A single page, not a wizard.
    any name can be typed. Picking or typing one already known shows **Seen before**: how many earlier cases name it (and
    how many are open), the last closed one with its outcome and closing line, and *View them*, which opens the case list
    filtered to that vendor with closed cases included. Nothing shows on an exercise.
+7. **Team** (CAP-36, shown once teams exist): the team that owns the case, chosen to start with when you're in exactly
+   one team. It picks the case's chat channel and detection source (the *Detection case ID* field takes the team's
+   label); it doesn't change who can see the case.
 
 ## The case workspace
 
@@ -392,6 +399,7 @@ lessons-learned report.
 | Roles & access | System and custom roles, AD group mappings, and the access review: who sees across cases, restricted cases' teams, known users (each a link to their offboarding page) and active API tokens, with a CSV and **Record this review** ("Last reviewed … by …", CAP-15) | ![](../screenshots/roles-access.png) |
 | Retention review | Closed cases past case retention with their legal hold, open improvement actions and unrecorded regulatory notices; archive up to 25 at a time after confirming the list (CAP-10). No screenshot yet | — |
 | Data elements | Personal-data categories and their notification jurisdictions | ![](../screenshots/data-elements.png) |
+| Teams (CAP-36) | The teams that own cases: add, edit (name, detection source label and link template, members), the team's own chat webhook (write-only, with *Send test*), retire and restore. Each team shows its key, members and how many cases name it (a link to them). No screenshot yet | — |
 | Regulatory deadlines | Notification window per jurisdiction | ![](../screenshots/regulatory-deadlines.png) |
 | Report templates | Word template library with live preview | ![](../screenshots/report-templates.png) |
 | Configuration bundle | Signed export and previewed import of editable configuration. A bundle signed with a key this server neither holds nor trusts needs its key id typed; the *Trusted signing keys* card lists the keys in `Config:TrustedBundleKeys` (CAP-16) | ![](../screenshots/config-bundle.png) |

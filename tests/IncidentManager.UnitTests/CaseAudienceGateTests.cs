@@ -50,6 +50,7 @@ public partial class CaseAudienceGateTests
         ["ActivityFeedService.cs:RecentAsync"] = (1, "an existence test only (audit rows under a number no case holds now, BUG-277); no case row comes back"),
         ["CaseOutcomeService.cs:ListAllAsync"] = (1, "how many closes recorded each outcome, for the administration list; no case named"),
         ["DataElementService.cs:ListAllAsync"] = (1, "which element keys any case references (delete is offered only where none does); no case named"),
+        ["TeamService.cs:ListAllAsync"] = (1, "CAP-36: how many cases name each team, for the Teams page; a count per team, no case named"),
         ["CampaignService.cs:GetRollupAsync"] = (4, "the anchor is checked through ForUser; member ids come from ResolveMemberIdsAsync, visible ones only"),
         ["CampaignService.cs:ListAsync"] = (2, "the link graph is read whole, then cut to the cases ForUser returns; the exercise flags only drop edges"),
         ["CampaignService.cs:ResolveMemberIdsAsync"] = (2, "walks the whole link graph, then keeps the visible component only (ForUser), so a restricted case never bridges two"),
@@ -146,6 +147,7 @@ public partial class CaseAudienceGateTests
         ["Notifications/SmtpSignInStore.cs"] = "CAP-05: the relay sign-in saved in Administration (SmtpSignIns); no case table read",
         ["Secrets/StoredSecretStore.cs"] = "CAP-40: the chat webhook URL and SIEM token saved in Administration (StoredSecrets); no case table read",
         ["Secrets/StoredSecretAdminService.cs"] = "CAP-40: the secret cards' saves (StoredSecrets); no case table read",
+        ["Secrets/TeamWebhookAdminService.cs"] = "CAP-36: a team's webhook card's saves (StoredSecrets) and the team's name (Teams); no case table read",
     };
 
     [Fact]

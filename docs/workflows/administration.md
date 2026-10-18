@@ -25,6 +25,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Taxonomy labels | `/admin/taxonomy` | Rename, hide or reorder display labels for six lists: classifications, phases, entity types, dispositions, timeline entry types and relationship types (display only; stored values don't change). Severity labels are under Response & SLA |
 | Data elements | `/admin/data-elements` | Personal-data categories and their notification jurisdictions; archive or (if unused) delete |
 | Case outcomes | `/admin/outcomes` | What a case can conclude when it closes; add, relabel, describe, reorder, archive or (if unused) delete |
+| Teams | `/admin/teams` | CAP-36: the teams that own cases; add, rename, retire or restore, set members, a detection source and a team chat webhook |
 | Response & SLA | `/admin/settings/sla` | SLA targets per severity, breach overrides, at-risk threshold, severity labels |
 | Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings; the access review (broad access, restricted cases, known users, each opening their offboarding page (CAP-30), active API tokens) with its CSV, and **Record this review** (CAP-15) |
 | API tokens | `/admin/api-tokens` | System tokens for machine producers |
@@ -159,6 +160,30 @@ description you can change, and a sort order. Added outcomes get a key made from
 `InsiderMisuse`), never one a deleted outcome had or a case records (then it's numbered, `InsiderMisuse2`).
 Built-in outcomes can be archived but not deleted; an added one can be deleted only if no close recorded it. At least one outcome must stay active. Keep the wording neutral: it's part of the case record.
 
+## Teams
+
+CAP-36. The teams that own cases, under Workflow & taxonomy › **Teams** (`Administer`). Teams **route and filter
+only**: a case's team picks where its chat notifications go and which detection source its pages name and link to, and
+the Cases list, Find, Program and Team workload can be cut to it. A team never changes who can see a case; that stays
+need-to-know ([security](../architecture/security.md)).
+
+- **Add a team** with a name. Its key is made from the name ("SOC tier 1" → `SocTier1`) and never changes: it's what
+  the `team=` filter, saved views and a configuration bundle name. Names are unique, ignoring case.
+- **Edit** a team to rename it, give it its own **detection source label** (shown in place of the organization's
+  *Detection source label* on its cases) and **detection case link template** (a full `https://` address with `{0}`
+  for the detection case id, in place of *Detection case link template*), and set its **members** from the known
+  users. Members get the team chosen on a new case when it's their only team, and can share saved views with it.
+- **Team chat webhook**: an incoming-webhook URL of the team's own. Posts about the team's cases (assignments, breach
+  escalations, mentions, the reminder scans' summaries, and imports waiting for review for one of its cases) go there;
+  without one they go to the shared channel ([integrations](../operations/integrations.md#team-chat)). It's encrypted on
+  this server like the shared webhook URL (CAP-40), never shown again, and has its own *Send test*.
+- **Retire** a team that's no longer used: it isn't offered for cases any more but stays on the cases that name it;
+  **Restore** brings it back. Teams aren't deleted.
+
+Every change is audited (entities `Team` and `TeamMember`, hash-chained) and streamed as SIEM 5405 (target type `Team`);
+a webhook change is recorded as a `StoredSecret` entry and SIEM 5403, never with its value. An edit made from a page
+opened before another administrator's change is refused.
+
 ## API tokens
 
 System tokens: a name (unique among active tokens), the roles they act with, and a required expiry (up to 365
@@ -171,8 +196,10 @@ Moves editable configuration between instances (test to production, a new instan
 snapshots it for comparison with a revised incident response plan.
 
 - **Export** (`/export/config-bundle.json`): editable settings and taxonomy labels, roles, AD mappings, case
-  templates, stage gates, report profiles with their Word templates, data elements, case outcomes and notification rules,
-  signed with the instance's seal key. Email-template wording isn't included. Recorded in the audit chain.
+  templates, stage gates, report profiles with their Word templates, data elements, case outcomes, notification rules
+  and (schema v5, CAP-36) teams, signed with the instance's seal key. Email-template wording isn't included, nor a team's
+  members or its chat webhook URL: a team brought in by a bundle has neither until they're set on that server. Recorded
+  in the audit chain.
 - **Import** (up to 64 MB): the signature is checked against the public key **inside the file**, and the page
   says whether that key is this instance's. A valid signature is required: the page won't offer Apply without
   one, and `ConfigBundleService.ImportAsync` itself refuses a bundle whose signature doesn't verify. A diff

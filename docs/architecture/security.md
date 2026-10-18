@@ -194,6 +194,12 @@ return query.Where(c => !c.IsRestricted
 - Without `ViewCases` it returns nothing, whatever else the user holds (as `CaseAudience.CanSee`). Windows auth
   signs in every domain user, so this is what keeps one with no CaseBook role out of the palette, Find and the
   case tabs; the layout also hides those (and the activity bell) behind the `ViewCases` policy (BUG-465).
+- **Teams don't change visibility** (CAP-36, owner decision 2026-10-18; ADR 0003's single filter). A case's owning
+  team routes its chat posts and picks its detection source, and the team filter (`TeamScope`, `team=` / `team:`) on
+  Cases and its CSV, Find, Program and Team workload is applied after `ForUser`, so it only narrows what need-to-know
+  already let through and never brings a restricted case into view. Team membership grants nothing: it decides which
+  saved views a person is offered and the team a new case starts with. A team's own chat webhook is a channel like
+  the shared one, and restricted cases are redacted there the same way.
 - **No existence leak:** a hidden case and a missing case give the same "not found".
 - Restricting is open to anyone with `EditCases` (they're kept on the case). Lifting needs the IC, or
   `ViewAllCases` or `ViewRestricted`.

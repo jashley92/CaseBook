@@ -30,6 +30,7 @@ public static class CaseListQuery
             Origin = EnumNames.OrNull<CaseOrigin>(get("origin")),
             OutcomeKey = string.IsNullOrEmpty(get("outcome")) ? null : get("outcome"),
             Vendor = string.IsNullOrWhiteSpace(get("vendor")) ? null : get("vendor"),   // CAP-24
+            TeamKey = string.IsNullOrWhiteSpace(get("team")) ? null : get("team")!.Trim(),   // CAP-36: a team key, or none
             Search = get("q") ?? "",
             IncludeClosed = QueryValue.Flag(get("closed")),
             IncludeExercises = QueryValue.Flag(get("exercises")),
@@ -78,6 +79,7 @@ public static class CaseListQuery
         to.Origin = from.Origin;
         to.OutcomeKey = from.OutcomeKey;
         to.Vendor = from.Vendor;
+        to.TeamKey = from.TeamKey;   // CAP-36
         to.Search = from.Search;
         to.IncludeClosed = from.IncludeClosed;
         to.IncludeExercises = from.IncludeExercises;

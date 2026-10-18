@@ -55,6 +55,10 @@ public sealed class CreateCaseRequest
     /// <summary>Put the filer on the case team as an analyst, so it shows in their My work. The intake form
     /// offers it ticked; the filer can untick it to leave the case unassigned.</summary>
     public bool AssignToMe { get; set; }
+
+    /// <summary>CAP-36: the team that owns the case (an active <c>Team</c>), or null for none. Routes its chat posts and
+    /// detection link; never changes who can see it.</summary>
+    public Guid? TeamId { get; set; }
 }
 
 /// <summary>Lightweight row for case lists and queues.</summary>
@@ -86,7 +90,9 @@ public sealed record CaseListItem(
     bool ContainmentNotNeeded = false,
     // CAP-17: for the list's CSV export, with the detected, contained and resolved times above.
     DateTimeOffset? ClosedAtUtc = null,
-    DateTimeOffset? ReportedAtUtc = null);
+    DateTimeOffset? ReportedAtUtc = null,
+    // CAP-36: the owning team, for the list's team column and its CSV.
+    Guid? TeamId = null);
 
 /// <summary>Filter for listing cases.</summary>
 public sealed class CaseFilter
@@ -100,6 +106,9 @@ public sealed class CaseFilter
     public string? Vendor { get; set; }
     /// <summary>HR-01: only cases closed with this outcome (a CaseOutcome key). Implies closed cases are included.</summary>
     public string? OutcomeKey { get; set; }
+    /// <summary>CAP-36: only one team's cases, by its key (ignoring case), or <c>none</c> for the cases with no team
+    /// (<see cref="TeamScope"/>). Applied after need-to-know, so it never shows a case the caller couldn't see anyway.</summary>
+    public string? TeamKey { get; set; }
     public bool IncludeClosed { get; set; }
     public bool OnlyMine { get; set; }
 

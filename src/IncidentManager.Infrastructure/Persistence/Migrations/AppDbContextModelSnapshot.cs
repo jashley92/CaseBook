@@ -795,6 +795,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(8000)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("TeamId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -815,6 +818,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.HasIndex("OutcomeKey");
 
                     b.HasIndex("Phase");
+
+                    b.HasIndex("TeamId");
 
                     b.HasIndex("Year", "Sequence")
                         .IsUnique()
@@ -2597,11 +2602,16 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("TeamId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IsShared");
 
                     b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("TeamId");
 
                     b.HasIndex("OwnerUserId", "Name")
                         .IsUnique();
@@ -2846,6 +2856,97 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.HasKey("Name");
 
                     b.ToTable("StoredSecrets", (string)null);
+                });
+
+            modelBuilder.Entity("IncidentManager.Domain.Entities.Team", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DetectionLinkTemplate")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DetectionSourceLabel")
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ModifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(70)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Teams", (string)null);
+                });
+
+            modelBuilder.Entity("IncidentManager.Domain.Entities.TeamMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AddedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AddedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(70)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TeamId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("TeamMembers", (string)null);
                 });
 
             modelBuilder.Entity("IncidentManager.Domain.Entities.TimelineEntry", b =>
@@ -3467,6 +3568,15 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)
                         .WithMany("StatusChanges")
                         .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("IncidentManager.Domain.Entities.TeamMember", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

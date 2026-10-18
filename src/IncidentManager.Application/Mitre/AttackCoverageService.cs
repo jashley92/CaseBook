@@ -61,10 +61,15 @@ public sealed class AttackCoverageService
 
     /// <summary>E-31: the same aggregation over cases detected in [<paramref name="since"/>, <paramref name="until"/>).</summary>
     public async Task<AttackCoverage> GetForPeriodAsync(DateTimeOffset? since, DateTimeOffset? until,
-        bool includeExercises = false, CancellationToken ct = default)
+        bool includeExercises = false, CancellationToken ct = default) =>
+        await GetForPeriodAsync(since, until, includeExercises, Cases.TeamScope.Any, ct);
+
+    /// <summary>As above, for one team's cases (CAP-36), after need-to-know.</summary>
+    public async Task<AttackCoverage> GetForPeriodAsync(DateTimeOffset? since, DateTimeOffset? until,
+        bool includeExercises, Cases.TeamScope team, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var q = db.Cases.AsNoTracking().ForUser(_user);
+        var q = Cases.TeamScopeQueries.InTeam(db.Cases.AsNoTracking().ForUser(_user), team);
         if (!includeExercises) q = q.ExcludingExercises();
 
         var caseRows = await q.Select(c => new { c.Id, c.CaseNumber, c.Title, c.DetectedAtUtc, c.CreatedAtUtc, c.Origin }).ToListAsync(ct);

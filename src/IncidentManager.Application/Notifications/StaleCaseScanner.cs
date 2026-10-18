@@ -63,7 +63,7 @@ public sealed class StaleCaseScanner(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander, c.CreatedAtUtc,
                 // C18: CaseBook's upkeep (a start-up fill, the row-hash upgrade) isn't activity on the case.
                 db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber && a.Reason != Integrity.IntegrityUpkeep.Reason).Max(a => (DateTimeOffset?)a.AtUtc),
-                c.IsRestricted, c.Assignments.Select(a => a.UserId).ToList()))
+                c.IsRestricted, c.Assignments.Select(a => a.UserId).ToList(), c.TeamId))
             .ToListAsync(ct);
 
         // BUG-147: the marks below are kept only if the sends finish.
@@ -91,7 +91,7 @@ public sealed class StaleCaseScanner(
                 // BUG-377: only people still entitled to the case; with nobody left it's tried again next scan (WF-96).
                 await audience.EntitledOnlyAsync(recipients.Distinct(StringComparer.OrdinalIgnoreCase),
                     cand.IsRestricted, cand.IncidentCommander, cand.AssigneeUserIds, ct),
-                lastActivity, (int)Math.Floor(daysInactive), threshold));
+                lastActivity, (int)Math.Floor(daysInactive), threshold, cand.TeamId));
         }
 
         if (reminders.Count > 0)
@@ -112,5 +112,5 @@ public sealed class StaleCaseScanner(
 
     private sealed record Candidate(
         Guid CaseId, string CaseNumber, string CaseTitle, Severity Severity, string? IncidentCommander,
-        DateTimeOffset CreatedAtUtc, DateTimeOffset? LastAuditAtUtc, bool IsRestricted, List<string> AssigneeUserIds);
+        DateTimeOffset CreatedAtUtc, DateTimeOffset? LastAuditAtUtc, bool IsRestricted, List<string> AssigneeUserIds, Guid? TeamId);
 }

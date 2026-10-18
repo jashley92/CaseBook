@@ -25,6 +25,7 @@
 @inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
 @inject IncidentManager.Application.Evidence.EvidenceService EvidenceSvc
 @inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
+@inject IncidentManager.Application.Admin.TeamService TeamsSvc
 @inject IncidentManager.Web.Services.CaseTabsState OpenTabs
 @inject IncidentManager.Web.Services.UnsavedEdits Edits
 
@@ -144,6 +145,7 @@ else
            Things; the parent threads the retention alert, the readiness gate, the shared confirm dialog, the
            assign modal (OnOpenModal), and hotkey dispatch. *@
         <CaseOverviewTab @ref="_overviewTab" Section="@_activeTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" OutcomeLabels="_outcomeLabels" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
+                         Teams="_teams"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval" BriefInPane="PaneShown" OnEditBrief="() => _nowNext?.BeginBriefEdit()"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
                          OnFix="FixGateItem" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" RefreshToken="_liveRefresh" />
@@ -179,7 +181,7 @@ else
         @* UX-13: extracted to CaseEntitiesTab. It owns the vis-network graph interop (its own
            DotNetObjectReference + [JSInvokable] OnNodesMoved) and entity/relationship CRUD; the parent keeps
            the shared confirm dialog (RequestConfirm→AskConfirm), the flash, and hotkey dispatch (@ref). *@
-        <CaseEntitiesTab @ref="_entitiesTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
+        <CaseEntitiesTab @ref="_entitiesTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" DetectionLabel="@DetectionLabel"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" FocusEntityId="QEntity" OnOpenEntity="OpenEntity"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh"
                          PickUnknownOnShow="_entitiesPickUnknown" OnPickUnknownHandled="() => _entitiesPickUnknown = false" />
@@ -590,6 +592,13 @@ else
             : await Cases.GetTaskResultsAsync(_case.Id);
         if (Stale()) return false;
         _taskResults = taskResults;
+        // CAP-36: the teams (a few rows), once, for the case's team and its detection source.
+        if (_case is not null && _teams is null)
+        {
+            var teams = await TeamsSvc.ListAsync();
+            if (Stale()) return false;
+            _teams = teams;
+        }
         // HR-01: outcome labels (admin-managed) for the header and the Closed milestone; only closed cases show one.
         if (_case?.StatusChanges.Any(s => s.OutcomeKey is not null) == true && _outcomeLabels.Count == 0)
         {
@@ -770,15 +779,14 @@ else
 
     // --- Detection-source deep-links (used by the Overview header) ---
 
-    /// <summary>Display label for the detection source (configurable); defaults to "SIEM".</summary>
-    private string DetectionLabel
-    {
-        get
-        {
-            var label = Config["ExternalLinks:DetectionSourceLabel"];
-            return string.IsNullOrWhiteSpace(label) ? "SIEM" : label;
-        }
-    }
+    /// <summary>Display label for the detection source (configurable); defaults to "SIEM". CAP-36: the case's team's own,
+    /// when it sets one.</summary>
+    private string DetectionLabel => DetectionSource.Label(Config, CaseTeam);
+
+    // CAP-36: the teams, read once per visit (null until then), and the case's own.
+    private List<IncidentManager.Application.Admin.TeamView>? _teams;
+    private IncidentManager.Application.Admin.TeamView? CaseTeam =>
+        _case?.TeamId is { } id ? _teams?.FirstOrDefault(t => t.Id == id) : null;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

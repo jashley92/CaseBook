@@ -348,6 +348,40 @@ public sealed class CaseOutcomeConfiguration : IEntityTypeConfiguration<CaseOutc
     }
 }
 
+/// <summary>CAP-36: teams, admin-managed reference data keyed by a stable Key (a case holds the id, without a foreign key,
+/// like its report profile: teams are retired, never deleted).</summary>
+public sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
+{
+    public void Configure(EntityTypeBuilder<Team> b)
+    {
+        b.ToTable("Teams");
+        b.Property(x => x.Key).HasMaxLength(Team.KeyMax).IsRequired();
+        b.Property(x => x.Name).HasMaxLength(Team.NameMax).IsRequired();
+        b.Property(x => x.DetectionSourceLabel).HasMaxLength(Team.LabelMax);
+        b.Property(x => x.DetectionLinkTemplate).HasMaxLength(Team.LinkTemplateMax);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ModifiedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(70);
+        b.HasIndex(x => x.Key).IsUnique();
+        b.HasIndex(x => x.Name).IsUnique();
+    }
+}
+
+/// <summary>CAP-36: who is in a team (once each).</summary>
+public sealed class TeamMemberConfiguration : IEntityTypeConfiguration<TeamMember>
+{
+    public void Configure(EntityTypeBuilder<TeamMember> b)
+    {
+        b.ToTable("TeamMembers");
+        b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
+        b.Property(x => x.AddedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(70);
+        b.HasOne<Team>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.TeamId, x.UserId }).IsUnique();
+        b.HasIndex(x => x.UserId);
+    }
+}
+
 public sealed class DataElementConfiguration : IEntityTypeConfiguration<DataElement>
 {
     public void Configure(EntityTypeBuilder<DataElement> b)
@@ -723,6 +757,7 @@ public sealed class SavedViewConfiguration : IEntityTypeConfiguration<SavedView>
         b.Property(x => x.Query).HasMaxLength(2000);
         b.HasIndex(x => x.OwnerUserId);
         b.HasIndex(x => x.IsShared);
+        b.HasIndex(x => x.TeamId);   // CAP-36: a view shared with one team
         // A user can't have two views with the same name; shared views still live under their owner.
         b.HasIndex(x => new { x.OwnerUserId, x.Name }).IsUnique();
     }

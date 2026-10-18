@@ -10,8 +10,11 @@ public enum ChatUrgency
 /// <summary>
 /// A concise chat notification for a shared SOC channel: a short title, a line or two of text, and an
 /// optional deep link back into CaseBook. The transport renders it per platform (Slack mrkdwn / Teams card).
+/// CAP-36: <see cref="TeamId"/> is the team of the case (or cases) it's about: the post goes to that team's chat webhook when
+/// one is saved for it, and to the shared channel otherwise.
 /// </summary>
-public sealed record ChatNotification(string Title, string Text, string? Url = null, ChatUrgency Urgency = ChatUrgency.Normal);
+public sealed record ChatNotification(string Title, string Text, string? Url = null, ChatUrgency Urgency = ChatUrgency.Normal,
+    Guid? TeamId = null);
 
 /// <summary>
 /// Posts case-lifecycle notifications to a shared team chat (Slack/Teams incoming webhook) — a broadcast
@@ -28,6 +31,13 @@ public interface IChatNotifier
     /// delivery card; null when it will, or when it's off.
     /// </summary>
     string? StoppedReason => null;
+
+    /// <summary>
+    /// CAP-36: whether a post for <paramref name="teamId"/>'s cases goes to a webhook of the team's own (one is saved for it),
+    /// rather than the shared channel: how a reminder scan's summary is split, one post per channel. Read from what's kept,
+    /// so it may lag a save by a few seconds; the post itself reads the webhook again.
+    /// </summary>
+    bool RoutesTeam(Guid teamId) => false;
 
     /// <summary>Posts one message to the configured channel. A no-op (not an error) when disabled.</summary>
     Task SendAsync(ChatNotification message, CancellationToken ct = default);

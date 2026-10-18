@@ -15,6 +15,9 @@ namespace IncidentManager.Web.Notifications;
 /// so it may be a literal or a <c>@cyberark:</c> reference (F-19). Never throws into the caller.
 /// CAP-40: when the server's configuration sets no URL, the one saved in Administration (<see cref="StoredSecretStore"/>)
 /// is used, read per post so a save applies without a restart; one that won't decrypt here isn't posted to (fail closed).
+/// CAP-36: a post about a team's cases (<see cref="ChatNotification.TeamId"/>) goes to the webhook URL saved for that team
+/// when there is one, and to the shared one otherwise. A team's URL that won't decrypt, or can't be read, isn't posted to,
+/// and the post isn't sent to the shared channel instead: a team's channel may be the only audience its cases are meant for.
 /// </summary>
 public sealed class ChatWebhookNotifier : IChatNotifier
 {
@@ -49,9 +52,13 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             var o = _options.CurrentValue;
             if (!o.Enabled) return false;
             if (!string.IsNullOrWhiteSpace(o.WebhookUrl)) return true;
-            return _stored?.Peek(StoredSecretKind.ChatWebhookUrl) is { } saved && (saved.Set || saved.Unread);
+            return _stored?.Peek(StoredSecretKind.ChatWebhookUrl) is { } saved && (saved.Set || saved.Unread)
+                   || _stored?.AnyTeamWebhookSaved() == true;   // CAP-36: a team's own webhook posts its cases
         }
     }
+
+    // CAP-36: a team whose cases go to a webhook of its own (one is saved for it), from what's kept.
+    public bool RoutesTeam(Guid teamId) => _options.CurrentValue.Enabled && _stored?.TeamWebhookSaved(teamId) == true;
 
     // CAP-40: on, but nothing will post: shown as stopped on the delivery card, with why.
     public string? StoppedReason
@@ -64,7 +71,11 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             if (saved is { Unread: true })
                 return "not posting: the webhook URL saved in Administration can't be read (the database isn't answering); " +
                        "posts are tried again once it does";
-            if (saved is not { Set: true }) return "not posting: no webhook URL is set (Chat:Webhook:WebhookUrl, or Settings, Notifications)";
+            // CAP-36: posts still go to the teams with their own webhook; the rest have nowhere to go, which Diagnostics shows.
+            if (saved is not { Set: true })
+                return _stored?.AnyTeamWebhookSaved() == true
+                    ? null
+                    : "not posting: no webhook URL is set (Chat:Webhook:WebhookUrl, or Settings, Notifications)";
             return saved.Unreadable
                 ? "not posting: the webhook URL saved in Administration can't be decrypted on this server; re-enter it"
                 : null;
@@ -86,39 +97,60 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         var o = _options.CurrentValue;
         if (!o.Enabled) return null;
 
-        string? url;
-        if (!string.IsNullOrWhiteSpace(o.WebhookUrl))
+        string? url = null;
+        // CAP-36: a team's own webhook first, when one is saved for the team the post is about.
+        if (message.TeamId is { } teamId && _stored is not null)
         {
-            // The webhook URL is itself the channel credential; resolve it (literal or @cyberark: reference).
-            url = await _secrets.ResolveAsync(o.WebhookUrl, ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(url))
+            var team = await _stored.ResolveTeamWebhookAsync(teamId, ct).ConfigureAwait(false);
+            if (team.Unread)
             {
-                _logger.LogWarning("Chat webhook URL could not be resolved; message not posted.");
-                _health?.RecordFailure(DeliveryHealth.Chat, "the webhook URL couldn't be resolved");   // CAP-04
-                return "The webhook URL couldn't be resolved.";
+                // Can't tell whether the team has its own channel: not posted to the shared one in its place; tried again.
+                _health?.RecordFailure(DeliveryHealth.Chat, "a team's saved webhook URL couldn't be read (database not answering)");
+                return "The team's webhook URL couldn't be read: the database isn't answering. Try again shortly.";
             }
+            if (team.Unreadable)
+            {
+                _health?.RecordFailure(DeliveryHealth.Chat, "a team's saved webhook URL can't be decrypted on this server");
+                return "The team's webhook URL can't be decrypted on this server (its Data Protection keys aren't here). " +
+                       "Re-enter it under Administration, Teams.";
+            }
+            if (team.Saved) url = team.Value;
         }
-        else
+        if (url is null)
         {
-            // CAP-40: the URL saved in Administration, read now. None saved: chat is off, as with no URL configured.
-            var saved = _stored is null ? StoredSecretValue.NotSaved
-                : await _stored.ResolveAsync(StoredSecretKind.ChatWebhookUrl, ct).ConfigureAwait(false);
-            if (saved.Unread)
+            if (!string.IsNullOrWhiteSpace(o.WebhookUrl))
             {
-                // CAP-40 review: the database can't tell whether one is saved (bounded; what was last read answers when there
-                // is any). Not "chat is off": the failure counts, so a scheduled broadcast is tried again, not marked sent.
-                _health?.RecordFailure(DeliveryHealth.Chat, "the saved webhook URL couldn't be read (database not answering)");
-                return "The webhook URL saved in Administration couldn't be read: the database isn't answering. Try again shortly.";
+                // The webhook URL is itself the channel credential; resolve it (literal or @cyberark: reference).
+                url = await _secrets.ResolveAsync(o.WebhookUrl, ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    _logger.LogWarning("Chat webhook URL could not be resolved; message not posted.");
+                    _health?.RecordFailure(DeliveryHealth.Chat, "the webhook URL couldn't be resolved");   // CAP-04
+                    return "The webhook URL couldn't be resolved.";
+                }
             }
-            if (!saved.Saved) return null;
-            if (saved.Unreadable)
+            else
             {
-                // Fail closed. The store logged it once; the failure counts, so a scheduled broadcast is tried again.
-                _health?.RecordFailure(DeliveryHealth.Chat, "the saved webhook URL can't be decrypted on this server");
-                return "The webhook URL saved in Administration can't be decrypted on this server (its Data Protection keys " +
-                       "aren't here). Re-enter it under Settings, Notifications, Team chat webhook.";
+                // CAP-40: the URL saved in Administration, read now. None saved: chat is off, as with no URL configured.
+                var saved = _stored is null ? StoredSecretValue.NotSaved
+                    : await _stored.ResolveAsync(StoredSecretKind.ChatWebhookUrl, ct).ConfigureAwait(false);
+                if (saved.Unread)
+                {
+                    // CAP-40 review: the database can't tell whether one is saved (bounded; what was last read answers when there
+                    // is any). Not "chat is off": the failure counts, so a scheduled broadcast is tried again, not marked sent.
+                    _health?.RecordFailure(DeliveryHealth.Chat, "the saved webhook URL couldn't be read (database not answering)");
+                    return "The webhook URL saved in Administration couldn't be read: the database isn't answering. Try again shortly.";
+                }
+                if (!saved.Saved) return null;
+                if (saved.Unreadable)
+                {
+                    // Fail closed. The store logged it once; the failure counts, so a scheduled broadcast is tried again.
+                    _health?.RecordFailure(DeliveryHealth.Chat, "the saved webhook URL can't be decrypted on this server");
+                    return "The webhook URL saved in Administration can't be decrypted on this server (its Data Protection keys " +
+                           "aren't here). Re-enter it under Settings, Notifications, Team chat webhook.";
+                }
+                url = saved.Value!;
             }
-            url = saved.Value!;
         }
 
         // Same egress guard as the SIEM webhook (S-06): https required (http only to loopback) so the secret

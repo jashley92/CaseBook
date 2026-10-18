@@ -57,7 +57,7 @@ public sealed class NotificationDeadlineScanner(
         var candidates = await scope.Where(c => ids.Contains(c.Id))
             .Select(c => new Candidate(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander, c.IsRestricted,
-                c.Assignments.Select(a => a.UserId).ToList()))
+                c.Assignments.Select(a => a.UserId).ToList(), c.TeamId))
             .ToListAsync(ct);
 
         // BUG-147: the marks below are kept only if the sends finish.
@@ -85,7 +85,7 @@ public sealed class NotificationDeadlineScanner(
                     cand.CaseId, cand.CaseNumber, cand.CaseTitle, cand.Severity, to, clock.Key.State,
                     clock.Where(s => fresh.Contains(s.JurisdictionCode, StringComparer.OrdinalIgnoreCase))
                         .Select(s => new DeadlineJurisdiction(s.JurisdictionCode, s.JurisdictionLabel)).ToList(),
-                    clock.Key.DueAtUtc, clock.First().Remaining));
+                    clock.Key.DueAtUtc, clock.First().Remaining, cand.TeamId));
             }
         }
 
@@ -107,5 +107,5 @@ public sealed class NotificationDeadlineScanner(
 
     private sealed record Candidate(
         Guid CaseId, string CaseNumber, string CaseTitle, Severity Severity,
-        string? IncidentCommander, bool IsRestricted, List<string> AssigneeUserIds);
+        string? IncidentCommander, bool IsRestricted, List<string> AssigneeUserIds, Guid? TeamId);
 }

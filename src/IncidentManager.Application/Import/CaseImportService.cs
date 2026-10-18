@@ -243,6 +243,8 @@ public sealed class CaseImportService
             }
         }
 
+        await ResolveCaseTeamAsync(preview, ct);   // CAP-36
+
         // CAP-35: the team is matched to the directory, and the outcome checked, as it's reviewed. A history belongs to the
         // new case it describes: one going into an existing case (by id, or by detection case id, CAP-14) leaves it out.
         if (preview.HasHistory || preview.Outcome is not null)
@@ -907,6 +909,8 @@ public sealed class CaseImportService
         var exercise = preview.NewCase?.IsExercise == true;
         string? commander = null;
         IReadOnlyCollection<string> team = [];
+        // CAP-36: the channel post goes to the target's team (an existing case's, else the team the new case names).
+        var teamId = row.TargetCaseId is null ? preview.NewCase?.TeamId : null;
         try
         {
             if (row.TargetCaseId is { } caseId)
@@ -915,10 +919,10 @@ public sealed class CaseImportService
                 // the submission is saved, and telling people of it shouldn't stop because the producer stopped waiting.
                 using var db = _factory.CreateDbContext();
                 var target = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == caseId)
-                    .Select(c => new { c.IsRestricted, c.IsExercise, c.IncidentCommander, Team = c.Assignments.Select(a => a.UserId).ToList() })
+                    .Select(c => new { c.IsRestricted, c.IsExercise, c.IncidentCommander, Team = c.Assignments.Select(a => a.UserId).ToList(), c.TeamId })
                     .FirstOrDefaultAsync(CancellationToken.None);
                 if (target is not null)
-                    (restricted, exercise, commander, team) = (target.IsRestricted, target.IsExercise, target.IncidentCommander, target.Team);
+                    (restricted, exercise, commander, team, teamId) = (target.IsRestricted, target.IsExercise, target.IncidentCommander, target.Team, target.TeamId);
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -929,7 +933,7 @@ public sealed class CaseImportService
         }
 
         var draft = new ImportSubmission(row.Id, row.SubmittedBy, row.Origin, row.Summary, preview.IncludedItemCount,
-            row.TargetCaseId, restricted, exercise, []);
+            row.TargetCaseId, restricted, exercise, [], teamId);
         var (notifications, users, roles, audience, log) = (_notifications, _users, _roles, _audience, _log);
         // Not awaited, and without this request's execution context (its HttpContext, a caller's delivery watch).
         using (ExecutionContext.SuppressFlow())
@@ -1463,6 +1467,7 @@ public sealed class CaseImportService
         if (droppedTasks > 0) p.Warnings.Add(droppedTasks == 1 ? "1 task had no title and was skipped." : $"{droppedTasks} tasks had no title and were skipped.");
 
         BuildHistory(doc, p, nowUtc);   // CAP-35
+        BuildTeam(doc, p);              // CAP-36
         return p;
     }
 
@@ -1549,6 +1554,43 @@ public sealed class CaseImportService
             p.Warnings.Add("The outcome and conclusion are recorded only when the history closes the case, so they were ignored.");
             (p.Outcome, p.Conclusion) = (null, null);
         }
+    }
+
+    /// <summary>
+    /// CAP-36: a v2 document's <c>newCase.team</c>, as it names the team (matched to an active team when it's reviewed,
+    /// <see cref="ResolveCaseTeamAsync"/>). A v1 document's is ignored with a warning, as CAP-35's fields are.
+    /// </summary>
+    private static void BuildTeam(CaseImportDocument doc, CaseImportPreview p)
+    {
+        if (doc.Target?.NewCase?.Team is not { } named || string.IsNullOrWhiteSpace(named)) return;
+        if ((doc.SchemaVersion ?? 1) < CaseImportJson.HistorySchemaVersion)
+        {
+            p.Warnings.Add("The new case's team needs \"schemaVersion\": 2. This document is v1, so it was ignored.");
+            return;
+        }
+        p.TeamNamed = Clamp(named, Team.NameMax, "Team", p.Warnings);
+    }
+
+    /// <summary>
+    /// CAP-36: matches the document's team to an active team, by key then by name (ignoring case), as it's reviewed, and
+    /// sets it on the new case (the reviewer can change it). A team it doesn't know, or a retired one, is a warning, and the
+    /// case is opened without one: never dropped without a word. A team names a new case only: an import into an existing
+    /// case leaves that case's team as it is.
+    /// </summary>
+    private async Task ResolveCaseTeamAsync(CaseImportPreview p, CancellationToken ct)
+    {
+        if (p.TeamNamed is not { } named || p.NewCase is not { } nc) return;
+        using var db = _factory.CreateDbContext();
+        var teams = await db.Teams.AsNoTracking().Select(t => new { t.Id, t.Key, t.Name, t.IsActive }).ToListAsync(ct);
+        var team = teams.FirstOrDefault(t => string.Equals(t.Key, named, StringComparison.OrdinalIgnoreCase))
+                   ?? teams.FirstOrDefault(t => string.Equals(t.Name, named, StringComparison.OrdinalIgnoreCase));
+        if (team is null)
+            p.Warnings.Add($"The team \"{named}\" isn't one CaseBook has (Administration › Teams), so the case is opened without a team. Choose one if it should have one.");
+        else if (!team.IsActive)
+            p.Warnings.Add($"The team \"{team.Name}\" is retired, so the case is opened without a team. Choose another if it should have one.");
+        else nc.TeamId = team.Id;
+        if (p.TargetKind == CaseImportTargetKind.ExistingCase)
+            p.Warnings.Add("The document's team is for a new case, so it isn't applied to an existing one; that case keeps its own team.");
     }
 
     /// <summary>

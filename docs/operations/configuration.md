@@ -197,8 +197,8 @@ process's working directory, which under IIS is the site folder.
 | `Organization:TimeZone` | Where days, months and quarters begin for trends, the program report and digests. A fixed list of 14 IANA zones. | `America/New_York` | App |
 | `Organization:DefaultJurisdictions` | Pre-fills a case's affected jurisdictions (`NY, NJ`) | blank | App |
 | `Branding:AccentColor` / `Branding:InkColor` | Brand colors (hex) for the UI and emails | gold `#ffcf31` / charcoal `#232a33` | App |
-| `ExternalLinks:DetectionSourceLabel` | Name of the detection system shown in the UI | json: `SIEM` | App |
-| `ExternalLinks:DetectionCaseUrlTemplate` | Deep link to the detection platform; `{0}` = the case's detection id | blank | App |
+| `ExternalLinks:DetectionSourceLabel` | Name of the detection system shown in the UI. CAP-36: a case whose team sets its own label (Administration › Teams) shows the team's | json: `SIEM` | App |
+| `ExternalLinks:DetectionCaseUrlTemplate` | Deep link to the detection platform; `{0}` = the case's detection id. CAP-36: a case whose team sets its own template uses the team's | blank | App |
 | `ExternalLinks:VirusTotalUrlTemplate` | IOC lookup link; `{0}` = indicator | json: VirusTotal search URL | App |
 | `App:BaseUrl` | Absolute site URL used in email links, the email logo and calendar links. Blank still sends, without links. **The installer doesn't set it.** | blank | App |
 | `RelatedIndicators:ExcludedDomains` | CAP-28: your organization's domains, one per line (a pasted `contoso.com, corp.contoso.local` is split). Each covers every name under it (`mail.contoso.com`, `a@corp.contoso.com`; never `notcontoso.com`), checked against the whole host. A domain, URL, email address or account on one is never used to suggest *Possibly related* indicators, and nothing is suggested because of it. Stored lowercased without a trailing dot (`*.contoso.com` is `contoso.com`). Refused on save: an email address, an IP, a single label, a public suffix (`co.uk`), or non-ASCII (enter an international name in its `xn--` form). Under Administration › Integrations › Related indicators. **Default (CAP-28 discovery):** while it isn't set anywhere (never saved in Administration, not in a settings file), the domains found on the server's network are used: the AD domain the server is joined to, its forest root and the forest's other domains (NetBIOS names and public suffixes dropped). Domains the domain and the forest trust are found too but only offered under *Use these*: a partner's domain isn't necessarily noise. They're looked up once in the background after start-up (5 s limit), kept until restart or *Look again*, never stored, and never in a config bundle. Not domain-joined, not Windows, or a failure finds none. Once saved, blank included, the saved value is used; Reset brings discovery back. Setting sources shows *Discovered*. | blank, or the domains found on the server's network | App |
@@ -349,6 +349,12 @@ Set in the server's configuration (a literal, `@cyberark:` or `@protected:`), th
 it read-only. `Chat:Webhook:Enabled`, `Siem:Webhook:Enabled` and `Siem:Webhook:Url` stay server-side: a saved URL or
 token is used only while its switch is on there. A token set either way that won't resolve or decrypt stops the
 webhook's sends instead of sending without it (CAP-40; before, the event went without an auth header).
+
+**A team's own chat webhook URL** (CAP-36) has no configuration key: it's entered on Administration › Teams and kept
+the same way (Data Protection, a `StoredSecrets` row per team), outside the configuration bundle. It's used only while
+`Chat:Webhook:Enabled` is on, and with it set, chat posts even when no shared `Chat:Webhook:WebhookUrl` is set (posts
+for cases with no team, or whose team has none, then have nowhere to go). Teams themselves are reference data, not
+settings, and travel in the configuration bundle (schema v5) without their members or webhook URL.
 
 ### 3.16 Role mapping (first run only)
 

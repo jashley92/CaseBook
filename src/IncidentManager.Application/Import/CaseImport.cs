@@ -102,6 +102,10 @@ public sealed class CaseImportNewCase
 
     /// <summary>CAP-35: the rest of the case team, each by user id or UPN with a role.</summary>
     public List<CaseImportAssignment>? Assignments { get; set; }
+
+    /// <summary>CAP-36 (schema v2): the team that owns the new case, by its key or name (Administration › Teams), matched when
+    /// it's reviewed. One that isn't an active team is a warning, and the case is opened without a team.</summary>
+    public string? Team { get; set; }
 }
 
 /// <summary>CAP-35: one phase transition of an imported case's history, applied through <c>Case.ChangePhase</c> at its

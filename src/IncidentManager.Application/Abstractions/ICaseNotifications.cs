@@ -20,7 +20,9 @@ public sealed record OverdueActionItem(
     string Title,
     DateTimeOffset DueAtUtc,
     string? OwnerUserId,
-    string? WrittenOwner = null);
+    string? WrittenOwner = null,
+    // CAP-36: the case's team, so the channel post goes to the team's chat webhook when it has one.
+    Guid? TeamId = null);
 
 /// <summary>Who an overdue follow-up item has escalated to (PROD-03). Values are the escalation order.</summary>
 public enum OverdueEscalationTier
@@ -50,7 +52,8 @@ public sealed record DueSoonActionItem(
     Guid ActionItemId,
     string Title,
     DateTimeOffset DueAtUtc,
-    string? OwnerUserId);
+    string? OwnerUserId,
+    Guid? TeamId = null);   // CAP-36: as OverdueActionItem.TeamId
 
 /// <summary>
 /// A case whose regulatory notification deadline (PROD-07) is approaching or already passed, flattened for
@@ -69,7 +72,8 @@ public sealed record DeadlineReminder(
     SlaState State,
     IReadOnlyList<DeadlineJurisdiction> Jurisdictions,
     DateTimeOffset? DueAtUtc,
-    TimeSpan? Remaining)
+    TimeSpan? Remaining,
+    Guid? TeamId = null)   // CAP-36: as OverdueActionItem.TeamId
 {
     public IReadOnlyList<string> JurisdictionCodes => Jurisdictions.Select(j => j.Code).ToList();
 
@@ -92,7 +96,8 @@ public sealed record StaleCaseReminder(
     IReadOnlyList<string> RecipientUserIds,
     DateTimeOffset LastActivityAtUtc,
     int DaysInactive,
-    int ThresholdDays);
+    int ThresholdDays,
+    Guid? TeamId = null);   // CAP-36: as OverdueActionItem.TeamId
 
 /// <summary>One open, dated follow-up item on a user's work digest (PROD-39), flattened for the email body.</summary>
 public sealed record DigestItem(string CaseNumber, string TaskTitle, Severity Severity, DateTimeOffset DueAtUtc);
@@ -242,4 +247,7 @@ public sealed record ImportSubmission(
     Guid? TargetCaseId,
     bool IsRestricted,
     bool IsExercise,
-    IReadOnlyList<string> ReviewerUserIds);
+    IReadOnlyList<string> ReviewerUserIds,
+    // CAP-36: the team of the case it targets (an existing case's, or the team a new case names), so the channel post goes
+    // to that team's chat webhook when it has one.
+    Guid? TeamId = null);

@@ -270,6 +270,17 @@ Notes:
   a reviewer confirms it (a missing reason reads "imported record: &lt;origin&gt;", and a close whose gate checks can't be
   met is overridden with that reason). People the reviewer's directory doesn't know are a warning and aren't added. A
   history only applies to a new case: one that lands in an existing case leaves it out, with a warning.
+- **Team** (CAP-36, v2, no version change): `newCase.team` names the team that owns the new case, by its key (as the
+  Cases list's team filter shows it, `SocTier1`) or its name, ignoring case, up to 100 characters. It's matched when a
+  reviewer reviews the import (the reviewer can change it): one that isn't an active team is a warning and the case is
+  opened without a team; in a v1 document it's ignored, with a warning; an import into an existing case leaves that
+  case's team as it is. A team never changes who can see the case. An import waiting for review is posted to the
+  target's team's chat channel when it has one.
+
+  ```json
+  "schemaVersion": 2,
+  "target": { "newCase": { "title": "Beacon from a laptop", "team": "SocTier1" } }
+  ```
 - **Times**: ISO 8601. A time with an offset (`2026-09-18T09:05:00-04:00`) or `Z` is kept as stated. A time without one
   is read in the document's top-level `timeZone` (an IANA id such as `America/New_York`), or as UTC when it has none.
   (On the Import page the reviewer picks the zone for such times instead, the organization's by default; a document's

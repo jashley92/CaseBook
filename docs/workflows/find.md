@@ -59,6 +59,7 @@ used) or `owner:` alongside `type:` or `by:` (tasks aren't record entries).
 | `state:NY` (or `jurisdiction:NY`) | Cases with residents of that state affected |
 | `in:notes` | Include working notes |
 | `exercises:yes` | Include exercises (left out otherwise) |
+| `team:SocTier1` (or `team:none`) | CAP-36: one team's cases, by its key (as the Cases list's team filter shows it), or the cases with no team. Applied after need-to-know, like every filter; also a *Team* picker beside the results |
 
 Examples:
 

@@ -128,6 +128,13 @@ public static class CaseImportSchema
                             ["type"] = "array", ["items"] = Ref("assignment"), ["maxItems"] = CaseImportService.MaxAssignments,
                             ["description"] = "v2: the rest of the case team.",
                         },
+                        // CAP-36
+                        ["team"] = new JsonObject
+                        {
+                            ["type"] = "string", ["maxLength"] = Domain.Entities.Team.NameMax,
+                            ["description"] = "v2: the team that owns the case, by its key or name (Administration › Teams), matched when it's reviewed; " +
+                                              "one that isn't an active team is a warning, and the case is opened without one.",
+                        },
                     },
                 },
                 // CAP-35
@@ -213,8 +220,8 @@ public static class CaseImportSchema
         };
     }
 
-    /// <summary>CAP-35: the new-case fields v2 added, which a v1 document may not carry.</summary>
-    public static IReadOnlyList<string> V2NewCaseFields() => ["history", "outcome", "conclusion", "incidentCommander", "assignments"];
+    /// <summary>CAP-35: the new-case fields v2 added, which a v1 document may not carry. CAP-36: and the owning team.</summary>
+    public static IReadOnlyList<string> V2NewCaseFields() => ["history", "outcome", "conclusion", "incidentCommander", "assignments", "team"];
 
     private static JsonObject Str(string? description)
     {

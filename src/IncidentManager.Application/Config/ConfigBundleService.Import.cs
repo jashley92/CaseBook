@@ -449,6 +449,29 @@ public sealed partial class ConfigBundleService
             }
         }
 
+        // --- Teams (CAP-36; match by stable Key; absent from a pre-v5 bundle). Members and the chat webhook never travel:
+        // a team new here has none until they're set on this server, and an existing team keeps its own. ---
+        var teamRows = await db.Teams.ToListAsync(ct);
+        foreach (var t in bundle.Teams ?? [])
+        {
+            var existing = teamRows.FirstOrDefault(x => string.Equals(x.Key, t.Key, StringComparison.OrdinalIgnoreCase));
+            var (name, label, link) = (t.Name.Trim(), Blank(t.DetectionSourceLabel), Blank(t.DetectionLinkTemplate));
+            if (existing is null)
+            {
+                db.Teams.Add(new Team { Key = t.Key, Name = name, IsActive = t.IsActive, DetectionSourceLabel = label,
+                    DetectionLinkTemplate = link, CreatedBy = actor, CreatedAtUtc = now });
+                run.Note("Team", t.Key, true, true);
+            }
+            else
+            {
+                var changed = existing.Name != name || existing.IsActive != t.IsActive || existing.DetectionSourceLabel != label
+                    || existing.DetectionLinkTemplate != link;
+                if (changed) { existing.Name = name; existing.IsActive = t.IsActive; existing.DetectionSourceLabel = label;
+                    existing.DetectionLinkTemplate = link; existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                run.Note("Team", existing.Key, false, changed);
+            }
+        }
+
         // --- Data elements (match by stable Key; codes are per-instance) ---
         var elements = await db.DataElements.ToListAsync(ct);
         foreach (var d in bundle.DataElements)
@@ -654,6 +677,18 @@ public sealed partial class ConfigBundleService
             problems.Add($"Data element \"{d.Label}\" has the key \"{d.Key}\"; a key is letters, digits, \"_\" and \"-\" only.");
         foreach (var o in (incoming.CaseOutcomes ?? []).Where(o => o.Key is { Length: > CaseOutcomeService.MaxKeyLength }))
             problems.Add($"Case outcome \"{o.Label}\" has a key longer than {CaseOutcomeService.MaxKeyLength} characters.");
+        // CAP-36: a team as the Teams page saves one (TeamService.Problem), with a key as it makes them; and a name no other
+        // team here has (the unique index), so the import refuses it in words rather than at the save.
+        foreach (var t in incoming.Teams ?? [])
+        {
+            var label = string.IsNullOrWhiteSpace(t.Name) ? "(unnamed)" : t.Name.Trim();
+            if (!IsTeamKey(t.Key)) problems.Add($"Team \"{label}\" has the key \"{t.Key}\"; a key is 1 to {Team.KeyMax} letters and digits.");
+            if (TeamService.Problem(new TeamEdit(t.Name ?? "", t.DetectionSourceLabel, t.DetectionLinkTemplate, [])) is { } bad)
+                problems.Add($"Team \"{label}\": {bad}");
+            if ((live.Teams ?? []).FirstOrDefault(x => string.Equals(x.Name, t.Name?.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(x.Key, t.Key, StringComparison.OrdinalIgnoreCase)) is { } other)
+                problems.Add($"Team \"{label}\" has the name of the team \"{other.Key}\" here. Rename one, then try again.");
+        }
         if (incoming.CaseOutcomes is { Count: > 0 } outcomes)
         {
             var active = (live.CaseOutcomes ?? []).ToDictionary(o => o.Key, o => o.IsActive, StringComparer.OrdinalIgnoreCase);
@@ -735,6 +770,8 @@ public sealed partial class ConfigBundleService
             .Concat(Check("Data elements", bundle.DataElements, d => d.Key))
             .Concat(Check("Notification rules", bundle.NotificationRules, r => r.Code?.Trim()))
             .Concat(Check("Case outcomes", bundle.CaseOutcomes, o => o.Key))
+            .Concat(Check("Teams", bundle.Teams, t => t.Key))   // CAP-36
+            .Concat(Check("Team names", bundle.Teams, t => t.Name?.Trim()))
             .ToList();
         if (problems.Count > 0)
             throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems) + " Rename one, then export again.");
@@ -979,6 +1016,12 @@ public sealed partial class ConfigBundleService
 
     private static bool IsElementKey(string? key) =>
         !string.IsNullOrEmpty(key) && key.All(c => char.IsLetterOrDigit(c) || c is '_' or '-');
+
+    // CAP-36: a team key as TeamService.UniqueKey makes one (ASCII letters and digits; the team= URL filter carries it).
+    private static bool IsTeamKey(string? key) =>
+        key is { Length: > 0 and <= Team.KeyMax } && key.All(char.IsAsciiLetterOrDigit);
+
+    private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     /// <summary>Whether some AD-group mapping grants a role holding Administer (names matched regardless of case).</summary>
     private static bool AdministerMapped(IEnumerable<Role> roles, IEnumerable<AdGroupRoleMapping> mappings)

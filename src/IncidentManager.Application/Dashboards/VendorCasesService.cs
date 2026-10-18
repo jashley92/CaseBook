@@ -30,10 +30,14 @@ public sealed class VendorCasesService
         _user = user;
     }
 
-    public async Task<VendorCases> GetAsync(ProgramWindow period, bool includeExercises = false, CancellationToken ct = default)
+    public async Task<VendorCases> GetAsync(ProgramWindow period, bool includeExercises = false, CancellationToken ct = default) =>
+        await GetAsync(period, includeExercises, TeamScope.Any, ct);
+
+    /// <summary>As above, for one team's cases (CAP-36), after need-to-know.</summary>
+    public async Task<VendorCases> GetAsync(ProgramWindow period, bool includeExercises, TeamScope team, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var cases = db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Origin == CaseOrigin.ThirdParty && !c.IsArchived);
+        var cases = db.Cases.AsNoTracking().ForUser(_user).InTeam(team).Where(c => c.Origin == CaseOrigin.ThirdParty && !c.IsArchived);
         if (!includeExercises) cases = cases.ExcludingExercises();
 
         var rows = (await cases.Select(c => new

@@ -439,6 +439,8 @@ public sealed class CaseService
         if (filter.MinSeverity is { } sev) q = q.Where(c => c.Severity >= sev);
         if (filter.Origin is { } origin) q = q.Where(c => c.Origin == origin);
         if (filter.Vendor?.Trim() is { Length: > 0 } vendor) q = VendorCases(q, vendor.ToLowerInvariant());   // CAP-24
+        // CAP-36: a team narrows what need-to-know let through (q is already Scoped); it never widens it.
+        if (!string.IsNullOrWhiteSpace(filter.TeamKey)) q = q.InTeam(await TeamScope.ResolveAsync(db, filter.TeamKey, ct));
         // UX-10: SOC/IC roll-up of Legal obligations across the queue (Legal doesn't use the app).
         if (filter.ReferredOnly) q = q.Where(c => c.LegalReferral.IsReferred);
         if (filter.OnHoldOnly) q = q.Where(c => c.LegalHold);
@@ -721,7 +723,8 @@ public sealed class CaseService
                     .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
                     .Select(a => a.UserId).FirstOrDefault(),
                 c.ContainmentNotNeededReason != null,
-                c.ClosedAtUtc, c.ReportedAtUtc);   // CAP-17
+                c.ClosedAtUtc, c.ReportedAtUtc,   // CAP-17
+                c.TeamId);   // CAP-36
 
     /// <summary>
     /// Design review P3: the case preview panel's summary, scoped like every read (null when the case doesn't exist
@@ -927,6 +930,11 @@ public sealed class CaseService
         if (request.OccurredAtUtc is { } occurred && occurred > detectedAtUtc)
             throw new ArgumentException("Activity can't begin after it was detected.");
         Case.EnsurePlausibleDwell(request.OccurredAtUtc, detectedAtUtc);
+        if (request.TeamId is { } teamId)
+        {
+            using var check = _factory.CreateDbContext();
+            await RequireActiveTeamAsync(check, teamId, ct);   // CAP-36
+        }
 
         // Retry on the rare auto-sequence collision (the unique CaseNumber / per-scheme sequence indexes
         // are the guard). A fresh context per attempt so a failed save's audit entry never lingers into the
@@ -968,6 +976,7 @@ public sealed class CaseService
             c.ImpactedAssets = request.ImpactedAssets;
             c.DetectedAtUtc = detectedAtUtc;          // FR-03: real detection time (Case.Open defaults it to now)
             c.OccurredAtUtc = request.OccurredAtUtc;
+            if (request.TeamId is { } team) c.SetTeam(team, _user.UserId, now);   // CAP-36
             if (request.AssignToMe)
                 c.Assign(_user.UserId, SelfDisplayName, CaseAssignmentRole.Analyst, _user.UserId, now);
             if (request.IsRestricted)
@@ -3552,6 +3561,34 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         c.SetReportProfile(profileId, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// CAP-36: sets (or clears, with null) the team that owns the case: an active team. Audited, and in the row hash. Teams
+    /// route and filter only, so this never changes who can see the case. <paramref name="expectedStamp"/> is
+    /// <see cref="Case.TeamConcurrencyStamp"/> as the editor opened (C9): a team changed since is refused.
+    /// </summary>
+    public async Task SetTeamAsync(Guid id, Guid? teamId, string? expectedStamp = null, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        if (expectedStamp is not null && c.TeamConcurrencyStamp() != expectedStamp)
+            throw new StaleEditException(c.TeamConcurrencyStamp(),
+                "Someone else changed this case's team while you were editing. Reload and try again.");
+        if (c.TeamId == teamId) return;
+        if (teamId is { } t) await RequireActiveTeamAsync(db, t, ct);
+        c.SetTeam(teamId, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    // CAP-36: a case takes an active team only (a retired one stays on the cases that name it, but isn't given to more).
+    private static async Task RequireActiveTeamAsync(IAppDbContext db, Guid teamId, CancellationToken ct)
+    {
+        var team = await db.Teams.AsNoTracking().Where(t => t.Id == teamId).Select(t => new { t.Name, t.IsActive }).FirstOrDefaultAsync(ct)
+                   ?? throw new InvalidOperationException("That team no longer exists. Reload the page and choose another.");
+        if (!team.IsActive)
+            throw new InvalidOperationException($"The team \"{team.Name}\" is retired, so it can't be given a case. Choose another.");
     }
 
     /// <summary>Archives or restores the case. Archiving is refused while a legal hold is in force.</summary>

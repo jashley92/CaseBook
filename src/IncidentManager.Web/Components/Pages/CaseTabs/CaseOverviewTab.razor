@@ -448,6 +448,10 @@
                     <dl class="row mb-0 im-ov-dl">
                         <dt class="col-sm-3">Origin</dt>
                         <dd class="col-sm-9">@(Case.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection")</dd>
+                        @if (Teams is { Count: > 0 } || Case.TeamId is not null)
+                        {
+                            <CaseTeamField Case="Case" Teams="@(Teams ?? [])" CanEdit="CanEdit" OnChanged="OnChanged" />
+                        }
                         @if (Case.ThirdParty is not null)
                         {
                             <dt class="col-sm-3">Vendor</dt>
@@ -677,6 +681,8 @@
     /// <summary>HR-02: each task's latest recorded result.</summary>
     [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     [Parameter] public bool CanEdit { get; set; }
+    /// <summary>CAP-36: the teams (null while the workspace reads them), for the case's team and its detection source.</summary>
+    [Parameter] public IReadOnlyList<IncidentManager.Application.Admin.TeamView>? Teams { get; set; }
     /// <summary>S-08: whether this user may lift the need-to-know restriction (the IC or a cleared role).</summary>
     [Parameter] public bool CanLiftRestriction { get; set; }
     /// <summary>Retention-guard message set by the parent's legal-hold / archive actions (header, any tab).</summary>
@@ -954,21 +960,12 @@
         try { await JS.InvokeVoidAsync("imMotion.scrollToId", "ov-gate"); } catch (JSException) { /* cosmetic */ }
     }
 
-    private string DetectionLabel
-    {
-        get
-        {
-            var label = Config["ExternalLinks:DetectionSourceLabel"];
-            return string.IsNullOrWhiteSpace(label) ? "SIEM" : label;
-        }
-    }
+    // CAP-36: the case's team's detection source when it sets one, else the organization's (DetectionSource).
+    private IncidentManager.Application.Admin.TeamView? CaseTeam => Case.TeamId is { } id ? Teams?.FirstOrDefault(t => t.Id == id) : null;
 
-    private string? DetectionCaseUrl()
-    {
-        var template = Config["ExternalLinks:DetectionCaseUrlTemplate"];
-        if (string.IsNullOrWhiteSpace(template) || string.IsNullOrWhiteSpace(Case.DetectionCaseId)) return null;
-        return IncidentManager.Application.Content.LinkTemplate.Fill(template, Case.DetectionCaseId);   // BUG-264
-    }
+    private string DetectionLabel => DetectionSource.Label(Config, CaseTeam);
+
+    private string? DetectionCaseUrl() => DetectionSource.CaseUrl(Config, CaseTeam, Case.DetectionCaseId);   // BUG-264
 
     private int ReadinessMachineOutstanding => ReadinessEval?.Requirements
         .Count(r => r.Kind == GateRequirementKind.MachineCheck && r.IsBlocking && !r.MachineSatisfied) ?? 0;

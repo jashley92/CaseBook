@@ -44,6 +44,7 @@ public sealed class ImportWriterGateTests : IDisposable
         typeof(AdminSettingsService), typeof(TaxonomyAdminService), typeof(RoleService), typeof(CaseTemplateService),
         typeof(StageGateService), typeof(ReportTemplateService), typeof(ReportProfileService), typeof(CaseOutcomeService),
         typeof(DataElementService), typeof(NotificationRuleService), typeof(ApiTokenService),
+        typeof(TeamService),   // CAP-36: a bundle carries the teams
     ];
 
     /// <summary>The other guarded services, and why the import doesn't share their data.</summary>
@@ -161,6 +162,8 @@ public sealed class ImportWriterGateTests : IDisposable
         "DataElementService.DeleteAsync(Guid, CancellationToken)",
         "NotificationRuleService.SetArchivedAsync(Guid, Boolean, CancellationToken)",
         "NotificationRuleService.DeleteAsync(Guid, CancellationToken)",
+        "TeamService.UpdateAsync(Guid, TeamEdit, String, CancellationToken)",   // CAP-36
+        "TeamService.SetActiveAsync(Guid, Boolean, String, CancellationToken)",
         // Nothing is stored in an empty database, so there's nothing to reset.
         "AdminSettingsService.ResetAsync(String, CancellationToken)",
         "TaxonomyAdminService.ResetAsync(String, String, CancellationToken)",
@@ -178,6 +181,7 @@ public sealed class ImportWriterGateTests : IDisposable
         [typeof(StageGate)] = nameof(GuardGate), [typeof(StageGateRequirement)] = nameof(GuardGate),
         [typeof(CaseOutcome)] = nameof(GuardGate), [typeof(DataElement)] = nameof(GuardGate), [typeof(NotificationRule)] = nameof(GuardGate),
         [typeof(ReportTemplate)] = FileGate, [typeof(ReportProfile)] = FileGate,
+        [typeof(Team)] = nameof(GuardGate),   // CAP-36
     };
 
     private const string FileGate = "FileGate";
@@ -186,7 +190,7 @@ public sealed class ImportWriterGateTests : IDisposable
     private static readonly string[] ImportWrittenSets =
     [
         "AppSettings", "Roles", "RoleMappings", "CaseTemplates", "CaseTemplateSteps", "StageGates", "StageGateRequirements",
-        "CaseOutcomes", "DataElements", "NotificationRules", "ReportTemplates", "ReportProfiles",
+        "CaseOutcomes", "DataElements", "NotificationRules", "ReportTemplates", "ReportProfiles", "Teams",
     ];
 
     /// <summary>Files outside the <see cref="ImportWritten"/> services that write those sets, and why that's safe.</summary>
@@ -366,6 +370,10 @@ public sealed class ImportWriterGateTests : IDisposable
         Add(Rules, s => s.SetArchivedAsync(some, true, None));
         Add(Rules, s => s.DeleteAsync(some, None));
         Add(f => new ApiTokenService(f, _user, _clock, new NoRoles()), s => s.CreateSystemAsync("Probe token", sysAdmin, expires, None));
+        var team = new TeamEdit("Probe team", null, null, []);   // CAP-36
+        Add(Teams, s => s.CreateAsync(team, None));
+        Add(Teams, s => s.UpdateAsync(some, team, null, None));
+        Add(Teams, s => s.SetActiveAsync(some, false, null, None));
         return probes;
     }
 
@@ -376,6 +384,7 @@ public sealed class ImportWriterGateTests : IDisposable
     private CaseOutcomeService Outcomes(IAppDbContextFactory f) => new(f, _user, _clock);
     private DataElementService Elements(IAppDbContextFactory f) => new(f, _user, _clock);
     private NotificationRuleService Rules(IAppDbContextFactory f) => new(f, _user, _clock);
+    private TeamService Teams(IAppDbContextFactory f) => new(f, _user, _clock);
 
     private ReportTemplateService Library(IAppDbContextFactory f) => new(f, _user, _clock, new OkEngine(), new MemoryStore());
 

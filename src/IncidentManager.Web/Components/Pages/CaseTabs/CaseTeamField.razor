@@ -1,0 +1,106 @@
+@* CAP-36: the case's owning team on the Case record, with Change for an editor. Teams route (the team's chat webhook,
+   its detection source) and filter only: changing it never changes who can see the case. The save carries the team as
+   it was shown (C9), runs once at a time (C8), and a choice not yet saved is asked about before the case is left (C7). *@
+@using IncidentManager.Application.Admin
+@implements IDisposable
+@inject CaseService Cases
+@inject ToastService Toasts
+@inject UnsavedEdits Edits
+
+<dt class="col-sm-3">Team</dt>
+<dd class="col-sm-9">
+    @if (_editing)
+    {
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <select id="ov-team" class="form-select form-select-sm" style="width:auto;min-width:12rem" aria-label="Owning team"
+                    @bind="_choice" disabled="@_saving.Busy">
+                <option value="">No team</option>
+                @foreach (var t in Teams.Where(t => t.IsActive || t.Id == Case.TeamId))
+                {
+                    <option value="@t.Id">@t.Name@(t.IsActive ? "" : " (retired)")</option>
+                }
+            </select>
+            <button type="button" class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving.Busy">Save</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Cancel" disabled="@_saving.Busy">Cancel</button>
+        </div>
+        <div class="form-text mt-0">Picks the team's chat channel and detection link. It doesn't change who can see the case.</div>
+        @if (_error is { } err)
+        {
+            <div class="alert alert-warning py-1 px-2 small mt-1 mb-0" role="alert">@err</div>
+        }
+    }
+    else
+    {
+        <span>@(Current?.Name ?? "—")</span>
+        @if (Current is { IsActive: false }) { <span class="im-badge im-b-neutral ms-1" title="Retired: not offered for other cases">Retired</span> }
+        @if (CanEdit && Teams.Count > 0)
+        {
+            <button type="button" class="btn btn-sm btn-link py-0" @onclick="Begin" aria-label="Change the owning team">Change</button>
+        }
+    }
+</dd>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public IReadOnlyList<TeamView> Teams { get; set; } = [];
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    private bool _editing;
+    private string _choice = "";
+    private string _shown = "";   // C7: what the editor opened with
+    private string? _stamp;       // C9: the team as the editor was opened with it
+    private string? _error;
+    private readonly InFlight _saving = new();
+    private bool _disposed;
+
+    private TeamView? Current => Case.TeamId is { } id ? Teams.FirstOrDefault(t => t.Id == id) : null;
+
+    protected override void OnInitialized() =>
+        Edits.Track(this, "the case's team you're changing", () => _editing && _choice != _shown, Region);
+
+    private void Begin()
+    {
+        _choice = _shown = Case.TeamId?.ToString() ?? "";
+        _stamp = Case.TeamConcurrencyStamp();
+        _error = null;
+        _editing = true;
+    }
+
+    private void Cancel() => (_editing, _error) = (false, null);
+
+    private Task Save() => _saving.Run(SaveCore);
+
+    private async Task SaveCore()
+    {
+        var team = Guid.TryParse(_choice, out var id) ? id : (Guid?)null;
+        try
+        {
+            await Cases.SetTeamAsync(Case.Id, team, _stamp);
+        }
+        catch (StaleEditException ex)
+        {
+            // C9: another editor changed the team since this opened; the page shows theirs, and a second Save overwrites.
+            _stamp = ex.CurrentStamp;
+            _error = "Someone else changed this case's team while you were choosing, so yours wasn't saved. Check the team shown, then Save again to overwrite it, or Cancel.";
+            await OnChanged.InvokeAsync();
+            return;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _error = ex.Message;
+            return;
+        }
+        if (_disposed) return;   // C5: the case was left while it saved
+        _editing = false;
+        Toasts.Success(team is null ? "The case has no team now." : $"Team set to {Teams.FirstOrDefault(t => t.Id == team)?.Name ?? "the team"}.");
+        await OnChanged.InvokeAsync();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Edits.Forget(this);
+    }
+}

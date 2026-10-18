@@ -95,6 +95,7 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
         b.HasIndex(c => c.Phase);
         b.Property(c => c.OutcomeKey).HasMaxLength(64);   // HR-01: a CaseOutcome key (no foreign key, like data elements)
         b.HasIndex(c => c.OutcomeKey);
+        b.HasIndex(c => c.TeamId);   // CAP-36: the team filter (a Team id, no foreign key: teams are never deleted)
         b.HasIndex(c => c.IsArchived);
     }
 }

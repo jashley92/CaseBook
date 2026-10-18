@@ -35,6 +35,7 @@ public static class AdminActionPermissions
         typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
         typeof(ApiTokenService), typeof(AccessReviewService), typeof(RetentionReviewService), typeof(OffboardingService),
         typeof(Search.FullTextAdminService),
+        typeof(TeamService),   // CAP-36
     ];
 
     public static readonly IReadOnlyDictionary<string, Permission> Required =
@@ -57,6 +58,9 @@ public static class AdminActionPermissions
             [Key<CaseOutcomeService>(nameof(CaseOutcomeService.SaveAsync))] = Permission.Administer,          // HR-01
             [Key<CaseOutcomeService>(nameof(CaseOutcomeService.SetArchivedAsync))] = Permission.Administer,
             [Key<CaseOutcomeService>(nameof(CaseOutcomeService.DeleteAsync))] = Permission.Administer,
+            [Key<TeamService>(nameof(TeamService.CreateAsync))] = Permission.Administer,                      // CAP-36
+            [Key<TeamService>(nameof(TeamService.UpdateAsync))] = Permission.Administer,
+            [Key<TeamService>(nameof(TeamService.SetActiveAsync))] = Permission.Administer,
             [Key<DataElementService>(nameof(DataElementService.SetArchivedAsync))] = Permission.Administer,
             [Key<DataElementService>(nameof(DataElementService.DeleteAsync))] = Permission.Administer,
             [Key<CaseTemplateService>(nameof(CaseTemplateService.CreateAsync))] = Permission.Administer,

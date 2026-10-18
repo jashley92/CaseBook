@@ -1,0 +1,163 @@
+@* CAP-36: a team's own chat webhook URL (Administer only, as the Teams page is), CAP-40's secret card for one team. The value
+   is write-only: typed into a field never filled from the server, sent once on Save, and shown afterwards only as "set on
+   <date> by <user>", with Replace and Clear. Posts about the team's cases go here when it's set, and to the shared channel
+   when it isn't. Never in the team's row, the audit trail or the configuration bundle. *@
+@using IncidentManager.Application.Abstractions
+@using IncidentManager.Web.Secrets
+@inject TeamWebhookAdminService Webhooks
+@inject IChatNotifier Chat
+@inject IConfiguration Config
+@inject ToastService Toasts
+
+<div class="border rounded p-2 mt-2">
+    <div class="fw-semibold small mb-1"><span class="bi bi-chat-square-text me-1" aria-hidden="true"></span>Team chat webhook</div>
+    @if (_status is null)
+    {
+        <LoadingBlock />
+    }
+    else
+    {
+        @if (_status.Unreadable)
+        {
+            <div class="alert alert-warning py-2 small" role="alert">
+                The saved webhook URL can't be decrypted on this server (its Data Protection keys aren't here, as after a database
+                restored elsewhere), so this team's posts aren't sent. Re-enter it.
+            </div>
+        }
+        @if (_status.Set && !_replacing)
+        {
+            <div class="small">
+                <span class="im-badge im-b-ok">Set</span>
+                <span class="text-muted ms-1">on @_status.SetAtUtc?.ToString("yyyy-MM-dd") by @(_status.SetBy ?? "an administrator")</span>
+            </div>
+            <div class="mt-1 d-flex flex-wrap gap-1">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _replacing = true">Replace</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="Clear" disabled="@_clearing.Busy">Clear</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="SendTest" disabled="@_testing.Busy">Send test</button>
+            </div>
+        }
+        else
+        {
+            <label class="form-label small mb-0" for="@FieldId">Incoming webhook URL</label>
+            @* Write-only: no value is ever rendered into this field; what's typed is read on change and sent once. *@
+            <input id="@FieldId" class="form-control form-control-sm" type="password" autocomplete="new-password" spellcheck="false"
+                   @key="_fieldKey" @onchange="e => _newValue = e.Value as string" />
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
+                <button type="button" class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving.Busy">Save webhook</button>
+                @if (_status.Set)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelReplace">Cancel</button>
+                }
+            </div>
+        }
+        <div class="form-text">
+            Posts about this team's cases go to this channel; without one they go to the shared channel. Encrypted on this
+            server and never shown again. It doesn't travel in a configuration bundle.
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid TeamId { get; set; }
+
+    private string FieldId => $"team-hook-{TeamId:N}";
+    private StoredSecretStatus? _status;
+    private string _stamp = "";
+    private string? _newValue;   // held only between typing and Save; never rendered
+    private bool _replacing;
+    private int _fieldKey;
+    private Guid _loadedFor;
+
+    // C8: one save, clear or test at a time. C5: only the newest read lands.
+    private readonly InFlight _saving = new();
+    private readonly InFlight _clearing = new();
+    private readonly InFlight _testing = new();
+    private readonly LoadSequence _load = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == TeamId && _status is not null) return;
+        _loadedFor = TeamId;
+        _status = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var status = await Webhooks.GetAsync(TeamId);
+        if (!_load.IsCurrent(t)) return;
+        _status = status;
+        _stamp = status.Stamp;
+        _replacing = !status.Set;
+        ForgetValue();
+    }
+
+    private void ForgetValue()
+    {
+        _newValue = null;
+        _fieldKey++;
+    }
+
+    private void CancelReplace()
+    {
+        _replacing = false;
+        ForgetValue();
+    }
+
+    private Task Save() => _saving.Run(SaveCore);
+
+    private async Task SaveCore()
+    {
+        try
+        {
+            await Webhooks.SaveAsync(TeamId, _newValue, _stamp);
+            Toasts.Success("The team's webhook URL is saved. Its next post uses it.");
+            await LoadAsync();
+        }
+        catch (IncidentManager.Application.Cases.StaleEditException ex)
+        {
+            ForgetValue();
+            Toasts.Error(ex.Message);
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            ForgetValue();   // the refusal's reason, never the value
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private Task Clear() => _clearing.Run(ClearCore);
+
+    private async Task ClearCore()
+    {
+        try
+        {
+            await Webhooks.ClearAsync(TeamId, _stamp);
+            Toasts.Info("The team's webhook URL is cleared. Its posts go to the shared channel.");
+            await LoadAsync();
+        }
+        catch (IncidentManager.Application.Cases.StaleEditException ex)
+        {
+            Toasts.Error(ex.Message);
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private Task SendTest() => _testing.Run(SendTestCore);
+
+    private async Task SendTestCore()
+    {
+        if (!Chat.Enabled) { Toasts.Warning("Chat isn't on. Chat:Webhook:Enabled is set on the server."); return; }
+        var baseUrl = (Config["App:BaseUrl"] ?? "").TrimEnd('/');
+        var error = await Chat.SendTestAsync(new ChatNotification("CaseBook test message",
+            "This is a test notification confirming this team's chat webhook.", baseUrl.Length == 0 ? null : baseUrl, TeamId: TeamId));
+        if (error is null) Toasts.Success("Test chat message posted to the team's channel.");
+        else Toasts.Error($"Couldn't post the test message. {error}");
+    }
+}

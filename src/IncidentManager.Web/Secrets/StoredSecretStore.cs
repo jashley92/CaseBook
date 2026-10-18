@@ -15,6 +15,9 @@ public enum StoredSecretKind
     ChatWebhookUrl,
     /// <summary><c>Siem:Webhook:Token</c>: the SIEM collector's bearer token or API key.</summary>
     SiemWebhookToken,
+    /// <summary>CAP-36: a team's own chat webhook URL, one row per team (<see cref="StoredSecretStore.TeamWebhookName"/>). Not
+    /// in <see cref="StoredSecretDefinition.All"/>: it's entered on the Teams page, not as a server-configuration secret.</summary>
+    TeamChatWebhookUrl,
 }
 
 /// <summary>
@@ -31,12 +34,20 @@ public sealed record StoredSecretDefinition(StoredSecretKind Kind, string Name, 
     public static readonly StoredSecretDefinition SiemWebhookToken = new(StoredSecretKind.SiemWebhookToken, "Siem:Webhook:Token",
         "CaseBook.Secrets.SiemWebhookToken.v1", "SIEM webhook token", "Administration, Server configuration, SIEM webhook token", 4096);
 
+    /// <summary>CAP-36: a team's chat webhook URL. <see cref="Name"/> is the pattern; each team's row is
+    /// <see cref="StoredSecretStore.TeamWebhookName"/>, protected under <see cref="Purpose"/> with the team's id as a
+    /// sub-purpose, so one team's URL never opens as another's (nor as the shared one).</summary>
+    public static readonly StoredSecretDefinition TeamChatWebhookUrl = new(StoredSecretKind.TeamChatWebhookUrl, "Teams:{team}:ChatWebhookUrl",
+        "CaseBook.Secrets.TeamChatWebhookUrl.v1", "team's chat webhook URL", "Administration, Teams, the team's chat webhook", 2048);
+
+    /// <summary>The server-configuration secrets (one row each). CAP-36: a team's webhook isn't one of them.</summary>
     public static IReadOnlyList<StoredSecretDefinition> All { get; } = [ChatWebhookUrl, SiemWebhookToken];
 
     public static StoredSecretDefinition For(StoredSecretKind kind) => kind switch
     {
         StoredSecretKind.ChatWebhookUrl => ChatWebhookUrl,
         StoredSecretKind.SiemWebhookToken => SiemWebhookToken,
+        StoredSecretKind.TeamChatWebhookUrl => TeamChatWebhookUrl,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 }
@@ -99,6 +110,7 @@ public sealed class StoredSecretStore
 
     private readonly IServiceScopeFactory _scopes;   // the context factory is scoped; this is a singleton
     private readonly Dictionary<StoredSecretKind, IDataProtector> _protectors;
+    private readonly IDataProtector _teamProtector;   // CAP-36: a team's webhook, with the team's id as a sub-purpose
     private readonly ILogger<StoredSecretStore> _logger;
     private readonly ConcurrentDictionary<string, byte> _reported = new(StringComparer.Ordinal);
     private readonly object _gate = new();
@@ -116,11 +128,69 @@ public sealed class StoredSecretStore
         _keep = keep ?? DefaultKeep;
         _scopes = scopes;
         _protectors = StoredSecretDefinition.All.ToDictionary(d => d.Kind, d => protection.CreateProtector(d.Purpose));
+        _teamProtector = protection.CreateProtector(StoredSecretDefinition.TeamChatWebhookUrl.Purpose);
         _logger = logger;
     }
 
     /// <summary>The ciphertext of <paramref name="value"/> under <paramref name="kind"/>'s purpose (the form's save).</summary>
     internal string Protect(StoredSecretKind kind, string value) => _protectors[kind].Protect(value);
+
+    // --- CAP-36: a team's own chat webhook URL, a row per team in the same table, kept and read as the others are ---
+
+    /// <summary>CAP-36: the row (and configuration-style name) of <paramref name="teamId"/>'s chat webhook URL.</summary>
+    public static string TeamWebhookName(Guid teamId) => $"Teams:{teamId:N}:ChatWebhookUrl";
+
+    private IDataProtector TeamProtector(Guid teamId) => _teamProtector.CreateProtector(teamId.ToString("N"));
+
+    /// <summary>CAP-36: the ciphertext of a team's webhook URL (the Teams page's save).</summary>
+    internal string ProtectTeamWebhook(Guid teamId, string value) => TeamProtector(teamId).Protect(value);
+
+    /// <summary>CAP-36: the team's saved webhook URL for a post: not saved, the value, saved but unreadable, or can't tell
+    /// (the database not answering, as <see cref="ResolveAsync"/>).</summary>
+    public async Task<StoredSecretValue> ResolveTeamWebhookAsync(Guid teamId, CancellationToken ct = default)
+    {
+        if (await RowsAsync(ct).ConfigureAwait(false) is not { } rows) return StoredSecretValue.CantTell;
+        var row = rows.GetValueOrDefault(TeamWebhookName(teamId));
+        return row?.ProtectedValue is { } p ? new StoredSecretValue(true, OpenTeam(teamId, p)) : StoredSecretValue.NotSaved;
+    }
+
+    /// <summary>CAP-36: the team's saved webhook as the Teams page shows it, read now when <paramref name="fresh"/>.</summary>
+    public async Task<StoredSecretStatus> TeamWebhookStatusAsync(Guid teamId, bool fresh = false, CancellationToken ct = default)
+    {
+        var rows = await RowsAsync(ct, fresh).ConfigureAwait(false);
+        if (rows is null) return StoredSecretStatus.CantTell(StoredSecretKind.TeamChatWebhookUrl);
+        var row = rows.GetValueOrDefault(TeamWebhookName(teamId));
+        return row is null
+            ? StoredSecretStatus.None(StoredSecretKind.TeamChatWebhookUrl)
+            : new StoredSecretStatus(StoredSecretKind.TeamChatWebhookUrl, row.ProtectedValue is not null, row.SetAtUtc, row.SetBy,
+                row.UpdatedAtUtc, row.UpdatedBy, row.ProtectedValue is { } p && OpenTeam(teamId, p) is null, StampOf(row));
+    }
+
+    /// <summary>CAP-36: whether a webhook URL is saved for <paramref name="teamId"/> (from what's kept): where its posts go.</summary>
+    public bool TeamWebhookSaved(Guid teamId) =>
+        Rows()?.GetValueOrDefault(TeamWebhookName(teamId))?.ProtectedValue is not null;
+
+    /// <summary>CAP-36: whether any team has a webhook URL saved (from what's kept): chat posts without a shared one.</summary>
+    public bool AnyTeamWebhookSaved() =>
+        Rows()?.Values.Any(r => r.ProtectedValue is not null && r.Name.StartsWith("Teams:", StringComparison.Ordinal)) == true;
+
+    private string? OpenTeam(Guid teamId, string ciphertext)
+    {
+        try
+        {
+            var value = TeamProtector(teamId).Unprotect(ciphertext);
+            _reported.TryRemove(ciphertext, out _);
+            return value;
+        }
+        catch (CryptographicException ex)
+        {
+            if (_reported.TryAdd(ciphertext, 0))
+                _logger.LogError("A team's chat webhook URL saved in Administration can't be decrypted ({Failure}): the Data Protection " +
+                                 "key ring it was saved with isn't in DataProtection:KeyPath. Nothing is posted to it; re-enter it under {Where}.",
+                    ex.GetType().Name, StoredSecretDefinition.TeamChatWebhookUrl.Where);
+            return null;
+        }
+    }
 
     /// <summary>
     /// Drops what's kept, so the next send reads the row the form just saved. CAP-40 review: the rows from before the save

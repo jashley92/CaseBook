@@ -112,7 +112,7 @@ public sealed class CaseListExportTests : IDisposable
         var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         lines[1].Should().Be("case_number,title,classification,phase,severity,sla,owner,other_assignees,origin,restricted,legal_referral," +
-                             "legal_hold,exercise,opened_utc,detected_utc,contained_utc,resolved_utc,closed_utc,reported_utc");
+                             "legal_hold,exercise,opened_utc,detected_utc,contained_utc,resolved_utc,closed_utc,reported_utc,team");
         var row = lines[2].Split(',');
         row[1].Should().Be("Alpha phishing 6");
         row[5].Should().Be("On track");

@@ -70,6 +70,9 @@ public sealed class ConfigImportParityTests : IDisposable
             db.RoleMappings.Add(new AdGroupRoleMapping { AdGroup = "CORP\\Admins", RoleName = "Ops Admin", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin1" });
             db.AppSettings.Add(new AppSetting { Key = "Reporting:OrganizationName", Value = "Northwind Mutual", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin1" });
             db.NotificationRules.Add(new NotificationRule { Code = "NY", Label = "New York", WindowHours = 72, IsActive = true, CreatedBy = "admin1", CreatedAtUtc = _clock.UtcNow });
+            // CAP-36: a team with a member: the member stays here, and never travels.
+            var team = db.Teams.Add(new Team { Key = "SocTier1", Name = "SOC tier 1", CreatedBy = "admin1", CreatedAtUtc = _clock.UtcNow }).Entity;
+            db.TeamMembers.Add(new TeamMember { TeamId = team.Id, UserId = "analyst1", AddedBy = "admin1", AddedAtUtc = _clock.UtcNow });
             await db.SaveChangesAsync();
         }
         var templates = new ReportTemplateService(_factory, _user, _clock, _engine, _store);
@@ -167,6 +170,15 @@ public sealed class ConfigImportParityTests : IDisposable
         }),
         ["outcome relabelled"] = new(nameof(ConfigBundle.CaseOutcomes), b => b with
             { CaseOutcomes = Set(b.CaseOutcomes!, o => o == b.CaseOutcomes![0], o => o with { Label = "Renamed" }) }),
+        // CAP-36: a team renamed and given a detection source, and one added (with no members and no webhook here).
+        ["team renamed and added"] = new(nameof(ConfigBundle.Teams), b => b with
+        {
+            Teams = [.. Set(b.Teams!, t => t.Key == "SocTier1", t => t with { Name = "SOC tier one", DetectionSourceLabel = "EDR",
+                    DetectionLinkTemplate = "https://edr.example/case/{0}" }),
+                new ConfigTeam("Fraud", "Fraud desk", true, null, null)],
+        }),
+        ["team retired"] = new(nameof(ConfigBundle.Teams), b => b with
+            { Teams = Set(b.Teams!, t => t.Key == "SocTier1", t => t with { IsActive = false }) }),
     };
 
     public static TheoryData<string> MutatorNames() => [.. Mutators.Keys];
@@ -259,6 +271,12 @@ public sealed class ConfigImportParityTests : IDisposable
             { CaseTemplates = Set(b.CaseTemplates, t => t == b.CaseTemplates[0], t => t with { DefaultSeverity = "Low,High" }) },
         ["playbook step of an unknown kind"] = b => b with
             { CaseTemplates = Set(b.CaseTemplates, t => t == b.CaseTemplates[0], t => t with { Steps = [t.Steps[0] with { Kind = (TaskKind)99 }] }) },
+        // CAP-36
+        ["team key with a space"] = b => b with { Teams = [.. b.Teams!, new ConfigTeam("Soc Two", "SOC two", true, null, null)] },
+        ["team twice"] = b => b with { Teams = [.. b.Teams!, new ConfigTeam("Fraud", "Fraud", true, null, null), new ConfigTeam("fraud", "Fraud two", true, null, null)] },
+        ["team named as another"] = b => b with { Teams = [.. b.Teams!, new ConfigTeam("Other", "SOC tier 1", true, null, null)] },
+        ["team link without its placeholder"] = b => b with
+            { Teams = Set(b.Teams!, t => t.Key == "SocTier1", t => t with { DetectionLinkTemplate = "https://edr.example/case" }) },
     };
 
     public static TheoryData<string> RefusedNames() => [.. Refused.Keys];
@@ -293,7 +311,7 @@ public sealed class ConfigImportParityTests : IDisposable
         var sections = typeof(ConfigBundle).GetProperties()
             .Where(p => p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(IReadOnlyList<>))
             .Select(p => p.Name).ToList();
-        sections.Should().HaveCount(10, "the sections known when this was written; a new one needs a mutator here");
+        sections.Should().HaveCount(11, "the sections known when this was written; a new one needs a mutator here");
         Mutators.Values.Select(m => m.Section).Distinct().Should().BeEquivalentTo(sections,
             "a section without a mutator could preview one thing and import another");
     }
@@ -321,6 +339,7 @@ public sealed class ConfigImportParityTests : IDisposable
                     CaseOutcome o => $"Case outcome: {o.Key}",
                     DataElement d => $"Data element: {d.Label}",
                     NotificationRule r => $"Notification rule: {r.Code}",
+                    Team t => $"Team: {t.Key}",   // CAP-36
                     CaseTemplateStep or StageGateRequirement => null,   // replaced with their parent, which is listed
                     _ => $"unlisted: {e.Entity.GetType().Name}",
                 };

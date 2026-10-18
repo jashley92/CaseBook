@@ -1,0 +1,293 @@
+@page "/admin/teams"
+@using IncidentManager.Application.Admin
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@implements IDisposable
+@inject TeamService Teams
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject ToastService Toasts
+@inject UnsavedEdits Edits
+
+<PageTitle>Teams</PageTitle>
+
+<PageHeader Title="Teams">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    The teams that own cases. A case's team picks where its chat notifications go (the team's own webhook, else the shared
+    channel) and which detection source its pages name and link to, and the Cases list, Find, Program and Team workload can
+    be filtered to it. A team <strong>never changes who can see a case</strong>: need-to-know decides that, as before. Its
+    members are offered it first on a new case and can share saved views with it. Retire a team that's no longer used: it
+    stays on the cases that name it. Changes are audited.
+</p>
+
+@if (_teams is null)
+{
+    <LoadingBlock />
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-header"><span class="bi bi-plus-lg me-1" aria-hidden="true"></span>Add a team</div>
+        <div class="card-body d-flex flex-wrap align-items-end gap-2">
+            <div>
+                <label class="form-label small mb-0" for="team-new-name">Name</label>
+                <input id="team-new-name" class="form-control form-control-sm" style="min-width:16rem" maxlength="@IncidentManager.Domain.Entities.Team.NameMax"
+                       @bind="_newName" @bind:event="oninput" @onkeydown="OnNewKeyDown" />
+            </div>
+            <button type="button" class="btn btn-sm btn-primary" @onclick="Add" disabled="@(_adding.Busy || string.IsNullOrWhiteSpace(_newName))">Add team</button>
+        </div>
+    </div>
+
+    @if (_teams.Count == 0)
+    {
+        <div class="empty-state">
+            <span class="bi bi-people empty-state-icon" aria-hidden="true"></span>
+            <div class="empty-state-title">No teams yet</div>
+            <div class="empty-state-msg">Without teams every case uses the shared chat channel and detection source.</div>
+        </div>
+    }
+    else
+    {
+        <div class="im-card mb-3">
+            <div class="table-responsive">
+                <table class="table align-middle im-table mb-0">
+                    <thead>
+                        <tr><th>Team</th><th>Detection source</th><th class="text-center">Members</th><th class="text-center">Cases</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in _teams)
+                        {
+                            <tr class="@(t.IsActive ? "" : "opacity-75")">
+                                <td>
+                                    <span class="fw-semibold">@t.Name</span>
+                                    <code class="small ms-1" title="Its key: what the team filter, saved views and a configuration bundle name">@t.Key</code>
+                                    @if (!t.IsActive) { <span class="im-badge im-b-neutral ms-1">Retired</span> }
+                                </td>
+                                <td class="small">@(t.DetectionSourceLabel ?? "Organization's")</td>
+                                <td class="text-center">@t.Members.Count</td>
+                                <td class="text-center">
+                                    @if (t.CaseCount > 0) { <a href="@($"cases?scope=all&closed=true&team={Uri.EscapeDataString(t.Key)}")">@t.CaseCount</a> }
+                                    else { <span class="text-muted">0</span> }
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(t)"
+                                            aria-label="@($"Edit {t.Name}")">Edit</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" @onclick="() => SetActive(t, !t.IsActive)"
+                                            disabled="@_changing.Contains(t.Id)" aria-label="@($"{(t.IsActive ? "Retire" : "Restore")} {t.Name}")">
+                                        @(t.IsActive ? "Retire" : "Restore")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (_edit is { } e)
+    {
+        <div class="card mb-3" id="team-editor">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-pencil me-1" aria-hidden="true"></span>@e.Original.Name</span>
+                <code class="small">@e.Original.Key</code>
+            </div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="team-name">Name</label>
+                        <input id="team-name" class="form-control form-control-sm" maxlength="@IncidentManager.Domain.Entities.Team.NameMax"
+                               @bind="e.Name" @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0" for="team-label">Detection source label <span class="text-muted">(optional)</span></label>
+                        <input id="team-label" class="form-control form-control-sm" maxlength="@IncidentManager.Domain.Entities.Team.LabelMax"
+                               placeholder="The organization's" @bind="e.Label" @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small mb-0" for="team-link">Detection case link template <span class="text-muted">(optional)</span></label>
+                        <input id="team-link" class="form-control form-control-sm font-monospace" maxlength="@IncidentManager.Domain.Entities.Team.LinkTemplateMax"
+                               placeholder="https://edr.example/case/{0}" @bind="e.Link" @bind:event="oninput" aria-describedby="team-link-help" />
+                        <div id="team-link-help" class="form-text">A full https:// address with {0} where the detection case id goes. Blank: the organization's.</div>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <div class="small fw-semibold mb-1">Members <span class="text-muted fw-normal">(@e.Members.Count)</span></div>
+                    @if (e.Members.Count == 0) { <div class="small text-muted mb-1">Nobody yet.</div> }
+                    <ul class="list-unstyled d-flex flex-wrap gap-1 mb-2">
+                        @foreach (var m in e.Members)
+                        {
+                            <li class="im-badge im-b-neutral d-inline-flex align-items-center gap-1">
+                                @Users.DisplayFor(m)
+                                <button type="button" class="btn btn-sm btn-link p-0 lh-1" aria-label="@($"Remove {Users.DisplayFor(m)}")"
+                                        @onclick="() => e.Members.Remove(m)"><span class="bi bi-x" aria-hidden="true"></span></button>
+                            </li>
+                        }
+                    </ul>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <select class="form-select form-select-sm" style="width:auto;min-width:14rem" aria-label="Add a member" @bind="_addMember">
+                            <option value="">Add a member…</option>
+                            @foreach (var u in Users.All().Where(u => !e.Members.Contains(u.UserId, StringComparer.OrdinalIgnoreCase)).OrderBy(u => u.DisplayName))
+                            {
+                                <option value="@u.UserId">@u.DisplayName</option>
+                            }
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddMember" disabled="@string.IsNullOrEmpty(_addMember)">Add</button>
+                    </div>
+                </div>
+
+                <TeamWebhookCard TeamId="e.Original.Id" />
+
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="Save" disabled="@(_saving.Busy || string.IsNullOrWhiteSpace(e.Name))">Save team</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _edit = null" disabled="@_saving.Busy">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    // One team in the editor, with what it opened with (C7) and its stamp (C9).
+    private sealed class Editor(TeamView t)
+    {
+        public TeamView Original { get; } = t;
+        public string Name { get; set; } = t.Name;
+        public string? Label { get; set; } = t.DetectionSourceLabel;
+        public string? Link { get; set; } = t.DetectionLinkTemplate;
+        public List<string> Members { get; } = [.. t.Members];
+
+        public bool Dirty => Name != Original.Name || (Label ?? "") != (Original.DetectionSourceLabel ?? "")
+            || (Link ?? "") != (Original.DetectionLinkTemplate ?? "")
+            || !Members.Order(StringComparer.OrdinalIgnoreCase).SequenceEqual(Original.Members.Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private List<TeamView>? _teams;
+    private Editor? _edit;
+    private string _newName = "";
+    private string _addMember = "";
+
+    // C8: one add, one save, one retire/restore per team at a time. C5: only the newest read lands.
+    private readonly InFlight _adding = new();
+    private readonly InFlight _saving = new();
+    private readonly HashSet<Guid> _changing = [];
+    private readonly LoadSequence _load = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // C7: a team being edited, or a name typed for a new one, is asked about before the page is left.
+        Edits.Track(this, "the team you're editing", () => _edit?.Dirty == true);
+        Edits.Track(this, "the team you're adding", () => !string.IsNullOrWhiteSpace(_newName));
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        var all = await Teams.ListAllAsync();
+        if (!_load.IsCurrent(t)) return;
+        _teams = all.OrderByDescending(x => x.IsActive).ToList();
+    }
+
+    private void BeginEdit(TeamView t)
+    {
+        // C7: switching to another team would drop what's typed for this one.
+        if (_edit is { Dirty: true } open && open.Original.Id != t.Id)
+        {
+            Toasts.Warning($"Save or cancel your changes to {open.Original.Name} first.");
+            return;
+        }
+        _edit = new Editor(t);
+        _addMember = "";
+    }
+
+    private void AddMember()
+    {
+        if (_edit is null || string.IsNullOrEmpty(_addMember)) return;
+        if (!_edit.Members.Contains(_addMember, StringComparer.OrdinalIgnoreCase)) _edit.Members.Add(_addMember);
+        _addMember = "";
+    }
+
+    private async Task OnNewKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.Repeat) await Add();   // C6: a held key adds once
+    }
+
+    private Task Add() => _adding.Run(AddCore);
+
+    private async Task AddCore()
+    {
+        var typed = _newName;
+        var name = typed.Trim();
+        if (name.Length == 0) return;
+        try
+        {
+            await Teams.CreateAsync(new TeamEdit(name, null, null, []));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        _newName = DraftText.ClearIfUnchanged(_newName, typed);   // C7: a name typed for the next one stays
+        Toasts.Success($"Team “{name}” added.");
+        await LoadAsync();
+    }
+
+    private Task Save() => _saving.Run(SaveCore);
+
+    private async Task SaveCore()
+    {
+        if (_edit is not { } e) return;
+        try
+        {
+            await Teams.UpdateAsync(e.Original.Id, new TeamEdit(e.Name, e.Label, e.Link, e.Members.ToList()), e.Original.Stamp);
+        }
+        catch (IncidentManager.Application.Cases.StaleEditException ex)
+        {
+            // C9: someone changed it since this opened; what was typed stays, and the list shows theirs.
+            Toasts.Error(ex.Message);
+            await LoadAsync();
+            return;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        Toasts.Success($"Team “{e.Name.Trim()}” saved.");
+        if (ReferenceEquals(_edit, e)) _edit = null;
+        await LoadAsync();
+    }
+
+    private async Task SetActive(TeamView t, bool active)
+    {
+        if (!_changing.Add(t.Id)) return;   // C8
+        try
+        {
+            try
+            {
+                await Teams.SetActiveAsync(t.Id, active, t.Stamp);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException
+                                           or IncidentManager.Application.Cases.StaleEditException)
+            {
+                Toasts.Error(ex.Message);
+                await LoadAsync();
+                return;
+            }
+            Toasts.Info(active ? $"{t.Name} restored." : $"{t.Name} retired. It stays on the cases that name it.");
+            // An open editor for it keeps what's typed but takes the new stamp only through a reload of the list.
+            await LoadAsync();
+            if (_edit is { Dirty: false } open && open.Original.Id == t.Id && _teams?.FirstOrDefault(x => x.Id == t.Id) is { } fresh)
+                _edit = new Editor(fresh);
+        }
+        finally { _changing.Remove(t.Id); }
+    }
+
+    public void Dispose() => Edits.Forget(this);
+}

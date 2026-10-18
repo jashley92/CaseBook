@@ -12,6 +12,7 @@
 @inject IClock Clock
 @inject IOrganizationTimeZone OrgZone
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Admin.TeamService TeamsSvc
 
 <PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Find" : $"Find: {Q}")</PageTitle>
 
@@ -242,6 +243,19 @@
                     <option value="incident">Incident</option>
                     <option value="breach">Breach</option>
                 </select>
+                @* CAP-36: one team's cases (team:KEY), after need-to-know. *@
+                @if (_teams.Count > 0)
+                {
+                    <label class="form-label small mb-1" for="find-team">Team</label>
+                    <select id="find-team" class="form-select form-select-sm mb-2" value="@IncidentManager.Application.Admin.TeamService.PickerValue(_teams, s.Query.Team)" @onchange="OnTeam">
+                        <option value="">Any</option>
+                        <option value="@TeamScope.NoneKey">No team</option>
+                        @foreach (var t in _teams)
+                        {
+                            <option value="@t.Key">@t.Name@(t.IsActive ? "" : " (retired)")</option>
+                        }
+                    </select>
+                }
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="find-ex" checked="@s.Query.Exercises"
                            @onchange='() => Go(FindQuery.WithFilter(Q, "exercises", s.Query.Exercises ? null : "yes"))' />
@@ -342,6 +356,17 @@
 
     private void Toggle(FindKind k) { if (!_hidden.Remove(k)) _hidden.Add(k); }
     private bool Shows(FindKind k) => !_hidden.Contains(k);
+
+    // CAP-36: the teams for the Team filter (read once).
+    private List<IncidentManager.Application.Admin.TeamView> _teams = [];
+
+    protected override async Task OnInitializedAsync() => _teams = await TeamsSvc.ListAsync();
+
+    private void OnTeam(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        Go(FindQuery.WithFilter(Q, "team", string.IsNullOrEmpty(v) ? null : v));
+    }
 
     private void OnClass(ChangeEventArgs e)
     {
@@ -444,6 +469,7 @@
                 <li><code>by:NAME</code> or <code>by:me</code> who recorded it; <code>owner:NAME</code> whose task</li>
                 <li><code>state:NY</code> cases with that state's residents affected</li>
                 <li><code>in:notes</code> include working notes; <code>exercises:yes</code> include exercises</li>
+                <li><code>team:KEY</code> one team's cases, by its key; <code>team:none</code> the cases with no team</li>
                 <li><code>"a phrase"</code> keeps words together</li>
             </ul>
         </details>

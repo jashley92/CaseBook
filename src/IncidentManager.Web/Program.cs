@@ -178,6 +178,7 @@ builder.Services.AddScoped<IncidentManager.Web.Notifications.SmtpSignInAdminServ
 // purpose), read per send by ChatWebhookNotifier and WebhookTransport when the server's configuration sets none.
 builder.Services.AddSingleton<IncidentManager.Web.Secrets.StoredSecretStore>();
 builder.Services.AddScoped<IncidentManager.Web.Secrets.StoredSecretAdminService>();
+builder.Services.AddScoped<IncidentManager.Web.Secrets.TeamWebhookAdminService>();   // CAP-36: a team's own chat webhook
 
 // --- F-13: per-user rate limit on the download/export endpoints, so a compromised account can't bulk-
 // scrape evidence/reports/exports. A token bucket keyed on the caller's id — bursts are fine, sustained
@@ -843,14 +844,20 @@ app.MapGet("/campaigns/{id:guid}/rollup.json", async (Guid id,
 // Scoped to the caller's visible cases via DashboardService; plain CSV attachment (no JS).
 app.MapGet("/export/metrics.csv", async (
     string? exercises,
+    string? team,
     IncidentManager.Application.Dashboards.DashboardService dashboard,
+    IncidentManager.Application.Admin.TeamService teams,
     IncidentManager.Application.Access.IAccessLogService access,
     IClock clock, CancellationToken ct) =>
 {
     // BUG-326: with exercises when the overview that links here includes them, so the CSV says what the page said.
     var withExercises = string.Equals(exercises, "true", StringComparison.OrdinalIgnoreCase);
-    var metrics = await dashboard.GetAsync(withExercises, ct);
-    var csv = IncidentManager.Application.Dashboards.MetricsCsv.Build(metrics, clock.UtcNow, withExercises);
+    // CAP-36: and the team the overview was filtered to, read as the Cases list reads team= (after need-to-know).
+    var scope = await teams.ScopeAsync(team, ct);
+    var metrics = await dashboard.GetAsync(withExercises, withSlaHistory: true, scope, ct);
+    var teamLabel = scope.IsAny ? null : scope.Unowned ? "No team"
+        : (await teams.FindByKeyAsync(team, ct))?.Name ?? "(no such team)";
+    var csv = IncidentManager.Application.Dashboards.MetricsCsv.Build(metrics, clock.UtcNow, withExercises, teamLabel);
     // BUG-531: download names carry Gregorian digits whatever the server culture (here and the exports below).
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"incident-metrics-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
@@ -921,6 +928,7 @@ app.MapGet("/export/cases.csv", async (HttpContext http,
     IncidentManager.Application.Sla.ISlaTargetsProvider sla,
     IncidentManager.Application.Abstractions.ISeverityLabels sevLabels,
     IncidentManager.Application.Access.IAccessLogService access,
+    IncidentManager.Application.Admin.TeamService teams,
     IClock clock, CancellationToken ct) =>
 {
     var query = http.Request.Query;
@@ -932,13 +940,15 @@ app.MapGet("/export/cases.csv", async (HttpContext http,
         filter.Search = search;
     }
     var (items, truncated) = await IncidentManager.Application.Cases.CaseListCsv.CollectAsync(cases, filter, ct: ct);
+    var teamNames = (await teams.ListAsync(ct)).ToDictionary(t => t.Id, t => t.Name);   // CAP-36: the team column
     var targets = sla.Current;
     var now = clock.UtcNow;
     var csv = IncidentManager.Application.Cases.CaseListCsv.Build(items, now, truncated,
         IncidentManager.Web.Components.Shared.Ui.Label, IncidentManager.Web.Components.Shared.Ui.Label, sevLabels.For,
         c => IncidentManager.Application.Sla.SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
                 targets, now, c.Classification, c.ContainmentNotNeeded) is { State: not IncidentManager.Application.Sla.SlaState.NoTarget } st
-            ? IncidentManager.Web.Components.Shared.Ui.SlaLabel(st.State) : "");
+            ? IncidentManager.Web.Components.Shared.Ui.SlaLabel(st.State) : "",
+        id => id is { } t ? teamNames.GetValueOrDefault(t, "") : "");
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"cases-{now.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{fileName} ({items.Count} cases{(truncated ? ", cut" : "")})"), null, ct);

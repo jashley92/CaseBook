@@ -7,6 +7,7 @@
 @inject ILogger<CreateCase> Logger
 @inject CaseTemplateService Templates
 @inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
+@inject IncidentManager.Application.Admin.TeamService TeamsSvc
 @inject NavigationManager Nav
 @inject IConfiguration Config
 @inject ISeverityLabels SevLabels
@@ -96,6 +97,22 @@
                         <option value="@CaseOrigin.ThirdParty">Third-party / vendor</option>
                     </InputSelect>
                 </div>
+                @* CAP-36: the team that owns it: routes its chat posts and detection link, and filters lists. It never
+                   changes who can see the case. A member of one team has it chosen to start with. *@
+                @if (_teams.Count > 0)
+                {
+                    <div class="col-md-4">
+                        <label class="form-label" for="cc-team">Team <span class="text-muted">(optional)</span></label>
+                        <select id="cc-team" class="form-select" value="@(_request.TeamId?.ToString() ?? "")" @onchange="OnTeamChanged">
+                            <option value="">No team</option>
+                            @foreach (var t in _teams)
+                            {
+                                <option value="@t.Id">@t.Name</option>
+                            }
+                        </select>
+                        <div class="form-text">Picks its chat channel and detection link; who can see it is unchanged.</div>
+                    </div>
+                }
 
                 @if (_request.Origin == CaseOrigin.ThirdParty)
                 {
@@ -627,9 +644,17 @@
         Nav.ToBaseRelativePath(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(),
             new Dictionary<string, object?> { ["scope"] = "all", ["vendor"] = vendor, ["closed"] = "true" }));
 
+    // CAP-36: the active teams, and the one this user is in when they're in exactly one (the default).
+    private List<IncidentManager.Application.Admin.TeamView> _teams = [];
+
+    private void OnTeamChanged(ChangeEventArgs e) =>
+        _request.TeamId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+
     protected override async Task OnInitializedAsync()
     {
         _templates = await Templates.ListActiveAsync();
+        _teams = (await TeamsSvc.ListAsync()).Where(t => t.IsActive).ToList();
+        if (await TeamsSvc.MineAsync() is [var only]) _request.TeamId ??= only.Id;
         // FR-03: default Detected to now in the viewer's display zone. If the display zone resolves after
         // first render (U-29 reconfigures TimeDisp, remounting this page via the layout @key), this re-seeds
         // with the correct zone — the user hasn't interacted yet at that point.
@@ -716,15 +741,9 @@
         }
     }
 
-    /// <summary>Configurable display label for the detection source; defaults to "SIEM".</summary>
-    private string DetectionLabel
-    {
-        get
-        {
-            var label = Config["ExternalLinks:DetectionSourceLabel"];
-            return string.IsNullOrWhiteSpace(label) ? "SIEM" : label;
-        }
-    }
+    /// <summary>Configurable display label for the detection source; defaults to "SIEM". CAP-36: the chosen team's own, when
+    /// it sets one.</summary>
+    private string DetectionLabel => DetectionSource.Label(Config, _teams.FirstOrDefault(t => t.Id == _request.TeamId));
 
     // Required fields, checked here so the message sits under the field (and focus goes there) rather than in
     // a summary. The service validates again.

@@ -287,6 +287,7 @@ public sealed class PastPeriodFreezeTests : IDisposable
         ["ApproveLegalHoldRelease"] = "legal hold",
         ["CancelLegalHoldReleaseRequest"] = "legal hold",
         ["SetReportProfile"] = "the case report's profile",
+        ["SetTeam"] = "CAP-36: the owning team, which routes and filters; no period figure reads it (a team filter cuts by the team a case has now)",
         ["Archive"] = "REV-59, the documented exception: a never-closed case archived later drops out of a past open-at-end count",
         ["Unarchive"] = "REV-59, as Archive",
         ["ReviseBrief"] = "the brief",

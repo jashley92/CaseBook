@@ -7,12 +7,17 @@ namespace IncidentManager.Application.Views;
 /// <summary>A saved case-queue view as shown in the views menu.</summary>
 /// <param name="IsMine">True when the current user owns it (and so may rename/share/delete it).</param>
 /// <param name="OwnerName">Display name of the owner, for shared views from someone else.</param>
-public sealed record SavedViewItem(Guid Id, string Name, string Query, bool IsShared, bool IsMine, string OwnerName, bool IsDefault);
+/// <param name="TeamId">CAP-36: with <paramref name="IsShared"/>, the team it's shared with (null: everyone).</param>
+/// <param name="TeamName">CAP-36: that team's name, for the menu.</param>
+public sealed record SavedViewItem(Guid Id, string Name, string Query, bool IsShared, bool IsMine, string OwnerName, bool IsDefault,
+    Guid? TeamId = null, string? TeamName = null);
 
 /// <summary>
 /// Persists named case-queue filter sets (PROD-09 / E-02b). Each view is the exact Cases query string plus
 /// a name; personal by default, or shared to the whole team. Users manage their own views; shared views
 /// from others are read-only (apply only). This is convenience state — out of the tamper-evident chain.
+/// CAP-36: a view can be shared with one team instead of everyone: only that team's members (and its owner) see it. A
+/// view holds a filter, never cases: whoever applies it still sees only the cases need-to-know lets them see.
 /// </summary>
 public sealed class SavedViewService
 {
@@ -29,14 +34,20 @@ public sealed class SavedViewService
         _clock = clock;
     }
 
-    /// <summary>The current user's own views plus everyone's shared views, for the menu. Own first, then shared.</summary>
+    /// <summary>The current user's own views plus the views shared with everyone or with a team they're in, for the menu.
+    /// Own first, then shared.</summary>
     public async Task<List<SavedViewItem>> ListAsync(CancellationToken ct = default)
     {
         var me = _user.UserId;
         using var db = _factory.CreateDbContext();
+        // CAP-36: the teams I'm in (any, retired too: a view already shared with one stays with its members).
+        var mine = await db.TeamMembers.AsNoTracking().Where(m => m.UserId == me).Select(m => m.TeamId).ToListAsync(ct);
         var rows = await db.SavedViews.AsNoTracking()
-            .Where(v => v.OwnerUserId == me || v.IsShared)
+            .Where(v => v.OwnerUserId == me || (v.IsShared && (v.TeamId == null || mine.Contains(v.TeamId.Value))))
             .ToListAsync(ct);
+        var teamIds = rows.Where(v => v.TeamId != null).Select(v => v.TeamId!.Value).Distinct().ToList();
+        var teamNames = teamIds.Count == 0 ? new Dictionary<Guid, string>()
+            : await db.Teams.AsNoTracking().Where(t => teamIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
 
         return rows
             .Select(v => new SavedViewItem(
@@ -44,7 +55,9 @@ public sealed class SavedViewService
                 IsMine: string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase),
                 OwnerName: string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase) ? "you" : _users.DisplayFor(v.OwnerUserId),
                 // A default only applies to its owner's own landing (never inherited from someone's shared view).
-                IsDefault: v.IsDefault && string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase)))
+                IsDefault: v.IsDefault && string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase),
+                TeamId: v.IsShared ? v.TeamId : null,
+                TeamName: v.IsShared && v.TeamId is { } t ? teamNames.GetValueOrDefault(t) : null))
             .OrderByDescending(v => v.IsMine)
             .ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -93,14 +106,20 @@ public sealed class SavedViewService
             .OrderBy(x => x.Name).ThenBy(x => x.Id)
             .FirstOrDefaultAsync(ct);
         return v is null ? null
-            : new SavedViewItem(v.Id, v.Name, v.Query, v.IsShared, IsMine: true, OwnerName: "you", IsDefault: true);
+            : new SavedViewItem(v.Id, v.Name, v.Query, v.IsShared, IsMine: true, OwnerName: "you", IsDefault: true, v.IsShared ? v.TeamId : null);
     }
 
     /// <summary>
     /// Creates or updates the current user's view of the given name (upsert by owner+name, matching the
     /// unique index), so "save" over an existing name updates it rather than erroring. Returns its id.
+    /// CAP-36: <paramref name="teamId"/> shares it with that team only (with <paramref name="isShared"/>): an active team the
+    /// user is in.
     /// </summary>
-    public async Task<Guid> SaveAsync(string name, string query, bool isShared, CancellationToken ct = default)
+    public async Task<Guid> SaveAsync(string name, string query, bool isShared, CancellationToken ct = default) =>
+        await SaveAsync(name, query, isShared, null, ct);
+
+    /// <inheritdoc cref="SaveAsync(string, string, bool, CancellationToken)"/>
+    public async Task<Guid> SaveAsync(string name, string query, bool isShared, Guid? teamId, CancellationToken ct = default)
     {
         var cleanName = (name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(cleanName)) throw new ArgumentException("A view name is required.");
@@ -108,6 +127,15 @@ public sealed class SavedViewService
         var cleanQuery = NormalizeQuery(query);
 
         var me = _user.UserId;
+        if (!isShared) teamId = null;
+        if (teamId is { } team)
+        {
+            // CAP-36: shared with a team the sharer is in (and an active one), never one they'd only name.
+            using var check = _factory.CreateDbContext();
+            if (!await check.TeamMembers.AsNoTracking().AnyAsync(m => m.TeamId == team && m.UserId == me, ct)
+                || !await check.Teams.AsNoTracking().AnyAsync(t => t.Id == team && t.IsActive, ct))
+                throw new InvalidOperationException("You can share a view only with an active team you're in.");
+        }
         // BUG-452: two first saves of the same name (a double click, two tabs) both insert, and the second hits the
         // (OwnerUserId, Name) unique index. That one re-reads the row the first inserted and updates it instead.
         for (var attempt = 0; ; attempt++)
@@ -128,6 +156,7 @@ public sealed class SavedViewService
             }
             existing.Query = cleanQuery;
             existing.IsShared = isShared;
+            existing.TeamId = teamId;   // CAP-36
             try
             {
                 await db.SaveChangesAsync(ct);

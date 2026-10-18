@@ -63,11 +63,15 @@ public sealed class NeedsActionService
         _rules = rules;
     }
 
-    public async Task<NeedsAction> GetAsync(bool includeExercises = false, CancellationToken ct = default)
+    public async Task<NeedsAction> GetAsync(bool includeExercises = false, CancellationToken ct = default) =>
+        await GetAsync(includeExercises, TeamScope.Any, ct);
+
+    /// <summary>As above, for one team's cases (CAP-36), after need-to-know.</summary>
+    public async Task<NeedsAction> GetAsync(bool includeExercises, TeamScope team, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
-        var cases = db.Cases.AsNoTracking().ForUser(_user).Where(c => !c.IsArchived);
+        var cases = db.Cases.AsNoTracking().ForUser(_user).InTeam(team).Where(c => !c.IsArchived);
         if (!includeExercises) cases = cases.ExcludingExercises();
         var items = new List<NeedsActionItem>();
 
