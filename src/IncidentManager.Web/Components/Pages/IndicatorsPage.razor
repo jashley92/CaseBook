@@ -9,6 +9,8 @@
 @using IncidentManager.Domain.Observables
 @inject IndicatorService Indicators
 @inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+@inject IncidentManager.Web.Services.ExportSearchRefs SearchRefs
 @implements IDisposable
 
 <PageTitle>Indicators</PageTitle>
@@ -68,7 +70,7 @@
             <input class="form-check-input" type="checkbox" id="ind-exercises" checked="@_includeExercises" @onchange="OnExercisesChanged" />
             <label class="form-check-label small" for="ind-exercises">Include exercise cases</label>
         </div>
-        <div class="ms-auto d-flex align-items-end gap-2">
+        <div class="ms-auto d-flex flex-wrap align-items-end gap-2">
             <span class="seg" role="radiogroup" aria-label="Indicator display"
                   title="Defanged shows addresses and URLs as hxxp://evil[.]com, safe to copy out">
                 <button type="button" class="seg-opt @(!_defang ? "on" : "")" role="radio" aria-checked="@Ui.Aria(!_defang)"
@@ -76,20 +78,49 @@
                 <button type="button" class="seg-opt @(_defang ? "on" : "")" role="radio" aria-checked="@Ui.Aria(_defang)"
                         @onclick="() => _defang = true">Defanged</button>
             </span>
-            <a class="btn btn-sm btn-outline-primary" href="export/iocs.csv" download
+            @* CAP-27: every indicator these filters match (not only this page), whatever the verdict, with its cases. *@
+            <a class="btn btn-sm btn-outline-secondary text-nowrap" href="@_exportHref" download
+               title="Every indicator these filters match, not only this page, as CSV with each one's verdicts and cases"
+               aria-label="Export the indicators these filters match as CSV">
+                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Export CSV
+            </a>
+            <a class="btn btn-sm btn-outline-primary text-nowrap" href="export/iocs.csv" download
                title="Confirmed-malicious IOCs from your cases, as a blocklist for SIEM, firewall or EDR">
-                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Export IOC feed (CSV)
+                <span class="bi bi-shield-exclamation me-1" aria-hidden="true"></span>Export IOC feed (CSV)
             </a>
         </div>
     </div>
+
+    @if (_library.Rows.Count > 0 || _library.HasPrevious)
+    {
+        @* CAP-27: pages from the server, by the row the page shown starts or ends at (keyset), not by page number. *@
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+            <span class="small text-muted" aria-live="polite">@IndicatorQuery.PageRange(_library)@(Filtered ? " (filtered)" : "")</span>
+            @if (_library.HasPrevious || _library.HasNext)
+            {
+                <span class="btn-group btn-group-sm" role="group" aria-label="Pages of indicators">
+                    <button type="button" class="btn btn-outline-secondary" disabled="@(!_library.HasPrevious)" @onclick="Previous">
+                        <span class="bi bi-chevron-left" aria-hidden="true"></span> Previous
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" disabled="@(!_library.HasNext || _library.Rows.Count == 0)" @onclick="Next">
+                        Next <span class="bi bi-chevron-right" aria-hidden="true"></span>
+                    </button>
+                </span>
+            }
+        </div>
+    }
 
     @if (_library.Rows.Count == 0)
     {
         <div class="empty-state">
             <div class="empty-state-icon"><span class="bi bi-crosshair" aria-hidden="true"></span></div>
-            <div class="empty-state-title">@(Filtered ? "No indicators match" : "No indicators yet")</div>
+            <div class="empty-state-title">@(_library.HasPrevious ? "No more indicators" : Filtered ? "No indicators match" : "No indicators yet")</div>
             <div class="empty-state-msg">
-                @if (Filtered)
+                @if (_library.HasPrevious)
+                {
+                    <text>The indicators after the last page you saw have changed. Go back to the previous page.</text>
+                }
+                else if (Filtered)
                 {
                     <text>Try a shorter search, another type, or clear the filters.</text>
                 }
@@ -167,10 +198,6 @@
                 }
             </tbody>
         </table>
-        @if (_library.Truncated)
-        {
-            <p class="small text-muted mt-2 mb-0">Showing the first @IndicatorService.MaxRows. Search or filter to narrow the list.</p>
-        }
     }
 </section>
 
@@ -227,24 +254,47 @@
             _search = hit.Value;
             _typeKey = hit.Type.ToString();
         }
+        _at = IndicatorPageAt.First;
         await Load();
         if (raw != _lastEntityRaw || rawEx != _lastExercisesRaw) return;
         // A pivot lands on one indicator: open its case list straight away.
         if (EntityId is not null && _library is { Rows.Count: 1 }) _expanded.Add(RowKey(_library.Rows[0]));
     }
 
+    // CAP-27: the page by where it starts or ends in the library (keyset), as the Integrity page's audit trail is paged. A
+    // filter change, a search or a pivot starts again from the first page.
+    private IndicatorPageAt _at = IndicatorPageAt.First;
+    private string _exportHref = "export/indicators.csv";
+    private bool _disposed;
+
     private async Task Load(CancellationToken ct = default)
     {
         var seq = ++_loadSeq;
-        var (scope, type) = _typeKey switch
-        {
-            "ioc" => (IndicatorTypeScope.Indicators, (EntityType?)null),
-            "all" => (IndicatorTypeScope.AllTypes, null),
-            var k => (IndicatorTypeScope.AllTypes, EnumNames.OrNull<EntityType>(k)),
-        };
-        var library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises), ct);
-        if (seq != _loadSeq) return;
+        // CAP-27 (C2): the filter through the function the export reads its link with.
+        var filter = IndicatorQuery.Filter(_search, _typeKey, _disposition, _sharedOnly, _includeExercises);
+        var library = await Indicators.SearchAsync(filter, _at, IndicatorService.PageSize, ct);
+        if (seq != _loadSeq || _disposed) return;
         _library = library;
+        if (!library.HasPrevious) _at = IndicatorPageAt.First;   // a Previous that reached the start is the first page
+        // BUG-388: the link describes the rows shown. The search is held for this person, never put in the link (C7).
+        _exportHref = IndicatorQuery.ExportHref(filter,
+            string.IsNullOrWhiteSpace(_search) ? null : SearchRefs.Hold(CurrentUser.UserId, _search));
+    }
+
+    private async Task Next()
+    {
+        if (_library is not { Rows.Count: > 0 } lib) return;
+        _at = IndicatorPageAt.Next(lib.Rows[^1]);
+        await Load();
+    }
+
+    private async Task Previous()
+    {
+        if (_library is null) return;
+        // An empty page past the end (the rows after it changed) goes back from the place it started at.
+        _at = _library.Rows.Count > 0 ? IndicatorPageAt.Previous(_library.Rows[0])
+            : _at.After is { } after ? new IndicatorPageAt(null, after) : IndicatorPageAt.First;
+        await Load();
     }
 
     private const int CasesShown = 10;
@@ -259,17 +309,24 @@
     private string Display(IndicatorRow r) =>
         _defang && IocObservable.IsRefangable(r.Type) ? IocObservable.Defang(r.Value) : r.Value;
 
-    private async Task OnTypeChanged(ChangeEventArgs e) { _typeKey = e.Value?.ToString() ?? "ioc"; await Load(); }
+    // CAP-27: a changed filter lists from its first page.
+    private Task Reload(CancellationToken ct = default)
+    {
+        _at = IndicatorPageAt.First;
+        return Load(ct);
+    }
+
+    private async Task OnTypeChanged(ChangeEventArgs e) { _typeKey = e.Value?.ToString() ?? "ioc"; await Reload(); }
 
     private async Task OnVerdictChanged(ChangeEventArgs e)
     {
         _disposition = EnumNames.OrNull<EntityDisposition>(e.Value?.ToString());
-        await Load();
+        await Reload();
     }
 
-    private async Task OnSharedChanged(ChangeEventArgs e) { _sharedOnly = e.Value is true; await Load(); }
+    private async Task OnSharedChanged(ChangeEventArgs e) { _sharedOnly = e.Value is true; await Reload(); }
 
-    private async Task OnExercisesChanged(ChangeEventArgs e) { _includeExercises = e.Value is true; await Load(); }
+    private async Task OnExercisesChanged(ChangeEventArgs e) { _includeExercises = e.Value is true; await Reload(); }
 
     // Debounced so typing doesn't re-query on every keystroke.
     private async Task OnSearch(ChangeEventArgs e)
@@ -283,13 +340,14 @@
         try
         {
             await Task.Delay(250, token);
-            await Load(token);
+            await Reload(token);
         }
         catch (OperationCanceledException) { }
     }
 
     public void Dispose()
     {
+        _disposed = true;
         _searchDebounce?.Cancel();
         _searchDebounce?.Dispose();
     }

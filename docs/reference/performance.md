@@ -28,7 +28,7 @@ worse.
 | **Compliance bundle** | Streams the whole chain to verify it, then reads the range again into a temp-file zip (BUG-256). | The verify pass is linear in audit rows; memory stays flat. |
 | **Evidence re-hash** | Reads every stored file on its interval. | I/O heavy; off by default; schedule it for quiet hours via the interval. |
 | **Report generation** | Builds the model, renders diagrams with SkiaSharp, writes Word. | A case with very large timelines or graphs takes seconds. It runs in the background (`ReportJobs`, one at a time), so nobody waits on the page; a queue of many large reports finishes in order. |
-| **Indicators page** | Capped at 300 rows. | |
+| **Indicators page** | Every visible occurrence is read and grouped in memory for each load (the summary counts the whole library); 300 rows a page, paged by keyset (CAP-27). The CSV reads the same way, up to 50,000 indicators. | Linear in recorded entities; a library of hundreds of thousands of occurrences makes each page a second or more. |
 | **Audit and access-log CSV** | Capped at 100,000 rows, silently. | Large ranges are truncated. |
 | **Graph** | vis-network in the browser; positions saved per drag. | Hundreds of nodes get slow to lay out. |
 

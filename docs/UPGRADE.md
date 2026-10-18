@@ -212,6 +212,14 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Indicators page through, and export, instead of stopping at 300 (CAP-27).** Intel › Indicators shows 300 a page
+  with *Previous* and *Next*, paged by the row a page ends at, so indicators recorded meanwhile don't repeat or push
+  others out of sight. *Export CSV* (`/export/indicators.csv`) downloads every indicator the filters match, of every
+  verdict, with case and open-case counts and each case's number and verdict there, up to 50,000 (a cut file says so
+  at the top and the end); a restricted case's occurrences stay out, as on the page. A search isn't put in the link:
+  it's held for you for an hour, as the Cases export does. Recorded in the access log and as SIEM 5304, like every
+  export. No migration and nothing to configure. The order now breaks ties between equally shared, equally recent
+  indicators by value and type, so a few rows may sit in a different order than before.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

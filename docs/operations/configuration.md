@@ -394,7 +394,7 @@ first.
 | API token maximum lifetime 90 days (personal) / 365 days (system) | `Application/ApiTokens/ApiTokenService.cs` |
 | "Recorded later" threshold 1 hour | `Application/Cases/CaseService.cs` (`BackdateReasonThreshold`) |
 | Audit and access-log CSV exports capped at **100,000 rows**, newest kept; a cut file says so on its second line (and an audit export on its last line too) | `Web/Program.cs` (`ExportRowLimit`) |
-| Indicator list 300 rows | `Application/Intel/IndicatorService.cs` |
+| Indicator list 300 rows a page (Previous and Next page through the rest); its CSV up to **50,000** indicators, a cut file saying so at the top and the end | `Application/Intel/IndicatorService.cs` (`PageSize`, `ExportLimit`) |
 | Access review "dormant" after 90 days | `Application/Admin/AccessReviewService.cs` |
 | Webhook and chat retry back-off 250 ms × attempt | `Web/Siem/WebhookTransport.cs`, `Web/Notifications/ChatWebhookNotifier.cs` |
 | Seal key RSA-3072, PKCS#1 v1.5 with SHA-256 | `Infrastructure/Security/RsaSealSigner.cs` |

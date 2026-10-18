@@ -62,8 +62,8 @@ public static class IocFeedCsv
         TlpLevel.AmberStrict => "TLP:AMBER+STRICT", TlpLevel.Red => "TLP:RED", _ => ""
     };
 
-    /// <summary>Short indicator-type terms common to firewall / EDR / SIEM blocklist imports.</summary>
-    private static string FeedType(EntityType t) => t switch
+    /// <summary>Short indicator-type terms common to firewall / EDR / SIEM blocklist imports (and CAP-27's indicator CSV).</summary>
+    internal static string FeedType(EntityType t) => t switch
     {
         EntityType.IpAddress => "ip",
         EntityType.Domain => "domain",

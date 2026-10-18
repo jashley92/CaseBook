@@ -84,8 +84,7 @@ builder.Services.AddHostedService<RowHashUpgradeHostedService>();
 // --- F-17: periodic evidence-at-rest re-verification (re-hash stored bytes, alarm on drift) ---
 builder.Services.Configure<EvidenceVerifyOptions>(builder.Configuration.GetSection("Integrity:EvidenceVerify"));
 builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
-// PROD-52: deletes access-log entries older than Retention:AccessLogYears (default 3), keeping legal-hold cases' entries.
-builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
+// PROD-52: deletes access-log entries older than Retention:AccessLogYears (default 3), keeping legal-hold cases' entries.builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 builder.Services.AddHostedService<AccessLogRetentionHostedService>();
 // CAP-10: the retention review reads Retention:CaseYears; a nightly count feeds Diagnostics and the optional monthly email
 // to Legal (Notifications:RetentionReview:Email). It counts only: nothing is archived or deleted by a job.
@@ -919,6 +918,36 @@ app.MapGet("/export/cases.csv", async (HttpContext http,
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"cases-{now.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{fileName} ({items.Count} cases{(truncated ? ", cut" : "")})"), null, ct);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
+
+// --- CAP-27: the Indicators page as CSV, every indicator its filters match, whatever the verdict, with case counts and each
+// case's number and verdict. The page's filter, read by the page's own function (C2), through IndicatorService (ForUser: a
+// restricted case's occurrences stay out, as on the page); bounded at 50,000 indicators (a cut said in the file). A search
+// comes as qref, held for this user by the page, so an indicator value never rides in the URL (C7). Access log and SIEM
+// 5304; plain attachment.
+app.MapGet("/export/indicators.csv", async (HttpContext http,
+    IncidentManager.Application.Intel.IndicatorService indicators,
+    IncidentManager.Web.Services.ExportSearchRefs searchRefs,
+    IncidentManager.Application.Abstractions.ICurrentUser user,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var query = http.Request.Query;
+    string? search = null;
+    if (query.TryGetValue("qref", out var qref))
+    {
+        if (searchRefs.Read(user.UserId, qref.ToString()) is not { } held)
+            return Results.Text("This export link has expired. Export again from the Indicators page.", statusCode: StatusCodes.Status410Gone);
+        search = held;
+    }
+    var filter = IncidentManager.Web.Components.Shared.IndicatorQuery.Parse(k => query.TryGetValue(k, out var v) ? v.ToString() : null, search);
+    var export = await indicators.ExportAsync(filter, ct: ct);
+    var now = clock.UtcNow;
+    var csv = IncidentManager.Application.Intel.IndicatorCsv.Build(export.Rows, now, export.Truncated);
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"indicators-{now.UtcDateTime:yyyyMMdd-HHmm}.csv");
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{fileName} ({export.Rows.Count} indicators{(export.Truncated ? ", cut" : "")})"), null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 

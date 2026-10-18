@@ -39,7 +39,7 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/cases/{Id:guid}` | `CaseWorkspace` | ViewCases | The case workspace. `?tab=`, `?entity=`, `?evidence=`, `?note=`, `?entry=` (brings one record entry into view) |
 | `/cases/{Number}` | `CaseByNumber` | ViewCases | Resolves `2026-14` or `2026-14_Name` and redirects |
 | `/find` | `FindPage` | ViewCases | Find: typed results across the cases you can see. `?q=` holds the query, grammar in [workflows/find.md](../workflows/find.md) |
-| `/intel/indicators` | `IndicatorsPage` | ViewCases | Intel › Indicators: cross-case indicators, each one's cases and verdicts. `?entity=` |
+| `/intel/indicators` | `IndicatorsPage` | ViewCases | Intel › Indicators: cross-case indicators, each one's cases and verdicts, paged from the server (CAP-27), with a CSV of the filter. `?entity=` |
 | `/intel/campaigns`, `/intel/campaigns/{Id}` | `CampaignsPage`, `CampaignPage` | ViewCases | Intel › Campaigns: list and rollup (`/campaigns/{id}/rollup.json` is the export) |
 | `/intel/attack` | `AttackCoveragePage` | ViewCases | Intel › ATT&CK coverage heatmap. Every Intel page carries `Shared/IntelNav` |
 | `/program/improvement-actions` | `ImprovementActionsPage` | ViewCases | Program › Improvement actions |

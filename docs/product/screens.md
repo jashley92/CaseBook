@@ -360,7 +360,7 @@ lessons-learned report.
 | Screen | What it's for | Image |
 |---|---|---|
 | Campaigns | Cases linked "same campaign", rolled up: shared indicators, combined ATT&CK, merged event timeline | ![](../screenshots/campaign-rollup.png) |
-| Indicators | Every indicator across cases you can see, most-shared first | ![](../screenshots/indicators.png) |
+| Indicators | Every indicator across cases you can see, most-shared first, 300 a page (*Previous* / *Next*). *Export CSV* downloads everything the filters match, every verdict, with each indicator's cases; *Export IOC feed* is the malicious-only blocklist | ![](../screenshots/indicators.png) |
 | ATT&CK coverage | Techniques and tactics seen across cases, shaded by count | ![](../screenshots/attack-coverage.png) |
 | Improvement actions | The cross-case register of post-incident follow-up | ![](../screenshots/improvement-actions.png) |
 | Program report | Quarter-on-quarter figures for leadership | ![](../screenshots/program-report.png) |

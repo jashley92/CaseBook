@@ -417,6 +417,47 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task The_indicators_export_as_csv_with_a_held_search_never_in_the_url(/* CAP-27 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            using var asImage = new HttpRequestMessage(HttpMethod.Get, "/export/indicators.csv");
+            asImage.Headers.Add("Sec-Fetch-Dest", "image");
+            (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var all = await client.GetAsync("/export/indicators.csv?type=all&exercises=true");
+            all.StatusCode.Should().Be(HttpStatusCode.OK);
+            all.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+            var fileName = all.Content.Headers.ContentDisposition!.FileName!.Trim('"');
+            fileName.Should().MatchRegex(@"^indicators-\d{8}-\d{4}\.csv$");
+            var rows = (await all.Content.ReadAsStringAsync()).TrimStart('﻿').Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+            rows[0].Should().StartWith("# CaseBook indicators");
+            rows[1].Should().StartWith("type,indicator,worst_verdict,case_count,");
+            rows.Length.Should().BeGreaterThan(2, "the demo cases' indicators are listed");
+
+            var refs = factory.Services.GetRequiredService<IncidentManager.Web.Services.ExportSearchRefs>();
+            var nothing = refs.Hold("S-1-5-21-DEV-1001", "no indicator is this " + Guid.NewGuid());
+            var searched = await client.GetAsync($"/export/indicators.csv?type=all&qref={nothing}");
+            searched.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await searched.Content.ReadAsStringAsync()).Split("\r\n", StringSplitOptions.RemoveEmptyEntries)
+                .Should().HaveCount(2, "the held search is applied: only the comment and the header");
+
+            var someoneElses = refs.Hold("S-1-5-21-OTHER", "203.0.113.5");
+            (await client.GetAsync($"/export/indicators.csv?qref={someoneElses}")).StatusCode.Should().Be(HttpStatusCode.Gone,
+                "a reference is read back only for the person it was held for");
+
+            using var scope = factory.Services.CreateScope();
+            await using var db = await scope.ServiceProvider
+                .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                .CreateDbContextAsync();
+            db.CaseAccessEvents.AsEnumerable().Should().Contain(e => e.TargetLabel != null && e.TargetLabel.StartsWith(fileName + " ("));
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);
