@@ -19,6 +19,7 @@ public sealed record HeldEmailSummary(int Count, bool AtLeast, DateTimeOffset? O
         timeout.CancelAfter(limit);
         try
         {
+            timeout.Token.ThrowIfCancellationRequested();   // a limit already past: say so, whether or not the provider checks
             await using var db = await factory.CreateDbContextAsync(timeout.Token);
             var count = await db.HeldEmails.AsNoTracking().Take(EmailSender.MaxHeld + 1).CountAsync(timeout.Token);
             var oldest = count == 0 ? null

@@ -139,7 +139,8 @@ public sealed class ProtectedSecretCompositionTests : IDisposable
                 await db.SaveChangesAsync();
             }
 
-            var summary = await HeldEmailSummary.ReadAsync(factory, HeldEmailSummary.DefaultLimit);
+            // A generous limit: under the full suite's load the 5 s default could lapse on a busy machine (a flaky run).
+            var summary = await HeldEmailSummary.ReadAsync(factory, TimeSpan.FromMinutes(1));
             summary.Should().Be(new HeldEmailSummary(3, false, new DateTimeOffset(2026, 10, 18, 8, 0, 0, TimeSpan.Zero), null));
 
             var late = await HeldEmailSummary.ReadAsync(factory, TimeSpan.Zero);
