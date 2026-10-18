@@ -33,6 +33,7 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
     {
         var started = DateTimeOffset.UtcNow;
         var lastLoad = DateTimeOffset.UtcNow;   // Program.cs loaded it at start-up
+        var envelopeStamp = EnvelopeStamp();
         DateTimeOffset? lastConversion = null;
         var lastRunConverted = false;
         await ReportAsync(stoppingToken);
@@ -44,7 +45,12 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
             {
                 var now = DateTimeOffset.UtcNow;
                 var every = keyring.State is EvidenceKeyState.Ready or EvidenceKeyState.Off ? TimeSpan.FromDays(1) : TimeSpan.FromMinutes(5);
-                if (now - lastLoad >= every)
+                // PROD-59: casebook-keytool changed the keys folder's envelope (shares issued, a drill, a recovery, an export):
+                // read it now, so what it did reaches the audit trail and the SIEM within a minute, not at the daily check.
+                var stamp = EnvelopeStamp();
+                var touched = stamp != envelopeStamp;
+                envelopeStamp = stamp;
+                if (now - lastLoad >= every || touched)
                 {
                     await keyring.LoadAsync(stoppingToken);
                     lastLoad = now;
@@ -75,6 +81,13 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
                 logger.LogError(ex, "The evidence key or file conversion check failed; it will try again in a minute.");
             }
         }
+    }
+
+    // The keys folder's envelope's last write (local data root, so cheap); null when it isn't there or can't be read.
+    private DateTime? EnvelopeStamp()
+    {
+        try { return File.Exists(keyring.EnvelopePath) ? File.GetLastWriteTimeUtc(keyring.EnvelopePath) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
     // The key's state on the evidence monitor: one finding while it's unavailable, alarmed once.

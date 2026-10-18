@@ -57,6 +57,26 @@ public sealed class KeyEnvelope
     public DateTimeOffset? LastDrillUtc { get; set; }
     public string? LastDrillBy { get; set; }
 
+    /// <summary>
+    /// PROD-59: what casebook-keytool did (shares issued, a drill, a recovery, an export). The tool runs apart from the
+    /// app and can't write the audit trail, so it leaves a record here; CaseBook writes each to the audit trail and the
+    /// SIEM once, when it next reads the envelope. The newest <see cref="MaxRecords"/> are kept.
+    /// </summary>
+    public List<KeyToolRecord> Records { get; set; } = [];
+
+    public const int MaxRecords = 200;
+
+    /// <summary>Adds a record, keeping the newest <see cref="MaxRecords"/>.</summary>
+    public void Record(string kind, string summary, string? caseNumber = null)
+    {
+        Records.Add(new KeyToolRecord
+        {
+            Id = Guid.NewGuid(), Kind = kind, AtUtc = DateTimeOffset.UtcNow,
+            By = $"{Environment.UserDomainName}\\{Environment.UserName}", Summary = summary, CaseNumber = caseNumber,
+        });
+        if (Records.Count > MaxRecords) Records = Records.OrderByDescending(r => r.AtUtc).Take(MaxRecords).OrderBy(r => r.AtUtc).ToList();
+    }
+
     [JsonIgnore] public bool HasBackup => Recovery.Count > 0 || Shares is not null;
 
     private static readonly JsonSerializerOptions Json = new()
@@ -105,6 +125,19 @@ public sealed class RecoveryCopy
 
     /// <summary>The chain key it also carries, by id; null when the chain key was off.</summary>
     public string? ChainKeyId { get; set; }
+}
+
+/// <summary>PROD-59: one thing casebook-keytool did, for CaseBook to record (see <see cref="KeyEnvelope.Records"/>).</summary>
+public sealed class KeyToolRecord
+{
+    public const string SharesIssued = "shares-issued", Drill = "drill", Recovered = "recovered", Exported = "exported";
+
+    public Guid Id { get; set; }
+    public string Kind { get; set; } = "";
+    public DateTimeOffset AtUtc { get; set; }
+    public string By { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string? CaseNumber { get; set; }
 }
 
 public sealed class SharesIssued

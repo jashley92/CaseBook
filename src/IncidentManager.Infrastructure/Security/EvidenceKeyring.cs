@@ -59,6 +59,8 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
     private readonly IChainKeyring _chainKeys;
     private readonly IServiceScopeFactory? _scopes;
     private readonly ILogger<EvidenceKeyring>? _logger;
+    private readonly IncidentManager.Application.Security.ISecurityEventSink? _siem;
+    private readonly HashSet<Guid> _recorded = [];   // keytool records already written to the audit trail this run
     private readonly SemaphoreSlim _gate = new(1, 1);   // C21: one load at a time, so an older one can't land after a newer
 
     private sealed record Loaded(EvidenceKeyState State, string? KeyId, byte[]? Key, string? Problem);
@@ -67,8 +69,10 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
 
     public EvidenceKeyring(IOptions<EvidenceEncryptionOptions> options, IOptions<SealSigningOptions> integrity,
         IOptions<EvidenceStoreOptions> evidence, IOptions<ReportOutputOptions> reports, IChainKeyring chainKeys,
-        IServiceScopeFactory? scopes = null, ILogger<EvidenceKeyring>? logger = null)
+        IServiceScopeFactory? scopes = null, ILogger<EvidenceKeyring>? logger = null,
+        IncidentManager.Application.Security.ISecurityEventSink? siem = null)
     {
+        _siem = siem;
         _options = options.Value;
         _integrity = integrity.Value;
         _evidenceRoot = Path.GetFullPath(evidence.Value.RootPath);
@@ -123,6 +127,12 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
             // Before the first load the state reads Unavailable ("not loaded yet"), so the first load always logs: a key
             // that can't be opened at start-up gets its Critical line too.
             if (!_loadedOnce || loaded.State != before) LogChange(loaded);
+            // PROD-59: the SOC sees the key go and come back, once per change.
+            if (loaded.State == EvidenceKeyState.Unavailable && (!_loadedOnce || before != EvidenceKeyState.Unavailable))
+                Emit(IncidentManager.Application.Security.SecurityEvents.EvidenceKeyUnavailable(loaded.Problem ?? "The evidence key can't be opened."));
+            else if (loaded.State == EvidenceKeyState.Ready && _loadedOnce && before == EvidenceKeyState.Unavailable)
+                Emit(IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("KeyAvailable", loaded.KeyId!,
+                    "The evidence key can be opened again; evidence and reports resume."));
             _loadedOnce = true;
             return loaded.State;
         }
@@ -431,8 +441,9 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
             CryptographicOperations.ZeroMemory(key);
             return (null, null);
         }
-        await AuditAsync(AuditAction.Create, envelope.KeyId,
-            $"Evidence encryption key {envelope.KeyId} created, protected by {p.Describe}, with {envelope.Recovery.Count} recovery certificate(s).", ct);
+        var created = $"Evidence encryption key {envelope.KeyId} created, protected by {p.Describe}, with {envelope.Recovery.Count} recovery certificate(s).";
+        await AuditAsync(AuditAction.Create, envelope.KeyId, created, ct);
+        Emit(IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("KeyCreated", envelope.KeyId, created));
         return (key, envelope);
     }
 
@@ -455,7 +466,15 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
                 (envelope.LastDrillUtc, envelope.LastDrillBy) = (drill, other.LastDrillBy);
                 changes.Add("kept the last recovery drill from another copy");
             }
+            var missing = other.Records.Where(r => envelope.Records.All(m => m.Id != r.Id)).ToList();
+            if (missing.Count > 0)
+            {
+                envelope.Records = envelope.Records.Concat(missing).OrderByDescending(r => r.AtUtc).Take(KeyEnvelope.MaxRecords)
+                    .OrderBy(r => r.AtUtc).ToList();
+                changes.Add("kept the keytool records from another copy");
+            }
         }
+        await RecordKeyToolActionsAsync(envelope, dbJson, ct);
         // A renewed certificate (or a new choice of protection): the key is re-encrypted to the current one. Review finding
         // 6: not to a certificate that isn't in the store (the envelope still opens with the one it names).
         if (envelope.Server.Kind != p.Kind || !string.Equals(envelope.Server.Ref, p.Ref, StringComparison.OrdinalIgnoreCase))
@@ -477,6 +496,9 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         if (changes.Count > 0)
         {
             await AuditAsync(AuditAction.Update, envelope.KeyId, $"Evidence encryption key {envelope.KeyId}: {string.Join("; ", changes)}.", ct);
+            if (changes.Any(c => c.StartsWith("re-encrypted", StringComparison.Ordinal) || c.Contains("recovery certificate", StringComparison.Ordinal)))
+                Emit(IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("KeyProtectionChanged", envelope.KeyId,
+                    string.Join("; ", changes)));
             _logger?.LogInformation("Evidence encryption key {KeyId}: {Changes}. Every envelope copy was rewritten; no file changes.",
                 envelope.KeyId, string.Join("; ", changes));
         }
@@ -616,13 +638,40 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         return null;
     }
 
-    private async Task AuditAsync(AuditAction action, string keyId, string summary, CancellationToken ct)
+    /// <summary>
+    /// PROD-59: what casebook-keytool recorded in the envelope (shares issued, a drill, a recovery, an export) that CaseBook
+    /// hasn't yet: each is written to the audit trail and sent to the SIEM once. "Yet" is the database copy, which CaseBook
+    /// alone writes (the tool writes the keys folder's), plus what this run has already recorded.
+    /// </summary>
+    private async Task RecordKeyToolActionsAsync(KeyEnvelope envelope, string? dbJson, CancellationToken ct)
+    {
+        var known = KeyEnvelope.Parse(dbJson)?.Records.Select(r => r.Id).ToHashSet() ?? [];
+        foreach (var r in envelope.Records.Where(r => !known.Contains(r.Id) && !_recorded.Contains(r.Id)).OrderBy(r => r.AtUtc))
+        {
+            var summary = $"casebook-keytool, run by {r.By} at {r.AtUtc.UtcDateTime:u}: {r.Summary}";
+            await AuditAsync(r.Kind == KeyToolRecord.Exported ? AuditAction.Export : AuditAction.Update, envelope.KeyId, summary, ct,
+                caseNumber: r.CaseNumber);
+            Emit(r.Kind switch
+            {
+                KeyToolRecord.Exported => IncidentManager.Application.Security.SecurityEvents.EvidenceExportedOffline(r.By, r.CaseNumber, r.Summary),
+                KeyToolRecord.SharesIssued => IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("SharesIssued", envelope.KeyId, r.Summary, r.By),
+                KeyToolRecord.Drill => IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("RecoveryDrill", envelope.KeyId, r.Summary, r.By),
+                _ => IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("KeyRecovered", envelope.KeyId, r.Summary, r.By),
+            });
+            _recorded.Add(r.Id);
+            _logger?.LogInformation("Recorded a casebook-keytool action: {Summary}", summary);
+        }
+    }
+
+    private void Emit(IncidentManager.Application.Security.SecurityEvent e) => _siem?.Emit(e);   // never throws, never blocks
+
+    private async Task AuditAsync(AuditAction action, string keyId, string summary, CancellationToken ct, string? caseNumber = null)
     {
         if (_scopes is null) return;
         try
         {
             using var scope = _scopes.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<IAuditWriter>().RecordAsync(action, "EvidenceKey", keyId, null, summary, ct);
+            await scope.ServiceProvider.GetRequiredService<IAuditWriter>().RecordAsync(action, "EvidenceKey", keyId, caseNumber, summary, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

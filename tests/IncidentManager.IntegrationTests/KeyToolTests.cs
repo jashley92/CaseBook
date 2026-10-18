@@ -256,7 +256,12 @@ public sealed class KeyToolTests : IDisposable
         manifest.Should().Contain(encrypted.Sha256).And.Contain("\"'=cmd", "a name starting like a formula is neutralised (C13)");
         manifest.Should().Contain("refused: its stored path leads outside the evidence store");
         Directory.GetFiles(Path.Combine(outFolder, caseNumber)).Select(File.ReadAllText).Should().NotContain("not evidence");
-        File.ReadAllText(site.EnvelopePath).Should().Be(envelopeBefore, "export changes nothing");
+        // PROD-59: export changes nothing but its own record, for CaseBook to put in the audit trail and the SIEM.
+        var after = KeyEnvelope.Parse(File.ReadAllText(site.EnvelopePath))!;
+        after.Records.Should().ContainSingle(r => r.Kind == KeyToolRecord.Exported)
+            .Which.Summary.Should().Contain($"case {caseNumber}").And.Contain("manifest.csv SHA-256");
+        after.Records.Single().CaseNumber.Should().Be(caseNumber);
+        KeyEnvelope.Parse(envelopeBefore)!.Server.Data.Should().Be(after.Server.Data);
 
         File.Delete(site.EnvelopePath);
         File.Delete(site.RootEnvelopePath);

@@ -214,6 +214,50 @@ public static class SecurityEvents
                  + (keyedFrom is { } k ? $" keyedFrom={k.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "")
     };
 
+    /// <summary>
+    /// PROD-59: the evidence key can't be opened, so evidence and reports are paused (the rest of CaseBook works).
+    /// <see cref="SecurityEvent.Detail"/> is the reason, with no key material. Sent once per change of state.
+    /// </summary>
+    public static SecurityEvent EvidenceKeyUnavailable(string reason) => new()
+    {
+        EventId = SecurityEventIds.EvidenceKeyUnavailable,
+        Category = "Integrity",
+        Action = "EvidenceKeyUnavailable",
+        Outcome = SecurityOutcome.Failure,
+        Severity = SecuritySeverity.High,
+        Actor = "system", TargetType = "EvidenceKey",
+        Detail = reason.Length > 300 ? reason[..300] : reason
+    };
+
+    /// <summary>
+    /// PROD-59: something happened to the evidence key. <paramref name="action"/> is one of KeyCreated, KeyAvailable,
+    /// KeyProtectionChanged, SharesIssued, RecoveryDrill, KeyRecovered; <see cref="SecurityEvent.TargetId"/> is the key
+    /// id (derived from the key, revealing nothing). A recovery onto another certificate is High: the key moved.
+    /// </summary>
+    public static SecurityEvent EvidenceKeyChanged(string action, string keyId, string detail, string actor = "system") => new()
+    {
+        EventId = SecurityEventIds.EvidenceKeyChanged,
+        Category = "Integrity",
+        Action = action,
+        Outcome = SecurityOutcome.Success,
+        Severity = action == "KeyRecovered" ? SecuritySeverity.High : SecuritySeverity.Info,
+        Actor = actor, TargetType = "EvidenceKey", TargetId = keyId,
+        Detail = detail.Length > 300 ? detail[..300] : detail
+    };
+
+    /// <summary>PROD-59: evidence written out decrypted by casebook-keytool export, by an administrator on the server
+    /// (recorded when CaseBook next reads the key's envelope). Bulk decrypted evidence leaving the store is a Warning.</summary>
+    public static SecurityEvent EvidenceExportedOffline(string actor, string? caseNumber, string detail) => new()
+    {
+        EventId = SecurityEventIds.EvidenceExportedOffline,
+        Category = "DataAccess",
+        Action = "EvidenceExportedOffline",
+        Outcome = SecurityOutcome.Success,
+        Severity = SecuritySeverity.Warning,
+        Actor = actor, CaseNumber = caseNumber, TargetType = "Evidence",
+        Detail = detail.Length > 300 ? detail[..300] : detail
+    };
+
     /// <summary>F-26/F-27: a copy of a seal (export folder, email digest, timestamp) failed. The seal itself is recorded;
     /// <see cref="SecurityEvent.Detail"/> names the destination and the reason.</summary>
     public static SecurityEvent SealExportFailed(long upToSequence, string reason) => new()

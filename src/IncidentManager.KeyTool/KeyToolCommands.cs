@@ -120,6 +120,8 @@ internal static class KeyToolCommands
             IssuedUtc = DateTimeOffset.UtcNow, Threshold = threshold, Count = count,
             ChainKeyId = chainKey is null ? null : ChainKeyring.KeyIdOf(chainKey),
         };
+        e.Record(KeyToolRecord.SharesIssued, $"Evidence key {e.KeyId} split into {count} shares, any {threshold} of which rebuild it" +
+                                             (chainKey is null ? "." : ", with the audit chain key."));
         Save(site, e, output);
         return shares;
     }
@@ -143,6 +145,7 @@ internal static class KeyToolCommands
         output.WriteLine($"OK: evidence key {e.KeyId} opens with {opened.How}" + (opened.ChainKey is null ? "." : "; the audit chain key comes back with it."));
         e.LastDrillUtc = DateTimeOffset.UtcNow;
         e.LastDrillBy = $"{Environment.UserDomainName}\\{Environment.UserName}";
+        e.Record(KeyToolRecord.Drill, $"Recovery drill: evidence key {e.KeyId} opens with {opened.How}.");
         Save(site, e, output);
     }
 
@@ -164,6 +167,8 @@ internal static class KeyToolCommands
         if (writeChainKey && opened.ChainKey is { } chainToCheck) chainPath = ChainKeyTarget(site, chainToCheck, output);
         e.Server = new WrappedKey { Kind = WrappedKey.Certificate, Ref = normalized, Data = KeyWrap.ToCertificate(target, opened.EvidenceKey) };
         CryptographicOperations.ZeroMemory(opened.EvidenceKey);
+        e.Record(KeyToolRecord.Recovered, $"Evidence key {e.KeyId} recovered with {opened.How} onto certificate {normalized} ({toStore})" +
+                                          (chainPath is not null ? ", with the audit chain key." : "."));
         Save(site, e, output);
         // PROD-56: the copy beside the evidence only into a store that's there (never recreating one that vanished).
         if (Directory.Exists(site.EvidenceRoot)) TryWrite(site.RootEnvelopePath, e.ToJson(), output);
@@ -239,8 +244,16 @@ internal static class KeyToolCommands
             manifest.Append(CultureInfo.InvariantCulture, $"{Csv(r.CaseNumber)},{Csv(r.OriginalFileName)},{Csv(Path.GetRelativePath(outFolder, target))},{r.Sha256},{Csv(actual)},{(matches ? "yes" : "NO")}\r\n");
         }
         CryptographicOperations.ZeroMemory(opened.EvidenceKey);
-        File.WriteAllText(Path.Combine(outFolder, "manifest.csv"), manifest.ToString());
+        var manifestText = manifest.ToString();
+        File.WriteAllText(Path.Combine(outFolder, "manifest.csv"), manifestText);
         output.WriteLine($"Exported {exported} file(s) to {Path.GetFullPath(outFolder)}; {mismatched} don't match their recorded SHA-256 (see manifest.csv).");
+        // PROD-59: decrypted evidence left the store; CaseBook records it in the audit trail and the SIEM when it next reads
+        // the envelope (within a minute while it runs). The manifest's own SHA-256 ties the record to the file list.
+        var manifestSha = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(manifestText))).ToLowerInvariant();
+        e.Record(KeyToolRecord.Exported,
+            $"Exported {exported} evidence file(s) decrypted ({(caseNumber is null ? "all cases" : $"case {caseNumber}")}) to {Path.GetFullPath(outFolder)} " +
+            $"on {Environment.MachineName}; {mismatched} didn't match their record; manifest.csv SHA-256 {manifestSha}.", caseNumber);
+        Save(site, e, output);
         return (exported, mismatched);
     }
 

@@ -432,9 +432,14 @@ it can't open.
 **Getting the files out.** `casebook-keytool export --site <site folder> (--case <number> | --all) --out <folder>`
 writes each file under its original name, per case, with `manifest.csv` listing each file's recorded and actual
 SHA-256 (exit code 2 if any differ). It's for eDiscovery, moving to another product or a disaster. It opens the key
-with the server's certificate by default, or `--pfx`, `--cert` or `--shares`. It doesn't write to CaseBook's audit
-trail: keep the manifest with the change record. The exported files are live: export malware only to a quarantined
-location.
+with the server's certificate by default, or `--pfx`, `--cert` or `--shares`. The exported files are live: export
+malware only to a quarantined location.
+
+**What the keytool does is recorded.** The tool runs apart from the app and can't write the audit trail, so `split`,
+`verify`, `recover` and `export` each leave a record in the keys folder's `evidence-key.json`. Within a minute (while
+CaseBook runs; otherwise at its next start) CaseBook writes each to the audit trail (an export as an Export entry with
+the case, file count, folder and the manifest's SHA-256) and sends it to the SIEM (5007, or 5307 for an export). Run
+the tool on the server, against the site's own keys folder, or the record waits for the envelope to be copied back.
 
 ---
 
@@ -630,6 +635,8 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5003 | Integrity | Evidence at rest drifted from its recorded SHA-256 (F-17 critical log/email alarm) |
 | 5004 | Integrity | Integrity seal recorded: the SIEM's copy of each seal (F-26; see *Seal copies in the SIEM* below) |
 | 5005 | Integrity | A copy of a seal failed (export folder, email digest or timestamp; the detail names it); the seal itself is recorded (F-26/F-27) |
+| 5006 | Integrity | **Evidence key unavailable**: encrypted evidence and reports are paused (High; once per episode; the detail gives the reason, never key material) |
+| 5007 | Integrity | Evidence key changed. Action: `KeyCreated`, `KeyAvailable` (back after 5006), `KeyProtectionChanged` (renewed certificate, recovery certificates changed), `SharesIssued`, `RecoveryDrill`, or **`KeyRecovered`** (moved onto another certificate; High). Target id is the key id |
 | 5101 | Authentication | Authentication failure |
 | 5201 | Authorization | Access denied (403) on a page or download **GET** (other 403s aren't streamed) |
 | 5202 | Authorization | In-app action refused for lack of a permission |
@@ -639,6 +646,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5304 | DataAccess | Data exported: metrics, legal register, program report, improvement actions, IOC feed, case audit CSV, compliance bundle, STIX graph, campaign rollup, Word template preview (the access-log CSV and the configuration bundle don't emit it) |
 | 5305 | DataAccess | **Restricted** case accessed (elevated severity) |
 | 5306 | DataAccess | Download/export refused by the per-user rate limit (F-13; possible bulk-scrape) |
+| 5307 | DataAccess | Evidence written out **decrypted** by `casebook-keytool export` (Warning; actor is the Windows account that ran it; detail has the case, count, folder and the manifest's SHA-256) |
 | 5401 | Admin | Role created / updated / deleted |
 | 5402 | Admin | AD-group → role mapping added / removed |
 | 5403 | Admin | Operational setting changed |

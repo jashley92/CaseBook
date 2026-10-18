@@ -3,6 +3,7 @@ using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Evidence;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
@@ -109,11 +110,13 @@ public sealed class EvidenceKeyringTests : IDisposable
     private string KeysFile => Path.Combine(_dir, "keys", "evidence-key.json");
     private string RootFile => Path.Combine(Evidence, ".key", "evidence-key.json");
 
+    private readonly CapturingSecurityEventSink _siem = new();
+
     private EvidenceKeyring Ring(EvidenceEncryptionOptions options, SealSigningOptions? integrity = null, IChainKeyring? chain = null,
         IServiceScopeFactory? scopes = null) =>
         new(Options.Create(options), Options.Create(integrity ?? new SealSigningOptions { SigningKeyPath = Path.Combine(_dir, "keys", "seal-signing.pem") }),
             Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), Options.Create(new ReportOutputOptions { RootPath = Reports }),
-            chain ?? NoChainKeys.Instance, scopes ?? Scopes());
+            chain ?? NoChainKeys.Instance, scopes ?? Scopes(), siem: _siem);
 
     private IServiceScopeFactory Scopes(bool brokenDatabase = false)
     {
@@ -319,6 +322,64 @@ public sealed class EvidenceKeyringTests : IDisposable
         (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready, "the next check clears it, no restart");
         await using var again = await store.OpenReadAsync(stored.StoragePath);
         new StreamReader(again).ReadToEnd().Should().Be("sample");
+    }
+
+    // ---- PROD-59: the key in the SIEM, and what the keytool did in the audit trail ----
+
+    [Fact]
+    public async Task The_SIEM_hears_the_key_made_lost_and_back_once_each()
+    {
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var options = On(server, RecoveryCer(recovery));
+        var ring = Ring(options);
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        _siem.Events.Should().ContainSingle(e => e.EventId == SecurityEventIds.EvidenceKeyChanged && e.Action == "KeyCreated")
+            .Which.TargetId.Should().Be(ring.CurrentKeyId);
+
+        var pfx = server.Export(X509ContentType.Pfx, "t");
+        Uninstall(server);
+        await ring.LoadAsync();
+        await ring.LoadAsync();   // a 5-minute retry
+        _siem.Events.Should().ContainSingle(e => e.EventId == SecurityEventIds.EvidenceKeyUnavailable, "once per episode")
+            .Which.Severity.Should().Be(SecuritySeverity.High);
+
+        var back = X509CertificateLoader.LoadPkcs12(pfx, "t", X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.UserKeySet);
+        using (var s = new X509Store(StoreName.My, StoreLocation.CurrentUser)) { s.Open(OpenFlags.ReadWrite); s.Add(back); }
+        _installed.Add(back);
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        _siem.Events.Should().ContainSingle(e => e.Action == "KeyAvailable");
+        _siem.Events.Select(e => e.Detail ?? "").Should().NotContain(d => d.Contains("BEGIN", StringComparison.Ordinal), "no key material");
+    }
+
+    [Fact]
+    public async Task What_the_keytool_did_reaches_the_audit_trail_and_the_SIEM_once()
+    {
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var options = On(server, RecoveryCer(recovery));
+        (await Ring(options).LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+
+        // casebook-keytool, run on the server: a drill, an export of one case, a recovery. It writes the keys folder's copy.
+        var e = KeyEnvelope.Parse(await File.ReadAllTextAsync(KeysFile))!;
+        e.Record(KeyToolRecord.Drill, "Recovery drill: evidence key opens with 3 shares.");
+        e.Record(KeyToolRecord.Exported, "Exported 2 evidence file(s) decrypted (case 2026-01) to E:\\out; manifest.csv SHA-256 abc.", "2026-01");
+        e.Record(KeyToolRecord.Recovered, "Evidence key recovered onto certificate 1234.");
+        await File.WriteAllTextAsync(KeysFile, e.ToJson());
+
+        var ring = Ring(options);
+        await ring.LoadAsync();
+        _audit.Entries.Should().Contain(x => x.StartsWith("Export EvidenceKey", StringComparison.Ordinal) && x.Contains("manifest.csv SHA-256 abc", StringComparison.Ordinal));
+        _audit.Entries.Count(x => x.Contains("casebook-keytool, run by", StringComparison.Ordinal)).Should().Be(3);
+        _siem.Events.Should().ContainSingle(x => x.EventId == SecurityEventIds.EvidenceExportedOffline).Which.CaseNumber.Should().Be("2026-01");
+        _siem.Events.Should().ContainSingle(x => x.Action == "RecoveryDrill");
+        _siem.Events.Should().ContainSingle(x => x.Action == "KeyRecovered").Which.Severity.Should().Be(SecuritySeverity.High);
+        KeyEnvelope.Parse(DbEnvelope())!.Records.Should().HaveCount(3, "the database copy now holds them, so they're recorded once");
+
+        await ring.LoadAsync();
+        await Ring(options).LoadAsync();   // and after a restart
+        _audit.Entries.Count(x => x.Contains("casebook-keytool, run by", StringComparison.Ordinal)).Should().Be(3);
+        _siem.Events.Count(x => x.EventId == SecurityEventIds.EvidenceExportedOffline).Should().Be(1);
     }
 
     // ---- review findings (2026-10-17) ----

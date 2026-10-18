@@ -16,6 +16,8 @@ public static class SecurityEventIds
     public const int EvidenceIntegrityDrift = 5003; // evidence at rest no longer matches its recorded SHA-256 (F-17)
     public const int IntegritySealRecorded = 5004;  // a seal was recorded: its copy outside CaseBook (F-26)
     public const int SealExportFailed = 5005;       // a copy of a seal failed: export folder, email or timestamp (F-26/F-27)
+    public const int EvidenceKeyUnavailable = 5006; // the evidence key can't be opened: evidence and reports paused (PROD-59)
+    public const int EvidenceKeyChanged = 5007;     // the evidence key: created, available again, re-protected, shares issued, a drill, a recovery (PROD-59)
 
     // 51xx — Authentication
     public const int AuthenticationFailed = 5101;
@@ -31,6 +33,7 @@ public static class SecurityEventIds
     public const int DataExported = 5304;
     public const int RestrictedCaseAccessed = 5305; // a read of a restricted case (elevated severity)
     public const int DownloadRateLimited = 5306; // a download/export request refused by the per-user rate limit (F-13)
+    public const int EvidenceExportedOffline = 5307; // evidence written out decrypted by casebook-keytool export (PROD-59)
 
     // 54xx — Admin / configuration
     public const int RoleChanged = 5401;
