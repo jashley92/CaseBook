@@ -285,25 +285,50 @@ public sealed class CaseImportService
 
     /// <summary>
     /// CAP-14: the open (not closed, not archived) cases the current user can see that carry <paramref name="detectionCaseId"/>
-    /// as their detection case id, compared without regard to case on either database; at most one more than
+    /// as their detection case id, compared as <see cref="SameDetectionId"/> does on either database; at most one more than
     /// <see cref="MaxDetectionMatches"/>.
     /// </summary>
     public async Task<IReadOnlyList<(Guid Id, string CaseNumber, string Title)>> FindOpenByDetectionIdAsync(string detectionCaseId,
         CancellationToken ct = default)
     {
-        var key = detectionCaseId.Trim().ToUpperInvariant();
-        if (key.Length == 0) return [];
+        var detection = detectionCaseId.Trim();
+        if (detection.Length == 0) return [];
+        // CAP-14 review: the database narrows, then SameDetectionId decides, so SQLite, SQL Server and CheckTargetAsync agree.
+        // Trimmed on both sides (an id saved before CaseService trimmed it can carry a stray space; SQL Server's = ignores a
+        // trailing one and SQLite's doesn't). SQLite's upper() folds ASCII only and SQL Server's folds Unicode, so the key is
+        // offered both ways: each database's own fold of a matching id equals one of them.
+        var ascii = AsciiUpper(detection);
+        var full = detection.ToUpperInvariant();
         using var db = _factory.CreateDbContext();
-#pragma warning disable CA1304, CA1311, CA1862 // UPPER() in SQL, so SQLite matches as SQL Server does; the culture overloads don't translate
+#pragma warning disable CA1304, CA1311, CA1862 // UPPER() in SQL; the culture overloads don't translate
         var found = await db.Cases.AsNoTracking().ForUser(_user)
-            .Where(c => c.Phase != CasePhase.Closed && !c.IsArchived && c.DetectionCaseId != null && c.DetectionCaseId.ToUpper() == key)
+            .Where(c => c.Phase != CasePhase.Closed && !c.IsArchived && c.DetectionCaseId != null
+                        && (c.DetectionCaseId.Trim().ToUpper() == ascii || c.DetectionCaseId.Trim().ToUpper() == full))
 #pragma warning restore CA1304, CA1311, CA1862
             .OrderBy(c => c.CaseNumber)
-            .Select(c => new { c.Id, c.CaseNumber, c.Title })
-            .Take(MaxDetectionMatches + 1)
+            .Select(c => new { c.Id, c.CaseNumber, c.Title, c.DetectionCaseId })
+            .Take(MaxDetectionCandidates)
             .ToListAsync(ct);
-        return found.Select(c => (c.Id, c.CaseNumber, c.Title)).ToList();
+        return found.Where(c => SameDetectionId(c.DetectionCaseId, detection))
+            .Take(MaxDetectionMatches + 1)
+            .Select(c => (c.Id, c.CaseNumber, c.Title)).ToList();
     }
+
+    // CAP-14 review: what the database's narrowing may return before SameDetectionId decides (bounded, C10; a looser fold
+    // on SQL Server can let a near-miss through, never drop a match).
+    private const int MaxDetectionCandidates = 50;
+
+    /// <summary>
+    /// CAP-14 review: whether two detection case ids are the same id: trimmed, ASCII letters compared without regard to case,
+    /// every other character exactly (as SQLite's <c>upper()</c> folds, so the database and this agree on both providers).
+    /// </summary>
+    public static bool SameDetectionId(string? a, string? b) =>
+        a is not null && b is not null && string.Equals(AsciiUpper(a.Trim()), AsciiUpper(b.Trim()), StringComparison.Ordinal);
+
+    private static string AsciiUpper(string s) => string.Create(s.Length, s, static (span, src) =>
+    {
+        for (var i = 0; i < src.Length; i++) span[i] = char.IsAsciiLetterLower(src[i]) ? (char)(src[i] - 32) : src[i];
+    });
 
     /// <summary>
     /// CAP-14: why the document's target can't be used, or null. <c>target.caseId</c> and <c>target.detectionCaseId</c> given
@@ -317,7 +342,7 @@ public sealed class CaseImportService
         using var db = _factory.CreateDbContext();
         var target = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == id)
             .Select(c => new { c.CaseNumber, c.DetectionCaseId }).FirstOrDefaultAsync(ct);
-        if (target is null || string.Equals(target.DetectionCaseId?.Trim(), detection, StringComparison.OrdinalIgnoreCase)) return null;
+        if (target is null || SameDetectionId(target.DetectionCaseId, detection)) return null;   // CAP-14 review: as FindOpenByDetectionIdAsync
         return $"target.caseId and target.detectionCaseId name different cases: {target.CaseNumber} carries " +
                (string.IsNullOrWhiteSpace(target.DetectionCaseId) ? "no detection case id" : $"detection case id \"{target.DetectionCaseId.Trim()}\"") +
                $", not \"{detection}\". Give one of them.";

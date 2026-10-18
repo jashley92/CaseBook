@@ -350,6 +350,31 @@ logged today; check the folder's permissions directly.
   the value on the card (Settings → Notifications → Team chat webhook; Server configuration → SIEM webhook token).
   Nothing is sent with it meanwhile (fail closed, CAP-40).
 
+### Saved secrets while the database is down
+
+- **Symptom:** during a database outage, the log says "The secrets saved in Administration couldn't be read" once.
+  Team chat may show **Stopped** on Delivery health with "the webhook URL saved in Administration can't be read (the
+  database isn't answering)", and Server configuration shows "can't tell" for the token or webhook.
+- **Cause:** the senders read the saved team-chat webhook URL and SIEM webhook token from the database. Each read waits
+  at most 3 seconds; a database that doesn't answer is asked again only every 10 seconds meanwhile (CAP-40 review).
+- **What happens:** a value read before the outage keeps being used, so chat posts and the SIEM webhook sends as
+  before. When nothing was read yet (the database was down from startup), the SIEM webhook sends without a token, as
+  it did before one could be saved, so a collector that wants one answers 401 and Delivery health shows it. A chat post
+  counts as failed, not "chat is off", so the next reminder scan tries a scheduled broadcast again rather than marking
+  it sent.
+- **Fix:** none needed for the secrets: once the database answers, the next read picks the values up. To keep the SIEM
+  token through a cold start with the database down, set it in the server's configuration (`Siem:Webhook:Token`)
+  instead.
+
+### "The … couldn't be encrypted on this server" on Save
+
+- **Symptom:** saving the team-chat webhook URL or the SIEM webhook token says it couldn't be encrypted, so nothing was
+  saved.
+- **Cause:** Data Protection couldn't use its key ring: `DataProtection:KeyPath` is missing, or the app-pool account
+  can't write to it (a new key can't be created).
+- **Fix:** check the folder exists and grant the app-pool account Modify on it, then save again (CAP-40 review: before,
+  this ended the page's connection).
+
 ### "Someone changed the team-chat webhook URL (or SIEM webhook token) since you opened it"
 
 - **Symptom:** Save or Clear on a secret card says nothing was saved; or "Someone else saved the … just now; reload to

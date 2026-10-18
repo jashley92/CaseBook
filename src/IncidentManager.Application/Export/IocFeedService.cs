@@ -81,8 +81,11 @@ public sealed class IocFeedService
     /// CAP-09: the feed, with <paramref name="since"/> narrowing it to the indicators with an occurrence added or changed
     /// (a verdict, a marking, an edit) at or after that time: a delta for a scheduled pull. A delta can't say what left the
     /// feed (an indicator removed or cleared, or its case restricted or made an exercise since), so a consumer takes a full
-    /// pull now and then. Reads at most <paramref name="limit"/> occurrences, the most recently changed first;
-    /// <see cref="IocFeed.Cut"/> says when there were more.
+    /// pull now and then. CAP-09 review: <paramref name="since"/> picks which indicators are in the delta, never what they
+    /// say: each one's marking, cases and first/last seen are over all its visible occurrences, so a delta never downgrades a
+    /// TLP:RED indicator to the looser marking of the occurrence that changed, nor replaces its case list with that one case.
+    /// Reads at most <paramref name="limit"/> occurrences, cut by whole indicators (the most recently changed first), never
+    /// part of one's occurrences; <see cref="IocFeed.Cut"/> says when there were more.
     /// </summary>
     public async Task<IocFeed> GetFeedAsync(DateTimeOffset? since, int limit = MaxOccurrences, CancellationToken ct = default)
     {
@@ -90,17 +93,53 @@ public sealed class IocFeedService
 
         // Join to the caller's visible cases so restricted-case IOCs never leak into the feed;
         // an indicator present on both a visible and a restricted case surfaces only its visible
-        // occurrences (first/last-seen and source list are computed over those alone).
-        var query =
+        // occurrences (first/last-seen and source list are computed over those alone). CAP-09 review: Key is the indicator's
+        // dedupe key as the database folds it (SQL LOWER(), as the E-08/E-23 matchers), so the delta's and the cut's selection
+        // and the grouping below agree on what one indicator is.
+#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL; the invariant overload doesn't translate.
+        var occurrences =
             from e in db.CaseEntities.AsNoTracking()
             where e.Disposition == EntityDisposition.Malicious && IocTypes.Contains(e.Type)
             join c in db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() on e.CaseId equals c.Id // PROD-43: no drill IOCs in the pushed feed
-            select new { e.Id, e.Type, e.Value, e.Source, e.CreatedAtUtc, Changed = e.ModifiedAtUtc ?? e.CreatedAtUtc, c.CaseNumber, e.Tlp };
-        if (since is { } from) query = query.Where(x => x.Changed >= from);
+            select new { e.Id, e.Type, e.Value, Key = e.Value.ToLower(), e.Source, e.CreatedAtUtc, Changed = e.ModifiedAtUtc ?? e.CreatedAtUtc, c.CaseNumber, e.Tlp };
+#pragma warning restore CA1304, CA1311
+        var query = occurrences;
+        // CAP-09 review: the delta is every occurrence of an indicator that has one changed since then, not only the changed ones.
+        if (since is { } from)
+            query = query.Where(x => occurrences.Any(y => y.Type == x.Type && y.Key == x.Key && y.Changed >= from));
         // CAP-09 (C10): bounded, the most recently changed first, so a cut keeps what a blocking control most needs.
         var rows = await query.OrderByDescending(x => x.Changed).ThenBy(x => x.Id).Take(limit + 1).ToListAsync(ct);
         var cut = rows.Count > limit;
-        if (cut) rows.RemoveAt(rows.Count - 1);
+        if (cut)
+        {
+            // CAP-09 review: cut by whole indicators. The indicators by their latest change (a row each: bounded by the limit,
+            // as each has an occurrence), as many as fit whole; then the occurrences of exactly those, picked in the database
+            // by where the last one taken stands in that order (latest change, type, key), so no list of keys is sent back.
+            var keys = await query.GroupBy(x => new { x.Type, x.Key })
+                .Select(g => new { g.Key.Type, g.Key.Key, Count = g.Count(), Latest = g.Max(x => x.Changed) })
+                .OrderByDescending(k => k.Latest).ThenBy(k => k.Type).ThenBy(k => k.Key)
+                .Take(limit).ToListAsync(ct);
+            var (taken, fit) = (0, 0);
+            foreach (var k in keys)
+            {
+                if (taken + k.Count > limit) break;
+                taken += k.Count;
+                fit++;
+            }
+            if (fit == 0) rows = [];
+            else
+            {
+                var last = keys[fit - 1];
+                var (at, type, key) = (last.Latest, last.Type, last.Key);
+                // string.Compare is the SQL comparison (the database's collation, as its ORDER BY above); Ordinal doesn't translate.
+#pragma warning disable CA1309
+                rows = await occurrences
+                    .Where(x => occurrences.Any(y => y.Type == x.Type && y.Key == x.Key
+                        && (y.Changed > at || (y.Changed == at && (y.Type < type || (y.Type == type && string.Compare(y.Key, key) <= 0))))))
+                    .Take(limit).ToListAsync(ct);
+#pragma warning restore CA1309
+            }
+        }
 
         // WF-79: an occurrence without its own marking carries the default (as in the report and STIX, BUG-73), so it isn't
         // outranked by a looser marking elsewhere, and an indicator marked nowhere still goes out marked.
@@ -109,7 +148,7 @@ public sealed class IocFeedService
         // Dedupe by (type, value) in memory — case-insensitive to match the E-08 overlap engine,
         // and to keep DateTimeOffset aggregation off SQLite (see F-08).
         var deduped = rows
-            .GroupBy(r => (r.Type, Key: r.Value.ToLowerInvariant()))
+            .GroupBy(r => (r.Type, r.Key))   // CAP-09 review: the database's fold, as the selection above used
             .Select(g =>
             {
                 var ordered = g.OrderByDescending(x => x.CreatedAtUtc).ToList();

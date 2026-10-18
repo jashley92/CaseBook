@@ -799,7 +799,7 @@ public sealed class CaseService
                     c.SetComplexEventNumber(local, n);
 
             c.SetInitialSummary(request.Summary, _user.UserId, now);   // INV-36: brief v1 holds it
-            c.DetectionCaseId = request.DetectionCaseId;
+            c.DetectionCaseId = request.DetectionCaseId?.Trim();   // CAP-14 review: trimmed, as the import matches it
             c.DataTypesInvolved = request.DataTypesInvolved;
             c.ImpactedAssets = request.ImpactedAssets;
             c.DetectedAtUtc = detectedAtUtc;          // FR-03: real detection time (Case.Open defaults it to now)
@@ -1219,7 +1219,7 @@ public sealed class CaseService
         var c = Case.Open(OrgLocal(now).Year, 0, string.IsNullOrWhiteSpace(request.DescriptiveName) ? "New case" : request.DescriptiveName,
             request.Title, cls, request.Severity, request.Origin, _user.UserId, now, request.IsExercise);
         c.SetInitialSummary(request.Summary, _user.UserId, now);
-        c.DetectionCaseId = request.DetectionCaseId;
+        c.DetectionCaseId = request.DetectionCaseId?.Trim();   // CAP-14 review: trimmed, as the import matches it
         using var db = _factory.CreateDbContext();
         var gates = new List<GateEvaluation>();
         foreach (var t in StageGateTriggers.Climb(null, cls))

@@ -31,7 +31,7 @@ public sealed class ApiEndpointTests : IDisposable
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "casebook-api-tests", Guid.NewGuid().ToString("N"));
     private readonly Sink _siem = new();
 
-    private const string OpenIoc = "198.51.100.201", SecretIoc = "198.51.100.202", DrillIoc = "198.51.100.203";
+    private const string OpenIoc = "198.51.100.201", RestrictedIoc = "198.51.100.202", DrillIoc = "198.51.100.203";
 
     /// <summary>A thread-safe stand-in for the SIEM queue (requests run concurrently with the test).</summary>
     private sealed class Sink : ISecurityEventSink
@@ -83,14 +83,15 @@ public sealed class ApiEndpointTests : IDisposable
                 return c;
             }
             Open(9001, "cap09-open", OpenIoc);
-            Open(9002, "cap09-secret", SecretIoc, restricted: true);
+            Open(9002, "cap09-secret", RestrictedIoc, restricted: true);
             Open(9003, "cap09-drill", DrillIoc, exercise: true);
             await db.SaveChangesAsync();
         }
         scope.ServiceProvider.GetRequiredService<IRoleDirectory>().Invalidate();
     }
 
-    private static async Task<string> TokenAsync(WebApplicationFactory<Program> factory, string slug, string roles, bool revoked = false)
+    private static async Task<string> TokenAsync(WebApplicationFactory<Program> factory, string slug, string roles, bool revoked = false,
+        string? owner = null)
     {
         var (plaintext, prefix, hash) = ApiTokenService.NewToken();
         using var scope = factory.Services.CreateScope();
@@ -98,7 +99,7 @@ public sealed class ApiEndpointTests : IDisposable
         var now = DateTimeOffset.UtcNow;
         db.ApiTokens.Add(new ApiToken
         {
-            Name = slug, Kind = ApiTokenKind.System, OwnerUserId = "apitoken:" + slug, OwnerDisplayName = slug, RolesCsv = roles,
+            Name = slug, Kind = ApiTokenKind.System, OwnerUserId = owner ?? "apitoken:" + slug, OwnerDisplayName = slug, RolesCsv = roles,
             TokenHash = hash, Prefix = prefix, CreatedBy = "test", CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(30),
             RevokedAtUtc = revoked ? now : null, RevokedBy = revoked ? "test" : null,
         });
@@ -140,11 +141,11 @@ public sealed class ApiEndpointTests : IDisposable
             csv.StatusCode.Should().Be(HttpStatusCode.OK);
             csv.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
             var text = await csv.Content.ReadAsStringAsync();
-            text.Should().StartWith("# CaseBook malicious-IOC feed").And.Contain(OpenIoc).And.NotContain(SecretIoc).And.NotContain(DrillIoc);
+            text.Should().StartWith("# CaseBook malicious-IOC feed").And.Contain(OpenIoc).And.NotContain(RestrictedIoc).And.NotContain(DrillIoc);
             csv.Headers.Contains("X-CaseBook-Truncated").Should().BeFalse();
 
             var all = await (await client.SendAsync(Get("/api/export/iocs.csv", cleared))).Content.ReadAsStringAsync();
-            all.Should().Contain(OpenIoc).And.Contain($"ip,{SecretIoc},malicious,").And.Contain("TLP:RED").And.NotContain(DrillIoc);
+            all.Should().Contain(OpenIoc).And.Contain($"ip,{RestrictedIoc},malicious,").And.Contain("TLP:RED").And.NotContain(DrillIoc);
 
             var stix = await client.SendAsync(Get("/api/export/iocs.stix.json", reader));
             stix.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -152,7 +153,7 @@ public sealed class ApiEndpointTests : IDisposable
             bundle.RootElement.GetProperty("type").GetString().Should().Be("bundle");
             var values = bundle.RootElement.GetProperty("objects").EnumerateArray()
                 .Where(o => o.TryGetProperty("value", out _)).Select(o => o.GetProperty("value").GetString()).ToList();
-            values.Should().Contain(OpenIoc).And.NotContain(SecretIoc).And.NotContain(DrillIoc);
+            values.Should().Contain(OpenIoc).And.NotContain(RestrictedIoc).And.NotContain(DrillIoc);
 
             // The access log and SIEM 5304, in the token's name.
             using var scope = factory.Services.CreateScope();
@@ -233,6 +234,29 @@ public sealed class ApiEndpointTests : IDisposable
             _siem.Events.Should().Contain(e => e.EventId == SecurityEventIds.DownloadRateLimited && e.Actor == "apitoken:busy");
 
             (await client.SendAsync(Get("/api/export/iocs.csv", other))).StatusCode.Should().Be(HttpStatusCode.OK, "each token has its own budget");
+        });
+    }
+
+    [Fact]
+    public async Task Two_tokens_of_one_owner_each_have_their_own_feed_budget()
+    {
+        // CAP-09 review: the limit was keyed by NameIdentifier, the token's owner, so one owner's firewall token spent the
+        // budget of their TIP token too.
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory(("RateLimiting:ApiFeeds:TokenLimit", "2"), ("RateLimiting:ApiFeeds:TokensPerPeriod", "1"),
+                ("RateLimiting:ApiFeeds:PeriodSeconds", "3600"));
+            using var client = factory.CreateClient();
+            await SeedAsync(factory);
+            var firewall = await TokenAsync(factory, "owner-firewall", "Feed reader", owner: "apitoken:shared-owner");
+            var tip = await TokenAsync(factory, "owner-tip", "Feed reader", owner: "apitoken:shared-owner");
+
+            (await client.SendAsync(Get("/api/export/iocs.csv", firewall))).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await client.SendAsync(Get("/api/export/iocs.csv", firewall))).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await client.SendAsync(Get("/api/export/iocs.csv", firewall))).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+
+            (await client.SendAsync(Get("/api/export/iocs.csv", tip))).StatusCode.Should().Be(HttpStatusCode.OK, "the same owner, another token");
+            (await client.SendAsync(Get("/api/export/iocs.stix.json", tip))).StatusCode.Should().Be(HttpStatusCode.OK);
         });
     }
 

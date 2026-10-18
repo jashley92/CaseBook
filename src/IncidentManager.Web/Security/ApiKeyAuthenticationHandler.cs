@@ -12,7 +12,9 @@ namespace IncidentManager.Web.Security;
 /// PROD-34: authenticates a request presenting an API token as <c>Authorization: Bearer &lt;token&gt;</c>.
 /// It validates the token (hash lookup, active, not expired) and builds a <see cref="ClaimsPrincipal"/> that
 /// carries the token's attribution id (<see cref="ClaimTypes.NameIdentifier"/> → <c>ICurrentUser.UserId</c> +
-/// audit actor + rate-limit partition), a display name, and one <c>perm</c> claim per granted permission.
+/// audit actor + the per-person rate-limit partition), a display name, the token's own row id
+/// (<see cref="AppClaimTypes.ApiTokenId"/>, CAP-09 review: the IOC feed's per-token limit), and one <c>perm</c> claim per
+/// granted permission.
 /// It deliberately emits <b>no</b> <see cref="ClaimTypes.Role"/> claims, so the Windows-mode
 /// <c>RoleClaimsTransformer</c> early-returns and never tries to AD-resolve them. When no bearer token is
 /// present it returns <see cref="AuthenticateResult.NoResult"/> so it never interferes with other schemes.
@@ -51,6 +53,8 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         {
             new(ClaimTypes.NameIdentifier, auth.OwnerUserId),
             new(ClaimTypes.Name, auth.DisplayName),
+            // CAP-09 review: which token, so the feed's limit is per token, not shared by every personal token of one owner.
+            new(AppClaimTypes.ApiTokenId, auth.TokenId.ToString("N")),
         };
         foreach (var perm in auth.Permissions)
             claims.Add(new Claim(AppClaimTypes.Permission, perm.ToString()));

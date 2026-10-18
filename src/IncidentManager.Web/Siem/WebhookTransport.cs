@@ -170,6 +170,9 @@ public sealed class WebhookTransport : ISecurityEventTransport
         if (!string.IsNullOrWhiteSpace(opts.Token))
             return (true, await _secrets.ResolveAsync(opts.Token, ct).ConfigureAwait(false), "server configuration");
         if (_stored is null) return (false, null, "");
+        // CAP-40 review: bounded, and a database that doesn't answer never throws here (which dropped the event and stalled
+        // the lane for a connect timeout each): the token last read is used, or, when none was ever read, none (CantTell
+        // isn't Saved), as before a token could be saved here.
         var saved = await _stored.ResolveAsync(StoredSecretKind.SiemWebhookToken, ct).ConfigureAwait(false);
         return (saved.Saved, saved.Value, "saved in Administration");
     }

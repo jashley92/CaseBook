@@ -130,9 +130,11 @@ flowchart LR
   consumer to honor them before sharing anything onward.
 - **Scheduling:** pull every few minutes at most. Send back the `ETag` as `If-None-Match` and an unchanged feed is a
   `304` with no body; or ask for a delta with `?since=<ISO time>` and take a full pull now and then (a delta doesn't
-  list indicators that left the feed). Per token: a burst of 20 pulls, then one a minute (`RateLimiting:ApiFeeds`).
-- **Bound:** at most 100,000 indicator occurrences, the most recently changed; past that the feed says it was cut
-  (`X-CaseBook-Truncated: true`, and in the body).
+  list indicators that left the feed). A delta row is the whole indicator, as a full pull gives it: its strictest
+  marking, every case and its first seen, not only the occurrence that changed. Per token, each token its own budget
+  (two tokens of one owner don't share it): a burst of 20 pulls, then one a minute (`RateLimiting:ApiFeeds`).
+- **Bound:** at most 100,000 indicator occurrences, cut by whole indicators, the most recently changed first (never
+  part of one's occurrences); past that the feed says it was cut (`X-CaseBook-Truncated: true`, and in the body).
 - **Recorded:** each pull with a body is in the access log (*Export*, by `apitoken:<name>`) and is SIEM event 5304; a
   `304` isn't.
 - **Failure:** 401 (token missing, invalid, expired or revoked: SIEM 5101), 403 (no `ViewCases`), 400 (a bad `since`),

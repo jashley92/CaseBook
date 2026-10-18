@@ -163,6 +163,74 @@ public sealed class IocFeedPullTests : IDisposable
         feed.Fingerprint("csv").Should().NotBe(stix.Fingerprint(feed), "each format has its own tag");
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_delta_row_is_the_whole_indicator_not_just_the_occurrence_that_changed(string provider)
+    {
+        // CAP-09 review: since picks the indicators; their marking, cases and first seen are over every occurrence.
+        _db = TestDatabase.Open(provider);
+        var a = Add(1, entities: Ioc("203.0.113.77", created: T0, tlp: TlpLevel.Red));
+        var b = Add(2, entities: Ioc("203.0.113.77", created: T0.AddDays(10), tlp: TlpLevel.Green));
+        Add(3, entities: Ioc("203.0.113.78", created: T0));   // nothing changed since: not in the delta
+
+        var feed = await Feed(_feed).GetFeedAsync(T0.AddDays(5));
+        var row = feed.Rows.Should().ContainSingle().Which;
+        row.Value.Should().Be("203.0.113.77");
+        row.Tlp.Should().Be(TlpLevel.Red, "the delta never downgrades a marking to the changed occurrence's");
+        row.Cases.Should().BeEquivalentTo(a.CaseNumber, b.CaseNumber);
+        row.FirstSeenUtc.Should().Be(T0);
+        row.LastSeenUtc.Should().Be(T0.AddDays(10));
+
+        var csv = IocFeedCsv.Build(feed, _clock.UtcNow);
+        csv.Should().Contain($"ip,203.0.113.77,malicious,2026-09-01 00:00:00,2026-09-11 00:00:00,2,{a.CaseNumber}; {b.CaseNumber},SIEM,TLP:RED\r\n");
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(Stix(_feed).BuildFeed(feed)));
+        var objects = doc.RootElement.GetProperty("objects").EnumerateArray().ToList();
+        var red = objects.Single(o => o.GetProperty("type").GetString() == "marking-definition" && o.GetProperty("name").GetString() == "TLP:RED");
+        var ip = objects.Single(o => o.GetProperty("type").GetString() == "ipv4-addr");
+        ip.GetProperty("object_marking_refs")[0].GetString().Should().Be(red.GetProperty("id").GetString());
+        ip.GetProperty("x_casebook_cases").EnumerateArray().Select(c => c.GetString()).Should().BeEquivalentTo(a.CaseNumber, b.CaseNumber);
+        ip.GetProperty("x_casebook_first_seen").GetString().Should().Be("2026-09-01T00:00:00.000Z");
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_cut_keeps_whole_indicators_never_part_of_ones_occurrences(string provider)
+    {
+        _db = TestDatabase.Open(provider);
+        Add(1, entities: [Ioc("198.51.100.30", created: T0, tlp: TlpLevel.Red), Ioc("bad.example", EntityType.Domain, created: T0.AddDays(12))]);
+        Add(2, entities: Ioc("198.51.100.30", created: T0.AddDays(10), tlp: TlpLevel.Green));
+
+        // Three occurrences, a bound of two: the newest indicator (one occurrence) fits; the IP's two don't fit beside it,
+        // and its newer GREEN occurrence alone would have gone out as a GREEN indicator on one case.
+        var cut = await Feed(_feed).GetFeedAsync(null, limit: 2);
+        cut.Cut.Should().BeTrue();
+        cut.Rows.Select(r => r.Value).Should().Equal("bad.example");
+
+        var whole = await Feed(_feed).GetFeedAsync(null, limit: 3);
+        whole.Cut.Should().BeFalse();
+        whole.Rows.Single(r => r.Value == "198.51.100.30").Tlp.Should().Be(TlpLevel.Red);
+
+        // A delta that's cut is cut the same way.
+        var delta = await Feed(_feed).GetFeedAsync(T0.AddDays(5), limit: 2);
+        delta.Cut.Should().BeTrue();
+        delta.Rows.Select(r => r.Value).Should().Equal("bad.example");
+        (await Feed(_feed).GetFeedAsync(T0.AddDays(5), limit: 1)).Rows.Select(r => r.Value).Should().Equal("bad.example");
+    }
+
+    [Fact]
+    public async Task The_stix_etag_changes_with_the_default_marking()
+    {
+        _db = TestDatabase.Open(TestDatabase.Sqlite);
+        Add(1, entities: Ioc("198.51.100.40", tlp: TlpLevel.Green));   // marked: its row doesn't move with the default
+        var feed = await Feed(_feed).GetFeedAsync(null);
+        StixWith(TlpLevel.Amber).Fingerprint(feed).Should().NotBe(StixWith(TlpLevel.Red).Fingerprint(feed),
+            "the bundle lists the default and the report takes it when it's the strictest, so a 304 would be stale");
+        StixWith(TlpLevel.Amber).Fingerprint(feed).Should().Be(StixWith(TlpLevel.Amber).Fingerprint(feed));
+    }
+
+    private StixExportService StixWith(TlpLevel defaultTlp) =>
+        new(_db!.Factory(), _feed, _clock, new TestOptionsMonitor<ReportingOptions>(
+            new ReportingOptions { OrganizationName = "Northwind Mutual", DefaultTlp = defaultTlp.ToString() }));
+
     [Fact]
     public async Task A_cut_bundle_says_so_in_its_report()
     {

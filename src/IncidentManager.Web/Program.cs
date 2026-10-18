@@ -239,11 +239,16 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
-    // CAP-09: keyed by the token's identity (the API scheme has signed it in by the time the limiter runs; an unsigned
-    // request was refused before it).
+    // CAP-09: keyed by the token (the API scheme has signed it in by the time the limiter runs; an unsigned request was
+    // refused before it). CAP-09 review: by the token's own id, not NameIdentifier, which is its owner: two personal tokens
+    // of one user (a firewall's and a TIP's) shared one budget, so one exhausted the other. The import API stays on the
+    // "downloads" bucket, per person on purpose: a personal token acts as its owner, and a user's exports and imports share
+    // one budget however many tokens they mint.
     options.AddPolicy(IocFeedApiEndpoints.RateLimitPolicy, httpContext =>
         RateLimitPartition.GetTokenBucketLimiter(
-            httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anon", _ => new TokenBucketRateLimiterOptions
+            httpContext.User.FindFirstValue(IncidentManager.Application.Security.AppClaimTypes.ApiTokenId) is { Length: > 0 } tokenId
+                ? "token:" + tokenId
+                : "owner:" + (httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anon"), _ => new TokenBucketRateLimiterOptions
             {
                 TokenLimit = apiFeedLimits.TokenLimit,
                 TokensPerPeriod = apiFeedLimits.TokensPerPeriod,

@@ -349,6 +349,138 @@ public sealed class StoredSecretStoreTests : IDisposable
         _log.Errors.Should().ContainSingle();
     }
 
+    // --- A database outage (CAP-40 review) ---
+
+    // The store over a database that can be taken down (throws as a refused connection does) or hung (never answers), with
+    // what's kept expiring at once so each send reads again.
+    private (StoredSecretStore Store, SwitchableFactory Db, ServiceProvider Services) Outage(TimeSpan? readLimit = null)
+    {
+        var db = new SwitchableFactory(Factory);
+        var services = new ServiceCollection().AddSingleton<IDbContextFactory<AppDbContext>>(db).BuildServiceProvider();
+        var store = new StoredSecretStore(services.GetRequiredService<IServiceScopeFactory>(), _keys, _log,
+            readLimit: readLimit ?? TimeSpan.FromSeconds(5), keep: TimeSpan.Zero);
+        return (store, db, services);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task With_no_token_the_siem_webhook_still_posts_while_the_database_is_down(bool warm)
+    {
+        var (store, db, services) = Outage();
+        using var running = services;
+        var handler = new CapturingHandler();
+        var health = new DeliveryHealth(_clock);
+        var transport = Transport(handler, store, health);
+        if (warm) (await transport.SendTestAsync(Event(), CancellationToken.None)).Should().BeNull("read once while it was up");
+
+        db.Down = true;
+        (await transport.SendTestAsync(Event(), CancellationToken.None)).Should().BeNull();
+        await transport.SendAsync(Event(), CancellationToken.None);
+
+        handler.Requests.Should().HaveCount(warm ? 3 : 2, "the outage doesn't stop the lane");
+        handler.Requests.Should().OnlyContain(r => r.Headers.Authorization == null, "no token saved, or none can be told: none sent, as before");
+        // The delivery card: not stopped, and its last attempt went.
+        transport.StoppedReason.Should().BeNull();
+        SiemTransportRows.Pick([transport]).Single().StoppedReason.Should().BeNull();
+        health.Snapshot()[DeliveryHealth.Siem("webhook")].LastAttemptFailed.Should().BeFalse();
+        (await store.ResolveAsync(StoredSecretKind.SiemWebhookToken)).Should().Be(warm ? StoredSecretValue.NotSaved : StoredSecretValue.CantTell);
+        _log.Errors.Should().ContainSingle("the outage is logged once").Which.Should().Contain("couldn't be read");
+    }
+
+    [Fact]
+    public async Task A_saved_token_read_before_the_outage_is_still_sent_during_it()
+    {
+        var token = NewToken();
+        await Admin().SaveAsync(StoredSecretKind.SiemWebhookToken, token);
+        var (store, db, services) = Outage();
+        using var running = services;
+        var handler = new CapturingHandler();
+        var transport = Transport(handler, store);
+        await transport.SendTestAsync(Event(), CancellationToken.None);
+
+        db.Down = true;
+        (await transport.SendTestAsync(Event(), CancellationToken.None)).Should().BeNull();
+        handler.Requests.Should().HaveCount(2).And.OnlyContain(r => r.Headers.Authorization!.Parameter == token,
+            "what was last read answers, past the time it's kept for");
+    }
+
+    [Fact]
+    public async Task A_database_that_never_answers_holds_a_send_for_the_read_limit_only()
+    {
+        var (store, db, services) = Outage(readLimit: TimeSpan.FromMilliseconds(300));
+        using var running = services;
+        db.Hung = true;
+        var handler = new CapturingHandler();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        (await Transport(handler, store).SendTestAsync(Event(), CancellationToken.None)).Should().BeNull();
+        store.Peek(StoredSecretKind.ChatWebhookUrl).Unread.Should().BeTrue("a property's read is bounded too, and can't tell");
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "C10: not a connect timeout per event");
+        handler.Requests.Should().ContainSingle().Which.Headers.Authorization.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Chat_with_a_saved_url_it_cant_read_yet_fails_so_a_scheduled_broadcast_is_tried_again()
+    {
+        await Admin().SaveAsync(StoredSecretKind.ChatWebhookUrl, NewHookUrl());
+        var (store, db, services) = Outage();
+        using var running = services;
+        db.Down = true;   // down since startup: nothing read
+        var handler = new CapturingHandler();
+        var health = new DeliveryHealth(_clock);
+        var chat = Notifier(handler, store, health);
+
+        chat.Enabled.Should().BeTrue("can't tell isn't not configured: the scan sends, and the post's failure keeps the item due");
+        chat.StoppedReason.Should().Contain("can't be read");
+        int failures;
+        using (var watch = DeliveryWatch.Begin())
+        {
+            await chat.SendAsync(new ChatNotification("Overdue", "Two tasks are overdue"));
+            failures = watch.Failures;
+        }
+        failures.Should().Be(1);
+        handler.Requests.Should().BeEmpty();
+        health.Snapshot()[DeliveryHealth.Chat].LastFailure.Should().Contain("couldn't be read");
+
+        // Back: the next read after RetryAfter finds it (a store started now reads at once), and the retried post goes.
+        var (later, _, laterServices) = Outage();
+        using var runningLater = laterServices;
+        (await Notifier(handler, later).SendTestAsync(new ChatNotification("Overdue", "Two tasks are overdue"))).Should().BeNull();
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Chat_read_before_the_outage_still_posts_to_the_saved_url()
+    {
+        var url = NewHookUrl();
+        await Admin().SaveAsync(StoredSecretKind.ChatWebhookUrl, url);
+        var (store, db, services) = Outage();
+        using var running = services;
+        var handler = new CapturingHandler();
+        var chat = Notifier(handler, store);
+        chat.Enabled.Should().BeTrue();
+
+        db.Down = true;
+        chat.Enabled.Should().BeTrue();
+        chat.StoppedReason.Should().BeNull();
+        (await chat.SendTestAsync(new ChatNotification("Test", "Hello"))).Should().BeNull();
+        handler.Requests.Single().RequestUri!.ToString().Should().Be(url);
+    }
+
+    [Fact]
+    public async Task A_key_ring_that_cant_protect_is_a_worded_refusal_not_a_dead_circuit()
+    {
+        var broken = new StoredSecretStore(_services.GetRequiredService<IServiceScopeFactory>(), new ThrowingProtection(), _log);
+        var admin = new StoredSecretAdminService(broken, Factory, new TestOptionsMonitor<ChatOptions>(_chat),
+            new TestOptionsMonitor<SiemWebhookOptions>(_webhook), _admin, _audit, _clock, _siem);
+        var token = NewToken();
+        var save = () => admin.SaveAsync(StoredSecretKind.SiemWebhookToken, token);
+        var refused = (await save.Should().ThrowAsync<InvalidOperationException>()).Which;
+        refused.Message.Should().Contain("couldn't be encrypted").And.Contain("DataProtection:KeyPath").And.NotContain(token);
+        (await RowAsync(StoredSecretKind.SiemWebhookToken)).Should().BeNull("nothing was written");
+        _audit.Summaries.Should().BeEmpty();
+    }
+
     // --- Stale stamp and the first-save race ---
 
     [Fact]
@@ -536,6 +668,34 @@ public sealed class StoredSecretStoreTests : IDisposable
         new(new StubFactory(handler), new TestOptionsMonitor<ChatOptions>(_chat),
             new PassthroughSecretProvider(NullLogger<PassthroughSecretProvider>.Instance), NullLogger<ChatWebhookNotifier>.Instance,
             health: health, stored: store ?? _store);
+
+    // CAP-40 review: the database as the store reaches it, which a test takes down (refused, as SQL Server's connect fails)
+    // or hangs (no answer, the time limit's case).
+    private sealed class SwitchableFactory(IDbContextFactory<AppDbContext> inner) : IDbContextFactory<AppDbContext>
+    {
+        public volatile bool Down;
+        public volatile bool Hung;
+
+        public AppDbContext CreateDbContext() =>
+            Down || Hung ? throw new InvalidOperationException("The database isn't answering (test).") : inner.CreateDbContext();
+
+        public async Task<AppDbContext> CreateDbContextAsync(CancellationToken ct = default)
+        {
+            if (Hung) await Task.Delay(Timeout.Infinite, ct);
+            if (Down) throw new Microsoft.Data.Sqlite.SqliteException("unable to open database file (test)", 14);
+            return await inner.CreateDbContextAsync(ct);
+        }
+    }
+
+    // A key ring Data Protection can't use: Protect fails as it does when DataProtection:KeyPath can't be written.
+    private sealed class ThrowingProtection : IDataProtectionProvider, IDataProtector
+    {
+        public IDataProtector CreateProtector(string purpose) => this;
+        public byte[] Protect(byte[] plaintext) =>
+            throw new System.Security.Cryptography.CryptographicException("An error occurred during a cryptographic operation.",
+                new UnauthorizedAccessException("Access to the key ring path is denied (test)."));
+        public byte[] Unprotect(byte[] protectedData) => throw new System.Security.Cryptography.CryptographicException("test");
+    }
 
     private sealed class NothingResolves : ISecretProvider
     {

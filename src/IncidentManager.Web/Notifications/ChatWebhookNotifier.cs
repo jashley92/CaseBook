@@ -40,13 +40,16 @@ public sealed class ChatWebhookNotifier : IChatNotifier
     }
 
     // CAP-40: a URL in the server's configuration, or one saved in Administration (even one that won't decrypt here: its
-    // post then fails, so a scheduled broadcast is tried again once it's re-entered, rather than marked sent).
+    // post then fails, so a scheduled broadcast is tried again once it's re-entered, rather than marked sent). CAP-40 review:
+    // and while the database can't tell (down since startup, nothing read): its post fails too, for the same reason.
     public bool Enabled
     {
         get
         {
             var o = _options.CurrentValue;
-            return o.Enabled && (!string.IsNullOrWhiteSpace(o.WebhookUrl) || _stored?.Peek(StoredSecretKind.ChatWebhookUrl).Set == true);
+            if (!o.Enabled) return false;
+            if (!string.IsNullOrWhiteSpace(o.WebhookUrl)) return true;
+            return _stored?.Peek(StoredSecretKind.ChatWebhookUrl) is { } saved && (saved.Set || saved.Unread);
         }
     }
 
@@ -58,6 +61,9 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             var o = _options.CurrentValue;
             if (!o.Enabled || !string.IsNullOrWhiteSpace(o.WebhookUrl)) return null;
             var saved = _stored?.Peek(StoredSecretKind.ChatWebhookUrl);
+            if (saved is { Unread: true })
+                return "not posting: the webhook URL saved in Administration can't be read (the database isn't answering); " +
+                       "posts are tried again once it does";
             if (saved is not { Set: true }) return "not posting: no webhook URL is set (Chat:Webhook:WebhookUrl, or Settings, Notifications)";
             return saved.Unreadable
                 ? "not posting: the webhook URL saved in Administration can't be decrypted on this server; re-enter it"
@@ -97,6 +103,13 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             // CAP-40: the URL saved in Administration, read now. None saved: chat is off, as with no URL configured.
             var saved = _stored is null ? StoredSecretValue.NotSaved
                 : await _stored.ResolveAsync(StoredSecretKind.ChatWebhookUrl, ct).ConfigureAwait(false);
+            if (saved.Unread)
+            {
+                // CAP-40 review: the database can't tell whether one is saved (bounded; what was last read answers when there
+                // is any). Not "chat is off": the failure counts, so a scheduled broadcast is tried again, not marked sent.
+                _health?.RecordFailure(DeliveryHealth.Chat, "the saved webhook URL couldn't be read (database not answering)");
+                return "The webhook URL saved in Administration couldn't be read: the database isn't answering. Try again shortly.";
+            }
             if (!saved.Saved) return null;
             if (saved.Unreadable)
             {

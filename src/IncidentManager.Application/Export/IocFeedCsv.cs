@@ -54,7 +54,7 @@ public static class IocFeedCsv
     }
 
     private static string CutLine(int limit) => string.Create(CultureInfo.InvariantCulture,
-        $"# Cut: more than {limit:N0} indicator occurrences match, so this feed holds the {limit:N0} most recently changed. Older ones are left out.\r\n");
+        $"# Cut: more than {limit:N0} indicator occurrences match, so this feed holds the most recently changed indicators, each whole, up to {limit:N0} occurrences. Older ones are left out.\r\n");
 
     private static string Tlp(TlpLevel? t) => t switch
     {

@@ -9,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace IncidentManager.Application.ApiTokens;
 
 /// <summary>Resolved identity + permissions for a validated API token (what the auth handler needs).</summary>
-public sealed record ApiTokenAuth(string OwnerUserId, string DisplayName, IReadOnlySet<Permission> Permissions);
+/// <param name="TokenId">CAP-09 review: the token's row id (never the secret), for a limit kept per token.</param>
+public sealed record ApiTokenAuth(string OwnerUserId, string DisplayName, IReadOnlySet<Permission> Permissions, Guid TokenId = default);
 
 /// <summary>A token row for the management lists (never carries the secret).</summary>
 public sealed record ApiTokenView(
@@ -96,7 +97,7 @@ public sealed class ApiTokenService
 
         var perms = _directory.PermissionsForRoles(roles);
         if (perms.Count == 0) perms = RoleDefinitions.PermissionsForRoleNames(roles);
-        return new ApiTokenAuth(row.OwnerUserId, row.OwnerDisplayName, perms);
+        return new ApiTokenAuth(row.OwnerUserId, row.OwnerDisplayName, perms, row.Id);
     }
 
     // ── Creation ─────────────────────────────────────────────────────────────────────────────────
