@@ -196,6 +196,40 @@ public sealed class RelatedIndicatorTests
             .Which.OtherValue.Should().Be("2001:0db8:0:0:0:0:0:1");
     }
 
+    private sealed class NoExclusions : IRelatedExclusionsProvider
+    {
+        public RelatedExclusions Current => RelatedExclusions.None;
+    }
+
+    // CAP-28 review (R2): IpText reads a zero-padded part as decimal, so 010.0.0.9 is in 10.0.0.0/24; the narrowing matched
+    // only the canonical spelling, so a padded address was found for itself but never for its canonical neighbour. Every
+    // spelling here is one the analyst could have stored as written: one part padded, all padded, a mapped one, a URL's.
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_zero_padded_address_is_found_from_its_canonical_neighbour_and_back(string provider)
+    {
+        using var database = Open(provider);
+        var svc = new CaseService(database.Factory(), _user, _clock, new CaseNumberGenerator(database.NewContext()), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            relatedExclusions: new NoExclusions());   // 10.0.0.0/8 is left out by default
+        var other = await CaseWithAsync(svc, "Other", false,
+            (EntityType.IpAddress, "010.0.0.9"), (EntityType.IpAddress, "010.000.000.010"), (EntityType.Url, "http://010.0.0.11/x"),
+            (EntityType.IpAddress, "110.0.0.9"), (EntityType.IpAddress, "10.0.1.9"), (EntityType.IpAddress, "0x0a.0.0.12"));
+        await using (var db = database.NewContext())
+        {
+            db.CaseEntities.Add(new CaseEntity { CaseId = other, Type = EntityType.IpAddress, Value = "::ffff:010.0.0.13" });   // legacy, as written
+            await db.SaveChangesAsync();
+        }
+
+        var related = await svc.FindRelatedIndicatorsForIocsAsync(["10.0.0.5"]);
+        related.Should().OnlyContain(r => r.OtherCaseId == other);
+        related.Select(r => r.OtherValue).Should().BeEquivalentTo(["010.0.0.9", "010.000.000.010", "http://010.0.0.11/x", "::ffff:010.0.0.13"],
+            "110.0.0.9 and 10.0.1.9 aren't in 10.0.0.0/24, and 0x0a.0.0.12 isn't an address");
+
+        var back = await svc.FindRelatedIndicatorsForIocsAsync(["010.0.0.5"]);
+        back.Select(r => r.OtherValue).Should().Contain(["010.0.0.9", "http://010.0.0.11/x"]);
+    }
+
     // --- CAP-28 exclusions: the organization's own domains and ranges, saved in Administration and read live -------------
 
     private sealed record Live(CaseService Cases, AdminSettingsService Settings, IConfigurationRoot Config);

@@ -935,11 +935,6 @@ public sealed class CaseService
         if (request.OccurredAtUtc is { } occurred && occurred > detectedAtUtc)
             throw new ArgumentException("Activity can't begin after it was detected.");
         Case.EnsurePlausibleDwell(request.OccurredAtUtc, detectedAtUtc);
-        if (request.TeamId is { } teamId)
-        {
-            using var check = _factory.CreateDbContext();
-            await RequireActiveTeamAsync(check, teamId, ct);   // CAP-36
-        }
 
         // Retry on the rare auto-sequence collision (the unique CaseNumber / per-scheme sequence indexes
         // are the guard). A fresh context per attempt so a failed save's audit entry never lingers into the
@@ -1012,7 +1007,17 @@ public sealed class CaseService
             db.Cases.Add(c);
             try
             {
-                await db.SaveChangesAsync(ct);
+                if (request.TeamId is { } teamId)
+                {
+                    // CAP-36 review (C1): the active-team check and the save run together, in this attempt's context, inside
+                    // the gate a team's retire takes (as SetTeamAsync), so a retire landing between them can't file the case
+                    // on a retired team. Only the check and the save are inside: GuardGate isn't re-entrant, and nothing
+                    // they call takes it; the alerts below run after it's released.
+                    using var guard = await Admin.GuardGate.EnterAsync(ct);
+                    await RequireActiveTeamAsync(db, teamId, ct);
+                    await db.SaveChangesAsync(ct);
+                }
+                else await db.SaveChangesAsync(ct);
                 EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseCreated(s, c.Classification, c.Severity, a, u));   // CAP-06
                 if (c.Classification == Classification.Breach)
                 {
@@ -2386,14 +2391,27 @@ public sealed class CaseService
                     narrowed = narrowed.Where(x => x.Type != EntityType.Domain
                         || (x.Value.ToLower() != own2 && !EF.Functions.Like(x.Value.ToLower(), under, LikeEscape)));
                 }
-            var rows = await narrowed
-                .Where(x => !own.Contains(x.Value.ToLower())
-                    && ((x.Type == direct && (EF.Functions.Like(x.Value.ToLower(), pDirect, LikeEscape)
-                            || EF.Functions.Like(x.Value.ToLower(), pDirect2, LikeEscape)))
-                        || (x.Type != direct && (EF.Functions.Like(x.Value.ToLower(), pIn1, LikeEscape)
-                            || EF.Functions.Like(x.Value.ToLower(), pIn2, LikeEscape)
-                            || EF.Functions.Like(x.Value.ToLower(), pIn3, LikeEscape)))))
-                .OrderByDescending(x => x.CreatedAtUtc).Take(RelatedScanLimit).ToListAsync(ct);
+            // CAP-28 review (R2): an IPv4 address is stored as written, and IpText reads a zero-padded part as decimal
+            // (010.0.0.9 is in 10.0.0.0/24), so for a /24 the patterns match the value with each part's leading zeros
+            // stripped (a 0 part left empty): REPLACE after each separator an address part can follow ('.', and the URL's
+            // '/', '@' or a mapped address's ':'). Every spelling of a /24 narrows by the same five patterns, on both
+            // providers (SQLite's LIKE has no character classes), and the exact rule below filters what the stripping over-reads.
+            var shaped = key.Rule == Domain.Observables.RelatedRule.Ipv4Slash24
+                ? narrowed.Select(x => new
+                {
+                    Row = x,
+                    Text = ("." + x.Value.ToLower()).Replace(".00", ".").Replace(".0", ".").Replace("/00", "/").Replace("/0", "/")
+                        .Replace("@00", "@").Replace("@0", "@").Replace(":00", ":").Replace(":0", ":"),
+                })
+                : narrowed.Select(x => new { Row = x, Text = x.Value.ToLower() });
+            var rows = await shaped
+                .Where(x => !own.Contains(x.Row.Value.ToLower())
+                    && ((x.Row.Type == direct && (EF.Functions.Like(x.Text, pDirect, LikeEscape)
+                            || EF.Functions.Like(x.Text, pDirect2, LikeEscape)))
+                        || (x.Row.Type != direct && (EF.Functions.Like(x.Text, pIn1, LikeEscape)
+                            || EF.Functions.Like(x.Text, pIn2, LikeEscape)
+                            || EF.Functions.Like(x.Text, pIn3, LikeEscape)))))
+                .OrderByDescending(x => x.Row.CreatedAtUtc).Take(RelatedScanLimit).Select(x => x.Row).ToListAsync(ct);
             limitHit |= rows.Count >= RelatedScanLimit;
             // Another of this check's values with the same part (evil.example beside portal.evil.example) is related to
             // the rest, so its copies elsewhere are read too, bounded the same way.
@@ -2437,9 +2455,12 @@ public sealed class CaseService
             {
                 // CAP-28 review: anchored. "%1.2.3.%" also read 11.2.3.4 and 201.2.3.9, which could fill the scan. An address
                 // is stored as a dotted quad; in a URL it follows the "//", a userinfo "@" or a mapped "[::ffff:". R1: an
-                // address stored before v1.5.3 (BUG-176, no backfill) can still be IPv4-mapped ("::ffff:1.2.3.4").
-                var p = Esc(key.Shared) + ".%";
-                return (p, "%:" + p, "%/" + p, "%@" + p, "%:" + p);
+                // address stored before v1.5.3 (BUG-176, no backfill) can still be IPv4-mapped ("::ffff:1.2.3.4"). R2: matched
+                // against the value with its parts' leading zeros stripped (RelatedAsync), so the key is too: 10.0.0 is "10..".
+                // The value there starts with a '.', so a stored address is anchored after it.
+                var stripped = string.Join('.', key.Shared.Split('.').Select(o => o.TrimStart('0')));
+                var p = Esc(stripped) + ".%";
+                return ("." + p, "%:" + p, "%/" + p, "%@" + p, "%:" + p);
             }
             case Domain.Observables.RelatedRule.Ipv6Slash48:
             {

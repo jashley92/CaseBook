@@ -170,9 +170,12 @@ public sealed class FindService
         if (q.Entity is { } ev)
         {
             var key = IocObservable.Normalize(IocObservable.DetectType(ev), ev).ToLowerInvariant();   // WF-03
+            // CAP-28 review: and as written, for a value stored before its normal form changed (::ffff:010.0.0.1, kept as
+            // written then, which IpText now reads as 10.0.0.1).
+            var written = ev.Trim().ToLowerInvariant();
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower(); culture overloads don't translate.
             entityIds = await db.CaseEntities.AsNoTracking()
-                .Where(e => cases.Select(c => c.Id).Contains(e.CaseId) && e.Value.Trim().ToLower() == key)
+                .Where(e => cases.Select(c => c.Id).Contains(e.CaseId) && (e.Value.Trim().ToLower() == key || e.Value.Trim().ToLower() == written))
                 .Select(e => e.Id).ToListAsync(ct);
 #pragma warning restore CA1304, CA1311, CA1862
             var onCases = await db.CaseEntities.AsNoTracking().Where(e => entityIds.Contains(e.Id)).Select(e => e.CaseId).ToListAsync(ct);
@@ -241,7 +244,9 @@ public sealed class FindService
         {
 #pragma warning disable CA1304, CA1311, CA1862
             var exact = IocObservable.Normalize(iocType!.Value, text).ToLower();
-            indicatorRefs = (await db.CaseEntities.AsNoTracking().Where(e => caseIds.Contains(e.CaseId) && e.Value.Trim().ToLower() == exact)
+            var asWritten = IocObservable.Refang(text).ToLower();   // CAP-28 review: as the entity search below
+            indicatorRefs = (await db.CaseEntities.AsNoTracking().Where(e => caseIds.Contains(e.CaseId)
+                    && (e.Value.Trim().ToLower() == exact || e.Value.Trim().ToLower() == asWritten))
                 .Select(e => e.Id).Take(MaxTagRefs).ToListAsync(ct)).Select(id => $"entity:{id}").ToList();
 #pragma warning restore CA1304, CA1311, CA1862
         }
@@ -263,7 +268,10 @@ public sealed class FindService
             {
                 // WF-03: compared in the form entities are stored in (IPv6 canonical, no trailing dot on a domain).
                 var exact = IocObservable.Normalize(iocType!.Value, text).ToLower();
-                src = src.Where(e => e.Value.Trim().ToLower() == exact);
+                // CAP-28 review: and as written (refanged), for a value stored before its normal form changed: an IP
+                // ::ffff:010.0.0.1 was kept as written, and IpText now reads it as 10.0.0.1.
+                var asWritten = IocObservable.Refang(text).ToLower();
+                src = src.Where(e => e.Value.Trim().ToLower() == exact || e.Value.Trim().ToLower() == asWritten);
             }
             else if (readAs == FindReadAs.Words)
                 foreach (var t in terms)
@@ -326,7 +334,7 @@ public sealed class FindService
             case FindReadAs.Indicator:
                 var stored = IocObservable.Normalize(iocType!.Value, text).ToLower();
                 var typed = IocObservable.Refang(text).ToLower();
-                caseQ = caseQ.Where(c => c.Entities.Any(e => e.Value.Trim().ToLower() == stored)
+                caseQ = caseQ.Where(c => c.Entities.Any(e => e.Value.Trim().ToLower() == stored || e.Value.Trim().ToLower() == typed)   // CAP-28 review
                                          || c.Title.ToLower().Contains(typed) || (c.Summary != null && c.Summary.ToLower().Contains(typed))
                                          || (alsoPersonId != null && (c.IncidentCommander == alsoPersonId
                                                                       || c.Assignments.Any(a => a.UserId == alsoPersonId))));   // WF-89

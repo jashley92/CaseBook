@@ -111,13 +111,13 @@ public static class RelatedObservables
             case RelatedRule.Ipv4Slash24:
             case RelatedRule.Ipv6Slash48:
             {
-                var address = type == EntityType.Url && Uri.TryCreate(v, UriKind.Absolute, out var u) ? u.Host.Trim('[', ']') : v;
+                var address = type == EntityType.Url && Uri.TryCreate(v, UriKind.Absolute, out var u) ? UrlHost(v, u) : v;   // R1
                 if (!IpText.TryParse(address, out var ip) || exclusions.RangeOf(ip) is not { } range) return null;   // F3: decimal parts
                 return $"{address.ToLowerInvariant()} is in {range}, one of your organization's excluded address ranges, so it isn't used to suggest relations.";
             }
             case RelatedRule.RegistrableDomain:
             {
-                var host = (type == EntityType.Url && Uri.TryCreate(v, UriKind.Absolute, out var u) ? u.Host : v).TrimEnd('.').ToLowerInvariant();
+                var host = (type == EntityType.Url && Uri.TryCreate(v, UriKind.Absolute, out var u) ? UrlHost(v, u) : v).TrimEnd('.').ToLowerInvariant();
                 return OwnDomain(host, exclusions);
             }
             default:
@@ -151,7 +151,7 @@ public static class RelatedObservables
                 return RegistrableDomain(v) is { } d ? new RelatedKey(RelatedRule.RegistrableDomain, d) : null;
             case EntityType.Url:
                 if (!Uri.TryCreate(v, UriKind.Absolute, out var uri) || uri.Host.Length == 0) return null;
-                var host = uri.HostNameType is UriHostNameType.IPv6 ? uri.Host.Trim('[', ']') : uri.Host;
+                var host = UrlHost(v, uri);
                 return IpKey(host) ?? (RegistrableDomain(host) is { } h ? new RelatedKey(RelatedRule.RegistrableDomain, h) : null);
             case EntityType.EmailAddress:
             case EntityType.Account:
@@ -159,6 +159,28 @@ public static class RelatedObservables
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// The host of <paramref name="url"/> as the rules read it: an IPv6 one without its brackets, a name as <see cref="Uri"/>
+    /// reads it, and (CAP-28 review, R1) an IPv4 one as written. System.Uri reads an IPv4 host the way inet_aton does, so
+    /// <c>http://010.0.0.5/</c> has host 8.0.0.5 and <c>http://0x0a.0.0.5/</c> 10.0.0.5; read as written, by
+    /// <see cref="IpText"/>, the first is 10.0.0.5, as the address 010.0.0.5 is, and the second isn't an address at all.
+    /// </summary>
+    private static string UrlHost(string url, Uri uri)
+    {
+        if (uri.HostNameType is UriHostNameType.IPv6) return uri.Host.Trim('[', ']');
+        if (uri.HostNameType is not UriHostNameType.IPv4) return uri.Host;
+        // The authority follows the scheme's "//" and ends at the path, query or fragment; the host follows any userinfo
+        // "@" and ends at the port.
+        var slashes = url.IndexOf("//", StringComparison.Ordinal);
+        if (slashes < 0) return uri.Host;
+        var start = slashes + 2;
+        var stop = url.IndexOfAny(['/', '\\', '?', '#'], start);
+        var authority = stop < 0 ? url[start..] : url[start..stop];
+        var hostPort = authority[(authority.LastIndexOf('@') + 1)..];
+        var colon = hostPort.IndexOf(':');
+        return colon < 0 ? hostPort : hostPort[..colon];
     }
 
     /// <summary>

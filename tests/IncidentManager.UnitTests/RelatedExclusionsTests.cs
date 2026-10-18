@@ -206,4 +206,74 @@ public sealed class RelatedExclusionsTests
         RelatedObservables.KeyOf(EntityType.IpAddress, "0x0A.0.0.1", RelatedExclusions.None).Should().BeNull();
         IocObservable.Normalize(EntityType.IpAddress, "::ffff:010.0.0.1").Should().Be("10.0.0.1", "BUG-176's mapped form, read decimally");
     }
+
+    // --- CAP-28 review (R1): a URL's IPv4 host is read as written; System.Uri reads 010.0.0.5 as 8.0.0.5 ---
+
+    [Fact]
+    public void A_zero_padded_URL_host_is_its_decimal_address_and_a_hex_one_is_no_address()
+    {
+        RelatedObservables.AreRelated(EntityType.IpAddress, "010.0.0.5", EntityType.Url, "http://010.0.0.5/x", RelatedExclusions.None)
+            .Should().BeTrue("both are 10.0.0.5");
+        RelatedObservables.KeyOf(EntityType.Url, "http://user@010.0.0.5:8080/x?q#f", RelatedExclusions.None)!.Value
+            .Should().Be(new RelatedKey(RelatedRule.Ipv4Slash24, "10.0.0"));
+        RelatedObservables.ExcludedBecause(EntityType.Url, "http://010.0.0.5/x", Org(ranges: ["10.0.0.0/8"])).Should().Contain("10.0.0.0/8");
+        RelatedObservables.KeyOf(EntityType.Url, "http://010.0.0.5/x", Org(ranges: ["10.0.0.0/8"])).Should().BeNull();
+        RelatedObservables.KeyOf(EntityType.Url, "http://010.0.0.5/x", Org(ranges: ["8.0.0.0/8"])).Should().NotBeNull("not 8.0.0.5");
+        RelatedObservables.KeyOf(EntityType.Url, "http://0x0a.0.0.5/", RelatedExclusions.None).Should().BeNull("no Ipv4Slash24 key, nor any other");
+        RelatedObservables.KeyOf(EntityType.Url, "http://[2001:db8::9]/y", RelatedExclusions.None)!.Value
+            .Should().Be(new RelatedKey(RelatedRule.Ipv6Slash48, "2001:db8:0"), "a bracketed IPv6 host as before");
+        RelatedObservables.KeyOf(EntityType.Url, "https://203.0.113.9/x", RelatedExclusions.None)!.Value.Shared.Should().Be("203.0.113");
+    }
+
+    // --- CAP-28 review: IpText changed only zero-padded and hex IPv4; everything else reads as IPAddress.TryParse read it ---
+
+    // Expected: whether DetectType took it as an IP, and Normalize's IpAddress form, both as before IpText (27182076^).
+    [Theory]
+    [InlineData("1.2.3.4", true, "1.2.3.4")]
+    [InlineData("203.0.113.5", true, "203.0.113.5")]
+    [InlineData("fe80::1%eth0.5", true, "fe80::1")]
+    [InlineData("fe80::1%3", true, "fe80::1%3")]
+    [InlineData("fe80::1%eth0", true, "fe80::1")]
+    [InlineData("FE80::ABCD%ETH0", true, "fe80::abcd")]
+    [InlineData("fe80::1%25eth0", true, "fe80::1")]
+    [InlineData("::ffff:1.2.3.4%3", true, "1.2.3.4")]
+    [InlineData("::ffff:1.2.3.4%eth0", true, "1.2.3.4")]
+    [InlineData("::ffff:1.2.3.4", true, "1.2.3.4")]
+    [InlineData("::FFFF:203.0.113.5", true, "203.0.113.5")]
+    [InlineData("::ffff:0a00:0001", true, "10.0.0.1")]
+    [InlineData("2001:0db8:0:0:0:0:0:1", true, "2001:db8::1")]
+    [InlineData("2001:DB8::ABCD", true, "2001:db8::abcd")]
+    [InlineData("2001:DB8:0:0:1:0:0:1", true, "2001:db8::1:0:0:1")]
+    [InlineData("2001:db8::1.2.3.4", true, "2001:db8::102:304")]
+    [InlineData("64:ff9b::192.0.2.33", true, "64:ff9b::c000:221")]
+    [InlineData("::1.2.3.4", true, "::1.2.3.4")]
+    [InlineData("::1", true, "::1")]
+    [InlineData("::", true, "::")]
+    [InlineData("FE80::1", true, "fe80::1")]
+    [InlineData("[2001:db8::1]", true, "2001:db8::1")]
+    [InlineData("[::1]:80", true, "::1")]
+    [InlineData("2001:db8::1/64", false, "2001:db8::1/64")]
+    [InlineData("1.2.3", false, "1.2.3")]
+    [InlineData("1.2.3.4/24", false, "1.2.3.4/24")]
+    [InlineData("1.2.3.4:80", false, "1.2.3.4:80")]
+    [InlineData("1.2.3.4.5", false, "1.2.3.4.5")]
+    [InlineData("256.1.1.1", false, "256.1.1.1")]
+    public void Every_address_but_a_padded_or_hex_IPv4_one_reads_as_before(string value, bool ip, string canonical)
+    {
+        (IocObservable.DetectType(value) == EntityType.IpAddress).Should().Be(ip);
+        IocObservable.Normalize(EntityType.IpAddress, value).Should().Be(canonical);
+    }
+
+    // The ones IpText changed on purpose: a padded part is decimal, a hex one isn't an address.
+    [Theory]
+    [InlineData("010.0.0.1", true, "010.0.0.1")]
+    [InlineData("::ffff:010.0.0.1", true, "10.0.0.1")]
+    [InlineData("::ffff:010.0.0.1%3", true, "10.0.0.1")]
+    [InlineData("0x0a.0.0.1", false, "0x0a.0.0.1")]
+    [InlineData("::ffff:0x0a.0.0.1", false, "::ffff:0x0a.0.0.1")]
+    public void A_padded_IPv4_part_is_decimal_and_a_hex_one_no_address(string value, bool ip, string canonical)
+    {
+        (IocObservable.DetectType(value) == EntityType.IpAddress).Should().Be(ip);
+        IocObservable.Normalize(EntityType.IpAddress, value).Should().Be(canonical);
+    }
 }

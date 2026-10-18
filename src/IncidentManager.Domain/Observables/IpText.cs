@@ -18,14 +18,21 @@ public static class IpText
     {
         address = null;
         var t = text ?? "";
-        var colon = t.LastIndexOf(':');
-        if (colon >= 0)
+        if (t.Contains(':'))
         {
-            var tail = t[(colon + 1)..];
-            if (tail.Contains('.'))
+            // CAP-28 review: the IPv4 part ends the address, before a zone ID (fe80::1%eth0.5, ::ffff:1.2.3.4%3) or the
+            // bracket of [addr]:port, which go to the framework as written, as they did before IpText.
+            var end = t.IndexOfAny(['%', ']']);
+            if (end < 0) end = t.Length;
+            var colon = t.LastIndexOf(':', Math.Max(end - 1, 0));
+            if (colon >= 0 && colon < end)
             {
-                if (DottedDecimal(tail) is not { } v4) return false;
-                t = t[..(colon + 1)] + v4;
+                var tail = t[(colon + 1)..end];
+                if (tail.Contains('.'))
+                {
+                    if (DottedDecimal(tail) is not { } v4) return false;
+                    t = t[..(colon + 1)] + v4 + t[end..];
+                }
             }
             return IPAddress.TryParse(t, out address);
         }

@@ -75,6 +75,24 @@ public sealed class FindServiceTests : IDisposable
     }
 
     [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_value_stored_before_its_normal_form_changed_is_found_as_written(string provider)
+    {
+        // CAP-28 review: ::ffff:010.0.0.1 wasn't an address before IpText, so it was stored as written; it now normalizes to
+        // 10.0.0.1, and searching for what's stored still finds it.
+        Use(provider);
+        using (var db = NewContext())
+        {
+            db.CaseEntities.Add(new CaseEntity { CaseId = _alpha, Type = EntityType.IpAddress, Value = "::ffff:010.0.0.1", CreatedBy = "robin", CreatedAtUtc = H(-10) });
+            db.SaveChanges();
+        }
+
+        var r = await NewFind().FindAsync("::ffff:010.0.0.1");
+        r.ReadAs.Should().Be(FindReadAs.Indicator);
+        r.Entities.Should().ContainSingle().Which.Value.Should().Be("::ffff:010.0.0.1");
+        r.Cases.Select(c => c.Id).Should().Contain(_alpha);
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
     public async Task An_indicator_is_read_as_one_and_found_across_every_kind_on_cases_you_can_see(string provider)
     {
         Use(provider);

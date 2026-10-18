@@ -1059,6 +1059,29 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_value_stored_before_its_normal_form_changed_is_found_and_kept_as_stored()
+    {
+        // CAP-28 review: before IpText, ::ffff:010.0.0.1 wasn't an address, so it was stored as written; it now normalizes
+        // to 10.0.0.1. It's still found by the text it's stored as, and an edit of its verdict doesn't rewrite it.
+        var c = NewCase();
+        c.Entities.Add(new CaseEntity { CaseId = c.Id, Type = EntityType.IpAddress, Value = "::ffff:010.0.0.1", CreatedBy = "analyst1", CreatedAtUtc = Now });
+        var legacy = c.Entities[0];
+
+        c.FindEntity(EntityType.IpAddress, "::ffff:010.0.0.1").Should().BeSameAs(legacy);
+        c.AddEntity(EntityType.IpAddress, "::ffff:010.0.0.1", null, EntityDisposition.Unknown, null, null, "analyst1", Now)
+            .Should().BeSameAs(legacy, "pasted again, it's the same row");
+
+        c.EditEntity(legacy.Id, legacy.Type, legacy.Value, legacy.Label, EntityDisposition.Malicious, null, null, "analyst1",
+            Now.AddMinutes(1), "C2 beacon");
+        legacy.Value.Should().Be("::ffff:010.0.0.1", "a verdict-only edit keeps the stored value");
+        legacy.Disposition.Should().Be(EntityDisposition.Malicious);
+
+        c.EditEntity(legacy.Id, legacy.Type, " ::FFFF:010.0.0.1 ", legacy.Label, EntityDisposition.Malicious, null, null, "analyst1",
+            Now.AddMinutes(2));
+        legacy.Value.Should().Be("10.0.0.1", "a value the analyst retyped is normalized");
+    }
+
+    [Fact]
     public void AddEntity_refangs_on_entry_so_defanged_and_live_values_dedup()
     {
         var c = NewCase();

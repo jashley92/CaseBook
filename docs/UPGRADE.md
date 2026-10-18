@@ -246,7 +246,7 @@ first with `casebook-keytool export`.
   reported time and the audit trail as before. No migration and nothing to configure.
 - **Teams, review fixes (CAP-36).** Retiring or restoring a team while editing it on the Teams page no longer makes the
   open edit unsaveable (and a save refused over a colleague's change can be saved again deliberately); giving a case a
-  team checks the team is active inside the same gate a retire takes; team membership is matched ignoring case when a
+  team, or filing a new case on one, checks the team is active inside the same gate a retire takes; team membership is matched ignoring case when a
   view is shared or listed (it was case-sensitive on SQLite); and **Program › Improvement actions** gains a team
   picker (`?team=`), which its CSV and the Program overview's link and tabs carry. Nothing to configure.
 - **Full-text search on SQL Server, optional (CAP-22).** Where the SQL Server instance has the Full-Text Search
@@ -279,7 +279,13 @@ first with `casebook-keytool export`.
     (8.0.0.0/8, 192.168.8.0/24, 8.0.0.1), and now means 10.0.0.0/8, 192.168.10.0/24 and 10.0.0.1; a hex part
     (`0x0A.0.0.0/8`) is refused, and an indicator written so isn't read as an address. An IPv4-mapped range
     (`::ffff:10.0.0.0/104`) is stored as its IPv4 range, so it matches IPv4 indicators. A range a settings file gives
-    in a form now refused is skipped and listed by Diagnostics as an invalid setting, as before. No migration.
+    in a form now refused is skipped and listed by Diagnostics as an invalid setting, as before. A URL's IPv4 host is
+    read the same way (`http://010.0.0.5/x` is on 10.0.0.5, so a range covering 10.0.0.0/8 leaves it out, and
+    `http://0x0a.0.0.5/` has no address to relate by); an address stored zero-padded (`010.0.0.9`) is now found from its
+    canonical neighbours (`10.0.0.5`) as well as the other way round. An IPv6 address with a zone ID
+    (`fe80::1%eth0.5`, `::ffff:1.2.3.4%3`) is read as an address again, as before this change. A value stored as written
+    before this change (an IP `::ffff:010.0.0.1`, which now reads as 10.0.0.1) is still found by Find and by adding it
+    again, and editing only its verdict or label no longer rewrites it. No migration.
 
 - **An owning team on each case (CAP-36).** One migration, `AddTeams` (both providers): new `Teams` and `TeamMembers`
   tables, and a nullable `TeamId` on `Cases` and on `SavedViews` (both indexed); no data moves and no case gets a team.

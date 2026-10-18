@@ -325,6 +325,31 @@ public sealed class TeamTests
     }
 
     [Theory, MemberData(nameof(Providers))]
+    public async Task Filing_a_case_on_a_team_waits_for_a_retire_in_progress_and_then_refuses_the_retired_team(string provider)
+    {
+        // CAP-36 review (C1): as SetTeamAsync, the create's active-team check runs with its save, inside the gate a retire
+        // holds. Whether the create reaches the gate before or after the retire's write, it reads the team after it (C17).
+        using var db = Open(provider);
+        var soc = await Teams(db).CreateAsync(new TeamEdit("SOC", null, null, []));
+        var cases = Cases(db);
+
+        Task<Case> filing;
+        var gate = await GuardGate.EnterAsync();   // as SetActiveAsync holds it while it retires
+        try
+        {
+            filing = CaseAsync(cases, "Racing a retire", soc);
+            await using var ctx = db.NewContext();
+            (await ctx.Teams.SingleAsync(t => t.Id == soc)).IsActive = false;
+            await ctx.SaveChangesAsync();
+        }
+        finally { gate.Dispose(); }
+
+        await filing.Invoking(t => t).Should().ThrowAsync<InvalidOperationException>().WithMessage("*retired*");
+        await using var check = db.NewContext();
+        (await check.Cases.CountAsync(c => c.Title == "Racing a retire")).Should().Be(0, "nothing was filed");
+    }
+
+    [Theory, MemberData(nameof(Providers))]
     public async Task Team_membership_ignores_case_for_sharing_a_view_and_listing_it(string provider)
     {
         // On SQLite "==" is case-sensitive; membership is matched ignoring case everywhere, as the Teams page shows it.

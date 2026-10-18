@@ -877,12 +877,17 @@ public class Case : AuditableEntity, IHashableEntity
         Touch(actor, nowUtc);
     }
 
-    /// <summary>The entity with this type and value on the case (matched after normalizing, ignoring case), or null.</summary>
+    /// <summary>The entity with this type and value on the case (matched after normalizing, ignoring case), or null.
+    /// CAP-28 review: or, failing that, the one stored as <paramref name="value"/> is written. A value stored before its
+    /// normal form changed (an IP ::ffff:010.0.0.1 kept as written, which IpText now reads as 10.0.0.1) is still found by
+    /// the text it's stored as.</summary>
     public CaseEntity? FindEntity(EntityType type, string value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var v = IocObservable.Normalize(type, value);
-        return Entities.FirstOrDefault(e => e.Type == type && string.Equals(e.Value, v, StringComparison.OrdinalIgnoreCase));
+        var written = value.Trim();
+        return Entities.FirstOrDefault(e => e.Type == type && string.Equals(e.Value, v, StringComparison.OrdinalIgnoreCase))
+               ?? Entities.FirstOrDefault(e => e.Type == type && string.Equals(e.Value, written, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -904,7 +909,7 @@ public class Case : AuditableEntity, IHashableEntity
         var v = IocObservable.Normalize(type, value);
         // REV-18: a value that's only dots ("." or "[.]" as a domain) is nothing once it's normalized.
         if (v.Length == 0) throw new ArgumentException("That value is empty once it's normalized. Enter the indicator itself.");
-        var existing = FindEntity(type, v);
+        var existing = FindEntity(type, value);   // CAP-28 review: as written too, for a value stored before its normal form changed
         if (existing is not null)
         {
             var changed = false;
@@ -951,7 +956,12 @@ public class Case : AuditableEntity, IHashableEntity
         var entity = Entities.FirstOrDefault(e => e.Id == entityId)
             ?? throw new InvalidOperationException("Entity not found on this case.");
 
-        var v = IocObservable.Normalize(type, value);
+        // CAP-28 review: the value as it's stored, sent back unchanged (a verdict or label edit), stays as stored. A value
+        // stored before its normal form changed (an IP ::ffff:010.0.0.1 kept as written) isn't rewritten by an edit of
+        // something else; one the analyst changes is normalized.
+        var v = type == entity.Type && string.Equals(value.Trim(), entity.Value, StringComparison.Ordinal)
+            ? entity.Value
+            : IocObservable.Normalize(type, value);
         // REV-18: a value that's only dots ("." or "[.]" as a domain) is nothing once it's normalized.
         if (v.Length == 0) throw new ArgumentException("That value is empty once it's normalized. Enter the indicator itself.");
         // Don't let an edit collapse this entity onto a different one of the same type+value.
