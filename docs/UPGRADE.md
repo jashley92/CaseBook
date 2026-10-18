@@ -210,6 +210,18 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### Unreleased
+
+- **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
+  `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
+  `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and
+  `Siem:Webhook:Token` in `appsettings.Production.json`: those still win, and the new cards (Settings → Notifications →
+  Team chat webhook; Server configuration → SIEM webhook token) show them read-only. To move a value into the app, clear
+  it in the file, recycle the app pool, and enter it on the card. Saved values are encrypted with the Data Protection
+  key ring, so back up `DataProtection:KeyPath` with the database (OPERATIONS.md §1). **Behavior change:** a SIEM webhook
+  token that's set but won't resolve (a CyberArk reference that fails) or decrypt now stops the webhook's sends; before,
+  each event went without an auth header. Diagnostics → Delivery health shows it.
+
 ### v1.9.0
 
 One migration: the new `SmtpSignIns` table (one row; the app applies it on first start). Things to check:

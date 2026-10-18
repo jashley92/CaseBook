@@ -322,6 +322,16 @@ The full SIEM reference, including the event catalog, is in [OPERATIONS.md §5](
 integrity keys take `@cyberark:` references of their own (§3.4). Connection strings, `Agenda:FeedKey` and the other
 SMTP settings must be literals or come from environment variables.
 
+**Two of them can be entered in Administration instead** (CAP-40), as the SMTP password can: leave
+`Chat:Webhook:WebhookUrl` blank and enter the URL under **Settings → Notifications → Team chat webhook**, or leave
+`Siem:Webhook:Token` blank and enter the token under **Server configuration → SIEM webhook token**. Each is encrypted
+with ASP.NET Core Data Protection under a purpose of its own and kept in the `StoredSecrets` table, never shown again,
+and outside the configuration bundle and the settings list ([integrations.md](integrations.md#team-chat-slack-or-teams)).
+Set in the server's configuration (a literal, `@cyberark:` or `@protected:`), the server's value wins and the card shows
+it read-only. `Chat:Webhook:Enabled`, `Siem:Webhook:Enabled` and `Siem:Webhook:Url` stay server-side: a saved URL or
+token is used only while its switch is on there. A token set either way that won't resolve or decrypt stops the
+webhook's sends instead of sending without it (CAP-40; before, the event went without an auth header).
+
 ### 3.16 Role mapping (first run only)
 
 `RoleMapping:Groups:{Analyst,IncidentCommander,Manager,LegalPrivacy,SysAdmin}`: the AD groups (names or SIDs)

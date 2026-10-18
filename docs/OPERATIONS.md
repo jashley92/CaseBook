@@ -20,7 +20,7 @@ Three data sets must be backed up **in lockstep** so they stay mutually consiste
 | Integrity seals | `Integrity:ExportPath` (out-of-band seal exports) | File backup (append-only) |
 | Generated reports | `ReportOutput:RootPath` | File backup |
 | Keys folder | `<DataRoot>\keys` (the seal-signing key, `chain-key.json`, `evidence-key.json`) | File backup with tighter access; the evidence key's envelope is useless without a certificate or the shares, but keep it with the rest ([§2, Evidence key](#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)) |
-| Data Protection key ring | `DataProtection:KeyPath` (`DataRoot\dp-keys`) | File backup **with the database**, tight access. Besides keeping sessions across recycles, it decrypts the SMTP password saved under Administration (CAP-05). A database restored without it can't open that password: email that signs in is held, and Diagnostics says to re-enter the SMTP password ([troubleshooting](operations/troubleshooting.md)). The keys are DPAPI-protected to the machine, so on a new server the password is re-entered anyway. |
+| Data Protection key ring | `DataProtection:KeyPath` (`DataRoot\dp-keys`) | File backup **with the database**, tight access. Besides keeping sessions across recycles, it decrypts the secrets saved under Administration: the SMTP password (CAP-05), and the team-chat webhook URL and the SIEM webhook token (CAP-40). A database restored without it can't open them: email that signs in is held, chat isn't posted, the SIEM webhook stops rather than sending without its token, and Diagnostics says which to re-enter ([troubleshooting](operations/troubleshooting.md)). The keys are DPAPI-protected to the machine, so on a new server these are re-entered anyway. |
 | Report branding logo | `ReportBranding:RootPath` (`DataRoot\branding`, H-07) | File backup (single small image; low churn) |
 | Word report templates | `ReportTemplates:RootPath` (`DataRoot\report-templates`, PROD-47; when unset, a `report-templates` folder beside `ReportBranding:RootPath`, so upgraded servers need no config change) | File backup (one .docx per library template, named by its id; low churn) |
 
@@ -745,6 +745,13 @@ changes are audited, and it needs the Data Protection key ring backed up with th
 ([integrations.md, Email](operations/integrations.md#email-smtp)). Integrated Windows sign-in as the app-pool gMSA
 (`Email:SmtpUseDefaultCredentials`, or *Windows* on the form) needs no password at all.
 
+**The chat webhook URL and the SIEM webhook token can be entered in the app too** (CAP-40): Settings → Notifications →
+Team chat webhook, and Server configuration → SIEM webhook token. They're kept as the SMTP password is (Data Protection,
+a purpose each, the `StoredSecrets` table), write-only and audited, with the same key-ring backup (§1). A value set in
+the file, in any of the three forms below, wins and the card shows it read-only. Either way, a SIEM token that's set
+but won't resolve or decrypt stops the webhook's sends rather than sending them unauthenticated
+([integrations.md, SIEM](operations/integrations.md#siem-security-event-stream)).
+
 **How a secret is selected**
 
 - **Literal (default):** the configured value is the secret, exactly as before. For the SMTP password,
@@ -834,7 +841,8 @@ Two read-only views help operators confirm it is wired up and working:
   success/failure counts. It is in-memory and resets on restart. A persistent *Last attempt failed* here is
   the first place to look if an integration that depends on a CyberArk-backed secret stops authenticating.
 
-**Candidates.** Applied to `Siem:Webhook:Token`, `Chat:Webhook:WebhookUrl` and `Email:SmtpPassword` (CAP-05). Any future
+**Candidates.** Applied to `Siem:Webhook:Token`, `Chat:Webhook:WebhookUrl` and `Email:SmtpPassword` (CAP-05); the first
+two can be entered in Administration instead (CAP-40). Any future
 config-borne credential should resolve through the same seam, which gives it `@protected:` too. The **seal signing key** (F-05b) and **Always-Encrypted column keys**
 (F-14) are noted as candidates but generally prefer the Windows certificate store / HSM over CCP.
 

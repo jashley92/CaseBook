@@ -179,6 +179,16 @@ schema, for use in the organization's own approved AI tool.
   summaries, API imports waiting for review), chosen per type under Notifications.
 - **Auth:** the incoming-webhook URL is the credential (`Chat:Webhook:WebhookUrl`: a literal, a `@protected:` value or a
   CyberArk reference). Must be https (http only to loopback).
+- **Entering the URL in Administration (CAP-40):** with `Chat:Webhook:WebhookUrl` blank on the server, enter it under
+  **Administration → Settings → Notifications → Team chat webhook**. It's checked as a post checks it (https, or http
+  only to loopback) before it's saved, and a refusal says why without repeating the URL. It's write-only: encrypted with
+  Data Protection (purpose `CaseBook.Secrets.ChatWebhookUrl.v1`, key ring in `DataProtection:KeyPath`) and stored in the
+  `StoredSecrets` table; the card shows only "set on <date> by <user>", with Replace and Clear, and a **Send test** beside
+  it. A change applies to the next post without a restart, and is recorded in the audit trail (who, when, and whether
+  the URL was set, replaced or cleared; never the URL) and on the SIEM stream as 5403. A URL in the server's
+  configuration wins, and the card shows it read-only. Chat still needs `Chat:Webhook:Enabled` on the server. A saved
+  URL that can't be decrypted (the database restored without its key ring) isn't posted to: Diagnostics and the card say
+  to re-enter it, and Delivery health shows chat as **Stopped**.
 - **Data:** Slack mrkdwn or a Teams MessageCard; restricted cases are redacted ("Breach escalation (restricted
   case)"; an import into one says only that it's waiting, without its summary or origin).
 - **Failure and retry:** up to `MaxAttempts` (3) with a 250 ms × attempt back-off. A scheduled reminder's post that still
@@ -200,7 +210,7 @@ schema, for use in the organization's own approved AI tool.
   platform's incident id (an elevation from `CaseBookElevate.py` sets it), so a correlation rule can join a CaseBook
   close, reopen or downgrade to the XSIAM incident it came from.
 - **Transports:** webhook (JSON over https, optional bearer or API-key header; token may be a CyberArk
-  reference or a `@protected:` value), syslog (RFC 5424 with a CEF payload, UDP or TCP), Windows Event Log (event id =
+  reference or a `@protected:` value, or entered in Administration, below), syslog (RFC 5424 with a CEF payload, UDP or TCP), Windows Event Log (event id =
   catalog id).
 - **Delivery:** events go into a bounded in-memory queue (`Siem:QueueCapacity`, 2048) and a background dispatcher
   sends each to every enabled transport. Never blocks a user action. Webhook retries up to 3 times; syslog and
@@ -208,7 +218,18 @@ schema, for use in the organization's own approved AI tool.
 - **Health (CAP-04):** Diagnostics → Delivery health shows, for each transport that's on, its last good send, its queue
   depth and the events it dropped since start (and any dropped before reaching a transport). In memory, reset at
   restart. A transport that's on in its settings but not sending shows as **Stopped** with why: an Event Log source that's
-  missing (stopped until restart), no syslog host, no webhook URL or one that's refused.
+  missing (stopped until restart), no syslog host, no webhook URL or one that's refused, or a webhook token saved in
+  Administration that can't be decrypted here.
+- **Webhook token in Administration (CAP-40):** with `Siem:Webhook:Token` blank on the server, enter it under
+  **Administration → Server configuration → SIEM webhook token**, with a **Send test event** beside it. It's kept as the
+  chat URL is (purpose `CaseBook.Secrets.SiemWebhookToken.v1`, the `StoredSecrets` table), write-only, audited without the
+  value, sent to the SIEM as 5403, and read per event, so a change applies without a restart. The collector URL and the
+  switch stay in the server's configuration, and a token set there wins.
+- **A token that won't resolve stops the send (CAP-40):** when a token is set (on the server, or saved in
+  Administration) but can't be resolved from CyberArk, opened as `@protected:` or decrypted here, the event isn't sent.
+  Before CAP-40 it went without an auth header; a collector that wants a token refused it as a 401, which pointed at the
+  collector rather than the secret, and one that doesn't need a token shouldn't have one set. It's logged once, until a
+  token resolves again, and shows on Delivery health. With no token set anywhere, events go without one, as before.
 - **Testing:** Administration → Diagnostics → *Send test event* (id 5901) reports per-transport success.
   Locally, a webhook to `http://localhost:<port>` or syslog to a local UDP listener.
 
