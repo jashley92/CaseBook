@@ -335,8 +335,25 @@ else
     </div>
 
     <div class="card mb-3">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
             <span>Entities (@Case.Entities.Count)</span>
+            @* CAP-02: pick several, then record one verdict on all of them (each keeps its own history row and milestone). *@
+            @if (CanEdit)
+            {
+                <span class="d-flex flex-wrap align-items-center gap-2 ms-md-auto me-md-2" role="group" aria-label="Selected entities">
+                    @if (Case.Entities.Any(e => e.Disposition == EntityDisposition.Unknown))
+                    {
+                        <button type="button" class="btn btn-sm btn-link p-0" @onclick="PickUnknown"
+                                title="Select every entity still marked Unknown">Select Unknown</button>
+                    }
+                    @if (_picked.Count > 0)
+                    {
+                        <span class="small text-muted" aria-live="polite">@_picked.Count selected</span>
+                        <button type="button" class="btn btn-sm btn-link p-0" @onclick="_picked.Clear">Clear</button>
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="OpenAssess">Set verdict for @_picked.Count…</button>
+                    }
+                </span>
+            }
             <span class="seg" role="radiogroup" aria-label="Indicator display"
                   title="Defanged shows network and URL indicators as hxxp://evil[.]com so they're safe to copy.">
                 <button type="button" class="seg-opt @(!_defangView ? "on" : "")"
@@ -349,11 +366,22 @@ else
         </div>
         <div class="card-body p-0 table-responsive">
             <table class="table table-sm align-middle mb-0">
-                <thead><tr><th>Type</th><th>Value</th><th>Label</th><th>Disposition</th><th>Source</th><th></th></tr></thead>
+                <thead><tr>
+                    @if (CanEdit)
+                    {
+                        <th style="width:2rem"><input class="form-check-input" type="checkbox" aria-label="Select all entities"
+                                                      checked="@AllPicked" @onchange="e => PickAll((bool)(e.Value ?? false))" /></th>
+                    }
+                    <th>Type</th><th>Value</th><th>Label</th><th>Disposition</th><th>Source</th><th></th></tr></thead>
                 <tbody>
                     @foreach (var e in Case.Entities.OrderBy(x => x.Type).ThenBy(x => x.Value))
                     {
                         <tr id="@RowId(e.Id)" class="im-enter @(FocusEntityId == e.Id ? "im-focus-row" : "") @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" @key="e.Id">
+                            @if (CanEdit)
+                            {
+                                <td><input class="form-check-input" type="checkbox" aria-label="Select @Ui.Label(e.Type) @(e.Label ?? e.Value)"
+                                           checked="@_picked.Contains(e.Id)" @onchange="ev => Pick(e.Id, (bool)(ev.Value ?? false))" /></td>
+                            }
                             <td class="text-nowrap">@Ui.EntityGlyph(e.Type) @Ui.Label(e.Type)</td>
                             <td><code class="small">@DisplayValue(e)</code>
                                 @if (!string.IsNullOrWhiteSpace(e.Description)) { <br /><small class="text-muted">@e.Description</small> }
@@ -529,6 +557,56 @@ else
     }
 }
 
+@if (_assess is { } assessing)
+{
+    @* CAP-02: one verdict, one "when determined" and one reason for every selected entity; one audited save. Ctrl/Cmd+Enter
+       records it (.im-own-keys), Escape closes it. *@
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="ent-assess-title"
+         style="background:var(--im-scrim)" @onclick="CancelAssess" @onkeydown="OnAssessKey">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-content im-own-keys" @onkeydown="e => SaveOnKey(e, SaveAssess)">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="ent-assess-title">Set the verdict for @IncidentManager.Application.Common.Plural.Of(assessing.Count, "entity", "entities")</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CancelAssess"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted mb-2">
+                        Each entity that changes gets its own verdict record and timeline milestone, with this reason and time.
+                        @if (AssessUnchanged is > 0 and var same)
+                        {
+                            <span>@IncidentManager.Application.Common.Plural.Of(same, "is", "are") already @Ui.Label(_assessDisposition) and stay as they are.</span>
+                        }
+                    </p>
+                    <label class="form-label small mb-0" for="ent-assess-disposition">Verdict</label>
+                    <select id="ent-assess-disposition" class="form-select form-select-sm mb-2" @bind="_assessDisposition">
+                        @foreach (var d in Verdicts)
+                        {
+                            <option value="@d">@Ui.Label(d)</option>
+                        }
+                    </select>
+                    <div class="mb-2"><DeterminedAt Id="ent-assess-determined" @bind-Value="_assessDeterminedWall" /></div>
+                    <label class="form-label small mb-0" for="ent-assess-reason">@(AssessNeedsReason ? $"Why are they {Ui.Label(_assessDisposition).ToLowerInvariant()}?" : "Reason") <span class="text-muted">@(AssessNeedsReason ? "(required; kept with each verdict on the timeline)" : "(optional)")</span></label>
+                    <textarea id="ent-assess-reason" class="form-control form-control-sm" rows="2" maxlength="2000"
+                              placeholder="e.g. confirmed in the EDR triage of the phishing wave"
+                              @bind="_assessReason" @bind:event="oninput"></textarea>
+                    @if (_assessError is not null)
+                    {
+                        <p class="text-danger small mt-2 mb-0" role="alert">@_assessError</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelAssess">Cancel</button>
+                    <button type="button" class="btn btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveAssess"
+                            disabled="@(_assessSaving || (AssessNeedsReason && string.IsNullOrWhiteSpace(_assessReason)))">
+                        @if (_assessSaving) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
+                        Record verdict
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
@@ -588,6 +666,26 @@ else
     private bool _bulkBusy;
     private string? _bulkError;
     private readonly List<BulkRow> _bulkRows = new();
+
+    // CAP-02: the entities picked for one verdict, and the dialog that records it. _assess is what the dialog opened with
+    // (id → the verdict each showed then), so a colleague's change since is refused rather than written over.
+    private readonly HashSet<Guid> _picked = new();
+    private Dictionary<Guid, EntityDisposition>? _assess;
+    private EntityDisposition _assessDisposition = EntityDisposition.Benign;
+    private DateTime? _assessDeterminedWall;
+    private string? _assessReason;
+    private string? _assessError;
+    private bool _assessSaving;
+    private bool _assessTrapArmed;
+    private readonly InFlight _assessing = new();
+    private bool AllPicked => Case.Entities.Count > 0 && Case.Entities.All(e => _picked.Contains(e.Id));
+    private bool AssessNeedsReason => _assessDisposition is EntityDisposition.Malicious or EntityDisposition.Compromised
+        && (AssessUnchanged ?? 0) < (_assess?.Count ?? 0);
+    private int? AssessUnchanged => _assess?.Count(kv => kv.Value == _assessDisposition);
+
+    /// <summary>CAP-02: the Closure gate's "Assess" link: select every entity still Unknown once the tab shows.</summary>
+    [Parameter] public bool PickUnknownOnShow { get; set; }
+    [Parameter] public EventCallback OnPickUnknownHandled { get; set; }
 
     private sealed class BulkRow
     {
@@ -661,6 +759,7 @@ else
         Edits.Track(this, "the entity you're editing", () => EditDirty, Region);
         Edits.Track(this, "the relationship you're editing", () => _relEdit.IsOpen && RelationshipInput() != _relEditSeed, Region);
         Edits.Track(this, "the indicators you pasted", () => _bulkOpen && (!string.IsNullOrWhiteSpace(_bulkText) || _bulkRows.Count > 0), Region);
+        Edits.Track(this, "the verdict you're recording", () => _assess is not null && (!string.IsNullOrWhiteSpace(_assessReason) || _assessDeterminedWall is not null), Region);   // CAP-02
         _graphRef = DotNetObjectReference.Create(this);
         // BUG-506 (BUG-478 sibling): a default an admin has hidden showed nothing in its select while the save used it.
         _enType = OfferedOr(_enType, EntityTypes);
@@ -689,6 +788,8 @@ else
     {
         // BUG-578: a relationship a colleague removed takes its open edit with it (its row is gone), so another can open.
         if (_relEdit.Current is { } rel && Case.EntityRelationships.All(r => r.Id != rel.Key)) _relEdit.Close();
+        // CAP-02: a removed entity leaves the selection (the open dialog keeps what it opened with, and the save refuses it).
+        _picked.IntersectWith(Case.Entities.Select(e => e.Id));
         // Load overlaps on first mount and whenever the parent signals a live change.
         if (_loadedToken != RefreshToken)
         {
@@ -703,6 +804,11 @@ else
                 await LoadRelated();
             }
             await LoadLinks();
+        }
+        if (PickUnknownOnShow)
+        {
+            PickUnknown();
+            await OnPickUnknownHandled.InvokeAsync();
         }
     }
 
@@ -787,7 +893,11 @@ else
     private Task ParseBulkOnKey() => string.IsNullOrWhiteSpace(_bulkText) ? Task.CompletedTask : ParseBulk();
 
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — add the entity in the composer, or save the edit.</summary>
-    public async Task SubmitAsync() => await SubmitComposer();
+    public async Task SubmitAsync()
+    {
+        if (_assess is not null) return;   // CAP-02: the verdict dialog has its own Ctrl/Cmd+Enter
+        await SubmitComposer();
+    }
 
     // Enter in the value adds the entity, like any one-line form (held Enter doesn't add it twice).
     private async Task OnValueKey(KeyboardEventArgs e)
@@ -877,6 +987,83 @@ else
             else Toasts.Info($"{addedVal} is already on this case.");
         }
         catch (Exception ex) { _entityError = ex.Message; }
+    }
+
+    // --- CAP-02: one verdict on several entities ---
+    private void Pick(Guid entityId, bool on)
+    {
+        if (on) _picked.Add(entityId); else _picked.Remove(entityId);
+    }
+
+    private void PickAll(bool on)
+    {
+        _picked.Clear();
+        if (on) _picked.UnionWith(Case.Entities.Select(e => e.Id));
+    }
+
+    private void PickUnknown()
+    {
+        _picked.Clear();
+        _picked.UnionWith(Case.Entities.Where(e => e.Disposition == EntityDisposition.Unknown).Select(e => e.Id));
+    }
+
+    private void OpenAssess()
+    {
+        if (_picked.Count == 0 || _assess is not null) return;
+        if (_picked.Count > CaseService.MaxEntitiesPerAssessment)
+        {
+            Toasts.Info($"Pick up to {CaseService.MaxEntitiesPerAssessment:N0} entities at a time.");
+            return;
+        }
+        _assess = Case.Entities.Where(e => _picked.Contains(e.Id)).ToDictionary(e => e.Id, e => e.Disposition);
+        _assessDisposition = OfferedOr(_assessDisposition, Verdicts);   // BUG-506: the last one used, if the select offers it
+        _assessDeterminedWall = null;   // BUG-414: now, unless set
+        _assessReason = null;
+        _assessError = null;
+    }
+
+    private void CancelAssess()
+    {
+        if (_assessSaving) return;   // the save in flight closes it
+        _assess = null;
+        _assessError = null;
+    }
+
+    private void OnAssessKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelAssess();
+    }
+
+    private Task SaveAssess() => _assessing.Run(SaveAssessCore);
+
+    private async Task SaveAssessCore()
+    {
+        if (_assess is not { } seen || _assessSaving) return;
+        _assessSaving = true;
+        _assessError = null;
+        try
+        {
+            var determined = DeterminedAt.UtcOf(_assessDeterminedWall, TimeDisp.Zone, Clock.UtcNow);   // BUG-414
+            var verdict = _assessDisposition;
+            var changed = await Cases.AssessEntitiesAsync(CaseId, seen.Keys.ToList(), verdict, _assessReason, seen, determined);
+            _assess = null;
+            _picked.Clear();
+            await OnChanged.InvokeAsync();
+            var plural = IncidentManager.Application.Common.Plural.Of;
+            Toasts.Success(changed == 0 ? $"{(seen.Count == 1 ? "It was" : "They were all")} already {Ui.Label(verdict)}."
+                : $"Recorded {Ui.Label(verdict)} on {plural(changed, "entity", "entities")}.");
+        }
+        catch (StaleEditException ex)
+        {
+            _assess = null;
+            Toasts.Error(ex.Message);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _assessError = ex.Message;
+        }
+        finally { _assessSaving = false; }
     }
 
     // --- PROD-22: bulk indicator paste ---
@@ -1230,6 +1417,14 @@ else
             try { await JS.InvokeVoidAsync(fn, id); } catch (JSException) { /* motion is optional */ }
         }
 
+        // CAP-02: UX-01's focus trap for the verdict dialog, as the timeline's dialogs do.
+        if ((_assess is not null) != _assessTrapArmed && !Disposed)
+        {
+            _assessTrapArmed = _assess is not null;
+            try { await JS.InvokeVoidAsync(_assessTrapArmed ? "imModal.arm" : "imModal.release"); }
+            catch (JSException) { /* focus trap is a progressive enhancement */ }
+        }
+
         // The graph container only exists when there are entities to draw. BUG-418: nor for a tab disposed meanwhile.
         if (Disposed || Case.Entities.Count == 0) return;
 
@@ -1390,7 +1585,11 @@ else
             await check.CancelAsync();
             check.Dispose();
         }
-        try { await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); await JS.InvokeVoidAsync("entityGraph.destroy", CrossGraphId); }
+        try
+        {
+            if (_assessTrapArmed) await JS.InvokeVoidAsync("imModal.release");   // CAP-02: the dialog went with the tab
+            await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); await JS.InvokeVoidAsync("entityGraph.destroy", CrossGraphId);
+        }
         catch { /* circuit may already be gone during teardown */ }
         _graphRef?.Dispose();
     }

@@ -474,7 +474,13 @@ public partial class CaseWorkspace
         _action.Name = null;
         switch (checkKey)
         {
-            case GateCheckKeys.AtLeastOneEntity or GateCheckKeys.AtLeastOneMaliciousEntity or GateCheckKeys.EntitiesAssessed: await SetTab("Entities"); break;
+            case GateCheckKeys.AtLeastOneEntity or GateCheckKeys.AtLeastOneMaliciousEntity: await SetTab("Entities"); break;
+            case GateCheckKeys.EntitiesAssessed:
+                // CAP-02: "Assess" opens the tab with the Unknown ones selected, ready for one verdict.
+                _entitiesPickUnknown = true;
+                await SetTab("Entities");
+                if (_activeTab != "Entities") _entitiesPickUnknown = false;   // the switch was held for unsaved text
+                break;
             case GateCheckKeys.AtLeastOneEvidence: await SetTab("Evidence"); break;
             case GateCheckKeys.AtLeastOneReport: await SetTab("Report"); break;
             case GateCheckKeys.LessonsCaptured: await SetTab("Review"); break;
@@ -499,4 +505,6 @@ public partial class CaseWorkspace
 
     // A details/impact fix raised from a gate dialog elsewhere: handed to the Briefing or Impact part once it renders.
     private string? _pendingOverviewFix;
+    // CAP-02: the Closure gate's "Assess": the Entities tab selects the Unknown ones when it next renders.
+    private bool _entitiesPickUnknown;
 }

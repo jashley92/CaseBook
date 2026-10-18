@@ -261,7 +261,8 @@ link to another case. The footer says what the save writes before you save it.
    tactic-colored edges. *Across cases* redraws it around shared indicators. Drag to arrange (positions are
    shared). *STIX* downloads the graph as a STIX 2.1 bundle.
 5. **Entity list**: *also in* links to other cases you can see; Live or Defanged display; VirusTotal lookup;
-   details panel; edit; remove.
+   details panel; edit; remove. Editors tick rows (or *Select Unknown*) and use *Set verdict for N…* to record one
+   verdict, time and reason on all of them; the Closure gate's *Assess* opens the tab with the Unknown ones ticked.
 
 Below the list, relationships are added and edited (type, description and direction).
 

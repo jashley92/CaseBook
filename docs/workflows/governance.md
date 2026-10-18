@@ -42,7 +42,7 @@ an optional number) or an **attestation** (a statement the person ticks in the d
 | `LessonsCaptured` | Passes below Incident; otherwise the review has "what happened" and at least one improvement action, or "no actions identified" |
 | `NoOpenTasks` | No open tasks |
 | `NotificationsRecorded` | Passes unless the deadline clock is on, a deadline applies (a start time, and a jurisdiction in play with no notice, judged as the case page judges it: those kept when the case was reported plus those of elements added since) and no reported time is recorded |
-| `EntitiesAssessed` | No entity is left with the verdict **Unknown** ("Assess" goes to the Entities tab; the dialog shows how many are left) |
+| `EntitiesAssessed` | No entity is left with the verdict **Unknown** ("Assess" goes to the Entities tab with the Unknown ones ticked, ready for *Set verdict for N…*; the dialog shows how many are left) |
 
 Rules:
 

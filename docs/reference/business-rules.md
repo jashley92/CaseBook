@@ -69,6 +69,7 @@ making touches one of these, read the linked page first and add a test that woul
 | C5 | **Report approval is a separate, permission-gated, one-way step.** Generating never approves; maker-checker is optional. | Separation of duties. | `ReportService.ApproveAsync` |
 | C6 | **CSV exports neutralize formula characters.** | A malicious indicator value mustn't execute in a spreadsheet. | `Csv.Escape` |
 | C7 | **Indicator values never go in URLs.** | URLs are logged by proxies and browsers. | UI conventions |
+| C8 | **A verdict set on several entities at once is recorded one entity at a time, in one save** (CAP-02): each that changes gets its own `EntityVerdictChange` and milestone through `Case.EditEntity`, under the single verdict's rules (a reason for Malicious or Compromised; R4's time checks per entity); one refused row, an entity not on the case, or a verdict changed since it was picked records none. | The findings history is per entity; a batch that half-lands leaves the record saying something nobody decided. | `CaseService.AssessEntitiesAsync` |
 
 ## Assumptions
 

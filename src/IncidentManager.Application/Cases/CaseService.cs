@@ -2234,6 +2234,51 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>CAP-02: how many entities one assessment takes (the most a paste or an IOC file adds at once).</summary>
+    public const int MaxEntitiesPerAssessment = Import.IocImportConverter.MaxIndicators;
+
+    /// <summary>
+    /// CAP-02: records one verdict on several of a case's entities at once, as <see cref="SetEntityVerdictAsync"/> records
+    /// it on one: each one that changes gets its own <see cref="EntityVerdictChange"/> and timeline milestone (HR-05), with
+    /// the same reason and "when determined". The rules are the single verdict's: a reason for Malicious or Compromised and
+    /// for a time more than an hour back, the time checked against each entity's own earlier verdicts (BUG-414).
+    /// <paramref name="expected"/> holds the verdict each one showed when they were picked; if someone has changed any of
+    /// them since, nothing is recorded (BUG-234). One save: an id that isn't on this case, or a time one entity refuses,
+    /// records none of them. Returns how many changed (one already at the verdict is left as it is). All on one case, so
+    /// no E-18 cross-case metering applies.
+    /// </summary>
+    public async Task<int> AssessEntitiesAsync(Guid id, IReadOnlyCollection<Guid> entityIds, EntityDisposition disposition,
+        string? reason, IReadOnlyDictionary<Guid, EntityDisposition>? expected = null, DateTimeOffset? determinedAtUtc = null,
+        CancellationToken ct = default)
+    {
+        Require();
+        var ids = entityIds.Distinct().ToList();
+        if (ids.Count == 0) throw new ArgumentException("Pick at least one entity to assess.");
+        if (ids.Count > MaxEntitiesPerAssessment)
+            throw new ArgumentException($"Assess up to {MaxEntitiesPerAssessment:N0} entities at a time.");
+        if (reason is { Length: > 2000 }) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        var entities = c.Entities.ToDictionary(e => e.Id);
+        if (ids.Any(e => !entities.ContainsKey(e)))
+            throw new InvalidOperationException("Some of those entities are no longer on this case. Look again, then assess them.");
+        var picked = ids.Select(e => entities[e]).ToList();
+        if (expected is not null && picked.FirstOrDefault(e => expected.TryGetValue(e.Id, out var seen) && seen != e.Disposition) is { } moved)
+            throw new StaleEditException(moved.RowHash ?? "", $"Someone set {moved.Label ?? moved.Value} to {moved.Disposition} since " +
+                "you picked it, so no verdicts were recorded. Look again, then record yours.");
+        var changing = picked.Where(e => e.Disposition != disposition).ToList();
+        if (changing.Count == 0) return 0;
+        if (disposition is EntityDisposition.Malicious or EntityDisposition.Compromised && string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException($"Say why they're {(disposition == EntityDisposition.Malicious ? "malicious" : "compromised")}: the reason is kept with each verdict.");
+        RequireReasonIfBackdated(determinedAtUtc, reason);   // BUG-414
+        var now = _clock.UtcNow;
+        foreach (var e in changing)
+            c.EditEntity(e.Id, e.Type, e.Value, e.Label, disposition, e.Description, e.Source, _user.UserId, now, reason, determinedAtUtc);
+        db.PendingChangeReason = reason;
+        await db.SaveChangesAsync(ct);
+        return changing.Count;
+    }
+
     /// <summary>BUG-152: an indicator's own TLP marking (null when it has none, or isn't on a case the caller can see).</summary>
     public async Task<TlpLevel?> EntityTlpAsync(Guid id, Guid entityId, CancellationToken ct = default)
     {

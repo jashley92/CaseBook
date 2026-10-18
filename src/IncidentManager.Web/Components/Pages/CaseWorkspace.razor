@@ -179,7 +179,8 @@ else
            the shared confirm dialog (RequestConfirm→AskConfirm), the flash, and hotkey dispatch (@ref). *@
         <CaseEntitiesTab @ref="_entitiesTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" FocusEntityId="QEntity" OnOpenEntity="OpenEntity"
-                         FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" />
+                         FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh"
+                         PickUnknownOnShow="_entitiesPickUnknown" OnPickUnknownHandled="() => _entitiesPickUnknown = false" />
     }
     else if (_activeTab == "Evidence")
     {

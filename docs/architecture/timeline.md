@@ -81,7 +81,7 @@ From `Application/Cases/CaseMilestones.cs`:
 | Task done: *title* (unless a stored entry already logs that task's result) | `ActionItem` with status Done | completion time | |
 | Evidence added: *file* (unless it's a screenshot shown on an entry, or a file an entry cites) | `Evidence` | upload time | uploader |
 | Case / lessons-learned report *vN* approved as final | `Report` | approval time | approver |
-| *Entity* assessed *verdict* (was *previous*), with the reason | `EntityVerdictChange` (an existing entity re-assessed; adding one with a verdict isn't recorded) | when recorded | who changed it |
+| *Entity* assessed *verdict* (was *previous*), with the reason | `EntityVerdictChange` (an existing entity re-assessed; adding one with a verdict isn't recorded). A verdict set on several at once (CAP-02) is one milestone per entity, all at the same time with the same reason | when recorded | who changed it |
 | Working assessment recorded / Assessment revised (brief v*N*), with the new assessment | `CaseBrief` versions whose working assessment differs from the version before; a closing brief's conclusion is left to the Closed milestone | when the version was saved | who saved it |
 
 Not on the timeline (they're in their own tabs and in the Audit tab): notes themselves, task comments, case
