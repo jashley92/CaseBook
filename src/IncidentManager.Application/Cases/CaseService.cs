@@ -3312,7 +3312,8 @@ public sealed class CaseService
         c.TimelineEntries.Add(new TimelineEntry
         {
             CaseId = c.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Handoff, OccurredAtUtc = now,
-            Description = text, Source = "Handoff", CreatedBy = _user.UserId, CreatedAtUtc = now
+            Description = text, Source = "Handoff", CreatedBy = _user.UserId, CreatedAtUtc = now,
+            HandedToUserId = toUserId.Trim()   // CAP-20 review: the card finds the recipient by id, not by the name in the text
         });
         var moved = 0;
         if (reassignMyOpenTasks)

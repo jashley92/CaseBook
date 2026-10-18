@@ -194,6 +194,7 @@ Stored timeline content. Milestones are not stored; see [timeline.md](timeline.m
 | `EvidenceId` | uniqueidentifier | yes | A screenshot pasted into the entry (no foreign key). |
 | `ActionItemId` | uniqueidentifier | yes | The task whose result this entry logs (no foreign key). |
 | `PromotedFrom` | nvarchar(64) | yes | `note:<id>`, `taskcomment:<id>` or `import`. |
+| `HandedToUserId` | nvarchar(200) | yes | CAP-20 review: on a handoff's first version, the user id it was handed to, so Now's "watch for" card finds them by id (older handoffs: by the name in the text). In the row hash from format 5, only when set. |
 | `Version`, `IsCurrent`, `SupersedesEntryId` | | | Investigation entries are versioned (see below). |
 | `RetractedAtUtc`, `RetractedBy` (200), `RetractReason` (2000) | | yes | BUG-413: set when the entry was retracted (taken off the record with a reason). A retracted entry also has `IsCurrent = false` and no later version. Hashed when set. |
 

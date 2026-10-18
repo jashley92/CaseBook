@@ -155,6 +155,7 @@ public sealed class TrailSnapshot
             // CAP-21: a withdrawal
             nameof(Domain.Entities.Evidence.WithdrawnAtUtc), nameof(Domain.Entities.Evidence.WithdrawnBy),
             nameof(Domain.Entities.Evidence.WithdrawnReason)],
+        [typeof(TimelineEntry)] = [nameof(TimelineEntry.HandedToUserId)],   // CAP-20 review: a handoff's recipient
     };
 
     /// <summary>The trail of each of <paramref name="ids"/> of <paramref name="entityType"/>, read in batches.</summary>

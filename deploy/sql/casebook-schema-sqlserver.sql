@@ -4440,3 +4440,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018080718_HandoffRecipient'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [HandedToUserId] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018080718_HandoffRecipient'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261018080718_HandoffRecipient'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

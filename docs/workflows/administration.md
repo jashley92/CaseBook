@@ -31,7 +31,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from |
 | Configuration bundle | `/admin/config-bundle` | Export, diff and import editable configuration |
 | Updates | `/admin/settings/updates` | The running version and the last upgrade; the update check (off by default: one anonymous call a day to the GitHub Releases API) with each newer release's notes; the exact elevated command to upgrade this site |
-| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the email relay sign-in check, a "re-enter" check for a saved chat URL or SIEM token that can't be decrypted here (CAP-40), SIEM test event, writable-path checks, the retention review's nightly count (CAP-10) and the access-review reminder (CAP-15) |
+| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the email relay sign-in check, a "re-enter" check for a saved chat URL or SIEM token that can't be decrypted here (CAP-40), SIEM test event, writable-path checks, the retention review's latest count (CAP-10) and the access-review reminder (CAP-15) |
 | Style guide | `/admin/style` | Live design-system reference for developers |
 | Access log | `/access-log` (main navigation) | Who read which case or downloaded what |
 
@@ -108,7 +108,8 @@ The list shows at most **500 cases**, the oldest closings first. With more due, 
 Archiving takes a case off the lists, dashboards and reminders; it stays in the record and the audit trail and can be
 restored from its page. **Nothing is deleted.** Purging stays out of CaseBook until it can have two-person control.
 
-A job counts the cases past retention once a day (and a few minutes after start-up, or after the setting changes) for
+A job counts the cases past retention at start-up and then once a day by default (and within a few minutes after the
+setting changes) for
 Diagnostics, across every case but exercises, so it can count cases your list doesn't show. With
 **Monthly retention-review email to Legal** on (off by default), the Legal / Privacy distribution is told once a calendar
 month how many cases are waiting and how many are under a hold: counts only, no case named, no link. The email's wording

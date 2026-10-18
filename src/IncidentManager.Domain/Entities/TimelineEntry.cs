@@ -104,6 +104,13 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// </summary>
     public string? PromotedFrom { get; set; }
 
+    /// <summary>
+    /// CAP-20 review: on a handoff entry, the user id of the person it was handed to, so the "watch for" card finds them
+    /// by who they are rather than by the display name the text gives (a rename, or two people with one name). Null on
+    /// every other entry, and on a handoff recorded before it was kept. Folded into the row hash only when set (format 5).
+    /// </summary>
+    public string? HandedToUserId { get; set; }
+
     /// <summary>INV-23: the <see cref="PromotedFrom"/> of an entry brought in by a structured import.</summary>
     public const string Imported = "import";
 
@@ -190,6 +197,8 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
             content += Canonical.Since(4, TechniqueId is not null || ActorEntityId is not null || TargetEntityId is not null || Tactics.Count > 0,
                 () => "|step|" + Canonical.Text(TechniqueId) + "|" + ActorEntityId + "|" + TargetEntityId + "|"
                       + string.Join(',', Tactics.Select(t => (int)t.Tactic).OrderBy(x => x)));
+        // CAP-20 review: a handoff's recipient, from format 5, only when set.
+        content += Canonical.Since(5, HandedToUserId is not null, () => "|to|" + Canonical.Text(HandedToUserId));
         return content;
     }
 }

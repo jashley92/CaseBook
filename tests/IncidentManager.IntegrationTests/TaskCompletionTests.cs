@@ -254,6 +254,7 @@ public sealed class TaskCompletionTests : IDisposable
         var entry = c.TimelineEntries.Single(e => e.Type == TimelineEntryType.Handoff);
         entry.Kind.Should().Be(TimelineKind.Investigation);
         entry.Description.Should().Contain("eradication next");
+        entry.HandedToUserId.Should().Be("robin", "CAP-20 review: the card finds the recipient by id");
     }
 
     [Fact]

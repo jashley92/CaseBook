@@ -30,7 +30,7 @@
         <section class="im-nn-handover" aria-labelledby="nn-ho-h">
             <h2 class="im-nn-h" id="nn-ho-h"><span class="bi bi-arrow-left-right" aria-hidden="true"></span> Watch for</h2>
             <div class="im-nn-sub">
-                Handed to @(mine ? "you" : ho.HandedTo ?? "the next analyst") by @Users.DisplayFor(ho.HandedBy) on <span title="@TimeDisp.Long(ho.HandedAtUtc)">@TimeDisp.Short(ho.HandedAtUtc)</span>:
+                Handed to @(mine ? "you" : ho.HandedToUserId is { } toId ? Users.DisplayFor(toId) : ho.HandedTo ?? "the next analyst") by @Users.DisplayFor(ho.HandedBy) on <span title="@TimeDisp.Long(ho.HandedAtUtc)">@TimeDisp.Short(ho.HandedAtUtc)</span>:
             </div>
             <div class="md-body im-rec">@((MarkupString)Md.ToHtml(ho.WatchFor, Case.Id))</div>
             <div class="im-nn-sub">@(mine ? "This goes once you revise the brief or mark it still accurate." : "This goes once they revise the brief or mark it still accurate.")</div>

@@ -212,6 +212,11 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
+  `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
+  id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.
+  Handoffs recorded before the upgrade keep matching by the name in their text. The id is hashed only when set
+  (canonical format 5), so existing rows keep their hashes.
 - **Escalating a case offers the rung's playbook (CAP-11).** After an upward reclassification, or on a case filed at a
   rung, a notice under the case header offers the steps of each active template whose default classification is that
   rung and that aren't tasks yet; *Add them…* opens the Tasks tab's apply-playbook card with them ticked, and nothing
@@ -246,7 +251,7 @@ first with `casebook-keytool export`.
   Diagnostics → *Backup set* shows the database's name and every path OPERATIONS.md §1 says to back up (evidence,
   report output, seal exports, the keys folder, the Data Protection keys, report templates, branding), each with
   whether it's there and writable, its size and last write. `GET /export/backup-manifest.json` (Administer) is the same
-  as JSON, paths only, never key material; it's access-logged and SIEM 5304. Setting sources now also show
+  as JSON, paths and metadata, never key material; it's access-logged and SIEM 5304. Setting sources now also show
   `Integrity:ExportPath`, `DataProtection:KeyPath`, `ReportTemplates:RootPath` and `ReportBranding:RootPath`. No setting
   or migration. Compare the card with your backup job's folder list once after upgrading.
 - **Trusted signing keys for configuration bundles (CAP-16).** A new server-side setting, `Config:TrustedBundleKeys`,
@@ -331,7 +336,8 @@ first with `casebook-keytool export`.
 - **How a regulator was notified (CAP-07).** One migration, `NoticeDetails`: four nullable columns on
   `JurisdictionNotices` (`Method`, `Reference`, `NotifiedBy`, `EvidenceId`); no data moves. Existing notices are
   unchanged and keep their row hashes. New row hashes are written as `v5:` (canonical format 5), which differs from
-  format 4 only for a notice with these details or evidence with collection details (CAP-08), so nothing is re-hashed
+  format 4 only for a notice with these details, evidence with collection details (CAP-08) or a withdrawn file
+  (CAP-21), so nothing is re-hashed
   and the integrity upgrade doesn't run again. Templates can use the new `notice` collection (`jurisdiction`,
   `notified`, `due`, `method`, `reference`, `by`, `file`). The case report's Business Impact section now lists each regulator's notice ("Notice to NY: …"), so a regenerated
   report of a notified case reads differently from an older version. The legal-register CSV gains a last column,

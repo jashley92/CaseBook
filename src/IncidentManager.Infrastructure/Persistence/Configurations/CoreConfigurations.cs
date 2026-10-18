@@ -63,6 +63,7 @@ public sealed class TimelineEntryConfiguration : IEntityTypeConfiguration<Timeli
         b.Property(x => x.OptionsConsidered).HasMaxLength(2000);
         b.Property(x => x.DecidedBy).HasMaxLength(300);
         b.Property(x => x.PromotedFrom).HasMaxLength(64);   // INV-07
+        b.Property(x => x.HandedToUserId).HasMaxLength(200);   // CAP-20 review
         b.Property(x => x.RetractedBy).HasMaxLength(200);   // BUG-413
         b.Property(x => x.RetractReason).HasMaxLength(2000);
         b.ToTable("TimelineEntries");

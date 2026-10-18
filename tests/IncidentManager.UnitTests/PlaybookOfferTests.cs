@@ -106,4 +106,17 @@ public class PlaybookOfferTests
     {
         PlaybookOffer.For(NewCase(Classification.Breach), []).Should().BeEmpty();
     }
+
+    [Fact]
+    public void Add_them_again_keeps_a_card_already_open_as_offered_and_refuses_to_replace_other_work(/* CAP-11 review */)
+    {
+        Guid offered = Guid.NewGuid(), other = Guid.NewGuid(), s1 = Guid.NewGuid(), s2 = Guid.NewGuid();
+        var missing = new HashSet<Guid> { s1, s2 };
+
+        PlaybookOffer.Take(null, new HashSet<Guid>(), offered, missing).Should().Be(OfferTake.Open, "no card is open");
+        PlaybookOffer.Take(offered, new HashSet<Guid> { s2, s1 }, offered, missing)
+            .Should().Be(OfferTake.Keep, "the card already shows the offer, so the owner chosen in it isn't reset");
+        PlaybookOffer.Take(offered, new HashSet<Guid> { s1 }, offered, missing).Should().Be(OfferTake.Refuse, "a step was unticked");
+        PlaybookOffer.Take(other, missing, offered, missing).Should().Be(OfferTake.Refuse, "another playbook is open");
+    }
 }
