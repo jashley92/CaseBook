@@ -1179,6 +1179,9 @@ app.MapPost("/api/import/cases", async (
     // CAP-14: a case id and a detection case id that name different cases.
     if (await import.CheckTargetAsync(parsed.Document!, ct) is { } conflict)
         return Results.BadRequest(new { error = conflict });
+    // CAP-35: a v2 history that breaks R4's time checks (out of order, before detection, in the future) is refused here.
+    if (import.CheckHistory(parsed.Document!) is { } badHistory)
+        return Results.BadRequest(new { error = badHistory });
 
     // BUG-217: a retry of a submission still waiting for review returns that one (200), not a second (201).
     var (id, preview, alreadyQueued) = await import.SubmitOnceAsync(json, parsed.Document!, ct);

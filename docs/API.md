@@ -64,7 +64,7 @@ changed document is a new submission.
 |---|---|
 | `201 Created` | Accepted for review. Body: `{ pendingImportId, status: "pending", duplicate: false, message, itemCount, warnings[] }`. `Location` points at the review URL. |
 | `200 OK` | The identical document from the same token is already waiting for review (sent within 24 hours), so a retry isn't queued twice. Same body, `duplicate: true`, with that import's id. |
-| `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports / carries more than one import takes (2,000 indicators, 1,000 timeline entries, 500 tasks; split it) / gives a `target.caseId` and a `target.detectionCaseId` that name different cases. Body: `{ error }`. |
+| `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports / carries more than one import takes (2,000 indicators, 1,000 timeline entries, 500 tasks; split it) / gives a `target.caseId` and a `target.detectionCaseId` that name different cases / (v2) has a `newCase.history` that breaks the time checks: a step out of order, in the future, before `detectedAt` (or no `detectedAt`), a close before the last step or without its `outcome` and `conclusion` (CAP-35). Body: `{ error }`. |
 | `401 Unauthorized` | Missing, invalid, expired, or revoked token. |
 | `403 Forbidden` | The token authenticated but lacks the **EditCases** permission. |
 | `413 Payload Too Large` | The body is over 5 MiB (with or without a `Content-Length`). |
@@ -241,6 +241,31 @@ Notes:
   With `target.caseId` as well, both must name the same case: when the case with that id (one your token can see)
   carries a different detection case id, or none, the document is refused with `400`. When they agree, `caseId` is the
   target.
+- **Versions** (CAP-35): `schemaVersion` is `1` or `2`; a higher one is refused with `400`. A v1 document is read exactly
+  as before. **v2** lets a new case carry how it went, for a historical or closed case: `newCase.history` (phase
+  transitions, oldest first), `newCase.outcome` and `newCase.conclusion` (when the history ends in Closed),
+  `newCase.incidentCommander` and `newCase.assignments` (users by id or UPN). In a v1 document these are ignored, with a
+  warning.
+
+  ```json
+  "schemaVersion": 2,
+  "target": { "newCase": {
+    "title": "Wire fraud attempt", "classification": "Incident", "detectedAt": "2026-03-02T10:00:00Z",
+    "history": [
+      { "phase": "Containment", "at": "2026-03-02T15:00:00Z", "reason": "Mailbox rule removed" },
+      { "phase": "Closed", "at": "2026-03-09T12:00:00Z" }
+    ],
+    "outcome": "Confirmed", "conclusion": "Stopped before any payment left.",
+    "incidentCommander": "dana.lee@contoso.example",
+    "assignments": [ { "user": "analyst9", "role": "Analyst" } ] } }
+  ```
+
+  The history needs `detectedAt`; no step may be in the future, before it, or before the step before it, and only the
+  last step may close the case; a step past Containment or Recovery without it says `containedAt` /
+  `containmentNotNeeded` or `resolvedAt`. Such a document is refused with `400`. Each step is applied at its time when
+  a reviewer confirms it (a missing reason reads "imported record: &lt;origin&gt;", and a close whose gate checks can't be
+  met is overridden with that reason). People the reviewer's directory doesn't know are a warning and aren't added. A
+  history only applies to a new case: one that lands in an existing case leaves it out, with a warning.
 - **Times**: ISO 8601. A time with an offset (`2026-09-18T09:05:00-04:00`) or `Z` is kept as stated. A time without one
   is read in the document's top-level `timeZone` (an IANA id such as `America/New_York`), or as UTC when it has none.
   (On the Import page the reviewer picks the zone for such times instead, the organization's by default; a document's

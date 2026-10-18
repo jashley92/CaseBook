@@ -487,7 +487,7 @@ be edited**; nothing locks them.
 | Task | any status to any status, except Cancelled to Done: a cancelled task is reopened first (REV-23, BUG-304). |
 | Report | draft → final (once, irreversible). |
 | Improvement action | any status to any status; closing needs an outcome note. |
-| Pending import | pending → applied or rejected (both final). |
+| Pending import | pending → applied or rejected (both final). Applied one at a time or in a batch from one submitter (at most 25, each its own claim and apply, CAP-35). A v2 document's history moves the new case through its phases at their effective times, last. |
 | API token | active → revoked or expired. |
 | Versioned records (notes, investigation entries, briefs) | exactly one current version per lineage. |
 

@@ -63,6 +63,11 @@ send `caseId` with it unless it's the same case; a different case is refused (40
 To find out what became of a hand-off later, `GET <casebook>/api/import/cases/<PendingImportId>` with the same token
 says `pending`, `applied` (with the case number) or `rejected` ([API.md](../../docs/API.md)).
 
+The script sends `schemaVersion: 1`, which CaseBook still reads unchanged; v2 (CAP-35) only adds a new case's
+history and team, for historical cases. When a playbook has queued several hand-offs, a reviewer can confirm them
+together from the queue (*Confirm all from &lt;token&gt;…*, up to 25 at a time, each listed first); each still reads
+`applied` to this token once confirmed.
+
 ## Reference
 
 - API and authentication: [docs/API.md](../../docs/API.md)

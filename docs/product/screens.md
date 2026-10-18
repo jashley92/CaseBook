@@ -17,7 +17,10 @@ browser's local zone because the profile menu was set to *Local*; stored times a
 1. **Workspace**: Desk, Cases, **Find** (typed results across every case you can see; see
    [Find](../workflows/find.md)), **Intel** (Indicators, Campaigns, ATT&CK coverage under one bar), **Program**, and New case and
    **Import** (with `EditCases`). Import's count is the API submissions waiting for your review (up to 99+, only those
-   you'd see in the queue; CAP-01); the Desk lists them under *Needs you* as well. Opening `/` goes to Program for roles with `ViewAllCases`, and to the Desk for everyone else.
+   you'd see in the queue; CAP-01); the Desk lists them under *Needs you* as well. The Import page's queue offers
+   *Confirm all from &lt;submitter&gt;…* when one submitter has several waiting (listed by name first, at most 25, with a
+   result per import), and a preview of a v2 document shows a *History and team* card (the phases with their times, the
+   outcome, the people and whether each is known) (CAP-35). Opening `/` goes to Program for roles with `ViewAllCases`, and to the Desk for everyone else.
    **Program** gathers the cross-case views under one bar: Overview (the leadership dashboard), Team, Due work
    (open tasks across the team by when they're due), Improvement actions, the Legal register and the Program
    report. The first three need `ViewAllCases`. Your calendar feed is in *Notification settings*.

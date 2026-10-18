@@ -53,13 +53,41 @@ public sealed class CaseImportPreview
     /// <summary>Document-level notes about what was clamped, defaulted, dropped, or fell back to a default.</summary>
     public List<string> Warnings { get; } = new();
 
+    // CAP-35 (schema v2): a new case's history and team. Applied only to a new case, after everything else, so the case
+    // closes (when its history says so) last, with its content in.
+
+    /// <summary>CAP-35: the phase transitions to apply, oldest first.</summary>
+    public List<ImportHistoryRow> History { get; } = new();
+
+    /// <summary>CAP-35: the outcome key and conclusion of a history that ends in Closed.</summary>
+    public string? Outcome { get; set; }
+    public string? Conclusion { get; set; }
+
+    /// <summary>CAP-35: the incident commander as the document names them, and who that resolved to in the user directory
+    /// (null when no user matched: warned, and not applied).</summary>
+    public ImportAssignmentRow? IncidentCommander { get; set; }
+    public List<ImportAssignmentRow> Assignments { get; } = new();
+
+    /// <summary>CAP-35: why the history can't be applied as it stands (out of order, before detection, in the future, a
+    /// close without its outcome), or null. Apply refuses while it's set, before writing anything.</summary>
+    public string? HistoryProblem { get; set; }
+
+    /// <summary>CAP-35: whether the document carries a history or team (v2), so a reviewer sees it's a historical record.</summary>
+    public bool HasHistory => History.Count > 0 || IncidentCommander is not null || Assignments.Count > 0;
+
+    /// <summary>CAP-35: the override reason a close takes when its gate's checks can't be met.</summary>
+    public string ImportedRecordReason => $"imported record: {(string.IsNullOrWhiteSpace(Origin) ? "import" : Origin.Trim())}";
+
     // Resume-safe apply state (not user-facing).
     public Guid? CreatedCaseId { get; set; }
     public bool SummaryApplied { get; set; }
 
     public int IncludedItemCount =>
         (IncludeSummary && !string.IsNullOrWhiteSpace(Summary) ? 1 : 0)
-        + Timeline.Count(r => r.Include) + Entities.Count(r => r.Include) + ActionItems.Count(r => r.Include);
+        + Timeline.Count(r => r.Include) + Entities.Count(r => r.Include) + ActionItems.Count(r => r.Include)
+        // CAP-35: a new case's history and the team members found in the directory.
+        + (TargetKind == CaseImportTargetKind.NewCase
+            ? History.Count + (IncidentCommander?.UserId is null ? 0 : 1) + Assignments.Count(a => a.UserId is not null) : 0);
 
     public bool HasAnything => IncludedItemCount > 0;
 }
@@ -85,6 +113,29 @@ public sealed class ImportTimelineRow
     public string? Rationale { get; set; }
     public string? OptionsConsidered { get; set; }
     public string? DecidedBy { get; set; }
+}
+
+/// <summary>CAP-35: one phase transition of an imported case's history.</summary>
+public sealed class ImportHistoryRow
+{
+    public bool Applied { get; set; }
+    public CasePhase Phase { get; set; }
+    public DateTimeOffset AtUtc { get; set; }
+    public string? Reason { get; set; }
+    public DateTimeOffset? ContainedAtUtc { get; set; }
+    public string? ContainmentNotNeeded { get; set; }
+    public DateTimeOffset? ResolvedAtUtc { get; set; }
+}
+
+/// <summary>CAP-35: one member of an imported case's team: as the document named them (<see cref="Named"/>) and who that is
+/// in the user directory (<see cref="UserId"/>, null when nobody matched).</summary>
+public sealed class ImportAssignmentRow
+{
+    public bool Applied { get; set; }
+    public string Named { get; set; } = string.Empty;
+    public string? UserId { get; set; }
+    public string? DisplayName { get; set; }
+    public CaseAssignmentRole Role { get; set; } = CaseAssignmentRole.Analyst;
 }
 
 /// <summary>One editable entity/IOC row in the preview.</summary>
@@ -126,6 +177,10 @@ public sealed record PendingImportSummary(
 /// <param name="ResolvedCaseNumber">The case it went into, as numbered now; null unless applied into a case the caller can
 /// see (with <paramref name="ResolvedCaseId"/>).</param>
 public sealed record ImportSubmissionStatus(string Status, DateTimeOffset? DecidedAtUtc, string? ResolvedCaseNumber, Guid? ResolvedCaseId);
+
+/// <summary>CAP-35: what became of one submission in a batch confirm: applied into <paramref name="CaseNumber"/>, or left in
+/// the queue with why (<paramref name="Message"/>), for a person to review on its own.</summary>
+public sealed record BatchConfirmItem(Guid PendingImportId, string Summary, bool Applied, string? CaseNumber, Guid? CaseId, string? Message);
 
 /// <summary>Counts written by an apply, plus the resulting case for navigation.</summary>
 public sealed record CaseImportResult(

@@ -68,6 +68,46 @@ else if (_pending.Count > 0)
                 </tbody>
             </table>
         </div>
+        @* CAP-35: confirm a submitter's imports together, at most 25 at a time, after seeing them named (decision 0004). *@
+        @{ var batchable = _pending.Where(x => x.StuckClaimedBy is null).GroupBy(x => x.SubmittedBy).Where(g => g.Count() > 1).Select(g => g.Key).ToList(); }
+        @if (batchable.Count > 0 && _batchSubmitter is null)
+        {
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                @foreach (var who in batchable)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => BeginBatch(who)" disabled="@_batching.Busy">Confirm all from @who…</button>
+                }
+            </div>
+        }
+        @if (_batchSubmitter is { } submitter)
+        {
+            <div class="border rounded p-2 mt-2" role="region" aria-label="@($"Confirm imports from {submitter}")">
+                @if (_batchResults is { } results)
+                {
+                    <div class="fw-semibold small mb-1">@results.Count(r => r.Applied) of @results.Count applied</div>
+                    <ul class="small mb-2">
+                        @foreach (var r in results)
+                        {
+                            <li>
+                                @if (r.Applied) { <span class="bi bi-check2 text-success" aria-hidden="true"></span> @r.Summary <text>→</text> <a href="cases/@r.CaseId">@r.CaseNumber</a> }
+                                else { <span class="bi bi-exclamation-triangle text-warning-emphasis" aria-hidden="true"></span> @r.Summary<text>: </text>@r.Message <a href="cases/import?pending=@r.PendingImportId">Review</a> }
+                            </li>
+                        }
+                    </ul>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CloseBatch">Done</button>
+                }
+                else if (_batchItems is { } items)
+                {
+                    <div class="small mb-1">These @items.Count imports from <strong>@submitter</strong> (oldest first, at most @CaseImportService.MaxBatchConfirm at a time) are applied under your name, each as if you confirmed it on its own. One that needs a choice (a target, a gate to tick, a history to correct) stays in the queue.</div>
+                    <ol class="small mb-2">@foreach (var i in items) { <li>@i.Summary <span class="text-muted">(@TimeDisp.Short(i.SubmittedAtUtc))</span></li> }</ol>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="ConfirmBatch" disabled="@(_batching.Busy || items.Count == 0)">Confirm these @items.Count</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CloseBatch" disabled="@_batching.Busy">Cancel</button>
+                    </div>
+                }
+                else { <LoadingBlock /> }
+            </div>
+        }
     </div>
 }
 
@@ -510,6 +550,53 @@ else if (_pending.Count > 0)
         </div>
     }
 
+    @* CAP-35: a historical or closed case's history and team (schema v2), applied last, to a new case only. *@
+    @if (p.HasHistory || p.HistoryProblem is not null)
+    {
+        <div class="im-card nc-card">
+            <div class="fw-semibold mb-2">History and team <span class="text-muted small">(applied last, to a new case only)</span></div>
+            @if (p.HistoryProblem is { } problem)
+            {
+                <div class="alert alert-danger py-2 small mb-2" role="alert">@problem This import can't be applied until the document is corrected.</div>
+            }
+            @if (p.History.Count > 0)
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <caption class="small">Each move is recorded at when it happened; a close runs the close gate, and checks it can't meet are overridden as "@p.ImportedRecordReason".</caption>
+                        <thead><tr><th>Phase</th><th style="width:12rem">When (@TimeDisp.Label)</th><th>Reason</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in p.History)
+                            {
+                                <tr class="@(h.Applied ? "opacity-50" : "")">
+                                    <td>@Ui.Label(h.Phase)</td>
+                                    <td class="small">@TimeDisp.Short(h.AtUtc)</td>
+                                    <td class="small text-break">@(h.Reason ?? p.ImportedRecordReason)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (p.Outcome is not null)
+                {
+                    <div class="small">Outcome: <code>@p.Outcome</code> · Conclusion: <span class="text-break">@p.Conclusion</span></div>
+                }
+            }
+            @if (p.IncidentCommander is not null || p.Assignments.Count > 0)
+            {
+                <ul class="small mb-0 mt-2">
+                    @foreach (var a in (p.IncidentCommander is { } icRow ? new[] { icRow } : []).Concat(p.Assignments))
+                    {
+                        <li>
+                            @a.Role: @(a.DisplayName ?? a.Named)
+                            @if (a.UserId is null) { <span class="text-warning-emphasis"> (not a known user, won't be added)</span> }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
     @if (_error is not null) { <div class="alert alert-danger">@_error</div> }
 
     @if (_rejecting)
@@ -575,6 +662,48 @@ else if (_pending.Count > 0)
         var t = _queue.Begin();
         var pending = await Import.ListPendingAsync();
         if (_queue.IsCurrent(t)) _pending = pending.ToList();
+    }
+
+    // CAP-35: "Confirm all from this submitter": the submissions are listed by name first, then confirmed together.
+    private string? _batchSubmitter;
+    private IReadOnlyList<PendingImportSummary>? _batchItems;
+    private IReadOnlyList<BatchConfirmItem>? _batchResults;
+    private readonly InFlight _batching = new();
+    private readonly LoadSequence _batchLoad = new();
+
+    private async Task BeginBatch(string submitter)
+    {
+        var t = _batchLoad.Begin();
+        (_batchSubmitter, _batchItems, _batchResults) = (submitter, null, null);
+        var items = await Import.ListBatchFromSubmitterAsync(submitter);
+        if (_disposed || !_batchLoad.IsCurrent(t)) return;
+        _batchItems = items;
+    }
+
+    private void CloseBatch()
+    {
+        if (_batching.Busy) return;
+        _batchLoad.Invalidate();
+        (_batchSubmitter, _batchItems, _batchResults) = (null, null, null);
+    }
+
+    private Task ConfirmBatch() => _batching.Run(ConfirmBatchCore);
+
+    private async Task ConfirmBatchCore()
+    {
+        if (_batchSubmitter is not { } submitter || _batchItems is not { Count: > 0 } items || _batchResults is not null) return;
+        try
+        {
+            var results = await Import.ConfirmBatchAsync(submitter, items.Select(i => i.Id).ToList());
+            if (_disposed) return;
+            _batchResults = results;
+            Toasts.Success($"{IncidentManager.Application.Common.Plural.Of(results.Count(r => r.Applied), "import")} applied.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or ForbiddenException or InvalidOperationException)
+        {
+            if (!_disposed) Toasts.Error(ex.Message);
+        }
+        if (!_disposed) await LoadQueue();
     }
 
     // WF-18: puts a stuck import back in the queue (audited) and opens it for review.
@@ -991,6 +1120,7 @@ else if (_pending.Count > 0)
     private static bool CanApply(CaseImportPreview p)
     {
         if (!p.HasAnything) return false;
+        if (p.TargetKind == CaseImportTargetKind.NewCase && p.HistoryProblem is not null) return false;   // CAP-35
         // INV-18: an included decision needs its why.
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale))) return false;
         // BUG-119: and an included entry something to say.
@@ -1111,6 +1241,7 @@ else if (_pending.Count > 0)
         _previews.Invalidate();
         _queue.Invalidate();
         _finds.Invalidate();
+        _batchLoad.Invalidate();
     }
 
     private const string SampleJson = @"{

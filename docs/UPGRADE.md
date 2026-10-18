@@ -212,6 +212,14 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Historical and closed cases import, and a batch confirm (CAP-35).** No migration. The case-import schema is now v2
+  (`docs/case-import.schema.json`, `GET /api/import/cases/schema`; `$id` `urn:casebook:schema:case-import:v2`):
+  `schemaVersion` is 1 or 2, and v1 documents (the XSIAM script's included) are read exactly as before. v2 lets a new
+  case carry its phase `history`, `outcome`, `conclusion`, `incidentCommander` and `assignments`; the API now refuses
+  (400) a v2 history that's out of order, in the future or before detection. A producer validating against the
+  published schema with `"const": 1` for `schemaVersion` should accept 2 as well. The Import queue gains *Confirm all
+  from &lt;submitter&gt;…* (up to 25 at a time, each applied as its own confirm under the reviewer's name; SIEM 5515 per case).
+  Nothing to configure.
 - **Outside parties on a case (CAP-34).** One migration, `AddCaseParties`: a new `CaseParties` table (role, name,
   contact, reference, when engaged, notes), cascading from `Cases`; no data moves. Things › Connections lists them under
   *Outside parties* (*Add a party*, needing `EditCases`). Each row is audited and hashed from its first row, so the
