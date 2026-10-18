@@ -1,0 +1,146 @@
+@* CAP-04: delivery health on Diagnostics, a row per outbound channel: the mail relay (its back-off, the held emails, the
+   last error by type and SMTP code, the next try, and the emails given up), the chat webhook, and each SIEM transport
+   that's on (its last good send, events dropped and its queue). Counts, times, types and codes only: never a recipient,
+   a relay's or collector's reply, a webhook URL or a secret. In-memory since the last restart, except the held emails,
+   which are counted in the database (bounded and time-limited, C10). *@
+@using IncidentManager.Application.Abstractions
+@using IncidentManager.Infrastructure.Notifications
+@using IncidentManager.Infrastructure.Siem
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Options
+@inject IDeliveryHealth Health
+@inject IClock Clock
+@inject IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext> DbFactory
+@inject IOptionsMonitor<EmailOptions> EmailOptions
+@inject IOptionsMonitor<ChatOptions> ChatOptions
+@inject IEnumerable<ISecurityEventTransport> Transports
+
+<p class="small text-muted mb-2">
+    Whether email, team chat and the SIEM stream are getting through. Never shows a recipient or what a server answered,
+    only its status code. The figures are held in memory and reset when CaseBook restarts (since @Health.SinceUtc.ToString("u"));
+    the held emails are counted in the database.
+</p>
+<table class="table table-sm">
+    <tbody>
+        <tr>
+            <td style="width:32%">Email (SMTP relay)</td>
+            <td class="small">
+                @if (!EmailOptions.CurrentValue.Enabled)
+                {
+                    <span class="im-badge im-b-neutral">Off</span>
+                    <span class="text-muted ms-1">delivery is off; email is logged, not sent</span>
+                }
+                else
+                {
+                    @State(Smtp)
+                }
+                <div class="mt-1">
+                    @if (_held is null) { <span class="text-muted">Held emails: reading&hellip;</span> }
+                    else if (_held.Problem is { } why) { <span class="text-warning-emphasis">Held emails: @why</span> }
+                    else if (_held.Count == 0) { <span>Held emails: none</span> }
+                    else
+                    {
+                        <span class="im-badge im-b-warn">@(_held.AtLeast ? $"{_held.Count}+" : _held.Count.ToString()) held</span>
+                        <span class="ms-1">the oldest since @_held.OldestUtc?.ToString("u")</span>
+                    }
+                </div>
+                @if (Smtp?.NextAttemptUtc is { } next) { <div>Next try of the held emails: @next.ToString("u")</div> }
+                <div>Given up since start: @(Smtp?.GivenUp ?? 0)</div>
+                @Detail(Smtp)
+            </td>
+        </tr>
+        @if (ChatOptions.CurrentValue.Enabled)
+        {
+            <tr>
+                <td>Team chat (webhook)</td>
+                <td class="small">@State(Chat) @Detail(Chat)</td>
+            </tr>
+        }
+        @foreach (var t in EnabledTransports)
+        {
+            var s = Channel(DeliveryHealth.Siem(t.Name));
+            <tr>
+                <td>SIEM: @TransportLabel(t.Name)</td>
+                <td class="small">
+                    @State(s)
+                    <div>
+                        Queue: @(s?.QueueDepth ?? 0) waiting · @(s?.Dropped ?? 0) dropped since start
+                        @if (Channel(DeliveryHealth.SiemQueue) is { Dropped: > 0 } shared)
+                        {
+                            <span class="text-warning-emphasis"> · @shared.Dropped dropped before reaching any transport (the stream's queue was full)</span>
+                        }
+                    </div>
+                    @Detail(s)
+                </td>
+            </tr>
+        }
+        @if (!EnabledTransports.Any())
+        {
+            <tr><td>SIEM stream</td><td class="small"><span class="im-badge im-b-neutral">Off</span> <span class="text-muted ms-1">no transport is on</span></td></tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyDictionary<string, DeliveryChannelStatus> _channels = new Dictionary<string, DeliveryChannelStatus>();
+    private HeldEmailSummary? _held;
+
+    private DeliveryChannelStatus? Smtp => Channel(DeliveryHealth.Smtp);
+    private DeliveryChannelStatus? Chat => Channel(DeliveryHealth.Chat);
+    private DeliveryChannelStatus? Channel(string name) => _channels.GetValueOrDefault(name);
+
+    private IEnumerable<ISecurityEventTransport> EnabledTransports => Transports.Where(t =>
+    {
+        try { return t.Enabled; }   // BUG-262: Enabled reads options, which can throw
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return false; }
+    });
+
+    protected override async Task OnInitializedAsync()
+    {
+        _channels = Health.Snapshot();
+        _held = await HeldEmailSummary.ReadAsync(DbFactory, HeldEmailSummary.DefaultLimit);
+    }
+
+    private static string TransportLabel(string name) => name switch
+    {
+        "webhook" => "webhook (HTTP collector)",
+        "syslog" => "syslog (CEF)",
+        "eventlog" => "Windows Event Log",
+        _ => name,
+    };
+
+    // Backed off, failing, getting through, or not tried since start.
+    private RenderFragment State(DeliveryChannelStatus? s) => builder =>
+    {
+        var now = Clock.UtcNow;
+        var (css, text) = s switch
+        {
+            null => ("im-badge im-b-neutral", "Nothing sent since start"),
+            _ when s.BackedOff(now) => ("im-badge im-b-danger", $"Backed off until {s.BackedOffUntilUtc:HH:mm} UTC"),
+            { LastAttemptFailed: true } => ("im-badge im-b-warn", "Last send failed"),
+            { LastSuccessUtc: not null } => ("im-badge im-b-ok", "Getting through"),
+            _ => ("im-badge im-b-neutral", "Nothing sent since start"),
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, text);
+        builder.CloseElement();
+    };
+
+    // Last good send and last failure (its type and code), with the counts.
+    private static RenderFragment Detail(DeliveryChannelStatus? s) => builder =>
+    {
+        if (s is null) return;
+        var seq = 0;
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "text-muted");
+        builder.AddContent(seq++, $"Last good send: {(s.LastSuccessUtc is { } ok ? ok.ToString("u") : "none since start")} · {s.SuccessCount} sent, {s.FailureCount} failed");
+        builder.CloseElement();
+        if (s.LastFailureUtc is { } failed)
+        {
+            builder.OpenElement(seq++, "div");
+            builder.AddContent(seq++, $"Last error: {failed:u}, {s.LastFailure}" + (s.LastStatusCode is { } code ? $" (code {code})" : ""));
+            builder.CloseElement();
+        }
+    };
+}

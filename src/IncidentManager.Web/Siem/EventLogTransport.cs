@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using IncidentManager.Infrastructure.Siem;
 using Microsoft.Extensions.Options;
@@ -36,11 +37,13 @@ public sealed class EventLogTransport : ISecurityEventTransport
     private readonly Action<SiemEventLogOptions, SecurityEvent>? _write;
     private readonly Func<string, bool>? _sourceRegistered;
     private volatile bool _sourceMissing;
+    private readonly IDeliveryHealth? _health;   // CAP-04
 
-    public EventLogTransport(IOptionsMonitor<SiemEventLogOptions> options, ILogger<EventLogTransport> logger)
+    public EventLogTransport(IOptionsMonitor<SiemEventLogOptions> options, ILogger<EventLogTransport> logger, IDeliveryHealth? health = null)
     {
         _options = options;
         _logger = logger;
+        _health = health;
     }
 
     /// <summary>For tests: stands in for the Event Log write and the source lookup, so no real entry is written.</summary>
@@ -75,11 +78,13 @@ public sealed class EventLogTransport : ISecurityEventTransport
         {
             if (_write is not null) _write(o, e);
             else if (OperatingSystem.IsWindows()) Write(o, e);
+            _health?.RecordSuccess(DeliveryHealth.Siem(Name));
             return null;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Security.SecurityException
                                        or System.ComponentModel.Win32Exception)
         {
+            _health?.RecordFailure(DeliveryHealth.Siem(Name), ex.GetType().Name);
             // REV-69: one event the log refused (one that's somehow still too long, say) is that event, not the transport.
             // Only a missing source turns delivery off; otherwise a single bad event left every later one, integrity
             // alarms included, unforwarded until restart.

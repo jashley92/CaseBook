@@ -20,15 +20,17 @@ public sealed class ChatWebhookNotifier : IChatNotifier
     private readonly ISecretProvider _secrets;
     private readonly ILogger<ChatWebhookNotifier> _logger;
     private readonly OutboundCircuit _circuit;
+    private readonly IDeliveryHealth? _health;   // CAP-04: what Diagnostics shows of the webhook
 
     public ChatWebhookNotifier(IHttpClientFactory httpFactory, IOptionsMonitor<ChatOptions> options,
-        ISecretProvider secrets, ILogger<ChatWebhookNotifier> logger, OutboundCircuit? circuit = null)
+        ISecretProvider secrets, ILogger<ChatWebhookNotifier> logger, OutboundCircuit? circuit = null, IDeliveryHealth? health = null)
     {
         _httpFactory = httpFactory;
         _options = options;
         _secrets = secrets;
         _logger = logger;
         _circuit = circuit ?? new OutboundCircuit();
+        _health = health;
     }
 
     public bool Enabled
@@ -60,6 +62,7 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         if (string.IsNullOrWhiteSpace(url))
         {
             _logger.LogWarning("Chat webhook URL could not be resolved; message not posted.");
+            _health?.RecordFailure(DeliveryHealth.Chat, "the webhook URL couldn't be resolved");   // CAP-04
             return "The webhook URL couldn't be resolved.";
         }
 
@@ -84,6 +87,8 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         var attempts = Math.Max(1, o.MaxAttempts);
         string? lastError = null;
         var unreachable = false;   // the last attempt timed out, couldn't connect, or got a server error
+        string? shown = null;      // CAP-04: the last failure for Diagnostics: a status or a type, never the URL
+        int? status = null;
 
         for (var attempt = 1; attempt <= attempts && !ct.IsCancellationRequested; attempt++)
         {
@@ -97,9 +102,11 @@ public sealed class ChatWebhookNotifier : IChatNotifier
                 if (resp.IsSuccessStatusCode)
                 {
                     _circuit.Succeeded(target);
+                    _health?.RecordSuccess(DeliveryHealth.Chat);
                     return null;
                 }
                 lastError = $"The webhook answered {(int)resp.StatusCode} {resp.ReasonPhrase}.";
+                (shown, status) = ($"HTTP {(int)resp.StatusCode}", (int)resp.StatusCode);
                 unreachable = (int)resp.StatusCode >= 500 || resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
 
                 _logger.LogWarning("Chat webhook returned {Status} (attempt {Attempt}/{Max}).",
@@ -112,6 +119,7 @@ public sealed class ChatWebhookNotifier : IChatNotifier
             catch (Exception ex)
             {
                 lastError = ex is TaskCanceledException ? "The webhook didn't answer in time." : ex.GetBaseException().Message;
+                (shown, status) = (ex is TaskCanceledException ? "timed out" : ex.GetBaseException().GetType().Name, null);
                 unreachable = true;
                 _logger.LogWarning(ex, "Chat webhook POST failed (attempt {Attempt}/{Max}).", attempt, attempts);
             }
@@ -126,6 +134,9 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         if (unreachable) _circuit.Failed(target);
         else if (lastError is not null) _circuit.Succeeded(target);
         else return Canceled();   // cancelled before the first attempt: not posted
+        _health?.RecordFailure(DeliveryHealth.Chat, shown ?? "failed", status);
+        if (_circuit.RetryIn(target) is var wait && wait > TimeSpan.Zero)
+            _health?.RecordBackOff(DeliveryHealth.Chat, _circuit.Time.GetUtcNow() + wait);
         return lastError;
 
         // BUG-607: a cancelled post says nothing about the webhook; the probe's turn it may hold is handed back (held,

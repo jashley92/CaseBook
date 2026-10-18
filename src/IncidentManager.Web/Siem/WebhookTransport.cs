@@ -20,14 +20,16 @@ public sealed class WebhookTransport : ISecurityEventTransport
     private readonly IOptionsMonitor<SiemWebhookOptions> _options;
     private readonly ISecretProvider _secrets;
     private readonly ILogger<WebhookTransport> _logger;
+    private readonly IDeliveryHealth? _health;   // CAP-04
 
     public WebhookTransport(IHttpClientFactory httpFactory, IOptionsMonitor<SiemWebhookOptions> options,
-        ISecretProvider secrets, ILogger<WebhookTransport> logger)
+        ISecretProvider secrets, ILogger<WebhookTransport> logger, IDeliveryHealth? health = null)
     {
         _httpFactory = httpFactory;
         _options = options;
         _secrets = secrets;
         _logger = logger;
+        _health = health;
     }
 
     public string Name => "webhook";
@@ -57,12 +59,15 @@ public sealed class WebhookTransport : ISecurityEventTransport
             _logger.LogWarning(
                 "SIEM webhook URL rejected ({Reason}); event {EventId} not sent. Configure an https collector URL.",
                 reason, e.EventId);
+            _health?.RecordFailure(DeliveryHealth.Siem(Name), "the collector URL was refused");   // CAP-04
             return $"The collector URL was refused ({reason}). Use an https URL.";
         }
 
         var payload = SecurityEventJson.Serialize(e);
         var attempts = Math.Max(1, opts.MaxAttempts);
         string? lastError = null;
+        string? shown = null;   // CAP-04: a status or a type for Diagnostics, never the collector's reply
+        int? status = null;
 
         // F-19: resolve the token (literal or @cyberark: reference) once per event; the provider caches.
         // A configured-but-unresolvable secret comes back null → we send no auth header (fail-closed) rather
@@ -86,8 +91,13 @@ public sealed class WebhookTransport : ISecurityEventTransport
                 ApplyAuth(req, opts, token);
 
                 using var resp = await client.SendAsync(req, ct).ConfigureAwait(false);
-                if (resp.IsSuccessStatusCode) return null;
+                if (resp.IsSuccessStatusCode)
+                {
+                    _health?.RecordSuccess(DeliveryHealth.Siem(Name));
+                    return null;
+                }
                 lastError = $"The collector answered {(int)resp.StatusCode} {resp.ReasonPhrase}.";
+                (shown, status) = ($"HTTP {(int)resp.StatusCode}", (int)resp.StatusCode);
 
                 _logger.LogWarning("SIEM webhook returned {Status} for event {EventId} (attempt {Attempt}/{Max}).",
                     (int)resp.StatusCode, e.EventId, attempt, attempts);
@@ -99,6 +109,7 @@ public sealed class WebhookTransport : ISecurityEventTransport
             catch (Exception ex)
             {
                 lastError = ex is TaskCanceledException ? "The collector didn't answer in time." : ex.GetBaseException().Message;
+                (shown, status) = (ex is TaskCanceledException ? "timed out" : ex.GetBaseException().GetType().Name, null);
                 _logger.LogWarning(ex, "SIEM webhook POST failed for event {EventId} (attempt {Attempt}/{Max}).",
                     e.EventId, attempt, attempts);
             }
@@ -109,6 +120,7 @@ public sealed class WebhookTransport : ISecurityEventTransport
                 catch (OperationCanceledException) { return "Canceled."; }
             }
         }
+        if (lastError is not null) _health?.RecordFailure(DeliveryHealth.Siem(Name), shown ?? "failed", status);
         return lastError;
     }
 

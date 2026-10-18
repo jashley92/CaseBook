@@ -4,6 +4,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using IncidentManager.Infrastructure.Persistence;
+using IncidentManager.Infrastructure.Secrets;
 using IncidentManager.Infrastructure.Security;
 using IncidentManager.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,10 @@ internal sealed record Site(string EnvelopePath, string EvidenceRoot, string Rep
     SealSigningOptions Integrity)
 {
     public string RootEnvelopePath => Path.Combine(EvidenceRoot, ".key", "evidence-key.json");
+
+    /// <summary>CAP-05: <c>Storage:Encryption:CertificateThumbprint</c> and its store, when set (protect-secret's first choice).</summary>
+    public string? EncryptionThumbprint { get; init; }
+    public string EncryptionStore { get; init; } = "LocalMachine";
 
     /// <summary>The site folder's appsettings.json and appsettings.Production.json, as the app reads them.</summary>
     public static Site Load(string siteFolder)
@@ -49,7 +54,11 @@ internal sealed record Site(string EnvelopePath, string EvidenceRoot, string Rep
             Full(config["ReportOutput:RootPath"], "App_Data/report-output"),
             provider,
             connection,
-            integrity);
+            integrity)
+        {
+            EncryptionThumbprint = config["Storage:Encryption:CertificateThumbprint"],
+            EncryptionStore = config["Storage:Encryption:StoreLocation"] ?? "LocalMachine",
+        };
     }
 }
 
@@ -86,6 +95,60 @@ internal static class KeyToolCommands
             return EnvelopeOpener.WithRecoveryCertificate(e, cert);
         }
         return EnvelopeOpener.WithServerCertificate(e);
+    }
+
+    /// <summary>
+    /// CAP-05 (ADR 0018): encrypts a secret (the SMTP password, a webhook token or URL) to a certificate as a <c>@protected:</c>
+    /// value for the site's configuration. <paramref name="thumbprint"/>, else the site's own integrity certificate: the
+    /// evidence key's, the chain key's, then the seal-signing one (as the evidence key chooses, ADR 0017). Only the
+    /// certificate's public key is used; the app-pool account needs read on its private key to open the value. Never
+    /// writes or records the secret.
+    /// </summary>
+    public static string ProtectSecret(string secret, string? thumbprint, string store, Site? site, TextWriter info)
+    {
+        if (string.IsNullOrEmpty(secret)) throw new ArgumentException("The secret is empty.");
+        if (string.IsNullOrWhiteSpace(thumbprint) && site is not null) (thumbprint, store) = DefaultCertificate(site, store);
+        if (string.IsNullOrWhiteSpace(thumbprint))
+            throw new ArgumentException("Give --cert <thumbprint> (a certificate in LocalMachine\\My the app-pool account can read the private key of), " +
+                                        "or --site <folder> of a site with an integrity certificate configured.");
+        using var cert = CertificateLookup.FindPublic(thumbprint, store, "--cert");
+        var value = ProtectedSecret.Protect(secret, cert);
+        info.WriteLine($"Encrypted to certificate {CertificateLookup.Normalize(cert.Thumbprint)} ({cert.Subject}, {store}\\My, expires " +
+                       $"{cert.NotAfter.ToUniversalTime():yyyy-MM-dd}). The app-pool account needs read on its private key.");
+        return value;
+    }
+
+    // The certificate the site already protects its keys with: the evidence key's, the chain key's, the signing one's.
+    private static (string? Thumbprint, string Store) DefaultCertificate(Site site, string store)
+    {
+        if (!string.IsNullOrWhiteSpace(site.EncryptionThumbprint)) return (site.EncryptionThumbprint, site.EncryptionStore);
+        if (site.Integrity.ChainKey is { Enabled: true, Source: ChainKeySource.Certificate } ck && !string.IsNullOrWhiteSpace(ck.CertificateThumbprint))
+            return (ck.CertificateThumbprint, ck.StoreLocation);
+        if (site.Integrity.SigningKey is { Source: SigningKeySource.CertificateStore } sk && !string.IsNullOrWhiteSpace(sk.CertificateThumbprint))
+            return (sk.CertificateThumbprint, sk.StoreLocation);
+        return (null, store);
+    }
+
+    /// <summary>
+    /// CAP-05: checks a <c>@protected:</c> value opens here, as this account, exactly as CaseBook opens it. Says OK and the
+    /// certificate, or why not; never the secret, nor anything about it (its length included).
+    /// </summary>
+    public static bool CheckSecret(string value, TextWriter output, Func<string, X509Certificate2>? findCertificate = null)
+    {
+        if (!ProtectedSecret.IsProtected(value))
+        {
+            output.WriteLine("Not a @protected: value (it should start with @protected:v1:).");
+            return false;
+        }
+        if (ProtectedSecret.TryOpen(value.Trim(), findCertificate ?? ProtectedSecret.FindInStore, out _, out var reason))
+        {
+            // The secret itself is dropped unseen: not shown, not kept.
+            output.WriteLine($"OK: the value opens with certificate {ProtectedSecret.ThumbprintOf(value)} on {Environment.MachineName}, as " +
+                             $"{Environment.UserDomainName}\\{Environment.UserName}. CaseBook opens it the same way, as the app-pool account.");
+            return true;
+        }
+        output.WriteLine($"It doesn't open here: {reason}.");
+        return false;
     }
 
     /// <summary>

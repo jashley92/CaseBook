@@ -63,6 +63,23 @@
     SmtpHost    = ''                  # e.g. 'smtp.contoso.com'
     MailDomain  = ''                  # e.g. 'contoso.com' (the From address becomes casebook@<domain>)
 
+    # How CaseBook signs in to the relay (CAP-05; OPERATIONS.md section 6):
+    #   'App'      (default) - set it after install in Administration -> Settings -> Notifications -> Email sign-in.
+    #                          The password is encrypted with Data Protection; nothing about it goes in a file.
+    #   'Windows'            - sign in as the app-pool account (gMSA): on-premises Exchange; no password at all.
+    #   'Password'           - SmtpUsername plus a password written into appsettings.Production.json, which then
+    #                          wins over the form. SmtpPasswordSource says how:
+    #       'Protected' - the installer prompts for it (never stored here) and writes only the @protected: value made
+    #                     by deploy\keytool\casebook-keytool, encrypted to SmtpPasswordThumbprint (blank = the evidence,
+    #                     chain-key or signing certificate above). The app account is granted read on its private key.
+    #       'CyberArk'  - SmtpPasswordSecret = an @cyberark:Safe=...;Object=... reference (Secrets:CyberArk enabled).
+    #       'Literal'   - prompted, and written as plain text (not recommended; Diagnostics warns).
+    SmtpSignIn             = 'App'
+    SmtpUsername           = ''       # e.g. 'casebook@contoso.com'
+    SmtpPasswordSource     = 'Protected'
+    SmtpPasswordSecret     = ''
+    SmtpPasswordThumbprint = ''
+
     # --- Integrity keys (ADR 0016; OPERATIONS.md section 2). Server configuration only, never in-app. ---
     # Where the seal SIGNING key comes from:
     #   'File' (default)      - a PEM at <DataRoot>\keys\seal-signing.pem, provisioned out of band.

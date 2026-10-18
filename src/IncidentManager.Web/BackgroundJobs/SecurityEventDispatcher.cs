@@ -1,3 +1,4 @@
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using IncidentManager.Infrastructure.Siem;
 
@@ -23,13 +24,15 @@ public sealed class SecurityEventDispatcher : BackgroundService
     private readonly SecurityEventQueue _queue;
     private readonly IReadOnlyList<ISecurityEventTransport> _transports;
     private readonly ILogger<SecurityEventDispatcher> _logger;
+    private readonly IDeliveryHealth? _health;   // CAP-04: each transport's queue depth and drops, for Diagnostics
 
     public SecurityEventDispatcher(SecurityEventQueue queue, IEnumerable<ISecurityEventTransport> transports,
-        ILogger<SecurityEventDispatcher> logger)
+        ILogger<SecurityEventDispatcher> logger, IDeliveryHealth? health = null)
     {
         _queue = queue;
         _transports = transports.ToList();
         _logger = logger;
+        _health = health;
     }
 
     /// <summary>One transport's queue: critical events ahead of routine ones, each lane bounded, oldest dropped first.</summary>
@@ -42,6 +45,12 @@ public sealed class SecurityEventDispatcher : BackgroundService
 
         public ISecurityEventTransport Transport { get; } = transport;
         public long Dropped { get; private set; }
+
+        /// <summary>CAP-04: events waiting, both lanes.</summary>
+        public int Depth
+        {
+            get { lock (_gate) return _critical.Count + _routine.Count; }
+        }
 
         public void Add(SecurityEvent e)
         {
@@ -82,7 +91,11 @@ public sealed class SecurityEventDispatcher : BackgroundService
                 {
                     try
                     {
-                        if (lane.Transport.Enabled) lane.Add(e);   // BUG-262: Enabled reads options, which can throw
+                        if (lane.Transport.Enabled)   // BUG-262: Enabled reads options, which can throw
+                        {
+                            lane.Add(e);
+                            Report(lane);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -104,6 +117,9 @@ public sealed class SecurityEventDispatcher : BackgroundService
         }
     }
 
+    private void Report(Lane lane) =>
+        _health?.RecordQueue(DeliveryHealth.Siem(lane.Transport.Name), lane.Dropped, lane.Depth);
+
     // One transport's worker: critical events first, then routine ones, one at a time, until shutdown.
     private async Task DrainAsync(Lane lane, CancellationToken ct)
     {
@@ -113,6 +129,7 @@ public sealed class SecurityEventDispatcher : BackgroundService
             SecurityEvent e;
             try { e = await lane.TakeAsync(ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
+            Report(lane);
             try
             {
                 await lane.Transport.SendAsync(e, ct).ConfigureAwait(false);

@@ -269,4 +269,34 @@ public sealed class KeyToolTests : IDisposable
         missing.Should().Throw<InvalidOperationException>().WithMessage("No evidence key envelope*");
         File.Exists(site.EnvelopePath).Should().BeFalse("the tool never makes a key");
     }
+    [Fact]
+    public void Protect_secret_makes_a_value_the_app_opens_and_check_secret_says_only_ok_or_why(/* CAP-05 */)
+    {
+        var server = Installed("CaseBook protect-secret test");
+        WriteSettings(server);
+        var secret = "pw-" + Guid.NewGuid().ToString("N");   // S2068: made at run time
+        var info = new StringWriter();
+
+        // Without --cert: the site's own certificate (Storage:Encryption's here).
+        var value = KeyToolCommands.ProtectSecret(secret, null, "LocalMachine", Site.Load(_site), info);
+        value.Should().StartWith("@protected:v1:" + CertificateLookup.Normalize(server.Thumbprint)).And.NotContain(secret);
+        info.ToString().Should().NotContain(secret, "the note names the certificate, never the secret");
+        IncidentManager.Infrastructure.Secrets.ProtectedSecret.TryOpen(value,
+            t => CertificateLookup.FindRsa(t, "CurrentUser", "test"), out var opened, out _).Should().BeTrue();
+        opened.Should().Be(secret);
+
+        var said = new StringWriter();
+        KeyToolCommands.CheckSecret(value, said, t => CertificateLookup.FindRsa(t, "CurrentUser", "test")).Should().BeTrue();
+        said.ToString().Should().StartWith("OK:").And.NotContain(secret);
+
+        var tampered = value[..^4] + (value[^4] == 'A' ? "B" : "A") + value[^3..];
+        said = new StringWriter();
+        KeyToolCommands.CheckSecret(tampered, said, t => CertificateLookup.FindRsa(t, "CurrentUser", "test")).Should().BeFalse();
+        said.ToString().Should().Contain("doesn't open").And.NotContain(secret);
+
+        // With --cert, and with neither: refused, not guessed.
+        KeyToolCommands.ProtectSecret(secret, server.Thumbprint, "CurrentUser", null, new StringWriter()).Should().StartWith("@protected:v1:");
+        var none = () => KeyToolCommands.ProtectSecret(secret, null, "LocalMachine", null, new StringWriter());
+        none.Should().Throw<ArgumentException>().WithMessage("*--cert*");
+    }
 }

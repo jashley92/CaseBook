@@ -5,7 +5,9 @@ host. Follow the runbooks in **[../docs/INSTALL.md](../docs/INSTALL.md)** (inclu
 and **[../docs/UPGRADE.md](../docs/UPGRADE.md)**; this folder is the toolbox they use. It ships inside every
 release bundle (`casebook-<version>.zip` → `deploy\`), next to the published app (`app\`).
 
-All scripts need Windows PowerShell 5.1 and run with Windows integrated authentication; none writes a secret.
+All scripts need Windows PowerShell 5.1 and run with Windows integrated authentication; none writes a secret in plain
+text unless told to (`-SmtpPasswordSource Literal`). An SMTP password is asked for at install time, never read from
+the answers file; the usual path is to enter it in Administration after install (`SmtpSignIn = 'App'`).
 
 | File | Purpose |
 |---|---|
@@ -15,7 +17,7 @@ All scripts need Windows PowerShell 5.1 and run with Windows integrated authenti
 | `Install-CaseBook.ps1` | Publish the app (from a repo clone) **or**, with `-SkipPublish`, use an app already copied into the site folder (from the release bundle); create the IIS site and app pool, write prod config, ACL the data dirs, carve `/api` out as anonymous. Run as local admin. Re-running rewrites `appsettings.Production.json` and leaves existing bindings alone. |
 | `Upgrade-CaseBook.ps1` | **Upgrade an existing site** to a newer build (from a release bundle, an app folder, or `-Build`). Backs up DB + config + binaries, runs a migration-compatibility preflight, swaps binaries without touching config/data, and rolls back on failure. See **[../docs/UPGRADE.md](../docs/UPGRADE.md)**. |
 | `Verify-Install.ps1` | Readiness + smoke test: `-ConfigFile` validates the answers file resolves (account/groups/cert/paths/SQL) **before** installing; `-Url` is the post-install smoke test. |
-| `keytool/casebook-keytool.exe` | *(Release bundle)* The evidence key tool (PROD-57): split the key into shares, check a share, run a recovery drill, recover the key onto a new certificate, export evidence as the original files. See **[../docs/OPERATIONS.md](../docs/OPERATIONS.md) §2, Evidence key**. |
+| `keytool/casebook-keytool.exe` | *(Release bundle)* The evidence key tool (PROD-57): split the key into shares, check a share, run a recovery drill, recover the key onto a new certificate, export evidence as the original files. See **[../docs/OPERATIONS.md](../docs/OPERATIONS.md) §2, Evidence key**. CAP-05: `protect-secret` turns a secret (the SMTP password, a webhook token) into a `@protected:` value encrypted to a certificate, and `check-secret` says whether one opens here; `Install-CaseBook.ps1 -SmtpSignIn Password -SmtpPasswordSource Protected` runs it for you. See **§6** there. |
 | `appsettings.Production.template.json` | Production config template; the installer substitutes `__PLACEHOLDERS__`. |
 | `sql/01-Create-Database.sql` | The DDL the DB installer runs (database, recovery model, login/user, grants). |
 | `Enable-Ledger.ps1` | *(Recommended, one-way)* Turn on the SQL Server ledger for the audit log, seals and custody events (E-10). Requires a full backup from the last 24 h. See **[../docs/OPERATIONS.md](../docs/OPERATIONS.md) §7**. |

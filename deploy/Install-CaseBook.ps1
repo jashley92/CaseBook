@@ -67,6 +67,18 @@
 .PARAMETER SmtpHost / MailDomain
     Optional email settings (email stays disabled until enabled in-app).
 
+.PARAMETER SmtpSignIn
+    CAP-05: how CaseBook signs in to the relay. 'App' (default): set it after install in Administration -> Settings ->
+    Notifications -> Email sign-in, where the password is encrypted with Data Protection. 'Windows': sign in as the
+    app-pool account (on-premises Exchange; no password). 'Password': -SmtpUsername with a password written into
+    appsettings.Production.json (which then wins over the form), as -SmtpPasswordSource says.
+
+.PARAMETER SmtpPasswordSource
+    With -SmtpSignIn Password: 'Protected' (default; the password is prompted for, or taken from -SmtpPassword, and only
+    its @protected: value from deploy\keytool\casebook-keytool protect-secret is written, encrypted to
+    -SmtpPasswordThumbprint or the integrity certificate), 'CyberArk' (-SmtpPasswordSecret = an @cyberark: reference) or
+    'Literal' (plain text in the file; not recommended). The password is never read from the answers file.
+
 .PARAMETER SkipPublish
     Do not run 'dotnet publish' on this host. Use when the server has no nuget.org access
     (NU1100 restore errors) or no SDK: publish on a machine WITH internet, copy the output
@@ -118,6 +130,15 @@ param(
 
     [string] $SmtpHost = '',
     [string] $MailDomain = '',
+    # CAP-05: the relay sign-in. The password itself is only ever prompted for, or passed as a SecureString.
+    [ValidateSet('App', 'Windows', 'Password')]
+    [string] $SmtpSignIn = 'App',
+    [string] $SmtpUsername = '',
+    [ValidateSet('Protected', 'CyberArk', 'Literal')]
+    [string] $SmtpPasswordSource = 'Protected',
+    [string] $SmtpPasswordSecret = '',
+    [string] $SmtpPasswordThumbprint = '',
+    [System.Security.SecureString] $SmtpPassword,
 
     # Integrity keys (ADR 0016; OPERATIONS.md section 2).
     [ValidateSet('File', 'CertificateStore', 'CyberArk')]
@@ -178,6 +199,11 @@ if ($ConfigFile) {
         AdGroupAppAdmins      = 'AdGroupAppAdmins'
         SmtpHost              = 'SmtpHost'
         MailDomain            = 'MailDomain'
+        SmtpSignIn            = 'SmtpSignIn'
+        SmtpUsername          = 'SmtpUsername'
+        SmtpPasswordSource    = 'SmtpPasswordSource'
+        SmtpPasswordSecret    = 'SmtpPasswordSecret'
+        SmtpPasswordThumbprint = 'SmtpPasswordThumbprint'
         SigningKeySource      = 'SigningKeySource'
         SigningKeyThumbprint  = 'SigningKeyThumbprint'
         SigningKeySecret      = 'SigningKeySecret'
@@ -217,6 +243,45 @@ if (-not (Test-Path $template)) { throw "Missing expected path: $template" }
 if (-not $SkipPublish -and -not (Test-Path $webProj)) { throw "Missing expected path: $webProj (use -SkipPublish to install a pre-published app)" }
 
 function Write-Step($m) { Write-Host "==> $m" -ForegroundColor Cyan }
+
+# --- CAP-05: the relay sign-in, checked (and its password asked for) before anything changes ---------------------
+if ($SmtpSignIn -notin @('App', 'Windows', 'Password')) { throw "SmtpSignIn must be App, Windows or Password (got '$SmtpSignIn')." }
+if ($SmtpPasswordSource -notin @('Protected', 'CyberArk', 'Literal')) { throw "SmtpPasswordSource must be Protected, CyberArk or Literal (got '$SmtpPasswordSource')." }
+$smtpUserValue = ''; $smtpPasswordValue = ''; $smtpProtectThumbprint = ''
+$smtpPlain = $null
+if ($SmtpSignIn -eq 'Password') {
+    if ([string]::IsNullOrWhiteSpace($SmtpUsername)) { throw "SmtpSignIn is Password but SmtpUsername is empty." }
+    $smtpUserValue = $SmtpUsername.Trim()
+    if ($SmtpPasswordSource -eq 'CyberArk') {
+        if ($SmtpPasswordSecret -notmatch '^\s*@cyberark:') { throw "SmtpPasswordSource is CyberArk: set SmtpPasswordSecret to an @cyberark:Safe=...;Object=... reference." }
+        $smtpPasswordValue = $SmtpPasswordSecret.Trim()
+    } else {
+        if (-not $SmtpPassword) { $SmtpPassword = Read-Host -AsSecureString "Password for the SMTP account $smtpUserValue" }
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SmtpPassword)
+        try { $smtpPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+        if ([string]::IsNullOrEmpty($smtpPlain)) { throw "The SMTP password is empty." }
+        if ($SmtpPasswordSource -eq 'Protected') {
+            # The certificate the site already protects its keys with, unless one is named for it.
+            $smtpProtectThumbprint = ($SmtpPasswordThumbprint -replace '[^0-9A-Fa-f]', '')
+            if (-not $smtpProtectThumbprint) { $smtpProtectThumbprint = ($EvidenceKeyThumbprint -replace '[^0-9A-Fa-f]', '') }
+            if (-not $smtpProtectThumbprint -and $ChainKeySource -eq 'Certificate') { $smtpProtectThumbprint = ($ChainKeyThumbprint -replace '[^0-9A-Fa-f]', '') }
+            if (-not $smtpProtectThumbprint -and $SigningKeySource -eq 'CertificateStore') { $smtpProtectThumbprint = ($SigningKeyThumbprint -replace '[^0-9A-Fa-f]', '') }
+            if (-not $smtpProtectThumbprint) {
+                throw ("SmtpPasswordSource is Protected but there's no certificate to encrypt it to. Set SmtpPasswordThumbprint " +
+                       "(a certificate in LocalMachine\My), or use -SmtpSignIn App and enter the password in Administration after install.")
+            }
+            $keytool = Join-Path $deployDir 'keytool\casebook-keytool.exe'
+            if (-not (Test-Path $keytool)) {
+                throw ("$keytool isn't here (it ships in the release bundle). Run it later by hand: casebook-keytool protect-secret " +
+                       "--cert $smtpProtectThumbprint, and put the value in Email:SmtpPassword; or use -SmtpSignIn App.")
+            }
+        } else {
+            Write-Warning "The SMTP password will be written to appsettings.Production.json as plain text. Protected or App is safer."
+            $smtpPasswordValue = $smtpPlain
+        }
+    }
+}
 
 # Preflight: the app-pool identity must resolve to a Windows SID up front - it is used for the NTFS
 # ACLs, the IIS app-pool identity, and it must match the SQL login from Install-Database.ps1. Failing
@@ -372,6 +437,16 @@ if ($EvidenceEncryption -and -not $recoveryOnServer.Count) {
 }
 
 # --- 3. appsettings.Production.json from template -----------------------------
+# CAP-05: a Protected SMTP password becomes its @protected: value here; the plain text goes to the keytool's stdin only.
+if ($smtpProtectThumbprint) {
+    Write-Step "Encrypting the SMTP password to certificate $smtpProtectThumbprint"
+    $protectedValue = @($smtpPlain | & $keytool protect-secret --cert $smtpProtectThumbprint --store LocalMachine) | Select-Object -Last 1
+    if ($LASTEXITCODE -ne 0 -or "$protectedValue" -notmatch '^@protected:v1:') {
+        throw "casebook-keytool protect-secret didn't produce a @protected: value (exit $LASTEXITCODE). Is certificate $smtpProtectThumbprint in LocalMachine\My?"
+    }
+    $smtpPasswordValue = "$protectedValue"
+}
+$smtpPlain = $null
 Write-Step "Writing appsettings.Production.json"
 $json = Get-Content $template -Raw
 $map = @{
@@ -382,6 +457,9 @@ $map = @{
     '__EVIDENCE_PATH__'        = $EvidencePath
     '__SMTP_HOST__'            = $SmtpHost
     '__MAIL_DOMAIN__'          = $MailDomain
+    '__SMTP_USERNAME__'        = $smtpUserValue
+    '__SMTP_PASSWORD__'        = $smtpPasswordValue
+    '__SMTP_INTEGRATED__'      = $(if ($SmtpSignIn -eq 'Windows') { 'true' } else { 'false' })
     '__AD_GROUP_ANALYSTS__'    = $AdGroupAnalysts
     '__AD_GROUP_COMMANDERS__'  = $AdGroupCommanders
     '__AD_GROUP_LEADERSHIP__'  = $AdGroupLeadership
@@ -509,7 +587,12 @@ if ($SigningKeySource -eq 'CertificateStore') { Grant-PrivateKeyRead $SigningKey
 if ($ChainKeySource -eq 'Certificate' -and ($ChainKeyThumbprint -replace '\s','') -ne ($SigningKeyThumbprint -replace '\s','')) {
     Grant-PrivateKeyRead $ChainKeyThumbprint 'the audit chain key'
 }
-if ($SigningKeySource -eq 'CyberArk' -or $ChainKeySource -eq 'CyberArk') {
+# CAP-05: the app opens a Protected SMTP password with this certificate's private key (once, if it's one of the above).
+if ($smtpProtectThumbprint -and $smtpProtectThumbprint -ne ($SigningKeyThumbprint -replace '[^0-9A-Fa-f]', '') -and
+    -not ($ChainKeySource -eq 'Certificate' -and $smtpProtectThumbprint -eq ($ChainKeyThumbprint -replace '[^0-9A-Fa-f]', ''))) {
+    Grant-PrivateKeyRead $smtpProtectThumbprint 'the SMTP password'
+}
+if ($SigningKeySource -eq 'CyberArk' -or $ChainKeySource -eq 'CyberArk' -or ($SmtpSignIn -eq 'Password' -and $SmtpPasswordSource -eq 'CyberArk')) {
     Write-Host "    (A key in CyberArk: enable Secrets:CyberArk in appsettings.Production.json, OPERATIONS.md section 6.)" -ForegroundColor Yellow
 }
 
@@ -613,7 +696,9 @@ Next steps:
   2. Confirm SQL connectivity: the app applies EF migrations on first request/start.
         Browse to $baseUrl (the first request runs the SQL Server migrations).
   3. Verify:  .\Verify-Install.ps1 -Url $baseUrl -AppPoolName $AppPoolName
-  4. Schedule the SQL backup + monthly restore-verification jobs (OPERATIONS.md section 1).
+  4. Schedule the SQL backup + monthly restore-verification jobs (OPERATIONS.md section 1); back up $DataRoot\dp-keys
+     with the database (it decrypts the SMTP password entered in Administration).
+  5. Email sign-in: $(switch ($SmtpSignIn) { 'App' { 'set it in Administration -> Settings -> Notifications -> Email sign-in, then send a test email' } 'Windows' { 'as the app-pool account; send a test email from Administration' } default { "as $smtpUserValue ($SmtpPasswordSource); send a test email from Administration" } }).
 "@ -ForegroundColor Green
 if (-not $CertificateThumbprint) {
     Write-Host "  Note: this is an HTTP binding. Add a TLS cert (or front it with TLS) before real case data." -ForegroundColor Yellow

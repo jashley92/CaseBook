@@ -99,6 +99,7 @@ public partial class CaseAudienceGateTests
         ["EmailSender.cs:DrainHeldAsync"] = (3, "the drain reading and removing its own rows; a case's email is re-checked against its audience first"),
         ["EmailSender.cs:PutBackAsync"] = (1, "the drain putting one of its own rows back for a later try (BUG-653, BUG-659)"),
         ["EmailSender.cs:StillEntitledAsync"] = (1, "the case's restriction and team, to check a held email's recipients against its audience (BUG-654)"),
+        ["HeldEmailSummary.cs:ReadAsync"] = (2, "CAP-04: Diagnostics' bounded count of the held mail and the oldest's time; no recipient, subject or case"),
         ["EvidenceKeyring.cs:EncryptedFileKeyIdAsync"] = (1, "PROD-57 review finding 3: before a new evidence key is made, every stored file's path and recorded size, to tell plain files from encrypted ones without opening them; its result is a key id or nothing"),
         ["EvidenceConversion.cs:RunAsync"] = (2, "PROD-57: the background encryption of files stored before, over every evidence file and report; it reads storage paths and hashes only, and its result is counts"),
         ["EvidenceIntegrityVerifier.cs:VerifyShareAsync"] = (2, "the evidence integrity sweep over every file (or a share of them, PROD-53); its result is counts and alerts, not case content"),
@@ -133,6 +134,8 @@ public partial class CaseAudienceGateTests
         ["HealthChecks/DatabaseHealthCheck.cs"] = "the health endpoint's can-connect check; no table read",
         ["Program.cs"] = "start-up: migrations, seeding and back-fills, before any request",
         ["BackgroundJobs/RowHashUpgradeHostedService.cs"] = "the integrity upgrade moved out of start-up (BUG-644): records hashes, shows no case to anyone",
+        ["Components/Shared/DeliveryHealthPanel.razor"] = "CAP-04: Diagnostics' delivery card counts the held emails (HeldEmailSummary); no case or recipient is read",
+        ["Notifications/SmtpSignInStore.cs"] = "CAP-05: the relay sign-in saved in Administration (SmtpSignIns); no case table read",
     };
 
     [Fact]

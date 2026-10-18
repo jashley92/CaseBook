@@ -2564,6 +2564,44 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("SeverityChanges", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.SmtpSignInRecord", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTimeOffset?>("PasswordSetAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PasswordSetBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ProtectedPassword")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SmtpSignIns", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.StageGate", b =>
                 {
                     b.Property<Guid>("Id")

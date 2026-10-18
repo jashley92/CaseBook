@@ -36,8 +36,8 @@ public sealed class EmailSenderTimeoutTests
         using var relay = new TcpListener(IPAddress.Loopback, 0);
         relay.Start();   // accepts connections, never sends the SMTP greeting
         var port = ((IPEndPoint)relay.LocalEndpoint).Port;
-        var was = EmailSender.SendTimeout;
-        EmailSender.SendTimeout = TimeSpan.FromSeconds(2);
+        var was = EmailSender.SendTimeoutOverride;
+        EmailSender.SendTimeoutOverride = TimeSpan.FromSeconds(2);
         try
         {
             var sender = new EmailSender(new Monitor(new EmailOptions
@@ -52,7 +52,7 @@ public sealed class EmailSenderTimeoutTests
             outcome.Error.Should().Contain("didn't finish");
             (DateTimeOffset.UtcNow - started).Should().BeLessThan(TimeSpan.FromSeconds(20));
         }
-        finally { EmailSender.SendTimeout = was; }
+        finally { EmailSender.SendTimeoutOverride = was; }
     }
 
     [Fact]
@@ -69,8 +69,8 @@ public sealed class EmailSenderTimeoutTests
             catch (OperationCanceledException) { /* done */ }
         });
         int Connections() { lock (held) return held.Count; }
-        var was = EmailSender.SendTimeout;
-        EmailSender.SendTimeout = TimeSpan.FromSeconds(1);
+        var was = EmailSender.SendTimeoutOverride;
+        EmailSender.SendTimeoutOverride = TimeSpan.FromSeconds(1);
         try
         {
             var options = new EmailOptions
@@ -105,7 +105,7 @@ public sealed class EmailSenderTimeoutTests
         }
         finally
         {
-            EmailSender.SendTimeout = was;
+            EmailSender.SendTimeoutOverride = was;
             await stop.CancelAsync();
             await accepting;
             lock (held) foreach (var c in held) c.Dispose();

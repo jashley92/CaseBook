@@ -23,6 +23,7 @@ later reversed gets a new record that supersedes the old one (the old one stays,
 | [0015](0015-entity-tags-double-bracket.md) | Entity tags in Markdown start with `[[`, not `#` | Accepted |
 | [0016](0016-key-custody-and-seal-copies.md) | Integrity keys from a file, the certificate store or CyberArk; seal copies to the SIEM | Accepted |
 | [0017](0017-evidence-encryption-and-key-recovery.md) | Evidence and reports encrypted at rest, with a key that can't be lost | Accepted |
+| [0018](0018-protected-secrets.md) | Secrets without CyberArk: the SMTP sign-in entered in the app (Data Protection), and `@protected:` values encrypted to a certificate | Accepted |
 
 ## Template
 
