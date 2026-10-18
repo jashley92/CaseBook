@@ -57,11 +57,14 @@ public static class HandoffDraft
 
     // An edited entry was first recorded when its original version was, so an edit doesn't pull an old entry
     // into the window.
-    private static DateTimeOffset FirstRecorded(Case c, TimelineEntry e)
+    private static DateTimeOffset FirstRecorded(Case c, TimelineEntry e) => FirstVersion(c, e).CreatedAtUtc;
+
+    /// <summary>The first version of an entry (itself when it was never edited). CAP-20: who handed off is its author.</summary>
+    internal static TimelineEntry FirstVersion(Case c, TimelineEntry e)
     {
         var first = e;
         while (first.SupersedesEntryId is { } prior && c.TimelineEntries.FirstOrDefault(x => x.Id == prior) is { } p)
             first = p;
-        return first.CreatedAtUtc;
+        return first;
     }
 }

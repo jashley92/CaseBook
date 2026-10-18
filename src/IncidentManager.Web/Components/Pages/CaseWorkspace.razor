@@ -65,6 +65,8 @@ else
     @* INV-04 / F-12: what changed since you last looked, and a pending legal-hold release. *@
     <CaseNotices Case="_case" Access="Access" SinceCount="_sinceCount" SincePeople="_sincePeople" LastViewed="_lastViewed"
                  SinceDismissed="_sinceDismissed" OnShowSince="ShowSinceOnTimeline" OnDismissSince="() => _sinceDismissed = true" OnChanged="Reload" />
+    @* CAP-11: the rung's playbook steps not yet on the case, after an escalation or filing at a rung. *@
+    <PlaybookOfferNotice @key="_case.Id" Case="_case" CanEdit="_canEdit" OnOffer="OfferPlaybook" />
 
     @* Design review P4: the tabs stay under the top bar while the case scrolls, and once the header above has
        scrolled away a one-line bar keeps the case's identity, state and next step in view. *@
@@ -197,7 +199,8 @@ else
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
         <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" NoticeDeadline="RunningNotice" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnFocusItem="FocusItem"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" OnAdvancePhase="AdvanceWithResult"
-                      AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false" />
+                      AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false"
+                      OfferTemplateId="_offerTemplate" OnOfferHandled="() => _offerTemplate = null" />
     }
     else if (_activeTab == "Review")
     {
@@ -349,6 +352,7 @@ else
     // keeps a ref for hotkey dispatch (Ctrl+Enter submit) and a flag for the 'n' focus shortcut.
     private bool _timelineAutofocus;   // INV-14
     private bool _tasksAutofocus;      // INV-14
+    private Guid? _offerTemplate;      // CAP-11: the playbook the Tasks tab opens its apply card on
 
     // Tasks: the tab is extracted to CaseTasksTab (UX-13), which owns the add-task + apply-playbook flow.
     private CaseTasksTab? _tasksTab;
@@ -715,6 +719,7 @@ else
     {
         // RD-08: working notes live in the Timeline's lens.
         if (string.Equals(tab, "Notes", StringComparison.OrdinalIgnoreCase)) { _openNotes = true; tab = "Timeline"; }
+        if (tab != "Tasks") _offerTemplate = null;   // CAP-11: an offer not taken there isn't opened on a later visit
         _activeTab = tab;
         _lastPart[CaseViews.ViewOf(tab)] = tab;   // RD-11: a view reopens on the part last used there
         // U-30: viewing a tab clears its "new" pulse; any items flashing there fade a moment after they're seen.

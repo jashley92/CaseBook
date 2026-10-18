@@ -37,6 +37,7 @@ public partial class CaseAudienceGateTests
         ["CaseService.cs:GetPreviewAsync"] = (1, "after the scoped head read for the same id; related cases go through the scoped visibleIds"),
         ["CaseService.cs:EnsureEvidenceOnCaseAsync"] = (1, "private: its callers loaded the case with LoadTrackedAsync; the evidence must be on it"),
         ["CaseService.cs:ApplyFollowUpsAsync"] = (1, "private: its callers loaded the case with LoadTrackedAsync"),
+        ["CaseService.cs:AnswerQuestionAsync"] = (1, "CAP-23, private: called from ApplyFollowUpsAsync, whose callers loaded the case with LoadTrackedAsync"),
         ["CaseService.cs:LinkedAsync"] = (1, "a bool; its callers checked both cases through Scoped"),
         ["CaseService.cs:SupersedeExposureAsync"] = (2, "after the scoped read of both cases (null unless both are visible)"),
         ["CaseService.cs:SupersedeAsync"] = (2, "after both cases are checked through Scoped and loaded with LoadTrackedAsync"),

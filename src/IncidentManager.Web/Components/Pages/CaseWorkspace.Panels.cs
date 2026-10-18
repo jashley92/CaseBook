@@ -100,6 +100,15 @@ public partial class CaseWorkspace
         await SetTab("Tasks");
     }
 
+    // CAP-11: the playbook notice's "Add them…" opens the Tasks tab's apply card on that playbook (nothing is added until
+    // it's applied there). Pending until the Tasks tab takes it; going to any other tab lets it go (ShowTab).
+    private async Task OfferPlaybook(Guid templateId)
+    {
+        _offerTemplate = templateId;
+        if (PhoneNowNext) await LeavePhonePane(() => SetTab("Tasks"));
+        else await SetTab("Tasks");
+    }
+
     // The gate meter in Next opens the Briefing's readiness section, where each check has its Fix.
     private async Task ShowReadiness()
     {

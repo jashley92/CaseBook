@@ -212,6 +212,21 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Escalating a case offers the rung's playbook (CAP-11).** After an upward reclassification, or on a case filed at a
+  rung, a notice under the case header offers the steps of each active template whose default classification is that
+  rung and that aren't tasks yet; *Add them…* opens the Tasks tab's apply-playbook card with them ticked, and nothing
+  is added until it's applied. No migration and nothing to configure; a site with no templates sees nothing. It's
+  worked out from the case, so after the upgrade open cases already at a rung with a matching template show it too,
+  until each person dismisses it (kept per browser, per case and rung).
+- **The last handover's "watch for" stays on Now (CAP-20).** After a handoff with a *Watch for* part, Now shows it above
+  the brief until the person it was handed to revises the brief or marks it still accurate. It's read from the handoff
+  entries already on the timeline, so an open case handed off before the upgrade shows its card too. No migration and
+  nothing to configure.
+- **A finding can answer an open question directly (CAP-23).** In the timeline composer's *Finding* mode, *Then* →
+  *Answers an open question* picks one of the brief's open questions; saving completes the question's task with the
+  finding as its result, or raises and completes one when none followed it up, in the entry's save. No migration and
+  nothing to configure. A question someone else answered or followed up while you were writing is refused, with your
+  text kept.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

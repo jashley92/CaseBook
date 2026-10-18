@@ -131,7 +131,9 @@ A single page, not a wizard.
 5. **Now and Next**, beside every tab from 1200 px wide (the button at the end of the tab bar hides it). **Now**
    is the brief, "where it stands": the versioned summary (in a serif, as written into the record), working
    assessment, known, and each open question with whoever is answering it. It tells you when the record has
-   moved on since it was written, and *Still accurate* or *Update* answers that. **Next** lists running
+   moved on since it was written, and *Still accurate* or *Update* answers that. After a handoff with a *Watch for*,
+   a card above the brief keeps it in view ("Handed to you by … on …: watch for …") until the person it was handed to
+   revises the brief or marks it still accurate. **Next** lists running
    obligations first (a notification deadline with *Mark reported…*, then the SLA clocks), the open tasks each
    with why it exists (answers a question, carries out a decision, about an entity or file, feeds a notification,
    phase work), and the next gate's readiness as a meter that opens its checklist. The team and key entities
@@ -250,7 +252,9 @@ Paste a screenshot anywhere in the composer to attach it as hashed evidence.
 
 **Then**, under a finding, decision or adversary step, adds follow-ups saved in the same act: tasks about the
 entry (a decision's tasks read as carrying it out), a question for the brief, a line for the brief's Known, and a
-link to another case. The footer says what the save writes before you save it.
+link to another case. Under a finding, **Answers an open question** (shown while the brief has one not yet answered)
+picks the question the finding answers: saving completes its task with the finding as the answer, or raises and
+completes one. The footer says what the save writes before you save it.
 
 ## IOCs & entities tab
 
@@ -315,7 +319,10 @@ tasks about it, and *Download* (a custody event), *Task about it* and *Record a 
 
 ![Tasks](../screenshots/doc-tasks.png)
 
-1. **Apply playbook**: add the steps of a case template as tasks.
+1. **Apply playbook**: add the steps of a case template as tasks. After a case is escalated, or filed at a rung, a
+   notice under the case header offers that rung's playbook ("The Breach response playbook has 6 steps not on this
+   case. *Add them…*"); it opens this card with the missing steps ticked, and adds nothing until you apply them.
+   Dismiss it with ×.
 2. **Add a task**: title, owner (a person, or a free-text external name), kind, due date and time.
 3. **Grouped by kind** (Investigate, Contain, Eradicate, Recover, Notify, General), with progress.
 4. **"About" chip**: the entity, evidence file or timeline entry the task was raised from. Click to jump there.

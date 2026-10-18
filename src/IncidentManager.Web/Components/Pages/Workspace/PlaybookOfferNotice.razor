@@ -1,0 +1,82 @@
+@* CAP-11: after a case is escalated, or filed straight at a rung, the playbooks for that rung with steps the case doesn't
+   have yet. A suggestion (ADR 0004): "Add them…" opens the Tasks tab's apply-playbook card with those steps ticked, and
+   nothing is written until the person applies them. Dismissing it is this viewer's, for this case and rung, kept in the
+   browser (a convenience, not a record), so it doesn't come back on a reload; a higher rung offers its own. *@
+@implements IDisposable
+@inject IncidentManager.Application.Admin.CaseTemplateService Templates
+@inject IJSRuntime JS
+
+@if (CanEdit && _templates is { Count: > 0 } && Case.Classification is { } rung && _dismissChecked.TryGetValue(rung, out var dismissed) && !dismissed
+     && PlaybookOffer.For(Case, _templates) is { Count: > 0 } offers)
+{
+    <div class="im-since im-playbook-offer small mb-2" role="status">
+        <span class="bi bi-clipboard-check" aria-hidden="true"></span>
+        @if (offers.Count == 1)
+        {
+            var o = offers[0];
+            <span>The <strong>@o.Template.Name</strong> playbook has @IncidentManager.Application.Common.Plural.Of(o.Missing.Count, "step") not on this case.</span>
+            <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => OnOffer.InvokeAsync(o.Template.Id)">Add them…</button>
+        }
+        else
+        {
+            <span>@offers.Count playbooks for @Ui.Label(rung) have steps not on this case. Add from:</span>
+            @foreach (var o in offers)
+            {
+                var offer = o;
+                <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => OnOffer.InvokeAsync(offer.Template.Id)"
+                        aria-label="@($"Add steps from {offer.Template.Name}: {IncidentManager.Application.Common.Plural.Of(offer.Missing.Count, "step")} not on this case")">
+                    @offer.Template.Name (@offer.Missing.Count)…</button>
+            }
+        }
+        <button type="button" class="btn-close ms-auto" aria-label="Dismiss the playbook suggestion" @onclick="() => Dismiss(rung)"></button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>"Add them…": the playbook to open in the Tasks tab's apply card.</summary>
+    [Parameter] public EventCallback<Guid> OnOffer { get; set; }
+
+    private List<IncidentManager.Application.Admin.TemplateView>? _templates;
+    // Per rung: whether this viewer dismissed it on this case. A rung is shown only once its answer has been read (after
+    // render, as localStorage needs interop), so a dismissed notice doesn't flash up first.
+    private readonly Dictionary<Classification, bool> _dismissChecked = [];
+    private bool _disposed, _loading;
+
+    private string Key(Classification rung) => $"im.playbookOffer.{Case.Id:N}.{(int)rung}";
+
+    // Loaded once someone who can add tasks is looking (a site with no templates shows nothing).
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!CanEdit || _templates is not null || _loading) return;
+        _loading = true;
+        try
+        {
+            var list = await Templates.ListActiveAsync();
+            if (_disposed) return;   // C5
+            _templates = list;
+        }
+        finally { _loading = false; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!CanEdit || Case.Classification is not { } rung || _dismissChecked.ContainsKey(rung)) return;
+        var dismissed = false;
+        try { dismissed = await JS.InvokeAsync<string?>("localStorage.getItem", Key(rung)) == "1"; }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { /* storage blocked: shown */ }
+        if (_disposed) return;   // C5
+        _dismissChecked[rung] = dismissed;
+        StateHasChanged();
+    }
+
+    private async Task Dismiss(Classification rung)
+    {
+        _dismissChecked[rung] = true;
+        try { await JS.InvokeVoidAsync("localStorage.setItem", Key(rung), "1"); }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { /* this visit only */ }
+    }
+
+    public void Dispose() => _disposed = true;
+}

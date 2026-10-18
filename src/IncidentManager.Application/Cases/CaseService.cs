@@ -1790,10 +1790,14 @@ public sealed class CaseService
     /// <summary>
     /// RD-09: what the composer saves with an entry, in the same save: tasks about the entry (a decision's tasks read
     /// "carries out a decision"), a question for the brief (optionally followed up as a task), a line for the brief's
-    /// Known, and a link to another case. The brief changes make one new brief version.
+    /// Known, and a link to another case. The brief changes make one new brief version. CAP-23: and the open question a
+    /// finding answers (<see cref="AnswerQuestionAsync"/>).
     /// </summary>
     private async Task ApplyFollowUpsAsync(IAppDbContext db, Case c, TimelineEntry entry, EntryFollowUps f, CancellationToken ct)
     {
+        // CAP-23: first, so a brief version this save also makes snapshots the answered task as done.
+        if (f.Answers is { } answers) await AnswerQuestionAsync(db, c, entry, answers, ct);
+
         foreach (var t in f.Tasks ?? [])
             c.ActionItems.Add(new ActionItem
             {
@@ -1834,6 +1838,66 @@ public sealed class CaseService
                     CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
                 });
         }
+    }
+
+    /// <summary>
+    /// CAP-23: a finding that answers one of the brief's open questions. The task following the question up (by the id
+    /// the picker had, WF-25) is completed with the finding's text as its result (HR-02), or, when no task did, one is
+    /// raised and completed (INV-25); the entry is linked to it (<see cref="TimelineEntry.ActionItemId"/>, as a result
+    /// logged from Mark done is, INV-08). All in the entry's save (RD-09). Refused when the question was answered,
+    /// followed up or closed by someone else since the picker showed it, so a second answer never overwrites the first.
+    /// </summary>
+    private async Task AnswerQuestionAsync(IAppDbContext db, Case c, TimelineEntry entry, QuestionAnswer a, CancellationToken ct)
+    {
+        if (entry.Kind != TimelineKind.Investigation || entry.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff)
+            throw new ArgumentException("Only a finding can answer an open question.");
+        var text = entry.Description.Trim();
+        if (text.Length > 8000 - TaskResults.Prefix.Length)   // BUG-105: the result is a comment of 8,000
+            throw new ArgumentException($"Keep a finding that answers a question to {8000 - TaskResults.Prefix.Length:N0} characters or fewer.");
+        var now = _clock.UtcNow;
+        var at = entry.OccurredAtUtc < now ? entry.OccurredAtUtc : now;
+        if (c.DetectedAtUtc is { } detected && Case.ToMinute(at) < Case.ToMinute(detected))   // REV-16, as Mark done
+            throw new ArgumentException("A finding dated before the case was detected can't complete the question's task.");
+
+        ActionItem task;
+        if (a.TaskId is { } id)
+        {
+            task = c.ActionItems.FirstOrDefault(t => t.Id == id)
+                   ?? throw new InvalidOperationException("The task for that question isn't on this case.");
+            if (!task.FollowsUpQuestion) throw new InvalidOperationException("That task doesn't follow up a question in the brief.");
+            if (task.Status == ActionItemStatus.Done)
+                throw new InvalidOperationException(
+                    $"{_users?.DisplayFor(task.CompletedBy) ?? task.CompletedBy} answered that question while you were writing. Your entry wasn't saved: read their answer, then save yours without it or with another question.");
+            if (task.Status == ActionItemStatus.Cancelled)
+                throw new InvalidOperationException("The task for that question was canceled while you were writing. Your entry wasn't saved: save it without the question, or reopen the task first.");
+        }
+        else
+        {
+            await db.CaseBriefs.Where(b => b.CaseId == c.Id && b.IsCurrent).ToListAsync(ct);
+            var question = EntryFollowUps.Clean(a.Question) ?? throw new ArgumentException("Choose the question the finding answers.");
+            var offered = OpenQuestionAnswers.Answerable(c).FirstOrDefault(q => string.Equals(q.Question, question, StringComparison.OrdinalIgnoreCase));
+            if (offered is null)
+                throw new InvalidOperationException(
+                    c.TasksFollowingUp(Content.MarkdownService.PlainLine(question)).Any(t => t.Status == ActionItemStatus.Done)
+                        ? "Someone answered that question while you were writing. Your entry wasn't saved: read their answer, then save yours without it or with another question."
+                        : "That question is no longer open in the brief. Your entry wasn't saved: save it without the question, or with another one.");
+            // Someone followed it up meanwhile: their task is the one to complete, so pick it again rather than add a second.
+            if (offered.TaskId is not null)
+                throw new InvalidOperationException("Someone followed that question up with a task while you were writing. Your entry wasn't saved: pick the question again, then save.");
+            task = c.RaiseTaskFromQuestion(Content.MarkdownService.PlainLine(question), _user.UserId, now);
+        }
+
+        task.Status = ActionItemStatus.Done;
+        task.CompletedAtUtc = at;
+        task.CompletedBy = _user.UserId;
+        task.CompletionRecordedAtUtc = now;   // BUG-364
+        task.ModifiedBy = _user.UserId;
+        task.ModifiedAtUtc = now;
+        db.ActionItemComments.Add(new ActionItemComment
+        {
+            ActionItemId = task.Id, CaseId = c.Id, Body = TaskResults.Body(text), CreatedBy = _user.UserId, CreatedAtUtc = now
+        });
+        entry.ActionItemId = task.Id;
     }
 
     /// <summary>

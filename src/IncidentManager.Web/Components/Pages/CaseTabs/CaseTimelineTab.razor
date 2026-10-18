@@ -1542,17 +1542,44 @@ else
     private LinkableCase? _fuLink;
     private CaseLinkType _fuLinkType = CaseLinkType.RelatedTo;
     private IReadOnlyList<LinkableCase> _fuLinkResults = [];
+    // CAP-23: the open question this finding answers, as the picker offered it (the task's id, not its title, WF-25). Kept
+    // across a mode switch (C7) and sent only from Finding mode.
+    private bool _fuAnswerOpen;
+    private QuestionAnswer? _fuAnswer;
 
     private void ResetFollowUps()
     {
         _fuTasks.Clear();
         _fuLinkSearch.Invalidate();   // BUG-482: a search still running doesn't land in the next entry's Then
-        _fuQuestionOpen = _fuKnownOpen = _fuLinkOpen = false;
+        _fuQuestionOpen = _fuKnownOpen = _fuLinkOpen = _fuAnswerOpen = false;
         _fuQuestion = _fuKnown = _fuLinkQuery = null;
         _fuQuestionTask = true;
         _fuLink = null;
         _fuLinkType = CaseLinkType.RelatedTo;
         _fuLinkResults = [];
+        _fuAnswer = null;
+    }
+
+    // CAP-23: what the picker offers, read as the save checks it (OpenQuestionAnswers, C2).
+    private IReadOnlyList<QuestionAnswer> Answerable() => OpenQuestionAnswers.Answerable(Case);
+
+    private static string QuestionLabel(string q) =>
+        IncidentManager.Application.Common.TextFit.Cap(IncidentManager.Application.Content.MarkdownService.PlainLine(q), 90);
+
+    private void PickAnswer(ChangeEventArgs e)
+    {
+        var list = Answerable();
+        _fuAnswer = int.TryParse(e.Value?.ToString(), out var i) && i >= 0 && i < list.Count ? list[i] : null;
+    }
+
+    // CAP-23 (C5/C7): a reload (a colleague's answer, a task raised, the brief revised) re-reads the pick. One no longer
+    // offered as it was picked is let go, and said, rather than sent to be refused or quietly swapped for another task.
+    private void RecheckAnswer()
+    {
+        if (_fuAnswer is not { } a) return;
+        if (Answerable().Contains(a)) return;
+        _fuAnswer = null;
+        Toasts.Error("The question your finding answers was answered, followed up or changed meanwhile. Pick it again if it's still open.");
     }
 
     private EntryFollowUps? FollowUps()
@@ -1565,7 +1592,8 @@ else
                     t.Due is { } d ? DayValues.ToUtc(d, null, TimeDisp.Zone, OrgZone.Current) : null)).ToList(),
             Question: _fuQuestionOpen ? Tagged(_fuQuestion) : null, QuestionTask: _fuQuestionTask,   // WF-25: [[tags]] as Question mode
             KnownLine: _fuKnownOpen ? Tagged(_fuKnown) : null,   // WF-104
-            LinkCaseId: _fuLinkOpen ? _fuLink?.Id : null, LinkType: _fuLinkType);
+            LinkCaseId: _fuLinkOpen ? _fuLink?.Id : null, LinkType: _fuLinkType,
+            Answers: _fuAnswerOpen && CurrentMode == ComposerMode.Finding ? _fuAnswer : null);   // CAP-23
         return f.Any ? f : null;
     }
 
@@ -1583,6 +1611,7 @@ else
         var parts = new List<string> { what };
         var tasks = (f.Tasks?.Count ?? 0) + (EntryFollowUps.Clean(f.Question) is not null && f.QuestionTask ? 1 : 0);
         if (tasks > 0) parts.Add(IncidentManager.Application.Common.Plural.Of(tasks, "task"));
+        if (f.Answers is { } ans) parts.Add(ans.TaskId is null ? "the answer to a question (a task raised and done)" : "the answer to a question (its task done)");
         var brief = new List<string>();
         if (EntryFollowUps.Clean(f.KnownLine) is not null) brief.Add("Known +1");
         if (EntryFollowUps.Clean(f.Question) is not null) brief.Add("1 question");
@@ -1621,8 +1650,31 @@ else
                 @if (!_fuQuestionOpen) { <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuQuestionOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Question</button> }
                 @if (!_fuKnownOpen) { <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuKnownOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Line for Known</button> }
                 @if (!_fuLinkOpen) { <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => _fuLinkOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Link a case</button> }
+                @if (!_fuAnswerOpen && CurrentMode == ComposerMode.Finding && Answerable().Count > 0)
+                {
+                    <button type="button" class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _fuAnswerOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Answers an open question</button>
+                }
             </span>
         </div>
+        @if (_fuAnswerOpen && CurrentMode == ComposerMode.Finding)
+        {
+            @* CAP-23: the finding is the answer; its question's task is completed with it as the result, in this save. *@
+            var answerable = Answerable();
+            var answerAt = _fuAnswer is { } chosen ? answerable.ToList().IndexOf(chosen) : -1;
+            <div class="im-then-row">
+                <span class="bi bi-patch-question" aria-hidden="true"></span>
+                <select class="form-select form-select-sm im-then-wide" aria-label="Open question this finding answers" value="@(answerAt >= 0 ? answerAt.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")" @onchange="PickAnswer">
+                    <option value="">Choose the question it answers</option>
+                    @for (var i = 0; i < answerable.Count; i++)
+                    {
+                        var q = answerable[i];
+                        var task = q.TaskId is { } tid ? Case.ActionItems.FirstOrDefault(t => t.Id == tid) : null;
+                        <option value="@i.ToString(System.Globalization.CultureInfo.InvariantCulture)">@QuestionLabel(q.Question)@(task is null ? " (no task yet: one is raised and done)" : string.IsNullOrWhiteSpace(task.Owner) ? "" : $" (task: {Users.DisplayFor(task.Owner)})")</option>
+                    }
+                </select>
+                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the answered question" @onclick="() => { _fuAnswerOpen = false; _fuAnswer = null; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            </div>
+        }
         @foreach (var t in _fuTasks)
         {
             var task = t;
@@ -1904,6 +1956,8 @@ else
 
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
+        if (_fuAnswerOpen && CurrentMode == ComposerMode.Finding && _fuAnswer is null)
+        { Toasts.Error("Choose the open question this finding answers, or remove it."); return; }   // CAP-23
         var whenUtc = KeptWhenUtc();   // C3: nothing recorded for a new entry, so as typed
         var withShot = _tlShotBytes is not null;
         var shot = _tlShotBytes;   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
@@ -1917,6 +1971,14 @@ else
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error($"Couldn't add the timeline entry. {ex.Message}");
+            // CAP-23: a question answered or followed up meanwhile: reload, so the picker shows it as it now stands. The
+            // composer's text stays in its editor.
+            // The pick is let go (the refusal says so; its row stays open, and the save waits for a new pick).
+            if (_fuAnswer is not null && ex is InvalidOperationException)
+            {
+                _fuAnswer = null;
+                await OnChanged.InvokeAsync();
+            }
             return;
         }
         var saved = SaveSummary();
@@ -2674,6 +2736,7 @@ else
             _tlOldestFirst = Case.Phase == CasePhase.Closed;
             _keyOnly = Case.Phase == CasePhase.Closed;   // RD-13: a closed case's Record opens on its Story
         }
+        RecheckAnswer();   // CAP-23
         // BUG-442: every reload (a retract here or by someone else, an edit) re-checks the step "Comes after" names.
         _tlAfter = CurrentAfter(_tlAfter, _tlEditId);
         if (_draft is { } d && CurrentAfter(d.After, null) is var after && after != d.After) _draft = d with { After = after };
