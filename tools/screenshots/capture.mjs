@@ -180,7 +180,7 @@ const SHOTS = [
     annotate: [['.tabbody .btn-outline-primary', 1], ['#task-add-form', 2], ['tr.im-task-group', 3], ['.im-about-chip', 4],
                ['.tabbody tbody td.text-end', 5]] },
   { name: 'doc-evidence', path: '/cases/{caseId}?tab=Evidence', settle: 1800,
-    annotate: [['#evidence-dropzone .card', 1], ['#evidence-dropzone tbody tr', 2]] },
+    annotate: [['#evidence-dropzone .card', 1], ['#evidence-dropzone .im-ev-bar', 2], ['#evidence-dropzone tbody tr', 3]] },
   { name: 'doc-entities', path: '/cases/{caseId}?tab=Entities', settle: 2400, viewport: { width: 1440, height: 2000 },
     annotate: [['.tabbody > .card.border-info', 1], ['.tabbody > .card', 2, 1], ['.tabbody > .card', 3, 2],
                ['.tabbody .vis-network', 4], ['.tabbody > .card', 5, 4]] },

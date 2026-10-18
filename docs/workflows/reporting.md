@@ -45,12 +45,16 @@ them. Notable behavior:
 - A TLP 2.0 marking is printed on every page.
 - People appear by display name and enums by their labels; no raw ids or code names.
 - Cited evidence is listed with its entry.
+- The appendix's evidence index gains a *Collected* column (when, from where, by whom; defanged like the rest) when
+  any file says how it was collected (CAP-08); without one it reads as before.
 - The header uses `Reporting:OrganizationName` and `TeamName`, and the logo from Administration.
 
 **Word templates.** Administrators upload `.docx` templates with `{{field}}` placeholders (Administration →
 Reports), preview each one filled with a real case, and choose defaults per report profile and for
 lessons-learned reports. Uploads with macros, embedded objects or externally loaded content are refused, and
-unknown fields are reported. Starter templates can be downloaded from the same page. A report records which
+unknown fields are reported. The evidence list (`evidence.*`: `file`, `size`, `sha256`, `uploaded`, `by`) also has
+`evidence.collected` (UTC), `evidence.collected_from` and `evidence.collected_by`, each empty when not recorded
+(CAP-08); the full field list is on the page and in `ReportTemplateFields`. Starter templates can be downloaded from the same page. A report records which
 template filled it (name and hash, by value).
 
 ## Lessons learned

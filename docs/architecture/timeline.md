@@ -79,7 +79,7 @@ From `Application/Cases/CaseMilestones.cs`:
 | *Gate* gate **overridden** (with justification; flagged). A passed gate isn't a row: it shows as a note ("Incident escalation gate passed") on the transition it guarded | `GatePassage` | the guarded transition's effective time (recorded time shown when different) | |
 | Reported to regulators | `Case.ReportedAtUtc` | that time | none recorded |
 | Task done: *title* (unless a stored entry already logs that task's result) | `ActionItem` with status Done | completion time | |
-| Evidence added: *file* (unless it's a screenshot shown on an entry, or a file an entry cites) | `Evidence` | upload time | uploader |
+| Evidence added: *file* (unless it's a screenshot shown on an entry, or a file an entry cites), with its description and where from and by whom it was collected (CAP-08) | `Evidence` | when it was collected, if recorded, else the upload time; "recorded" (the upload) shows when that was a later minute | uploader |
 | Case / lessons-learned report *vN* approved as final | `Report` | approval time | approver |
 | *Entity* assessed *verdict* (was *previous*), with the reason | `EntityVerdictChange` (an existing entity re-assessed; adding one with a verdict isn't recorded). A verdict set on several at once (CAP-02) is one milestone per entity, all at the same time with the same reason | when recorded | who changed it |
 | Working assessment recorded / Assessment revised (brief v*N*), with the new assessment | `CaseBrief` versions whose working assessment differs from the version before; a closing brief's conclusion is left to the Closed milestone | when the version was saved | who saved it |

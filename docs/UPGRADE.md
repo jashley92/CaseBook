@@ -210,6 +210,16 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### Unreleased
+
+- **Evidence records how it was collected (CAP-08); the Evidence list filters and sorts (CAP-25).** One migration,
+  `EvidenceCollection`, adds three nullable columns to `Evidence` (`CollectedAtUtc`, `CollectedFrom`, `CollectedBy`);
+  the app applies it on first start, and `DbaApplies` installs run the regenerated
+  `deploy/sql/casebook-schema-sqlserver.sql`. Existing rows are untouched and keep their row hashes (the columns join
+  the hash only when set). Nothing to configure. Large uploads in progress across the upgrade still resume (their
+  saved state reads without the new fields). Templates can use `evidence.collected`, `evidence.collected_from` and
+  `evidence.collected_by`. Browsers pick up the new upload script and styles by their cache version.
+
 ### v1.9.0
 
 One migration: the new `SmtpSignIns` table (one row; the app applies it on first start). Things to check:
