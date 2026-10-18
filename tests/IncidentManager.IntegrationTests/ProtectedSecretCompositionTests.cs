@@ -90,6 +90,19 @@ public sealed class ProtectedSecretCompositionTests : IDisposable
         (await provider.ResolveAsync("@cyberark:Safe=Mail;Object=Relay")).Should().BeNull();
     }
 
+    [Fact]
+    public void A_private_key_the_account_cant_read_fails_closed_rather_than_throwing()
+    {
+        // On Windows, reading a private key without the right to it throws ("Keyset does not exist") instead of
+        // returning null; CAP-05 review S2.
+        var value = ProtectedSecret.Protect(NewSecret(), _cert);
+        ProtectedSecret.TryOpen(value, Copy, _ => throw new CryptographicException("Keyset does not exist"),
+                out var secret, out var reason)
+            .Should().BeFalse();
+        secret.Should().BeNull();
+        reason.Should().Contain("no RSA private key this account can read");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

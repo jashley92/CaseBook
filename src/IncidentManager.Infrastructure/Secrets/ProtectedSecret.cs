@@ -60,6 +60,11 @@ public static class ProtectedSecret
     /// secret, when the value is malformed, of an unknown version, its certificate can't be had, or it was changed.
     /// </summary>
     public static bool TryOpen(string value, Func<string, X509Certificate2> findCertificate,
+        [NotNullWhen(true)] out string? secret, [NotNullWhen(false)] out string? reason) =>
+        TryOpen(value, findCertificate, c => c.GetRSAPrivateKey(), out secret, out reason);
+
+    // privateKeyOf is a test seam: on Windows, reading a key the account has no right to throws rather than returning null.
+    internal static bool TryOpen(string value, Func<string, X509Certificate2> findCertificate, Func<X509Certificate2, RSA?> privateKeyOf,
         [NotNullWhen(true)] out string? secret, [NotNullWhen(false)] out string? reason)
     {
         secret = null;
@@ -74,7 +79,12 @@ public static class ProtectedSecret
         }
         using (cert)
         {
-            using var rsa = cert.GetRSAPrivateKey();
+            // CAP-05 review: a private key the app-pool account can't read throws ("Keyset does not exist") rather than
+            // returning null, and that must fail closed like any other value that won't open.
+            RSA? key0;
+            try { key0 = privateKeyOf(cert); }
+            catch (CryptographicException) { key0 = null; }
+            using var rsa = key0;
             if (rsa is null)
             {
                 reason = $"the certificate {thumbprint} has no RSA private key this account can read";
