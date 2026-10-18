@@ -7,38 +7,33 @@ namespace IncidentManager.Application.Cases;
 
 /// <summary>
 /// CAP-17: the Cases list as a CSV, every case its filters match rather than one page: the list's columns plus the
-/// detected, contained, resolved, closed and reported times. Read through <see cref="CaseService.ListAsync"/> a page at
-/// a time, so need-to-know (ForUser), the exercise rule and every filter are the list's own; bounded at
-/// <see cref="Limit"/> cases, and a cut file says so at the top and the end (as REV-65 and CAP-03). Times are UTC;
-/// every cell goes through <c>Csv.Escape</c> (C13).
+/// detected, contained, resolved, closed and reported times. Read with <see cref="CaseService.ListAsync"/>'s own filter and
+/// order, the ids at once and the rows a page at a time, so need-to-know (ForUser), the exercise rule and every filter are
+/// the list's own; bounded at <see cref="Limit"/> cases, and a cut file says so at the top and the end (as REV-65 and
+/// CAP-03). Times are UTC; every cell goes through <c>Csv.Escape</c> (C13).
 /// </summary>
 public static class CaseListCsv
 {
     /// <summary>The most cases one export holds.</summary>
     public const int Limit = 10_000;
 
-    /// <summary>How many cases each read asks the list for.</summary>
+    /// <summary>How many cases' rows each read loads.</summary>
     public const int PageSize = 500;
 
     /// <summary>Every case the filter matches, in the list's order, up to <paramref name="limit"/>; whether more matched.</summary>
-    public static async Task<(IReadOnlyList<CaseListItem> Items, bool Truncated)> CollectAsync(
-        CaseService cases, CaseFilter filter, int limit = Limit, int pageSize = PageSize, CancellationToken ct = default)
-    {
-        var items = new List<CaseListItem>();
-        var seen = new HashSet<Guid>();   // a case that moved between pages while reading is listed once
-        filter.PageSize = pageSize;
-        for (filter.Page = 1; ; filter.Page++)
-        {
-            var page = await cases.ListAsync(filter, ct);
-            foreach (var item in page.Items)
-            {
-                if (!seen.Add(item.Id)) continue;
-                if (items.Count == limit) return (items, true);
-                items.Add(item);
-            }
-            if (page.Items.Count < pageSize || filter.Page >= page.TotalPages) return (items, false);
-        }
-    }
+    public static Task<(IReadOnlyList<CaseListItem> Items, bool Truncated)> CollectAsync(
+        CaseService cases, CaseFilter filter, int limit = Limit, int pageSize = PageSize, CancellationToken ct = default) =>
+        CollectAsync(cases, filter, limit, pageSize, afterPage: null, ct);
+
+    /// <summary>
+    /// As above; <paramref name="afterPage"/> runs after each read (tests). CAP-17 review: offset pages could miss a case
+    /// that moved, while the export read, from a page not yet read to one already read (sort=updated, a note added), and
+    /// sort=sla ranked every matching case once a page. So the ordered ids are read once, up to the limit and one more, and
+    /// the rows by id, <paramref name="pageSize"/> at a time (<see cref="CaseService.ListAllAsync"/>).
+    /// </summary>
+    internal static Task<(IReadOnlyList<CaseListItem> Items, bool Truncated)> CollectAsync(
+        CaseService cases, CaseFilter filter, int limit, int pageSize, Func<int, Task>? afterPage, CancellationToken ct) =>
+        cases.ListAllAsync(filter, limit, pageSize, afterPage, ct);
 
     /// <summary>The file. The label functions give the names the list shows (configured taxonomy and severity labels);
     /// <paramref name="sla"/> the SLA word the list shows for a row, or blank where it shows none.</summary>

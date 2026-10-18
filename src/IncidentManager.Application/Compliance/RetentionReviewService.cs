@@ -26,19 +26,29 @@ public sealed record RetentionDeadline(string Jurisdiction, DateTimeOffset? DueA
 /// </summary>
 public sealed record RetentionReviewRow(
     Guid CaseId, string CaseNumber, string Title, bool IsRestricted, DateTimeOffset ClosedAtUtc,
-    bool LegalHold, bool HoldReleasePending, int OpenImprovementActions, IReadOnlyList<RetentionDeadline> UnreportedDeadlines)
+    bool LegalHold, bool HoldReleasePending, int OpenImprovementActions, IReadOnlyList<RetentionDeadline> UnreportedDeadlines,
+    bool ClockRunning = false)
 {
-    /// <summary>What <see cref="CaseService.SetArchivedAsync"/> would refuse it for, or null when it can be archived.</summary>
+    /// <summary>What <see cref="CaseService.SetArchivedAsync(Guid, bool, CancellationToken)"/> would refuse it for, or null
+    /// when it can be archived. CAP-10 review: <see cref="ClockRunning"/> as well as the list, since the case's clock runs
+    /// until its report is recorded even when every jurisdiction listed has its notice.</summary>
     public string? Blocker => LegalHold ? "Under legal hold"
-        : UnreportedDeadlines.Count > 0 ? "Regulatory notice not recorded" : null;
+        : UnreportedDeadlines.Count > 0 || ClockRunning ? "Regulatory notice not recorded" : null;
 
     public bool CanArchive => Blocker is null;
 }
 
-/// <summary>The retention review: the setting it was built with, the cut-off, and the cases due. Off when years is 0.</summary>
-public sealed record RetentionReview(int Years, DateTimeOffset? CutoffUtc, IReadOnlyList<RetentionReviewRow> Rows)
+/// <summary>
+/// The retention review: the setting it was built with, the cut-off, and the cases due. Off when years is 0. CAP-10 review:
+/// <see cref="Rows"/> holds the oldest closings first, at most <see cref="RetentionReviewService.MaxShown"/>, and
+/// <see cref="Total"/> counts every case due.
+/// </summary>
+public sealed record RetentionReview(int Years, DateTimeOffset? CutoffUtc, IReadOnlyList<RetentionReviewRow> Rows, int Total)
 {
     public bool Off => Years <= 0;
+
+    /// <summary>More cases are due than <see cref="Rows"/> lists.</summary>
+    public bool Cut => Total > Rows.Count;
 }
 
 /// <summary>What happened to one case of an archive batch.</summary>
@@ -48,10 +58,20 @@ public enum RetentionArchiveOutcome
     /// <summary>The archive was refused (a legal hold, a deadline running): the detail says why.</summary>
     Refused,
     /// <summary>It's no longer in the review: reopened, archived meanwhile, out of sight, or the setting changed.</summary>
-    NoLongerDue
+    NoLongerDue,
+    /// <summary>CAP-10 review: something else went wrong with this case (the save failed, the permission went): the detail
+    /// says what, and the rest of the batch went ahead.</summary>
+    Failed
 }
 
 public sealed record RetentionArchiveResult(Guid CaseId, RetentionArchiveOutcome Outcome, string? Detail = null);
+
+/// <summary>
+/// CAP-10 review: the retention batch's archive found the case no longer closed before the cut-off (reopened, or archived,
+/// since the review was read), so it was left as it is.
+/// </summary>
+internal sealed class CaseNoLongerDueException()
+    : InvalidOperationException("It's no longer closed and past retention, or it was archived meanwhile.");
 
 /// <summary>
 /// CAP-10: the retention review. Lists closed, not-archived cases whose closing is older than <c>Retention:CaseYears</c>,
@@ -73,6 +93,15 @@ public sealed class RetentionReviewService(
     /// <summary>The most cases one archive batch takes (E-18's metering cap).</summary>
     public const int MaxBatch = 25;
 
+    /// <summary>CAP-10 review: the most due cases the review lists at once (the oldest closings); the rest are counted.</summary>
+    public const int MaxShown = 500;
+
+    /// <summary>How many due cases <see cref="BuildAsync"/> lists (a smaller number in tests).</summary>
+    internal int ShowLimit { get; init; } = MaxShown;
+
+    /// <summary>Runs before each case of a batch is archived (tests: to change the case under the batch).</summary>
+    internal Func<Guid, Task>? BeforeArchive { get; init; }
+
     /// <summary>The longest retention the settings page allows; a larger value in the server's file counts as this.</summary>
     public const int MaxYears = 100;
 
@@ -91,12 +120,18 @@ public sealed class RetentionReviewService(
     {
         AdminActionPermissions.Require<RetentionReviewService>(user, siem);
         var years = Years;
-        if (years == 0) return new RetentionReview(0, null, []);
+        if (years == 0) return new RetentionReview(0, null, [], 0);
         var cutoff = Cutoff(clock.UtcNow, years);
 
         using var db = factory.CreateDbContext();
         var scope = Due(db.Cases.AsNoTracking().ForUser(user), cutoff);
-        var found = await scope
+        // CAP-10 review: the oldest closings first, at most ShowLimit of them, and how many there are in all; the clocks
+        // are read for the cases shown only.
+        var total = await scope.CountAsync(ct);
+        var shownIds = await scope.OrderBy(c => c.ClosedAtUtc).ThenBy(c => c.CaseNumber).ThenBy(c => c.Id)
+            .Select(c => c.Id).Take(Math.Max(0, ShowLimit)).ToListAsync(ct);
+        var shown = scope.Where(c => shownIds.Contains(c.Id));
+        var found = await shown
             .Select(c => new
             {
                 c.Id, c.CaseNumber, c.Title, c.IsRestricted, c.ClosedAtUtc, c.LegalHold,
@@ -106,17 +141,19 @@ public sealed class RetentionReviewService(
             })
             .ToListAsync(ct);
         // Every jurisdiction's clock for the unreported ones, with the live rules: what SetArchivedAsync refuses on.
-        Dictionary<Guid, IReadOnlyList<NotificationDeadlineStatus>> clocks = deadlines is null ? [] : await deadlines.AllNowAsync(db, scope, ct);
+        Dictionary<Guid, IReadOnlyList<NotificationDeadlineStatus>> clocks = deadlines is null ? [] : await deadlines.AllNowAsync(db, shown, ct);
 
         var rows = found
             .OrderBy(c => c.ClosedAtUtc).ThenBy(c => c.CaseNumber, StringComparer.Ordinal)
             .Select(c => new RetentionReviewRow(c.Id, c.CaseNumber, c.Title, c.IsRestricted, c.ClosedAtUtc!.Value, c.LegalHold,
                 c.Pending, c.OpenActions,
+                // CAP-10 review: a jurisdiction already notified isn't "not recorded" (the clocks include the met ones).
                 clocks.TryGetValue(c.Id, out var s)
-                    ? s.Select(x => new RetentionDeadline(x.JurisdictionLabel, x.DueAtUtc, x.State)).ToList()
-                    : []))
+                    ? s.Where(x => x.NotifiedAtUtc is null).Select(x => new RetentionDeadline(x.JurisdictionLabel, x.DueAtUtc, x.State)).ToList()
+                    : [],
+                ClockRunning: clocks.ContainsKey(c.Id)))
             .ToList();
-        return new RetentionReview(years, cutoff, rows);
+        return new RetentionReview(years, cutoff, rows, total);
     }
 
     /// <summary>
@@ -133,9 +170,10 @@ public sealed class RetentionReviewService(
         var years = Years;
         if (years == 0) throw new InvalidOperationException("The retention review is off: the case retention setting is 0.");
 
+        var cutoff = Cutoff(clock.UtcNow, years);
         HashSet<Guid> due;
         using (var db = factory.CreateDbContext())
-            due = (await Due(db.Cases.AsNoTracking().ForUser(user), Cutoff(clock.UtcNow, years))
+            due = (await Due(db.Cases.AsNoTracking().ForUser(user), cutoff)
                 .Where(c => ids.Contains(c.Id)).Select(c => c.Id).ToListAsync(ct)).ToHashSet();
 
         var results = new List<RetentionArchiveResult>(ids.Count);
@@ -149,8 +187,15 @@ public sealed class RetentionReviewService(
             }
             try
             {
-                await cases.SetArchivedAsync(id, true, ct);
+                if (BeforeArchive is { } hook) await hook(id);
+                // CAP-10 review: `due` was read before the loop, so the archive checks again, on the row it saves, that the
+                // case is still closed before the cut-off: one reopened during the batch isn't archived.
+                await cases.SetArchivedAsync(id, true, closedBeforeUtc: cutoff, ct);
                 results.Add(new RetentionArchiveResult(id, RetentionArchiveOutcome.Archived));
+            }
+            catch (CaseNoLongerDueException ex)
+            {
+                results.Add(new RetentionArchiveResult(id, RetentionArchiveOutcome.NoLongerDue, ex.Message));
             }
             catch (InvalidOperationException ex)
             {
@@ -161,6 +206,13 @@ public sealed class RetentionReviewService(
                 // One case changed under the batch: it's reported, and the rest still go ahead.
                 results.Add(new RetentionArchiveResult(id, RetentionArchiveOutcome.Refused,
                     "Someone changed it while it was being archived. Reload the list and try again."));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // CAP-10 review: any other failure (a save the database refused, the permission gone) is this case's, so
+                // it's reported and the batch goes on, and the cases already archived are said to be.
+                results.Add(new RetentionArchiveResult(id, RetentionArchiveOutcome.Failed,
+                    ex is ForbiddenException ? ex.Message : "It couldn't be archived (" + ex.GetType().Name + "). Try again from its case page."));
             }
         }
         return results;

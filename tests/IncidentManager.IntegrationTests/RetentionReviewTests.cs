@@ -231,6 +231,117 @@ public sealed class RetentionReviewTests
         results.Single(r => r.CaseId == s.Due).Outcome.Should().Be(RetentionArchiveOutcome.Archived);
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_case_reopened_during_the_batch_is_no_longer_due_and_stays_unarchived(string provider /* CAP-10 review */)
+    {
+        using var database = Open(provider);
+        var s = await SeedAsync(database);
+        var service = new RetentionReviewService(database.Factory(), _admin, _clock, CasesFor(database), _retention)
+        {
+            // After the batch has read which cases are due, someone reopens one.
+            BeforeArchive = async id =>
+            {
+                if (id != s.Due) return;
+                await using var other = database.NewContext();
+                var c = await other.Cases.SingleAsync(x => x.Id == id);
+                c.ChangePhase(CasePhase.Triage, "New activity from the same actor", "ic1", _clock.UtcNow);
+                await other.SaveChangesAsync();
+            },
+        };
+
+        var results = await service.ArchiveAsync([s.Due]);
+
+        results.Should().ContainSingle().Which.Outcome.Should().Be(RetentionArchiveOutcome.NoLongerDue);
+        await using var db = database.NewContext();
+        var reopened = await db.Cases.SingleAsync(c => c.Id == s.Due);
+        (reopened.IsArchived, reopened.Phase).Should().Be((false, CasePhase.Triage), "a reopened case isn't archived by the batch");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_case_that_fails_some_other_way_is_reported_and_the_batch_goes_on(string provider /* CAP-10 review */)
+    {
+        using var database = Open(provider);
+        var s = await SeedAsync(database);
+        var service = new RetentionReviewService(database.Factory(), _admin, _clock, CasesFor(database), _retention)
+        {
+            BeforeArchive = id => id == s.Restricted ? throw new DbUpdateException("The database refused the save.") : Task.CompletedTask,
+        };
+
+        var results = await service.ArchiveAsync([s.Restricted, s.Due]);
+
+        results.Select(r => (r.CaseId, r.Outcome)).Should().Equal(
+            (s.Restricted, RetentionArchiveOutcome.Failed),
+            (s.Due, RetentionArchiveOutcome.Archived));
+        results[0].Detail.Should().Contain("DbUpdateException");
+        await using var db = database.NewContext();
+        (await db.Cases.SingleAsync(c => c.Id == s.Due)).IsArchived.Should().BeTrue("the rest of the batch went ahead");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task The_review_lists_the_oldest_closings_up_to_its_bound_and_counts_them_all(string provider /* CAP-10 review */)
+    {
+        using var database = Open(provider);
+        var s = await SeedAsync(database);
+        await using (var db = database.NewContext())
+        {
+            var oldest = await db.Cases.SingleAsync(c => c.Id == s.Restricted);
+            oldest.ClosedAtUtc = _clock.UtcNow.AddYears(-12);
+            await db.SaveChangesAsync();
+        }
+        RetentionReviewService.MaxShown.Should().Be(500);
+        var service = new RetentionReviewService(database.Factory(), _admin, _clock, CasesFor(database), _retention,
+            new NotificationDeadlineService(database.Factory(), _deadlineSettings, new NotificationRuleService(database.Factory(), _admin, _clock), _clock))
+        {
+            ShowLimit = 3,
+        };
+
+        var review = await service.BuildAsync();
+
+        review.Rows.Should().HaveCount(3);
+        (review.Total, review.Cut).Should().Be((4, true), "every case due is counted, listed or not");
+        review.Rows[0].CaseId.Should().Be(s.Restricted, "the oldest closing first");
+        (await Service(database).BuildAsync()).Cut.Should().BeFalse("four cases are under the real bound");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_jurisdiction_already_notified_isnt_listed_as_not_recorded(string provider /* CAP-10 review */)
+    {
+        using var database = Open(provider);
+        await SeedAsync(database);
+        var old = _clock.UtcNow.AddYears(-8);
+        Guid id;
+        await using (var db = database.NewContext())
+        {
+            db.DataElements.Add(new DataElement { Key = "DL", Label = "Driver's licence number", NotificationJurisdictions = "CA",
+                IsActive = true, IsSystem = false, CreatedBy = "system", CreatedAtUtc = old.AddDays(-30) });
+            db.NotificationRules.Add(new NotificationRule { Code = "CA", Label = "California (CCPA)", WindowHours = 72, IsActive = true,
+                CreatedBy = "system", CreatedAtUtc = old.AddDays(-30) });
+            var c = Case.Open(2018, 9, "Two", "Two regulators", Classification.Breach, Severity.High, CaseOrigin.InternalDetection, "ic1",
+                old.AddDays(-10));
+            c.SetImpactAssessment(500, ["SSN", "DL"], "NY, CA", "ic1", old.AddDays(-9));
+            c.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", old.AddDays(-8), "Likely harm.", "ic1", old.AddDays(-8));
+            c.RecordNotice("NY", old.AddDays(-7), "ic1", old.AddDays(-7));
+            c.ChangePhase(CasePhase.Closed, "Done", "ic1", old);
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+            id = c.Id;
+        }
+
+        var row = (await Service(database).BuildAsync()).Rows.Single(r => r.CaseId == id);
+
+        row.UnreportedDeadlines.Select(d => d.Jurisdiction).Should().ContainSingle().Which.Should().Contain("California");
+        row.Blocker.Should().Be("Regulatory notice not recorded");
+    }
+
+    private CaseService CasesFor(TestDatabase database) =>
+        new(database.Factory(), _admin, _clock, new CaseNumberGenerator(database.NewContext()), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new StageGateEvaluator(), new TestSlaTargets(), notifySettings: _deadlineSettings,
+            notifyRules: new NotificationRuleService(database.Factory(), _admin, _clock));
+
     // --- the nightly count and the monthly email -------------------------------------------------------------------
 
     private sealed class CapturingNotifications : ICaseNotifications

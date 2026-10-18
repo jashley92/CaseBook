@@ -51,7 +51,16 @@ else
         var archivable = _review.Rows.Where(r => r.CanArchive).ToList();
         <div class="d-flex flex-wrap align-items-center gap-2 mb-2" role="region" aria-label="Selected cases">
             <span class="small">
-                @Plural(_review.Rows.Count, "case") past retention · @Plural(archivable.Count, "case") can be archived
+                @* CAP-10 review: the review lists the oldest closings, at most MaxShown; the rest are counted. *@
+                @if (_review.Cut)
+                {
+                    <span>@Plural(_review.Total, "case") past retention; the first @_review.Rows.Count.ToString("N0") (oldest closed) of @_review.Total.ToString("N0") are listed</span>
+                }
+                else
+                {
+                    <span>@Plural(_review.Rows.Count, "case") past retention</span>
+                }
+                · @Plural(archivable.Count, "case") can be archived@(_review.Cut ? " of those listed" : "")
                 @if (_selected.Count > 0) { <span> · <strong>@_selected.Count selected</strong></span> }
                 @if (_selected.Count >= RetentionReviewService.MaxBatch) { <span class="text-muted"> (the most at a time)</span> }
             </span>
@@ -138,6 +147,13 @@ else
                 </tbody>
             </table>
         </div>
+        @if (_review.Cut)
+        {
+            <p class="small text-muted">
+                Only the first @RetentionReviewService.MaxShown cases, oldest closed first, are listed at a time. Archive these and the
+                list moves on to the next.
+            </p>
+        }
         <p class="small text-muted">Open improvement actions don't stop a case being archived: they're tracked under Program whatever their case's state.</p>
     }
 }
@@ -220,7 +236,7 @@ else
         if (_disposed) return;
         var archived = results.Count(r => r.Outcome == RetentionArchiveOutcome.Archived);
         if (archived > 0) Toasts.Success(archived == 1 ? "1 case archived" : $"{archived} cases archived");
-        foreach (var r in results.Where(r => r.Outcome == RetentionArchiveOutcome.Refused))
+        foreach (var r in results.Where(r => r.Outcome is RetentionArchiveOutcome.Refused or RetentionArchiveOutcome.Failed))
             Toasts.Error($"{numbers.GetValueOrDefault(r.CaseId)}: {r.Detail}");
         var gone = results.Where(r => r.Outcome == RetentionArchiveOutcome.NoLongerDue).Select(r => numbers.GetValueOrDefault(r.CaseId)).ToList();
         if (gone.Count > 0) Toasts.Info($"No longer in the review, so left as they are: {string.Join(", ", gone)}.");

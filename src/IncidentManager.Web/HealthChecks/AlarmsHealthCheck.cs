@@ -14,16 +14,25 @@ namespace IncidentManager.Web.HealthChecks;
 /// (<see cref="BackupHealthReader"/>). Tagged "alarms" only, never "ready": an alarm is for a person to look at, and
 /// pulling the node out of the load balancer wouldn't fix any of them. The reasons go in the result's description,
 /// which the endpoint's default writer never sends; the anonymous caller gets the status word only.
+/// CAP-18 review (C10): the backup file is read once for every probe that asks while it's being read, and its answer kept
+/// for <see cref="BackupKeepFor"/> (<paramref name="backupRead"/>, one per app), so an anonymous flood of requests on a
+/// share that doesn't answer parks one thread, not one each.
 /// </summary>
 public sealed class AlarmsHealthCheck(
     IIntegrityMonitor integrity,
     IEvidenceIntegrityMonitor evidence,
     IEvidenceKeyring evidenceKeys,
     SealCopyStatus sealCopies,
-    BackupHealthReader backup) : IHealthCheck
+    BackupHealthReader backup,
+    SharedRead<BackupHealthReport>? backupRead = null) : IHealthCheck
 {
     /// <summary>The check's registration tag; the readiness probe's predicate never selects it.</summary>
     public const string Tag = "alarms";
+
+    /// <summary>How long a backup report is kept before the file is read again (the backup job writes it daily).</summary>
+    public static readonly TimeSpan BackupKeepFor = TimeSpan.FromSeconds(30);
+
+    private readonly SharedRead<BackupHealthReport> _backupRead = backupRead ?? new SharedRead<BackupHealthReport>(BackupKeepFor);
 
     /// <summary>How long the backup status file may take to read (C10: it may sit on a share that doesn't answer).</summary>
     public TimeSpan TimeLimit { get; init; } = TimeSpan.FromSeconds(5);
@@ -42,7 +51,7 @@ public sealed class AlarmsHealthCheck(
             if (sealCopies.Snapshot().Any(c => !c.Ok)) raised.Add("seal copy failing");
 
             var read = ReadBackup ?? backup.Read;
-            var report = await Task.Run(read, cancellationToken).WaitAsync(TimeLimit, cancellationToken);
+            var report = await _backupRead.Get(read).WaitAsync(TimeLimit, cancellationToken);
             // Not configured is a choice (development, or backups watched elsewhere), not an alarm.
             if (report.Overall is BackupHealthState.Stale or BackupHealthState.Missing) raised.Add("backup " + report.Overall.ToString().ToLowerInvariant());
         }

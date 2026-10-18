@@ -529,6 +529,15 @@ the tool on the server, against the site's own keys folder, or the record waits 
     it says; **Administration → Diagnostics** and the Integrity page say which alarm is up. The backup file
     read is time-limited (5 s), so a share that doesn't answer reads as Degraded rather than hanging the
     probe. Alert on `Degraded`, not on the status code.
+  - **Shared reads and a per-address limit (CAP-18 review, C10).** The slow parts of the probes are read once
+    per node for every request that asks while they run: the backup status file, kept **30 s** after each read
+    (so a new backup shows on `/health/alarms` within half a minute), and the evidence store's folder, kept
+    **10 s** (so a node whose share is back returns to rotation within about 10 s of the next probe). A share
+    that doesn't answer holds one thread, however many probes arrive; each still answers within its 5 s limit.
+    `/health`, `/health/ready` and `/health/alarms` are also limited **per caller's address**: a burst of 120,
+    then 120 a minute (`RateLimiting:Health`), far above a load balancer or monitor polling every few seconds;
+    past it the address gets **429** (logged, SIEM 5306). `/health/live` reads nothing and isn't limited. If
+    every probe arrives through one proxy address, raise the limit there.
 
 ---
 

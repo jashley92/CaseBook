@@ -121,5 +121,61 @@ public sealed class CaseListExportTests : IDisposable
         row[18].Should().Be("2026-10-05 07:00:00", "the reported time");
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_case_worked_on_while_the_export_reads_is_still_in_it(string provider /* CAP-17 review */)
+    {
+        // Audited, so "updated" is the latest work on the case (REV-15): every seeded case ties, and the id breaks it.
+        _db = TestDatabase.Open(provider, new IncidentManager.Infrastructure.Persistence.Interceptors.AuditChainInterceptor(
+            new IncidentManager.Infrastructure.Security.HashChainService(), _me, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()));
+        Seed();
+        var cases = NewCases();
+        const string query = "scope=all&sort=updated&dir=desc";
+        var everyone = Parse(query);
+        everyone.PageSize = 1000;
+        var expected = (await cases.ListAsync(everyone)).Items.Select(i => i.Id).ToList();
+        expected.Should().HaveCountGreaterThan(6);
+        var last = expected[^1];
+
+        // After the first read, someone works on the case the list shows last: it's now the most recently updated, and
+        // would sit on the page already read.
+        var touched = false;
+        var (items, truncated) = await CaseListCsv.CollectAsync(cases, Parse(query), CaseListCsv.Limit, pageSize: 3, afterPage: async n =>
+        {
+            if (n != 1) return;
+            _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
+            using var db = _db!.NewContext();
+            var c = db.Cases.Single(x => x.Id == last);
+            c.Title += " (worked on)";
+            await db.SaveChangesAsync();
+            touched = true;
+        }, ct: default);
+
+        touched.Should().BeTrue();
+        truncated.Should().BeFalse();
+        items.Select(i => i.Id).Should().BeEquivalentTo(expected, "every case the filter matched is in the file, once");
+        items.Select(i => i.Id).Should().OnlyHaveUniqueItems();
+        var now = Parse(query);
+        now.PageSize = 1000;
+        (await cases.ListAsync(now)).Items[0].Id.Should().Be(last, "the touch did move it to the top of the list");
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task An_sla_ordered_export_ranks_once_and_matches_the_page(string provider /* CAP-17 review */)
+    {
+        _db = TestDatabase.Open(provider);
+        Seed();
+        var cases = NewCases();
+        var page = Parse("sort=sla&dir=desc");
+        page.PageSize = 1000;
+        var expected = (await cases.ListAsync(page)).Items.Select(i => i.Id).ToList();
+
+        var reads = 0;
+        var (items, _) = await CaseListCsv.CollectAsync(cases, Parse("sort=sla&dir=desc"), CaseListCsv.Limit, pageSize: 2,
+            afterPage: _ => { reads++; return Task.CompletedTask; }, ct: default);
+
+        items.Select(i => i.Id).Should().Equal(expected);
+        reads.Should().Be((expected.Count + 1) / 2, "the rows are read a chunk at a time");
+    }
+
     public void Dispose() => _db?.Dispose();
 }

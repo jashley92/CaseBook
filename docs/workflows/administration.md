@@ -91,15 +91,19 @@ own need-to-know view: an administrator without the clearance for a restricted c
 
 Each row shows the case, when it closed, its **legal hold** (and a release requested), its **open improvement actions**
 (they don't stop archiving; they're tracked under Program whatever their case's state) and each **regulatory notice not
-recorded** with its due date. A case under a legal hold, or with a notice not recorded while the deadline clock is on,
-can't be archived, and says so instead of offering *Archive*.
+recorded** with its due date (a jurisdiction already notified isn't listed). A case under a legal hold, or with a notice
+not recorded while the deadline clock is on, can't be archived, and says so instead of offering *Archive*.
+
+The list shows at most **500 cases**, the oldest closings first. With more due, the header says so ("the first 500
+(oldest closed) of 1,234 are listed") and counts them all; archive those listed and the list moves on to the next.
 
 1. Tick the cases to archive (at most 25; the header box ticks the first 25 that can be archived), or use a row's
    *Archive*.
 2. *Archive selected* lists the cases by number and asks you to confirm.
 3. Each is archived through the case's own archive action, as you, one save each: the case still refuses a hold or a
-   running deadline, and a case reopened or archived since the list loaded is left alone. The page says what happened to
-   each.
+   running deadline, and a case reopened or archived since the list loaded is left alone, even one reopened while the
+   batch runs (it's checked again on the save). A case that fails some other way (the save refused) is reported and the
+   rest go ahead. The page says what happened to each.
 
 Archiving takes a case off the lists, dashboards and reminders; it stays in the record and the audit trail and can be
 restored from its page. **Nothing is deleted.** Purging stays out of CaseBook until it can have two-person control.

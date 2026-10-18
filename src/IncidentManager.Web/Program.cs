@@ -187,9 +187,26 @@ var thumbnailLimits = builder.Configuration.GetSection("RateLimiting:Thumbnails"
 // formats, stays well inside it; a token scraping the feed in a loop doesn't).
 var apiFeedLimits = builder.Configuration.GetSection("RateLimiting:ApiFeeds").Get<DownloadRateLimitOptions>()
     ?? new DownloadRateLimitOptions { TokenLimit = 20, TokensPerPeriod = 1, PeriodSeconds = 60 };
+// CAP-18 review (C10): the anonymous probes that read something (/health, /health/ready, /health/alarms), per caller's
+// address: a burst of 120, then 120 a minute. A load balancer or monitor polling every few seconds per node uses a small
+// part of it; a script hammering them from one address is refused. /health/live reads nothing and isn't limited.
+var healthLimits = builder.Configuration.GetSection("RateLimiting:Health").Get<DownloadRateLimitOptions>()
+    ?? new DownloadRateLimitOptions { TokenLimit = 120, TokensPerPeriod = 120, PeriodSeconds = 60 };
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("health", httpContext =>
+        RateLimitPartition.GetTokenBucketLimiter(
+            "probe:" + (httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"), _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = healthLimits.TokenLimit,
+                TokensPerPeriod = healthLimits.TokensPerPeriod,
+                ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, healthLimits.PeriodSeconds)),
+                QueueLimit = 0,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                AutoReplenishment = true
+            }));
 
     options.AddPolicy("thumbnails", httpContext =>
         RateLimitPartition.GetTokenBucketLimiter(
@@ -387,6 +404,12 @@ builder.Services.AddScoped<Microsoft.AspNetCore.Components.Authorization.Authent
 // Two anonymous endpoints (mapped below): /health/live is a bare liveness signal (the process is up and
 // serving), /health (readiness) additionally verifies DB connectivity and evidence-store reachability.
 // Both return status only — no case data, no sensitive detail.
+// CAP-18 review (C10): a check is made per request, so the slow reads they make (the evidence store's folder, the backup
+// status file) are shared through one per app: a read in flight is joined, and its answer kept a few seconds.
+builder.Services.AddSingleton(new IncidentManager.Web.HealthChecks.SharedRead<bool>(
+    IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck.KeepFor));
+builder.Services.AddSingleton(new IncidentManager.Web.HealthChecks.SharedRead<IncidentManager.Application.Ops.BackupHealthReport>(
+    IncidentManager.Web.HealthChecks.AlarmsHealthCheck.BackupKeepFor));
 builder.Services.AddHealthChecks()
     .AddCheck<IncidentManager.Web.HealthChecks.DatabaseHealthCheck>("database", tags: ["ready"])
     .AddCheck<IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck>("evidence-store", tags: ["ready"])
@@ -618,8 +641,8 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 // Readiness: DB + evidence-store reachable. The default response writer emits just the status word
 // ("Healthy"/"Unhealthy") with 200/503 — no per-check names, paths, or exception detail.
 var readyOptions = new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") };
-app.MapHealthChecks("/health", readyOptions).AllowAnonymous();
-app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous();
+app.MapHealthChecks("/health", readyOptions).AllowAnonymous().RequireRateLimiting("health");
+app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous().RequireRateLimiting("health");
 // CAP-18: alarms for a monitoring tool: "Healthy" or "Degraded", always 200 (the word, never the status code, carries
 // it, so nothing reads it as the node being down). No detail: which alarm is up is on Diagnostics and in the SIEM.
 app.MapHealthChecks("/health/alarms", new HealthCheckOptions
@@ -631,7 +654,7 @@ app.MapHealthChecks("/health/alarms", new HealthCheckOptions
         [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = 200,
         [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = 200,
     },
-}).AllowAnonymous();
+}).AllowAnonymous().RequireRateLimiting("health");
 
 // E-03b: the deployment branding logo for branded emails. Anonymous — mail clients fetch it without a
 // session, and it is only the org's branding image (no case data). 404 when no logo is configured.

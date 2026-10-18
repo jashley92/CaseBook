@@ -108,5 +108,28 @@ public sealed class HealthCheckTests : IDisposable
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "the probe answers rather than hangs");
     }
 
+    [Fact]
+    public async Task Evidence_store_probes_at_once_share_one_look_at_a_share_that_doesnt_answer(/* CAP-18 review, C10 */)
+    {
+        using var gate = new ManualResetEventSlim();
+        var looks = 0;
+        var shared = new SharedRead<bool>(EvidenceStoreHealthCheck.KeepFor);
+        var options = Options.Create(new EvidenceStoreOptions { RootPath = @"\\files01\casebook$\evidence" });
+        try
+        {
+            var results = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
+                new EvidenceStoreHealthCheck(options, shared)
+                {
+                    TimeLimit = TimeSpan.FromMilliseconds(300),
+                    Exists = _ => { Interlocked.Increment(ref looks); gate.Wait(TimeSpan.FromSeconds(30)); return true; },
+                }.CheckHealthAsync(Context()))));
+
+            results.Should().AllSatisfy(r => r.Status.Should().Be(HealthStatus.Unhealthy));
+            SpinWait.SpinUntil(() => Volatile.Read(ref looks) > 0, TimeSpan.FromSeconds(10));
+            looks.Should().Be(1, "a look still blocked isn't given another thread");
+        }
+        finally { gate.Set(); }
+    }
+
     public void Dispose() => _connection.Dispose();
 }

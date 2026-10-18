@@ -287,9 +287,41 @@ public sealed class CaseService
     private static string NumberTakenMessage(string number) =>
         $"Case number '{number}' is already in use, or was used before by another case (its audit trail keeps it).";
 
-    public async Task<CasePage> ListAsync(CaseFilter filter, CancellationToken ct = default)
+    /// <summary>
+    /// CAP-17 review: every case the list's filter matches, in the list's order, up to <paramref name="limit"/>, and whether
+    /// more matched: the CSV export. The ids are read in one query, so a case that changes while the export reads can't move
+    /// from a page not yet read to one already read and be missed; then the rows by id, <paramref name="chunk"/> at a time.
+    /// The SLA order is ranked once, not once a page. A case the caller can no longer see by the time its rows are read is
+    /// left out. <paramref name="afterChunk"/> runs after each chunk (tests: to change a case under the export).
+    /// </summary>
+    internal async Task<(IReadOnlyList<CaseListItem> Items, bool Truncated)> ListAllAsync(CaseFilter filter, int limit, int chunk,
+        Func<int, Task>? afterChunk = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        var q = await FilteredAsync(db, filter, ct);
+        limit = Math.Max(0, limit);
+        var ids = filter.Sort == CaseSort.Sla
+            ? await SlaOrderedIdsAsync(q, filter.SortDescending, 0, limit + 1, ct)
+            : await Ordered(db, q, filter.Sort, filter.SortDescending).Select(c => c.Id).Take(limit + 1).ToListAsync(ct);
+        var truncated = ids.Count > limit;
+        if (truncated) ids.RemoveRange(limit, ids.Count - limit);
+
+        var items = new List<CaseListItem>(ids.Count);
+        var size = Math.Max(1, chunk);
+        for (var i = 0; i < ids.Count; i += size)
+        {
+            var part = ids.GetRange(i, Math.Min(size, ids.Count - i));
+            var rows = (await Scoped(db.Cases.AsNoTracking()).Where(c => part.Contains(c.Id)).Select(ListItem).ToListAsync(ct))
+                .ToDictionary(r => r.Id);
+            items.AddRange(part.Where(rows.ContainsKey).Select(id => rows[id]));
+            if (afterChunk is not null) await afterChunk(i / size + 1);
+        }
+        return (items, truncated);
+    }
+
+    // The cases the list's filter matches, need-to-know scoped (ForUser), unordered: the list and its export (CAP-17).
+    private async Task<IQueryable<Case>> FilteredAsync(IAppDbContext db, CaseFilter filter, CancellationToken ct)
+    {
         var q = Scoped(db.Cases.AsNoTracking());
 
         // BUG-57: the notification-deadline filter keeps closed cases (closing doesn't answer a regulator, INV-43), so
@@ -401,6 +433,13 @@ public sealed class CaseService
             }
 #pragma warning restore CA1304, CA1311, CA1862
         }
+        return q;
+    }
+
+    public async Task<CasePage> ListAsync(CaseFilter filter, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var q = await FilteredAsync(db, filter, ct);
 
         var total = await q.CountAsync(ct);
         var page = filter.Page < 1 ? 1 : filter.Page;
@@ -3068,11 +3107,23 @@ public sealed class CaseService
     }
 
     /// <summary>Archives or restores the case. Archiving is refused while a legal hold is in force.</summary>
-    public async Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default)
+    public Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default) =>
+        SetArchivedAsync(id, archived, closedBeforeUtc: null, ct);
+
+    /// <summary>
+    /// As <see cref="SetArchivedAsync(Guid, bool, CancellationToken)"/>. CAP-10 review: with <paramref name="closedBeforeUtc"/>
+    /// (the retention review's batch), a case is archived only if the row it loads is still closed before that instant and
+    /// not archived; one reopened (or archived) since the review was read is refused with
+    /// <see cref="Compliance.CaseNoLongerDueException"/> and left as it is.
+    /// </summary>
+    internal async Task SetArchivedAsync(Guid id, bool archived, DateTimeOffset? closedBeforeUtc, CancellationToken ct)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        if (archived && closedBeforeUtc is { } cutoff
+            && (c.IsArchived || c.Phase != CasePhase.Closed || c.ClosedAtUtc is not { } closed || closed >= cutoff))
+            throw new Compliance.CaseNoLongerDueException();
         // BUG-10: archiving drops a case from the deadline scan and the "awaiting report" count, so a case whose
         // notification clock is running can't be archived until the notice is recorded (INV-43). Drills are exempt.
         if (archived && !c.IsArchived && !c.IsExercise && c.ReportedAtUtc is null

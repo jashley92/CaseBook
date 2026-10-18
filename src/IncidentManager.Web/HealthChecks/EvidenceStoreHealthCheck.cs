@@ -11,9 +11,17 @@ namespace IncidentManager.Web.HealthChecks;
 /// status only; the resolved path is logged for operators but never returned to the anonymous caller.
 /// PROD-56 (C10): on a UNC share whose server is down, Directory.Exists can block for a long time, and load balancers
 /// poll this often; past <see cref="TimeLimit"/> the store counts as unreachable and the probe answers.
+/// CAP-18 review (C10): the folder is looked at once for every probe that asks while it's being looked at, and the answer
+/// kept for <see cref="KeepFor"/> (<paramref name="reachable"/>, one per app), so a flood of anonymous probes on a share
+/// that doesn't answer parks one thread, not one each.
 /// </summary>
-public sealed class EvidenceStoreHealthCheck(IOptions<EvidenceStoreOptions> options) : IHealthCheck
+public sealed class EvidenceStoreHealthCheck(IOptions<EvidenceStoreOptions> options, SharedRead<bool>? reachable = null) : IHealthCheck
 {
+    /// <summary>How long an answer is kept; short, so a node whose share is back returns to rotation soon.</summary>
+    public static readonly TimeSpan KeepFor = TimeSpan.FromSeconds(10);
+
+    private readonly SharedRead<bool> _reachable = reachable ?? new SharedRead<bool>(KeepFor);
+
     /// <summary>How long the check may wait for the store's folder to answer.</summary>
     public TimeSpan TimeLimit { get; init; } = TimeSpan.FromSeconds(5);
 
@@ -26,7 +34,7 @@ public sealed class EvidenceStoreHealthCheck(IOptions<EvidenceStoreOptions> opti
         try
         {
             var root = Path.GetFullPath(options.Value.RootPath);
-            return await Task.Run(() => Exists(root), cancellationToken).WaitAsync(TimeLimit, cancellationToken)
+            return await _reachable.Get(() => Exists(root)).WaitAsync(TimeLimit, cancellationToken)
                 ? HealthCheckResult.Healthy()
                 : HealthCheckResult.Unhealthy($"Evidence store root is not reachable ({root}).");
         }

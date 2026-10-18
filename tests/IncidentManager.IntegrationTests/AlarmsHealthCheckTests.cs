@@ -160,6 +160,73 @@ public sealed class AlarmsHealthCheckTests : IDisposable
     }
 
     [Fact]
+    public async Task Probes_at_once_on_a_share_that_doesnt_answer_share_one_read_and_all_answer_in_time(/* CAP-18 review, C10 */)
+    {
+        using var gate = new ManualResetEventSlim();
+        var reads = 0;
+        var shared = new SharedRead<BackupHealthReport>(AlarmsHealthCheck.BackupKeepFor);
+        BackupHealthReport Hung()
+        {
+            Interlocked.Increment(ref reads);
+            gate.Wait(TimeSpan.FromSeconds(30));
+            throw new IOException("the share didn't answer");
+        }
+        var limit = TimeSpan.FromMilliseconds(300);
+        var backup = Backup(Now);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            // As the endpoint makes them: a new check per request, one shared read per app.
+            var results = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
+                Run(new AlarmsHealthCheck(_integrity, _evidence, _keys, _seals, backup, shared) { TimeLimit = limit, ReadBackup = Hung }))));
+
+            results.Should().AllSatisfy(r => r.Status.Should().Be(HealthStatus.Degraded));
+            watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "each answers within its own limit");
+            Eventually(() => Volatile.Read(ref reads) == 1).Should().BeTrue("C17: the one read's thread may start late");
+            reads.Should().Be(1, "a read still blocked isn't given another thread");
+        }
+        finally { gate.Set(); }
+    }
+
+    [Fact]
+    public async Task A_backup_report_is_kept_for_a_while_then_read_again()
+    {
+        var time = new StepTime();
+        var shared = new SharedRead<BackupHealthReport>(AlarmsHealthCheck.BackupKeepFor, time);
+        var reads = 0;
+        var backup = Backup(Now.AddHours(-1));
+        BackupHealthReport Read() { Interlocked.Increment(ref reads); return backup.Read(); }
+        AlarmsHealthCheck Probe() => new(_integrity, _evidence, _keys, _seals, backup, shared) { ReadBackup = Read };
+
+        (await Run(Probe())).Status.Should().Be(HealthStatus.Healthy);
+        (await Run(Probe())).Status.Should().Be(HealthStatus.Healthy);
+        reads.Should().Be(1, "the second probe reads the kept answer");
+
+        time.Advance(AlarmsHealthCheck.BackupKeepFor + TimeSpan.FromSeconds(1));
+        (await Run(Probe())).Status.Should().Be(HealthStatus.Healthy);
+        reads.Should().Be(2, "past the keep, the file is read again");
+    }
+
+    private sealed class StepTime : TimeProvider
+    {
+        private long _ticks;
+        public override long GetTimestamp() => Interlocked.Read(ref _ticks);
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public void Advance(TimeSpan by) => Interlocked.Add(ref _ticks, by.Ticks);
+    }
+
+    private static bool Eventually(Func<bool> condition)
+    {
+        var until = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < until)
+        {
+            if (condition()) return true;
+            Thread.Sleep(20);
+        }
+        return condition();
+    }
+
+    [Fact]
     public async Task A_check_that_fails_is_degraded_never_unhealthy()
     {
         var check = new AlarmsHealthCheck(_integrity, _evidence, _keys, _seals, Backup(Now))
