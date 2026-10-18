@@ -200,6 +200,16 @@ Tasks are never deleted; cancel them instead.
 
 Team changes appear on the timeline ("X is incident commander, taking over from Y"). They can't be backdated.
 
+### The owning team (CAP-36)
+
+Besides the people on it, a case can belong to a **team** (Administration › Teams). It's chosen on the New case form
+(or by an import), and on the case record (Briefing, *Case record* → *Team* → *Change*, with `EditCases`): pick an active
+team or *No team*, then *Save*. A team **routes and filters only**: its chat channel gets the case's posts, its
+detection source label and link are the ones the case shows, and lists and figures can be cut to it. It never changes
+who can see the case; restriction and need-to-know decide that, as before. A change is audited and in the case's row
+hash; one saved after a colleague changed the team is refused (*Save* again overwrites). A retired team stays on the
+cases that have it, but isn't offered for others.
+
 ## ATT&CK
 
 - **Case techniques**: Things › ATT&CK → matrix picker. Added and removed one by one (a partial failure leaves
@@ -242,7 +252,7 @@ the legal lines, as `party.*` template fields, and in the legal register ([repor
 |---|---|---|
 | **Desk** (`/desk`) | Since you last looked: how many changes others made to your cases, and who. **Needs you**, most consequential first: a running notification deadline, your overdue tasks, notes mentioning you, being added to a case, API imports waiting for your review (with `EditCases`, those you'd see in the import queue, with when the oldest arrived; CAP-01), tasks due within a day. **Your cases**: state, phase and how long, your part, the next thing for you, changes since you looked. **Your next**: your tasks by when (overdue, today, tomorrow, this week, later, no date), each with why it exists; quick-add and *Done*. Beside them: the clocks running on your cases, quiet changes by others, pinned cases and recent escalations. "Since you looked" counts audit entries by others after you last opened the case (or the last 14 days). | everyone |
 | **Program › Due work** (`/program/due`) | Open tasks across the cases you can see, bucketed Overdue / Today / This week / Later / Undated, filterable by owner | `ViewAllCases` |
-| **Program › Team** (`/program/team`) | Open cases per person by severity, SLA and stale pressure, and the unassigned queue | `ViewAllCases` |
+| **Program › Team** (`/program/team`) | Open cases per person by severity, SLA and stale pressure, and the unassigned queue. A team picker (CAP-36, `?team=`) cuts it to one team's open cases, or those with no team; its links and the reassign list keep the cut | `ViewAllCases` |
 | **Calendar** (Notification settings) | Your personal calendar feed URL (needs `Agenda:FeedKey`) and a one-time `.ics` of your due tasks | everyone |
 
 Exercise cases are excluded from all three.
@@ -250,6 +260,8 @@ Exercise cases are excluded from all three.
 ## Saved views and pinned cases
 
 - **Saved views**: the current case-list filters saved under a name, personal or shared; one can be your
-  default landing view. Only the owner can delete one.
+  default landing view. Only the owner can delete one. CAP-36: a view can be shared with everyone or with one of the
+  teams you're in (an active one), and then only that team's members see it. A view holds filters, never cases: whoever
+  applies it sees only what need-to-know lets them see.
 - **Pinned cases**: the pin button in the case header; pinned and recent cases appear in the command palette.
   Both are re-checked against need-to-know when shown.

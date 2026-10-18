@@ -156,6 +156,7 @@ public sealed class TrailSnapshot
             nameof(Domain.Entities.Evidence.WithdrawnAtUtc), nameof(Domain.Entities.Evidence.WithdrawnBy),
             nameof(Domain.Entities.Evidence.WithdrawnReason)],
         [typeof(TimelineEntry)] = [nameof(TimelineEntry.HandedToUserId)],   // CAP-20 review: a handoff's recipient
+        [typeof(Case)] = [nameof(Case.TeamId)],   // CAP-36: the owning team
     };
 
     /// <summary>The trail of each of <paramref name="ids"/> of <paramref name="entityType"/>, read in batches.</summary>

@@ -65,6 +65,9 @@ erDiagram
     CASES ||--o{ IMPROVEMENT_ACTIONS : "improvement actions"
     CASES ||..o{ CASE_LINKS : "links (both ends)"
     REPORT_PROFILES |o..o{ CASES : "report profile"
+    TEAMS |o..o{ CASES : "owning team"
+    TEAMS ||--o{ TEAM_MEMBERS : members
+    TEAMS |o..o{ SAVED_VIEWS : "shared with"
     REPORT_TEMPLATES |o--o{ REPORT_PROFILES : "default template"
     CASE_TEMPLATES ||--o{ CASE_TEMPLATE_STEPS : steps
     STAGE_GATES ||--o{ STAGE_GATE_REQUIREMENTS : requirements
@@ -76,8 +79,7 @@ erDiagram
 ```
 
 Tables with no relationships: `Users`, `AppSettings`, `ApiTokens`, `NotificationRules` (matched to
-`DataElements.NotificationJurisdictions` by code), `SavedViews`, `UserDisplayPreferences`,
-`UserNotificationPreferences`.
+`DataElements.NotificationJurisdictions` by code), `UserDisplayPreferences`, `UserNotificationPreferences`.
 
 Legend for the tables below: **H** = row-hashed, **A** = audit-chained. "Never deleted" means no code path
 removes the row.
@@ -119,6 +121,7 @@ The aggregate root. Every state change on a case goes through a method on `Domai
 | `IsArchived` | bit | no | Hidden from active queues. |
 | `IsExercise` | bit | no | Tabletop case. Set at creation only; no method changes it. |
 | `ReportProfileId` | uniqueidentifier | yes | Preferred report profile. No foreign key; a deleted profile falls back to the default. Not hashed. |
+| `TeamId` | uniqueidentifier | yes | CAP-36: the owning team (`Teams.Id`; no foreign key: teams are retired, never deleted). Routes the case's chat posts and detection link, and filters lists and figures; never changes who can see the case. Indexed. In the row hash from canonical format 5, only when set, so a case without a team keeps its exact hash. |
 | `Legal_*` | | | Owned `LegalReferral`: referred flag, when, by whom, contact, regulatory-relevance note. |
 | `Materiality_*` | | | Owned `MaterialityDetermination`: status (0 Undetermined, 1 Under review, 2 Material, 3 Not material), decision maker, decided on, rationale, recorded at and by. |
 | `ThirdParty_*` | | | Owned `ThirdPartyDetails` for vendor cases: vendor name, contact, reference. |
@@ -394,6 +397,8 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 | `ReportTemplates` | `Name`, `FileName`, `Sha256`, `SizeBytes`, `IsActive`, `IsLessonsDefault` | File stored as `{id}.docx`. Can't be deleted while a profile or the lessons default uses it. |
 | `DataElements` | `Key` (unique, stable), `Label`, `SortOrder`, `IsActive`, `IsSystem`, `NotificationJurisdictions` (`"US, NY"`; saved as `US,NY`, and a `;` is read as a separator too, BUG-404) | 13 system elements are seeded. `Key` must never change. System elements can be archived but not deleted; custom ones only when unused. |
 | `CaseOutcomes` | `Key` (unique, stable), `Label`, `Description`, `SortOrder`, `IsActive`, `IsSystem` | Six system outcomes are seeded. `Key` must never change. System outcomes can be archived but not deleted; added ones only when no close recorded them. At least one stays active. |
+| `Teams` | `Key` (unique, stable, ASCII letters and digits, up to 40), `Name` (unique, up to 100), `IsActive`, `DetectionSourceLabel` (up to 60), `DetectionLinkTemplate` (up to 500, `{0}` for the detection case id) | CAP-36. H, A. None is seeded. `Key` is generated from the first name and never changes; it's what `team=` and a bundle name. Retired, never deleted. The team's chat webhook URL isn't here: it's a `StoredSecrets` row. |
+| `TeamMembers` | `TeamId` (FK, cascade), `UserId`, `AddedAtUtc`, `AddedBy` | CAP-36. H, A. Unique on (`TeamId`, `UserId`). Who a view shared with the team reaches, and the team a member's new case starts with; never access to a case. Not in a configuration bundle. |
 | `NotificationRules` | `Code` (unique, upper-case, matches jurisdiction codes), `Label`, `WindowHours`, `IsActive`, `IsSystem` | NY and US (72 h) are seeded. |
 | `AppSettings` | `Key` (unique), `Value`, `UpdatedAtUtc`, `UpdatedBy` | Whitelisted operational settings, plus `Taxonomy:*` and `EmailTemplate:*` keys. Deleting a row resets the setting. |
 
@@ -414,14 +419,14 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 | `IntegritySeals` (ledger) | `SealedAtUtc`, `UpToSequence`, `ChainHeadHash`, `SealedBy`, `Algorithm`, `KeyId`, `Signature` | Not audited. Also exported as files. |
 | `KeyEnvelopes` | `KeyId` (key), `EnvelopeJson`, `UpdatedAtUtc` | PROD-57: the database copy of the evidence key's envelope (the key only in encrypted forms, plus the shares-issued and last-drill records). Written by the keyring through an audited path; one of three copies ([0017](../decisions/0017-evidence-encryption-and-key-recovery.md)). |
 | `SmtpSignIns` | `Id` (key, always 1), `Mode` (`None`/`Password`/`Integrated`, by name), `Username`, `ProtectedPassword` (Data Protection ciphertext, nullable), `PasswordSetAtUtc`, `PasswordSetBy`, `UpdatedAtUtc`, `UpdatedBy` | CAP-05: the mail relay sign-in entered under Administration, used when the server's configuration sets none. Outside the audit chain and the configuration bundle; each change is recorded in the audit trail by the service (who, when, the mode, the password set/replaced/cleared, never its value) ([0018](../decisions/0018-protected-secrets.md)). Needs the Data Protection key ring to decrypt. |
-| `StoredSecrets` | `Name` (key: the configuration key the value stands in for, `Chat:Webhook:WebhookUrl` or `Siem:Webhook:Token`), `ProtectedValue` (Data Protection ciphertext, nullable once cleared), `SetAtUtc`, `SetBy`, `UpdatedAtUtc`, `UpdatedBy` | CAP-40: the team-chat webhook URL and the SIEM webhook token entered under Administration, used when the server's configuration sets none; each under its own Data Protection purpose. Outside the audit chain, the settings list and the configuration bundle; each change is recorded in the audit trail by the service (entity `StoredSecret`: who, when, which secret, set/replaced/cleared, never the value). A cleared row stays, so a card loaded before it is still refused as stale. Needs the Data Protection key ring to decrypt. |
+| `StoredSecrets` | `Name` (key: the configuration key the value stands in for, `Chat:Webhook:WebhookUrl` or `Siem:Webhook:Token`; CAP-36: `Teams:{team id}:ChatWebhookUrl` for a team's own webhook, under its own purpose with the team's id as a sub-purpose), `ProtectedValue` (Data Protection ciphertext, nullable once cleared), `SetAtUtc`, `SetBy`, `UpdatedAtUtc`, `UpdatedBy` | CAP-40: the team-chat webhook URL and the SIEM webhook token entered under Administration, used when the server's configuration sets none; each under its own Data Protection purpose. Outside the audit chain, the settings list and the configuration bundle; each change is recorded in the audit trail by the service (entity `StoredSecret`: who, when, which secret, set/replaced/cleared, never the value). A cleared row stays, so a card loaded before it is still refused as stale. Needs the Data Protection key ring to decrypt. |
 | `CaseAccessEvents` | `ActorUserId`, `CaseId`, `CaseNumber`, `AccessType` (0 case open, 1 evidence download, 2 report download, 3 export, 4 evidence package (CAP-12)), `TargetId`, `TargetLabel`, `WasRestricted`, `FirstSeenUtc`, `LastSeenUtc`, `Count` | The read log. Outside the audit chain; repeated access within the coalesce window increments `Count` (not exports: each is a row). Entries older than `Retention:AccessLogYears` (default 3; 0 keeps all) are deleted nightly, except a legal-hold case's; each prune is recorded in the audit trail (PROD-52). |
 
 ## Per-user state and staging (not hashed, not audited)
 
 | Table | Columns | Notes |
 |---|---|---|
-| `SavedViews` | `OwnerUserId`, `Name` (unique per owner), `Query` (a `/cases` query string), `IsShared`, `IsDefault` | One default per user (in code). |
+| `SavedViews` | `OwnerUserId`, `Name` (unique per owner), `Query` (a `/cases` query string), `IsShared`, `IsDefault`, `TeamId` (CAP-36: with `IsShared`, the team it's shared with; null is everyone) | One default per user (in code). A view shared with a team is listed for that team's members and its owner. |
 | `PinnedCases` | `UserId`, `CaseId` (unique pair) | Re-filtered by need-to-know when read. |
 | `OpenCaseTabs` | `UserId`, `CaseId` (unique pair), `OpenedAtUtc`, `LastSeenAtUtc` | RD-21 open-case tabs. Re-filtered by need-to-know when read; at most 8 unpinned per user. |
 | `UserDisplayPreferences` | `UserId` (unique), `DarkTheme`, `NavCollapsed`, `CompactRows`, `LocalTime`, `TwelveHourClock`, `AttackChainOpen`, `SingleKeyShortcutsOff`, `KeyBindings` (RD-24) | Rendered onto the page so the theme applies before first paint. |

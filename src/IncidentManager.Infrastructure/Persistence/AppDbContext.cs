@@ -44,6 +44,8 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<ReportTemplate> ReportTemplates => Set<ReportTemplate>();
     public DbSet<DataElement> DataElements => Set<DataElement>();
     public DbSet<CaseOutcome> CaseOutcomes => Set<CaseOutcome>();   // HR-01
+    public DbSet<Team> Teams => Set<Team>();   // CAP-36
+    public DbSet<TeamMember> TeamMembers => Set<TeamMember>();   // CAP-36
     public DbSet<NotificationRule> NotificationRules => Set<NotificationRule>();
     public DbSet<CaseDataElement> CaseDataElements => Set<CaseDataElement>();
     public DbSet<AppUser> Users => Set<AppUser>();

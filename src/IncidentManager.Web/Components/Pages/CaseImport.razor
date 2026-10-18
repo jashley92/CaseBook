@@ -12,6 +12,7 @@
 @inject ISeverityLabels SevLabels
 @inject ICurrentUser CurrentUser
 @inject CaseListMemory ListMemory
+@inject IncidentManager.Application.Admin.TeamService TeamsSvc
 
 <PageTitle>Import case</PageTitle>
 
@@ -298,6 +299,21 @@ else if (_pending.Count > 0)
                         <option value="@CaseOrigin.ThirdParty">Third-party / vendor</option>
                     </select>
                 </div>
+                @* CAP-36: the team the document names (matched when it's reviewed), or the reviewer's choice. *@
+                @if (_teams.Count > 0)
+                {
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1" for="imp-nc-team">Team</label>
+                        <select id="imp-nc-team" class="form-select form-select-sm" value="@(nc.TeamId?.ToString() ?? "")"
+                                @onchange="e => nc.TeamId = Guid.TryParse(e.Value?.ToString(), out var t) ? t : null">
+                            <option value="">No team</option>
+                            @foreach (var t in _teams)
+                            {
+                                <option value="@t.Id">@t.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
                 @if (nc.Origin == CaseOrigin.ThirdParty)
                 {
                     <div class="col-md-4">
@@ -733,6 +749,12 @@ else if (_pending.Count > 0)
     }
     private string? _rejectNote;
     private bool _rejecting;
+
+    // CAP-36: the active teams a new case can be given (read once).
+    private List<IncidentManager.Application.Admin.TeamView> _teams = [];
+
+    protected override async Task OnInitializedAsync() =>
+        _teams = (await TeamsSvc.ListAsync()).Where(t => t.IsActive).ToList();
 
     protected override async Task OnParametersSetAsync()
     {

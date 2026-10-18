@@ -19,6 +19,7 @@ public static class ReferenceDataKinds
     public const string ReportTemplate = "ReportTemplate";        // a Word template
     public const string EmailTemplate = "EmailTemplate";
     public const string ConfigurationBundle = "ConfigurationBundle";   // a bundle imported over the reference data
+    public const string Team = "Team";                            // CAP-36: a team that owns cases, or who is in it
 }
 
 /// <summary>

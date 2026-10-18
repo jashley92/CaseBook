@@ -107,6 +107,13 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public Guid? ReportProfileId { get; set; }
 
+    /// <summary>
+    /// CAP-36: the <see cref="Team"/> that owns the case, for routing (its chat webhook, detection source) and filtering
+    /// only. Null: no team (the global settings). It never changes who can see the case (ADR 0003). In the canonical from
+    /// format 5, only when set, so a case without a team keeps its exact hash. See <see cref="SetTeam"/>.
+    /// </summary>
+    public Guid? TeamId { get; private set; }
+
     // --- Lifecycle timestamps (for MTTD/MTTR/containment metrics) ---
     public DateTimeOffset? OccurredAtUtc { get; set; }
     public DateTimeOffset? DetectedAtUtc { get; set; }
@@ -1700,6 +1707,17 @@ public class Case : AuditableEntity, IHashableEntity
         Touch(actor, nowUtc);
     }
 
+    /// <summary>CAP-36: sets (or clears, with null) the owning team. Audited by the save interceptor and in the row hash.</summary>
+    public void SetTeam(Guid? teamId, string actor, DateTimeOffset nowUtc)
+    {
+        if (TeamId == teamId) return;
+        TeamId = teamId;
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>CAP-36 (C9): the team editor's stamp, the team as the editor was opened with it ("" for none).</summary>
+    public string TeamConcurrencyStamp() => TeamId?.ToString("N") ?? "";
+
     /// <summary>Archives the case. Refused while a legal hold is in force.</summary>
     public void Archive(string actor, DateTimeOffset nowUtc)
     {
@@ -2135,7 +2153,9 @@ public class Case : AuditableEntity, IHashableEntity
         // BUG-632: and a pending legal-hold release request, whose requester can't be the one who approves it.
         + Canonical.Since(4, LegalHoldReleaseRequestedBy is not null || LegalHoldReleaseRequestedAtUtc is not null || LegalHoldReleaseReason is not null,
             () => "|holdrelease|" + Canonical.Text(LegalHoldReleaseRequestedBy) + "|" + Canonical.Time(LegalHoldReleaseRequestedAtUtc)
-                  + "|" + Canonical.Text(LegalHoldReleaseReason));
+                  + "|" + Canonical.Text(LegalHoldReleaseReason))
+        // CAP-36: from format 5, the owning team, only when there is one (a case without a team keeps its exact hash).
+        + Canonical.Since(5, TeamId is not null, () => "|team|" + TeamId!.Value.ToString("N"));
 
     public static string FormatCaseNumber(int year, int sequence, string descriptiveName)
         => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{year:0000}-{sequence:00}_{descriptiveName}");

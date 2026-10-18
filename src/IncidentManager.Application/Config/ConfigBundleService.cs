@@ -123,8 +123,13 @@ public sealed partial class ConfigBundleService
             .Select(o => new ConfigCaseOutcome(o.Key, o.Label, o.Description, o.SortOrder, o.IsActive, o.IsSystem))
             .ToListAsync(ct);
 
+        // CAP-36: the teams, by key; never their members or their chat webhook URL (a secret kept apart, StoredSecrets).
+        var teams = await db.Teams.AsNoTracking().OrderBy(t => t.Key)
+            .Select(t => new ConfigTeam(t.Key, t.Name, t.IsActive, t.DetectionSourceLabel, t.DetectionLinkTemplate))
+            .ToListAsync(ct);
+
         return new ConfigBundle(settings, roles, mappings, templates, gates, profiles, dataElements, notificationRules,
-            reportTemplates, outcomes);
+            reportTemplates, outcomes, teams);
     }
 
     /// <summary>Builds, signs, and packages the bundle for download, recording the export in the audit trail.</summary>
@@ -157,7 +162,7 @@ public sealed partial class ConfigBundleService
             $"Exported configuration bundle ({bundle.Settings.Count} settings, {bundle.Roles.Count} roles, " +
             $"{bundle.CaseTemplates.Count} templates, {bundle.StageGates.Count} gates, " +
             $"{bundle.ReportProfiles.Count} report profiles, {bundle.ReportTemplates?.Count ?? 0} Word templates, " +
-            $"{bundle.DataElements.Count} data elements, {bundle.CaseOutcomes?.Count ?? 0} case outcomes, " +
+            $"{bundle.DataElements.Count} data elements, {bundle.CaseOutcomes?.Count ?? 0} case outcomes, {bundle.Teams?.Count ?? 0} teams, " +
             $"{bundle.NotificationRules.Count} notification rules)", ct);
 
         return new ConfigExport(bytes, fileName, envelope);

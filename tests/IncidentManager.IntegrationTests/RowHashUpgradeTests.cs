@@ -45,6 +45,9 @@ public sealed class RowHashUpgradeTests
         DevDataSeeder.SeedNotificationRulesAsync(db, _clock).GetAwaiter().GetResult();
         DevDataSeeder.SeedAsync(db, _clock).GetAwaiter().GetResult();
         DevDataSeeder.SeedHistoricalDemoAsync(db, _clock).GetAwaiter().GetResult();
+        // CAP-36: a team, as an administrator adds one (none is seeded), so a planted member has one to point at.
+        db.Teams.Add(new Team { Key = "SocTier1", Name = "SOC tier 1", CreatedBy = "admin1", CreatedAtUtc = _clock.UtcNow });
+        db.SaveChanges();
         return database;
     }
 

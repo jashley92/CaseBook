@@ -102,6 +102,7 @@ public static class CaseActionPermissions
 
             // Reporting profile & retention
             [nameof(CaseService.SetReportProfileAsync)] = Permission.EditCases,
+            [nameof(CaseService.SetTeamAsync)] = Permission.EditCases,   // CAP-36: routing and filters only
             [nameof(CaseService.SetArchivedAsync)] = Permission.Administer,
 
             // Need-to-know (S-08). Lifting is further limited to the IC / cleared roles by CaseRestrictionPolicy.

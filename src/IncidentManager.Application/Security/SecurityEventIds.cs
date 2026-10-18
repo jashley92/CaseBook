@@ -41,7 +41,7 @@ public static class SecurityEventIds
     public const int AdGroupMappingChanged = 5402;
     public const int SettingChanged = 5403;
     public const int ApiTokenChanged = 5404; // an API token was created or revoked (PROD-34)
-    public const int ReferenceDataChanged = 5405; // CAP-06: a gate, data element, deadline rule, template, outcome, taxonomy label, report profile or Word/email template
+    public const int ReferenceDataChanged = 5405; // CAP-06: a gate, data element, deadline rule, template, outcome, taxonomy label, report profile or Word/email template; CAP-36: a team
 
     // 55xx — Case governance
     public const int LegalHoldPlaced = 5501;

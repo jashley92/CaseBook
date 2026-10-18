@@ -19,6 +19,7 @@
 @inject AuthenticationStateProvider AuthState
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
+@inject IncidentManager.Application.Admin.TeamService TeamsSvc
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject IncidentManager.Web.Services.ExportSearchRefs SearchRefs
 
@@ -128,6 +129,18 @@
                 <option value="@o.Key">@o.Label</option>
             }
         </select>
+        @* CAP-36: one team's cases (routing and filters only: it never shows a case need-to-know hides). *@
+        @if (_teams.Count > 0)
+        {
+            <select id="cases-team" class="form-select form-select-sm" aria-label="Team" @bind="_team" @bind:after="ApplyFilters">
+                <option value="">Any team</option>
+                <option value="@TeamScope.NoneKey">No team</option>
+                @foreach (var t in _teams)
+                {
+                    <option value="@t.Key">@t.Name@(t.IsActive ? "" : " (retired)")</option>
+                }
+            </select>
+        }
         <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Search cases: number, title, IOC, timeline, notes, tasks…"
                aria-label="Search cases" @bind="_search" @bind:after="ApplyFilters" />
         @* FR-16: the rarer toggles collapse behind "More filters"; they auto-reveal whenever one is active so a
@@ -241,10 +254,15 @@
                 @* BUG-599: SavedViewService refuses a name over 120 characters; the box stops there. *@
                 <input id="view-name" class="form-control form-control-sm" style="max-width:16rem" placeholder="e.g. My triage queue" maxlength="120"
                        @bind="_newViewName" @bind:event="oninput" @bind:after="() => _confirmOverwrite = false" @onkeydown="OnSaveKeyDown" />
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="view-share" @bind="_newViewShared" />
-                    <label class="form-check-label small" for="view-share" title="Everyone on the team sees this view">Share with team</label>
-                </div>
+                @* CAP-36: private, shared with everyone, or shared with one of the teams the user is in. *@
+                <select id="view-share" class="form-select form-select-sm" style="width:auto" aria-label="Who sees this view" @bind="_newViewShare">
+                    <option value="">Only me</option>
+                    <option value="@ShareAll">Everyone</option>
+                    @foreach (var t in _myTeams)
+                    {
+                        <option value="@t.Id">@t.Name only</option>
+                    }
+                </select>
                 <button class="btn btn-sm btn-primary" @onclick="SaveView" disabled="@(_viewSaveBusy || string.IsNullOrWhiteSpace(_newViewName))">Save</button>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="CancelSaveView">Cancel</button>
             </div>
@@ -410,6 +428,7 @@ else
                             @if (c.LegalReferred) { <span class="im-badge im-b-neutral" title="Referred to Legal / Privacy">Legal</span> }
                             @if (c.LegalHold) { <span class="im-badge im-b-danger" title="Under a legal hold: preserve, don't delete">Hold</span> }
                             @if (c.IsExercise) { <span class="im-badge im-b-info" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
+                            @if (c.TeamId is { } teamId && TeamName(teamId) is { } teamName) { <span class="im-badge im-b-neutral" title="Owning team">@teamName</span> }
                         </div>
                         @* HR-09: where a search matched, when it isn't the number, title or summary. *@
                         @if (_page.Matches?.GetValueOrDefault(c.Id) is { } matched)
@@ -615,6 +634,7 @@ else
     [SupplyParameterFromQuery(Name = "origin")] public string? QOrigin { get; set; }
     [SupplyParameterFromQuery(Name = "outcome")] public string? QOutcome { get; set; }
     [SupplyParameterFromQuery(Name = "vendor")] public string? QVendor { get; set; }   // CAP-24: the "Seen before" link
+    [SupplyParameterFromQuery(Name = "team")] public string? QTeam { get; set; }   // CAP-36: a team key, or none
     [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
     [SupplyParameterFromQuery(Name = "closed")] public string? QClosedRaw { get; set; }
     private bool QClosed => QueryValue.Flag(QClosedRaw);   // BUG-31: a bad value is ignored, not an error
@@ -656,6 +676,10 @@ else
     private string _origin = "";
     private string _outcome = "";
     private string _vendor = "";   // CAP-24
+    private string _team = "";     // CAP-36: a team key, or "none"
+    private List<IncidentManager.Application.Admin.TeamView> _teams = [];
+    private List<IncidentManager.Application.Admin.TeamView> _myTeams = [];   // CAP-36: what a view can be shared with
+    private string? TeamName(Guid id) => _teams.FirstOrDefault(t => t.Id == id)?.Name;
     private List<IncidentManager.Application.Admin.CaseOutcomeView> _outcomes = [];
     private string _search = "";
     private bool _includeClosed;
@@ -682,7 +706,7 @@ else
 
     private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
         && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin) && string.IsNullOrEmpty(_outcome)
-        && string.IsNullOrEmpty(_vendor) && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly && !_notifyOnly
+        && string.IsNullOrEmpty(_vendor) && string.IsNullOrEmpty(_team) && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly && !_notifyOnly
         && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
     // FR-16: whether the collapsed "More filters" (status roll-up toggles) group is expanded.
@@ -692,7 +716,9 @@ else
     private List<SavedViewItem>? _views;
     private bool _savingView;
     private string _newViewName = "";
-    private bool _newViewShared;
+    // CAP-36: who a view is saved for: "" only me, ShareAll everyone, else a team's id.
+    private string _newViewShare = "";
+    private const string ShareAll = "all";
 
     // The caseload-summary tiles are a stable overview, so load them once (not on every filter change).
     // Live collaboration: another analyst opening or editing a case updates this list without a manual
@@ -712,6 +738,8 @@ else
         _canEdit = (await Authz.AuthorizeAsync(auth.User, Policies.EditCases)).Succeeded;
         _dash = await Dashboard.GetAsync(includeExercises: false, withSlaHistory: false);   // BUG-612: the counts only
         _outcomes = (await Outcomes.ListAllAsync()).Where(o => o.IsActive || o.UseCount > 0).ToList();
+        _teams = await TeamsSvc.ListAsync();     // CAP-36
+        _myTeams = await TeamsSvc.MineAsync();
         await ReloadViews();
         // BUG-566: left (or rebuilt by the layout's time-zone key) while these loads ran, Dispose has already run, so
         // subscribing now would leave the singleton notifier reloading this dead list on every case change.
@@ -814,6 +842,7 @@ else
         _origin = QOrigin ?? "";
         _outcome = QOutcome ?? "";
         _vendor = QVendor?.Trim() ?? "";
+        _team = IncidentManager.Application.Admin.TeamService.PickerValue(_teams, QTeam);   // CAP-36: as the picker spells it
         _search = QSearch ?? "";
         _includeClosed = QClosed;
         _includeExercises = QExercises;
@@ -875,6 +904,7 @@ else
         ["origin"] = Blank(_origin),
         ["outcome"] = Blank(_outcome),
         ["vendor"] = Blank(_vendor),
+        ["team"] = Blank(_team),   // CAP-36
         ["q"] = Blank(_search),
         ["closed"] = _includeClosed ? "true" : null,
         ["exercises"] = _includeExercises ? "true" : null,
@@ -981,6 +1011,10 @@ else
             yield return ($"Outcome: {_outcomes.FirstOrDefault(o => o.Key == _outcome)?.Label ?? _outcome}", () => _outcome = "");
         if (!string.IsNullOrEmpty(_vendor))
             yield return ($"Vendor: {_vendor}", () => _vendor = "");
+        if (!string.IsNullOrEmpty(_team))
+            yield return (string.Equals(_team, TeamScope.NoneKey, StringComparison.OrdinalIgnoreCase) ? "No team"
+                : $"Team: {_teams.FirstOrDefault(t => string.Equals(t.Key, _team, StringComparison.OrdinalIgnoreCase))?.Name ?? _team}",
+                () => _team = "");
         if (!string.IsNullOrWhiteSpace(_search))
             yield return ($"Search: “{_search}”", () => _search = "");
         if (_includeClosed) yield return ("Including closed", () => _includeClosed = false);
@@ -1022,7 +1056,7 @@ else
     {
         _savingView = !_savingView;
         _confirmOverwrite = false;
-        if (_savingView) { _newViewName = ""; _newViewShared = false; }
+        if (_savingView) { _newViewName = ""; _newViewShare = ""; }
         else _ = ApplyPendingLiveRefresh();
     }
 
@@ -1055,7 +1089,9 @@ else
         _viewSaveBusy = true;
         try
         {
-            await Views.SaveAsync(name, CurrentQuery(), _newViewShared);
+            // CAP-36: everyone, one of my teams, or only me.
+            var team = Guid.TryParse(_newViewShare, out var t) ? t : (Guid?)null;
+            await Views.SaveAsync(name, CurrentQuery(), _newViewShare.Length > 0, team);
             _savingView = false;
             _confirmOverwrite = false;
             await ReloadViews();
@@ -1104,7 +1140,8 @@ else
 
     private static string ViewTooltip(SavedViewItem v)
     {
-        var who = v.IsMine ? (v.IsShared ? "Shared by you" : "Your private view") : $"Shared by {v.OwnerName}";
+        var with = v.TeamName is { } team ? $" with {team}" : "";   // CAP-36
+        var who = v.IsMine ? (v.IsShared ? $"Shared by you{with}" : "Your private view") : $"Shared by {v.OwnerName}{with}";
         return string.IsNullOrEmpty(v.Query) ? $"{who} · all cases" : $"{who} · cases?{v.Query}";
     }
 

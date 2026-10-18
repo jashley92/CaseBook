@@ -1170,4 +1170,56 @@ public class CaseNotificationsTests
         sender.Sent.Should().BeEmpty();
         month.Failed.Should().BeTrue("the scan tries again once a distribution is set");
     }
+
+    // --- CAP-36: chat routed by the case's team ---
+
+    /// <summary>Captures chat posts; the teams in <see cref="Own"/> have a webhook of their own.</summary>
+    private sealed class RoutingChatNotifier : IChatNotifier
+    {
+        public HashSet<Guid> Own { get; } = [];
+        public bool Enabled => true;
+        public List<ChatNotification> Sent { get; } = new();
+        public bool RoutesTeam(Guid teamId) => Own.Contains(teamId);
+        public Task SendAsync(ChatNotification message, CancellationToken ct = default) { Sent.Add(message); return Task.CompletedTask; }
+    }
+
+    [Fact]
+    public async Task A_cases_chat_posts_name_its_team_so_they_go_to_its_channel()
+    {
+        var chat = new RoutingChatNotifier();
+        var notifications = Build(new CapturingEmailSender(), new EmailOptions(), chat: chat,
+            config: ChatConfig("Assignments", "BreachEscalations", "Mentions", "ImportSubmissions"));
+        var team = Guid.NewGuid();
+        var c = NewCase();
+        c.SetTeam(team, "ic1", Now);
+
+        await notifications.OnAssignedAsync(c, "analyst1", "Alice Analyst", CaseAssignmentRole.Analyst, "ic1");
+        await notifications.OnReclassifiedAsync(c, Classification.Incident, Classification.Breach);
+        await notifications.OnMentionedAsync(c, "ic1", ["analyst1"], "Look at this", Guid.NewGuid());
+        await notifications.OnImportSubmittedAsync(new ImportSubmission(Guid.NewGuid(), "apitoken:xsiam", "XSIAM", "Into 2026-01",
+            3, c.Id, false, false, [], team));
+
+        chat.Sent.Should().HaveCount(4);
+        chat.Sent.Should().OnlyContain(m => m.TeamId == team, "the notifier picks the team's webhook, or the shared one");
+    }
+
+    [Fact]
+    public async Task A_scan_summary_is_split_one_post_per_channel()
+    {
+        var chat = new RoutingChatNotifier();
+        var own = Guid.NewGuid();
+        var withoutWebhook = Guid.NewGuid();
+        chat.Own.Add(own);
+        var notifications = Build(new CapturingEmailSender(), new EmailOptions(), chat: chat, config: ChatConfig("OverdueReminders"));
+
+        await notifications.OnActionItemsOverdueAsync([
+            Item("owner1") with { TeamId = own }, Item("owner1") with { TeamId = own },
+            Item("owner1") with { TeamId = withoutWebhook }, Item("owner1")]);
+
+        chat.Sent.Should().HaveCount(2, "the team with its own webhook, and the shared channel for the rest");
+        chat.Sent[0].TeamId.Should().BeNull("the shared channel's post first");
+        chat.Sent[0].Title.Should().StartWith("2 tasks overdue", "a team without a webhook of its own posts with the cases with none");
+        chat.Sent[1].TeamId.Should().Be(own);
+        chat.Sent[1].Title.Should().StartWith("2 tasks overdue");
+    }
 }

@@ -5,6 +5,8 @@
 @inject IAuthorizationService Authz
 @inject ISeverityLabels SevLabels
 @inject AuthenticationStateProvider AuthState
+@inject IncidentManager.Application.Admin.TeamService TeamsSvc
+@inject NavigationManager Nav
 
 @* Team-workload panel (E-25): per-analyst open-case distribution + the unassigned queue, for rebalancing.
    Hosted by Program › Team (/program/team, ViewAllCases; RD-17). Carries no <h1>/PageTitle
@@ -13,7 +15,19 @@
    queue (or the unassigned queue): count-capped and enumerate-and-confirm, never across disparate cases. *@
 
 <div class="d-flex justify-content-end align-items-center flex-wrap gap-2 mb-3">
-    <a class="btn btn-sm btn-outline-secondary" href="cases?sla=true" title="Open cases at or past their response-time target">
+    @* CAP-36: one team's open cases, after need-to-know (a team never shows a case its viewer can't see). *@
+    @if (_teams.Count > 0)
+    {
+        <select class="form-select form-select-sm" style="width:auto" aria-label="Team" value="@IncidentManager.Application.Admin.TeamService.PickerValue(_teams, TeamKey)" @onchange="PickTeam">
+            <option value="">All teams</option>
+            <option value="@TeamScope.NoneKey">No team</option>
+            @foreach (var t in _teams)
+            {
+                <option value="@t.Key">@t.Name@(t.IsActive ? "" : " (retired)")</option>
+            }
+        </select>
+    }
+    <a class="btn btn-sm btn-outline-secondary" href="@($"cases?sla=true{TeamSuffix}")" title="Open cases at or past their response-time target">
         <span class="bi bi-clock-history" aria-hidden="true"></span> SLA at-risk cases
     </a>
 </div>
@@ -66,10 +80,10 @@ else
                         <tr class="wl-unassigned">
                             <td>
                                 <span class="wl-avatar wl-avatar-none"><span class="bi bi-inbox" aria-hidden="true"></span></span>
-                                <a class="fw-semibold ms-2 link-body-emphasis text-decoration-none case-title" href="cases?assignee=none">Unassigned queue</a>
+                                <a class="fw-semibold ms-2 link-body-emphasis text-decoration-none case-title" href="@($"cases?assignee=none{TeamSuffix}")">Unassigned queue</a>
                                 <div class="small text-muted ms-2 ps-4">Nobody actively working these</div>
                             </td>
-                            <td class="text-center"><a class="wl-open text-decoration-none" href="cases?assignee=none">@u.Open</a></td>
+                            <td class="text-center"><a class="wl-open text-decoration-none" href="@($"cases?assignee=none{TeamSuffix}")">@u.Open</a></td>
                             <td>@SevBar(u.Critical, u.High, u.Medium, u.Low, u.Informational)</td>
                             <td>@SlaCell(u.SlaAtRisk, u.SlaBreached)</td>
                             <td class="text-center">@StaleCell(u.Stale)</td>
@@ -251,11 +265,30 @@ else
     private int _sumAtRisk, _sumBreached;
     private bool _canEdit;
 
+    /// <summary>CAP-36: the team the workload is cut to (a key, or none), from the page's URL.</summary>
+    [Parameter] public string? TeamKey { get; set; }
+
+    private List<IncidentManager.Application.Admin.TeamView> _teams = [];
+    private string? _loadedFor;   // the TeamKey the shown workload was read for
+    private bool _initialized;
+    private string TeamSuffix => string.IsNullOrWhiteSpace(TeamKey) ? "" : "&team=" + Uri.EscapeDataString(TeamKey.Trim());
+
+    private void PickTeam(ChangeEventArgs e) =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("team", e.Value?.ToString() is { Length: > 0 } key ? key : null));
+
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
         _canEdit = (await Authz.AuthorizeAsync(auth.User, Policies.EditCases)).Succeeded;
+        _teams = await TeamsSvc.ListAsync();
+        _initialized = true;
         await LoadWorkload();
+    }
+
+    // CAP-36: a team picked here navigates; the new key reloads the workload (and only then).
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_initialized && !string.Equals(_loadedFor, TeamKey, StringComparison.OrdinalIgnoreCase)) await LoadWorkload();
     }
 
     // BUG-601: a reassign's reload can overtake the first load; only the newest lands.
@@ -264,9 +297,10 @@ else
     private async Task LoadWorkload()
     {
         var t = _load.Begin();
-        var w = await Workload.GetAsync();
+        var key = TeamKey;
+        var w = await Workload.GetAsync(await TeamsSvc.ScopeAsync(key));
         if (!_load.IsCurrent(t)) return;
-        _w = w;
+        (_w, _loadedFor) = (w, key);
         _sumAtRisk = w.Analysts.Sum(a => a.SlaAtRisk) + w.Unassigned.SlaAtRisk;
         _sumBreached = w.Analysts.Sum(a => a.SlaBreached) + w.Unassigned.SlaBreached;
     }
@@ -304,6 +338,7 @@ else
         {
             AssigneeUserId = fromId,
             UnassignedOnly = fromId is null,
+            TeamKey = TeamKey,   // CAP-36: the queue as the workload shows it
             IncludeClosed = false,
             Page = 1,
             PageSize = 200
@@ -376,8 +411,8 @@ else
         }
     }
 
-    private static string AssigneeHref(AnalystLoad a) =>
-        $"cases?assignee={Uri.EscapeDataString(a.UserId)}&assigneeName={Uri.EscapeDataString(a.DisplayName)}";
+    private string AssigneeHref(AnalystLoad a) =>
+        $"cases?assignee={Uri.EscapeDataString(a.UserId)}&assigneeName={Uri.EscapeDataString(a.DisplayName)}{TeamSuffix}";
 
     // A compact stacked severity bar plus per-severity counts, so balance reads at a glance.
     private RenderFragment SevBar(int crit, int high, int med, int low, int info) =>

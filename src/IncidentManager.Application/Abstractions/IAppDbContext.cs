@@ -42,6 +42,8 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<ReportTemplate> ReportTemplates { get; }
     DbSet<DataElement> DataElements { get; }
     DbSet<CaseOutcome> CaseOutcomes { get; }   // HR-01
+    DbSet<Team> Teams { get; }   // CAP-36
+    DbSet<TeamMember> TeamMembers { get; }   // CAP-36
     DbSet<NotificationRule> NotificationRules { get; }
     DbSet<CaseDataElement> CaseDataElements { get; }
     DbSet<AppUser> Users { get; }

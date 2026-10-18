@@ -126,6 +126,12 @@ public sealed class FindService
                 Classification.Incident => "Incidents", _ => "Breaches"
             });
         }
+        // CAP-36: one team's cases, after need-to-know (cases is already ForUser): never a case the caller couldn't see.
+        if (q.Team is { } teamKey)
+        {
+            cases = cases.InTeam(await TeamScope.ResolveAsync(db, teamKey, ct));
+            filters.Add(string.Equals(teamKey, TeamScope.NoneKey, StringComparison.OrdinalIgnoreCase) ? "cases with no team" : $"team {teamKey}");
+        }
         if (q.State is { } st)
         {
             var token = "," + st + ",";

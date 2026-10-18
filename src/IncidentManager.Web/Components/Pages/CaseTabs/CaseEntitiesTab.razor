@@ -736,14 +736,8 @@ else
     private string? _lastGraphSig;
     private DotNetObjectReference<CaseEntitiesTab>? _graphRef;
 
-    private string DetectionLabel
-    {
-        get
-        {
-            var label = Config["ExternalLinks:DetectionSourceLabel"];
-            return string.IsNullOrWhiteSpace(label) ? "SIEM" : label;
-        }
-    }
+    /// <summary>CAP-36: the detection source's name as the workspace resolves it (the case's team's, else the organization's).</summary>
+    [Parameter] public string DetectionLabel { get; set; } = "SIEM";
 
     [CascadingParameter] public EditRegion? Region { get; set; }
 

@@ -119,11 +119,11 @@ public sealed class CaseNotifications : ICaseNotifications
             await _chat.SendAsync(c.IsRestricted
                 ? new ChatNotification($"{tag}Breach escalation (restricted case)",
                     "A restricted case was escalated to Breach. Details are limited to its team; open it in CaseBook.",
-                    CaseUrl(c.Id), ChatUrgency.Alert)
+                    CaseUrl(c.Id), ChatUrgency.Alert, c.TeamId)   // CAP-36: the case's team's channel when it has one
                 : new ChatNotification(
                     $"{tag}Breach escalation: {c.CaseNumber}",
                     $"{c.Title} · severity {Sev(c.Severity)}, phase {PhaseName(c.Phase)}.",
-                    CaseUrl(c.Id), ChatUrgency.Alert), ct);
+                    CaseUrl(c.Id), ChatUrgency.Alert, c.TeamId), ct);
 
         var options = _options.CurrentValue;
         if (options.LegalDistribution.Length == 0) return;
@@ -229,8 +229,8 @@ public sealed class CaseNotifications : ICaseNotifications
             // it as a real case.
             var tag = c.IsExercise ? ExerciseMarking.Prefix : "";
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification($"{tag}Mention (restricted case)", $"{byName} mentioned {who} on a restricted case.", url)
-                : new ChatNotification($"{tag}Mention: {c.CaseNumber}", $"{byName} mentioned {who} in a note: {excerpt}", url), ct);
+                ? new ChatNotification($"{tag}Mention (restricted case)", $"{byName} mentioned {who} on a restricted case.", url, TeamId: c.TeamId)
+                : new ChatNotification($"{tag}Mention: {c.CaseNumber}", $"{byName} mentioned {who} in a note: {excerpt}", url, TeamId: c.TeamId), ct);
         }
 
         foreach (var id in recipients)
@@ -283,11 +283,11 @@ public sealed class CaseNotifications : ICaseNotifications
             await _chat.SendAsync(c.IsRestricted
                 ? new ChatNotification($"{(c.IsExercise ? ExerciseMarking.Prefix : "")}Case assigned (restricted case)",   // BUG-294
                     $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} to a restricted case.",
-                    CaseUrl(c.Id))
+                    CaseUrl(c.Id), TeamId: c.TeamId)   // CAP-36
                 : new ChatNotification(
                     $"{(c.IsExercise ? ExerciseMarking.Prefix : "")}Case assigned: {c.CaseNumber}",
                     $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} · {c.Title}.",
-                    CaseUrl(c.Id)), ct);
+                    CaseUrl(c.Id), TeamId: c.TeamId), ct);
 
         var options = _options.CurrentValue;
         if (!options.AssignmentNotifications) return;
@@ -381,8 +381,17 @@ public sealed class CaseNotifications : ICaseNotifications
         DeliveryWatch.Attribute(items.Select(itemKey), failures);
     }
 
-    // BUG-156: the team channel is a recipient too, so a reminder the scan tries again isn't broadcast again.
+    // BUG-156: the team channel is a recipient too, so a reminder the scan tries again isn't broadcast again. CAP-36: one mark
+    // for every channel: an item goes to one of them (its team's, or the shared one), so it's marked once either way.
     private const string ChatRecipient = "chat:team-channel";
+
+    // CAP-36: a scan's summary split by the channel it goes to: one post for each team whose cases go to a webhook of its
+    // own, and one to the shared channel for the rest (no team, or a team without one). The shared channel first, then by
+    // team id, so the posts go in a fixed order.
+    private List<(Guid? Route, List<T> Items)> ByChannel<T>(List<T> items, Func<T, Guid?> team) =>
+        items.GroupBy(i => team(i) is { } t && _chat.RoutesTeam(t) ? t : (Guid?)null)
+            .OrderBy(g => g.Key.HasValue).ThenBy(g => g.Key)
+            .Select(g => (g.Key, g.ToList())).ToList();
 
     private static string OverdueKey(OverdueActionItem i) =>
         string.Create(CultureInfo.InvariantCulture, $"overdue|{i.ActionItemId:N}|{i.DueAtUtc.UtcTicks}");
@@ -433,13 +442,14 @@ public sealed class CaseNotifications : ICaseNotifications
 
         // Chat broadcast (PROD-02): one summary to the shared channel, in addition to the per-owner emails.
         if (ChatOn("OverdueReminders") && NotYetSentTo(items, OverdueKey, ChatRecipient) is { Count: > 0 } chatItems)
-        {
-            var caseCount = chatItems.Select(i => i.CaseId).Distinct().Count();
-            await ChatForAsync(new ChatNotification(
-                $"{Plural.Of(chatItems.Count, "task")} overdue",
-                $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
-                OverdueUrl(), ChatUrgency.Alert), chatItems, OverdueKey, i => i.ActionItemId.ToString(), ct);
-        }
+            foreach (var (route, part) in ByChannel(chatItems, i => i.TeamId))   // CAP-36: one post per channel
+            {
+                var caseCount = part.Select(i => i.CaseId).Distinct().Count();
+                await ChatForAsync(new ChatNotification(
+                    $"{Plural.Of(part.Count, "task")} overdue",
+                    $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
+                    OverdueUrl(), ChatUrgency.Alert, route), part, OverdueKey, i => i.ActionItemId.ToString(), ct);
+            }
 
         // Group by recipient user (owner, else the case's incident commander), so opt-outs and address
         // resolution are per person (PROD-16).
@@ -486,13 +496,14 @@ public sealed class CaseNotifications : ICaseNotifications
         // REV-52: the team channel is a recipient here too (BUG-156), so a scan retrying one manager's failed email doesn't
         // post the escalation to the channel again, day after day.
         if (ChatOn("OverdueReminders") && NotYetSentTo(items, EscalationKey, ChatRecipient) is { Count: > 0 } chatItems)
-        {
-            var caseCount = chatItems.Select(i => i.Item.CaseId).Distinct().Count();
-            await ChatForAsync(new ChatNotification(
-                $"{Plural.Of(chatItems.Count, "overdue task")} escalated",
-                $"Across {Plural.Of(caseCount, "case")}. Incident commanders and managers were emailed where reachable.",
-                OverdueUrl(), ChatUrgency.Alert), chatItems, EscalationKey, e => e.Item.ActionItemId.ToString(), ct);
-        }
+            foreach (var (route, part) in ByChannel(chatItems, e => e.Item.TeamId))   // CAP-36: one post per channel
+            {
+                var caseCount = part.Select(i => i.Item.CaseId).Distinct().Count();
+                await ChatForAsync(new ChatNotification(
+                    $"{Plural.Of(part.Count, "overdue task")} escalated",
+                    $"Across {Plural.Of(caseCount, "case")}. Incident commanders and managers were emailed where reachable.",
+                    OverdueUrl(), ChatUrgency.Alert, route), part, EscalationKey, e => e.Item.ActionItemId.ToString(), ct);
+            }
 
         // Managers = everyone holding the Manager role, checked against the directory where it can say (REV-50).
         var managers = await ManagersAsync(ct);
@@ -628,13 +639,14 @@ public sealed class CaseNotifications : ICaseNotifications
 
         // Chat broadcast (PROD-02): one summary to the shared channel, in addition to the per-owner emails.
         if (ChatOn("DueSoonReminders") && NotYetSentTo(items, DueSoonKey, ChatRecipient) is { Count: > 0 } chatItems)
-        {
-            var caseCount = chatItems.Select(i => i.CaseId).Distinct().Count();
-            await ChatForAsync(new ChatNotification(
-                $"{Plural.Of(chatItems.Count, "task")} due within {leadHours}h",
-                $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
-                AgendaUrl()), chatItems, DueSoonKey, i => i.ActionItemId.ToString(), ct);
-        }
+            foreach (var (route, part) in ByChannel(chatItems, i => i.TeamId))   // CAP-36: one post per channel
+            {
+                var caseCount = part.Select(i => i.CaseId).Distinct().Count();
+                await ChatForAsync(new ChatNotification(
+                    $"{Plural.Of(part.Count, "task")} due within {leadHours}h",
+                    $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
+                    AgendaUrl(), TeamId: route), part, DueSoonKey, i => i.ActionItemId.ToString(), ct);
+            }
 
         var byRecipient = new Dictionary<string, List<DueSoonActionItem>>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
@@ -677,20 +689,21 @@ public sealed class CaseNotifications : ICaseNotifications
 
         // Chat broadcast (PROD-02): one urgent summary to the shared channel, alongside the per-recipient emails.
         if (ChatOn("DeadlineReminders") && DeadlinesNotYetSentTo(reminders, ChatRecipient) is { Count: > 0 } chatItems)
-        {
-            var caseCount = chatItems.Select(r => r.CaseId).Distinct().Count();
-            var breached = chatItems.Count(r => r.State == SlaState.Breached);
-            var detail = breached > 0
-                ? $"{breached} past deadline, {chatItems.Count - breached} at risk, across {Plural.Of(caseCount, "case")}. Incident commanders and owners were emailed where reachable."
-                // BUG-232: a case can have more than one clock (BUG-191), so count the cases, and say the deadlines too.
-                : (chatItems.Count == caseCount
-                    ? $"{Plural.Of(caseCount, "case")} approaching a deadline."
-                    : $"{Plural.Of(chatItems.Count, "deadline")} approaching, across {Plural.Of(caseCount, "case")}.")
-                  + " Incident commanders and owners were emailed where reachable.";
-            await ChatWatchedAsync(new ChatNotification(
-                "Regulatory notification deadline", detail,
-                DeadlinesUrl(), ChatUrgency.Alert), chatItems, posted => DeadlinesUnsent(posted, ChatRecipient), r => r.CaseId.ToString(), ct);
-        }
+            foreach (var (route, part) in ByChannel(chatItems, r => r.TeamId))   // CAP-36: one post per channel
+            {
+                var caseCount = part.Select(r => r.CaseId).Distinct().Count();
+                var breached = part.Count(r => r.State == SlaState.Breached);
+                var detail = breached > 0
+                    ? $"{breached} past deadline, {part.Count - breached} at risk, across {Plural.Of(caseCount, "case")}. Incident commanders and owners were emailed where reachable."
+                    // BUG-232: a case can have more than one clock (BUG-191), so count the cases, and say the deadlines too.
+                    : (part.Count == caseCount
+                        ? $"{Plural.Of(caseCount, "case")} approaching a deadline."
+                        : $"{Plural.Of(part.Count, "deadline")} approaching, across {Plural.Of(caseCount, "case")}.")
+                      + " Incident commanders and owners were emailed where reachable.";
+                await ChatWatchedAsync(new ChatNotification(
+                    "Regulatory notification deadline", detail,
+                    DeadlinesUrl(), ChatUrgency.Alert, route), part, posted => DeadlinesUnsent(posted, ChatRecipient), r => r.CaseId.ToString(), ct);
+            }
 
         // Group by recipient email, so a person on several at-risk cases gets one reminder listing them all.
         var byRecipient = new Dictionary<string, List<DeadlineReminder>>(StringComparer.OrdinalIgnoreCase);
@@ -741,13 +754,14 @@ public sealed class CaseNotifications : ICaseNotifications
 
         // Chat broadcast (PROD-02): one summary to the shared channel, alongside the per-recipient emails.
         if (ChatOn("StaleReminders") && NotYetSentTo(reminders, StaleKey, ChatRecipient) is { Count: > 0 } chatReminders)   // REV-52
-        {
-            var caseCount = chatReminders.Select(r => r.CaseId).Distinct().Count();
-            await ChatForAsync(new ChatNotification(
-                $"{Plural.Of(caseCount, "case")} with no recent activity",
-                "These open cases have had no activity past their severity threshold. Incident commanders and owners were emailed where reachable.",
-                QuietUrl()), chatReminders, StaleKey, r => r.CaseId.ToString(), ct);
-        }
+            foreach (var (route, part) in ByChannel(chatReminders, r => r.TeamId))   // CAP-36: one post per channel
+            {
+                var caseCount = part.Select(r => r.CaseId).Distinct().Count();
+                await ChatForAsync(new ChatNotification(
+                    $"{Plural.Of(caseCount, "case")} with no recent activity",
+                    "These open cases have had no activity past their severity threshold. Incident commanders and owners were emailed where reachable.",
+                    QuietUrl(), TeamId: route), part, StaleKey, r => r.CaseId.ToString(), ct);
+            }
 
         // Group by recipient, so a person on several quiet cases gets one nudge listing them all.
         var byRecipient = new Dictionary<string, List<StaleCaseReminder>>(StringComparer.OrdinalIgnoreCase);
@@ -808,9 +822,10 @@ public sealed class CaseNotifications : ICaseNotifications
             await _chat.SendAsync(submission.IsRestricted
                 ? new ChatNotification($"{tag}Import waiting for review (restricted case)",
                     "An import for a restricted case is waiting for review. Details are limited to its team; open the import queue in CaseBook.",
-                    url)
+                    url, TeamId: submission.TeamId)   // CAP-36: the target case's team's channel when it has one
                 : new ChatNotification($"{tag}Import waiting for review",
-                    $"{submission.Summary} · from {from}, submitted by {by}. A reviewer confirms it before anything is written.", url), ct);
+                    $"{submission.Summary} · from {from}, submitted by {by}. A reviewer confirms it before anything is written.", url,
+                    TeamId: submission.TeamId), ct);
 
         if (!_config.GetValue<bool>("Notifications:ImportSubmitted:Email")) return;
         foreach (var id in submission.ReviewerUserIds.Distinct(StringComparer.OrdinalIgnoreCase))

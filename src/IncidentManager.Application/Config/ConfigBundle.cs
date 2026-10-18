@@ -62,6 +62,13 @@ public sealed record ConfigNotificationRule(
 /// <summary>A case outcome (HR-01, schema v4). Matched on import by its stable <see cref="Key"/>.</summary>
 public sealed record ConfigCaseOutcome(string Key, string Label, string? Description, int SortOrder, bool IsActive, bool IsSystem);
 
+/// <summary>
+/// CAP-36 (schema v5): a team that owns cases. Matched on import by its stable <see cref="Key"/>. Its members (people,
+/// which differ between servers) and its chat webhook URL (a secret, kept encrypted on the server it was entered on) never
+/// travel: a team brought in by a bundle has no members and no webhook until they're set on that server.
+/// </summary>
+public sealed record ConfigTeam(string Key, string Name, bool IsActive, string? DetectionSourceLabel, string? DetectionLinkTemplate);
+
 /// <summary>The editable-configuration payload. This is the object that gets canonically serialized and signed.</summary>
 public sealed record ConfigBundle(
     IReadOnlyList<ConfigSetting> Settings,
@@ -80,7 +87,11 @@ public sealed record ConfigBundle(
     // Added in schema v4 (HR-01). Null on an older bundle, which then leaves the outcomes alone; left out of the JSON
     // when null, so an older bundle's canonical form (and signature) is unchanged.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<ConfigCaseOutcome>? CaseOutcomes = null);
+    IReadOnlyList<ConfigCaseOutcome>? CaseOutcomes = null,
+    // Added in schema v5 (CAP-36). Null on an older bundle, which then leaves the teams alone; left out of the JSON when
+    // null, so an older bundle's canonical form (and signature) is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ConfigTeam>? Teams = null);
 
 /// <summary>
 /// The downloadable file: the <see cref="ConfigBundle"/> plus provenance and a signature over the bundle's
@@ -100,7 +111,8 @@ public static class ConfigBundleJson
     // v2 (PROD-07) added ConfigBundle.NotificationRules. Older v1 bundles still import (the field reads as empty).
     // v3 (PROD-47) added the Word template library and each report profile's default template.
     // v4 (HR-01) added the case outcomes.
-    public const int CurrentSchemaVersion = 4;
+    // v5 (CAP-36) added the teams (never their members or webhook).
+    public const int CurrentSchemaVersion = 5;
 
     /// <summary>Human-readable, stable-cased options for the downloadable envelope file (diff-friendly).</summary>
     public static readonly JsonSerializerOptions File = new(JsonSerializerDefaults.Web)

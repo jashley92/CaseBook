@@ -37,6 +37,8 @@ public static class RowIntegrityVerifier
         db.CaseLinks.AsNoTracking(),
         db.CaseBriefs.AsNoTracking(),
         db.CaseOutcomes.AsNoTracking(),
+        db.Teams.AsNoTracking(),         // CAP-36
+        db.TeamMembers.AsNoTracking(),
         db.PostIncidentReviews.AsNoTracking(),
         db.ImprovementActions.AsNoTracking(),
         db.TransitionTimeCorrections.AsNoTracking(),

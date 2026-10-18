@@ -12,6 +12,7 @@
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject NavigationManager Nav
+@inject IncidentManager.Application.Admin.TeamService TeamsSvc
 @implements IDisposable
 
 <PageTitle>Program</PageTitle>
@@ -43,7 +44,19 @@
            title="Your cases, tasks and what needs you">
             <span class="bi bi-person-workspace" aria-hidden="true"></span> Desk
         </a>
-        <a class="btn btn-sm btn-outline-secondary" href="@(Exercises ? "export/metrics.csv?exercises=true" : "export/metrics.csv")" download
+        @* CAP-36: one team's cases (by the team each case belongs to now), after need-to-know. *@
+        @if (_teams.Count > 0)
+        {
+            <select class="form-select form-select-sm" style="width:auto" aria-label="Team" value="@IncidentManager.Application.Admin.TeamService.PickerValue(_teams, TeamRaw)" @onchange="PickTeam">
+                <option value="">All teams</option>
+                <option value="@TeamScope.NoneKey">No team</option>
+                @foreach (var t in _teams)
+                {
+                    <option value="@t.Key">@t.Name@(t.IsActive ? "" : " (retired)")</option>
+                }
+            </select>
+        }
+        <a class="btn btn-sm btn-outline-secondary" href="@MetricsHref" download
            title="Current metrics and 12-month trend, for a board or regulatory pack">
             <span class="bi bi-download" aria-hidden="true"></span> Export metrics (CSV)
         </a>
@@ -491,6 +504,17 @@ else
     private bool Exercises => QueryValue.Flag(ExercisesRaw);   // BUG-31: a bad value is ignored, not an error
     [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
     [SupplyParameterFromQuery(Name = "to")] public string? To { get; set; }
+    [SupplyParameterFromQuery(Name = "team")] public string? TeamRaw { get; set; }   // CAP-36: a team key, or none
+
+    // CAP-36: the teams for the picker, and the team kept on every link the page writes (C15: from its own state).
+    private List<IncidentManager.Application.Admin.TeamView> _teams = [];
+    private string TeamSuffix => string.IsNullOrWhiteSpace(TeamRaw) ? "" : "&team=" + Uri.EscapeDataString(TeamRaw.Trim());
+    private string MetricsHref => $"export/metrics.csv?exercises={(Exercises ? "true" : "false")}{TeamSuffix}";
+
+    protected override async Task OnInitializedAsync() => _teams = await TeamsSvc.ListAsync();
+
+    private void PickTeam(ChangeEventArgs e) =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("team", e.Value?.ToString() is { Length: > 0 } key ? key : null));
 
     private bool _customOpen;
     private DateTime? _from, _to;
@@ -520,17 +544,18 @@ else
     // BUG-434: a drill-in to the Cases list includes exercises when the overview does, so the list matches its count.
     private string CasesHref(string? query = null)
     {
-        var q = string.Join("&", new[] { query, Exercises ? "exercises=true" : null }.Where(x => !string.IsNullOrEmpty(x)));
+        // CAP-36: and the team the overview is filtered to, so the list holds the cases the figure counted.
+        var q = string.Join("&", new[] { query, Exercises ? "exercises=true" : null, TeamSuffix.TrimStart('&') }.Where(x => !string.IsNullOrEmpty(x)));
         // BUG-453: never a bare "cases", which bounces to the user's default view; scope=all is read as All.
         return q.Length == 0 ? "cases?scope=all" : $"cases?{q}";
     }
 
-    private static string Href(string period, bool exercises) =>
-        $"program?period={period}{(exercises ? "&exercises=true" : "")}";
+    private string Href(string period, bool exercises) =>
+        $"program?period={period}{(exercises ? "&exercises=true" : "")}{TeamSuffix}";
 
     // The current period, with or without exercises: a custom range keeps its dates.
     private string SameRange(bool exercises) => _period == OverviewPeriod.Custom
-        ? $"program?from={From}&to={To}{(exercises ? "&exercises=true" : "")}"
+        ? $"program?from={From}&to={To}{(exercises ? "&exercises=true" : "")}{TeamSuffix}"
         : Href(OverviewWindows.Key(_period), exercises);
 
     private void ApplyCustom()
@@ -543,7 +568,7 @@ else
             return;
         }
         _customError = null;
-        Nav.NavigateTo($"program?from={f}&to={t}{(Exercises ? "&exercises=true" : "")}");
+        Nav.NavigateTo($"program?from={f}&to={t}{(Exercises ? "&exercises=true" : "")}{TeamSuffix}");
     }
 
     private IReadOnlyList<BarPoint> _bars = [];
@@ -590,6 +615,7 @@ else
             previous.Dispose();
         }
         var exercises = Exercises;
+        TeamScope team;
         DashboardMetrics metrics;
         NeedsAction needs;
         IReadOnlyList<PhaseAging> phases;
@@ -598,12 +624,13 @@ else
         IReadOnlyList<ProgramSnapshot> snaps;
         try
         {
-            metrics = await Dashboard.GetAsync(exercises, ct);
-            needs = await NeedsActionSvc.GetAsync(exercises, ct);
-            phases = await Dashboard.PhaseAgingAsync(exercises, ct);
-            vendor = await Vendors.GetAsync(windows.Current, exercises, ct);
-            coverage = await Coverage.GetForPeriodAsync(windows.Current.StartUtc, windows.Current.EndUtc, exercises, ct);
-            snaps = await ProgramFigures.SnapshotsAsync([windows.Current, windows.Previous, .. windows.Months], exercises, ct);
+            team = await TeamsSvc.ScopeAsync(TeamRaw, ct);   // CAP-36: read as the Cases list reads team=
+            metrics = await Dashboard.GetAsync(exercises, withSlaHistory: true, team, ct);
+            needs = await NeedsActionSvc.GetAsync(exercises, team, ct);
+            phases = await Dashboard.PhaseAgingAsync(exercises, team, ct);
+            vendor = await Vendors.GetAsync(windows.Current, exercises, team, ct);
+            coverage = await Coverage.GetForPeriodAsync(windows.Current.StartUtc, windows.Current.EndUtc, exercises, team, ct);
+            snaps = await ProgramFigures.SnapshotsAsync([windows.Current, windows.Previous, .. windows.Months], exercises, team, ct);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested) { return; }   // superseded
         if (seq != _seq) return;

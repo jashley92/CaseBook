@@ -68,6 +68,10 @@ public sealed class CaseImportPreview
     public ImportAssignmentRow? IncidentCommander { get; set; }
     public List<ImportAssignmentRow> Assignments { get; } = new();
 
+    /// <summary>CAP-36: the owning team as the document names it (its key or name), and the team's name once it's matched to
+    /// an active team (the id is <see cref="CreateCaseRequest.TeamId"/> on <see cref="NewCase"/>, which the reviewer can change).</summary>
+    public string? TeamNamed { get; set; }
+
     /// <summary>CAP-35: why the history can't be applied as it stands (out of order, before detection, in the future, a
     /// close without its outcome), or null. Apply refuses while it's set, before writing anything.</summary>
     public string? HistoryProblem { get; set; }

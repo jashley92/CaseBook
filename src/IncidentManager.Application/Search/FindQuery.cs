@@ -20,6 +20,7 @@ public enum FindReadAs { Nothing, Words, CaseNumber, Indicator, Person }
 /// <item><c>by:NAME|me</c> who recorded it; <c>owner:NAME|me</c> whose task</item>
 /// <item><c>state:NY</c> (or <c>jurisdiction:NY</c>) cases with residents of that state affected</item>
 /// <item><c>in:notes</c> include working notes; <c>exercises:yes</c> include exercises</item>
+/// <item><c>team:KEY</c> (CAP-36) one team's cases, by its key; <c>team:none</c> the cases with no team</item>
 /// <item><c>"a phrase"</c> keeps words together</item>
 /// </list>
 /// </summary>
@@ -50,6 +51,8 @@ public sealed partial record FindQuery
     public string? By { get; init; }
     public string? Owner { get; init; }
     public string? State { get; init; }
+    /// <summary>CAP-36: a team's key, or <c>none</c> (<see cref="Cases.TeamScope"/>).</summary>
+    public string? Team { get; init; }
     public bool Notes { get; init; }
     public bool Exercises { get; init; }
     /// <summary>Filters it couldn't use, said back to the user rather than silently dropped.</summary>
@@ -64,12 +67,13 @@ public sealed partial record FindQuery
     public string Text => string.Join(' ', Terms);
 
     public bool HasFilters => Entity is not null || Open is not null || ClassFilter || EntryKind is not null || EntryType is not null
-                              || After is not null || Before is not null || By is not null || Owner is not null || State is not null;
+                              || After is not null || Before is not null || By is not null || Owner is not null || State is not null
+                              || Team is not null;
 
     public bool IsEmpty => Terms.Count == 0 && !HasFilters;
 
     private static readonly string[] Keys =
-        ["entity", "status", "class", "type", "after", "before", "by", "owner", "state", "jurisdiction", "in", "exercises"];
+        ["entity", "status", "class", "type", "after", "before", "by", "owner", "state", "jurisdiction", "in", "exercises", "team"];
 
     public static FindQuery Parse(string? raw)
     {
@@ -129,6 +133,10 @@ public sealed partial record FindQuery
                     else unread.Add($"{key}:{val} (use a date like 2026-01-31, between {MinYear} and {MaxYear})");
                     break;
                 case "by": q = q with { By = val }; break;
+                case "team":   // CAP-36: a key is letters and digits only (TeamService.UniqueKey)
+                    if (val.Length <= Domain.Entities.Team.KeyMax && val.All(char.IsAsciiLetterOrDigit)) q = q with { Team = val };
+                    else unread.Add($"team:{val} (use a team's key, as the Cases list's team filter shows it, or none)");
+                    break;
                 case "owner": q = q with { Owner = val }; break;
                 case "state":
                 case "jurisdiction":

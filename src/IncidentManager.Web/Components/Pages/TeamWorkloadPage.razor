@@ -9,4 +9,9 @@
 <PageHeader Title="Program" Subtitle="Open-case distribution across the team, for rebalancing." />
 <ProgramNav />
 
-<TeamWorkloadPanel />
+<TeamWorkloadPanel TeamKey="@TeamRaw" />
+
+@code {
+    // CAP-36: one team's open cases (a team key, or none), kept in the URL so the view can be linked.
+    [SupplyParameterFromQuery(Name = "team")] public string? TeamRaw { get; set; }
+}

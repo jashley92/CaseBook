@@ -28,6 +28,12 @@ public class SavedView : Entity
     public bool IsShared { get; set; }
 
     /// <summary>
+    /// CAP-36: with <see cref="IsShared"/>, the <see cref="Team"/> it's shared with: only that team's members (and its owner)
+    /// see it. Null with IsShared: shared with everyone, as before.
+    /// </summary>
+    public Guid? TeamId { get; set; }
+
+    /// <summary>
     /// PROD-24: when true, a bare <c>/cases</c> load lands the owner on this view. At most one of a user's
     /// own views is the default (setting one clears the rest). Personal — never inherited from a shared view.
     /// </summary>

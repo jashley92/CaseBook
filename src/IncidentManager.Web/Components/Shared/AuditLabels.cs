@@ -47,6 +47,8 @@ public static class AuditLabels
         "ClassificationChange" => "Classification change",
         "DataElement" => "Data element",
         "CaseOutcome" => "Case outcome",
+        "Team" => "Team",                 // CAP-36
+        "TeamMember" => "Team member",
         "EntityRelationship" => "Entity relationship",
         "ImprovementAction" => "Improvement action",
         "MaterialityChange" => "Materiality change",
@@ -73,5 +75,5 @@ public static class AuditLabels
     /// </summary>
     public static bool IsConfiguration(string? type) => type is "AppSetting" or "Role" or "AdGroupRoleMapping" or "StageGate"
         or "StageGateRequirement" or "NotificationRule" or "CaseTemplate" or "CaseTemplateStep" or "ReportProfile" or "ReportTemplate"
-        or "DataElement" or "CaseOutcome" or "ApiToken" or "EmailTemplate" or "IntegritySeal";
+        or "DataElement" or "CaseOutcome" or "ApiToken" or "EmailTemplate" or "IntegritySeal" or "Team" or "TeamMember";
 }

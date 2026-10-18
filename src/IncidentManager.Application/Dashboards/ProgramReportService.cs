@@ -139,7 +139,7 @@ public sealed class ProgramReportService
     public async Task<ProgramReport> BuildAsync(ProgramPeriod period, bool includeExercises = false, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var data = await LoadAsync(db, includeExercises, ct);
+        var data = await LoadAsync(db, includeExercises, TeamScope.Any, ct);
 
         // Quarters are cut in the organization's reporting time zone, like the dashboard's months.
         var zone = _zone?.Current ?? TimeZoneInfo.Utc;
@@ -159,10 +159,16 @@ public sealed class ProgramReportService
     /// <summary>The same figures for each window, from one read of the cases (the Program overview's period, the
     /// one before it, and its monthly trend lines).</summary>
     public async Task<IReadOnlyList<ProgramSnapshot>> SnapshotsAsync(IReadOnlyList<ProgramWindow> windows,
-        bool includeExercises = false, CancellationToken ct = default)
+        bool includeExercises = false, CancellationToken ct = default) =>
+        await SnapshotsAsync(windows, includeExercises, TeamScope.Any, ct);
+
+    /// <summary>As above, for one team's cases (CAP-36): the cases the team owns now, each window figured as it stood then
+    /// (C11) from those cases.</summary>
+    public async Task<IReadOnlyList<ProgramSnapshot>> SnapshotsAsync(IReadOnlyList<ProgramWindow> windows,
+        bool includeExercises, TeamScope team, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var data = await LoadAsync(db, includeExercises, ct);
+        var data = await LoadAsync(db, includeExercises, team, ct);
         return windows.Select(w => Snapshot(w.StartUtc, w.EndUtc, data)).ToList();
     }
 
@@ -175,9 +181,9 @@ public sealed class ProgramReportService
     private sealed record Loaded(List<CaseRow> Rows, List<ReviewRow> Reviews, List<ActionRow> Actions, NoticeOutcomeHistory Notices,
         TransitionHistory History, StampHistory Stamps, AttackHistory Attack, DateTimeOffset NowUtc, Func<DateTimeOffset, SlaTargets> TargetsAt);
 
-    private async Task<Loaded> LoadAsync(IAppDbContext db, bool includeExercises, CancellationToken ct)
+    private async Task<Loaded> LoadAsync(IAppDbContext db, bool includeExercises, TeamScope team, CancellationToken ct)
     {
-        var cases = db.Cases.AsNoTracking().ForUser(_user);
+        var cases = db.Cases.AsNoTracking().ForUser(_user).InTeam(team);
         if (!includeExercises) cases = cases.ExcludingExercises();
 
         var rows = await cases.Select(c => new CaseRow(c.Id, c.Classification, c.Severity, c.Phase, c.Origin, c.CreatedAtUtc,

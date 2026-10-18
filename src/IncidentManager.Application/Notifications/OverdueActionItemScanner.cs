@@ -47,7 +47,7 @@ public sealed class OverdueActionItemScanner(
             where c.Phase != CasePhase.Closed && !c.IsArchived // BUG-12: no reminders for a closed or archived case
             select new
             {
-                Item = new OverdueActionItem(c.Id, c.CaseNumber, c.Title, c.IncidentCommander, a.Id, a.Title, a.DueAtUtc!.Value, a.Owner),
+                Item = new OverdueActionItem(c.Id, c.CaseNumber, c.Title, c.IncidentCommander, a.Id, a.Title, a.DueAtUtc!.Value, a.Owner, null, c.TeamId),
                 c.IsRestricted, Team = c.Assignments.Select(x => x.UserId).ToList()
             })
             .ToListAsync(ct);

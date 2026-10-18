@@ -212,6 +212,20 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **An owning team on each case (CAP-36).** One migration, `AddTeams` (both providers): new `Teams` and `TeamMembers`
+  tables, and a nullable `TeamId` on `Cases` and on `SavedViews` (both indexed); no data moves and no case gets a team.
+  Administration › Workflow & taxonomy › **Teams** adds, renames, retires and restores teams, sets who is in each, an
+  optional detection-source label and link template, and an optional chat webhook URL of the team's own (encrypted
+  like the CAP-40 secrets; never shown again). A case's team is chosen on the New case form (a member of one team has
+  it chosen), on the case record (*Change*), or by a v2 import's new `newCase.team` (by key or name; the schema stays
+  v2). Chat posts about a team's case go to its webhook when it has one, else to the shared channel, as before; a scan's
+  summary is posted once per channel. Cases, Find (`team:`), Program and Team workload gain a team filter (`team=` in
+  the URL, carried by saved views and the CSV exports), applied after need-to-know: **a team never changes who can see a
+  case.** A saved view can be shared with one of your teams. The cases CSV gains a last column, `team`. The case's team
+  is in its row hash only when set (canonical format 5), so no existing hash changes. The configuration bundle moves to
+  schema v5 and carries the teams (key, name, active, detection label and link), never their members or webhook URL;
+  older bundles import as before. SIEM 5405 has a new target type, `Team`. Nothing to configure.
+
 - **Fixes from the regression review (CAP-28, CAP-35, BUG-341).** Possibly related indicators now also find addresses
   not stored in canonical form: an IPv6 address in a URL written with leading zeros (`[2001:0db8:…]`), and an IP address
   recorded before v1.5.3 as IPv4-mapped (`::ffff:203.0.113.9`) or written out in full. An import apply whose release

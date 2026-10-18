@@ -33,6 +33,12 @@ public sealed class AdminActionPermissionsTests
         K<CaseOutcomeService>(nameof(CaseOutcomeService.ListAllAsync)),
         K<CaseOutcomeService>(nameof(CaseOutcomeService.ListActiveAsync)),
         K<CaseOutcomeService>(nameof(CaseOutcomeService.LabelsAsync)),
+        // CAP-36: teams feed the case pages, the filters and the New case form
+        K<TeamService>(nameof(TeamService.ListAllAsync)),
+        K<TeamService>(nameof(TeamService.ListAsync)),
+        K<TeamService>(nameof(TeamService.MineAsync)),
+        K<TeamService>(nameof(TeamService.FindByKeyAsync)),
+        K<TeamService>(nameof(TeamService.ScopeAsync)),
         K<EmailTemplateAdminService>(nameof(EmailTemplateAdminService.GetAllAsync)),
         K<EmailTemplateAdminService>(nameof(EmailTemplateAdminService.GetAsync)),
         K<NotificationRuleService>(nameof(NotificationRuleService.ListAllAsync)),

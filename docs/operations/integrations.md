@@ -91,7 +91,8 @@ flowchart LR
 - **Auth:** bearer API token with `EditCases` ([API.md](../API.md)). IIS must allow anonymous access to `/api` so
   the token scheme applies (the installer does this).
 - **Data:** a `casebook-case-import` JSON document: target (a new case, an existing case id, or the detection case id
-  an existing case carries, CAP-14), origin, summary, timeline entries, entities, tasks. Up to 5 MB.
+  an existing case carries, CAP-14), origin, summary, timeline entries, entities, tasks. Up to 5 MB. Schema v2 can name
+  a new case's owning team (`newCase.team`, by key or name, CAP-36).
 - **Result:** a pending import, nothing written to a case. A reviewer confirms or rejects it in *Import →
   Pending imports*. Reviewers find it on the Desk ("Waiting for review") and by the count beside *Import* in the
   sidebar, and, when turned on, by email (`Notifications:ImportSubmitted:Email`), a chat post
@@ -223,6 +224,17 @@ schema, for use in the organization's own approved AI tool.
   configuration wins, and the card shows it read-only. Chat still needs `Chat:Webhook:Enabled` on the server. A saved
   URL that can't be decrypted (the database restored without its key ring) isn't posted to: Diagnostics and the card say
   to re-enter it, and Delivery health shows chat as **Stopped**.
+- **Routing by team (CAP-36):** a team can have a webhook URL of its own (Administration › Teams, the team's *Team chat
+  webhook*), kept like the shared one: write-only, encrypted with Data Protection (purpose
+  `CaseBook.Secrets.TeamChatWebhookUrl.v1` with the team's id as a sub-purpose, so it never opens as another team's) in a
+  `StoredSecrets` row named `Teams:{team id}:ChatWebhookUrl`, never in the configuration bundle. A post about a case
+  goes to its team's webhook when one is saved, else to the shared URL: assignments, breach escalations and mentions;
+  an API import waiting for review whose target is an existing case of a team (or a new case naming one, CAP-01); and
+  the reminder scans' summaries (overdue, escalated, due soon, regulatory deadlines, quiet cases), posted once per
+  channel with each channel's own counts. A case with no team, or whose team has no webhook, posts to the shared
+  channel as before. A team's URL that won't decrypt here, or that can't be read (the database not answering), isn't
+  posted to and the post isn't sent to the shared channel instead; a scheduled summary is tried again at the next scan.
+  `Chat:Webhook:Enabled` still switches chat on and off for every channel, and the per-type switches apply to all.
 - **Data:** Slack mrkdwn or a Teams MessageCard; restricted cases are redacted ("Breach escalation (restricted
   case)"; an import into one says only that it's waiting, without its summary or origin).
 - **Failure and retry:** up to `MaxAttempts` (3) with a 250 ms × attempt back-off. A scheduled reminder's post that still
@@ -317,7 +329,8 @@ Diagnostics. Format and job snippets: [OPERATIONS.md §1.3.1](../OPERATIONS.md#1
 ## Links out
 
 `ExternalLinks:DetectionCaseUrlTemplate` turns a case's detection id into a link to the SIEM or detection
-platform (`{0}` = the id); `ExternalLinks:VirusTotalUrlTemplate` adds a lookup link to network and hash
+platform (`{0}` = the id); CAP-36: a case whose team sets its own *detection case link template* (and *detection source
+label*) uses the team's instead. `ExternalLinks:VirusTotalUrlTemplate` adds a lookup link to network and hash
 indicators. These are plain links in the browser; CaseBook makes no request to either service.
 
 ## MITRE ATT&CK

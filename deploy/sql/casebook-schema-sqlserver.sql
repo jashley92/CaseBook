@@ -4506,3 +4506,118 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    ALTER TABLE [SavedViews] ADD [TeamId] uniqueidentifier NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [TeamId] uniqueidentifier NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE TABLE [Teams] (
+        [Id] uniqueidentifier NOT NULL,
+        [Key] nvarchar(40) NOT NULL,
+        [Name] nvarchar(100) NOT NULL,
+        [IsActive] bit NOT NULL,
+        [DetectionSourceLabel] nvarchar(60) NULL,
+        [DetectionLinkTemplate] nvarchar(500) NULL,
+        [RowHash] nvarchar(70) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_Teams] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE TABLE [TeamMembers] (
+        [Id] uniqueidentifier NOT NULL,
+        [TeamId] uniqueidentifier NOT NULL,
+        [UserId] nvarchar(200) NOT NULL,
+        [AddedAtUtc] datetimeoffset NOT NULL,
+        [AddedBy] nvarchar(200) NOT NULL,
+        [RowHash] nvarchar(70) NULL,
+        CONSTRAINT [PK_TeamMembers] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_TeamMembers_Teams_TeamId] FOREIGN KEY ([TeamId]) REFERENCES [Teams] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE INDEX [IX_SavedViews_TeamId] ON [SavedViews] ([TeamId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE INDEX [IX_Cases_TeamId] ON [Cases] ([TeamId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_TeamMembers_TeamId_UserId] ON [TeamMembers] ([TeamId], [UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE INDEX [IX_TeamMembers_UserId] ON [TeamMembers] ([UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_Teams_Key] ON [Teams] ([Key]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_Teams_Name] ON [Teams] ([Name]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018130609_AddTeams'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261018130609_AddTeams'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

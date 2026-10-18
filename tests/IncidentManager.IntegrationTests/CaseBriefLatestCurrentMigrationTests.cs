@@ -37,8 +37,9 @@ public sealed class CaseBriefLatestCurrentMigrationTests : IDisposable
         await using (var db = NewContext())
         {
             await db.GetService<IMigrator>().MigrateAsync(Before);
-            // Columns added by later migrations (WF-11, WF-30), so today's model can write the old rows; dropped below.
+            // Columns added by later migrations (WF-11, WF-30, CAP-36), so today's model can write the old rows; dropped below.
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE Cases ADD COLUMN ReportedJurisdictions TEXT NULL");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Cases ADD COLUMN TeamId TEXT NULL");
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE CaseBriefs ADD COLUMN Appended INTEGER NOT NULL DEFAULT 0");
             var a = Case.Open(2026, 1, "Raced", "Two saves", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "a1", T);
             var b = Case.Open(2026, 2, "Normal", "One save", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "a1", T);
@@ -53,6 +54,7 @@ public sealed class CaseBriefLatestCurrentMigrationTests : IDisposable
                 Brief(normal, 2, true, T.AddMinutes(1), "current"));
             await db.SaveChangesAsync();
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE Cases DROP COLUMN ReportedJurisdictions");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Cases DROP COLUMN TeamId");
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE CaseBriefs DROP COLUMN Appended");
         }
 
