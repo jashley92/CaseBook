@@ -200,6 +200,15 @@ public class CanonicalFormatTests
     public static TheoryData<string> PinnedShapes =>
         new(CanonicalFixtures.HashableTypes.SelectMany(t => CanonicalFixtures.Shapes(t).Select(s => t.Name + "/" + s.Name)));
 
+    // Properties a released format has folded in since it was pinned, each only when set (Canonical.Since), so no row
+    // written before them holds one. The pins are of the record without them: left unset, it must build exactly what the
+    // format was released with (CanonicalCoverageTests checks each is in the hash when set).
+    private static readonly Dictionary<string, string[]> AddedSincePinned = new(StringComparer.Ordinal)
+    {
+        // CAP-08: an evidence file's collection.
+        [nameof(Evidence)] = [nameof(Evidence.CollectedAtUtc), nameof(Evidence.CollectedFrom), nameof(Evidence.CollectedBy)],
+    };
+
     [Theory]
     [MemberData(nameof(PinnedShapes))]
     public void Every_format_still_builds_the_canonical_it_was_released_with(string shape /* C18 */)
@@ -208,9 +217,20 @@ public class CanonicalFormatTests
         var parts = shape.Split('/');
         var type = CanonicalFixtures.HashableTypes.Single(t => t.Name == parts[0]);
         var make = CanonicalFixtures.Shapes(type).Single(s => s.Name == parts[1]).Make;
+        var added = AddedSincePinned.GetValueOrDefault(type.Name, []).Select(n => type.GetProperty(n)!).ToList();
+        IHashableEntity Released()
+        {
+            var e = make();
+            foreach (var p in added) p.SetValue(e, null);
+            return e;
+        }
         var pinned = Pinned[shape];
         for (var format = 1; format <= pinned.Length; format++)
-            CanonicalFixtures.Sha(format, make()).Should().Be(pinned[format - 1], $"{shape} in format {format} must build what it was released with");
+            CanonicalFixtures.Sha(format, Released()).Should().Be(pinned[format - 1], $"{shape} in format {format} must build what it was released with");
+        // The format before the one that took them in still leaves them out entirely.
+        if (added.Count > 0)
+            for (var format = 1; format < Canonical.CurrentFormat; format++)
+                CanonicalFixtures.Sha(format, make()).Should().Be(pinned[format - 1], $"{shape} in format {format} predates them");
     }
 
     [Fact]

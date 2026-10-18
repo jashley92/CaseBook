@@ -62,17 +62,24 @@ public sealed class EvidenceUploadSessions
         /// <summary>PROD-59: restored after a restart: <see cref="Hash"/> holds nothing, the parts' hashes stand in.</summary>
         public bool Resumed { get; init; }
 
+        /// <summary>CAP-08: when, where from and by whom the file was collected, as given when the upload began (checked
+        /// then, and again when it completes); null when none was.</summary>
+        public EvidenceCollection? Collected { get; set; }
+
         internal State ToState() => new(Id, UserId, CaseId, FileName, ContentType, Description, Size, Incoming, NextPart, Committed,
-            [.. PartHashes], Sample, PendingPart, PendingHash is null ? null : Convert.ToHexString(PendingHash), LastActivity);
+            [.. PartHashes], Sample, PendingPart, PendingHash is null ? null : Convert.ToHexString(PendingHash), LastActivity,
+            Collected?.AtUtc, Collected?.From, Collected?.By);
 
         /// <summary>Review finding 11: once ended, the running hash isn't needed again (every later step checks Ended first).</summary>
         public void Release() => Hash.Dispose();
     }
 
-    /// <summary>PROD-59: what's kept on disk for an upload (no secrets: names, sizes, offsets and hashes).</summary>
+    /// <summary>PROD-59: what's kept on disk for an upload (no secrets: names, sizes, offsets and hashes). CAP-08: and the
+    /// collection given with it, last and optional, so a state saved before them still restores.</summary>
     internal sealed record State(string Id, string UserId, Guid CaseId, string FileName, string ContentType, string? Description,
         long Size, string Incoming, int NextPart, long Committed, List<string> PartHashes, string? Sample, int PendingPart,
-        string? PendingHash, DateTimeOffset LastActivity);
+        string? PendingHash, DateTimeOffset LastActivity, DateTimeOffset? CollectedAtUtc = null, string? CollectedFrom = null,
+        string? CollectedBy = null);
 
     private static readonly System.Text.Json.JsonSerializerOptions StateJson = new(System.Text.Json.JsonSerializerDefaults.Web);
 
@@ -90,6 +97,8 @@ public sealed class EvidenceUploadSessions
         {
             NextPart = st.NextPart, Committed = st.Committed, PartHashes = [.. st.PartHashes], Sample = st.Sample, Resumed = true,
             PendingPart = st.PendingPart, PendingHash = st.PendingHash is null ? null : Convert.FromHexString(st.PendingHash),
+            Collected = st.CollectedAtUtc is null && st.CollectedFrom is null && st.CollectedBy is null
+                ? null : new EvidenceCollection(st.CollectedAtUtc, st.CollectedFrom, st.CollectedBy),
         };
         return _sessions.TryAdd(s.Id, s);
     }

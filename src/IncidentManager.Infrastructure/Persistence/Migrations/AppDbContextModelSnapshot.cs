@@ -1613,6 +1613,17 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CaseId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("CollectedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CollectedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CollectedFrom")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(200)

@@ -49,12 +49,14 @@ public sealed class EvidenceService
     /// <summary>
     /// PROD-55: <paramref name="size"/> is the size the browser declared, checked against the limits before any byte is
     /// stored; the bytes actually read are held to the largest file allowed, and checked again once stored.
+    /// CAP-08: <paramref name="collected"/> is when, where from and by whom it was collected, checked before any byte is
+    /// stored too.
     /// </summary>
     public async Task<Domain.Entities.Evidence> UploadAsync(Guid caseId, string fileName, string contentType,
-        Stream content, string? description, long? size = null, CancellationToken ct = default)
+        Stream content, string? description, long? size = null, EvidenceCollection? collected = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        await CheckCanUploadAsync(db, caseId, fileName, description, ct);
+        var collection = await CheckCanUploadAsync(db, caseId, fileName, description, collected, ct);
         var limits = Limits;
         await EvidenceRoom.CheckAsync(db, _store, limits, size ?? 0, ct: ct);
         await using var held = new LimitedReadStream(content, limits.MaxUploadBytes,
@@ -70,26 +72,34 @@ public sealed class EvidenceService
                 throw;
             }
         }
-        return await RecordAsync(db, caseId, fileName, contentType, description, stored, ct);
+        return await RecordAsync(db, caseId, fileName, contentType, description, collection, stored, ct);
     }
 
     // S-09: uploading is a case edit, and only onto a case the caller can see (checked before any bytes are stored, and
     // again when a large upload completes). BUG-206: what the record can't hold is refused before any bytes are stored.
-    private async Task CheckCanUploadAsync(IAppDbContext db, Guid caseId, string fileName, string? description, CancellationToken ct)
+    // CAP-08: so is a collection the case's own times rule out; the collection is returned as it's stored.
+    private async Task<EvidenceCollection> CheckCanUploadAsync(IAppDbContext db, Guid caseId, string fileName, string? description,
+        EvidenceCollection? collected, CancellationToken ct)
     {
         if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, nameof(UploadAsync));
-        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct))
-            throw new InvalidOperationException("Case not found or not accessible.");
+        var times = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == caseId)
+                        .Select(c => new { c.OccurredAtUtc, c.DetectedAtUtc }).FirstOrDefaultAsync(ct)
+                    ?? throw new InvalidOperationException("Case not found or not accessible.");
         if (description is { Length: > MaxDescriptionLength })
             throw new ArgumentException($"Keep the description to {MaxDescriptionLength:N0} characters or fewer.");
         if (fileName is { Length: > MaxFileNameLength })
             throw new ArgumentException($"That file name is longer than {MaxFileNameLength} characters. Rename the file and upload it again.");
+        if (collected is null || collected.IsEmpty) return EvidenceCollection.None;
+        var now = _clock.UtcNow;
+        var (at, from, by) = Domain.Entities.Evidence.CheckCollection(collected.AtUtc, collected.From, collected.By, now,
+            times.OccurredAtUtc ?? times.DetectedAtUtc, now);
+        return new EvidenceCollection(at, from, by);
     }
 
     // The record, its "Uploaded" custody event and (through the save) its audit entry, for a file already in the store;
     // the same for both upload paths. BUG-206: a file whose record can't be saved is removed, so no bytes sit unrecorded.
     private async Task<Domain.Entities.Evidence> RecordAsync(IAppDbContext db, Guid caseId, string fileName, string contentType,
-        string? description, StoredEvidence stored, CancellationToken ct)
+        string? description, EvidenceCollection collected, StoredEvidence stored, CancellationToken ct)
     {
         // PROD-59: the same file again in this case isn't stored twice: the first copy holds its chain of custody. The
         // case was checked by the caller (CheckCanUploadAsync), so this reads only its own evidence.
@@ -111,6 +121,7 @@ public sealed class EvidenceService
             Sha256 = stored.Sha256,
             StoragePath = stored.StoragePath,
             Description = description,
+            CollectedAtUtc = collected.AtUtc, CollectedFrom = collected.From, CollectedBy = collected.By,   // CAP-08
             CreatedBy = _user.UserId,
             CreatedAtUtc = _clock.UtcNow
         };
@@ -164,13 +175,14 @@ public sealed class EvidenceService
 
     /// <summary>
     /// PROD-56: starts a large upload, sent in parts. The same checks as an in-page upload (permission, the case, the
-    /// record's limits, the size and room) are made before anything is written.
+    /// record's limits, the size and room) are made before anything is written. CAP-08: the collection given is kept in
+    /// the upload's saved state, so it survives a restart and a resume, and is checked again when the upload completes.
     /// </summary>
     public async Task<UploadStarted> BeginUploadAsync(Guid caseId, string fileName, string contentType, long size,
-        string? description, string? sample = null, CancellationToken ct = default)
+        string? description, string? sample = null, EvidenceCollection? collected = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        await CheckCanUploadAsync(db, caseId, fileName, description, ct);
+        var collection = await CheckCanUploadAsync(db, caseId, fileName, description, collected, ct);
         if (size <= 0) throw new ArgumentException("That file is empty.");
         await EvidenceRoom.CheckAsync(db, _store, Limits, size, ct: ct);
         var incoming = await _store.BeginIncomingAsync(ct);
@@ -180,6 +192,7 @@ public sealed class EvidenceService
                 string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, description, size, incoming,
                 _clock.UtcNow);
             s.Sample = Sample(sample);
+            s.Collected = collection.IsEmpty ? null : collection;
             await SaveStateAsync(s, ct);   // PROD-59: resumable from here
             return new UploadStarted(s.Id, EvidenceUploadSessions.PartBytes, s.Parts);
         }
@@ -247,7 +260,7 @@ public sealed class EvidenceService
             if (s.Ended) throw new InvalidOperationException("That upload was cancelled. Start it again.");
             if (s.Committed != s.Size)
                 throw new InvalidOperationException($"The upload is missing parts: {s.Committed:N0} of {s.Size:N0} bytes arrived.");
-            await CheckCanUploadAsync(db, s.CaseId, s.FileName, s.Description, ct);
+            var collection = await CheckCanUploadAsync(db, s.CaseId, s.FileName, s.Description, s.Collected, ct);
             await EvidenceRoom.CheckAsync(db, _store, Limits, s.Size, alreadyStored: true, ct: ct);
             await _store.FinishIncomingAsync(s.Incoming, s.Size, ct);   // PROD-57: an encrypted file's final chunk
             string? sha;
@@ -270,7 +283,7 @@ public sealed class EvidenceService
             var stored = await _store.CommitIncomingAsync(s.Incoming, s.CaseId, sha, s.Size, ct);
             s.Ended = true;   // the parts are now the stored file: abandoning must not touch them
             s.Release();
-            var evidence = await RecordAsync(db, s.CaseId, s.FileName, s.ContentType, s.Description, stored, ct);
+            var evidence = await RecordAsync(db, s.CaseId, s.FileName, s.ContentType, s.Description, collection, stored, ct);
             s.EvidenceId = evidence.Id;
             s.LastActivity = _clock.UtcNow;
             return evidence;

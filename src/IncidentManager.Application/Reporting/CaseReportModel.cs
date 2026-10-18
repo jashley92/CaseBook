@@ -50,7 +50,14 @@ public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Typ
 public sealed record ReportBrief(int Version, DateTimeOffset RevisedAtUtc, string RevisedBy,
     string? WorkingAssessment, string? Known, string? OpenQuestions, string? NextSteps);
 
-public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string Sha256, DateTimeOffset UploadedAtUtc, string UploadedBy);
+/// <summary>A file in the evidence index. CAP-08: when, where from and by whom it was collected, each when recorded
+/// (where from and by whom defanged as the rest of the report is).</summary>
+public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string Sha256, DateTimeOffset UploadedAtUtc, string UploadedBy,
+    DateTimeOffset? CollectedAtUtc = null, string? CollectedFrom = null, string? CollectedBy = null)
+{
+    /// <summary>CAP-08: the collection in one line ("2026-10-01 09:30 UTC, from mail01 by J. Smith"); empty when none is recorded.</summary>
+    public string Collected => Evidence.EvidenceCollection.Line(CollectedAtUtc, CollectedFrom, CollectedBy);
+}
 /// <summary>An analyst note: <see cref="Body"/> is plain text; <see cref="Blocks"/> keeps its Markdown formatting for print.</summary>
 public sealed record ReportNoteItem(DateTimeOffset AtUtc, string Author, string Body, IReadOnlyList<RichBlock>? Blocks = null);
 /// <summary>A response task. HR-02: a done task carries its recorded result, when it was completed and by whom.</summary>
