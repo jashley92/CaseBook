@@ -294,9 +294,10 @@ public sealed class CaseImportService
         var detection = detectionCaseId.Trim();
         if (detection.Length == 0) return [];
         // CAP-14 review: the database narrows, then SameDetectionId decides, so SQLite, SQL Server and CheckTargetAsync agree.
-        // Trimmed on both sides (an id saved before CaseService trimmed it can carry a stray space; SQL Server's = ignores a
-        // trailing one and SQLite's doesn't). SQLite's upper() folds ASCII only and SQL Server's folds Unicode, so the key is
-        // offered both ways: each database's own fold of a matching id equals one of them.
+        // Trimmed of spaces on both sides (an id saved before CaseService trimmed it can carry a stray space; SQL Server's =
+        // ignores a trailing one and SQLite's doesn't; SQL TRIM strips U+0020 only, as SameDetectionId does). SQLite's upper()
+        // folds ASCII only and SQL Server's folds Unicode, so the key is offered both ways: each database's own fold of a
+        // matching id equals one of them.
         var ascii = AsciiUpper(detection);
         var full = detection.ToUpperInvariant();
         using var db = _factory.CreateDbContext();
@@ -319,11 +320,17 @@ public sealed class CaseImportService
     private const int MaxDetectionCandidates = 50;
 
     /// <summary>
-    /// CAP-14 review: whether two detection case ids are the same id: trimmed, ASCII letters compared without regard to case,
-    /// every other character exactly (as SQLite's <c>upper()</c> folds, so the database and this agree on both providers).
+    /// CAP-14 review: whether two detection case ids are the same id: trimmed of spaces, ASCII letters compared without regard
+    /// to case, every other character exactly (as SQLite's <c>upper()</c> folds, so the database and this agree on both providers).
     /// </summary>
+    /// <remarks>
+    /// Only U+0020 is trimmed, because that is all SQL <c>TRIM</c> strips on either database, so an id stored with other
+    /// whitespace at an end (a no-break space, a tab) matches on neither path. Every write path trims all whitespace, so only an
+    /// old row can carry one; normalising those rows instead would change Case's canonical hash (it includes the detection
+    /// case id), so they are left as written and simply don't match until the case's details are saved again.
+    /// </remarks>
     public static bool SameDetectionId(string? a, string? b) =>
-        a is not null && b is not null && string.Equals(AsciiUpper(a.Trim()), AsciiUpper(b.Trim()), StringComparison.Ordinal);
+        a is not null && b is not null && string.Equals(AsciiUpper(a.Trim(' ')), AsciiUpper(b.Trim(' ')), StringComparison.Ordinal);
 
     private static string AsciiUpper(string s) => string.Create(s.Length, s, static (span, src) =>
     {
