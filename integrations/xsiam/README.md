@@ -40,10 +40,33 @@ indicator and timeline entry reads "XSIAM incident N".
 
 ## Adding to an existing case
 
-To enrich a case that's already open instead of opening a new one, change `target` in `build_document` to
-`{"caseId": "<CaseBook case GUID>"}`. The same review step applies.
+To enrich the CaseBook case already open for this incident instead of opening another, target it by the XSIAM
+incident id, which CaseBook keeps as the case's detection case id (the back-link above). No CaseBook GUID is needed.
+In `build_document`, change the `target` to:
+
+```python
+"target": {"detectionCaseId": incident_id[:100], "newCase": new_case},
+```
+
+When the import is reviewed, CaseBook looks for the one **open** case carrying that id, among the cases the
+**reviewer** can see (not the cases the token sees):
+
+- **One:** the import goes into it.
+- **None** (the incident hasn't been elevated yet, or its case is closed): the `newCase` is prepared, so a re-run of the
+  playbook opens the case the first time and enriches it after that.
+- **Several:** the reviewer is told and picks the case.
+
+The playbook's output warnings include "This adds to the open case carrying detection case id …": the case is decided
+at review. Without `newCase`, a reviewer finding no match chooses the case, or fills in a new one from scratch. Don't
+send `caseId` with it unless it's the same case; a different case is refused (400).
+
+To find out what became of a hand-off later, `GET <casebook>/api/import/cases/<PendingImportId>` with the same token
+says `pending`, `applied` (with the case number) or `rejected` ([API.md](../../docs/API.md)).
 
 ## Reference
 
 - API and authentication: [docs/API.md](../../docs/API.md)
+- Pulling CaseBook's malicious IOCs back into XSIAM (a TIP or an EDR feed): `GET /api/export/iocs.csv` or
+  `/api/export/iocs.stix.json` with a separate token whose role grants `ViewCases` only
+  ([docs/API.md](../../docs/API.md#get-apiexportiocscsv-and-get-apiexportiocsstixjson))
 - Import document schema: `GET /api/import/cases/schema`, or [docs/case-import.schema.json](../../docs/case-import.schema.json)

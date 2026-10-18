@@ -18,6 +18,7 @@ flowchart LR
         SIEM["SIEM: webhook · syslog CEF ·<br/>Windows Event Log"]
         CCP["CyberArk CCP<br/>(secrets)"]
         Cal["Calendar apps<br/>(ICS feed pull)"]
+        Feed["Firewall / EDR / TIP<br/>(IOC feed pull, /api/export)"]
         Links["Browser links only:<br/>detection platform · VirusTotal"]
     end
     AD --> CB
@@ -29,6 +30,7 @@ flowchart LR
     CB --> SIEM
     CB --> CCP
     Cal --> CB
+    Feed --> CB
     CB -.-> Links
 ```
 
@@ -42,6 +44,7 @@ flowchart LR
 | SIEM | out | off | `Siem:*` | `Infrastructure/Siem/`, `Web/Siem/` |
 | CyberArk CCP | out | off | `Secrets:CyberArk:*` | `Infrastructure/Secrets/` |
 | Calendar feed | pulled | off | `Agenda:FeedKey` | `Application/Work/AgendaFeedService.cs`, `Infrastructure/Agenda/` |
+| IOC feed (CSV, STIX) | pulled | available to a token with `ViewCases` | API tokens in-app; `RateLimiting:ApiFeeds` | `Web/Security/IocFeedApiEndpoints.cs`, `Application/Export/` |
 | Backup status | read from file | off | `BackupStatus:*` | `Web/Ops/BackupHealthReader.cs` |
 | Detection platform, VirusTotal | links in the UI only | — | `ExternalLinks:*` | Briefing (case record) and Things › IOCs & entities |
 | MITRE ATT&CK | embedded data | — | — | `Application/Mitre/` |
@@ -87,8 +90,8 @@ flowchart LR
   reviewer.
 - **Auth:** bearer API token with `EditCases` ([API.md](../API.md)). IIS must allow anonymous access to `/api` so
   the token scheme applies (the installer does this).
-- **Data:** a `casebook-case-import` JSON document: target (new case or an existing case id), origin, summary,
-  timeline entries, entities, tasks. Up to 5 MB.
+- **Data:** a `casebook-case-import` JSON document: target (a new case, an existing case id, or the detection case id
+  an existing case carries, CAP-14), origin, summary, timeline entries, entities, tasks. Up to 5 MB.
 - **Result:** a pending import, nothing written to a case. A reviewer confirms or rejects it in *Import →
   Pending imports*. Reviewers find it on the Desk ("Waiting for review") and by the count beside *Import* in the
   sidebar, and, when turned on, by email (`Notifications:ImportSubmitted:Email`), a chat post
@@ -98,6 +101,11 @@ flowchart LR
 - **Failure:** 400 with an `error` message for invalid documents; 401/403/413/429 as documented; a server error is a
   JSON 500 (`{ "error", "ref" }`, the ref matching the server log), as in [API.md](../API.md).
 - **Retry:** none on the server; the caller decides.
+- **Afterwards:** the sender can ask what became of a submission, `GET /api/import/cases/{pendingImportId}` (CAP-13):
+  pending, applied (with the case when its token can see it) or rejected.
+- **Into an existing case by incident id:** `target.detectionCaseId` (CAP-14) names the case by the detection
+  platform's id, resolved among the open cases the reviewer can see when it's reviewed; none or several is a warning in
+  the preview and the reviewer picks. The producer no longer needs a CaseBook GUID.
 - **XSIAM:** `integrations/xsiam/CaseBookElevate.py` is a template automation (Python 3, `requests`) that builds
   a new-case document from an XSIAM incident (name, severity, times, details, incident id, indicators with DBot
   verdicts) and posts it. It hasn't been run against a live tenant; adapt the mappings and test it first. See
@@ -105,6 +113,30 @@ flowchart LR
 - **Local testing:** create a system token in Administration → API tokens on a development instance, then
   `curl -X POST http://localhost:5103/api/import/cases -H "Authorization: Bearer <token>" -H "Content-Type:
   application/json" --data @integrations/xsiam/sample-elevation.json`.
+
+## IOC feed for firewalls, EDR and threat-intel platforms
+
+- **What:** the malicious-IOC blocklist (indicators marked **Malicious** of type IP, domain, URL or file hash, across
+  cases) for a machine to pull on a schedule: `GET /api/export/iocs.csv` (the same columns as *Export → Malicious
+  IOCs*) or `GET /api/export/iocs.stix.json` (a STIX 2.1 bundle, one observable per indicator with its TLP marking)
+  (CAP-09, [API.md](../API.md#get-apiexportiocscsv-and-get-apiexportiocsstixjson)).
+- **Auth:** a **system API token** with a role granting `ViewCases`. Under IIS the request reaches the app through the
+  installer's anonymous carve-out for `/api` (it covers `/api/export/…`); the token, not Windows, signs it in.
+- **A feed token shouldn't hold `ViewRestricted` (or `ViewAllCases`).** The feed holds what the token's owner may see,
+  so a token with either permission puts every restricted matter's indicators into the firewall, the EDR and whatever
+  the TIP shares onward. Make a custom role with `ViewCases` alone (*Administration → Roles*) and grant the feed token
+  that. Exercises never appear, whatever the token holds.
+- **Markings:** every indicator carries its TLP marking (the default where none is set), TLP:RED included. Configure the
+  consumer to honor them before sharing anything onward.
+- **Scheduling:** pull every few minutes at most. Send back the `ETag` as `If-None-Match` and an unchanged feed is a
+  `304` with no body; or ask for a delta with `?since=<ISO time>` and take a full pull now and then (a delta doesn't
+  list indicators that left the feed). Per token: a burst of 20 pulls, then one a minute (`RateLimiting:ApiFeeds`).
+- **Bound:** at most 100,000 indicator occurrences, the most recently changed; past that the feed says it was cut
+  (`X-CaseBook-Truncated: true`, and in the body).
+- **Recorded:** each pull with a body is in the access log (*Export*, by `apitoken:<name>`) and is SIEM event 5304; a
+  `304` isn't.
+- **Failure:** 401 (token missing, invalid, expired or revoked: SIEM 5101), 403 (no `ViewCases`), 400 (a bad `since`),
+  429 (`Retry-After`; SIEM 5306).
 
 ## File imports
 
@@ -294,7 +326,8 @@ The Enterprise matrix (v19.1) is embedded as JSON and loaded once. No network ac
 
 | Export | For |
 |---|---|
-| `/export/iocs.csv` | A blocklist feed of malicious indicators |
+| `/export/iocs.csv` | A blocklist feed of malicious indicators (signed-in download) |
+| `/api/export/iocs.csv`, `/api/export/iocs.stix.json` | The same feed for a machine, with an API token ([above](#ioc-feed-for-firewalls-edr-and-threat-intel-platforms)) |
 | `/cases/{id}/graph.stix.json` | A case's entities and relationships as STIX 2.1, for a TIP or a partner |
 | `/campaigns/{id}/rollup.json` | A campaign rollup |
 | `/export/config-bundle.json` | Moving configuration between CaseBook instances |

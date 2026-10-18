@@ -195,8 +195,14 @@ public sealed class CaseImportService
     /// document. Row validation/clamping is pure (<see cref="BuildPreviewCore"/>); only target resolution hits
     /// the database (need-to-know scoped).
     /// </summary>
-    public async Task<CaseImportPreview> BuildPreviewAsync(CaseImportDocument doc, Guid? intoCaseId = null,
-        CancellationToken ct = default)
+    public Task<CaseImportPreview> BuildPreviewAsync(CaseImportDocument doc, Guid? intoCaseId = null,
+        CancellationToken ct = default) => PreviewAsync(doc, intoCaseId, resolveDetection: true, ct);
+
+    /// <param name="resolveDetection">CAP-14: false for a submission's own preview (the API's response and the queued row):
+    /// a detection case id is resolved under the reviewer when it's reviewed, never under the producer's token, whose view of
+    /// the cases isn't the reviewer's (the BUG-279 lesson). The preview then names it in <see cref="CaseImportPreview.DetectionCaseId"/>.</param>
+    private async Task<CaseImportPreview> PreviewAsync(CaseImportDocument doc, Guid? intoCaseId, bool resolveDetection,
+        CancellationToken ct)
     {
         var preview = BuildPreviewCore(doc, _clock.UtcNow);
         // BUG-542: REV-14, as CreateCase offers it: a rung this user can't file is dropped here, so the import page and the
@@ -226,8 +232,95 @@ public sealed class CaseImportService
                 preview.Warnings.Add("The target case wasn't found or isn't visible to you, so a new case was prepared instead.");
             }
         }
+        else if (DetectionTarget(doc, preview.Warnings) is { } detection)
+        {
+            if (resolveDetection) await ResolveDetectionAsync(preview, detection, ct);
+            else
+            {
+                preview.DetectionCaseId = detection;
+                preview.Warnings.Add($"This adds to the open case carrying detection case id \"{detection}\". Which case that is is " +
+                                     "decided when it's reviewed, among the cases the reviewer can see; with none, a new case is prepared.");
+            }
+        }
 
         return preview;
+    }
+
+    /// <summary>CAP-14: the most cases one detection case id is matched against; past it, the reviewer is told there are more.</summary>
+    private const int MaxDetectionMatches = 5;
+
+    // CAP-14: the document's target.detectionCaseId, trimmed; null when there's none, or one longer than any case can carry.
+    private static string? DetectionTarget(CaseImportDocument doc, List<string>? warnings = null)
+    {
+        var d = doc.Target?.DetectionCaseId?.Trim();
+        if (string.IsNullOrEmpty(d)) return null;
+        if (d.Length <= CaseImportSchema.MaxDetectionCaseId) return d;
+        warnings?.Add($"The target's detection case id is longer than {CaseImportSchema.MaxDetectionCaseId} characters, so no case " +
+                      "carries it. It was ignored.");
+        return null;
+    }
+
+    // CAP-14: the one open case carrying the id becomes the target. None leaves the new case the document describes; several
+    // leave the choice to the reviewer, naming them. All as the current user (the reviewer) sees cases.
+    private async Task ResolveDetectionAsync(CaseImportPreview preview, string detection, CancellationToken ct)
+    {
+        var matches = await FindOpenByDetectionIdAsync(detection, ct);
+        if (matches.Count == 1)
+        {
+            preview.TargetKind = CaseImportTargetKind.ExistingCase;
+            (preview.ExistingCaseId, preview.ExistingCaseNumber, preview.ExistingTitle) = matches[0];
+            return;
+        }
+        if (matches.Count == 0)
+        {
+            preview.Warnings.Add($"No open case you can see carries detection case id \"{detection}\", so a new case was prepared. " +
+                                 "If it belongs in a case, choose that case as the target.");
+            return;
+        }
+        preview.TargetKind = CaseImportTargetKind.ExistingCase;
+        var named = string.Join(", ", matches.Take(MaxDetectionMatches).Select(m => m.CaseNumber));
+        preview.Warnings.Add($"More than one open case you can see carries detection case id \"{detection}\" ({named}" +
+                             (matches.Count > MaxDetectionMatches ? ", and more" : "") + "). Choose the case to add to.");
+    }
+
+    /// <summary>
+    /// CAP-14: the open (not closed, not archived) cases the current user can see that carry <paramref name="detectionCaseId"/>
+    /// as their detection case id, compared without regard to case on either database; at most one more than
+    /// <see cref="MaxDetectionMatches"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<(Guid Id, string CaseNumber, string Title)>> FindOpenByDetectionIdAsync(string detectionCaseId,
+        CancellationToken ct = default)
+    {
+        var key = detectionCaseId.Trim().ToUpperInvariant();
+        if (key.Length == 0) return [];
+        using var db = _factory.CreateDbContext();
+#pragma warning disable CA1304, CA1311, CA1862 // UPPER() in SQL, so SQLite matches as SQL Server does; the culture overloads don't translate
+        var found = await db.Cases.AsNoTracking().ForUser(_user)
+            .Where(c => c.Phase != CasePhase.Closed && !c.IsArchived && c.DetectionCaseId != null && c.DetectionCaseId.ToUpper() == key)
+#pragma warning restore CA1304, CA1311, CA1862
+            .OrderBy(c => c.CaseNumber)
+            .Select(c => new { c.Id, c.CaseNumber, c.Title })
+            .Take(MaxDetectionMatches + 1)
+            .ToListAsync(ct);
+        return found.Select(c => (c.Id, c.CaseNumber, c.Title)).ToList();
+    }
+
+    /// <summary>
+    /// CAP-14: why the document's target can't be used, or null. <c>target.caseId</c> and <c>target.detectionCaseId</c> given
+    /// together must name the same case, so one that carries a different detection case id (or none) is refused, before
+    /// anything is queued or previewed. A case id the caller can't see isn't judged here: it previews as a new case, as before
+    /// (BUG-279), and its detection case id goes with it.
+    /// </summary>
+    public async Task<string?> CheckTargetAsync(CaseImportDocument doc, CancellationToken ct = default)
+    {
+        if (doc.Target?.CaseId is not { } id || DetectionTarget(doc) is not { } detection) return null;
+        using var db = _factory.CreateDbContext();
+        var target = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == id)
+            .Select(c => new { c.CaseNumber, c.DetectionCaseId }).FirstOrDefaultAsync(ct);
+        if (target is null || string.Equals(target.DetectionCaseId?.Trim(), detection, StringComparison.OrdinalIgnoreCase)) return null;
+        return $"target.caseId and target.detectionCaseId name different cases: {target.CaseNumber} carries " +
+               (string.IsNullOrWhiteSpace(target.DetectionCaseId) ? "no detection case id" : $"detection case id \"{target.DetectionCaseId.Trim()}\"") +
+               $", not \"{detection}\". Give one of them.";
     }
 
     /// <summary>Resolves a case the current user is allowed to see, by id — for the existing-case target.</summary>
@@ -461,7 +554,7 @@ public sealed class CaseImportService
                 .Where(p => string.Equals(p.RawJson, rawJson, StringComparison.Ordinal))
                 .OrderByDescending(p => p.SubmittedAtUtc).Select(p => (Guid?)p.Id).FirstOrDefault();
             if (same is { } id0)
-                return (id0, await BuildPreviewAsync(doc, ct: ct), null);
+                return (id0, await PreviewAsync(doc, null, resolveDetection: false, ct), null);   // CAP-14
         }
         var (row, preview) = await QueueAsync(rawJson, doc, ct);
         return (row.Id, preview, row);
@@ -478,7 +571,8 @@ public sealed class CaseImportService
     private async Task<(PendingImport Row, CaseImportPreview Preview)> QueueAsync(string rawJson, CaseImportDocument doc,
         CancellationToken ct)
     {
-        var preview = await BuildPreviewAsync(doc, ct: ct);
+        // CAP-14: a detection case id stays unresolved here, so the row has no target and every reviewer's own view decides.
+        var preview = await PreviewAsync(doc, null, resolveDetection: false, ct);
 
         var row = new PendingImport
         {
@@ -645,6 +739,34 @@ public sealed class CaseImportService
         return true;
     }
 
+    /// <summary>
+    /// CAP-13: what became of a submission, for the API caller asking: one it sent itself, or any it could review (EditCases,
+    /// within the queue's need-to-know, <see cref="VisiblePending"/>). Null for an id it may not see, as for one that doesn't
+    /// exist, so the answer never says a submission is there. Pending until a reviewer has finished applying it (one claimed
+    /// is still being applied); applied, with the case's number and id as they are now when the caller can see that case
+    /// (<see cref="CaseQueryExtensions.ForUser"/>) and without them when it can't; or rejected.
+    /// </summary>
+    public async Task<ImportSubmissionStatus?> GetSubmissionStatusAsync(Guid pendingId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var me = _user.UserId;
+        var row = await db.PendingImports.AsNoTracking().Where(p => p.Id == pendingId && p.SubmittedBy == me)
+            .Select(p => new { p.Status, p.DecidedAtUtc, p.ResolvedCaseId }).FirstOrDefaultAsync(ct);
+        if (row is null && _user.Has(Permission.EditCases))
+            row = await VisiblePending(db).AsNoTracking().Where(p => p.Id == pendingId)
+                .Select(p => new { p.Status, p.DecidedAtUtc, p.ResolvedCaseId }).FirstOrDefaultAsync(ct);
+        if (row is null) return null;
+
+        if (row.Status == PendingImportStatus.Rejected) return new ImportSubmissionStatus("rejected", row.DecidedAtUtc, null, null);
+        if (row.Status != PendingImportStatus.Applied || row.ResolvedCaseId is not { } caseId)
+            return new ImportSubmissionStatus("pending", null, null, null);
+        var number = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == caseId)
+            .Select(c => c.CaseNumber).FirstOrDefaultAsync(ct);
+        return number is null
+            ? new ImportSubmissionStatus("applied", row.DecidedAtUtc, null, null)
+            : new ImportSubmissionStatus("applied", row.DecidedAtUtc, number, caseId);
+    }
+
     /// <summary>How many imports are awaiting review — for a queue badge.</summary>
     public async Task<int> CountPendingAsync(CancellationToken ct = default)
     {
@@ -683,7 +805,13 @@ public sealed class CaseImportService
         if (!parsed.Ok) return null; // validated at submit, so this is defensive
         // BUG-334: the row's recorded target is the only one. Null means the submitter's preview prepared a new case (BUG-279:
         // they couldn't see the document's), so the document's case id mustn't resolve again under the reviewer.
-        if (parsed.Document!.Target is { } target) target.CaseId = null;
+        // CAP-14: a detection case id resolves now, under the reviewer, unless it came with a case id: that pair named one case
+        // (CheckTargetAsync), so when the submitter couldn't see it, neither half resolves again.
+        if (parsed.Document!.Target is { } target)
+        {
+            if (target.CaseId is not null) target.DetectionCaseId = null;
+            target.CaseId = null;
+        }
         var preview = await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
         // WF-18/WF-94: an apply that stopped without recording anything may have written before it stopped.
         if (reopenedBy is { } who)
@@ -828,9 +956,11 @@ public sealed class CaseImportService
 
     private static string SummariseForQueue(CaseImportPreview p)
     {
-        var target = p.TargetKind == CaseImportTargetKind.ExistingCase
-            ? $"Into {p.ExistingCaseNumber ?? "an existing case"}"
-            : $"New case: {(string.IsNullOrWhiteSpace(p.NewCase?.Title) ? "(untitled)" : p.NewCase!.Title)}";
+        string target;
+        if (p.TargetKind == CaseImportTargetKind.ExistingCase) target = $"Into {p.ExistingCaseNumber ?? "an existing case"}";
+        // CAP-14: no case is named; the reviewer's view decides which it is.
+        else if (p.DetectionCaseId is { } detection) target = $"Into the open case with detection case id {detection}";
+        else target = $"New case: {(string.IsNullOrWhiteSpace(p.NewCase?.Title) ? "(untitled)" : p.NewCase!.Title)}";
         var s = $"{target} ({Plural.Of(p.IncludedItemCount, "item")})";
         return TextFit.Cap(s, MaxQueueSummaryLength, "");
     }

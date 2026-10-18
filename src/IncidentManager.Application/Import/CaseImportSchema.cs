@@ -12,6 +12,9 @@ namespace IncidentManager.Application.Import;
 /// </summary>
 public static class CaseImportSchema
 {
+    /// <summary>CAP-14: the longest detection case id (the cases' <c>DetectionCaseId</c> column).</summary>
+    public const int MaxDetectionCaseId = 100;
+
     /// <summary>The schema as an indented JSON string (the canonical machine-readable reference).</summary>
     public static string Build() => Root().ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
@@ -53,12 +56,17 @@ public static class CaseImportSchema
                 ["target"] = new JsonObject
                 {
                     ["type"] = "object",
-                    ["description"] = "Where the import lands: an existing case (by id) or a new one.",
+                    ["description"] = "Where the import lands: an existing case (by id, or by its detection case id) or a new one.",
                     ["additionalProperties"] = false,
                     ["properties"] = new JsonObject
                     {
                         ["caseId"] = new JsonObject { ["type"] = "string", ["format"] = "uuid",
                             ["description"] = "Import into this existing case (takes precedence over newCase when visible)." },
+                        // CAP-14
+                        ["detectionCaseId"] = new JsonObject { ["type"] = "string", ["maxLength"] = MaxDetectionCaseId,
+                            ["description"] = "Import into the one open case carrying this detection case id (for example the XSIAM "
+                                + "incident id), as the reviewer sees cases when it's reviewed. With none, newCase is prepared; with "
+                                + "several, the reviewer picks. Given with caseId, both must name the same case." },
                         ["newCase"] = Ref("newCase"),
                     },
                 },

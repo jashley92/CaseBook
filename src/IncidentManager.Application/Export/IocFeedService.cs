@@ -21,6 +21,29 @@ public sealed record IocFeedRow(
     IReadOnlyList<string> Sources,
     TlpLevel? Tlp = null);   // WF-37: the most restrictive marking any occurrence carries
 
+/// <summary>CAP-09: the feed's rows, and whether it was cut at <paramref name="Limit"/> occurrences.</summary>
+/// <param name="Since">The delta's start, when it is one (<see cref="IocFeedService.GetFeedAsync"/>).</param>
+public sealed record IocFeed(IReadOnlyList<IocFeedRow> Rows, bool Cut, int Limit, DateTimeOffset? Since)
+{
+    /// <summary>
+    /// CAP-09: a digest of everything the feed says (each row, the cut and the delta's start), plus <paramref name="writer"/>
+    /// for what its format adds, so a scheduled pull that would get the same feed again is answered 304 (the API's ETag).
+    /// Not the generated time, which every pull has its own.
+    /// </summary>
+    public string Fingerprint(string writer)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var text = new System.Text.StringBuilder(writer).Append('\n')
+            .Append(Cut).Append('|').Append(Limit.ToString(inv)).Append('|').Append(Since?.UtcTicks.ToString(inv)).Append('\n');
+        foreach (var r in Rows)
+            text.Append((int)r.Type).Append('|').Append(r.Value).Append('|').Append(r.FirstSeenUtc.UtcTicks.ToString(inv)).Append('|')
+                .Append(r.LastSeenUtc.UtcTicks.ToString(inv)).Append('|').Append(string.Join('\u001f', r.Cases)).Append('|')
+                .Append(string.Join('\u001f', r.Sources)).Append('|').Append(r.Tlp is { } t ? ((int)t).ToString(inv) : "").Append('\n');
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..32]
+            .ToLowerInvariant();
+    }
+}
+
 /// <summary>
 /// Curated malicious-IOC feed: the confirmed-<see cref="EntityDisposition.Malicious"/>, IOC-like
 /// indicators across every case the caller is entitled to see, deduped into a flat blocklist.
@@ -47,19 +70,37 @@ public sealed class IocFeedService
     private static readonly EntityType[] IocTypes =
         [EntityType.IpAddress, EntityType.Domain, EntityType.Url, EntityType.FileHash];
 
-    public async Task<IReadOnlyList<IocFeedRow>> GetMaliciousIocsAsync(CancellationToken ct = default)
+    /// <summary>CAP-09: the most indicator occurrences one feed reads (C10). Past it, the feed holds the most recently
+    /// changed ones and says it was cut.</summary>
+    public const int MaxOccurrences = 100_000;
+
+    public async Task<IReadOnlyList<IocFeedRow>> GetMaliciousIocsAsync(CancellationToken ct = default) =>
+        (await GetFeedAsync(since: null, ct: ct)).Rows;
+
+    /// <summary>
+    /// CAP-09: the feed, with <paramref name="since"/> narrowing it to the indicators with an occurrence added or changed
+    /// (a verdict, a marking, an edit) at or after that time: a delta for a scheduled pull. A delta can't say what left the
+    /// feed (an indicator removed or cleared, or its case restricted or made an exercise since), so a consumer takes a full
+    /// pull now and then. Reads at most <paramref name="limit"/> occurrences, the most recently changed first;
+    /// <see cref="IocFeed.Cut"/> says when there were more.
+    /// </summary>
+    public async Task<IocFeed> GetFeedAsync(DateTimeOffset? since, int limit = MaxOccurrences, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
 
         // Join to the caller's visible cases so restricted-case IOCs never leak into the feed;
         // an indicator present on both a visible and a restricted case surfaces only its visible
         // occurrences (first/last-seen and source list are computed over those alone).
-        var rows = await (
+        var query =
             from e in db.CaseEntities.AsNoTracking()
             where e.Disposition == EntityDisposition.Malicious && IocTypes.Contains(e.Type)
             join c in db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() on e.CaseId equals c.Id // PROD-43: no drill IOCs in the pushed feed
-            select new { e.Type, e.Value, e.Source, e.CreatedAtUtc, c.CaseNumber, e.Tlp }
-        ).ToListAsync(ct);
+            select new { e.Id, e.Type, e.Value, e.Source, e.CreatedAtUtc, Changed = e.ModifiedAtUtc ?? e.CreatedAtUtc, c.CaseNumber, e.Tlp };
+        if (since is { } from) query = query.Where(x => x.Changed >= from);
+        // CAP-09 (C10): bounded, the most recently changed first, so a cut keeps what a blocking control most needs.
+        var rows = await query.OrderByDescending(x => x.Changed).ThenBy(x => x.Id).Take(limit + 1).ToListAsync(ct);
+        var cut = rows.Count > limit;
+        if (cut) rows.RemoveAt(rows.Count - 1);
 
         // WF-79: an occurrence without its own marking carries the default (as in the report and STIX, BUG-73), so it isn't
         // outranked by a looser marking elsewhere, and an indicator marked nowhere still goes out marked.
@@ -67,7 +108,7 @@ public sealed class IocFeedService
 
         // Dedupe by (type, value) in memory — case-insensitive to match the E-08 overlap engine,
         // and to keep DateTimeOffset aggregation off SQLite (see F-08).
-        return rows
+        var deduped = rows
             .GroupBy(r => (r.Type, Key: r.Value.ToLowerInvariant()))
             .Select(g =>
             {
@@ -89,5 +130,6 @@ public sealed class IocFeedService
             .OrderBy(r => r.Type)
             .ThenBy(r => r.Value, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        return new IocFeed(deduped, cut, limit, since);
     }
 }

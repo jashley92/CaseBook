@@ -42,6 +42,14 @@ public sealed class CaseImportTarget
     /// <summary>Import into this existing case. Takes precedence over <see cref="NewCase"/> when set and visible.</summary>
     public Guid? CaseId { get; set; }
 
+    /// <summary>
+    /// CAP-14: import into the one open case that carries this detection-platform id (its detection case id, for example the
+    /// XSIAM incident id), found among the cases the reviewer can see when it's reviewed. None, or several, is a warning in
+    /// the preview and the reviewer picks; with none, <see cref="NewCase"/> is prepared. With <see cref="CaseId"/> too, both
+    /// must name the same case (<c>CaseImportService.CheckTargetAsync</c>). Up to 100 characters.
+    /// </summary>
+    public string? DetectionCaseId { get; set; }
+
     /// <summary>Open a new case with these fields (mapped to a CreateCaseRequest, validated on apply).</summary>
     public CaseImportNewCase? NewCase { get; set; }
 }

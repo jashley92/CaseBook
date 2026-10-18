@@ -15,7 +15,7 @@ flowchart TB
     Mode -- "Windows (production)" --> Neg["Negotiate: Kerberos / NTLM via IIS"]
     Neg --> RCT["RoleClaimsTransformer<br/>group SIDs → group names → CaseBook roles<br/>→ role + perm claims"]
     Mode -- "anything else (Development only)" --> Dev["DevAuthenticationHandler<br/>configured user and roles<br/>?as=Name for a second identity"]
-    Api["Authorization: Bearer cbk_…<br/>(only on POST /api/import/cases)"] --> Key["ApiKeyAuthenticationHandler<br/>hash lookup · not revoked or expired ·<br/>personal tokens trimmed to the owner's current roles"]
+    Api["Authorization: Bearer cbk_…<br/>(only on the /api endpoints)"] --> Key["ApiKeyAuthenticationHandler<br/>hash lookup · not revoked or expired ·<br/>personal tokens trimmed to the owner's current roles"]
     RCT --> P[/"ClaimsPrincipal with perm claims"/]
     Dev --> P
     Key --> P
@@ -51,7 +51,10 @@ environment is `Development`. A demo or QA server (any environment except `Produ
 
 ### API tokens
 
-Used only by `POST /api/import/cases` (bearer header).
+Used only by the endpoints under `/api` (bearer header): `POST /api/import/cases` and its status
+(`GET /api/import/cases/{id}`), and the IOC feeds `GET /api/export/iocs.csv` and `GET /api/export/iocs.stix.json`. Each
+names the scheme in its authorization policy, so the Windows (or development) sign-in never counts there, and a token
+counts nowhere else. A refused API GET keeps its 401 or 403; it isn't redirected to a page.
 
 | | Personal token | System token |
 |---|---|---|
@@ -177,6 +180,17 @@ return query.Where(c => !c.IsRestricted
   Desk item, the sidebar count and the digest line (CAP-01). One with no target, or a target that no longer exists,
   is visible to every reviewer. The email about a new submission goes to reviewers through the same audience filter
   as other case emails, and the chat post leaves out a restricted target's summary.
+- **API tokens are scoped as their owner** (`ForUser` for the token's identity and permissions). The IOC feeds under
+  `/api/export` (CAP-09) carry a restricted case's indicators only to a token whose owner could open that case: one
+  holding `ViewAllCases` or `ViewRestricted`, or the case's commander or a member of its team. A feed token for a
+  firewall or a TIP shouldn't hold either permission. Exercises never appear.
+- **An import aimed by detection case id** (`target.detectionCaseId`, CAP-14) is resolved when it's reviewed, among
+  the cases the **reviewer** can see, never as the producer's token sees them (the BUG-279 lesson): the queued row has
+  no target, so it's listed to every reviewer, and its queue summary names the detection case id, not a case. A
+  reviewer who can't see the matching case is told no open case they can see carries it.
+- **An import's status** (`GET /api/import/cases/{id}`, CAP-13) answers only the token that sent it, or a token holding
+  `EditCases` for a submission it could review (`PendingImportQueue.Visible`); anything else is the same 404 as an
+  unknown id. The case it went into is named only when the asking token can see that case.
 - Without `ViewCases` it returns nothing, whatever else the user holds (as `CaseAudience.CanSee`). Windows auth
   signs in every domain user, so this is what keeps one with no CaseBook role out of the palette, Find and the
   case tabs; the layout also hides those (and the activity bell) behind the `ViewCases` policy (BUG-465).
@@ -205,12 +219,13 @@ Listed in [reference/known-issues.md](../reference/known-issues.md#security). In
 - **HSTS and HTTPS redirection** outside Development.
 - **Antiforgery** on form posts.
 - **Rate limiting**: a per-user token bucket (40 burst, 40 per minute by default) on downloads, exports, the
-  import API and the calendar feed. Over budget returns 429 with `Retry-After` and SIEM 5306 (a spike suggests
-  bulk scraping).
+  import API (and an import's status) and the calendar feed. The API's IOC feeds have their own bucket per token
+  (`api-feeds`: 20 burst, then one a minute, `RateLimiting:ApiFeeds`). Over budget returns 429 with `Retry-After` and
+  SIEM 5306 (a spike suggests bulk scraping).
 - **Static files** are served before authentication, so everything in `wwwroot` is public. Nothing sensitive
   belongs there.
 - **Status pages**: a page GET that's refused redirects to `/access-denied` (SIEM 5201); an unknown page
-  redirects to `/not-found`.
+  redirects to `/not-found`. Neither applies under `/api`, whose callers get the plain 403 or 404 (SIEM 5201 still).
 
 ## Protecting data
 

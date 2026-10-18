@@ -32,7 +32,7 @@ Start with the question you have.
 | Every configuration setting | [operations/configuration.md](operations/configuration.md) |
 | How each integration works | [operations/integrations.md](operations/integrations.md) |
 | What to do when something breaks | [operations/troubleshooting.md](operations/troubleshooting.md) |
-| How to call the import API | [API.md](API.md) and [case-import.schema.json](case-import.schema.json) |
+| How to call the import API, or pull the IOC feed | [API.md](API.md) and [case-import.schema.json](case-import.schema.json) |
 | The deploy scripts | [../deploy/README.md](../deploy/README.md) |
 | How to keep these docs current | [MAINTAINING-DOCS.md](MAINTAINING-DOCS.md) |
 

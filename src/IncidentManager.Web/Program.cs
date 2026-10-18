@@ -176,6 +176,10 @@ var uploadLimits = builder.Configuration.GetSection("RateLimiting:Uploads").Get<
     ?? new DownloadRateLimitOptions { TokenLimit = 240, TokensPerPeriod = 240, PeriodSeconds = 60 };   // PROD-56
 var thumbnailLimits = builder.Configuration.GetSection("RateLimiting:Thumbnails").Get<DownloadRateLimitOptions>()
     ?? new DownloadRateLimitOptions { TokenLimit = 300, TokensPerPeriod = 300, PeriodSeconds = 60 };
+// CAP-09: the IOC feed's scheduled pulls, per API token: a burst of 20, then one a minute (a pull every few minutes, in both
+// formats, stays well inside it; a token scraping the feed in a loop doesn't).
+var apiFeedLimits = builder.Configuration.GetSection("RateLimiting:ApiFeeds").Get<DownloadRateLimitOptions>()
+    ?? new DownloadRateLimitOptions { TokenLimit = 20, TokensPerPeriod = 1, PeriodSeconds = 60 };
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -234,6 +238,20 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true
         });
     });
+
+    // CAP-09: keyed by the token's identity (the API scheme has signed it in by the time the limiter runs; an unsigned
+    // request was refused before it).
+    options.AddPolicy(IocFeedApiEndpoints.RateLimitPolicy, httpContext =>
+        RateLimitPartition.GetTokenBucketLimiter(
+            httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anon", _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = apiFeedLimits.TokenLimit,
+                TokensPerPeriod = apiFeedLimits.TokensPerPeriod,
+                ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, apiFeedLimits.PeriodSeconds)),
+                QueueLimit = 0,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                AutoReplenishment = true
+            }));
 
     options.OnRejected = (context, _) =>
     {
@@ -543,7 +561,9 @@ app.UseStatusCodePages(context =>
             http.Request.Path.Value ?? ""));
 
         // S-22: pass the refused path so the page can say which permission it needs (display only, never a link).
-        http.Response.Redirect("/access-denied?from=" + Uri.EscapeDataString(http.Request.Path.Value ?? ""));
+        // CAP-09: an API caller (a feed pull, an import's status) keeps its 403: a redirect to a page is no answer for it.
+        if (!http.Request.Path.StartsWithSegments("/api"))
+            http.Response.Redirect("/access-denied?from=" + Uri.EscapeDataString(http.Request.Path.Value ?? ""));
     }
     // A browser asking for a page CaseBook doesn't have gets the friendly not-found page instead of a blank
     // one. Only HTML page GETs: API calls, downloads, static files and the circuit keep their plain 404.
@@ -818,8 +838,8 @@ app.MapGet("/export/iocs.csv", async (
     IncidentManager.Application.Access.IAccessLogService access,
     IClock clock, CancellationToken ct) =>
 {
-    var rows = await feed.GetMaliciousIocsAsync(ct);
-    var csv = IncidentManager.Application.Export.IocFeedCsv.Build(rows, clock.UtcNow);
+    var iocs = await feed.GetFeedAsync(since: null, ct: ct);   // CAP-09: bounded (C10), a cut said in the file
+    var csv = IncidentManager.Application.Export.IocFeedCsv.Build(iocs, clock.UtcNow);
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"malicious-iocs-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv");
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);   // no BOM: machines read it (BUG-168)
@@ -1033,6 +1053,9 @@ app.MapPost("/api/import/cases", async (
     var parsed = IncidentManager.Application.Import.CaseImportService.Parse(json);
     if (!parsed.Ok)
         return Results.BadRequest(new { error = parsed.Error });
+    // CAP-14: a case id and a detection case id that name different cases.
+    if (await import.CheckTargetAsync(parsed.Document!, ct) is { } conflict)
+        return Results.BadRequest(new { error = conflict });
 
     // BUG-217: a retry of a submission still waiting for review returns that one (200), not a second (201).
     var (id, preview, alreadyQueued) = await import.SubmitOnceAsync(json, parsed.Document!, ct);
@@ -1053,6 +1076,21 @@ app.MapPost("/api/import/cases", async (
     Policy = Policies.EditCases,
     AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName
 }).RequireRateLimiting("downloads");
+
+// CAP-13: what became of a submission, for the token that sent it (or one that reviews imports, EditCases): pending,
+// applied (with the case's number and id when the token can see the case) or rejected. 404 for an id it may not see, as
+// for one that doesn't exist. Any valid token may ask; what it sees is the service's to decide. The guid constraint keeps
+// /schema below its own route.
+app.MapGet("/api/import/cases/{pendingImportId:guid}", async (Guid pendingImportId,
+    IncidentManager.Application.Import.CaseImportService import, CancellationToken ct) =>
+    await import.GetSubmissionStatusAsync(pendingImportId, ct) is { } status
+        ? Results.Ok(status)
+        : Results.NotFound(new { error = "No submission with that id that this token may see." }))
+    .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName })
+    .RequireRateLimiting("downloads");
+
+// CAP-09: the IOC feed (CSV and STIX) for a firewall, an EDR or a threat-intel platform, signed in with an API token.
+app.MapIocFeedApi();
 
 // PROD-35: the machine-readable JSON Schema for the import format, so producers can validate/generate against
 // it and editors can autocomplete. A public contract (no data), served anonymously and generated from the

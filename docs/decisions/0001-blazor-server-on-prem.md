@@ -27,7 +27,8 @@ receives rendered UI over a SignalR circuit. Users sign in with Windows Integrat
   users; a dropped connection shows the reconnect UI.
 - The data-protection keyring must persist (`DataProtection:KeyPath`) or every app-pool recycle ends all
   sessions. A web farm would need sticky sessions and a shared keyring (not done today).
-- There is no general REST API. The only machine API is the case-import endpoint ([API.md](../API.md)), and it
-  stages drafts ([0004](0004-human-gated-automation.md)).
+- There is no general REST API. The machine API ([API.md](../API.md)) is the case-import endpoint, which stages
+  drafts ([0004](0004-human-gated-automation.md)), with its submission status, and the malicious-IOC feed (CAP-09),
+  one fixed read for blocking controls. Each is a narrow, token-signed endpoint, not a way to read cases.
 - `DbContext` is created per operation from `IAppDbContextFactory`, never held per circuit (a circuit is one DI
   scope that lives as long as the tab).

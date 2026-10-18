@@ -7,7 +7,7 @@ What's tested, how to run it, what isn't covered, and what to check by hand befo
 | Project | Tests | References | Runs against |
 |---|---|---|---|
 | `tests/IncidentManager.UnitTests` | ~490 test methods (plus ~160 `InlineData` rows) | Domain, Application, Infrastructure | Plain objects |
-| `tests/IncidentManager.IntegrationTests` | ~495 test methods | Application, Infrastructure, Web | In-memory SQLite per test class; 14 tests also on SQL Server; one boots the real host |
+| `tests/IncidentManager.IntegrationTests` | ~495 test methods | Application, Infrastructure, Web | In-memory SQLite per test class; some also on SQL Server; `HostStartupSmokeTests` and `ApiEndpointTests` boot the real host |
 
 Packages: xUnit 2.9, FluentAssertions 8, coverlet (coverage isn't collected in CI), and
 `Microsoft.AspNetCore.Mvc.Testing` for the host test. There's no mocking library; fakes are hand-written. There
@@ -131,8 +131,10 @@ To check a commit by hand: `SONAR_TOKEN=... SONAR_WAIT_SECONDS=0 bash tools/ci/c
 
 - **The browser.** No end-to-end tests; no component tests. UI logic in `.razor` files (dialogs, forms, the
   workspace) is exercised only through its services.
-- **HTTP endpoints.** Downloads, exports, the import API (token scheme, 5 MB limit), rate limiting, security
-  headers and the 403/404 redirects have no request-level tests; their services do.
+- **HTTP endpoints**, mostly. `HostStartupSmokeTests` covers a few downloads (passive loads, the download budget, 404s)
+  and `ApiEndpointTests` the `/api` endpoints of CAP-09, CAP-13 and CAP-14 (token sign-in, scoping, the 304 and
+  `since`, the feed's rate limit, the access log and SIEM 5304). The import POST's 5 MB limit, security headers and
+  the page redirects have no request-level tests; their services do.
 - **Windows authentication** and real AD group resolution (CI runs on Linux).
 - **Background-service wrappers** (the scanners they call are tested).
 - **SQL Server** beyond the tests above and the upgrade test; most tests use SQLite with `EnsureCreated`, not the SQL
