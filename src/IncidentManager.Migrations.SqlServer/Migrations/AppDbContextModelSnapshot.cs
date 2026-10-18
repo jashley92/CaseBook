@@ -2734,6 +2734,35 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("StatusChanges", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.StoredSecretRecord", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ProtectedValue")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("SetAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SetBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("StoredSecrets", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.TimelineEntry", b =>
                 {
                     b.Property<Guid>("Id")

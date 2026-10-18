@@ -54,6 +54,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<HeldEmail> HeldEmails => Set<HeldEmail>();   // BUG-617
     public DbSet<KeyEnvelopeRecord> KeyEnvelopes => Set<KeyEnvelopeRecord>();   // PROD-57
     public DbSet<SmtpSignInRecord> SmtpSignIns => Set<SmtpSignInRecord>();   // CAP-05
+    public DbSet<StoredSecretRecord> StoredSecrets => Set<StoredSecretRecord>();   // CAP-40
     public DbSet<IntegritySeal> IntegritySeals => Set<IntegritySeal>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<Role> Roles => Set<Role>();
