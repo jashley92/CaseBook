@@ -57,13 +57,18 @@
   "$defs": {
     "target": {
       "type": "object",
-      "description": "Where the import lands: an existing case (by id) or a new one.",
+      "description": "Where the import lands: an existing case (by id, or by its detection case id) or a new one.",
       "additionalProperties": false,
       "properties": {
         "caseId": {
           "type": "string",
           "format": "uuid",
           "description": "Import into this existing case (takes precedence over newCase when visible)."
+        },
+        "detectionCaseId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Import into the one open case carrying this detection case id (for example the XSIAM incident id), as the reviewer sees cases when it's reviewed. With none, newCase is prepared; with several, the reviewer picks. Given with caseId, both must name the same case."
         },
         "newCase": {
           "$ref": "#/$defs/newCase"

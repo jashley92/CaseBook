@@ -36,6 +36,10 @@ public sealed class CaseImportPreview
     public string? ExistingCaseNumber { get; set; }
     public string? ExistingTitle { get; set; }
 
+    /// <summary>CAP-14: the detection case id the document targets, while no review has resolved it (a submission's own
+    /// preview, built as the producer sent it: which case it names is the reviewer's view to decide).</summary>
+    public string? DetectionCaseId { get; set; }
+
     /// <summary>Provenance default applied to imported entities/timeline as their <c>Source</c> (editable).</summary>
     public string? Origin { get; set; }
 
@@ -116,6 +120,12 @@ public sealed class ImportActionItemRow
 public sealed record PendingImportSummary(
     Guid Id, string SubmittedBy, DateTimeOffset SubmittedAtUtc, string? Origin, string Summary,
     string? StuckClaimedBy = null, DateTimeOffset? StuckSinceUtc = null);
+
+/// <summary>CAP-13: what became of a submission, as its sender reads it over the API.</summary>
+/// <param name="Status"><c>pending</c> (waiting, or being applied right now), <c>applied</c> or <c>rejected</c>.</param>
+/// <param name="ResolvedCaseNumber">The case it went into, as numbered now; null unless applied into a case the caller can
+/// see (with <paramref name="ResolvedCaseId"/>).</param>
+public sealed record ImportSubmissionStatus(string Status, DateTimeOffset? DecidedAtUtc, string? ResolvedCaseNumber, Guid? ResolvedCaseId);
 
 /// <summary>Counts written by an apply, plus the resulting case for navigation.</summary>
 public sealed record CaseImportResult(

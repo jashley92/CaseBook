@@ -829,6 +829,13 @@ else if (_pending.Count > 0)
             _parseError = converted.Error;
             return;
         }
+        // CAP-14: a case id and a detection case id that name different cases are refused, as the API refuses them (a page
+        // opened from a case imports into that one, whatever the document names).
+        if (IntoCaseId is null && await Import.CheckTargetAsync(converted.Document!) is { } conflict)
+        {
+            if (_previews.IsCurrent(t)) _parseError = conflict;
+            return;
+        }
         var preview = await Import.BuildPreviewAsync(converted.Document!, IntoCaseId);
         // BUG-601: a newer preview, a Clear or a queued review took over while this one was built; showing it would let
         // Apply import a document that is no longer the one in the box.

@@ -13,7 +13,11 @@ namespace IncidentManager.Application.Export;
 public static class IocFeedCsv
 {
     /// <param name="generatedAtUtc">Stamped into the header row so the feed is self-dating.</param>
-    public static string Build(IReadOnlyList<IocFeedRow> rows, DateTimeOffset generatedAtUtc)
+    public static string Build(IReadOnlyList<IocFeedRow> rows, DateTimeOffset generatedAtUtc) =>
+        Build(new IocFeed(rows, Cut: false, IocFeedService.MaxOccurrences, Since: null), generatedAtUtc);
+
+    /// <summary>CAP-09: the feed with what narrowed it: a delta's start, and a cut said at the top and at the end.</summary>
+    public static string Build(IocFeed feed, DateTimeOffset generatedAtUtc)
     {
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
@@ -22,6 +26,11 @@ public static class IocFeedCsv
         // leading '#'/blank column-count-mismatch line as skippable; the real header follows).
         sb.Append("# CaseBook malicious-IOC feed: confirmed indicators across your visible cases, generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
+        if (feed.Since is { } since)
+            sb.Append("# Only indicators added or changed since ").Append(since.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv))
+              .Append(" UTC. Indicators that left the feed aren't listed; take a full pull to drop them.\r\n");
+        if (feed.Cut) sb.Append(CutLine(feed.Limit));
+        var rows = feed.Rows;
 
         // WF-37: each indicator's TLP marking (the most restrictive across its cases; blank when none is set), last so
         // existing column positions don't move. The feed includes everything; whoever consumes it decides what to share.
@@ -40,8 +49,12 @@ public static class IocFeedCsv
               .Append(Tlp(r.Tlp)).Append("\r\n");
         }
 
+        if (feed.Cut) sb.Append(CutLine(feed.Limit));   // CAP-03's rule: at the end too, where a reader stops
         return sb.ToString();
     }
+
+    private static string CutLine(int limit) => string.Create(CultureInfo.InvariantCulture,
+        $"# Cut: more than {limit:N0} indicator occurrences match, so this feed holds the {limit:N0} most recently changed. Older ones are left out.\r\n");
 
     private static string Tlp(TlpLevel? t) => t switch
     {

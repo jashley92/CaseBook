@@ -84,22 +84,7 @@ public sealed class StixExportService
 
         var now = _clock.UtcNow;
         var objects = new List<Dictionary<string, object?>>();
-
-        // created-by identity (the exporting org).
-        var org = OrgName;
-        var identityId = $"identity--{Deterministic("identity", org)}";
-        objects.Add(Prune(new()
-        {
-            ["type"] = "identity",
-            ["spec_version"] = Spec,
-            ["id"] = identityId,
-            // BUG-248: the same object every export (its id is derived from the name), so the same created and modified:
-            // STIX 2.1 says created never changes across versions, and a TIP sees a new one as a conflicting object.
-            ["created"] = IdentityCreated,
-            ["modified"] = IdentityCreated,
-            ["name"] = org,
-            ["identity_class"] = "organization",
-        }));
+        var identityId = IdentityId;
 
         // One SCO per entity; remember the mapped STIX id so relationships can reference it.
         var stixIdByEntity = new Dictionary<Guid, string>();
@@ -136,13 +121,9 @@ public sealed class StixExportService
             }));
         }
 
-        // The marking definitions the bundle uses, so a consumer that doesn't know TLP 2.0 can still read them.
         var used = tlpByEntity.Values.Select(t => t!.Value).Append(fallback).Distinct().Order().ToList();
-        objects.InsertRange(1, used.Select(MarkingDefinition));
-
         // report SDO tying the graph together with the case metadata.
-        var objectRefs = objects.Select(o => (string)o["id"]!).ToList();
-        objects.Insert(1, Prune(new()   // right after the identity, before the SCOs, for readability
+        var bundle = Bundle(objects, used, objectRefs => new()
         {
             ["type"] = "report",
             ["spec_version"] = Spec,
@@ -161,32 +142,112 @@ public sealed class StixExportService
             // The report carries the most restricted marking of anything it contains, and at least the default (its
             // title and summary are the case's).
             ["object_marking_refs"] = MarkingRefs(used.Max()),
-        }));
+        });
+        return new StixBundleResult(c.CaseNumber, bundle);
+    }
 
-        var bundle = new Dictionary<string, object?>
+    /// <summary>
+    /// CAP-09: the IOC feed (<see cref="IocFeedService"/>) as a STIX 2.1 bundle: one cyber-observable per indicator, across
+    /// the cases the feed drew on, each with its own marking (WF-37/79: the most restrictive of its occurrences, the default
+    /// where none was set), its case numbers, sources and first and last seen. An indicator's id is derived from its type and
+    /// value, so it's the same object in every pull and a TIP updates it rather than adding another. A report SDO ties them
+    /// together and says what narrowed the feed (a delta's start, a cut).
+    /// </summary>
+    public IReadOnlyDictionary<string, object?> BuildFeed(IocFeed feed)
+    {
+        var now = _clock.UtcNow;
+        var fallback = _reporting.CurrentValue.EffectiveDefaultTlp;
+        var objects = new List<Dictionary<string, object?>>();
+        foreach (var r in feed.Rows)
+        {
+            var tlp = r.Tlp ?? fallback;
+            var o = Sco(Deterministic("indicator", $"{r.Type}:{r.Value.Trim().ToLowerInvariant()}").ToString(), r.Type, r.Value, tlp);
+            o["x_casebook_disposition"] = nameof(EntityDisposition.Malicious);
+            o["x_casebook_cases"] = r.Cases;
+            if (r.Sources.Count > 0) o["x_casebook_sources"] = r.Sources;
+            o["x_casebook_first_seen"] = Ts(r.FirstSeenUtc);
+            o["x_casebook_last_seen"] = Ts(r.LastSeenUtc);
+            objects.Add(Prune(o));
+        }
+
+        var used = feed.Rows.Select(r => r.Tlp ?? fallback).Append(fallback).Distinct().Order().ToList();
+        var org = OrgName;
+        return Bundle(objects, used, objectRefs => Prune(new()
+        {
+            ["type"] = "report",
+            ["spec_version"] = Spec,
+            ["id"] = $"report--{Deterministic("ioc-feed", org)}",
+            // As the identity (BUG-248): the same report every pull, each a new version of it.
+            ["created"] = IdentityCreated,
+            ["modified"] = Ts(now),
+            ["created_by_ref"] = IdentityId,
+            ["name"] = $"{org} malicious-IOC feed",
+            ["description"] = FeedDescription(feed),
+            ["report_types"] = new[] { "indicator" },
+            ["published"] = Ts(now),
+            ["object_refs"] = objectRefs,
+            ["x_casebook_since"] = feed.Since is { } since ? Ts(since) : null,
+            ["x_casebook_truncated"] = feed.Cut ? true : null,
+            ["object_marking_refs"] = MarkingRefs(used.Max()),
+        }));
+    }
+
+    /// <summary>CAP-09: <see cref="IocFeed.Fingerprint"/> for this format, which also names the organization.</summary>
+    public string Fingerprint(IocFeed feed) => feed.Fingerprint("stix|" + OrgName);
+
+    private static string FeedDescription(IocFeed feed)
+    {
+        var text = "Confirmed-malicious indicators across the cases this feed's token can see (exercises excluded).";
+        if (feed.Since is { } since)
+            text += $" Only those added or changed since {Ts(since)}; indicators that left the feed aren't listed.";
+        if (feed.Cut)
+            text += string.Create(CultureInfo.InvariantCulture,
+                $" Cut: more than {feed.Limit:N0} indicator occurrences match, so this holds the {feed.Limit:N0} most recently changed.");
+        return text;
+    }
+
+    // The organization's identity: the same id (derived from its name) in every export.
+    private string IdentityId => $"identity--{Deterministic("identity", OrgName)}";
+
+    /// <summary>
+    /// The bundle around <paramref name="body"/> (SCOs and SROs): the exporting organization's identity first, then the
+    /// report <paramref name="report"/> builds from every object's id, then the marking definitions
+    /// <paramref name="used"/>, so a consumer that doesn't know TLP 2.0 can still read them, then the body.
+    /// </summary>
+    private Dictionary<string, object?> Bundle(List<Dictionary<string, object?>> body, IReadOnlyList<TlpLevel> used,
+        Func<List<string>, Dictionary<string, object?>> report)
+    {
+        var objects = new List<Dictionary<string, object?>>
+        {
+            Prune(new()
+            {
+                ["type"] = "identity",
+                ["spec_version"] = Spec,
+                ["id"] = IdentityId,
+                // BUG-248: the same object every export (its id is derived from the name), so the same created and modified:
+                // STIX 2.1 says created never changes across versions, and a TIP sees a new one as a conflicting object.
+                ["created"] = IdentityCreated,
+                ["modified"] = IdentityCreated,
+                ["name"] = OrgName,
+                ["identity_class"] = "organization",
+            }),
+        };
+        objects.AddRange(used.Select(MarkingDefinition));
+        objects.AddRange(body);
+        objects.Insert(1, Prune(report(objects.Select(o => (string)o["id"]!).ToList())));   // right after the identity, for readability
+
+        return new Dictionary<string, object?>
         {
             ["type"] = "bundle",
             ["id"] = $"bundle--{Guid.NewGuid()}",
             ["objects"] = objects,
         };
-        return new StixBundleResult(c.CaseNumber, bundle);
     }
 
     /// <summary>Maps a case entity to the closest STIX 2.1 cyber-observable object.</summary>
     private static Dictionary<string, object?> MapEntity(CaseEntity e, TlpLevel? tlp)
     {
-        var (stixType, props) = Observable(e);
-        var o = new Dictionary<string, object?>
-        {
-            ["type"] = stixType,
-            ["spec_version"] = Spec,
-            ["id"] = $"{stixType}--{e.Id}",
-        };
-        foreach (var (k, v) in props) o[k] = v;
-
-        o["object_marking_refs"] = MarkingRefs(tlp);   // BUG-41: the indicator's TLP, so a TLP:RED IOC isn't shared unmarked
-        // Analyst verdict + provenance travel as spec-legal custom properties.
-        o["x_casebook_entity_type"] = e.Type.ToString();
+        var o = Sco(e.Id.ToString(), e.Type, e.Value, tlp);
         o["x_casebook_disposition"] = e.Disposition.ToString();
         if (!string.IsNullOrWhiteSpace(e.Label)) o["x_casebook_label"] = e.Label!.Trim();
         if (!string.IsNullOrWhiteSpace(e.Source)) o["x_casebook_source"] = e.Source!.Trim();
@@ -194,11 +255,30 @@ public sealed class StixExportService
         return Prune(o);
     }
 
-    /// <summary>The STIX SCO type + its identifying properties for an entity. Falls back to a custom SCO.</summary>
-    private static (string Type, Dictionary<string, object?> Props) Observable(CaseEntity e)
+    /// <summary>CAP-09: an indicator as the closest STIX 2.1 cyber-observable, marked, with its CaseBook type; whoever
+    /// calls adds the rest of what rides along (verdict, provenance) as custom properties.</summary>
+    private static Dictionary<string, object?> Sco(string uuid, EntityType type, string value, TlpLevel? tlp)
     {
-        var v = e.Value.Trim();
-        return e.Type switch
+        var (stixType, props) = Observable(type, value);
+        var o = new Dictionary<string, object?>
+        {
+            ["type"] = stixType,
+            ["spec_version"] = Spec,
+            ["id"] = $"{stixType}--{uuid}",
+        };
+        foreach (var (k, v) in props) o[k] = v;
+
+        o["object_marking_refs"] = MarkingRefs(tlp);   // BUG-41: the indicator's TLP, so a TLP:RED IOC isn't shared unmarked
+        // Analyst verdict + provenance travel as spec-legal custom properties.
+        o["x_casebook_entity_type"] = type.ToString();
+        return o;
+    }
+
+    /// <summary>The STIX SCO type + its identifying properties for an entity. Falls back to a custom SCO.</summary>
+    private static (string Type, Dictionary<string, object?> Props) Observable(EntityType type, string value)
+    {
+        var v = value.Trim();
+        return type switch
         {
             EntityType.IpAddress => (v.Contains(':') ? "ipv6-addr" : "ipv4-addr", new() { ["value"] = v }),
             EntityType.Domain => ("domain-name", new() { ["value"] = v }),
