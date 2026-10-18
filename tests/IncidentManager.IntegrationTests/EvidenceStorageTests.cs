@@ -324,7 +324,14 @@ public sealed class EvidenceStorageTests : IDisposable
         await SendAllAsync(svc, started, bytes);
 
         var part = Directory.GetFiles(Path.Combine(_dir, "store", ".incoming"), "*.part").Single();
-        await using (var fs = new FileStream(part, FileMode.Open)) { fs.Position = 100; fs.WriteByte(0x5A); }
+        // Flip the byte: writing a fixed value left the file unchanged whenever the random byte there already had it (1 in 256).
+        await using (var fs = new FileStream(part, FileMode.Open))
+        {
+            fs.Position = 100;
+            var b = fs.ReadByte();
+            fs.Position = 100;
+            fs.WriteByte((byte)(b ^ 0xFF));
+        }
         var complete = () => svc.CompleteUploadAsync(started.Id);
         (await complete.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("damaged");
         StoredFiles().Should().BeEmpty("the damaged parts are deleted, and nothing was stored");
