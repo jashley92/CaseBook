@@ -138,7 +138,8 @@ streaming unzip, recovers every file that arrived), so a package that stops part
 out. So it's recorded in steps, each step's custody and its audit entry in one transaction (both or neither):
 
 - **Begun**, before the first byte: a "Transfer begun" custody event on every file, naming the package (its id) and
-  the hand-over, and an audit entry with the package id, the hand-over, and each file's name and SHA-256; with it the
+  the hand-over, and an audit entry with the package id, the hand-over, and each file's name and SHA-256 (for a large package the list is cut to the entry's 2,000 characters; each file's own
+  custody event names the package, and its SHA-256 is on its record); with it the
   access-log row and SIEM 5308. If this can't be written, nothing is sent (the download answers 503).
 - **Sent in full**: each file gets "Transferred", and the audit trail an entry with the SHA-256 of the zip as sent and
   of its manifest (the recipient can check the zip they received against it), written before the zip's directory goes
