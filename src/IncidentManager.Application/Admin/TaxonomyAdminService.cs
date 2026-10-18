@@ -34,13 +34,16 @@ public sealed class TaxonomyAdminService
     private readonly IClock _clock;
     private readonly ICurrentUser _user;
     private readonly ISettingsReloader _reloader;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
-    public TaxonomyAdminService(IAppDbContextFactory factory, IClock clock, ICurrentUser user, ISettingsReloader reloader)
+    public TaxonomyAdminService(IAppDbContextFactory factory, IClock clock, ICurrentUser user, ISettingsReloader reloader,
+        ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _clock = clock;
         _user = user;
         _reloader = reloader;
+        _siem = siem;
     }
 
     /// <summary>Every taxonomy and member with its default, current override, effective label and hidden flag,
@@ -155,6 +158,7 @@ public sealed class TaxonomyAdminService
         var rows = await db.AppSettings.Where(s => keys.Contains(s.Key)).ToListAsync(ct);
         var added = new List<string>();
         var changed = false;
+        var log = new ReferenceDataLog(ReferenceDataKinds.TaxonomyLabel);   // CAP-06: by its key (kind and member), not the label
         foreach (var (key, value) in edits)
         {
             var existing = rows.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase));
@@ -169,9 +173,11 @@ public sealed class TaxonomyAdminService
             else if (!string.Equals(existing.Value, value, StringComparison.Ordinal)) Touch(existing, value);
             else continue;
             changed = true;
+            log.Add(key[TaxonomyCatalog.KeyPrefix.Length..], ReferenceDataAction.Changed);
         }
         if (!changed) return;
         await SaveAsync(db, added, ct);
+        log.Emit(_siem, _user);
         _reloader.ReloadOrThrow();   // BUG-270
     }
 
@@ -252,6 +258,8 @@ public sealed class TaxonomyAdminService
             // BUG-438: a row this changes or removes went between the read above and this save.
             try { await SaveAsync(db, added, ct); }
             catch (ConcurrentEditException ex) { throw StaleOrder(k, ex); }
+            _siem.ReferenceDataChanged(_user, ReferenceDataKinds.TaxonomyOrder,
+                hidden.Count == 0 ? kind : $"{kind} ({hidden.Count} hidden)", ReferenceDataAction.Changed);   // CAP-06
             reloadError = _reloader.ReloadAndReport();
         }
         // The rows as saved (Local leaves out the removed ones), so the page can save again without reloading the card.

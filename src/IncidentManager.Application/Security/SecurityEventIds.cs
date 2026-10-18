@@ -40,6 +40,7 @@ public static class SecurityEventIds
     public const int AdGroupMappingChanged = 5402;
     public const int SettingChanged = 5403;
     public const int ApiTokenChanged = 5404; // an API token was created or revoked (PROD-34)
+    public const int ReferenceDataChanged = 5405; // CAP-06: a gate, data element, deadline rule, template, outcome, taxonomy label, report profile or Word/email template
 
     // 55xx — Case governance
     public const int LegalHoldPlaced = 5501;
@@ -47,6 +48,17 @@ public static class SecurityEventIds
     public const int BreachEscalated = 5503;
     public const int CaseRestricted = 5504;          // a case was limited to need-to-know (S-08)
     public const int CaseRestrictionLifted = 5505;   // a case's need-to-know restriction was lifted — widens exposure (S-08)
+    // CAP-06: the case lifecycle. Each carries the case number, the actor and, when set, the detection platform's id.
+    public const int CaseCreated = 5506;
+    public const int CasePhaseChanged = 5507;        // a move between phases other than closing or reopening (5509, 5510)
+    public const int CaseReclassified = 5508;        // any reclassification except an escalation to Breach (5503)
+    public const int CaseClosed = 5509;
+    public const int CaseReopened = 5510;
+    public const int CaseArchived = 5511;            // archived, or restored from the archive (action CaseRestored)
+    public const int MaterialityRecorded = 5512;
+    public const int CaseReported = 5513;            // marked reported to regulators, or one regulator's notice recorded
+    public const int ReportApproved = 5514;
+    public const int ImportApplied = 5515;           // a case-import document applied to a case (PROD-31/33), by a reviewer
 
     // 59xx — Diagnostics
     public const int SiemTest = 5901; // an admin's "Send test event" from Diagnostics, to confirm the collector receives the stream

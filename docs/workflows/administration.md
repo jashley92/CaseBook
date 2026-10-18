@@ -62,6 +62,12 @@ with `{0}` where the value goes.
 
 ![Roles](../screenshots/roles-access.png)
 
+**Reference data in the SIEM (CAP-06).** Every save on the pages below (case templates, stage gates, taxonomy labels,
+data elements and notification rules, case outcomes, report profiles, Word and email templates), and a configuration
+bundle import, also sends SIEM event 5405 naming what changed by its kind and name (never a template's text). A
+change to a stage gate or a notification rule, and any delete, is a Warning. See
+[OPERATIONS.md §5](../OPERATIONS.md#event-id-catalog).
+
 ## Case templates (playbooks)
 
 A template has a name, description, active flag, sort order, optional default classification and severity,

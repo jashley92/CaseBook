@@ -29,14 +29,18 @@ public sealed class CaseImportService
 
     private readonly IAuditWriter? _audit;   // WF-18
 
+    // CAP-06: the SIEM.
+    private readonly ISecurityEventSink? _siem;
+
     public CaseImportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, CaseService cases,
-        IAuditWriter? audit = null)
+        IAuditWriter? audit = null, ISecurityEventSink? siem = null)
     {
         _audit = audit;
         _factory = factory;
         _user = user;
         _clock = clock;
         _cases = cases;
+        _siem = siem;
     }
 
     // Defensive caps for untrusted text — matched to the create validator where one exists.
@@ -242,7 +246,9 @@ public sealed class CaseImportService
     /// failure never duplicates. Provenance (<see cref="CaseImportPreview.Origin"/> or a row's own source) is
     /// stamped on imported entities and timeline entries.
     /// </summary>
-    public async Task<CaseImportResult> ApplyAsync(CaseImportPreview p, CancellationToken ct = default)
+    /// <param name="pendingImportId">CAP-06: the queued submission being applied, named in the SIEM event; null for a
+    /// document pasted or uploaded on the Import page.</param>
+    public async Task<CaseImportResult> ApplyAsync(CaseImportPreview p, Guid? pendingImportId = null, CancellationToken ct = default)
     {
         // INV-18: checked before anything is written, so a missing why can't leave a half-applied import.
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale)))
@@ -355,7 +361,20 @@ public sealed class CaseImportService
         }, ct);
         var actionItems = tasks.Count;
 
+        await EmitAppliedAsync(caseId, pendingImportId, p.CreatedCaseId is not null, ct);
         return new CaseImportResult(caseId, caseNumber, created, notes, timeline, entities, actionItems);
+    }
+
+    // CAP-06: the import's SIEM event (5515), naming the case as it now stands (scoped: the reviewer just wrote to it).
+    private async Task EmitAppliedAsync(Guid caseId, Guid? pendingImportId, bool createdCase, CancellationToken ct)
+    {
+        if (_siem is null) return;
+        using var db = _factory.CreateDbContext();
+        var c = await db.Cases.AsNoTracking().ForUser(_user).Where(x => x.Id == caseId)
+            .Select(x => new { x.CaseNumber, x.DetectionCaseId, x.IsExercise }).FirstOrDefaultAsync(ct);
+        if (c is null) return;
+        _siem.EmitSafely(() => SecurityEvents.ImportApplied(new CaseSubject(c.CaseNumber, c.DetectionCaseId, c.IsExercise),
+            pendingImportId, createdCase, _user.UserId, _user.UserPrincipalName));
     }
 
     /// <summary>BUG-152: a TLP marking as written in a document ("Red", "TLP:RED", "amber+strict"); null when absent.</summary>

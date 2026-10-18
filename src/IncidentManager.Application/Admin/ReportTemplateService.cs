@@ -31,15 +31,17 @@ public sealed class ReportTemplateService
     private readonly IClock _clock;
     private readonly Reporting.IReportTemplateEngine? _engine;
     private readonly Reporting.IReportTemplateStore? _store;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
     public ReportTemplateService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        Reporting.IReportTemplateEngine? engine = null, Reporting.IReportTemplateStore? store = null)
+        Reporting.IReportTemplateEngine? engine = null, Reporting.IReportTemplateStore? store = null, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
         _engine = engine;
         _store = store;
+        _siem = siem;
     }
 
     /// <summary>Every template, archived ones included, for administration. Ordered by name.</summary>
@@ -88,6 +90,7 @@ public sealed class ReportTemplateService
             await SaveThenCommitAsync(db, store, staged, () => db.ReportTemplates.Remove(t), ct);
         }
         finally { FileGate.Release(); }
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportTemplate, cleanName, ReferenceDataAction.Created, t.Id);   // CAP-06
         return new ReportTemplateUpload(check, t.Id);
     }
 
@@ -116,6 +119,8 @@ public sealed class ReportTemplateService
             t.ModifiedAtUtc = _clock.UtcNow;
             await SaveThenCommitAsync(db, store, staged,
                 () => (t.FileName, t.Sha256, t.SizeBytes, t.ModifiedBy, t.ModifiedAtUtc) = (oldName, oldHash, oldSize, oldBy, oldAt), ct);
+            // CAP-06: a new file under the same template; the name says so (the SHA-256 is in the audit trail).
+            _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportTemplate, $"{t.Name} (file replaced)", ReferenceDataAction.Changed, id);
         }
         finally { FileGate.Release(); }
         return check;
@@ -188,6 +193,7 @@ public sealed class ReportTemplateService
         t.ModifiedBy = _user.UserId;
         t.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportTemplate, cleanName, ReferenceDataAction.Changed, id);   // CAP-06
     }
 
     /// <summary>Archives or restores a template. Its name is left as it is. A profile's default can't be archived.</summary>
@@ -199,10 +205,14 @@ public sealed class ReportTemplateService
         var t = await FindAsync(db, id, ct);
         if (!isActive && t.IsActive)
             await EnsureNotADefaultAsync(db, id, "archive", ct);
+        var was = t.IsActive;
         t.IsActive = isActive;
         t.ModifiedBy = _user.UserId;
         t.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        if (was != isActive)
+            _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportTemplate, $"{t.Name} ({(isActive ? "restored" : "archived")})",
+                ReferenceDataAction.Changed, id);   // CAP-06
     }
 
     /// <summary>
@@ -232,6 +242,8 @@ public sealed class ReportTemplateService
         t.ModifiedBy = _user.UserId;
         t.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportTemplate,
+            $"{t.Name} ({(isDefault ? "lessons-learned default" : "no longer the lessons-learned default")})", ReferenceDataAction.Changed, id);   // CAP-06
     }
 
     /// <summary>Deletes a template and its file. Reports already generated from it keep its name and hash.</summary>
@@ -245,6 +257,7 @@ public sealed class ReportTemplateService
         await EnsureNotADefaultAsync(db, id, "delete", ct);
         db.ReportTemplates.Remove(t);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportTemplate, t.Name, ReferenceDataAction.Deleted, id);   // CAP-06
         // BUG-239: the template is deleted once its row is; a file that can't be removed now (open, read-only) is left
         // unreferenced rather than reported as a failed delete.
         if (_store is not null)

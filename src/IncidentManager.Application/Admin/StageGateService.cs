@@ -36,12 +36,14 @@ public sealed class StageGateService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly ISecurityEventSink? _siem;   // CAP-06
 
-    public StageGateService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+    public StageGateService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
+        _siem = siem;
     }
 
     /// <summary>Every gate, active or not, for administration.</summary>
@@ -72,6 +74,7 @@ public sealed class StageGateService
         ApplyContent(gate, input);
         db.StageGates.Add(gate);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.StageGate, GateName(gate), ReferenceDataAction.Created, gate.Id);   // CAP-06
         return gate.Id;
     }
 
@@ -104,7 +107,11 @@ public sealed class StageGateService
         gate.Requirements.Clear();
         ApplyContent(gate, input);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.StageGate, GateName(gate), ReferenceDataAction.Changed, gate.Id);   // CAP-06
     }
+
+    // CAP-06: the gate as the SIEM names it: its name and whether it's in force (an inactive gate blocks nothing).
+    private static string GateName(StageGate g) => g.IsActive ? g.Name : $"{g.Name} (inactive)";
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
@@ -116,6 +123,7 @@ public sealed class StageGateService
         db.StageGateRequirements.RemoveRange(gate.Requirements);
         db.StageGates.Remove(gate);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.StageGate, gate.Name, ReferenceDataAction.Deleted, gate.Id);   // CAP-06
     }
 
     /// <summary>At most one active gate per transition, so the evaluator's choice is never ambiguous.</summary>

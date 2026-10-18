@@ -25,11 +25,13 @@ public sealed class ReportProfileService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
-    public ReportProfileService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+    private readonly ISecurityEventSink? _siem;   // CAP-06
+    public ReportProfileService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
+        _siem = siem;
     }
 
     /// <summary>Active profiles for the case picker, ordered for display.</summary>
@@ -79,6 +81,7 @@ public sealed class ReportProfileService
                 throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.", ex);
             throw;
         }
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportProfile, name, ReferenceDataAction.Created, profile.Id);   // CAP-06
         return profile.Id;
     }
 
@@ -118,6 +121,7 @@ public sealed class ReportProfileService
                 throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.", ex);
             throw;
         }
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportProfile, name, ReferenceDataAction.Changed, id);   // CAP-06
     }
 
     /// <summary>
@@ -134,6 +138,7 @@ public sealed class ReportProfileService
         if (profile is null) return;
         db.ReportProfiles.Remove(profile);
         await db.SaveChangesAsync(ct);
+        _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ReportProfile, profile.Name, ReferenceDataAction.Deleted, id);   // CAP-06
     }
 
     // A default template must exist and be active (archived templates can't be picked for new reports). BUG-524: called

@@ -835,6 +835,7 @@ public sealed class CaseService
             try
             {
                 await db.SaveChangesAsync(ct);
+                EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseCreated(s, c.Classification, c.Severity, a, u));   // CAP-06
                 if (c.Classification == Classification.Breach)
                 {
                     // Filed as a Breach: the same alerts as an escalation to one (Legal distribution, SIEM).
@@ -1059,6 +1060,8 @@ public sealed class CaseService
         // F-18: a breach escalation is a notable governance signal for the SOC stream.
         if (to == Classification.Breach && from != Classification.Breach)
             EmitBreachEscalated(c);
+        else if (to != from)   // CAP-06: every other reclassification
+            EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReclassified(s, from, to, a, u));
     }
 
     /// <summary>F-18's breach-escalation SIEM event. BUG-100: an exercise's is marked EXERCISE, or not sent when the
@@ -1069,6 +1072,11 @@ public sealed class CaseService
         var e = Security.SecurityEvents.BreachEscalated(_user.UserId, _user.UserPrincipalName, c.CaseNumber);
         _siem?.Emit(c.IsExercise ? e with { Detail = ExerciseMarking.SiemDetail } : e);
     }
+
+    /// <summary>CAP-06: a case-lifecycle SIEM event (5506-5513) for <paramref name="c"/> as saved, by the current user.
+    /// Best effort: it never fails the action that was just saved.</summary>
+    private void EmitLifecycle(Case c, Func<Security.CaseSubject, string, string?, Security.SecurityEvent> build) =>
+        Security.SecurityEventEmit.EmitSafely(_siem, () => build(Security.CaseSubject.Of(c), _user.UserId, _user.UserPrincipalName));
 
     /// <summary>
     /// HR-01: what closing a case records: the outcome (a <c>CaseOutcome</c> key) and the closing brief: what happened
@@ -1118,9 +1126,19 @@ public sealed class CaseService
         }
         else RequireReasonIfBackdated(effectiveAtUtc, reason);
 
+        var fromPhase = c.Phase;
         c.ChangePhase(to, reason, _user.UserId, now, effectiveAtUtc, outcomeKey,
             containment?.ContainedAtUtc, containment?.NotNeededReason, resolvedAtUtc);
         await db.SaveChangesAsync(ct);
+        // CAP-06: a close says whether it went past unmet gate requirements (the passage just recorded; the case's earlier
+        // passages aren't loaded).
+        if (closingNow)
+            EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseClosed(s, outcomeKey,
+                c.GatePassages.Any(p => p.Trigger == StageGateTrigger.CloseCase && p.WasOverridden && p.PassedAtUtc >= now), a, u));
+        else if (fromPhase == CasePhase.Closed && to != CasePhase.Closed)
+            EmitLifecycle(c, Security.SecurityEvents.CaseReopened);   // BUG-62: leaving Closed is a reopen by another route
+        else if (fromPhase != to)
+            EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CasePhaseChanged(s, fromPhase, to, a, u));
     }
 
     /// <summary>BUG-165: for a case going past Containment without it: when it was contained, or why it wasn't needed.</summary>
@@ -1162,6 +1180,7 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         c.Reopen(reason, _user.UserId, _clock.UtcNow, containment?.ContainedAtUtc, containment?.NotNeededReason, resolvedAtUtc);
         await db.SaveChangesAsync(ct);
+        EmitLifecycle(c, Security.SecurityEvents.CaseReopened);   // CAP-06
     }
 
     /// <summary>Evaluates the active gate for a transition (read-only) — for the workspace readiness view.</summary>
@@ -1336,6 +1355,7 @@ public sealed class CaseService
             c.ReportedFromNotices(inPlay, _user.UserId, now);
         }
         await db.SaveChangesAsync(ct);
+        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, null, a, u));   // CAP-06
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
 
@@ -1361,6 +1381,7 @@ public sealed class CaseService
         c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now);
         c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
+        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseReported(s, NoticeCode(jurisdiction), a, u));   // CAP-06
         await FreezeNoticeDuesAsync(id, ct);   // WF-77
     }
 
@@ -1442,6 +1463,7 @@ public sealed class CaseService
                 "Someone else changed the materiality determination while you were editing. Reload and try again.");
         c.RecordMateriality(status, decisionMaker, decidedOnUtc, rationale, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
+        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.MaterialityRecorded(s, status, a, u));   // CAP-06
     }
 
     /// <summary>
@@ -2906,9 +2928,11 @@ public sealed class CaseService
                 .EvaluateAsync(id, ct)).HasClock)
             throw new InvalidOperationException("This case has a regulatory notification deadline running and no notice recorded. " +
                 "Record when regulators were notified before archiving it, so the deadline isn't silenced.");
+        var wasArchived = c.IsArchived;
         if (archived) c.Archive(_user.UserId, _clock.UtcNow);
         else c.Unarchive(_user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
+        if (wasArchived != archived) EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseArchived(s, archived, a, u));   // CAP-06
     }
 
     /// <summary>

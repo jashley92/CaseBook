@@ -660,11 +660,22 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5402 | Admin | AD-group → role mapping added / removed |
 | 5403 | Admin | Operational setting changed |
 | 5404 | Admin | API token created or revoked |
+| 5405 | Admin | **Reference data changed** (CAP-06). Action `ReferenceDataCreated`, `ReferenceDataChanged` or `ReferenceDataDeleted`; target type is the kind (`StageGate`, `DataElement`, `DeadlineRule`, `CaseTemplate`, `CaseOutcome`, `TaxonomyLabel`, `TaxonomyOrder`, `ReportProfile`, `ReportTemplate`, `EmailTemplate`, `ConfigurationBundle`), target id the row's id, detail its name (an archive or restore says so in brackets). Warning for a stage gate, a deadline rule or any delete; else Info |
 | 5501 | Governance | Legal hold placed |
 | 5502 | Governance | Legal hold released |
 | 5503 | Governance | Case escalated to Breach |
 | 5504 | Authorization | Case restricted to need-to-know |
 | 5505 | Authorization | Case restriction lifted (widens who can see it) |
+| 5506 | Governance | Case created (CAP-06). Detail `classification=… severity=…` (a case filed as a Breach also sends 5503). Info |
+| 5507 | Governance | Phase changed, other than closing or reopening. Detail `from=… to=…`. Info |
+| 5508 | Governance | Reclassified, other than escalated to Breach (5503). Action `CaseReclassified`, or **`CaseDowngraded`** when the classification goes down (Warning: a lowered case skips the higher rung's checks when it closes) |
+| 5509 | Governance | Case closed. Detail `outcome=<key>`, plus `gateOverridden=true` when it was closed past unmet gate requirements (Warning; else Info) |
+| 5510 | Governance | Case reopened (by *Reopen*, or by moving a closed case to another phase). Info |
+| 5511 | Governance | Case archived (Info), or **restored** from the archive (action `CaseRestored`, Warning) |
+| 5512 | Governance | Materiality recorded. Detail `status=…`; `Material` is a Warning (it can start a disclosure clock), the rest Info |
+| 5513 | Governance | Regulators recorded as notified: the whole case (`CaseReported`) or one regulator (`RegulatorNoticeRecorded`, detail `jurisdiction=<code>`). Info |
+| 5514 | Governance | Report approved; target is the report. Info |
+| 5515 | Governance | Case import applied by a reviewer; target is the pending import when it came through the queue (`PendingImport:<id>`), detail `createdCase=true` when it filed a new case. Info |
 | 5901 | Diagnostics | Test event from **Administration → Diagnostics → Send test event**. Safe to ignore; use it to confirm the collector receives the stream |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never
@@ -675,6 +686,20 @@ revoked **API token** (the detail carries the token's display prefix and source 
 hides what a user can't do, so this marks a stale session (access removed while signed in) or a UI defect.
 Today it's emitted by case actions and by the role, settings and configuration-bundle services; refusals in other
 services (evidence, reports, lessons, imports, tokens) aren't streamed.
+
+**Case lifecycle and reference data (CAP-06).** 5506-5515 carry the case number (`caseNumber` / CEF `cs1`), the actor
+and, when the case records one, the detection platform's incident id as `detection=<id>` at the end of `detail`, so a
+rule can join CaseBook's record to the platform's incident. They carry ids and labels only (enum names, outcome keys,
+jurisdiction codes), never a reason, a summary or any other text from the case. An exercise's `detail` starts
+`EXERCISE:`, as its breach escalation's does; unlike 5503, these are always sent for an exercise (they record activity,
+not an alert), so filter on that prefix to keep drills out of a rule. Each is sent after the change is saved, best
+effort: a stream that's down never fails the action. Reasons and the full before and after are in the audit trail.
+A configuration bundle import sends one 5405 (`ConfigurationBundle`, with its counts and signing key) rather than one
+per row it replaced, alongside the 5401-5403 it already sends per role, mapping and setting.
+
+**Suggested rules:** a `CaseDowngraded` (5508) followed by a 5509 on the same case within a few days; any 5509 with
+`gateOverridden=true`; a 5511 `CaseRestored`; a 5512 `status=Material`; and any 5405 with target type `StageGate` or
+`DeadlineRule` outside a change window.
 
 ### Seal copies in the SIEM (F-26)
 
