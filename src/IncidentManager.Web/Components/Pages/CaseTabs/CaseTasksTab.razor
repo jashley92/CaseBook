@@ -54,6 +54,8 @@
                         {
                             <p class="small text-muted mb-2">Uncheck steps you don't need. Each task goes to the step's owner, or to the case owner if the step has none. Due dates count from now.</p>
                             <div class="border rounded p-2 mb-2">
+                                @* CAP-11: a step whose title is already a task (trimmed, ignoring case, as PlaybookOffer compares) says so. *@
+                                @{ var applyOnCase = Case.ActionItems.Select(t => t.Title.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase); }
                                 @foreach (var s in _applyTemplate.Steps)
                                 {
                                     <div class="form-check">
@@ -64,6 +66,7 @@
                                             @s.Title
                                             @if (s.DueOffsetHours is { } h) { <span class="im-badge im-b-warn ms-1">+@FormatOffset(h)</span> }
                                             @if (!string.IsNullOrWhiteSpace(s.OwnerHint)) { <span class="im-badge im-b-neutral ms-1">@s.OwnerHint</span> }
+                                            @if (applyOnCase.Contains(s.Title.Trim())) { <span class="im-badge im-b-neutral ms-1">already a task</span> }
                                         </label>
                                     </div>
                                 }
@@ -676,6 +679,7 @@ else
     {
         // REV-23: a task a colleague finished or cancelled since it was ticked drops out of the selection.
         _selected.IntersectWith(OpenTaskIds);
+        if (OfferTemplateId is { } offer) await TakeOffer(offer);
         if (RefreshToken != _seenRefresh)
         {
             _seenRefresh = RefreshToken;
@@ -1108,6 +1112,35 @@ else
         _applyingTemplate = true;
         _applyTemplate = null;
         _applySelected.Clear();
+        _applyDefaultOwner = null;
+    }
+
+    /// <summary>CAP-11: the playbook notice's "Add them…": the playbook to open the apply card on.</summary>
+    [Parameter] public Guid? OfferTemplateId { get; set; }
+    [Parameter] public EventCallback OnOfferHandled { get; set; }
+
+    // CAP-11: opens the apply card on the offered playbook with the steps the case doesn't have ticked (PlaybookOffer, the
+    // notice's own reading, C2). Applying is the usual ApplyTemplateAsync with those steps. C7: a card already open with
+    // another playbook or other steps ticked isn't replaced.
+    private async Task TakeOffer(Guid templateId)
+    {
+        await OnOfferHandled.InvokeAsync();
+        if (!CanEdit) return;
+        if (_applyTemplates?.FirstOrDefault(t => t.Id == templateId) is not { } template)
+        {
+            Toasts.Error("That playbook is no longer available. Choose one from Apply playbook.");
+            return;
+        }
+        var missing = PlaybookOffer.MissingSteps(template, Case.ActionItems.Select(t => t.Title)).Select(s => s.Id).ToHashSet();
+        if (_applyingTemplate && _applyTemplate is not null && (_applyTemplate.Id != templateId || !_applySelected.SetEquals(missing)))
+        {
+            Toasts.Error("You're already applying a playbook. Add its tasks or cancel it, then try again.");
+            return;
+        }
+        _applyingTemplate = true;
+        _applyTemplate = template;
+        _applySelected.Clear();
+        _applySelected.UnionWith(missing);
         _applyDefaultOwner = null;
     }
 

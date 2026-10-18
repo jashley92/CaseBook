@@ -319,7 +319,10 @@ tasks about it, and *Download* (a custody event), *Task about it* and *Record a 
 
 ![Tasks](../screenshots/doc-tasks.png)
 
-1. **Apply playbook**: add the steps of a case template as tasks.
+1. **Apply playbook**: add the steps of a case template as tasks. After a case is escalated, or filed at a rung, a
+   notice under the case header offers that rung's playbook ("The Breach response playbook has 6 steps not on this
+   case. *Add them…*"); it opens this card with the missing steps ticked, and adds nothing until you apply them.
+   Dismiss it with ×.
 2. **Add a task**: title, owner (a person, or a free-text external name), kind, due date and time.
 3. **Grouped by kind** (Investigate, Contain, Eradicate, Recover, Notify, General), with progress.
 4. **"About" chip**: the entity, evidence file or timeline entry the task was raised from. Click to jump there.

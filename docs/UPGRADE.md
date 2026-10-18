@@ -212,6 +212,12 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Escalating a case offers the rung's playbook (CAP-11).** After an upward reclassification, or on a case filed at a
+  rung, a notice under the case header offers the steps of each active template whose default classification is that
+  rung and that aren't tasks yet; *Add them…* opens the Tasks tab's apply-playbook card with them ticked, and nothing
+  is added until it's applied. No migration and nothing to configure; a site with no templates sees nothing. It's
+  worked out from the case, so after the upgrade open cases already at a rung with a matching template show it too,
+  until each person dismisses it (kept per browser, per case and rung).
 - **The last handover's "watch for" stays on Now (CAP-20).** After a handoff with a *Watch for* part, Now shows it above
   the brief until the person it was handed to revises the brief or marks it still accurate. It's read from the handoff
   entries already on the timeline, so an open case handed off before the upgrade shows its card too. No migration and
