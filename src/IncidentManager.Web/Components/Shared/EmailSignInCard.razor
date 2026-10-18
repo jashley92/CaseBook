@@ -116,6 +116,9 @@
 
 @code {
     private SmtpSignInStatus? _status;
+    // CAP-05 review: the stamp of the sign-in the entries were loaded from (or the admin was last told about). Kept apart
+    // from _status, which a test email refreshes for display without the admin seeing what changed.
+    private string _stamp = "";
     private SmtpSignInMode _mode;
     private string? _username;
     private string? _newPassword;   // held only between typing and Save; never rendered
@@ -143,6 +146,7 @@
         var status = await SignIns.GetAsync();
         if (!_load.IsCurrent(t)) return;
         _status = status;
+        _stamp = status.Stamp;
         _mode = _status.Mode is SmtpSignInMode.Invalid ? SmtpSignInMode.None : _status.Mode;
         _username = _status.Username;
         _replacing = !_status.PasswordSet;
@@ -163,14 +167,14 @@
         try
         {
             // CAP-05 review: with the stamp it loaded ("" for no row), so a sign-in changed since isn't written over.
-            await SignIns.SaveAsync(_mode, _username, _newPassword, _status?.Stamp ?? "");
+            await SignIns.SaveAsync(_mode, _username, _newPassword, _stamp);
             Toasts.Success("Email sign-in saved. The next email uses it.");
             await LoadAsync();   // the stamp of what was just saved, for the next Save
         }
         catch (IncidentManager.Application.Cases.StaleEditException ex)
         {
             Toasts.Error(ex.Message);
-            await ReloadStatusAsync();   // what's saved now; the entries (and a typed password) stay for the admin to re-decide
+            await ReloadStatusAsync(takeStamp: true);   // what's saved now, and they've been told; the entries stay to re-decide
         }
         catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
         {
@@ -185,14 +189,14 @@
     {
         try
         {
-            await SignIns.ClearAsync(_status?.Stamp ?? "");
+            await SignIns.ClearAsync(_stamp);
             Toasts.Info("The saved password is cleared, and email is sent without a sign-in.");
             await LoadAsync();
         }
         catch (IncidentManager.Application.Cases.StaleEditException ex)
         {
             Toasts.Error(ex.Message);
-            await ReloadStatusAsync();
+            await ReloadStatusAsync(takeStamp: true);
         }
         catch (Exception ex) when (ex is InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
         {
@@ -215,14 +219,18 @@
             case EmailSendStatus.Disabled: Toasts.Info($"Email delivery is off. Logged a test message for {to} instead."); break;
             default: Toasts.Error($"Couldn't send the test email. {outcome.Error}"); break;
         }
-        await ReloadStatusAsync();   // a password that won't decrypt shows at once (the form keeps what was typed)
+        // A password that won't decrypt shows at once. The stamp stays the loaded one: a sign-in someone else saved since
+        // is still refused on Save rather than silently taken as seen.
+        await ReloadStatusAsync(takeStamp: false);
     }
 
-    // The saved status (and its stamp) only: what the admin has entered stays as it is.
-    private async Task ReloadStatusAsync()
+    // The saved status only (and its stamp, when the admin has just been told it changed): their entries stay as they are.
+    private async Task ReloadStatusAsync(bool takeStamp)
     {
         var t = _load.Begin();
         var status = await SignIns.GetAsync();
-        if (_load.IsCurrent(t)) _status = status;
+        if (!_load.IsCurrent(t)) return;
+        _status = status;
+        if (takeStamp) _stamp = status.Stamp;
     }
 }

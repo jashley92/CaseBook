@@ -344,6 +344,19 @@ public sealed class SmtpSignInStoreTests : IDisposable
         card.Should().NotContain("ProtectedPassword");
     }
 
+    [Fact]
+    public void The_form_saves_with_the_stamp_it_loaded_and_a_test_email_doesnt_move_it()
+    {
+        // CAP-05 review (C9): the stamp is what the admin saw. A test email refreshes the status for display; if it took
+        // the newer stamp too, a stale form would save its old username over another admin's new password unrefused.
+        var card = File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Web", "Components", "Shared", "EmailSignInCard.razor"));
+        card.Should().Contain("SignIns.SaveAsync(_mode, _username, _newPassword, _stamp)").And.Contain("SignIns.ClearAsync(_stamp)");
+        Regex.Matches(card, @"_stamp\s*=(?!=)", RegexOptions.None, TimeSpan.FromSeconds(1)).Should().HaveCount(3,
+            "set at its declaration, on a load of the entries, and on a reload the admin was told about");
+        Regex.IsMatch(card, @"SendTestCore\(\)(?:(?!private ).)*ReloadStatusAsync\(takeStamp: false\)", RegexOptions.Singleline,
+            TimeSpan.FromSeconds(1)).Should().BeTrue("a test email keeps the loaded stamp");
+    }
+
     private static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
