@@ -812,7 +812,7 @@ else
             try
             {
                 await JS.InvokeVoidAsync("imPasteDrop.register", "evidence-dropzone", "evidence-file-input", "evidence-file-drop");
-                await JS.InvokeVoidAsync("imPasteDrop.register", "timeline-dropzone", "timeline-file-paste", null);
+                await JS.InvokeVoidAsync("imPasteDrop.register", "timeline-dropzone", "timeline-file-paste", "timeline-file-paste", true);   // CAP-26: any file, pasted or dropped
             }
             catch (JSException) { /* progressive enhancement — the manual picker still works */ }
 

@@ -45,6 +45,7 @@ public partial class CaseAudienceGateTests
         ["CaseService.cs:ResolveAboutAsync"] = (3, "private: its caller loaded the case with LoadTrackedAsync; the target must be on that case"),
         ["CaseService.cs:MergeAppendedAsync"] = (1, "private: its caller loaded the case with LoadTrackedAsync"),
         ["CaseService.cs:EnsureQuestionAnsweredAsync"] = (1, "private: its callers loaded the task's case with LoadTrackedAsync"),
+        ["CaseService.cs:AttachScreenshotAsync"] = (1, "CAP-26, private: its callers loaded the case with LoadTrackedAsync; the duplicate check reads only that case's evidence"),
         // Activity, administration, campaigns
         ["ActivityFeedService.cs:RecentAsync"] = (1, "an existence test only (audit rows under a number no case holds now, BUG-277); no case row comes back"),
         ["CaseOutcomeService.cs:ListAllAsync"] = (1, "how many closes recorded each outcome, for the administration list; no case named"),

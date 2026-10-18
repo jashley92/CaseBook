@@ -255,7 +255,9 @@ why, the options considered, who decided, and the tasks carrying them out.
 4. **ATT&CK** technique or tactic search, or the matrix picker.
 5. **Then**: follow-ups saved in the same act (below).
 
-Paste a screenshot anywhere in the composer to attach it as hashed evidence.
+Paste a screenshot anywhere in the composer to attach it as hashed evidence. Any other file can be pasted or dropped
+on the composer too (CAP-26, one per entry, up to 50 MB or the evidence limit if lower): it's stored as evidence in the
+entry's save and the entry cites it. A file that can run is marked *Can run: downloads zipped*.
 
 **Then**, under a finding, decision or adversary step, adds follow-ups saved in the same act: tasks about the
 entry (a decision's tasks read as carrying it out), a question for the brief, a line for the brief's Known, and a

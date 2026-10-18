@@ -212,6 +212,11 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **The note box takes any file, not only screenshots (CAP-26).** Paste a file, or drop one on the timeline composer,
+  and it's stored as evidence with the entry and cited by it ("Evidence: file.csv"), checked as an Evidence tab upload
+  is before anything is stored (the same file already on the case is refused). Up to 50 MB, or the evidence limit if
+  lower; larger files still go through the Evidence tab. Pasted images work as before. No migration and nothing to
+  configure.
 - **Vendors are picked from a list, with their history (CAP-24).** On a third-party case, the New case form's vendor name
   offers the vendors on cases you can see, and a known one shows *Seen before*: how many earlier cases, how the last
   closed one ended, and a link to the case list filtered to that vendor (`?vendor=`, a new filter that saved views and

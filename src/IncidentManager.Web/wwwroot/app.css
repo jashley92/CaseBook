@@ -2127,6 +2127,12 @@ h1:focus {
     background-color: color-mix(in srgb, var(--bs-body-bg) 70%, transparent);
     border-radius: .5rem; pointer-events: none;
 }
+/* CAP-26: the timeline composer takes a dropped file too (one per entry; a non-image is cited). */
+#timeline-dropzone.im-dropping {
+    outline: 2px dashed var(--bs-primary);
+    outline-offset: 2px;
+    background-color: color-mix(in srgb, var(--bs-primary) 6%, var(--bs-body-bg));
+}
 
 /* ============================================================================
    Shared page design system (im-*) — ONE vocabulary for page headers, stat

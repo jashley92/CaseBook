@@ -111,7 +111,7 @@
             @if (!ComposerVisible)
             {
                 <button type="button" class="btn btn-sm btn-primary ms-auto" aria-expanded="false" aria-controls="timeline-dropzone"
-                        title="Add @(IsThirdParty ? "an attack step, a disclosure milestone" : "an adversary step") or an investigation entry. You can also paste a screenshot."
+                        title="Add @(IsThirdParty ? "an attack step, a disclosure milestone" : "an adversary step") or an investigation entry. You can also paste a screenshot, or paste or drop a file."
                         @onclick="() => _composerOpen = true">
                     <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
                 </button>
@@ -183,19 +183,32 @@
        the top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted. *@
     <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none")">
         <div class="card-body">
-            @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. *@
-            <InputFile id="timeline-file-paste" class="d-none" accept="image/*" OnChange="OnTimelinePasted" />
+            @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. CAP-26: any file,
+               pasted or dropped on the composer; one that isn't an image is cited by the entry. *@
+            <InputFile id="timeline-file-paste" class="d-none" OnChange="OnTimelinePasted" aria-label="Attach a file to the entry" />
             @if (_tlEditId is null)
             {
-                <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap">
-                    <span><span class="bi bi-clipboard me-1"></span>Paste a screenshot to attach it. It's saved as hashed evidence with chain of custody.</span>
+                <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap" aria-live="polite">
+                    <span><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Paste a screenshot, or paste or drop a file, to attach it.
+                        It's saved as hashed evidence with chain of custody; a file that isn't an image is cited by the entry.</span>
                     @if (_tlShotBytes is not null)
                     {
                         <span class="im-badge im-b-info">
-                            <span class="bi bi-paperclip me-1"></span>@_tlShotName
+                            <span class="bi bi-paperclip me-1" aria-hidden="true"></span>@_tlShotName@(TlShotIsFile ? $" · {EvidenceRoom.Size(_tlShotBytes.LongLength)}" : "")
                         </span>
-                        <img src="@TlShotDataUri()" alt="Pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
-                        <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="ClearTimelineShot">Remove</button>
+                        @if (!TlShotIsFile)
+                        {
+                            <img src="@TlShotDataUri()" alt="Pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
+                        }
+                        else if (EvidenceRisk.Sentence(_tlShotName, _tlShotType, _tlShotBytes.AsSpan(0, Math.Min(16, _tlShotBytes.Length))) is { } risk)
+                        {
+                            @* CAP-26 (PROD-58): a file that can run is stored like any other, and downloads inside a zip. *@
+                            <span class="im-badge im-b-warn" title="@risk It's kept as evidence and downloads inside a password-protected zip.">
+                                <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Can run: downloads zipped
+                            </span>
+                        }
+                        <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="ClearTimelineShot"
+                                aria-label="Remove @_tlShotName">Remove</button>
                     }
                 </div>
             }
@@ -1905,23 +1918,51 @@ else
         else await AddTimeline();
     }
 
+    // CAP-26: the largest file the composer holds until Add (it's kept in memory, so less than the Evidence tab's chunked,
+    // resumable upload takes); never more than the evidence limit. A screenshot keeps its 15 MB.
+    private const long MaxShotBytes = 15 * 1024 * 1024;
+    private const long MaxComposerFileBytes = 50 * 1024 * 1024;
+    private long MaxFileBytes => Math.Min(MaxComposerFileBytes, Evidence.Limits.MaxUploadBytes);
+
+    // CAP-26: staged as it came: an image keeps the screenshot path; anything else is cited by the entry.
+    private bool TlShotIsFile => !_tlShotType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
     private async Task OnTimelinePasted(InputFileChangeEventArgs e)
     {
         _composerOpen = true; // a pasted screenshot is staged in the form, so show it
+        // CAP-26: one file per entry (a drop can carry several; the first is taken).
+        var files = e.GetMultipleFiles(maximumFileCount: 50);
+        if (files.Count == 0) return;
+        var f = files[0];
+        var image = f.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+        // WF-31: what the save would refuse is refused before any byte is sent.
+        var max = image ? MaxShotBytes : MaxFileBytes;
+        if (f.Size > max)
+        {
+            Toasts.Error(image ? "That image is larger than 15 MB. Upload it on the Evidence tab."
+                : $"“{f.Name}” is larger than {EvidenceRoom.Size(max)}, the most the timeline attaches. Upload it on the Evidence tab, then cite it.");
+            return;
+        }
+        if (f.Name.Length > EvidenceService.MaxFileNameLength)
+        {
+            Toasts.Error($"That file name is longer than {EvidenceService.MaxFileNameLength} characters. Rename the file and attach it again.");
+            return;
+        }
         try
         {
-            var f = e.File;
-            const long maxShot = 15 * 1024 * 1024;
-            await using var s = f.OpenReadStream(maxShot);
+            await using var s = f.OpenReadStream(max);
             using var ms = new MemoryStream();
             await s.CopyToAsync(ms);
             _tlShotBytes = ms.ToArray();
             _tlShotName = f.Name;
-            _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? "image/png" : f.ContentType;
+            _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? (image ? "image/png" : "application/octet-stream") : f.ContentType;
+            if (files.Count > 1)
+                Toasts.Info($"An entry takes one file, so “{f.Name}” is attached. Upload the others on the Evidence tab.");
         }
         catch (Exception)
         {
-            Toasts.Error("Couldn't read the pasted image. Try again, or upload it on the Evidence tab (15 MB max).");
+            Toasts.Error(image ? "Couldn't read the pasted image. Try again, or upload it on the Evidence tab (15 MB max)."
+                : "Couldn't read that file. Try again, or upload it on the Evidence tab.");
             ClearTimelineShot();
         }
     }
@@ -1937,8 +1978,14 @@ else
 
     // WF-31: the staged screenshot goes with the entry, stored as hashed, chain-of-custody evidence in the same save, so a
     // refused entry leaves no evidence behind.
+    // CAP-26: a file that isn't an image goes the same way, and the entry cites it.
     private CaseService.Screenshot? TimelineShot() => _tlShotBytes is null ? null
+        : TlShotIsFile ? new CaseService.Screenshot(_tlShotName ?? "attached-file", _tlShotType, _tlShotBytes, CaseService.AttachedFromTimeline)
         : new CaseService.Screenshot(_tlShotName ?? "pasted-screenshot.png", _tlShotType, _tlShotBytes);
+
+    // CAP-26: what the save's toast says it took with it.
+    private string WithShot(string what, bool withShot, bool asFile, string? name) =>
+        !withShot ? what : asFile ? $"{what}, citing {name}" : $"{what} with screenshot";
 
     // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
     private bool _inFlight;
@@ -1962,6 +2009,7 @@ else
         { Toasts.Error("Choose the open question this finding answers, or remove it."); return; }   // CAP-23
         var whenUtc = KeptWhenUtc();   // C3: nothing recorded for a new entry, so as typed
         var withShot = _tlShotBytes is not null;
+        var (shotIsFile, shotName) = (TlShotIsFile, _tlShotName);   // CAP-26: for the toast
         var shot = _tlShotBytes;   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
         // BUG-601: what was sent, so only that is cleared after the save; text typed while it ran stays.
         var (sent, sentSource, sentDecision) = (_tlDesc, _tlSource, (_decWhy, _decOptions, _decBy));
@@ -1989,7 +2037,7 @@ else
         ClearTimelineShot(shot); ClearDecisionIfUnchanged(sentDecision); ResetFollowUps();
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
-        Toasts.Success(saved ?? (!withShot ? "Timeline entry added" : "Timeline entry added with screenshot"));
+        Toasts.Success(saved ?? WithShot("Timeline entry added", withShot, shotIsFile, shotName));
         await ClearEditorIfUnchanged(sent);
     }
 
@@ -2020,6 +2068,7 @@ else
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var disclosure = IsThirdParty && !_evtAttackMode;
         var withShot = _tlShotBytes is not null;
+        var (shotIsFile, shotName) = (TlShotIsFile, _tlShotName);   // CAP-26: for the toast
         var shot = _tlShotBytes;   // BUG-483 sibling
         // BUG-601: what was sent, so only that is cleared after the save; what was typed or picked while it ran stays.
         var (sent, sentSource, sentTechnique, sentActor, sentTarget, sentTactic) =
@@ -2062,7 +2111,7 @@ else
         var savedStep = SaveSummary();
         ResetFollowUps();
         var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Event step";
-        Toasts.Success(savedStep ?? (!withShot ? $"{what} added" : $"{what} added with screenshot"));
+        Toasts.Success(savedStep ?? WithShot($"{what} added", withShot, shotIsFile, shotName));
     }
 
     // A lens button: switch the timeline lens (All / Event / Investigation).

@@ -179,6 +179,8 @@ times don't settle the order (`Case.MoveEventStep`), and refuse where they do. E
 - A **screenshot pasted** into the composer is uploaded as evidence (hashed, with custody) and shown on that
   entry (`EvidenceId`). Thumbnails come from `/evidence/{id}/inline`, which serves only real raster images and
   logs nothing.
+- CAP-26: any **other file** pasted or dropped on the composer is uploaded the same way in the entry's save and
+  **cited** by the entry (`EvidenceCitations`) instead of shown on it.
 - **Cite evidence** links any number of evidence files to a current entry. The report prints them with the
   entry.
 - Evidence that isn't a pasted screenshot also appears as an "Evidence added" milestone.

@@ -155,13 +155,28 @@ public sealed class CaseService
         (_audience ?? new Notifications.ReminderAudience(_users, _roles)).RecipientsAsync(userIds, c.IsRestricted,
             c.IncidentCommander, c.Assignments.Select(a => a.UserId).ToList(), ct);
 
-    /// <summary>WF-31: a screenshot pasted into the composer, stored as evidence with the entry it illustrates.</summary>
-    public sealed record Screenshot(string FileName, string ContentType, byte[] Bytes, string? Description = "Pasted into the timeline");
+    /// <summary>
+    /// WF-31: a screenshot pasted into the composer, stored as evidence with the entry it illustrates. CAP-26: or any other
+    /// file pasted or dropped there: one whose type isn't an image is stored the same way and cited by the entry
+    /// (<see cref="IsCitedFile"/>) instead of shown as its screenshot.
+    /// </summary>
+    public sealed record Screenshot(string FileName, string ContentType, byte[] Bytes, string? Description = "Pasted into the timeline")
+    {
+        /// <summary>CAP-26: not an image by the type it came with, so it's cited rather than shown; an image keeps the
+        /// screenshot path exactly as before.</summary>
+        public bool IsCitedFile => !ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>CAP-26: what the composer says of a file it attaches that isn't an image.</summary>
+    public const string AttachedFromTimeline = "Attached from the timeline";
 
     /// <summary>
     /// WF-31: stores <paramref name="shot"/> and records it as evidence on the case, linked to <paramref name="entry"/>, in
     /// the same save as the entry. Called once the entry has passed every check, so a refused entry leaves no evidence
-    /// (which can't be removed once recorded). Returns the stored path, to discard if the save itself fails.
+    /// (which can't be removed once recorded). Returns the stored path, to discard if the save itself fails. CAP-26: a file
+    /// that isn't an image is cited by the entry (as <see cref="CiteEvidenceAsync"/> records it), and is first held to what
+    /// an Evidence tab upload is: the same file already on the case (not withdrawn) is refused before a byte is stored
+    /// (PROD-59). It carries no collection details (CAP-08); they're recorded later from its evidence panel.
     /// </summary>
     private async Task<string?> AttachScreenshotAsync(IAppDbContext db, Guid caseId, TimelineEntry entry, Screenshot? shot,
         CancellationToken ct)
@@ -170,6 +185,16 @@ public sealed class CaseService
         if (_evidenceStore is null) throw new InvalidOperationException("Screenshots can't be stored on this server.");
         if (shot.FileName.Length > Evidence.EvidenceService.MaxFileNameLength)
             throw new ArgumentException($"That file name is longer than {Evidence.EvidenceService.MaxFileNameLength} characters.");
+        if (shot.IsCitedFile)
+        {
+            var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(shot.Bytes)).ToLowerInvariant();
+            var already = await db.Evidence.AsNoTracking()   // stored as lowercase hex, as the store writes it
+                .Where(e => e.CaseId == caseId && e.Sha256 == sha && e.WithdrawnAtUtc == null)
+                .OrderBy(e => e.CreatedAtUtc).Select(e => new { e.OriginalFileName, e.CreatedAtUtc }).FirstOrDefaultAsync(ct);
+            if (already is not null)
+                throw new ArgumentException(Evidence.EvidenceService.AlreadyEvidence(already.OriginalFileName, already.CreatedAtUtc) +
+                    " It wasn't stored again. Remove it here, save the entry, then cite that copy with Cite evidence.");
+        }
         // PROD-55: a pasted screenshot is evidence, so it counts against the same limits as an upload.
         await Evidence.EvidenceRoom.CheckAsync(db, _evidenceStore, _evidenceLimits?.CurrentValue ?? new(), shot.Bytes.LongLength, ct: ct);
         await using var content = new MemoryStream(shot.Bytes, writable: false);
@@ -188,7 +213,9 @@ public sealed class CaseService
             Action = "Uploaded", Details = $"{stored.SizeBytes} bytes; sha256={stored.Sha256}"
         });
         db.Evidence.Add(evidence);
-        entry.EvidenceId = evidence.Id;
+        if (shot.IsCitedFile)   // CAP-26: "Evidence: file.csv" on the entry, as a citation made later reads
+            db.EvidenceCitations.Add(new EvidenceCitation { CaseId = caseId, TimelineEntryId = entry.Id, EvidenceId = evidence.Id });
+        else entry.EvidenceId = evidence.Id;
         return stored.StoragePath;
     }
 

@@ -100,6 +100,11 @@ public sealed class EvidenceService
         return new EvidenceCollection(at, from, by);
     }
 
+    /// <summary>PROD-59: the refusal's first sentence, for the Evidence tab's upload and the composer's (CAP-26).</summary>
+    internal static string AlreadyEvidence(string originalFileName, DateTimeOffset uploadedAtUtc) =>
+        $"This file is already evidence in this case, as \"{originalFileName}\" " +
+        $"(uploaded {uploadedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)} UTC).";
+
     // The record, its "Uploaded" custody event and (through the save) its audit entry, for a file already in the store;
     // the same for both upload paths. BUG-206: a file whose record can't be saved is removed, so no bytes sit unrecorded.
     private async Task<Domain.Entities.Evidence> RecordAsync(IAppDbContext db, Guid caseId, string fileName, string contentType,
@@ -113,9 +118,8 @@ public sealed class EvidenceService
         if (already is not null)
         {
             await _store.DiscardUnrecordedAsync(stored.StoragePath);
-            throw new ArgumentException($"This file is already evidence in this case, as \"{already.OriginalFileName}\" " +
-                $"(uploaded {already.CreatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)} UTC). " +
-                "It wasn't stored again; that copy's chain of custody stands.");
+            throw new ArgumentException(AlreadyEvidence(already.OriginalFileName, already.CreatedAtUtc) +
+                " It wasn't stored again; that copy's chain of custody stands.");
         }
         var evidence = new Domain.Entities.Evidence
         {
