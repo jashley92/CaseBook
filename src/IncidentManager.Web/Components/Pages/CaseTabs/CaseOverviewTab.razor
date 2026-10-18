@@ -745,8 +745,11 @@
         if (!_deadlineLoad.IsCurrent(t)) return;
         _deadlines = deadlines;
         // A notice a colleague recorded meanwhile hides its form; the slot is let go so another row's can open. CAP-07: an
-        // edit of how one was notified stays open (its save is refused if the notice changed), so what's typed is kept.
-        if (!_noticeEditing && _notice.Current is { } open && !deadlines.Statuses.Any(s => s.JurisdictionCode == open.Key && s.NotifiedAtUtc is null))
+        // edit of how one was notified stays open while its notice does (a save over a colleague's change is refused, and
+        // what's typed is kept); a notice removed meanwhile takes its form with it.
+        if (_notice.Current is { } open && (_noticeEditing
+                ? !deadlines.NoticeCodes.Contains(open.Key) || !deadlines.Statuses.Any(s => s.JurisdictionCode == open.Key && s.NotifiedAtUtc is not null)
+                : !deadlines.Statuses.Any(s => s.JurisdictionCode == open.Key && s.NotifiedAtUtc is null)))
             _notice.Close();
     }
 
