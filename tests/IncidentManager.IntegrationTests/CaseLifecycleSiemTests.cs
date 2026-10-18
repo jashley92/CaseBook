@@ -174,8 +174,10 @@ public sealed class CaseLifecycleSiemTests : IDisposable
         var c = await OpenAsync(svc, Classification.Breach, detection: null);
         await svc.MarkReportedAsync(c.Id, _clock.UtcNow);
         await svc.ClearReportedAsync(c.Id);
+        await svc.ClearReportedAsync(c.Id);   // a stale page: nothing left to clear, nothing sent
         await svc.RecordNoticeAsync(c.Id, "NY", _clock.UtcNow);
         await svc.RemoveNoticeAsync(c.Id, "NY");
+        await svc.RemoveNoticeAsync(c.Id, "NY");   // and again: nothing removed, nothing sent
 
         _siem.Events.Where(e => e.EventId == SecurityEventIds.CaseReported).Select(e => (e.Action, e.Severity, e.Detail))
             .Should().Equal(

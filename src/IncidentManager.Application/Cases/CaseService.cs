@@ -1407,13 +1407,14 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadWithNoticesAsync(db, id, ct);
         var now = _clock.UtcNow;
-        var hadNotices = c.JurisdictionNotices.Count > 0;
+        var hadNotices = c.JurisdictionNotices.Count;
         c.RemoveNotice(jurisdiction, _user.UserId, now);
-        var cleared = hadNotices && c.JurisdictionNotices.Count == 0;
+        var removed = c.JurisdictionNotices.Count < hadNotices;   // CAP-06 review: a stale page's second remove removes nothing
+        var cleared = hadNotices > 0 && c.JurisdictionNotices.Count == 0;
         if (cleared) c.ClearReported(_user.UserId, now);
         else c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
-        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.ReportedCleared(s, NoticeCode(jurisdiction), a, u));   // CAP-06
+        if (removed) EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.ReportedCleared(s, NoticeCode(jurisdiction), a, u));   // CAP-06
         // BUG-156: its clock runs again, so it's reminded again. BUG-619: only that regulator's, unless every notice went.
         if (cleared) _deadlineReminders?.ForgetCase(id);
         else
@@ -1440,9 +1441,11 @@ public sealed class CaseService
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadWithNoticesAsync(db, id, ct);
+        var wasReported = c.ReportedAtUtc is not null || c.JurisdictionNotices.Count > 0;
         c.ClearReported(_user.UserId, _clock.UtcNow);   // BUG-09: and every jurisdiction's notice
         await db.SaveChangesAsync(ct);
-        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.ReportedCleared(s, null, a, u));   // CAP-06
+        // CAP-06 review: only when something was taken back (a stale page's second clear changes nothing).
+        if (wasReported) EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.ReportedCleared(s, null, a, u));
         _deadlineReminders?.ForgetCase(id);   // BUG-156: its clock runs again, so it's reminded again
     }
 
