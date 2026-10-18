@@ -107,7 +107,7 @@ public partial class CaseAudienceGateTests
         ["EvidenceIntegrityVerifier.cs:VerifyShareAsync"] = (2, "the evidence integrity sweep over every file (or a share of them, PROD-53); its result is counts and alerts, not case content"),
         ["RetentionReviewScanner.cs:CountAsync"] = (1, "CAP-10: the nightly retention count over every case; its result is two numbers (due, under hold), no case named"),
         ["AccessLogRetention.cs:PruneAsync"] = (2, "PROD-52: the nightly access-log prune deletes old rows and reads a case only for its legal hold; nothing is shown to anyone"),
-        ["RowIntegrityVerifier.cs:Tables"] = (26, "the list of hashed tables the integrity check verifies, every row"),
+        ["RowIntegrityVerifier.cs:Tables"] = (27, "the list of hashed tables the integrity check verifies, every row"),
         ["RowIntegrityVerifier.cs:ReplacedButCurrentAsync"] = (7, "the integrity check's version-lineage test over every row"),
         ["RowIntegrityVerifier.cs:HiddenAsync"] = (4, "the integrity check's hidden-version test over every row (BUG-634)"),
         // Start-up: migration back-fills and development seed data, before any request

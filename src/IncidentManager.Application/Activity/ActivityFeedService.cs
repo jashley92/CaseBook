@@ -193,6 +193,7 @@ public sealed class ActivityFeedService
         "CaseEntity" => "an entity or IOC",
         "EntityRelationship" => "a relationship",
         "CaseTechnique" => "an ATT&CK technique",
+        "CaseParty" => "an outside party",   // CAP-34
         "ActionItem" => "a task",
         "CaseAssignment" => "an assignment",
         "Evidence" => "evidence",

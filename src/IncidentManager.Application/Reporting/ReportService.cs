@@ -745,6 +745,7 @@ public sealed class ReportService
             .Include(x => x.StatusChanges)        // INV-16: milestones in the investigation timeline
             .Include(x => x.MaterialityChanges)
             .Include(x => x.JurisdictionNotices)  // WF-35: each regulator's notice is its own milestone (BUG-09)
+            .Include(x => x.Parties)              // CAP-34: outside parties, with the legal lines
             .Include(x => x.VerdictChanges)      // HR-05: verdict milestones in the investigation timeline
             .Include(x => x.GatePassages)
             .Include(x => x.Citations)            // INV-10: evidence an entry cites
@@ -959,6 +960,15 @@ public sealed class ReportService
                     return new ReportNoticeRow(n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc,
                         n.Method is { } m ? Compliance.NoticeDetailText.Label(m) : null, reference, by, file,
                         Compliance.NoticeDetailText.Summary(n.Method, reference, by, file));
+                })
+                .ToList(),
+            // CAP-34: the outside parties, in the order engaged (typed text defanged like the rest).
+            Parties = c.Parties.OrderBy(p => p.EngagedAtUtc ?? p.CreatedAtUtc).ThenBy(p => p.CreatedAtUtc)
+                .Select(p =>
+                {
+                    var (name, contact, reference) = (d.Text(p.Name), d.NullableText(p.Contact), d.NullableText(p.Reference));
+                    return new ReportPartyRow(Cases.PartyText.Label(p.Role), name, contact, reference, p.EngagedAtUtc,
+                        d.NullableText(p.Notes), Cases.PartyText.Line(p.Role, name, contact, reference, p.EngagedAtUtc));
                 })
                 .ToList(),
             ContainedAtUtc = c.ContainmentNotNeededReason is null ? c.ContainedAtUtc : null,

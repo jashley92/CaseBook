@@ -154,8 +154,9 @@ team. *Open the brief* shows the brief's card (where it's revised or confirmed);
 same briefing on the clipboard as plain text. Below: the notification deadline table with *Mark reported*, each
 row's *Record notice* (the time, and optionally the method, reference number, who notified and the notice file) and,
 on a notified row, how it was notified with *Add how notified* / *Edit how notified* (CAP-07), readiness for the next stage gate with each check's *Fix*, the case record and access (restriction). Scope and impact (affected individuals, data
-elements, jurisdictions) is **Things › Impact**; ATT&CK techniques are **Things › ATT&CK**; related cases are
-**Things › Connections**. Change history is in the audit trail (**Paper › Audit trail**).
+elements, jurisdictions) is **Things › Impact**; ATT&CK techniques are **Things › ATT&CK**; related cases, and the
+outside parties with their references (counsel, forensics, the insurer, law enforcement: *Add a party*, *Edit*, ×;
+CAP-34), are **Things › Connections**. Change history is in the audit trail (**Paper › Audit trail**).
 
 A **closed** case's Briefing leads with the record instead: an outcome strip (the outcome, when the activity
 began, detected → contained and recovery → closed with how long each took, and the improvement actions still

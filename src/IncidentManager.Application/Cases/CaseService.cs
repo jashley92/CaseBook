@@ -720,6 +720,7 @@ public sealed class CaseService
             .Include(x => x.GatePassages)   // INV-01: shown on the timeline as milestones
             .Include(x => x.TimeCorrections)  // INV-05b: the "time corrected" history on those milestones
             .Include(x => x.JurisdictionNotices)   // BUG-09: each regulator's notice, a milestone
+            .Include(x => x.Parties)          // CAP-34: outside parties (Things › Connections)
             .Include(x => x.Briefs)           // INV-09: the case brief and its earlier versions
             .Include(x => x.Citations)        // INV-10: evidence cited by timeline entries
             .FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -2850,6 +2851,64 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         c.RemoveTechnique(techniqueId, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// CAP-34: records an outside party on the case (counsel, a forensics firm, the insurer, law enforcement, a regulator's
+    /// contact) with its reference and when it was engaged. Facts only (ADR 0012). Audited and hash-chained; need-to-know
+    /// applies (the case loads through <see cref="LoadTrackedAsync"/>).
+    /// </summary>
+    public async Task<Guid> AddPartyAsync(Guid caseId, PartyDetails details, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadWithPartiesAsync(db, caseId, ct);
+        var party = c.AddParty(details, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+        return party.Id;
+    }
+
+    /// <summary>CAP-34: replaces what's recorded about one outside party.</summary>
+    /// <param name="expectedStamp">C9: the party's <see cref="CaseParty.RowHash"/> as the form opened with it (empty for one
+    /// without). Given, the save is refused when the party changed or was removed since.</param>
+    /// <returns>False when nothing changed, so nothing was saved.</returns>
+    public async Task<bool> UpdatePartyAsync(Guid caseId, Guid partyId, PartyDetails details, string? expectedStamp = null,
+        CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadWithPartiesAsync(db, caseId, ct);
+        var party = c.Parties.FirstOrDefault(p => p.Id == partyId);
+        if (expectedStamp is not null && (party?.RowHash ?? "") != expectedStamp)
+            throw new StaleEditException(party?.RowHash ?? "", party is null
+                ? "Someone else removed this party while you were editing it."
+                : "Someone else changed this party while you were editing. Review it, then save yours again if it's still needed.");
+        if (!c.EditParty(partyId, details, _user.UserId, _clock.UtcNow)) return false;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>CAP-34: takes an outside party off the case (a mis-entry); the audit trail keeps what it said.</summary>
+    /// <param name="expectedStamp">C9: the party's row hash as the page showed it. Given, a party changed since is refused,
+    /// so a stale page doesn't remove what a colleague just corrected.</param>
+    public async Task RemovePartyAsync(Guid caseId, Guid partyId, string? expectedStamp = null, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadWithPartiesAsync(db, caseId, ct);
+        if (c.Parties.FirstOrDefault(p => p.Id == partyId) is not { } party) return;   // already gone
+        if (expectedStamp is not null && (party.RowHash ?? "") != expectedStamp)
+            throw new StaleEditException(party.RowHash ?? "",
+                "Someone else changed this party since you opened the case, so it wasn't removed. Look at it again first.");
+        if (c.RemoveParty(partyId, _user.UserId, _clock.UtcNow)) await db.SaveChangesAsync(ct);
+    }
+
+    // CAP-34: the case (need-to-know scoped) with its parties tracked.
+    private async Task<Case> LoadWithPartiesAsync(IAppDbContext db, Guid id, CancellationToken ct)
+    {
+        var c = await LoadTrackedAsync(db, id, ct);
+        await db.CaseParties.Where(p => p.CaseId == id).ToListAsync(ct);   // tracked: fixes up c.Parties
+        return c;
     }
 
     /// <summary>

@@ -46,6 +46,11 @@ them. Notable behavior:
   notice file ack.pdf." (how it was given only when recorded; typed text defanged like the rest). Template collection
   `notice`: `jurisdiction`, `notified`, `due` (the deadline kept when it was recorded), `method`, `reference`, `by`,
   `file` (a table row holding any of them repeats per notice).
+- **Outside parties** (CAP-34) print with the legal lines (the referral and the hold): in Business Impact when the
+  profile has it, else in the case facts (which then say "Outside parties: see Business Impact." when it does), in the
+  order engaged: "Outside counsel: Lee & Park LLP (contact Dana Lee), reference MAT-114, engaged 2026-10-02 14:00
+  UTC." A party's notes aren't in the built-in report (decision 0012). Template collection `party`: `role`, `name`,
+  `contact`, `reference`, `engaged` (UTC), `notes` (the template decides whether to print them).
 - Indicators are listed apart from everything examined and **defanged** (`Reporting:DefangIndicators`).
 - A TLP 2.0 marking is printed on every page.
 - People appear by display name and enums by their labels; no raw ids or code names.
@@ -84,7 +89,7 @@ template filled it (name and hash, by value).
 | Leadership dashboard | Program › Overview, `/program` | Needs action and running notification clocks, open mix, median timings and targets met for a chosen period (30 days, quarter to date, 12 months), phases, notification compliance, 12 months of case activity (new, carried over and closed, optionally by classification); every figure links to the filtered list |
 | Metrics CSV | `/export/metrics.csv` | Dashboard figures with monthly and quarterly rollups. The SLA met/missed counts judge each milestone as the program report judged it in the quarter it was reached (target in force then, severity and class at that quarter's end) |
 | Program report | Program › Program report (`/program/report`), `/export/program-report.csv` | Quarter against the previous quarter: volumes, time to detect, contain and resolve, SLA attainment (each milestone against the target in force then, from the audited settings changes), regulatory notices (each in the quarter it was given), post-incident follow-through, top techniques. A past quarter is figured from the record as it stood at its end: later corrections of when a transition happened, removed or re-dated notices, a review cleared later, and later edits to attack steps and techniques don't move it. Nothing is measured from an approximate start (no time to detect or detection target). Optional quarterly email to managers. |
-| Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines, and each regulator's reference number (`notice_references`, "NY: NYDFS-2026-114; CA: 88-2026", CAP-07; the last column) |
+| Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines, and each regulator's reference number (`notice_references`, "NY: NYDFS-2026-114; CA: 88-2026", CAP-07), and the outside parties with their references (`outside_parties`, "Insurer: Acme Mutual (CLM-2207); Law enforcement: FBI IC3", CAP-34; the last column) |
 | IOC feed | `/export/iocs.csv` | Malicious indicators across visible cases (a blocklist feed) |
 | Case audit | `/export/case-audit.csv?case=…` | One case's audit trail |
 | Audit trail | Integrity page or `/export/audit.csv` | The audit trail across the cases you can see, filtered as the Integrity page is |

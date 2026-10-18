@@ -4461,3 +4461,48 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018090013_AddCaseParties'
+)
+BEGIN
+    CREATE TABLE [CaseParties] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [Role] int NOT NULL,
+        [Name] nvarchar(300) NOT NULL,
+        [Contact] nvarchar(300) NULL,
+        [Reference] nvarchar(200) NULL,
+        [EngagedAtUtc] datetimeoffset NULL,
+        [Notes] nvarchar(2000) NULL,
+        [RowHash] nvarchar(70) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_CaseParties] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_CaseParties_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018090013_AddCaseParties'
+)
+BEGIN
+    CREATE INDEX [IX_CaseParties_CaseId] ON [CaseParties] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261018090013_AddCaseParties'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261018090013_AddCaseParties'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

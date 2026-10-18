@@ -284,6 +284,9 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>BUG-09: when each regulator was notified (one per jurisdiction).</summary>
     public List<JurisdictionNotice> JurisdictionNotices { get; set; } = new();
 
+    /// <summary>CAP-34: outside parties on the case (counsel, forensics, the insurer, law enforcement), each with its reference.</summary>
+    public List<CaseParty> Parties { get; set; } = new();
+
     /// <summary>Saved graph node positions (cosmetic; not audited/hashed).</summary>
     public List<EntityLayout> EntityLayouts { get; set; } = new();
 
@@ -1393,6 +1396,43 @@ public class Case : AuditableEntity, IHashableEntity
         Techniques.Add(technique);
         Touch(actor, nowUtc);
         return technique;
+    }
+
+    /// <summary>
+    /// CAP-34: records an outside party on the case (normalized and checked by <see cref="PartyDetails.Normalized"/>).
+    /// </summary>
+    public CaseParty AddParty(PartyDetails details, string actor, DateTimeOffset nowUtc)
+    {
+        var d = details.Normalized(nowUtc);
+        var party = new CaseParty
+        {
+            CaseId = Id, Role = d.Role, Name = d.Name, Contact = d.Contact, Reference = d.Reference,
+            EngagedAtUtc = d.EngagedAtUtc, Notes = d.Notes, CreatedBy = actor, CreatedAtUtc = nowUtc,
+        };
+        Parties.Add(party);
+        Touch(actor, nowUtc);
+        return party;
+    }
+
+    /// <summary>CAP-34: replaces what's recorded about one outside party. False when nothing changed.</summary>
+    public bool EditParty(Guid partyId, PartyDetails details, string actor, DateTimeOffset nowUtc)
+    {
+        var party = Parties.FirstOrDefault(p => p.Id == partyId)
+                    ?? throw new InvalidOperationException("That party isn't on this case any more.");
+        if (!party.Set(details.Normalized(nowUtc))) return false;
+        party.ModifiedBy = actor;
+        party.ModifiedAtUtc = nowUtc;
+        Touch(actor, nowUtc);
+        return true;
+    }
+
+    /// <summary>CAP-34: takes an outside party off the case (a mis-entry); the audit trail keeps what it said. False when it
+    /// was already gone.</summary>
+    public bool RemoveParty(Guid partyId, string actor, DateTimeOffset nowUtc)
+    {
+        if (Parties.RemoveAll(p => p.Id == partyId) == 0) return false;
+        Touch(actor, nowUtc);
+        return true;
     }
 
     /// <summary>Removes a tagged ATT&amp;CK technique from the case.</summary>

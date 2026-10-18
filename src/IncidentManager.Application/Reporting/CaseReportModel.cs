@@ -82,6 +82,13 @@ public sealed record ReportNoticeRow(string Jurisdiction, DateTimeOffset Notifie
     public string Line => string.Create(System.Globalization.CultureInfo.InvariantCulture,
         $"Notice to {Jurisdiction}: {NotifiedAtUtc.UtcDateTime:yyyy-MM-dd HH:mm} UTC.{(How is null ? "" : $" {How}.")}");
 }
+/// <summary>
+/// CAP-34: one outside party, as the report's legal and governance lines and the <c>party.*</c> template fields print it.
+/// <paramref name="Role"/> is its label. <paramref name="Notes"/> is only in the template field: the built-in layout prints
+/// the facts that identify the party (ADR 0012).
+/// </summary>
+public sealed record ReportPartyRow(string Role, string Name, string? Contact, string? Reference, DateTimeOffset? EngagedAtUtc,
+    string? Notes, string Line);
 /// <summary>E-26: the post-incident review, as printed in the lessons-learned report (Markdown kept as blocks).</summary>
 public sealed record ReportReview(IReadOnlyList<RichBlock> WhatHappened, IReadOnlyList<RichBlock> ContributingFactors,
     IReadOnlyList<RichBlock> WhatWorkedWell, IReadOnlyList<RichBlock> OpportunitiesToImprove, bool NoActionsIdentified);
@@ -197,6 +204,8 @@ public sealed record CaseReportModel
     public DateTimeOffset? ReportedAtUtc { get; init; }
     /// <summary>CAP-07: each regulator's notice, in the order given, with how it was given when that's recorded.</summary>
     public IReadOnlyList<ReportNoticeRow> Notices { get; init; } = [];
+    /// <summary>CAP-34: the outside parties (counsel, forensics, the insurer, law enforcement), by role and when engaged.</summary>
+    public IReadOnlyList<ReportPartyRow> Parties { get; init; } = [];
     public DateTimeOffset? ContainedAtUtc { get; init; }
     /// <summary>BUG-165: why containment wasn't needed (then <see cref="ContainedAtUtc"/> is null, and this was decided
     /// at <see cref="ContainmentDecidedAtUtc"/>).</summary>
@@ -301,6 +310,7 @@ public sealed record CaseReportModel
             if (ImpactHome)
             {
                 var held = new[] { LegalReferred ? "Legal/Privacy referral" : null, LegalHold ? "legal hold" : null,
+                    Parties.Count > 0 ? "outside parties" : null,   // CAP-34
                     DataTypesInvolved is not null ? "data context" : null }.OfType<string>().ToList();
                 if (held.Count == 0) return [];
                 var said = string.Join(", ", held);
@@ -319,6 +329,8 @@ public sealed record CaseReportModel
         {
             if (LegalReferred) yield return $"Legal/Privacy referral recorded. {LegalNote}";
             if (LegalHold) yield return "Legal hold in effect. Case data must be preserved and not deleted.";
+            // CAP-34: the outside parties with their references, beside the referral and the hold.
+            foreach (var p in Parties) yield return p.Line;
         }
     }
 

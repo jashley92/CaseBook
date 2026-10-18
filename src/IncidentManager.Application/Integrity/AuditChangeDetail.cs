@@ -102,6 +102,7 @@ public static class AuditChangeDetail
         ("EntityRelationship", "Type") => typeof(EntityRelationshipType),
         ("CaseAssignment", "Role") => typeof(CaseAssignmentRole),
         ("CaseLink", "Type") => typeof(CaseLinkType),
+        ("CaseParty", "Role") => typeof(PartyRole),   // CAP-34
         _ => null
     };
 

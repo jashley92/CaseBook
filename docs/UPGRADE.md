@@ -212,6 +212,13 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Outside parties on a case (CAP-34).** One migration, `AddCaseParties`: a new `CaseParties` table (role, name,
+  contact, reference, when engaged, notes), cascading from `Cases`; no data moves. Things › Connections lists them under
+  *Outside parties* (*Add a party*, needing `EditCases`). Each row is audited and hashed from its first row, so the
+  record check flags one without a hash. The case report prints them with the legal lines (Business Impact, or the case
+  facts), Word templates get a `party` list (`party.role`, `name`, `contact`, `reference`, `engaged`, `notes`), and the
+  legal register CSV gains a last column, `outside_parties`: a script reading the register by position still reads the
+  columns before it as before. The configuration bundle is unchanged.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.
