@@ -28,6 +28,8 @@
 @inject IncidentManager.Application.Abstractions.IEvidenceStore EvidenceStoreFiles
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject IncidentManager.Web.Notifications.SmtpSignInStore SmtpSignIns
+@inject IncidentManager.Application.Abstractions.IOrganizationDomains OrgDomains
+@inject IncidentManager.Application.Abstractions.IRelatedExclusionsProvider RelatedExclusionsInForce
 @inject IncidentManager.Web.Secrets.StoredSecretStore StoredSecrets
 @inject IncidentManager.Web.Secrets.StoredSecretAdminService StoredSecretAdmin
 @inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Infrastructure.Notifications.EmailOptions> EmailOptions
@@ -224,7 +226,12 @@
                                             case SettingKind.MultiText:
                                                 <textarea class="form-control font-monospace" id="@def.Key" rows="4"
                                                           value="@_form[def.Key]"
+                                                          aria-describedby="@(def.Key == RelatedExclusionSettings.DomainsKey ? "org-domains-found" : null)"
                                                           @oninput="e => _form[def.Key] = e.Value?.ToString()"></textarea>
+                                                @if (def.Key == RelatedExclusionSettings.DomainsKey)
+                                                {
+                                                    @DiscoveredDomains(s, OrgDomains.Current)
+                                                }
                                                 break;
                                             case SettingKind.Int:
                                                 <input class="form-control" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
@@ -703,6 +710,26 @@
                     @* CAP-22: by word (full-text) or by substring *@
                     <IncidentManager.Web.Components.Shared.SearchModeRow />
                     <tr><td>Authentication mode</td><td><code>@(Config["Auth:Mode"] ?? "(unset)")</code></td></tr>
+                    @* CAP-28 discovery: what was found on the server's network and when, or why nothing was. *@
+                    <tr>
+                        <td>Organization domains found</td>
+                        <td>
+                            @{ var discovery = OrgDomains.Current; }
+                            @DiscoveryBadge(discovery)
+                            <span class="small ms-2">@discovery.Summary(OrgDomains.TimeLimit)</span>
+                            @if (discovery.Refused > 0)
+                            {
+                                <span class="small text-muted ms-1">@discovery.Refused name(s) that aren't full domain names (NetBIOS names) left out.</span>
+                            }
+                            @if (discovery.AtUtc is { } lookedAt)
+                            {
+                                <span class="small text-muted ms-1">Looked @lookedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture).</span>
+                            }
+                            <span class="small text-muted ms-1">@(RelatedExclusionsInForce.DiscoveredInForce is not null
+                                ? "In use: your organization's domains aren't set."
+                                : discovery.Domains.Count > 0 ? "Not in use: your organization's domains are set." : "")</span>
+                        </td>
+                    </tr>
                 </tbody>
             </table>
 
@@ -1026,7 +1053,13 @@
 
     // --- Unsaved changes ---
     private bool Differs(string key) =>
-        !string.Equals(_form.GetValueOrDefault(key) ?? "", SavedValue(key) ?? "", StringComparison.Ordinal);
+        DiscoveredInForce(key)
+            // CAP-28 discovery: the field starts untouched (null) while the found domains are in force, so anything typed,
+            // even a list cleared back to blank (none), is a change to save.
+            ? _form.GetValueOrDefault(key) is not null
+            : !string.Equals(_form.GetValueOrDefault(key) ?? "", SavedValue(key) ?? "", StringComparison.Ordinal);
+    private bool DiscoveredInForce(string key) =>
+        _effective?.FirstOrDefault(e => e.Definition.Key == key) is { Discovered: not null };
     private bool GroupDirty(string group) =>
         _effective?.Any(e => e.Definition.Group == group && Differs(e.Definition.Key)) ?? false;
     private bool BrandDirty =>
@@ -1170,6 +1203,9 @@
 
     private (string? Value, string Source) OperationalResolution(SettingDefinition def)
     {
+        // CAP-28 discovery: not set anywhere, so the domains found on the server's network are in force (never stored).
+        if (def.Key == RelatedExclusionSettings.DomainsKey && RelatedExclusionsInForce.DiscoveredInForce is { } found)
+            return (string.Join(", ", found.Select(d => d.Name)), "Discovered");
         if (def.Kind == SettingKind.MultiText)
         {
             var arr = Config.GetSection(def.Key).Get<string[]>() ?? [];
@@ -1180,6 +1216,76 @@
         var r = ConfigSource.Resolve(Config, def.Key);
         return (r.Value, r.Source);
     }
+
+    // --- CAP-28 discovery: the domains found on the server's network, offered beside "Your organization's domains" ---
+    private readonly InFlight _discovering = new();
+
+    private RenderFragment DiscoveredDomains(EffectiveSetting s, DomainDiscovery found) =>
+        @<div id="org-domains-found" class="small mt-2">
+            @if (s.Discovered is not null && _form.GetValueOrDefault(s.Definition.Key) is null)
+            {
+                <div class="mb-1"><span class="im-badge im-b-info">Not set</span> Using the domains found on this server's network.</div>
+            }
+            else if (s.Discovered is not null && string.IsNullOrWhiteSpace(_form.GetValueOrDefault(s.Definition.Key)))
+            {
+                <div class="mb-1 text-warning-emphasis">Saving this blank leaves out no domain, and the domains found are no longer used.</div>
+            }
+            @if (found.Domains.Count > 0)
+            {
+                <div class="text-muted">Found on this server's network: @found.Described</div>
+            }
+            else
+            {
+                <div class="text-muted">Nothing found on this server's network. @found.Summary(OrgDomains.TimeLimit)</div>
+            }
+            <div class="d-flex flex-wrap gap-3 mt-1">
+                @if (found.Domains.Count > 0)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@UsesFound(s.Definition.Key, found)"
+                            @onclick="() => UseFound(s.Definition.Key)"
+                            aria-label="Use these: fill your organization's domains with the domains found on this server's network, without saving">Use these</button>
+                }
+                <button type="button" class="btn btn-link btn-sm p-0" disabled="@_discovering.Busy" @onclick="LookAgain"
+                        aria-label="Look again for your organization's domains on this server's network">@(_discovering.Busy ? "Looking…" : "Look again")</button>
+            </div>
+        </div>;
+
+    // Whether the field already holds the domains found, one per line as "Use these" puts them.
+    private bool UsesFound(string key, DomainDiscovery found) =>
+        string.Equals((_form.GetValueOrDefault(key) ?? "").Replace("\r", "").Trim(), found.NamesText, StringComparison.OrdinalIgnoreCase);
+
+    // Fills the field only: the administrator reviews it and saves with the section.
+    private void UseFound(string key) => _form[key] = OrgDomains.Current.NamesText ?? "";
+
+    private Task LookAgain() => _discovering.Run(LookAgainCore);
+
+    private async Task LookAgainCore()
+    {
+        DomainDiscovery found;
+        try { found = await Settings.DiscoverDomainsAsync(); }
+        catch (ForbiddenException ex) { if (!_disposed) Toasts.Error(ex.Message); return; }
+        if (_disposed) return;   // C5
+        await ReloadKeepingEdits();   // the domains found may now be the ones in force
+        if (_disposed) return;
+        Toasts.Info(found.Summary(OrgDomains.TimeLimit));
+    }
+
+    private static RenderFragment DiscoveryBadge(DomainDiscovery d) => builder =>
+    {
+        var (css, text) = d.State switch
+        {
+            DomainDiscoveryState.Found when d.Domains.Count > 0 => ("im-badge im-b-ok", "Found"),
+            DomainDiscoveryState.Found => ("im-badge im-b-neutral", "None usable"),
+            DomainDiscoveryState.NotDomainJoined => ("im-badge im-b-neutral", "Not on a domain"),
+            DomainDiscoveryState.NotYet => ("im-badge im-b-neutral", "Not yet"),
+            DomainDiscoveryState.TimedOut => ("im-badge im-b-warn", "Timed out"),
+            _ => ("im-badge im-b-warn", "Failed"),
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, text);
+        builder.CloseElement();
+    };
 
     private static RenderFragment SourceBadge(string source) => builder =>
     {
@@ -1478,7 +1584,7 @@
         _logoDataUri = logo is null ? null : $"data:{logo.ContentType};base64,{Convert.ToBase64String(logo.Bytes)}";
         _form.Clear();
         foreach (var s in _effective)
-            _form[s.Definition.Key] = s.Value;
+            _form[s.Definition.Key] = s.Discovered is null ? s.Value : null;   // CAP-28 discovery: untouched (see Differs)
 
         _accentColor = _effective.FirstOrDefault(e => e.Definition.Key == "Branding:AccentColor")?.Value;
         _inkColor = _effective.FirstOrDefault(e => e.Definition.Key == "Branding:InkColor")?.Value;

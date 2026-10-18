@@ -205,6 +205,11 @@ Caveats:
 - `CriticalAlertRetryHostedService` retries undelivered breach-escalation and integrity-alarm emails from the alert
   outbox (BUG-101), holding them while email is off; `UpdateCheckHostedService` runs the update check (PROD-49, off by
   default).
+- `OrganizationDomains` (CAP-28 discovery, `Application/Admin`) looks once, after `ApplicationStarted`, for the
+  organization's domains in Active Directory (`AdDomainDiscoverySource`: the computer's domain, forest root, forest domains,
+  domain and forest trusts) on its own thread with a 5 s limit (C10: single-flight, a hung look isn't repeated until it
+  returns, its late answer kept). It isn't a scheduled job (one look, plus Administration's *Look again*, which is
+  `AdminSettingsService.DiscoverDomainsAsync`, Administer); its outcome is a Diagnostics row of its own.
 
 **Status on Diagnostics (CAP-29).** Each scheduled job reports into `IJobStatus` (`Application/Abstractions/IJobStatus.cs`,
 a singleton held in memory, reset at restart): it registers a `JobDefinition` (a static `Job` on its class) when it's

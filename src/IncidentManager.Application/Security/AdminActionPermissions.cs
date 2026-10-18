@@ -43,6 +43,7 @@ public static class AdminActionPermissions
             // Operational settings (A-02)
             [Key<AdminSettingsService>(nameof(AdminSettingsService.SetAsync))] = Permission.Administer,
             [Key<AdminSettingsService>(nameof(AdminSettingsService.ResetAsync))] = Permission.Administer,
+            [Key<AdminSettingsService>(nameof(AdminSettingsService.DiscoverDomainsAsync))] = Permission.Administer,   // CAP-28 discovery
 
             // Roles & AD-group mapping
             [Key<RoleService>(nameof(RoleService.CreateRoleAsync))] = Permission.Administer,

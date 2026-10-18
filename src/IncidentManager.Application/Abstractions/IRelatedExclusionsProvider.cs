@@ -10,6 +10,12 @@ namespace IncidentManager.Application.Abstractions;
 public interface IRelatedExclusionsProvider
 {
     RelatedExclusions Current { get; }
+
+    /// <summary>
+    /// CAP-28 discovery: the domains found on the server's network when they're the ones in force (no administrator has
+    /// set the organization's domains, in CaseBook or in the server's settings file), else null. Never stored.
+    /// </summary>
+    IReadOnlyList<DiscoveredDomain>? DiscoveredInForce => null;
 }
 
 /// <summary>CAP-28 exclusions: the settings' keys.</summary>

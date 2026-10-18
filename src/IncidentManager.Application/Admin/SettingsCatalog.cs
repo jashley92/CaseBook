@@ -184,10 +184,14 @@ public static class SettingsCatalog
             "Indicator lookup template: a full https:// address with {0} where the indicator value should appear.", "https://www.virustotal.com/gui/search/{0}", LinkTemplate: true),
         // CAP-28 exclusions: CaseBook can't tell the organization's own domains and ranges from an attacker's, so they were
         // suggested as "possibly related" across every case. Read live (IRelatedExclusionsProvider).
+        // CAP-28 discovery: the domains' static default stays blank; while nothing is saved (nor in the settings file) the
+        // provider uses the domains found on the network (IOrganizationDomains), which are never stored, so never exported.
         new SettingDefinition(RelatedExclusionSettings.DomainsKey, "Your organization's domains", "Related indicators", SettingKind.MultiText,
             "Domains that are yours, one per line, for example contoso.com and corp.contoso.local. Each covers every name under it " +
             "(mail.contoso.com, a@corp.contoso.com), not notcontoso.com. A domain, URL, email address or account on one is never " +
-            "used to suggest possibly related indicators, and nothing is suggested because of it. Blank by default.", "",
+            "used to suggest possibly related indicators, and nothing is suggested because of it. Until you save a list, the " +
+            "domains found on this server's network (its Active Directory domain, forest and trusts) are used; once saved, " +
+            "blank included, yours is.", "",
             DomainList: true),
         new SettingDefinition(RelatedExclusionSettings.RangesKey, "Excluded address ranges", "Related indicators", SettingKind.MultiText,
             "Address ranges in CIDR form, one per line, for example 10.0.0.0/8 or fd00::/8. An address inside one, or a URL on " +
