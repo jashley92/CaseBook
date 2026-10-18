@@ -232,6 +232,117 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task The_endpoints_iis_lets_through_anonymously_still_hold_their_own_line(/* CAP-37 */)
+    {
+        // The installer opens /health*, /branding/logo and /agenda/feed.ics to anonymous requests, so what each gives away
+        // is the app's to decide: a status word, the logo or nothing, and a feed only for a valid signed token.
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory(("Agenda:FeedKey", Convert.ToBase64String(new byte[32])));
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            foreach (var probe in new[] { "/health/live", "/health", "/health/ready" })
+            {
+                var answer = await client.GetAsync(probe);
+                (await answer.Content.ReadAsStringAsync()).Should().BeOneOf(["Healthy", "Unhealthy", "Degraded"], $"{probe} gives the status word only");
+            }
+
+            (await client.GetAsync("/branding/logo")).StatusCode.Should().Be(HttpStatusCode.NotFound, "no logo is configured");
+
+            (await client.GetAsync("/agenda/feed.ics")).StatusCode.Should().Be(HttpStatusCode.NotFound, "no token, no feed");
+            (await client.GetAsync("/agenda/feed.ics?token=forged.token")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        });
+    }
+
+    [Fact]
+    public async Task Alarms_say_degraded_with_no_detail_and_never_take_the_node_out_of_rotation(/* CAP-18 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            (await client.GetAsync("/health/live")).EnsureSuccessStatusCode();
+            var ready = (await client.GetAsync("/health")).StatusCode;
+
+            var calm = await client.GetAsync("/health/alarms");
+            calm.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await calm.Content.ReadAsStringAsync()).Should().Be("Healthy");
+
+            factory.Services.GetRequiredService<IncidentManager.Application.Integrity.SealCopyStatus>()
+                .Record("export folder", DateTimeOffset.UtcNow, @"Access to the path 'D:\CaseBook\seals' is denied.");
+
+            var alarmed = await client.GetAsync("/health/alarms");
+            alarmed.StatusCode.Should().Be(HttpStatusCode.OK, "a monitor reads the word; nothing reads it as the node being down");
+            (await alarmed.Content.ReadAsStringAsync()).Should().Be("Degraded", "the word only: no source, path or error");
+            (await client.GetAsync("/health")).StatusCode.Should().Be(ready, "readiness doesn't count alarms");
+            (await client.GetAsync("/health/ready")).StatusCode.Should().Be(ready);
+        });
+    }
+
+    [Fact]
+    public async Task The_backup_manifest_downloads_as_json_is_access_logged_and_refuses_a_passive_load(/* CAP-19 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            using var asImage = new HttpRequestMessage(HttpMethod.Get, "/export/backup-manifest.json");
+            asImage.Headers.Add("Sec-Fetch-Dest", "image");
+            (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var manifest = await client.GetAsync("/export/backup-manifest.json");
+            manifest.StatusCode.Should().Be(HttpStatusCode.OK);
+            manifest.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            using var doc = System.Text.Json.JsonDocument.Parse(await manifest.Content.ReadAsStringAsync());
+            doc.RootElement.GetProperty("paths").EnumerateArray().Select(p => p.TryGetProperty("path", out var path) ? path.GetString() : null)
+                .Should().Contain(Path.Combine(_dir, "evidence")).And.Contain(Path.Combine(_dir, "seals")).And.Contain(Path.Combine(_dir, "keys"));
+
+            using var scope = factory.Services.CreateScope();
+            await using var db = await scope.ServiceProvider
+                .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                .CreateDbContextAsync();
+            db.CaseAccessEvents.AsEnumerable().Should().Contain(e => e.TargetLabel != null && e.TargetLabel.StartsWith("backup-manifest-"));
+        });
+    }
+
+    [Fact]
+    public async Task The_case_list_exports_as_csv_with_its_filters_and_a_held_search_never_in_the_url(/* CAP-17 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            using var asImage = new HttpRequestMessage(HttpMethod.Get, "/export/cases.csv");
+            asImage.Headers.Add("Sec-Fetch-Dest", "image");
+            (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var all = await client.GetAsync("/export/cases.csv?scope=all");
+            all.StatusCode.Should().Be(HttpStatusCode.OK);
+            all.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
+            var rows = (await all.Content.ReadAsStringAsync()).Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+            rows[1].Should().StartWith("case_number,title,");
+            rows.Length.Should().BeGreaterThan(2, "the demo cases are listed");
+
+            var refs = factory.Services.GetRequiredService<IncidentManager.Web.Services.ExportSearchRefs>();
+            var nothing = refs.Hold("S-1-5-21-DEV-1001", "no case is called this " + Guid.NewGuid());
+            var searched = await client.GetAsync($"/export/cases.csv?scope=all&qref={nothing}");
+            searched.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await searched.Content.ReadAsStringAsync()).Split("\r\n", StringSplitOptions.RemoveEmptyEntries)
+                .Should().HaveCount(2, "the held search is applied: only the comment and the header");
+
+            (await client.GetAsync("/export/cases.csv?qref=0123456789abcdef0123456789abcdef")).StatusCode.Should().Be(HttpStatusCode.Gone);
+
+            using var scope = factory.Services.CreateScope();
+            await using var db = await scope.ServiceProvider
+                .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                .CreateDbContextAsync();
+            db.CaseAccessEvents.AsEnumerable().Should().Contain(e => e.TargetLabel != null && e.TargetLabel.StartsWith("cases-"));
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);

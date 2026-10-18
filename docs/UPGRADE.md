@@ -227,6 +227,42 @@ first with `casebook-keytool export`.
   finding as its result, or raises and completes one when none followed it up, in the entry's save. No migration and
   nothing to configure. A question someone else answered or followed up while you were writing is refused, with your
   text kept.
+- **Probes, the email logo and calendar feeds reach the app on IIS (CAP-37).** `Install-CaseBook.ps1` now carves
+  `/health` (with `/health/live`, `/health/ready` and everything else below it), `/branding/logo` and
+  `/agenda/feed.ics` out of Windows Authentication, as it always has `/api`; `Verify-Install.ps1 -Url` checks each
+  answers anonymously. The app still decides what each gives away: a status word, the logo or a 404, and a feed only
+  for a valid signed token. `/agenda/agenda.ics` and the rest of the site stay signed in. `Upgrade-CaseBook.ps1`
+  doesn't change IIS authentication, so on an existing site either re-run `Install-CaseBook.ps1` or apply the carve-out
+  by hand, elevated, for each of `health`, `branding/logo` and `agenda/feed.ics` (with your site's name):
+  `appcmd set config "CaseBook/health" /section:system.webServer/security/authentication/anonymousAuthentication /enabled:true /commit:apphost`
+  and the same with `windowsAuthentication /enabled:false`. A load balancer that authenticated to reach `/health` can
+  stop doing so.
+- **`GET /health/alarms` for monitoring tools (CAP-18).** It answers `Healthy`, or `Degraded` while the audit chain is
+  broken, evidence has drifted, the evidence key is unavailable, a seal copy is failing or the backup status file is
+  stale or missing; always 200, with no detail. It is not part of `/health` and never takes a node out of rotation, so
+  point a monitor (not the load balancer) at it and alert on `Degraded`. Anonymous on IIS through the `/health`
+  carve-out above; no setting or migration.
+- **Diagnostics lists the backup set, and `backup-manifest.json` gives it to backup jobs (CAP-19).** Administration →
+  Diagnostics → *Backup set* shows the database's name and every path OPERATIONS.md §1 says to back up (evidence,
+  report output, seal exports, the keys folder, the Data Protection keys, report templates, branding), each with
+  whether it's there and writable, its size and last write. `GET /export/backup-manifest.json` (Administer) is the same
+  as JSON, paths only, never key material; it's access-logged and SIEM 5304. Setting sources now also show
+  `Integrity:ExportPath`, `DataProtection:KeyPath`, `ReportTemplates:RootPath` and `ReportBranding:RootPath`. No setting
+  or migration. Compare the card with your backup job's folder list once after upgrading.
+- **Trusted signing keys for configuration bundles (CAP-16).** A new server-side setting, `Config:TrustedBundleKeys`,
+  names a folder of public keys (PEM) whose bundles import as this server's own do; it's blank (none) unless you add it
+  to `appsettings.Production.json` (the production template now carries it). **Behavior change:** a bundle signed with
+  any other key no longer imports on a tick box; the administrator types the key's id, which the page shows, to
+  confirm it. Re-importing this server's own bundle is unchanged. To promote from a test server without typing, put
+  the public half of its seal-signing key in the folder and recycle the app pool. A file there that isn't an RSA key
+  stops startup with its name. The import's audit entry and SIEM 5405 now end `signed with this server's key <id>`,
+  `signed with trusted key <id> (<file>)` or `signed with key <id> (...), its id typed to confirm`; a SIEM rule that
+  matched the 5405 detail's old `; key <id>` ending needs updating.
+- **The Cases list exports to CSV (CAP-17).** *Export CSV* beside Views downloads every case the list's filters match
+  (`/export/cases.csv`, the same query as the page), with the list's columns and the detected, contained, resolved,
+  closed and reported times, up to 10,000 cases. Need-to-know applies as on the page; each download is in the access
+  log and is SIEM 5304, and it counts against the downloads rate limit. A search is passed as a short-lived reference,
+  not its text. No setting or migration.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

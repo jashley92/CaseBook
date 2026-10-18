@@ -205,7 +205,9 @@ return query.Where(c => !c.IsRestricted
 Listed in [reference/known-issues.md](../reference/known-issues.md#security). In short:
 
 - A configuration bundle's signature is checked against the key inside the file, so it proves integrity, not
-  origin. (`ImportAsync` itself refuses a bundle whose signature doesn't verify.)
+  origin. Origin is the key's: this server's own and those in `Config:TrustedBundleKeys` import without asking; any
+  other imports only when an administrator types its key id (CAP-16, `ConfigBundleService.ImportAsync`, which also
+  refuses a bundle whose signature doesn't verify, or that states a held or trusted key's id while carrying another).
 
 ## HTTP protections
 

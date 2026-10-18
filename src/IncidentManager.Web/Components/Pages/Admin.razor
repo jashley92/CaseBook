@@ -757,6 +757,10 @@
                 </table>
             }
 
+            @* CAP-19: every path to back up, and the manifest a backup job reads. *@
+            <h6 class="text-uppercase small text-muted mt-3">Backup set</h6>
+            <IncidentManager.Web.Components.Shared.BackupSetPanel />
+
             <h6 class="text-uppercase small text-muted mt-3">Integrity check cost</h6>
             <p class="small text-muted mb-2">
                 The integrity check runs every 10 minutes. Each run checks every record and the audit entries written
@@ -1146,6 +1150,11 @@
         ("Evidence store path", "EvidenceStore:RootPath", false),
         ("Report output path", "ReportOutput:RootPath", false),
         ("Seal signing key path", "Integrity:SigningKeyPath", false),
+        // CAP-D5 (CAP-19): the rest of the backup set's paths, which this table used to leave out.
+        ("Seal export path", "Integrity:ExportPath", false),
+        ("Data Protection key path", "DataProtection:KeyPath", false),
+        ("Report templates path", "ReportTemplates:RootPath", false),
+        ("Report branding path", "ReportBranding:RootPath", false),
         ("Backup status file", "BackupStatus:FilePath", false),
         ("Update check repository", "Updates:Repository", false),
         ("Update check proxy", "Updates:Proxy", false),

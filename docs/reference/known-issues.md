@@ -10,7 +10,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
-| Medium | **Configuration-bundle signatures are checked against the key inside the file.** It proves integrity, not origin. (`ImportAsync` does refuse a bundle whose signature doesn't verify.) | A self-signed bundle from anywhere imports if an admin accepts it. | Pin trusted key ids. |
+| Low | **A bundle signed with an unknown key still imports once an administrator types its key id** (CAP-16; this server's key and the keys in `Config:TrustedBundleKeys` import without asking). Typing the id is a deliberate act, audited and sent to the SIEM, but it's the administrator's check against the source, not the server's. | An administrator persuaded to type a stranger's key id can import their bundle. | Turn off the typed-id route where every source's key is in the trusted folder (not built). |
 | Low | Only `CaseService`, three admin services, the access log and API tokens emit SIEM 5202 on refusal; other services (including the compliance bundle) refuse silently. | Gaps in detection of stale sessions or UI defects. | Emit from the shared `ForbiddenException` path. |
 | Low | The audit chain is unkeyed unless the chain key is turned on (off by default). Without it, up to one seal interval (6 h by default) of the newest entries is protected only by database access control. | See [integrity.md](../architecture/integrity.md#known-limitation). | Turn on `Integrity:ChainKey` once the key's backup is in place ([OPERATIONS.md §2](../OPERATIONS.md#the-audit-chain-key-f-25-off-by-default)). |
 | Low | PII at rest relies on SQL Server TDE; Always Encrypted isn't used. | Column-level protection for the most sensitive fields. | Always Encrypted on selected columns. |
@@ -33,7 +33,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
-| Medium | **Anonymous endpoints aren't reachable on an IIS install** (`/health*`, `/branding/logo`, `/agenda/feed.ics`) because the installer disables anonymous authentication outside `/api`. | Load-balancer probes, email logos and calendar subscriptions fail. | Installer carve-outs for those paths. |
 | Medium | **Install-CaseBook without `-AppPoolCredential`** for a non-gMSA account sets a blank password; several messages claim it prompts. | The app pool won't start. | Prompt or refuse. |
 | Medium | **Re-running Install-CaseBook overwrites `appsettings.Production.json`** and doesn't update an existing site's bindings. | Manual configuration is lost; adding a certificate by re-running doesn't work. | Merge config; update bindings. |
 | Low | `Upgrade-CaseBook.ps1` uses `robocopy /MIR`, which replaces `web.config` with the release's and removes other files in the site folder (`appsettings.Production.json`, `VERSION.txt` and `logs` are kept). | Hand edits to `web.config` (stdout logging) are lost on each upgrade. | Re-apply them after upgrading, or keep them in `appsettings.Production.json` where a setting exists. |

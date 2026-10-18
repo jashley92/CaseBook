@@ -43,18 +43,43 @@ public sealed partial class ConfigBundleService
                 $"This bundle is schema v{env.SchemaVersion}, newer than this app supports (v{ConfigBundleJson.CurrentSchemaVersion}). Upgrade CaseBook first.");
 
         RefuseBorrowedKeyId(env);
+        var (trust, trusted) = TrustOf(env.PublicKeyPem);
         var verification = new ConfigVerification(
             SignatureValid: SignatureValid(env),
-            SignedByThisInstance: HeldByThisServer(env.PublicKeyPem),
+            SignedByThisInstance: trust == ConfigBundleTrust.ThisServer,
             KeyId: env.KeyId,
             ExportedBy: env.ExportedBy,
             ExportedAtUtc: env.ExportedAtUtc,
             SchemaVersion: env.SchemaVersion,
             AppVersion: env.AppVersion,
-            SourceHost: env.SourceHost);
+            SourceHost: env.SourceHost,
+            Trust: trust,
+            CarriedKeyId: CarriedKeyId(env.PublicKeyPem),
+            TrustedKeyFile: trusted?.FileName);
 
         return (env, verification);
     }
+
+    /// <summary>CAP-16: the bundle-signing keys this server trusts besides its own, for the page to list.</summary>
+    public IReadOnlyList<TrustedBundleKey> TrustedKeys => _trustedKeys.Keys;
+
+    /// <summary>CAP-16: where the trusted keys are read from (<c>Config:TrustedBundleKeys</c>), or null when it isn't set.</summary>
+    public string? TrustedKeysFolder => _trustedKeys.Folder;
+
+    // CAP-16: whose the carried key is, decided by the key itself, never by the id the file states (BUG-221).
+    private (ConfigBundleTrust Trust, TrustedBundleKey? Key) TrustOf(string? publicKeyPem)
+    {
+        if (HeldByThisServer(publicKeyPem ?? "")) return (ConfigBundleTrust.ThisServer, null);
+        var carried = SubjectPublicKeyInfo(publicKeyPem);
+        var trusted = carried is null ? null : _trustedKeys.Keys.FirstOrDefault(k =>
+            SubjectPublicKeyInfo(k.PublicKeyPem) is { } held && held.AsSpan().SequenceEqual(carried));
+        return trusted is null ? (ConfigBundleTrust.Unknown, null) : (ConfigBundleTrust.TrustedKey, trusted);
+    }
+
+    /// <summary>CAP-16: a key's id as seal keys' are computed, the first 16 hex characters of the SHA-256 of its
+    /// SubjectPublicKeyInfo, from the key the bundle carries; null when it carries none that reads.</summary>
+    public static string? CarriedKeyId(string? publicKeyPem) =>
+        SubjectPublicKeyInfo(publicKeyPem) is { } spki ? Convert.ToHexString(SHA256.HashData(spki))[..16].ToLowerInvariant() : null;
 
     // BUG-221: "signed by this instance" is decided by the key the bundle carries (the one its signature was checked
     // against), never by the key id it states: the id is public (every export, the compliance bundle, the seals), so
@@ -89,6 +114,12 @@ public sealed partial class ConfigBundleService
             throw new InvalidOperationException(
                 $"This bundle says it was signed with this server's key ({env.KeyId}), but the key it carries is a different " +
                 "one, so it was made to look like this server's own export. Nothing was imported.");
+        // CAP-16: likewise a trusted key's id on a bundle that carries another key, made to look like that source's export.
+        if (_trustedKeys.Keys.FirstOrDefault(k => string.Equals(k.KeyId, env.KeyId, StringComparison.OrdinalIgnoreCase)) is { } named
+            && TrustOf(env.PublicKeyPem).Trust == ConfigBundleTrust.Unknown)
+            throw new InvalidOperationException(
+                $"This bundle says it was signed with the trusted key {env.KeyId} ({named.FileName}), but the key it carries is a " +
+                "different one, so it was made to look like that source's export. Nothing was imported.");
     }
 
     // BUG-335: a bundle from v1.0.x / v1.1.x was signed without step kinds (all General then), so it's checked against that
@@ -718,10 +749,12 @@ public sealed partial class ConfigBundleService
     /// audited.
     /// </summary>
     /// <exception cref="InvalidOperationException">Not a bundle this app reads, or the signature doesn't verify.</exception>
-    /// <param name="sourceTrusted">BUG-19: the administrator confirms the bundle came from a source they trust. Required when
-    /// it's signed with a key this server doesn't hold: the signature is checked against the key inside the bundle, so it
-    /// proves the bundle wasn't changed after signing, not who signed it.</param>
-    public async Task<ConfigImportResult> ImportAsync(ConfigBundleEnvelope envelope, bool sourceTrusted = false, CancellationToken ct = default)
+    /// <param name="confirmedKeyId">BUG-19, CAP-16: the carried key's id, typed by the administrator. Required when the bundle
+    /// is signed with a key this server neither holds nor trusts (<c>Config:TrustedBundleKeys</c>): the signature is checked
+    /// against the key inside the bundle, so it proves the bundle wasn't changed after signing, not who signed it. Typing
+    /// the id, checked against the source's own Integrity page, is the admin naming the key they trust; a tick box was too
+    /// easy to click through. Ignored for this server's own key and a trusted one.</param>
+    public async Task<ConfigImportResult> ImportAsync(ConfigBundleEnvelope envelope, string? confirmedKeyId = null, CancellationToken ct = default)
     {
         // S-18: an import can grant roles and AD mappings, so it's asserted here, not just by the Administer page.
         AdminActionPermissions.Require<ConfigBundleService>(_user, _siem);
@@ -735,11 +768,21 @@ public sealed partial class ConfigBundleService
             throw new InvalidOperationException(
                 "This bundle's signature doesn't verify, so it was altered after export. Nothing was imported.");
         RefuseBorrowedKeyId(envelope);
-        var foreignKey = !HeldByThisServer(envelope.PublicKeyPem);
-        if (foreignKey && !sourceTrusted)
+        var (trust, trustedKey) = TrustOf(envelope.PublicKeyPem);
+        var carriedId = CarriedKeyId(envelope.PublicKeyPem) ?? envelope.KeyId;
+        if (trust == ConfigBundleTrust.Unknown
+            && !string.Equals(confirmedKeyId?.Trim(), carriedId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
-                "This bundle is signed with a key this server doesn't hold, so its signature can't show who made it. " +
-                "Confirm it came from a source you trust to import it. Nothing was imported.");
+                $"This bundle is signed with key {carriedId}, which this server neither holds nor trusts, so its signature can't " +
+                "show who made it. To import it, check that id on the source server's Integrity page and type it to confirm, or " +
+                "add the source's public key to the trusted keys folder (Config:TrustedBundleKeys). Nothing was imported.");
+        // CAP-16: how the key was trusted, named in the audit line and the 5405 event.
+        var signedWith = trust switch
+        {
+            ConfigBundleTrust.ThisServer => $"this server's key {carriedId}",
+            ConfigBundleTrust.TrustedKey => $"trusted key {carriedId} ({trustedKey!.FileName})",
+            _ => $"key {carriedId} (not this server's or a trusted one), its id typed to confirm",
+        };
 
         var bundle = WithCommaJurisdictions(envelope.Bundle);   // after the signature check, which covers the bundle as signed
 
@@ -790,8 +833,7 @@ public sealed partial class ConfigBundleService
             }
             if (notPlaced.Count > 0) await db.SaveChangesAsync(CancellationToken.None);
             await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
-                $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)" +
-                (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : "") +
+                $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged), signed with {signedWith}" +
                 (notPlaced.Count > 0 ? $"; the file for {string.Join(", ", notPlaced)} couldn't be put in place and was left as it was" : ""),
                 CancellationToken.None);
         }
@@ -816,7 +858,7 @@ public sealed partial class ConfigBundleService
             // signing key; the audit trail has each row.
             if (added + updated > 0)
                 _siem.ReferenceDataChanged(_user, ReferenceDataKinds.ConfigurationBundle,
-                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{added} added, {updated} updated; key {envelope.KeyId}"),
+                    string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{added} added, {updated} updated; signed with {signedWith}"),
                     ReferenceDataAction.Changed);
         }
 

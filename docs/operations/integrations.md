@@ -305,8 +305,8 @@ schema, for use in the organization's own approved AI tool.
   for calendar apps (`/agenda/feed.ics?token=…`).
 - **Auth:** the subscription token is an HMAC (`Agenda:FeedKey`) over the user id and issue time. Users can reset
   their link; it stops working after 365 days or if the user loses all roles. Blank `FeedKey` disables the feed.
-- **IIS:** the feed must be reachable anonymously for calendar apps, which needs a carve-out
-  ([troubleshooting](troubleshooting.md#health-probe-returns-401)).
+- **IIS:** the feed must be reachable anonymously for calendar apps; the installer carves `/agenda/feed.ics` out of
+  Windows authentication (CAP-37; [troubleshooting](troubleshooting.md#health-probe-returns-401) for older sites).
 
 ## Backup status file
 
@@ -329,6 +329,7 @@ The Enterprise matrix (v19.1) is embedded as JSON and loaded once. No network ac
 | Export | For |
 |---|---|
 | `/export/iocs.csv` | A blocklist feed of malicious indicators (signed-in download) |
+| `/export/cases.csv` | The Cases list as filtered, with lifecycle times, for a spreadsheet or a report pack (signed-in download, CAP-17) |
 | `/api/export/iocs.csv`, `/api/export/iocs.stix.json` | The same feed for a machine, with an API token ([above](#ioc-feed-for-firewalls-edr-and-threat-intel-platforms)) |
 | `/cases/{id}/graph.stix.json` | A case's entities and relationships as STIX 2.1, for a TIP or a partner |
 | `/campaigns/{id}/rollup.json` | A campaign rollup |

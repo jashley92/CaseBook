@@ -151,7 +151,8 @@ Or pass the values directly instead of a config file:
 Run **on the web host, elevated** (Run as Administrator). Publishes the app (unless `-SkipPublish`), creates
 the data root and its folders (`evidence-store`, `report-output`, `branding`, `report-templates`, `keys`,
 `seals`, `ops`, `dp-keys`), writes `appsettings.Production.json`, creates the IIS app pool and site, enables
-Windows Authentication (anonymous only under `/api`, for the token-authenticated import API), and grants the app
+Windows Authentication (anonymous only under `/api`, for the token-authenticated API, and on `/health`,
+`/branding/logo` and `/agenda/feed.ics`, for probes, mail clients and calendar apps), and grants the app
 pool Modify on the data folders and Read & Execute on the site.
 
 **From the release bundle** (no SDK needed):
@@ -231,9 +232,11 @@ Or pass every value directly instead of a config file:
 - The template doesn't set `App:BaseUrl` (email links and logo; set it in Administration → Notifications),
   `Agenda:FeedKey` (calendar subscriptions), or any SIEM, chat or CyberArk endpoint. See
   [operations/configuration.md](operations/configuration.md).
-- **Anonymous endpoints:** IIS answers 401 for `/health`, `/health/live`, `/branding/logo` and
-  `/agenda/feed.ics` because only `/api` is anonymous. If a load balancer, mail clients or calendar apps need
-  them, add anonymous `<location>` entries for those paths the same way the installer does for `/api`.
+- **Anonymous endpoints (CAP-37):** the installer opens `/health` (and every probe below it), `/branding/logo` and
+  `/agenda/feed.ics` to anonymous requests with `<location>` entries, the same way as `/api`, so a load balancer,
+  mail clients and calendar apps reach them without a sign-in. The app still enforces each: the probes answer a
+  status word only, the logo is the branding image or a 404, and the feed is a 404 without a valid signed token.
+  `Verify-Install.ps1 -Url` checks all four paths.
 
 ### Publishing / NuGet restore
 
@@ -303,6 +306,9 @@ cd <repo>\deploy
 .\Verify-Install.ps1 -Url https://casebook.contoso.com/ -AppPoolName CaseBook
 # (or pass -ConfigFile to reuse the answers file's AppPoolName, and/or re-run readiness)
 ```
+
+The smoke test checks the app pool, a signed-in request to the site, and that `/api`, `/health/live`, `/health/alarms`,
+`/branding/logo` and `/agenda/feed.ics` reach CaseBook without a sign-in (a 401 or 403 there is IIS refusing first).
 
 Then, signed in as a mapped user:
 
@@ -384,7 +390,7 @@ The full guide is [operations/troubleshooting.md](operations/troubleshooting.md)
 | `500.30` / `500.31` on first hit | The app couldn't start: usually the connection string or SQL login, a store path the app pool can't write (the data folders, not the web root), or a migration failure. Check the Application event log and `logs\stdout`. |
 | The app pool stops immediately | A non-gMSA account installed without `-AppPoolCredential`: the password is blank. Set it in IIS Manager. |
 | `401 Unauthorized` for everyone | Windows Auth isn't negotiating: missing **SPN** for the hostname, or the site isn't in the browser's intranet zone. |
-| `401` on `/health` or the email logo | Only `/api` is anonymous on an installed site. Carve the paths out or let the probe authenticate. |
+| `401` on `/health`, the email logo or the calendar feed | The anonymous carve-out for that path is missing (a site installed before CAP-37, or changed since). Re-run the installer or apply it with `appcmd` ([UPGRADE.md](UPGRADE.md), *Unreleased*). |
 | `401` calling **`POST /api/import/cases`** | Send `Authorization: Bearer <token>`. If a valid token still gets 401, the `/api` anonymous carve-out is missing (re-run the installer or apply it with `appcmd`). A token without `EditCases` gets **403**. |
 | `400 Bad Request` | The hostname used isn't in `AllowedHosts`. |
 | Login OK but *access denied* everywhere | The user isn't in any mapped AD group, or the group names in the answers file don't match AD. After first start, manage mappings in Administration → Roles & access. |

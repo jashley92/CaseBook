@@ -86,7 +86,9 @@ From top to bottom:
 3. **Filters**: classification, phase, minimum severity, origin, outcome and search (case number, title, IOC,
    and the record: timeline entries and decisions, the brief, notes, tasks and their results, the review; a row
    says where it matched). *More filters* adds closed, exercises, notify state, legal referral, legal hold, assignee and opened
-   window. All filters live in the URL, so a view can be bookmarked or saved under **Views**.
+   window. All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export CSV**, beside
+   Views, downloads every case the filters match (not only the page shown), with the list's columns and the detected,
+   contained, resolved, closed and reported times (CAP-17; up to 10,000 cases).
 4. **A case row.** The left edge is marked for High or Critical cases. In the list, `j`/`k` move, `p` opens a
    read-only preview beside the list, and `Enter` opens the case.
 
@@ -355,10 +357,10 @@ lessons-learned report.
 |---|---|---|
 | Integrity & audit | Verify the audit chain, see seals, search the whole audit trail (case, actor, action, entity type, dates; paged by sequence, so new entries don't shift the pages) and export it as CSV, export a compliance bundle. A setting's *History* link in Administration opens it filtered to that setting | ![](../screenshots/integrity-audit.png) |
 | Access log | Who read which case or downloaded which artifact (administrators) | ![](../screenshots/access-log.png) |
-| Administration | Settings by section, with a left rail of every admin area | ![](../screenshots/admin-settings.png) |
+| Administration | Settings by section, with a left rail of every admin area. *Diagnostics* includes the **Backup set** (CAP-19): the database's name and every path to back up, each with whether it's there and writable, its size and last write, and `backup-manifest.json` to download | ![](../screenshots/admin-settings.png) |
 | Roles & access | System and custom roles, and AD group mappings | ![](../screenshots/roles-access.png) |
 | Data elements | Personal-data categories and their notification jurisdictions | ![](../screenshots/data-elements.png) |
 | Regulatory deadlines | Notification window per jurisdiction | ![](../screenshots/regulatory-deadlines.png) |
 | Report templates | Word template library with live preview | ![](../screenshots/report-templates.png) |
-| Configuration bundle | Signed export and previewed import of editable configuration | ![](../screenshots/config-bundle.png) |
+| Configuration bundle | Signed export and previewed import of editable configuration. A bundle signed with a key this server neither holds nor trusts needs its key id typed; the *Trusted signing keys* card lists the keys in `Config:TrustedBundleKeys` (CAP-16) | ![](../screenshots/config-bundle.png) |
 | My access | What your roles allow | ![](../screenshots/my-access.png) |

@@ -24,6 +24,16 @@ Three data sets must be backed up **in lockstep** so they stay mutually consiste
 | Report branding logo | `ReportBranding:RootPath` (`DataRoot\branding`, H-07) | File backup (single small image; low churn) |
 | Word report templates | `ReportTemplates:RootPath` (`DataRoot\report-templates`, PROD-47; when unset, a `report-templates` folder beside `ReportBranding:RootPath`, so upgraded servers need no config change) | File backup (one .docx per library template, named by its id; low churn) |
 
+**What this server holds (CAP-19).** Administration → Diagnostics → **Backup set** lists the database's name and each
+of these paths as this server resolves them (key files set outside the keys folder are listed on their own), with
+whether it's there, whether CaseBook's account can write it, its size and its last write. The seal export folder is
+judged writable by its last seal copy, never by a test file (it may be WORM), and the evidence store by its own probe.
+Each folder's walk is limited to 5 seconds and 200,000 entries, so a share that's down says "didn't answer" and a very
+large store says "at least". **`GET /export/backup-manifest.json`** (Administer; access-logged, SIEM 5304) gives the same
+as JSON for a backup job to read its folder list from, or a restore drill to compare against: paths and metadata only,
+never a key or the connection string. Pull it with the job's Windows account, for example
+`Invoke-WebRequest https://casebook.contoso.com/export/backup-manifest.json -UseDefaultCredentials -OutFile manifest.json`.
+
 ### 1.1 SQL Server backup schedule (recommended baseline)
 
 - **Full** backup nightly.
@@ -477,11 +487,11 @@ the tool on the server, against the site's own keys folder, or the record waits 
   Over budget returns **429** with a `Retry-After` header and emits SIEM **`EventId 5306`** — a spike of
   these from one account is a bulk-exfiltration signal worth a detection rule. The inline timeline
   thumbnail endpoint is intentionally exempt (many load at once; it is image-only and need-to-know scoped).
-- **Health probes (H-09)**: three endpoints the app serves **anonymously** for IIS / a load balancer / uptime
+- **Health probes (H-09)**: four endpoints the app serves **anonymously** for IIS / a load balancer / uptime
   monitoring — they return the status word only (no case data, no paths, no exception text), so they are safe
-  to expose to an internal monitor. **On an `Install-CaseBook.ps1` site, IIS itself requires Windows
-  authentication everywhere except `/api`**, so either let the probe authenticate or add anonymous
-  `<location>` entries for these paths (see [operations/troubleshooting.md](operations/troubleshooting.md#health-probe-returns-401)):
+  to expose to an internal monitor. `Install-CaseBook.ps1` carves `/health` and every path below it out of
+  Windows authentication (CAP-37), so a probe needs no sign-in; a site installed before that needs the carve-out
+  (see [operations/troubleshooting.md](operations/troubleshooting.md#health-probe-returns-401)):
   - `GET /health/live` — **liveness**: the process is up and the pipeline responds. Runs no dependency
     checks. `200 Healthy`. Use this for the app-pool / container "is it running" probe.
   - `GET /health` (alias `GET /health/ready`) — **readiness**: additionally verifies **database
@@ -491,6 +501,15 @@ the tool on the server, against the site's own keys folder, or the record waits 
     evidence volume is pulled from rotation instead of serving 500s. Complements the backup-health (H-04)
     and evidence-drift (F-17) signals on the Diagnostics page, which cover freshness/tamper rather than
     live reachability.
+  - `GET /health/alarms` — **alarms** (CAP-18), for a monitoring tool rather than the load balancer:
+    `200 Healthy`, or `200 Degraded` while any alarm the app otherwise shows only in banners and the SIEM is
+    up: the audit chain broken (5001), evidence drift or its store unreachable (5003), the evidence key
+    unavailable, a seal copy whose last attempt failed (5005), or the backup status file stale or missing
+    (§1.3; not configured isn't an alarm). It never answers 503 and isn't part of readiness, so an alarm
+    never takes a node out of rotation: none of them is fixed by sending traffic elsewhere. The word is all
+    it says; **Administration → Diagnostics** and the Integrity page say which alarm is up. The backup file
+    read is time-limited (5 s), so a share that doesn't answer reads as Degraded rather than hanging the
+    probe. Alert on `Degraded`, not on the status code.
 
 ---
 
@@ -504,8 +523,9 @@ the tool on the server, against the site's own keys folder, or the record waits 
 - [ ] Web root is **read/execute-only** — on SQL Server the app writes no `App_Data` under the content
       root (H-07); every store lives under `DataRoot`. No Modify carve-out on the site folder is required.
 - [ ] Load balancer / uptime monitor points at **`/health`** (readiness) and the app-pool/container probe
-      at **`/health/live`** (liveness) — H-09. Both are status-only; under IIS they need an anonymous carve-out
-      (or an authenticating probe).
+      at **`/health/live`** (liveness) — H-09. Both are status-only and anonymous on an installed site
+      (CAP-37); `Verify-Install.ps1 -Url` checks it. A monitoring tool alerts on **`Degraded`** from
+      **`/health/alarms`** (CAP-18), which is never a readiness signal.
 - [ ] Signing key provisioned out of band and protected (DPAPI/cert store/HSM); public key + `KeyId`
       archived separately.
 - [ ] `DataProtection:KeyPath` set to an ACL-restricted folder (installer creates `DataRoot\dp-keys`) so
@@ -696,7 +716,10 @@ jurisdiction codes), never a reason, a summary or any other text from the case. 
 not an alert), so filter on that prefix to keep drills out of a rule. Each is sent after the change is saved, best
 effort: a stream that's down never fails the action. Reasons and the full before and after are in the audit trail.
 A configuration bundle import sends one 5405 (`ConfigurationBundle`, with its counts and signing key) rather than one
-per row it replaced, alongside the 5401-5403 it already sends per role, mapping and setting.
+per row it replaced, alongside the 5401-5403 it already sends per role, mapping and setting. The detail ends with how
+the key was trusted (CAP-16): `signed with this server's key <id>`, `signed with trusted key <id> (<file>)`, or
+`signed with key <id> (not this server's or a trusted one), its id typed to confirm`. Alert on the last: someone
+imported configuration from a source the server doesn't know.
 
 **Suggested rules:** a `CaseDowngraded` (5508) followed by a 5509 on the same case within a few days; any 5509 with
 `gateOverridden=true`; a 5511 `CaseRestored`; a 5512 `status=Material`; and any 5405 with target type `StageGate` or

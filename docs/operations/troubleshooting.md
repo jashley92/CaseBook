@@ -16,8 +16,8 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
 | Windows **Application** event log (app server) | Startup failures (ASP.NET Core Module, .NET Runtime), Critical alarms 5001 and 5003, warnings | Event Viewer → Windows Logs → Application. Filter by level Critical/Error. **Needs verification on your host:** the source name the app's own Critical entries appear under. |
 | `logs\stdout_*.log` in the site folder | Console output when the app can't start | Set `stdoutLogEnabled="true"` in `web.config`, recycle, reproduce. Turn it off again afterwards. (An upgrade replaces `web.config`.) |
 | IIS logs (`%SystemDrive%\inetpub\logs\LogFiles`) | Status code per request (401, 403, 500.x) | |
-| `/health/live`, `/health` | Process up; database reachable and evidence folder present | Needs Windows authentication on an IIS install unless carved out (below) |
-| Administration → **Diagnostics** | Backup freshness, evidence-drift status, CyberArk resolution, writable paths, SIEM test event | Administrators |
+| `/health/live`, `/health`, `/health/alarms` | Process up; database reachable and evidence folder present; whether any alarm is up (Degraded; Diagnostics says which) | Anonymous on an installed site (CAP-37); a 401 means the carve-out is missing (below) |
+| Administration → **Diagnostics** | Backup freshness, the backup set (CAP-19), evidence-drift status, CyberArk resolution, writable paths, SIEM test event | Administrators |
 | Administration → **Setting sources** | The effective value of every setting and where it comes from | Administrators |
 | **Integrity & audit** | Chain verdict, first broken sequence, seals, audit trail | *Verify now* |
 | **Access log** | Who read or downloaded what | Administrators |
@@ -85,16 +85,19 @@ set it to `Dev` on a server. The same check stops any other non-Development envi
 - **Causes:** Windows authentication isn't negotiating: no SPN for the site's hostname, Kerberos disabled, the
   browser not treating the site as intranet, or anonymous authentication still on.
 - **Steps:** `setspn -Q HTTP/<hostname>`; check IIS authentication settings for the site (Windows on, anonymous
-  off except `/api`); try from a domain-joined machine with the site in the Local intranet zone.
+  off except `/api`, `/health`, `/branding/logo` and `/agenda/feed.ics`); try from a domain-joined machine with the
+  site in the Local intranet zone.
 
 ### Health probe returns 401
 
-- **Cause:** the installer disables anonymous authentication for the whole site except `/api`, and IIS rejects
-  the request before the app sees it, even though `/health`, `/health/live`, `/branding/logo` and
-  `/agenda/feed.ics` are anonymous in the app.
-- **Fix:** let the probe authenticate, or add `<location>` entries in `applicationHost.config` enabling
-  anonymous authentication for those paths (as the installer does for `/api`). The email logo and calendar feed
-  need the same carve-out to work for mail clients and calendar apps.
+- **Cause:** the site has no anonymous carve-out for the path, so IIS rejects the request before the app sees it,
+  even though `/health*`, `/branding/logo` and `/agenda/feed.ics` are anonymous in the app. Sites installed before
+  CAP-37 had a carve-out for `/api` only, and `Upgrade-CaseBook.ps1` doesn't change IIS authentication.
+- **Where to look:** `Verify-Install.ps1 -Url <site>` names each path IIS refuses.
+- **Fix:** re-run `Install-CaseBook.ps1`, or add the `<location>` entries by hand with `appcmd` (anonymous on, Windows
+  off, for `<site>/health`, `<site>/branding/logo` and `<site>/agenda/feed.ics`; the commands are in
+  [UPGRADE.md](../UPGRADE.md), *Unreleased*). The email logo and calendar feed need the same carve-out to work for
+  mail clients and calendar apps.
 
 ### Requests by IP or a different name get HTTP 400
 

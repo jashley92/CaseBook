@@ -55,6 +55,7 @@ user by the `downloads` policy.
 |---|---|---|---|
 | `GET /health/live` | anonymous | `Healthy` (no checks) | — |
 | `GET /health`, `/health/ready` | anonymous | `Healthy` 200 or `Unhealthy` 503 (database reachable, evidence folder exists) | — |
+| `GET /health/alarms` | anonymous | CAP-18: `Healthy` or `Degraded`, always 200, no detail. Degraded while the audit chain is broken, evidence has drifted (or its store or key is unreachable), the evidence key is unavailable, a seal copy's last attempt failed, or the backup status is stale or missing (`Web/HealthChecks/AlarmsHealthCheck.cs`). Not part of readiness | — |
 | `GET /branding/logo` | anonymous | The report and email logo, or 404 | — |
 | `GET /agenda/agenda.ics` | ViewCases (not rate-limited) | Your open dated tasks as an ICS file | — |
 | `GET /agenda/feed.ics?token=` | anonymous; the signed token is the credential | Personal ICS subscription feed; 404 if `Agenda:FeedKey` is blank or the token is invalid, reset or expired | — |
@@ -69,12 +70,14 @@ user by the `downloads` policy.
 | `GET /export/legal-register.csv` | ViewCases | Legal and regulatory obligations register | Access log; SIEM 5304 |
 | `GET /export/program-report.csv?year=&quarter=&exercises=` | ViewCases | Program report; 400 "Unknown quarter." | Access log; SIEM 5304 |
 | `GET /export/improvement-actions.csv?scope=&exercises=` | ViewCases | Improvement-action register | Access log; SIEM 5304 |
+| `GET /export/cases.csv?<the Cases page's filter>` | ViewCases | CAP-17: every case the Cases page's filters match (not one page), in its order, need-to-know scoped: the list's columns plus detected, contained, resolved, closed and reported times (UTC). The query is the page's own (`scope`, `classification`, `phase`, `sev`, `origin`, `outcome`, `closed`, `exercises`, `overdue`, `sla`, `notify`, `referred`, `hold`, `assignee`, `opened`, `sort`, `dir`), read by the page's parser (`Web/Components/Shared/CaseListQuery.cs`) and listed through `CaseService.ListAsync` 500 at a time; up to 10,000 cases, a cut file saying so at the top and the end. A search comes as `qref`, a reference the page holds for the signed-in user for an hour (`ExportSearchRefs`), so its text isn't in the URL; `q` is read too; an expired or another user's `qref` is **410** | Access log; SIEM 5304 |
 | `GET /export/iocs.csv` | ViewCases | Malicious IOCs across visible cases (a blocklist feed; up to 100,000 occurrences, a cut file saying so at the top and the end) | Access log; SIEM 5304 |
 | `GET /export/case-audit.csv?case=&actor=&action=&entity=&from=&to=` | ViewCases + can see the case | One case's audit trail (up to 100,000 rows; a cut file says so at the top and the end) | Access log; SIEM 5304 |
 | `GET /export/audit.csv?case=&actor=&action=&entity=&key=&from=&to=` | ViewCases (as `/integrity`) | The audit trail across every case the caller can see (configuration entries for oversight and administrators), filtered as the Integrity page is; `key` is one setting's history (CAP-03). Up to 100,000 rows, a cut file saying so at the top and the end | Access log (against the case when `case` names one); SIEM 5304 |
 | `GET /export/access-log.csv?…` | Administer | The access log (up to 100,000 rows) | none |
 | `GET /export/compliance-bundle.zip?from=&to=` | Administer | Compliance evidence bundle | Audit entry; access log; SIEM 5304 |
 | `GET /export/config-bundle.json` | Administer | Signed configuration bundle | Audit entry |
+| `GET /export/backup-manifest.json` | Administer | CAP-19: the backup set (OPERATIONS.md §1) as JSON: the database's provider and name, and each path with its setting, whether it exists and is writable, size, file count and last write (`complete: false` when the bounded walk stopped early). Paths and metadata only: no file is opened, never a key or the connection string (`Web/Ops/BackupSetReader.cs`) | Access log; SIEM 5304 |
 | `GET /export/report-template-starter.docx`, `…-lessons.docx` | Administer | Starter Word templates | — |
 | `GET /export/report-templates/{id}` | Administer | An uploaded template | — |
 | `GET /export/report-templates/{id}/preview?caseId=` | Administer | The template filled with a real case (not stored) | Access log |
@@ -92,8 +95,10 @@ Behavior to know:
   for hidden and missing, so nothing leaks), which surfaces as a 500 and then the error page.
 - A **403 on a page GET** redirects to `/access-denied` (SIEM 5201). An **HTML GET to an unknown path**
   redirects to `/not-found`.
-- **Anonymous endpoints aren't anonymous under IIS** unless you carve them out, because the site has anonymous
-  authentication disabled except under `/api` ([troubleshooting](../operations/troubleshooting.md#health-probe-returns-401)).
+- **Anonymous endpoints reach the app under IIS through the installer's carve-outs** (CAP-37): `/api`, `/health`
+  (and every path below it), `/branding/logo` and `/agenda/feed.ics` have anonymous authentication on and Windows
+  off; the rest of the site needs Windows sign-in. A new anonymous endpoint needs its path added there
+  (`DeployScriptTests` fails otherwise) ([troubleshooting](../operations/troubleshooting.md#health-probe-returns-401)).
 
 The `/api` endpoints are documented for callers in [API.md](../API.md). The IOC feeds are mapped in
 `Web/Security/IocFeedApiEndpoints.cs`; the rest are in `Program.cs`. Under IIS they reach the app through the

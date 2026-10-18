@@ -32,12 +32,14 @@ public sealed partial class ConfigBundleService
     private readonly ISecurityEventSink? _siem;
     private readonly Reporting.IReportTemplateEngine? _templateEngine;   // PROD-47
     private readonly Reporting.IReportTemplateStore? _templateStore;
+    private readonly ITrustedBundleKeys _trustedKeys;   // CAP-16
 
     public ConfigBundleService(IAppDbContextFactory factory, ISealSigner signer, IAuditWriter audit,
         ICurrentUser user, IClock clock, ISettingsReloader? reloader = null, IRoleDirectory? roles = null,
         ISecurityEventSink? siem = null, Reporting.IReportTemplateEngine? templateEngine = null,
-        Reporting.IReportTemplateStore? templateStore = null)
+        Reporting.IReportTemplateStore? templateStore = null, ITrustedBundleKeys? trustedKeys = null)
     {
+        _trustedKeys = trustedKeys ?? NoTrustedBundleKeys.Instance;
         _templateEngine = templateEngine;
         _templateStore = templateStore;
         _factory = factory;

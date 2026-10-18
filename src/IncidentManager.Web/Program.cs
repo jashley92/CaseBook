@@ -288,6 +288,7 @@ builder.Services.AddScoped<IncidentManager.Web.Services.CommandPaletteController
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseTabsState>();
 // Remembers the case list's filters so the case workspace's "Cases" breadcrumb returns to them.
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseListMemory>();
+builder.Services.AddSingleton<IncidentManager.Web.Services.ExportSearchRefs>();   // CAP-17: a list search kept out of the export's URL
 // PROD-19: lets the open CaseWorkspace publish its action verbs to the hosted command palette.
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseCommandRegistry>();
 // BUG-578: the circuit's unsaved edits, asked before a tab switch, leaving a case or a time-display redraw hides them.
@@ -299,6 +300,7 @@ builder.Services.AddScoped<IncidentManager.Web.Realtime.PresenceCircuitTracker>(
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(
     sp => sp.GetRequiredService<IncidentManager.Web.Realtime.PresenceCircuitTracker>());
 builder.Services.AddScoped<IncidentManager.Web.Ops.BackupHealthReader>();
+builder.Services.AddSingleton<IncidentManager.Web.Ops.BackupSetReader>();   // CAP-19: a singleton, so its walks are one per path
 builder.Services.Configure<DevAuthOptions>(builder.Configuration.GetSection("DevAuth"));
 
 // Idle-session timeout (F-15). Bound to the "Security" section; the value is administered in-app and
@@ -380,7 +382,10 @@ builder.Services.AddScoped<Microsoft.AspNetCore.Components.Authorization.Authent
 // Both return status only — no case data, no sensitive detail.
 builder.Services.AddHealthChecks()
     .AddCheck<IncidentManager.Web.HealthChecks.DatabaseHealthCheck>("database", tags: ["ready"])
-    .AddCheck<IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck>("evidence-store", tags: ["ready"]);
+    .AddCheck<IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck>("evidence-store", tags: ["ready"])
+    // CAP-18: the alarms roll-up for /health/alarms. Never tagged "ready", so an alarm never takes the node out of rotation.
+    .AddCheck<IncidentManager.Web.HealthChecks.AlarmsHealthCheck>("alarms", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
+        tags: [IncidentManager.Web.HealthChecks.AlarmsHealthCheck.Tag]);
 
 var app = builder.Build();
 
@@ -388,6 +393,7 @@ var app = builder.Build();
 // instead of failing later in the integrity job (and never makes the app sign with a key it made itself).
 app.Services.GetRequiredService<ISealSigner>();
 app.Services.GetRequiredService<IChainKeyring>();   // F-25: a chain key that can't be loaded stops startup here, too
+app.Services.GetRequiredService<ITrustedBundleKeys>();   // CAP-16: as the retired seal keys, a trusted bundle key that won't read stops it
 // F-27: a timestamp authority outside the organization (or that doesn't resolve) stops startup with the reason.
 _ = app.Services.GetServices<IncidentManager.Application.Integrity.ISealCopier>().ToList();
 
@@ -607,6 +613,18 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 var readyOptions = new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") };
 app.MapHealthChecks("/health", readyOptions).AllowAnonymous();
 app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous();
+// CAP-18: alarms for a monitoring tool: "Healthy" or "Degraded", always 200 (the word, never the status code, carries
+// it, so nothing reads it as the node being down). No detail: which alarm is up is on Diagnostics and in the SIEM.
+app.MapHealthChecks("/health/alarms", new HealthCheckOptions
+{
+    Predicate = c => c.Tags.Contains(IncidentManager.Web.HealthChecks.AlarmsHealthCheck.Tag),
+    ResultStatusCodes =
+    {
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy] = 200,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = 200,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = 200,
+    },
+}).AllowAnonymous();
 
 // E-03b: the deployment branding logo for branded emails. Anonymous — mail clients fetch it without a
 // session, and it is only the org's branding image (no case data). 404 when no logo is configured.
@@ -835,6 +853,41 @@ app.MapGet("/export/improvement-actions.csv", async (
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
+// --- CAP-17: the Cases list as CSV, every case its filters match. The same URL filter as the page, read by the page's own
+// parser (C2), through CaseService.ListAsync a page at a time (ForUser, need-to-know), bounded at 10,000 cases (a cut said in
+// the file). A search comes as qref, held for this user by the page, so its text stays out of the URL; a plain q (the page's
+// own URL) is read too. Access log and SIEM 5304; plain attachment.
+app.MapGet("/export/cases.csv", async (HttpContext http,
+    IncidentManager.Application.Cases.CaseService cases,
+    IncidentManager.Web.Services.ExportSearchRefs searchRefs,
+    IncidentManager.Application.Abstractions.ICurrentUser user,
+    IncidentManager.Application.Sla.ISlaTargetsProvider sla,
+    IncidentManager.Application.Abstractions.ISeverityLabels sevLabels,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var query = http.Request.Query;
+    var filter = IncidentManager.Web.Components.Shared.CaseListQuery.Parse(k => query.TryGetValue(k, out var v) ? v.ToString() : null);
+    if (query.TryGetValue("qref", out var qref))
+    {
+        if (searchRefs.Read(user.UserId, qref.ToString()) is not { } search)
+            return Results.Text("This export link has expired. Export again from the Cases page.", statusCode: StatusCodes.Status410Gone);
+        filter.Search = search;
+    }
+    var (items, truncated) = await IncidentManager.Application.Cases.CaseListCsv.CollectAsync(cases, filter, ct: ct);
+    var targets = sla.Current;
+    var now = clock.UtcNow;
+    var csv = IncidentManager.Application.Cases.CaseListCsv.Build(items, now, truncated,
+        IncidentManager.Web.Components.Shared.Ui.Label, IncidentManager.Web.Components.Shared.Ui.Label, sevLabels.For,
+        c => IncidentManager.Application.Sla.SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
+                targets, now, c.Classification, c.ContainmentNotNeeded) is { State: not IncidentManager.Application.Sla.SlaState.NoTarget } st
+            ? IncidentManager.Web.Components.Shared.Ui.SlaLabel(st.State) : "");
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"cases-{now.UtcDateTime:yyyyMMdd-HHmm}.csv");
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{fileName} ({items.Count} cases{(truncated ? ", cut" : "")})"), null, ct);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
+
 // --- Malicious-IOC blocklist feed (E-13): curated confirmed IOCs across the caller's visible cases ---
 // Flat CSV to push to SIEM / firewalls / EDR — closes the detection loop. Need-to-know scoped by the
 // service (joins to ForUser cases); ViewCases-gated like the metrics export. Plain attachment (no JS).
@@ -997,6 +1050,21 @@ app.MapGet("/export/config-bundle.json", async (
 {
     var export = await config.ExportAsync(ct);
     return Results.File(export.Content, "application/json", export.FileName);
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
+
+// CAP-19: the backup set (OPERATIONS.md §1) as JSON for backup jobs and restore drills: the database's name and every path
+// with what was found there. Paths and metadata only, never key material. Administer, like Diagnostics; access-logged.
+app.MapGet("/export/backup-manifest.json", async (
+    IncidentManager.Web.Ops.BackupSetReader backupSet,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var set = await backupSet.ReadAsync(ct);
+    var json = IncidentManager.Web.Ops.BackupManifest.Build(set, Environment.MachineName,
+        IncidentManager.Application.Updates.AppVersionInfo.Display);
+    var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"backup-manifest-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.json");
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
+    return Results.File(json, "application/json", fileName);
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // PROD-47: Word report templates — the starter template, and a profile's uploaded template (to edit and re-upload).

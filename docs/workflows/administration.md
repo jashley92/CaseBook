@@ -126,8 +126,18 @@ snapshots it for comparison with a revised incident response plan.
   permissions. Every change is audited (SIEM 5401–5403).
 - Never included: cases, evidence, the audit trail, server-side configuration.
 
-A valid signature proves the file wasn't altered after signing, not who made it. Check the key id before
-importing a bundle from elsewhere ([known issues](../reference/known-issues.md#security)).
+A valid signature proves the file wasn't altered after signing, not who made it, so whose key it is decides
+(CAP-16):
+
+- **This server's key** (a re-import here) or a **trusted key**, one in the server-side folder
+  `Config:TrustedBundleKeys` ([configuration](../operations/configuration.md#34-integrity)): the bundle imports as
+  before. The page's *Trusted signing keys* card lists the keys held, by id and file.
+- **Any other key**: Apply stays off until you type the key's id, which the page shows. Check it first on the source
+  server's Integrity page (*Signing key*). To trust a source for good (test to production, say), put its public key
+  (the public half of its seal-signing key, in PEM form) in the folder and restart.
+
+The audit entry and the SIEM 5405 name the key and how it was trusted. A bundle stating a trusted key's id (or this
+server's) while carrying another key is refused.
 
 ## Integrity operations
 
