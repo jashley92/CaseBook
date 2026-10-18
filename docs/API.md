@@ -1,9 +1,15 @@
 # CaseBook API
 
 CaseBook is primarily a **system of record with a human-gated workflow**, not an automation platform, so
-its API surface is deliberately small. Today it exposes one inbound integration — the **case-import API** —
-plus a public schema endpoint. Everything an API submits lands as a **draft a human confirms**; the API never
-writes case state directly.
+its API surface is deliberately small:
+
+- one inbound integration, the **case-import API**, with a status check for what became of a submission and a public
+  schema endpoint;
+- one outbound read, the **malicious-IOC feed**, as CSV or STIX 2.1, for a firewall, an EDR or a threat-intel platform
+  to pull.
+
+Everything an API submits lands as a **draft a human confirms**; the API never writes case state directly. There's no
+general read API ([decision 0001](decisions/0001-blazor-server-on-prem.md)).
 
 ## Authentication
 
@@ -15,10 +21,10 @@ Authorization: Bearer <token>
 
 Tokens are minted **in-app**, never by the API itself:
 
-- **System token** (for a machine producer — an XSIAM/SOAR playbook, a script): *Administration → API tokens →
-  New system token*. Give it a name and grant it the roles it needs (the import API requires a role that
-  grants **EditCases**). In the audit trail its actions are attributed to `apitoken:<name-as-slug>` (shown with
-  the token's name). Maximum lifetime 365 days.
+- **System token** (for a machine producer — an XSIAM/SOAR playbook, a script — or a feed consumer): *Administration →
+  API tokens → New system token*. Give it a name and grant it the roles it needs (the import API requires a role that
+  grants **EditCases**; the IOC feed one that grants **ViewCases**). In the audit trail and the access log its actions
+  are attributed to `apitoken:<name-as-slug>` (shown with the token's name). Maximum lifetime 365 days.
 - **Personal token** (for a user calling the API as themselves): the account menu → *API tokens*. Its
   permissions are a subset of your own, re-checked against the roles you still hold on every call (in Active
   Directory, with Windows sign-in: a disabled account's tokens stop working); actions attribute to you. Maximum
@@ -27,8 +33,13 @@ Tokens are minted **in-app**, never by the API itself:
 Tokens look like `cbk_` followed by 43 characters. They are shown **once** at creation (CaseBook stores only a
 SHA-256 hash), carry a **required expiry**, and can be **revoked** anytime by their creator or an administrator.
 A rejected token is reported to the SIEM stream (event 5101, with only the token's first 12 characters). On-prem/IIS deployments carve the `/api` path out as anonymous at the web server so the
-token scheme applies there while the rest of the site stays Windows-authenticated (the installer does this);
+token scheme applies there while the rest of the site stays Windows-authenticated (the installer does this, for
+`<site>/api` and everything below it, so `/api/export/…` is covered too);
 always call the API over **HTTPS**.
+
+A token **sees cases as its owner does** (need-to-know): a system token holds what its roles grant, and a personal
+token what you grant it of your own roles. Every endpoint under `/api` signs in with a token only; a browser's Windows
+sign-in doesn't count there. A refused call is a plain `401` or `403`, never a redirect to a page.
 
 ## Endpoints
 
@@ -53,7 +64,7 @@ changed document is a new submission.
 |---|---|
 | `201 Created` | Accepted for review. Body: `{ pendingImportId, status: "pending", duplicate: false, message, itemCount, warnings[] }`. `Location` points at the review URL. |
 | `200 OK` | The identical document from the same token is already waiting for review (sent within 24 hours), so a retry isn't queued twice. Same body, `duplicate: true`, with that import's id. |
-| `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports / carries more than one import takes (2,000 indicators, 1,000 timeline entries, 500 tasks; split it). Body: `{ error }`. |
+| `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports / carries more than one import takes (2,000 indicators, 1,000 timeline entries, 500 tasks; split it) / gives a `target.caseId` and a `target.detectionCaseId` that name different cases. Body: `{ error }`. |
 | `401 Unauthorized` | Missing, invalid, expired, or revoked token. |
 | `403 Forbidden` | The token authenticated but lacks the **EditCases** permission. |
 | `413 Payload Too Large` | The body is over 5 MiB (with or without a `Content-Length`). |
@@ -69,6 +80,35 @@ curl -X POST https://your-casebook/api/import/cases \
   --data @case.json
 ```
 
+### `GET /api/import/cases/{pendingImportId}`
+
+What became of a submission (CAP-13). **Auth:** bearer token: the token that sent it, or one with **EditCases** for a
+submission it could review in the queue (not one into a restricted case it can't see). Rate-limited with the import
+API (the same per-caller budget).
+
+**Body:** `{ status, decidedAtUtc, resolvedCaseNumber, resolvedCaseId }`
+
+| `status` | Meaning |
+|---|---|
+| `pending` | Waiting for review, or a reviewer is applying it right now. The other fields are `null`. |
+| `applied` | Confirmed into a case at `decidedAtUtc`. `resolvedCaseNumber` and `resolvedCaseId` name that case **as it is now** (a Complex Event promoted since has its new number), and only when the token can see the case; otherwise they're `null`. |
+| `rejected` | A reviewer rejected it at `decidedAtUtc`. Nothing was written to any case. |
+
+**Responses:** `200 OK` with the body; `401 Unauthorized` (missing, invalid, expired or revoked token); `404 Not Found`
+for an id that doesn't exist **or** that this token may not see (the two can't be told apart); `429`.
+
+```bash
+curl https://your-casebook/api/import/cases/7f0c2a52-1b7e-4a43-9d11-6c1a2f0b9e31 -H "Authorization: Bearer <token>"
+```
+
+```json
+{ "status": "applied", "decidedAtUtc": "2026-10-18T14:02:11.483+00:00",
+  "resolvedCaseNumber": "2026-42_Impossible_Travel", "resolvedCaseId": "0b9d4c61-5e7a-4f0e-8a51-2d6f3c9e7a14" }
+```
+
+A producer that polls should do so sparingly (a review is a person's work, often hours away) and stop at `applied` or
+`rejected`.
+
 ### `GET /api/import/cases/schema`
 
 Returns the **JSON Schema** (draft 2020-12) for the import document. **No authentication** — it's a public
@@ -76,6 +116,79 @@ contract, carries no data, and is generated from the server's own model so it ne
 importer accepts. `Content-Type: application/json`.
 
 A committed copy also lives at [`case-import.schema.json`](case-import.schema.json).
+
+### `GET /api/export/iocs.csv` and `GET /api/export/iocs.stix.json`
+
+The **malicious-IOC feed** (CAP-09): every indicator a person has marked **Malicious** of an IOC type (IP address,
+domain, URL, file hash), across the cases the token can see, one row (or object) per indicator. It's the feed the
+*Export → Malicious IOCs* download gives a signed-in user, for a machine to pull on a schedule. **Auth:** bearer token
+with **ViewCases**.
+
+- **What's in it:** the token's need-to-know decides. A restricted case's indicators appear only when the token's
+  owner could open that case (`ViewAllCases` or `ViewRestricted`, or on the case's team). **A feed token shouldn't hold
+  either permission**: give it a role with `ViewCases` alone, so restricted matters stay out of firewalls and partner
+  TIPs. Exercise cases never appear.
+- **Markings:** each indicator carries its TLP marking: the strictest any of its occurrences has, and the organization's
+  default (*Administration → Reporting*, AMBER unless changed) where none is set. The feed includes every marking,
+  TLP:RED too; the consumer decides what it may share onward.
+- **CSV** (`text/csv; charset=utf-8`, no byte-order mark): `#` comment lines, then the header
+  `type,indicator,disposition,first_seen_utc,last_seen_utc,case_count,cases,sources,tlp`. `type` is `ip`, `domain`, `url`
+  or `filehash`; `tlp` is `TLP:CLEAR` … `TLP:RED`.
+- **STIX** (`application/json`): a STIX 2.1 bundle: the organization's `identity`, a `report` tying it together, the TLP
+  2.0 `marking-definition`s it uses, and one cyber-observable per indicator (`ipv4-addr`, `domain-name`, `url`, `file` …)
+  with `object_marking_refs` and `x_casebook_cases`, `x_casebook_sources`, `x_casebook_first_seen`,
+  `x_casebook_last_seen`. An indicator's id is derived from its type and value, so it's the same object in every pull
+  and a TIP updates it rather than adding another.
+
+**Keeping scheduled pulls cheap.** Both are supported:
+
+- **`If-None-Match`**: each response has a weak `ETag` (`W/"csv-…"`, `W/"stix-…"`). Send it back and an unchanged feed
+  answers `304 Not Modified` with no body. It changes when anything in the feed does (an indicator added, removed or
+  re-marked, a case number, a source), whatever caused it. `If-Modified-Since` isn't honored: an indicator leaving the
+  feed (removed, cleared, its case restricted) leaves no newer time behind, so a date can't say nothing changed.
+- **`?since=<ISO 8601>`**: only indicators with an occurrence added or changed (a verdict, a marking, an edit) at or
+  after that time, for example `?since=2026-10-18T00:00:00Z` (a time without an offset is UTC; write a `+` offset as
+  `%2B`). A delta can't list what **left** the feed, so take a full pull (no `since`) now and then to drop those. The
+  CSV says the delta's start in a comment line, the STIX report in `x_casebook_since`.
+
+**Bounds.** A feed reads at most **100,000** indicator occurrences, the most recently changed first. Past that it holds
+those 100,000 and says it was cut: the `X-CaseBook-Truncated: true` header, a `# Cut: …` line at the top and the end of
+the CSV, and `x_casebook_truncated: true` with a sentence in the STIX report's description. A blocklist that size
+needs curating in CaseBook.
+
+**Rate limit.** Per token, separately from the other endpoints: a burst of 20 pulls, then one a minute
+(`RateLimiting:ApiFeeds`, see [configuration](operations/configuration.md)). Both formats share it. A pull every
+few minutes in both formats stays well inside it.
+
+**Recorded.** Each pull with a body is an export: an access-log entry (*Export*, actor `apitoken:<name>`, labelled
+"IOC feed (CSV, API)" or "IOC feed (STIX, API)", with the delta's start and ", cut" when they apply) and SIEM event
+5304. A `304` sends nothing, so records nothing.
+
+| Status | Meaning |
+|---|---|
+| `200 OK` | The feed. |
+| `304 Not Modified` | `If-None-Match` named the current feed. No body. |
+| `400 Bad Request` | `since` isn't an ISO 8601 time. Body: `{ error }`. |
+| `401 Unauthorized` | Missing, invalid, expired or revoked token. |
+| `403 Forbidden` | The token authenticated but lacks **ViewCases**. |
+| `429 Too Many Requests` | The token's feed budget is spent (`Retry-After` is set). |
+
+```bash
+# First pull: keep the ETag.
+curl -sS -D headers.txt -o iocs.csv https://your-casebook/api/export/iocs.csv -H "Authorization: Bearer <token>"
+# Later pulls: 304 when nothing changed.
+curl -sS -o iocs.csv -w "%{http_code}\n" https://your-casebook/api/export/iocs.csv \
+  -H "Authorization: Bearer <token>" -H 'If-None-Match: W/"csv-3f9a1c0e5b7d42a8e61f0c9d2b4a7e15"'
+# What's new since the last pull, as STIX.
+curl -sS "https://your-casebook/api/export/iocs.stix.json?since=2026-10-18T00:00:00Z" -H "Authorization: Bearer <token>"
+```
+
+```text
+# CaseBook malicious-IOC feed: confirmed indicators across your visible cases, generated 2026-10-18 14:05:00 UTC
+type,indicator,disposition,first_seen_utc,last_seen_utc,case_count,cases,sources,tlp
+domain,evil.example,malicious,2026-10-02 09:14:00,2026-10-11 16:40:12,2,2026-31_Phishing_Wave; 2026-42_Impossible_Travel,SIEM; VirusTotal,TLP:AMBER
+ip,203.0.113.66,malicious,2026-10-11 16:40:12,2026-10-11 16:40:12,1,2026-42_Impossible_Travel,XSIAM,TLP:RED
+```
 
 ## The import document
 
@@ -107,6 +220,20 @@ Notes:
   `origin: "ThirdParty"` needs `newCase.vendorName` (the vendor that disclosed it). `newCase.exercise: true` makes it a
   **tabletop / exercise case** (a drill: badged, kept out of dashboards, reminders, the IOC feed and correlation with
   live cases; fixed once created).
+- **`target.detectionCaseId`** (CAP-14, optional, up to 100 characters) adds to an existing case by the detection
+  platform's incident id rather than a CaseBook GUID: the one **open** case carrying that detection case id (compared
+  without regard to letter case), found among the cases the **reviewer** can see when it's reviewed, not the cases
+  your token sees. With no such case, `target.newCase` is prepared (send both, and the reviewer gets a new case when the
+  incident has none yet); with several, the reviewer picks. Closed and archived cases don't count. The response's
+  `warnings` say the target is decided at review.
+
+  ```json
+  "target": { "detectionCaseId": "4812", "newCase": { "title": "Impossible travel for jdoe", "detectionCaseId": "4812" } }
+  ```
+
+  With `target.caseId` as well, both must name the same case: when the case with that id (one your token can see)
+  carries a different detection case id, or none, the document is refused with `400`. When they agree, `caseId` is the
+  target.
 - **Times**: ISO 8601. A time with an offset (`2026-09-18T09:05:00-04:00`) or `Z` is kept as stated. A time without one
   is read in the document's top-level `timeZone` (an IANA id such as `America/New_York`), or as UTC when it has none.
   (On the Import page the reviewer picks the zone for such times instead, the organization's by default; a document's

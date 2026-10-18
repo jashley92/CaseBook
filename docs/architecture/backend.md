@@ -69,7 +69,7 @@ user by the `downloads` policy.
 | `GET /export/legal-register.csv` | ViewCases | Legal and regulatory obligations register | Access log; SIEM 5304 |
 | `GET /export/program-report.csv?year=&quarter=&exercises=` | ViewCases | Program report; 400 "Unknown quarter." | Access log; SIEM 5304 |
 | `GET /export/improvement-actions.csv?scope=&exercises=` | ViewCases | Improvement-action register | Access log; SIEM 5304 |
-| `GET /export/iocs.csv` | ViewCases | Malicious IOCs across visible cases (a blocklist feed) | Access log; SIEM 5304 |
+| `GET /export/iocs.csv` | ViewCases | Malicious IOCs across visible cases (a blocklist feed; up to 100,000 occurrences, a cut file saying so at the top and the end) | Access log; SIEM 5304 |
 | `GET /export/case-audit.csv?case=&actor=&action=&entity=&from=&to=` | ViewCases + can see the case | One case's audit trail (up to 100,000 rows; a cut file says so at the top and the end) | Access log; SIEM 5304 |
 | `GET /export/audit.csv?case=&actor=&action=&entity=&key=&from=&to=` | ViewCases (as `/integrity`) | The audit trail across every case the caller can see (configuration entries for oversight and administrators), filtered as the Integrity page is; `key` is one setting's history (CAP-03). Up to 100,000 rows, a cut file saying so at the top and the end | Access log (against the case when `case` names one); SIEM 5304 |
 | `GET /export/access-log.csv?…` | Administer | The access log (up to 100,000 rows) | none |
@@ -78,8 +78,11 @@ user by the `downloads` policy.
 | `GET /export/report-template-starter.docx`, `…-lessons.docx` | Administer | Starter Word templates | — |
 | `GET /export/report-templates/{id}` | Administer | An uploaded template | — |
 | `GET /export/report-templates/{id}/preview?caseId=` | Administer | The template filled with a real case (not stored) | Access log |
-| `POST /api/import/cases` | **API token** + EditCases | 201 with a pending-import id; 400, 401, 403, 413 (over 5 MB), 429 | Stores a pending import |
+| `POST /api/import/cases` | **API token** + EditCases | 201 with a pending-import id; 400 (also a `target.caseId` and `target.detectionCaseId` that name different cases, CAP-14), 401, 403, 413 (over 5 MB), 429 | Stores a pending import |
+| `GET /api/import/cases/{id}` | **API token**: the one that sent it, or one with EditCases that could review it | CAP-13: `{ status, decidedAtUtc, resolvedCaseNumber, resolvedCaseId }`, the case only when the token can see it; 401; 404 for an id it may not see | — |
 | `GET /api/import/cases/schema` | anonymous | The import JSON Schema | — |
+| `GET /api/export/iocs.csv?since=` | **API token** + ViewCases; `api-feeds` rate limit | CAP-09: the IOC feed as `/export/iocs.csv`, for the token's owner; `since` (ISO 8601) gives a delta; a weak ETag answers `If-None-Match` with 304; up to 100,000 occurrences (`X-CaseBook-Truncated: true` and the file say when cut); 400 for a bad `since` | Access log; SIEM 5304 (not on a 304) |
+| `GET /api/export/iocs.stix.json?since=` | **API token** + ViewCases; `api-feeds` rate limit | CAP-09: the same feed as a STIX 2.1 bundle, one observable per indicator across cases, with its TLP marking | Access log; SIEM 5304 (not on a 304) |
 
 Behavior to know:
 
@@ -92,7 +95,9 @@ Behavior to know:
 - **Anonymous endpoints aren't anonymous under IIS** unless you carve them out, because the site has anonymous
   authentication disabled except under `/api` ([troubleshooting](../operations/troubleshooting.md#health-probe-returns-401)).
 
-The import API is documented for callers in [API.md](../API.md).
+The `/api` endpoints are documented for callers in [API.md](../API.md). The IOC feeds are mapped in
+`Web/Security/IocFeedApiEndpoints.cs`; the rest are in `Program.cs`. Under IIS they reach the app through the
+installer's anonymous carve-out for `<site>/api`, which covers every path below it.
 
 ## Services
 

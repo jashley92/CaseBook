@@ -210,6 +210,30 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### Unreleased
+
+- **IOC feeds a machine can pull (CAP-09).** `GET /api/export/iocs.csv` and `GET /api/export/iocs.stix.json` give a
+  firewall, an EDR or a threat-intel platform the malicious-IOC feed with a **system API token** whose role grants
+  `ViewCases`, no Windows sign-in. No migration and no new setting is needed; the installer's anonymous carve-out for
+  `/api` already covers the new paths (check with `Verify-Install.ps1`, which tests `/api`).
+  - **Give a feed token a role with `ViewCases` alone.** The feed holds what the token's owner may see, so one holding
+    `ViewRestricted` or `ViewAllCases` feeds restricted matters' indicators to the consumer. Exercises never appear.
+  - Pulls are rate-limited per token (a burst of 20, then one a minute; `RateLimiting:ApiFeeds:*`, restart to change).
+    `If-None-Match` with the last `ETag` answers an unchanged feed with 304; `?since=` gives a delta.
+  - Each pull with a body is in the access log and is SIEM 5304, by `apitoken:<name>`.
+  - The feed, and the signed-in *Malicious IOCs* download, now stop at 100,000 indicator occurrences (the most recently
+    changed) and say so when cut.
+- **An import's sender can check what became of it (CAP-13).** `GET /api/import/cases/{pendingImportId}` answers the
+  token that sent it (or one with `EditCases` that could review it): pending, applied (with the case's number and id
+  when the token can see the case) or rejected. Anything else is a 404.
+- **Imports can name the existing case by its detection case id (CAP-14).** `target.detectionCaseId`, an optional
+  addition to import schema v1, is resolved when the import is reviewed, among the open cases the reviewer can see;
+  none or several is a preview warning and the reviewer picks. A `target.caseId` and `target.detectionCaseId` that
+  name different cases are refused (400). Producers sending only `caseId` or `newCase` see no change. The XSIAM
+  template's README shows the new target.
+- **API callers get their 403.** A refused GET under `/api` is a plain 403 rather than a redirect to the access-denied
+  page (SIEM 5201 as before).
+
 ### v1.9.0
 
 One migration: the new `SmtpSignIns` table (one row; the app applies it on first start). Things to check:

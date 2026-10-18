@@ -116,7 +116,8 @@ Columns:
 | `Logging:LogLevel:*` | Standard ASP.NET Core log levels | json: `Information`; prod template: `Warning` | Server | |
 | `Security:IdleTimeoutMinutes` | Lock an idle session after N minutes, up to 1,440 (a day; a larger value is held to it); `0` disables. The warning appears 60 seconds before (or at half the timeout if that's shorter). | `15` | App | |
 | `RateLimiting:Uploads:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on the 8 MB parts of large evidence uploads (PROD-56). The default allows about 32 MB/s per person. | `240` / `240` / `60` | Server | |
-| `RateLimiting:Downloads:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on downloads, exports, the import API and the agenda feed. Over budget gets **429** with `Retry-After` and SIEM event 5306. | `40` / `40` / `60` | Server | |
+| `RateLimiting:Downloads:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on downloads, exports, the import API (and an import's status) and the agenda feed. Over budget gets **429** with `Retry-After` and SIEM event 5306. | `40` / `40` / `60` | Server | |
+| `RateLimiting:ApiFeeds:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-token bucket on the API's IOC feeds, `/api/export/iocs.csv` and `/api/export/iocs.stix.json` together (CAP-09). The default is a burst of 20 pulls, then one a minute. Over budget gets **429** with `Retry-After` and SIEM event 5306. | `20` / `1` / `60` | Server | |
 | `RateLimiting:Thumbnails:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on evidence thumbnails (the timeline's inline images), which aren't logged as downloads but are still evidence (REV-62). Over budget gets **429**. | `300` / `300` / `60` | Server | |
 
 ### 3.2 Database

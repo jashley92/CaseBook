@@ -64,6 +64,25 @@ one, edits the preview and chooses **Confirm & apply** or **Reject** (with an op
 the submitting token could see: a document naming a case the token can't see is queued as a new case, as its preview
 said.
 
+**By detection case id (CAP-14).** A document can name its case by the detection platform's incident id instead,
+`target.detectionCaseId` (for example the XSIAM incident id). That's resolved when the import is previewed by the
+person reviewing it (or by whoever pastes it on the Import page), among the open (not closed, not archived) cases
+**they** can see, compared without regard to letter case:
+
+- **One case carries it:** the preview targets that case.
+- **None:** a new case is prepared from `target.newCase`, with a warning: "No open case you can see carries detection
+  case id …". Choose a case if it belongs in one.
+- **Several:** the preview asks the reviewer to choose ("More than one open case you can see carries …", naming them).
+
+The queued submission records no target, so every reviewer sees it, under "Into the open case with detection case id …".
+Given with `target.caseId`, the two must name the same case: if the case with that id (as the sender sees cases)
+carries another detection case id or none, the document is refused (the API's 400, the Import page's error). When they
+agree, it's an ordinary case-id target.
+
+**Asking what became of it (CAP-13).** `GET /api/import/cases/{pendingImportId}` gives the sending token the
+submission's status: `pending` (waiting, or being applied right now), `applied` (with the case's number and id when the
+token can see that case) or `rejected` ([API.md](../API.md)).
+
 **Telling reviewers (CAP-01).** A submission isn't left for someone to stumble on. Everyone who can confirm imports
 (`EditCases`) sees a *Waiting for review* item on their Desk and a count beside **Import** in the sidebar (up to 99+),
 each counting only the submissions they'd see in the queue. Two notifications, both off by default, go out when one
