@@ -198,12 +198,12 @@ public sealed class SmtpSignInAdminService(
         row ??= new SmtpSignInRecord();
         var before = adding ? SmtpSignInMode.None : SmtpSignInStore.ModeOf(row) ?? SmtpSignInMode.Invalid;
         var nameChanged = !string.Equals(row.Username, mode == SmtpSignInMode.Password ? name : "", StringComparison.Ordinal);
-        string passwordChange;
+        string storedChange;
         var now = clock.UtcNow;
         var who = TextFit.Cap(user.UserId, 256, marker: "")!;
         if (mode != SmtpSignInMode.Password)
         {
-            passwordChange = row.ProtectedPassword is null ? "none" : "cleared";
+            storedChange = row.ProtectedPassword is null ? "none" : "cleared";
             row.Username = "";
             row.ProtectedPassword = null;
             row.PasswordSetAtUtc = null;
@@ -211,7 +211,7 @@ public sealed class SmtpSignInAdminService(
         }
         else if (!string.IsNullOrEmpty(newPassword))
         {
-            passwordChange = row.ProtectedPassword is null ? "set" : "replaced";
+            storedChange = row.ProtectedPassword is null ? "set" : "replaced";
             row.Username = name;
             row.ProtectedPassword = store.Protect(newPassword);
             row.PasswordSetAtUtc = now;
@@ -220,7 +220,7 @@ public sealed class SmtpSignInAdminService(
         else
         {
             if (row.ProtectedPassword is null) throw new InvalidOperationException("Enter the password for that username.");
-            passwordChange = "kept";
+            storedChange = "kept";
             row.Username = name;
         }
         row.Mode = mode.ToString();
@@ -242,7 +242,7 @@ public sealed class SmtpSignInAdminService(
         // Who, when (the entry's own), the mode and what became of the password: never the password or its ciphertext.
         await audit.RecordAsync(adding ? AuditAction.Create : AuditAction.Update, "EmailSignIn", SettingKey, null,
             $"Email sign-in changed from {Label(before)} to {Label(mode)}" + (nameChanged ? ", with a new username" : "") +
-            $"; password {passwordChange}.", ct);
+            $"; password {storedChange}.", ct);
         siem?.Emit(SecurityEvents.SettingChanged(SettingKey, user.UserId, user.UserPrincipalName));
     }
 
