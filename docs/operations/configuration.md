@@ -319,7 +319,7 @@ The full SIEM reference, including the event catalog, is in [OPERATIONS.md §5](
 |---|---|---|
 | `Siem:QueueCapacity` (restart) | `2048` (minimum 16) | |
 | `Siem:Webhook:Enabled`, `Url` (https; http only to loopback), `Token`, `AuthHeader`, `AuthScheme`, `TimeoutSeconds`, `MaxAttempts` | off, blank, blank, `Authorization`, `Bearer`, `5`, `3` | `Token` 🔒, `Url` ⚠ |
-| `Siem:Syslog:Enabled`, `Host`, `Port`, `Protocol` (`Udp`/`Tcp`), `Facility`, `AppName`, `TimeoutSeconds` | off, blank, `514`, `Udp`, `16`, `CaseBook`, `5` | `Host` ⚠ |
+| `Siem:Syslog:Enabled`, `Host`, `Port`, `Protocol` (`Udp`/`Tcp`/`Tls`, by name only), `Facility`, `AppName`, `TimeoutSeconds`, `ServerCertificateThumbprint` (CAP-33, TLS: optional SHA-1 or SHA-256 pin), `ClientCertificateThumbprint` (CAP-33, TLS: optional, `LocalMachine\My`) | off, blank, `514`, `Udp`, `16`, `CaseBook`, `5`, blank, blank | `Host` ⚠ |
 | `Siem:EventLog:Enabled`, `Source`, `LogName` | off, `CaseBook`, `Application` | |
 | `Chat:Webhook:Enabled`, `WebhookUrl` (https), `Format` (`Slack`/`Teams`), `TimeoutSeconds`, `MaxAttempts` | off, blank, `Slack`, `5`, `3` | `WebhookUrl` 🔒 |
 | `Secrets:CyberArk:Enabled`, `BaseUrl`, `AppId`, `ClientCertificateThumbprint`, `CacheTtlSeconds`, `TimeoutSeconds`, `FailClosed` (all restart) | off, blank, blank (template `CaseBook`), blank, `300`, `5`, `true` | `BaseUrl`, `AppId` ⚠ |

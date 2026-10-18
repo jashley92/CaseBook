@@ -212,6 +212,12 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Syslog can go over TLS (CAP-33).** Set `Siem:Syslog:Protocol` to `Tls` (and usually `Port` to 6514) to send the
+  SIEM stream per RFC 5425, with the collector's certificate checked against this server's trusted roots and its name,
+  an optional pinned thumbprint (`ServerCertificateThumbprint`) and an optional client certificate from
+  `LocalMachine\My` (`ClientCertificateThumbprint`). See OPERATIONS §5. **Check your `Protocol` value:** it's now read
+  by name (`Udp`, `Tcp` or `Tls`, any case). Before, anything other than `Tcp` (a typo, a number) silently sent UDP;
+  now it stops syslog and Diagnostics → Delivery health shows it **Stopped** with why. No migration.
 - **Diagnostics lists the scheduled jobs (CAP-29).** Administration → Diagnostics → *Scheduled jobs* shows each
   background job's last run (when, how long, how it ended, items processed), when it's next due and its last error by
   type only. It's held in memory, so after the upgrade (a restart) every row starts at "Not run yet" and fills in as the

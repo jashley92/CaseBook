@@ -421,6 +421,32 @@ logged today; check the folder's permissions directly.
    last good send, queue depth and drops since start.
 6. 5101 only appears with Windows authentication.
 
+### Syslog over TLS fails (CAP-33)
+
+- **Symptom:** with `Siem:Syslog:Protocol` `Tls`, nothing reaches the collector; *Send test event* or Delivery health says
+  the handshake failed.
+- **Cause and fix**, by what Diagnostics says:
+  - *"isn't trusted by this server (its chain doesn't reach a trusted root)"*: the collector's certificate is self-signed
+    or from a private CA this server doesn't trust. Import the root (or the certificate) into *Local Computer › Trusted
+    Root Certification Authorities* (`certlm.msc`); optionally pin it with `ServerCertificateThumbprint`.
+  - *"isn't issued to Siem:Syslog:Host"*: `Host` must be a name (or address) the certificate's subject alternative names
+    list. Use the collector's DNS name rather than its IP address, or reissue the certificate.
+  - *"isn't the one pinned"*: the collector's certificate was renewed or replaced. Check the new one's thumbprint with the
+    collector's owner, then update `ServerCertificateThumbprint` (SHA-1 or SHA-256).
+  - *"timed out"* / *"didn't … finish the handshake in time"*: the port answers but doesn't speak TLS (it's the plain TCP
+    or UDP port: TLS is usually 6514), a firewall drops it, or the collector is overloaded. Raise `TimeoutSeconds` only for
+    a slow link.
+  - An `AuthenticationException` or `IOException` straight after connecting, with the collector logging "no client
+    certificate": it wants mutual TLS. Set `ClientCertificateThumbprint` to a certificate in `LocalMachine\My` and grant
+    the app pool's account read on its private key.
+  - **Stopped**, *"No certificate with thumbprint … in LocalMachine\My"* or *"has no private key, or the app account can't
+    read it"*: install the certificate or grant read on its key (Manage Private Keys in `certlm.msc`); it's looked for
+    again within 5 minutes.
+  - **Stopped**, *"Siem:Syslog:Protocol '…' isn't Udp, Tcp or Tls"*: the protocol is read by name; a number or a typo
+    isn't one (before CAP-33 any value other than `Tcp` silently meant UDP).
+- **Where to look:** Diagnostics → Delivery health (the syslog row), *Send test event*, and the Windows Event Log
+  warnings "Syslog delivery failed for event … (reason)".
+
 ### CyberArk secret not resolving
 
 Diagnostics → Secret resolution shows the last error (for example `HTTP 403 (APPAP004E)`). Check

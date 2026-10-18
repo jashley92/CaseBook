@@ -676,10 +676,23 @@ it in **CyberArk** and set `Token` to a `@cyberark:` reference (**§6, F-19**) s
 | `Enabled` | On/off | `false` |
 | `Host` | Syslog collector (SIEM syslog receiver, rsyslog, …) | `""` |
 | `Port` | Collector port | `514` |
-| `Protocol` | `Udp` (fire-and-forget) or `Tcp` (LF-framed) | `Udp` |
+| `Protocol` | `Udp` (fire-and-forget), `Tcp` (LF-framed) or `Tls` (CAP-33: RFC 5425, octet-counted), by name; any other value (a number too) stops syslog and Diagnostics says why | `Udp` |
 | `Facility` | Syslog facility number (16 = local0) | `16` |
 | `AppName` | APP-NAME in the RFC 5424 header | `CaseBook` |
-| `TimeoutSeconds` | Connect/send timeout (TCP only) | `5` |
+| `TimeoutSeconds` | One limit over connect and send (TCP), and connect, handshake and send (TLS) | `5` |
+| `ServerCertificateThumbprint` | TLS: pins the collector's certificate (SHA-1 or SHA-256 hex; spaces and colons ignored). The chain and name are checked as well | `""` |
+| `ClientCertificateThumbprint` | TLS: a client certificate in `LocalMachine\My` for a collector that wants mutual TLS (the app pool needs read on its key), as CyberArk's | `""` |
+
+**Syslog over TLS (CAP-33).** With `Protocol` `Tls` (the collector usually listens on 6514), each event goes over its own
+TLS connection (as TCP has always done), framed `MSG-LEN SP MESSAGE` (RFC 5425), and the connection is closed with
+close_notify. The collector's certificate must chain to a root in this server's trusted store and be issued to `Host`
+(use a name the certificate lists); revocation isn't checked. For a collector with a self-signed or private-CA
+certificate, import its root (or the certificate) into *Local Computer › Trusted Root Certification Authorities*, and pin
+its thumbprint to refuse any other. A refused certificate, a handshake that doesn't finish within `TimeoutSeconds`, or a
+collector that wants a client certificate it wasn't given shows on Diagnostics → Delivery health with the reason; a
+protocol that isn't a name, a pin that isn't a thumbprint, or a client certificate that's missing or has no readable key
+shows the transport as **Stopped** (the store is read again every 5 minutes, so installing the certificate needs no
+restart). Nothing is retried, as for UDP and TCP.
 
 Syslog emits one **CEF** record per event, wrapped in an RFC 5424 line
 (`<PRI>1 TIMESTAMP HOST APP - - - CEF:0|CaseBook|CaseBook|…`). CEF/syslog severities map from the event
