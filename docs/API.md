@@ -38,7 +38,7 @@ token scheme applies there while the rest of the site stays Windows-authenticate
 always call the API over **HTTPS**.
 
 A token **sees cases as its owner does** (need-to-know): a system token holds what its roles grant, and a personal
-token what you grant it of your own roles. Every endpoint under `/api` signs in with a token only; a browser's Windows
+token what you grant it of your own roles. Every endpoint under `/api` except the public schema (`GET /api/import/cases/schema`) signs in with a token only; a browser's Windows
 sign-in doesn't count there. A refused call is a plain `401` or `403`, never a redirect to a page.
 
 ## Endpoints

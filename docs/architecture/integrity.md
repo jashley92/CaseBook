@@ -31,12 +31,16 @@ whether a hash in an older format falls short of a record (it holds a value that
 change; `CanonicalCoverageTests` changes every stored value of every record and requires the hash to change, or the
 value to be listed with the reason it's left out.
 
-**Canonical format 5 (CAP-07).** Format 4 plus how a regulator was notified: a notice's method, reference, who gave it
-and the evidence file holding it, folded in only when one is set. New hashes are stored as `v5:`. A notice without them,
-and every other record, builds exactly what format 4 built, so nothing is re-hashed and the upgrade has nothing to do for
-it (the marker stays `4`). No hash older than format 5 can cover those values, and no trail written before them records
-them, so a notice holding one under an older hash was changed outside CaseBook: the strict check flags it, the upgrade
-leaves it (`TrailSnapshot` disagrees), and upkeep won't re-hash it.
+**Canonical format 5 (CAP-07, CAP-08).** Format 4 plus two sets of values, each folded in only when set:
+- how a regulator was notified: a notice's method, reference, who gave it and the evidence file holding it;
+- how evidence was collected: a file's collected-at, collected-from and collected-by.
+
+New hashes are stored as `v5:`. A record without these values builds exactly what format 4 built, so nothing is re-hashed
+and the upgrade has nothing to do for it (the marker stays `4`). No hash older than format 5 can cover them, and no trail
+written before them records them, so a notice or evidence row holding one under an older hash was changed outside
+CaseBook: the strict check flags it, the upgrade leaves it (`TrailSnapshot` disagrees: its list of format-5 fields names
+both entities, and a guard test fails if an entity with a format-5 part is missing from it), and upkeep won't re-hash
+it.
 
 **The upgrade and the strict check (C18).** After the first start of this release, `RowHashUpgrade` looks at every
 record in every hashed table. BUG-644: it runs in the background (`RowHashUpgradeHostedService`), once the app has

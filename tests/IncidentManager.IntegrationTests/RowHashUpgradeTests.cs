@@ -510,6 +510,67 @@ public sealed class RowHashUpgradeTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task An_evidence_collection_value_set_under_an_older_hash_is_caught_at_the_upgrade(string provider /* CAP-08 review */)
+    {
+        using var database = Seeded(provider);
+        Guid kept, planted;
+        await using (var db = database.NewContext())
+        {
+            var caseId = await db.Cases.Select(c => c.Id).FirstAsync();
+            Evidence File(string name) => new()
+            {
+                CaseId = caseId, OriginalFileName = name, ContentType = "text/plain", SizeBytes = 1, Sha256 = new string('a', 64),
+                StoragePath = name, CreatedBy = "alice", CreatedAtUtc = _clock.UtcNow,
+            };
+            var (a, b) = (File("a.txt"), File("b.txt"));
+            db.Evidence.AddRange(a, b);
+            await db.SaveChangesAsync();
+            (kept, planted) = (a.Id, b.Id);
+        }
+        foreach (var id in new[] { kept, planted })
+            await AsFormat3Async(database, nameof(Evidence), id, async raw => await raw.Evidence.SingleAsync(e => e.Id == id));
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            // The trail as v1.9.0 wrote it, before the columns: it doesn't name them at all.
+            var keys = new[] { kept.ToString(), planted.ToString() };
+            foreach (var entry in await raw.AuditLog.Where(a => a.EntityType == nameof(Evidence) && keys.Contains(a.EntityId) && a.AfterJson != null).ToListAsync())
+            {
+                var after = JsonNode.Parse(entry.AfterJson!)!.AsObject();
+                foreach (var f in new[] { nameof(Evidence.CollectedAtUtc), nameof(Evidence.CollectedFrom), nameof(Evidence.CollectedBy) })
+                    after.Remove(f);
+                entry.AfterJson = after.ToJsonString();
+            }
+            await raw.SaveChangesAsync();
+            // Where it was collected from, written into the database: no hash before format 5 can show it.
+            await raw.Evidence.Where(e => e.Id == planted).ExecuteUpdateAsync(s => s.SetProperty(e => e.CollectedFrom, "PLANTED-1"));
+        }
+
+        var result = await UpgradeAsync(database);
+        result.Left.Should().ContainSingle().Which.Should().StartWith($"{nameof(Evidence)} {planted}");
+        await using (var db = database.NewContext())
+            (await db.Evidence.AsNoTracking().SingleAsync(e => e.Id == planted)).RowHash.Should().StartWith(Canonical.V3Prefix,
+                "it isn't signed off with what was planted");
+        var bad = await VerifyRecordsAsync(database);
+        bad!.Id.Should().Be(planted);
+        bad.Detail.Should().Contain("doesn't cover");
+    }
+
+    [Fact]
+    public void Every_entity_with_a_format_5_part_lists_its_fields_for_the_upgrade(/* CAP-08 review */)
+    {
+        // A Canonical.Since(5, ...) part the trail snapshot doesn't know about lets the upgrade sign off a planted value.
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "IncidentManager.sln"))) root = root.Parent;
+        var entities = Path.Combine(root!.FullName, "src", "IncidentManager.Domain", "Entities");
+        var withFormat5 = Directory.GetFiles(entities, "*.cs")
+            .Where(f => File.ReadAllText(f).Contains("Canonical.Since(5", StringComparison.Ordinal))
+            .Select(Path.GetFileNameWithoutExtension).ToList();
+        withFormat5.Should().NotBeEmpty();
+        TrailSnapshot.BroughtInByFormat5.Keys.Select(t => t.Name).Should().BeEquivalentTo(withFormat5);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task The_hash_back_fill_doesnt_re_hash_a_row_changed_with_its_hash_cleared(string provider /* BUG-647 */)
     {
         using var database = Seeded(provider);

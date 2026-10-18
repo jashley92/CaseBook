@@ -143,11 +143,15 @@ public sealed class TrailSnapshot
     }
 
     // CAP-07: the stored values format 5 brought in. Their columns are newer than any trail written before them, so the
-    // trail can't put them back: a row holding one its trail never recorded doesn't agree.
-    private static readonly Dictionary<Type, string[]> BroughtInByFormat5 = new()
+    // trail can't put them back: a row holding one its trail never recorded doesn't agree. CAP-08 review: every entity
+    // with a Canonical.Since(5, ...) part is listed (a guard test checks), or a value planted under an older hash would
+    // be signed off by the upgrade.
+    internal static readonly IReadOnlyDictionary<Type, string[]> BroughtInByFormat5 = new Dictionary<Type, string[]>
     {
         [typeof(JurisdictionNotice)] = [nameof(JurisdictionNotice.Method), nameof(JurisdictionNotice.Reference),
             nameof(JurisdictionNotice.NotifiedBy), nameof(JurisdictionNotice.EvidenceId)],
+        [typeof(Domain.Entities.Evidence)] = [nameof(Domain.Entities.Evidence.CollectedAtUtc), nameof(Domain.Entities.Evidence.CollectedFrom),
+            nameof(Domain.Entities.Evidence.CollectedBy)],
     };
 
     /// <summary>The trail of each of <paramref name="ids"/> of <paramref name="entityType"/>, read in batches.</summary>

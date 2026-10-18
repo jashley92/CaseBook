@@ -237,7 +237,7 @@ first with `casebook-keytool export`.
   when the token can see the case) or rejected. Anything else is a 404.
 - **Imports can name the existing case by its detection case id (CAP-14).** `target.detectionCaseId`, an optional
   addition to import schema v1, is resolved when the import is reviewed, among the open cases the reviewer can see;
-  none or several is a preview warning and the reviewer picks. A `target.caseId` and `target.detectionCaseId` that
+  with no match the `newCase` is prepared (with a warning), and with several the reviewer picks. A `target.caseId` and `target.detectionCaseId` that
   name different cases are refused (400). Producers sending only `caseId` or `newCase` see no change. The XSIAM
   template's README shows the new target.
 - **API callers get their 403.** A refused GET under `/api` is a plain 403 rather than a redirect to the access-denied
@@ -248,12 +248,14 @@ first with `casebook-keytool export`.
   `deploy/sql/casebook-schema-sqlserver.sql`. Existing rows are untouched and keep their row hashes (the columns join
   format 5 of the hash only when set). Nothing to configure. Large uploads in progress across the upgrade still resume (their
   saved state reads without the new fields). Templates can use `evidence.collected`, `evidence.collected_from` and
-  `evidence.collected_by`. Browsers pick up the new upload script and styles by their cache version.
+  `evidence.collected_by`. A file with a collection time recorded puts its *Evidence added* timeline milestone at that
+  time. Browsers pick up the new upload script and styles by their cache version.
 - **How a regulator was notified (CAP-07).** One migration, `NoticeDetails`: four nullable columns on
   `JurisdictionNotices` (`Method`, `Reference`, `NotifiedBy`, `EvidenceId`); no data moves. Existing notices are
   unchanged and keep their row hashes. New row hashes are written as `v5:` (canonical format 5), which differs from
-  format 4 only for a notice with these details, so nothing is re-hashed and the integrity upgrade doesn't run again.
-  The case report's Business Impact section now lists each regulator's notice ("Notice to NY: …"), so a regenerated
+  format 4 only for a notice with these details or evidence with collection details (CAP-08), so nothing is re-hashed
+  and the integrity upgrade doesn't run again. Templates can use the new `notice` collection (`jurisdiction`,
+  `notified`, `due`, `method`, `reference`, `by`, `file`). The case report's Business Impact section now lists each regulator's notice ("Notice to NY: …"), so a regenerated
   report of a notified case reads differently from an older version. The legal-register CSV gains a last column,
   `notice_references`: a script that reads columns by position is unaffected, one that checks the header needs it
   added. No new SIEM event: editing how a regulator was notified sends none (recording the notice still sends 5513).

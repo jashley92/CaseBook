@@ -135,7 +135,7 @@ flowchart LR
   (`X-CaseBook-Truncated: true`, and in the body).
 - **Recorded:** each pull with a body is in the access log (*Export*, by `apitoken:<name>`) and is SIEM event 5304; a
   `304` isn't.
-- **Failure:** 401 (token missing, invalid, expired or revoked: SIEM 5101), 403 (no `ViewCases`), 400 (a bad `since`),
+- **Failure:** 401 (token missing; or invalid, expired or revoked, which is SIEM 5101), 403 (no `ViewCases`), 400 (a bad `since`),
   429 (`Retry-After`; SIEM 5306).
 
 ## File imports
