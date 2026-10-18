@@ -47,12 +47,25 @@ public sealed record RelatedIndicator(string Indicator, EntityType OtherType, st
 /// (<see cref="CaseService.RelatedScanLimit"/>, newest cases first): then "none" means none among the newest checked, and
 /// the panel says so rather than that nothing is related.
 /// </summary>
-public sealed class RelatedIndicators(IReadOnlyList<RelatedIndicator> items, bool scanLimitHit) : IReadOnlyList<RelatedIndicator>
+public sealed class RelatedIndicators(IReadOnlyList<RelatedIndicator> items, bool scanLimitHit,
+    IReadOnlyDictionary<string, string>? excluded = null) : IReadOnlyList<RelatedIndicator>
 {
     public static readonly RelatedIndicators None = new([], false);
 
+    private static readonly IReadOnlyDictionary<string, string> NoneExcluded = new Dictionary<string, string>();
+
     /// <summary>A shared part had at least <see cref="CaseService.RelatedScanLimit"/> candidates; only the newest were checked.</summary>
     public bool ScanLimitHit { get; } = scanLimitHit;
+
+    /// <summary>
+    /// CAP-28 exclusions: the checked indicators the organization's exclusions leave out, by value (ignoring case), with
+    /// why ("contoso.com is one of your organization's domains, so it isn't used to suggest relations."): said instead of
+    /// "nothing found".
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Excluded { get; } = excluded ?? NoneExcluded;
+
+    /// <summary>Why <paramref name="indicator"/> was left out, or null when it was checked.</summary>
+    public string? ExcludedBecause(string indicator) => Excluded.GetValueOrDefault(indicator.Trim());
 
     public int Count => items.Count;
     public RelatedIndicator this[int index] => items[index];
@@ -146,8 +159,10 @@ public sealed class CaseService
         Accounts.AccountDirectoryService? accounts = null,
         Notifications.ReminderAudience? audience = null,
         Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? evidenceLimits = null,
-        Evidence.EvidencePackageTickets? evidencePackages = null)
+        Evidence.EvidencePackageTickets? evidencePackages = null,
+        IRelatedExclusionsProvider? relatedExclusions = null)
     {
+        _relatedExclusions = relatedExclusions;
         _evidencePackages = evidencePackages;
         _evidenceLimits = evidenceLimits;
         _audience = audience;
@@ -175,6 +190,7 @@ public sealed class CaseService
     private readonly IEvidenceStore? _evidenceStore;   // WF-31
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<Evidence.EvidenceStorageOptions>? _evidenceLimits;   // PROD-55
     private readonly Evidence.EvidencePackageTickets? _evidencePackages;   // CAP-12
+    private readonly IRelatedExclusionsProvider? _relatedExclusions;   // CAP-28 exclusions; the shipped defaults without one
     private readonly Accounts.AccountDirectoryService? _accounts;   // BUG-416
     private readonly Notifications.ReminderAudience? _audience;   // BUG-596/597
 
@@ -2185,7 +2201,8 @@ public sealed class CaseService
     /// <paramref name="entityId"/>'s) by the fixed rules of <see cref="Domain.Observables.RelatedObservables"/>: the same
     /// registrable domain, /24 or /48, or email domain, never the identical value (that's <see cref="FindEntityOverlapsAsync"/>).
     /// Need-to-know scoped; exercises take part in none. Suggestions only: nothing is linked, and nothing counts toward a
-    /// gate or the Desk (A4).
+    /// gate or the Desk (A4). The organization's exclusions in force (its domains, ranges, free mail) take part in none
+    /// either, and the result says why each of the checked ones was left out (<see cref="RelatedIndicators.Excluded"/>).
     /// </summary>
     public async Task<RelatedIndicators> FindRelatedIndicatorsAsync(Guid caseId, Guid? entityId = null,
         CancellationToken ct = default)
@@ -2220,9 +2237,16 @@ public sealed class CaseService
     private async Task<RelatedIndicators> RelatedAsync(IAppDbContext db, IReadOnlyList<(EntityType Type, string Value)> mine,
         Guid? notCaseId, CancellationToken ct)
     {
-        var keyed = mine.Select(m => (m.Type, m.Value, Key: Domain.Observables.RelatedObservables.KeyOf(m.Type, m.Value)))
+        // CAP-28 exclusions: read once per check, live. What they leave out isn't looked up, nothing is suggested because of
+        // it (the exact rule below takes them too), and the caller is told why rather than "nothing found".
+        var exclusions = _relatedExclusions?.Current ?? Domain.Observables.RelatedExclusions.Default;
+        var excluded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in mine)
+            if (Domain.Observables.RelatedObservables.ExcludedBecause(m.Type, m.Value, exclusions) is { } why)
+                excluded.TryAdd(m.Value.Trim(), why);
+        var keyed = mine.Select(m => (m.Type, m.Value, Key: Domain.Observables.RelatedObservables.KeyOf(m.Type, m.Value, exclusions)))
             .Where(m => m.Key is not null).Select(m => (m.Type, m.Value, Key: m.Key!.Value)).ToList();
-        if (keyed.Count == 0) return RelatedIndicators.None;
+        if (keyed.Count == 0) return excluded.Count == 0 ? RelatedIndicators.None : new RelatedIndicators([], false, excluded);
 
         var found = new List<(Domain.Observables.RelatedKey Key, Guid CaseId, string CaseNumber, string Title, CasePhase Phase,
             EntityType Type, string Value, EntityDisposition Disposition)>();
@@ -2241,7 +2265,18 @@ public sealed class CaseService
                 where types.Contains(e.Type) && (notCaseId == null || e.CaseId != notCaseId)
                 join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
                 select new { e.Type, e.Value, e.Disposition, c.Id, c.CaseNumber, c.Title, c.Phase, c.CreatedAtUtc };
-            var rows = await candidates
+            // CAP-28 exclusions: an organization's domain under this one (corp.contoso.com under contoso.com) holds its own
+            // hosts, often many; left out in SQL too so they don't fill the scan. Bare domains only: a URL's host can't be
+            // told from its path with a LIKE, so URLs are left to the exact rule below.
+            var narrowed = candidates;
+            if (key.Rule == Domain.Observables.RelatedRule.RegistrableDomain)
+                foreach (var own2 in exclusions.Domains.Where(d => d.EndsWith("." + key.Shared, StringComparison.Ordinal)))
+                {
+                    var under = "%." + LikeEsc(own2);
+                    narrowed = narrowed.Where(x => x.Type != EntityType.Domain
+                        || (x.Value.ToLower() != own2 && !EF.Functions.Like(x.Value.ToLower(), under, LikeEscape)));
+                }
+            var rows = await narrowed
                 .Where(x => !own.Contains(x.Value.ToLower())
                     && ((x.Type == direct && (EF.Functions.Like(x.Value.ToLower(), pDirect, LikeEscape)
                             || EF.Functions.Like(x.Value.ToLower(), pDirect2, LikeEscape)))
@@ -2260,7 +2295,7 @@ public sealed class CaseService
                 rows.AddRange(copies);
             }
 #pragma warning restore CA1304, CA1311
-            found.AddRange(rows.Where(r => Domain.Observables.RelatedObservables.KeyOf(r.Type, r.Value) == key)
+            found.AddRange(rows.Where(r => Domain.Observables.RelatedObservables.KeyOf(r.Type, r.Value, exclusions) == key)
                 .Select(r => (key, r.Id, r.CaseNumber, r.Title, r.Phase, r.Type, r.Value, r.Disposition)));
         }
 
@@ -2268,21 +2303,24 @@ public sealed class CaseService
         foreach (var m in keyed.DistinctBy(m => (Domain.Observables.IocObservable.MatchFamily(m.Type), m.Value.ToLowerInvariant())))
         {
             result.AddRange(found
-                .Where(f => f.Key == m.Key && Domain.Observables.RelatedObservables.AreRelated(m.Type, m.Value, f.Type, f.Value))
+                .Where(f => f.Key == m.Key && Domain.Observables.RelatedObservables.AreRelated(m.Type, m.Value, f.Type, f.Value, exclusions))
                 .DistinctBy(f => (f.CaseId, f.Value.ToLowerInvariant()))
                 .Take(RelatedPerIndicator)
                 .Select(f => new RelatedIndicator(m.Value, f.Type, f.Value, f.CaseId, f.CaseNumber, f.Title, f.Phase, f.Disposition, m.Key)));
         }
-        return new RelatedIndicators(result, limitHit);
+        return new RelatedIndicators(result, limitHit, excluded);
     }
 
     private const string LikeEscape = "\\";
+
+    // A LIKE pattern's wildcards in a value, escaped with LikeEscape.
+    private static string LikeEsc(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[");
 
     // CAP-28: the LIKEs that narrow to values that can share the part (lowercase; wildcards in the part escaped): two for
     // the key's own type (a domain, an IP address, an email address), three for the type that carries it (a URL, an account).
     private static (string Direct, string Direct2, string In1, string In2, string In3) RelatedPatterns(Domain.Observables.RelatedKey key)
     {
-        static string Esc(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[");
+        static string Esc(string s) => LikeEsc(s);
         switch (key.Rule)
         {
             case Domain.Observables.RelatedRule.Ipv4Slash24:

@@ -45,9 +45,10 @@ public readonly record struct RelatedKey(RelatedRule Rule, string Shared)
 /// (<c>kawasaki.jp</c>'s city names, <c>pvt.k12.ma.us</c>) read as registrable, so two unrelated names under one can be
 /// suggested; and a shared host it doesn't know relates everyone hosted there. A single-label name, an IP or a public
 /// suffix itself has no registrable domain.</para>
-/// <para>Email domains match exactly (<c>mail.evil.example</c> isn't <c>evil.example</c>), and the big free mail providers
-/// are left out: two Gmail senders aren't related by that. Internal ranges and the organization's own domain aren't left
-/// out (CaseBook doesn't know which they are), so those suggestions are often noise; they're labelled as such.</para>
+/// <para>Email domains match exactly (<c>mail.evil.example</c> isn't <c>evil.example</c>).</para>
+/// <para>CAP-28 exclusions: what the organization says is its own (<see cref="RelatedExclusions"/>: its domains, its
+/// address ranges, and by default the big free mail providers) is never used to suggest relations, and nothing is
+/// suggested because of it. Every public rule here takes the exclusions in force, so no caller can leave them out.</para>
 /// </remarks>
 public static class RelatedObservables
 {
@@ -73,7 +74,7 @@ public static class RelatedObservables
         "framer.app", "webflow.io", "notion.site", "carrd.co",
     };
 
-    // Free mail: an address there says nothing about who sent it.
+    // Free mail: an address there says nothing about who sent it. Left out while RelatedExclusions.FreeMail is on.
     private static readonly HashSet<string> FreeMail = new(StringComparer.Ordinal)
     {
         "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "hotmail.co.uk", "live.com", "msn.com", "yahoo.com",
@@ -84,9 +85,61 @@ public static class RelatedObservables
 
     /// <summary>
     /// What <paramref name="value"/> (as stored, of <paramref name="type"/>) shares with possibly related indicators, or
-    /// null when no rule applies to it (a hash, a host name, a file, a free mail address, a single-label name).
+    /// null when no rule applies to it (a hash, a host name, a file, a single-label name) or <paramref name="exclusions"/>
+    /// leave it out (one of the organization's domains or ranges, a free mail address).
     /// </summary>
-    public static RelatedKey? KeyOf(EntityType type, string? value)
+    public static RelatedKey? KeyOf(EntityType type, string? value, RelatedExclusions exclusions) =>
+        KeyOf(type, value) is { } key && ExcludedBecause(type, value, key, exclusions) is null ? key : null;
+
+    /// <summary>Whether any rule applies to <paramref name="value"/>'s type and shape, before exclusions: whether the
+    /// entity panel has anything to say about it.</summary>
+    public static bool HasRule(EntityType type, string? value) => KeyOf(type, value) is not null;
+
+    /// <summary>
+    /// CAP-28 exclusions: why <paramref name="value"/> isn't used to suggest relations, worded for the entity panel
+    /// ("contoso.com is one of your organization's domains, so it isn't used to suggest relations."), or null when it is
+    /// used, or when no rule applies to it at all.
+    /// </summary>
+    public static string? ExcludedBecause(EntityType type, string? value, RelatedExclusions exclusions) =>
+        KeyOf(type, value) is { } key ? ExcludedBecause(type, value, key, exclusions) : null;
+
+    private static string? ExcludedBecause(EntityType type, string? value, RelatedKey key, RelatedExclusions exclusions)
+    {
+        var v = (value ?? "").Trim();
+        switch (key.Rule)
+        {
+            case RelatedRule.Ipv4Slash24:
+            case RelatedRule.Ipv6Slash48:
+            {
+                var address = type == EntityType.Url && Uri.TryCreate(v, UriKind.Absolute, out var u) ? u.Host.Trim('[', ']') : v;
+                if (!IPAddress.TryParse(address, out var ip) || exclusions.RangeOf(ip) is not { } range) return null;
+                return $"{address.ToLowerInvariant()} is in {range}, one of your organization's excluded address ranges, so it isn't used to suggest relations.";
+            }
+            case RelatedRule.RegistrableDomain:
+            {
+                var host = (type == EntityType.Url && Uri.TryCreate(v, UriKind.Absolute, out var u) ? u.Host : v).TrimEnd('.').ToLowerInvariant();
+                return OwnDomain(host, exclusions);
+            }
+            default:
+            {
+                // The email domain is the key's shared part, already lowercased.
+                if (OwnDomain(key.Shared, exclusions) is { } own) return own;
+                return exclusions.FreeMail && FreeMail.Contains(key.Shared)
+                    ? $"{key.Shared} is a free mail provider, so an address there isn't used to suggest relations."
+                    : null;
+            }
+        }
+    }
+
+    private static string? OwnDomain(string host, RelatedExclusions exclusions) => exclusions.DomainOf(host) switch
+    {
+        null => null,
+        var d when d == host => $"{d} is one of your organization's domains, so it isn't used to suggest relations.",
+        var d => $"{host} is under {d}, one of your organization's domains, so it isn't used to suggest relations.",
+    };
+
+    // The rule's key, nothing excluded but what can never relate (loopback, unspecified, IPv6 link-local).
+    private static RelatedKey? KeyOf(EntityType type, string? value)
     {
         var v = (value ?? "").Trim();
         if (v.Length == 0) return null;
@@ -112,11 +165,11 @@ public static class RelatedObservables
     /// Whether two indicators are possibly related: they share a key, and they aren't the same observable (an exact
     /// match is "Seen before", not a suggestion).
     /// </summary>
-    public static bool AreRelated(EntityType aType, string a, EntityType bType, string b)
+    public static bool AreRelated(EntityType aType, string a, EntityType bType, string b, RelatedExclusions exclusions)
     {
         if (IocObservable.MatchFamily(aType) == IocObservable.MatchFamily(bType)
             && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase)) return false;
-        return KeyOf(aType, a) is { } ka && KeyOf(bType, b) is { } kb && ka == kb;
+        return KeyOf(aType, a, exclusions) is { } ka && KeyOf(bType, b, exclusions) is { } kb && ka == kb;
     }
 
     /// <summary>The types a key can be shared with (the types whose values can carry it).</summary>
@@ -179,7 +232,7 @@ public static class RelatedObservables
         var at = v.LastIndexOf('@');
         if (at <= 0 || at == v.Length - 1) return null;
         var domain = v[(at + 1)..].Trim().TrimEnd('.').ToLowerInvariant();
-        if (domain.IndexOf('.') < 0 || RegistrableDomain(domain) is null || FreeMail.Contains(domain)) return null;
+        if (domain.IndexOf('.') < 0 || RegistrableDomain(domain) is null) return null;
         return domain;
     }
 }

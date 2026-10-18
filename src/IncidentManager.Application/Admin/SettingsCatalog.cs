@@ -1,4 +1,5 @@
 using System.Globalization;
+using IncidentManager.Application.Abstractions;
 
 namespace IncidentManager.Application.Admin;
 
@@ -17,6 +18,8 @@ public enum SettingKind
 /// appsettings.json default instead of falling back to it. Only for settings read as raw strings: a bound int can't
 /// take an empty value.</param>
 /// <param name="EmailAddress">BUG-468: a single sender address, never blank; a display-name form is allowed.</param>
+/// <param name="DomainList">CAP-28 exclusions: a list of domain names, one per line (a pasted "a, b" list is split).</param>
+/// <param name="AddressRangeList">CAP-28 exclusions: a list of IPv4 or IPv6 ranges in CIDR form, one per line.</param>
 public sealed record SettingDefinition(
     string Key,
     string Label,
@@ -32,7 +35,9 @@ public sealed record SettingDefinition(
     bool EmailList = false,
     bool LinkTemplate = false,
     bool AbsoluteUrl = false,
-    bool EmailAddress = false);
+    bool EmailAddress = false,
+    bool DomainList = false,
+    bool AddressRangeList = false);
 
 /// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
 public sealed record SettingOption(string Value, string Label);
@@ -177,6 +182,21 @@ public static class SettingsCatalog
             "Deep-link template for the referenced detection-source case: a full https:// address with {0} where the case id should appear.", "", LinkTemplate: true),
         new SettingDefinition("ExternalLinks:VirusTotalUrlTemplate", "VirusTotal lookup template", "Integrations", SettingKind.Text,
             "Indicator lookup template: a full https:// address with {0} where the indicator value should appear.", "https://www.virustotal.com/gui/search/{0}", LinkTemplate: true),
+        // CAP-28 exclusions: CaseBook can't tell the organization's own domains and ranges from an attacker's, so they were
+        // suggested as "possibly related" across every case. Read live (IRelatedExclusionsProvider).
+        new SettingDefinition(RelatedExclusionSettings.DomainsKey, "Your organization's domains", "Related indicators", SettingKind.MultiText,
+            "Domains that are yours, one per line, for example contoso.com and corp.contoso.local. Each covers every name under it " +
+            "(mail.contoso.com, a@corp.contoso.com), not notcontoso.com. A domain, URL, email address or account on one is never " +
+            "used to suggest possibly related indicators, and nothing is suggested because of it. Blank by default.", "",
+            DomainList: true),
+        new SettingDefinition(RelatedExclusionSettings.RangesKey, "Excluded address ranges", "Related indicators", SettingKind.MultiText,
+            "Address ranges in CIDR form, one per line, for example 10.0.0.0/8 or fd00::/8. An address inside one, or a URL on " +
+            "one, is never related by its /24 or /48. The default lists the private (RFC 1918), loopback, link-local and unique " +
+            "local ranges, which every organization uses; add your own public ranges, or clear the list to relate everything.",
+            string.Join("\n", Domain.Observables.RelatedExclusions.DefaultRanges), AddressRangeList: true),
+        new SettingDefinition(RelatedExclusionSettings.FreeMailKey, "Leave out free mail providers", "Related indicators", SettingKind.Bool,
+            "Two addresses at Gmail, Outlook.com, Yahoo, iCloud, Proton and the like say nothing about who sent them, so they " +
+            "aren't related by their email domain. Default on.", "true"),
         // CAP-10: read by the retention review (Administration › Retention review) and its nightly count. Never purges.
         new SettingDefinition("Retention:CaseYears", "Case retention (years)", "Retention", SettingKind.Int,
             "How long after closing a case is listed under Administration › Retention review, for an administrator to archive. " +
@@ -395,6 +415,22 @@ public static class SettingsCatalog
         return addresses.Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
+    // CAP-28 exclusions: a list of domains or ranges, pasted one per line or as "a, b; c d". Each entry is stored as the
+    // rule reads it (lowercased, canonical), once; one that isn't refuses the save with the entry named.
+    private delegate string? EntryNormalizer(string? entry, out string? problem);
+
+    private static IEnumerable<string> ListEntries(SettingDefinition def, IEnumerable<string> lines, EntryNormalizer normalize)
+    {
+        var entries = new List<string>();
+        foreach (var e in lines.SelectMany(l => l.Split([';', ',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
+        {
+            if (normalize(e, out var problem) is not { } stored)
+                throw new ArgumentException($"{def.Label}: \"{e}\" {problem}");
+            entries.Add(stored);
+        }
+        return entries.Distinct(StringComparer.Ordinal);
+    }
+
     private static string? SenderProblem(string? v)
     {
         if (string.IsNullOrEmpty(v))
@@ -446,6 +482,8 @@ public static class SettingsCatalog
                     .Select(x => x.Trim())
                     .Where(x => x.Length > 0);
                 if (def.EmailList) lines = EmailAddresses(def, lines);
+                if (def.DomainList) lines = ListEntries(def, lines, Domain.Observables.RelatedExclusions.NormalizeDomain);
+                if (def.AddressRangeList) lines = ListEntries(def, lines, Domain.Observables.RelatedExclusions.NormalizeRange);
                 return string.Join("\n", lines);
 
             default:

@@ -223,9 +223,15 @@ first with `casebook-keytool export`.
 
 - **Possibly related indicators (CAP-28).** The entity panel and the New case form's indicator check now also list
   indicators on other cases you can see that share a registrable domain, a /24 (or /48) or an email domain, clearly
-  labelled as suggestions. Nothing is linked and gates and the Desk are unchanged. No migration and nothing to
-  configure; the registrable domain is a built-in approximation (no Public Suffix List is downloaded). Each shared part
-  reads the newest 500 candidates; when that limit is reached, the panel says only the newest 500 were checked.
+  labelled as suggestions. Nothing is linked and gates and the Desk are unchanged. No migration; the registrable
+  domain is a built-in approximation (no Public Suffix List is downloaded). Each shared part reads the newest 500
+  candidates; when that limit is reached, the panel says only the newest 500 were checked. Under Administration ›
+  Integrations › Related indicators, enter **your organization's domains** (blank by default, so set them after the
+  upgrade) so internal accounts and hosts aren't suggested across cases; **excluded address ranges** default to the
+  private, loopback, link-local and unique local ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`,
+  `169.254.0.0/16`, `::1/128`, `fe80::/10`, `fc00::/7`), editable; and free mail addresses stay left out unless you turn
+  that off. What's left out is never suggested and suggests nothing, and the panel says why. The three settings travel
+  in the config bundle and apply without a restart.
 - **The note box takes any file, not only screenshots (CAP-26).** Paste a file, or drop one on the timeline composer,
   and it's stored as evidence with the entry and cited by it ("Evidence: file.csv"), checked as an Evidence tab upload
   is before anything is stored (the same file already on the case is refused). Up to 50 MB, or the evidence limit if
