@@ -69,6 +69,40 @@ public partial class DeployScriptTests
         chain.GetProperty("RetiredWrappedKeysPath").GetString()!.Replace('\\', '/').Should().Be(keysFolder + "/chain-retired");
     }
 
+    [Fact]
+    public void Every_anonymous_endpoint_the_app_maps_is_carved_out_of_windows_auth_by_the_installer(/* CAP-37 */)
+    {
+        // IIS answers 401 before the app runs on any path that isn't carved out, so an endpoint the app maps anonymous
+        // (a probe, the email logo, the calendar feed) only works on an installed site if the installer opens its path.
+        var program = File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Web", "Program.cs"));
+        var maps = MappedRoute().Matches(program).ToList();
+        var anonymous = maps
+            .Select((m, i) => (Path: m.Groups["path"].Value,
+                Body: program[m.Index..(i + 1 < maps.Count ? maps[i + 1].Index : program.Length)]))
+            .Where(x => x.Body.Contains(".AllowAnonymous()", StringComparison.Ordinal))
+            .Select(x => x.Path)
+            .ToList();
+        anonymous.Should().Contain(["/health", "/health/live", "/branding/logo", "/agenda/feed.ics"]);
+
+        var install = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "Install-CaseBook.ps1"));
+        var carved = AnonymousPaths().Match(install);
+        carved.Success.Should().BeTrue("the installer lists the carved-out paths in $anonymousPaths");
+        var paths = Regex.Matches(carved.Groups[1].Value, "'([^']+)'").Select(m => "/" + m.Groups[1].Value).Append("/api").ToList();
+        paths.Should().NotContain("/agenda", "the signed-in /agenda/agenda.ics download stays Windows-authenticated");
+
+        anonymous.Where(a => !paths.Any(p => a == p || a.StartsWith(p + "/", StringComparison.Ordinal)))
+            .Should().BeEmpty("every anonymous endpoint needs its path carved out in Install-CaseBook.ps1");
+
+        var verify = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "Verify-Install.ps1"));
+        verify.Should().Contain("'/health/live'").And.Contain("'/branding/logo'").And.Contain("'/agenda/feed.ics'");
+    }
+
+    [GeneratedRegex(@"app\.Map(Get|Post|HealthChecks)\(\s*""(?<path>/[^""]*)""", RegexOptions.None, 1000)]
+    private static partial Regex MappedRoute();
+
+    [GeneratedRegex(@"\$anonymousPaths\s*=\s*@\(([^)]*)\)", RegexOptions.None, 1000)]
+    private static partial Regex AnonymousPaths();
+
     [GeneratedRegex(@"sqlcmd(\.exe)?\b.*\s-i\s", RegexOptions.None)]
     private static partial Regex SqlcmdWithInputFile();
 

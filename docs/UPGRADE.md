@@ -212,6 +212,16 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **Probes, the email logo and calendar feeds reach the app on IIS (CAP-37).** `Install-CaseBook.ps1` now carves
+  `/health` (with `/health/live`, `/health/ready` and everything else below it), `/branding/logo` and
+  `/agenda/feed.ics` out of Windows Authentication, as it always has `/api`; `Verify-Install.ps1 -Url` checks each
+  answers anonymously. The app still decides what each gives away: a status word, the logo or a 404, and a feed only
+  for a valid signed token. `/agenda/agenda.ics` and the rest of the site stay signed in. `Upgrade-CaseBook.ps1`
+  doesn't change IIS authentication, so on an existing site either re-run `Install-CaseBook.ps1` or apply the carve-out
+  by hand, elevated, for each of `health`, `branding/logo` and `agenda/feed.ics` (with your site's name):
+  `appcmd set config "CaseBook/health" /section:system.webServer/security/authentication/anonymousAuthentication /enabled:true /commit:apphost`
+  and the same with `windowsAuthentication /enabled:false`. A load balancer that authenticated to reach `/health` can
+  stop doing so.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

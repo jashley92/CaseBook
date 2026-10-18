@@ -14,7 +14,8 @@
         Catches the common misconfigurations up front instead of mid-publish or mid-DDL.
 
       * POST-INSTALL smoke test (-Url) - confirms the app pool is running and the site
-        answers 200 over Windows integrated auth (the original behaviour).
+        answers 200 over Windows integrated auth (the original behaviour), and that /api,
+        /health, /branding/logo and /agenda/feed.ics reach the app without a sign-in.
 
     Pass -ConfigFile, -Url, or both. Host-specific items that can't be checked from where
     you're running (e.g. the web-host cert on the SQL box) are reported as WARN, not FAIL,
@@ -317,6 +318,48 @@ if ($Url) {
         else { Bad "/api answered $code, not the import schema." }
     } catch { Bad "/api request failed: $($_.Exception.Message)" }
     finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCallback }
+
+    # 4. CAP-37: the app's other anonymous endpoints reach it without a sign-in. The installer carves them out of
+    #    Windows Auth; a 401 or 403 here is IIS refusing before the app runs. Asked directly (no proxy), no credentials.
+    #    /health/live answers the status word; the logo is the image or the app's 404 (none configured); the agenda
+    #    feed without a token is the app's 404, which proves the path reaches it and that it still wants its token.
+    $siteRoot = ([Uri]$Url).GetLeftPart([UriPartial]::Authority)
+    $anonChecks = @(
+        @{ Path = '/health/live';     Want = @(200);      What = 'load-balancer and uptime probes' },
+        @{ Path = '/branding/logo';   Want = @(200, 404); What = 'the logo in branded emails' },
+        @{ Path = '/agenda/feed.ics'; Want = @(404);      What = 'calendar subscriptions' }
+    )
+    $prevCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    try {
+        foreach ($c in $anonChecks) {
+            $probe = $siteRoot + $c.Path
+            Info "GET $probe (anonymous)"
+            try {
+                $req = [System.Net.HttpWebRequest]::Create($probe)
+                $req.Proxy = $null; $req.AllowAutoRedirect = $false; $req.Timeout = 30000
+                $r = $null
+                try { $r = $req.GetResponse() } catch {
+                    $ex = $_.Exception; while ($ex -and $ex -isnot [System.Net.WebException]) { $ex = $ex.InnerException }
+                    if ($ex -and $ex.Response) { $r = $ex.Response } else { throw }
+                }
+                try {
+                    $code = [int]$r.StatusCode
+                    $body = (New-Object System.IO.StreamReader($r.GetResponseStream())).ReadToEnd()
+                } finally { $r.Close() }
+                if ($code -in 401,403) {
+                    Bad ("$($c.Path) answered ${code}: IIS isn't letting anonymous requests through, so $($c.What) fail. " +
+                         "Re-run Install-CaseBook.ps1 (it carves the path out of Windows Auth).")
+                }
+                elseif ($code -eq 400) { Bad "$($c.Path) answered $hostHint" }
+                elseif ($c.Path -eq '/health/live' -and $code -eq 200 -and $body.Trim() -ne 'Healthy') {
+                    Bad "$($c.Path) answered 200 but not CaseBook's status word."
+                }
+                elseif ($code -in $c.Want) { Ok "$($c.Path) reaches CaseBook anonymously ($($c.What))" }
+                else { Bad "$($c.Path) answered $code, not what CaseBook answers there." }
+            } catch { Bad "$($c.Path) request failed: $($_.Exception.Message)" }
+        }
+    } finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCallback }
 }
 
 # ================================== SUMMARY ===================================

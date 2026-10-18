@@ -33,7 +33,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
-| Medium | **Anonymous endpoints aren't reachable on an IIS install** (`/health*`, `/branding/logo`, `/agenda/feed.ics`) because the installer disables anonymous authentication outside `/api`. | Load-balancer probes, email logos and calendar subscriptions fail. | Installer carve-outs for those paths. |
 | Medium | **Install-CaseBook without `-AppPoolCredential`** for a non-gMSA account sets a blank password; several messages claim it prompts. | The app pool won't start. | Prompt or refuse. |
 | Medium | **Re-running Install-CaseBook overwrites `appsettings.Production.json`** and doesn't update an existing site's bindings. | Manual configuration is lost; adding a certificate by re-running doesn't work. | Merge config; update bindings. |
 | Low | `Upgrade-CaseBook.ps1` uses `robocopy /MIR`, which replaces `web.config` with the release's and removes other files in the site folder (`appsettings.Production.json`, `VERSION.txt` and `logs` are kept). | Hand edits to `web.config` (stdout logging) are lost on each upgrade. | Re-apply them after upgrading, or keep them in `appsettings.Production.json` where a setting exists. |

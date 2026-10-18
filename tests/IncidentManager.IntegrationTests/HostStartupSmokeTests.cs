@@ -232,6 +232,29 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task The_endpoints_iis_lets_through_anonymously_still_hold_their_own_line(/* CAP-37 */)
+    {
+        // The installer opens /health*, /branding/logo and /agenda/feed.ics to anonymous requests, so what each gives away
+        // is the app's to decide: a status word, the logo or nothing, and a feed only for a valid signed token.
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory(("Agenda:FeedKey", Convert.ToBase64String(new byte[32])));
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            foreach (var probe in new[] { "/health/live", "/health", "/health/ready" })
+            {
+                var answer = await client.GetAsync(probe);
+                (await answer.Content.ReadAsStringAsync()).Should().BeOneOf(["Healthy", "Unhealthy", "Degraded"], $"{probe} gives the status word only");
+            }
+
+            (await client.GetAsync("/branding/logo")).StatusCode.Should().Be(HttpStatusCode.NotFound, "no logo is configured");
+
+            (await client.GetAsync("/agenda/feed.ics")).StatusCode.Should().Be(HttpStatusCode.NotFound, "no token, no feed");
+            (await client.GetAsync("/agenda/feed.ics?token=forged.token")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);

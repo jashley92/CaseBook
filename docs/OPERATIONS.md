@@ -479,9 +479,9 @@ the tool on the server, against the site's own keys folder, or the record waits 
   thumbnail endpoint is intentionally exempt (many load at once; it is image-only and need-to-know scoped).
 - **Health probes (H-09)**: three endpoints the app serves **anonymously** for IIS / a load balancer / uptime
   monitoring — they return the status word only (no case data, no paths, no exception text), so they are safe
-  to expose to an internal monitor. **On an `Install-CaseBook.ps1` site, IIS itself requires Windows
-  authentication everywhere except `/api`**, so either let the probe authenticate or add anonymous
-  `<location>` entries for these paths (see [operations/troubleshooting.md](operations/troubleshooting.md#health-probe-returns-401)):
+  to expose to an internal monitor. `Install-CaseBook.ps1` carves `/health` and every path below it out of
+  Windows authentication (CAP-37), so a probe needs no sign-in; a site installed before that needs the carve-out
+  (see [operations/troubleshooting.md](operations/troubleshooting.md#health-probe-returns-401)):
   - `GET /health/live` — **liveness**: the process is up and the pipeline responds. Runs no dependency
     checks. `200 Healthy`. Use this for the app-pool / container "is it running" probe.
   - `GET /health` (alias `GET /health/ready`) — **readiness**: additionally verifies **database
@@ -504,8 +504,8 @@ the tool on the server, against the site's own keys folder, or the record waits 
 - [ ] Web root is **read/execute-only** — on SQL Server the app writes no `App_Data` under the content
       root (H-07); every store lives under `DataRoot`. No Modify carve-out on the site folder is required.
 - [ ] Load balancer / uptime monitor points at **`/health`** (readiness) and the app-pool/container probe
-      at **`/health/live`** (liveness) — H-09. Both are status-only; under IIS they need an anonymous carve-out
-      (or an authenticating probe).
+      at **`/health/live`** (liveness) — H-09. Both are status-only and anonymous on an installed site
+      (CAP-37); `Verify-Install.ps1 -Url` checks it.
 - [ ] Signing key provisioned out of band and protected (DPAPI/cert store/HSM); public key + `KeyId`
       archived separately.
 - [ ] `DataProtection:KeyPath` set to an ACL-restricted folder (installer creates `DataRoot\dp-keys`) so

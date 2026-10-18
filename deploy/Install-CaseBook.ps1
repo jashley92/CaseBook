@@ -11,7 +11,8 @@
          OUTSIDE the web root.
       3. Writes appsettings.Production.json from the template with your values.
       4. Creates/updates the IIS application pool (No Managed Code, your service identity)
-         and website, enabling Windows Authentication and disabling Anonymous.
+         and website, enabling Windows Authentication and disabling Anonymous (except under /api,
+         /health, /branding/logo and /agenda/feed.ics, which the app authenticates or keeps status-only).
       5. Grants the app-pool identity least-privilege NTFS rights.
 
     Integrated auth throughout - no secrets are written by this script. Provide the app-pool
@@ -678,6 +679,24 @@ foreach ($s in $apiAuthSections) {
     if ($LASTEXITCODE -ne 0) {
         throw ("Failed to set $($s.Name) on '$SiteName/api' (appcmd exit $LASTEXITCODE): $out. This carves the " +
                "token-authenticated API path out of Windows Auth; confirm you are running elevated.")
+    }
+}
+
+# CAP-37: the app's other anonymous endpoints, carved out the same way as /api. Without this IIS answers them 401
+# before the app runs, so load-balancer probes, the email logo and calendar subscriptions fail. The app still enforces
+# each one: /health (and /health/live, /health/ready, /health/alarms below it) answers a status word only, with no
+# detail; /branding/logo is the branding image only; the agenda feed is 404 without a valid signed token in its URL.
+# Only these paths: /agenda/agenda.ics (the signed-in download) and the rest of the site stay Windows-authenticated.
+$anonymousPaths = @('health', 'branding/logo', 'agenda/feed.ics')
+foreach ($p in $anonymousPaths) {
+    foreach ($s in $apiAuthSections) {
+        $out = & $appcmd set config "$SiteName/$p" `
+            "/section:system.webServer/security/authentication/$($s.Name)" `
+            "/enabled:$($s.Enabled)" /commit:apphost 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw ("Failed to set $($s.Name) on '$SiteName/$p' (appcmd exit $LASTEXITCODE): $out. This opens the " +
+                   "app's anonymous endpoint /$p to monitors, mail clients and calendar apps; confirm you are running elevated.")
+        }
     }
 }
 

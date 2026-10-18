@@ -92,8 +92,10 @@ Behavior to know:
   for hidden and missing, so nothing leaks), which surfaces as a 500 and then the error page.
 - A **403 on a page GET** redirects to `/access-denied` (SIEM 5201). An **HTML GET to an unknown path**
   redirects to `/not-found`.
-- **Anonymous endpoints aren't anonymous under IIS** unless you carve them out, because the site has anonymous
-  authentication disabled except under `/api` ([troubleshooting](../operations/troubleshooting.md#health-probe-returns-401)).
+- **Anonymous endpoints reach the app under IIS through the installer's carve-outs** (CAP-37): `/api`, `/health`
+  (and every path below it), `/branding/logo` and `/agenda/feed.ics` have anonymous authentication on and Windows
+  off; the rest of the site needs Windows sign-in. A new anonymous endpoint needs its path added there
+  (`DeployScriptTests` fails otherwise) ([troubleshooting](../operations/troubleshooting.md#health-probe-returns-401)).
 
 The `/api` endpoints are documented for callers in [API.md](../API.md). The IOC feeds are mapped in
 `Web/Security/IocFeedApiEndpoints.cs`; the rest are in `Program.cs`. Under IIS they reach the app through the
