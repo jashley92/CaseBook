@@ -136,13 +136,16 @@ On the **Integrity & audit** page (any `ViewCases` user can verify; sealing need
 - **Verify now**: checks the whole chain and the latest seal (shared, at most once a minute).
 - **Seal chain head**: verifies the whole chain and its records, then signs the current head. It refuses while the chain
   doesn't verify, since a seal would make a rewritten history read as authentic (REV-04).
-- **Audit trail**: the whole trail, newest first, 100 entries a page (*Newer* / *Older*). Filter by case number, actor,
+- **Audit trail**: the whole trail, newest first, 100 entries a page (*Newer* / *Older*). Pages follow on by sequence
+  number, so entries written while you page neither repeat on *Older* nor go missing on *Newer*; the summary shows the
+  page's range by sequence (`#1,000 to #901`, the **#** column) and says when it's the latest. Filter by case number, actor,
   action, entity type (configuration such as Setting, Role, AD group mapping and Stage gate is grouped apart in the
   list) and UTC dates; *Export CSV* downloads what the filter shows (`/export/audit.csv`, up to 100,000 rows; a cut file
   says so at the top and on its last line). Need-to-know applies as on a case's Audit tab: someone who can't see a
   restricted case doesn't see its entries, and only oversight and administrators see configuration entries. The
-  filters come from the address too (`?case=`, `?action=`, `?entity=`, `?key=`, `?from=`, `?to=`; never the actor), so
-  a link can open it filtered: **History** beside each setting in Administration opens that setting's changes
+  filters come from the address too (`?case=`, `?action=`, `?entity=`, `?key=`, `?from=`, `?to=`; the page's address never
+  carries the actor, though the *Export CSV* link does, as a case's Audit tab export does), so a link can open it
+  filtered, and following another link to the page (the menu's *Integrity*, Back, Forward) applies that link's filters: **History** beside each setting in Administration opens that setting's changes
   (`?entity=AppSetting&key=Email:From`), across a reset and the next change.
 - **Compliance bundle**: for a date range.
 - SQL Server ledger status, when enabled.

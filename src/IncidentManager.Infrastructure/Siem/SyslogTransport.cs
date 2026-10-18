@@ -37,6 +37,13 @@ public sealed class SyslogTransport : ISecurityEventTransport
         }
     }
 
+    // CAP-04 review: on in its options but with no host, it sends nothing; the delivery card says so instead of hiding it.
+    public bool Configured => _options.CurrentValue.Enabled;
+
+    public string? StoppedReason => Configured && string.IsNullOrWhiteSpace(_options.CurrentValue.Host)
+        ? "not sending: no collector host is set (Siem:Syslog:Host)"
+        : null;
+
     public async Task<string?> SendTestAsync(SecurityEvent e, CancellationToken ct)
     {
         var o = _options.CurrentValue;

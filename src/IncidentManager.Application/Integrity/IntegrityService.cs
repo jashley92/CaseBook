@@ -319,17 +319,38 @@ public sealed class IntegrityService
     }
 
     /// <summary>
-    /// CAP-03: one page of <see cref="QueryAsync"/>'s result for the cross-case trail on <c>/integrity</c> (page 0 is the
-    /// newest), scoped the same way.
+    /// CAP-03: one page of <see cref="QueryAsync"/>'s result for the cross-case trail on <c>/integrity</c>, newest first,
+    /// scoped the same way. CAP-03 review: paged by sequence, not by offset. An offset (Skip(page * size)) moved under
+    /// the reader as entries were written, so "Older" repeated entries just shown and "Newer" skipped some; each page now
+    /// starts from the sequence the page shown ended at. A "Newer" page that reaches the newest entries is the newest
+    /// page (full, with nothing newer).
     /// </summary>
-    public async Task<AuditPage> QueryPageAsync(AuditQueryFilter filter, int page, int pageSize, CancellationToken ct = default)
+    public async Task<AuditPage> QueryPageAsync(AuditQueryFilter filter, AuditPageAt at, int pageSize, CancellationToken ct = default)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(page);
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         using var db = _factory.CreateDbContext();
-        var rows = await (await FilteredAsync(db, filter, ct)).OrderByDescending(a => a.Sequence)
-            .Skip(page * pageSize).Take(pageSize + 1).ToListAsync(ct);   // one more, to know there's an older page
-        return new AuditPage(rows.Take(pageSize).ToList(), rows.Count > pageSize);
+        var q = await FilteredAsync(db, filter, ct);
+
+        if (at.NewerThan is { } first)
+        {
+            var newer = await q.Where(a => a.Sequence > first).OrderBy(a => a.Sequence)
+                .Take(pageSize + 1).ToListAsync(ct);   // one more, to know there's a newer page still
+            if (newer.Count > pageSize)
+            {
+                var kept = newer.Take(pageSize).ToList();
+                kept.Reverse();
+                return new AuditPage(kept, HasOlder: true, HasNewer: true);
+            }
+            at = AuditPageAt.Newest;   // reached the top: the newest page, full
+        }
+
+        var older = at.OlderThan is { } last ? q.Where(a => a.Sequence < last) : q;
+        var rows = await older.OrderByDescending(a => a.Sequence)
+            .Take(pageSize + 1).ToListAsync(ct);   // one more, to know there's an older page
+        var page = rows.Take(pageSize).ToList();
+        var top = page.Count > 0 ? page[0].Sequence : at.OlderThan.GetValueOrDefault() - 1;
+        var hasNewer = at.OlderThan is not null && await q.AnyAsync(a => a.Sequence > top, ct);
+        return new AuditPage(page, rows.Count > pageSize, hasNewer);
     }
 
     /// <summary>

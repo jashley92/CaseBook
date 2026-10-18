@@ -175,6 +175,50 @@ public sealed class AssessEntitiesTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task The_verdicts_seen_at_the_tick_are_checked_though_a_live_refresh_showed_the_change_before_the_dialog(string provider)
+    {
+        // CAP-02 review (C9): the analyst selects the Unknown entities; a colleague marks one Malicious and the live
+        // refresh reloads the case before "Set verdict for 3…". The dialog took its expected verdicts at open, so it
+        // already "saw" Malicious and a Benign overwrote it. The picks keep what each showed when ticked.
+        using var database = Open(provider);
+        var svc = NewService(database);
+        var (id, entities) = await SeedAsync(svc);
+        var picks = new IncidentManager.Web.Components.Shared.EntityPicks();
+        picks.Replace((await LoadAsync(database, id)).Entities.Where(e => e.Disposition == EntityDisposition.Unknown)
+            .Select(e => (e.Id, e.Disposition)));   // "Select Unknown"
+
+        await svc.SetEntityVerdictAsync(id, entities[1], EntityDisposition.Malicious, "Colleague's finding", EntityDisposition.Unknown);
+        var refreshed = await LoadAsync(database, id);   // the live refresh
+        picks.KeepOnly(refreshed.Entities.Select(e => e.Id));
+        refreshed.Entities.Single(e => e.Id == entities[1]).Disposition.Should().Be(EntityDisposition.Malicious, "the table shows it");
+        var expected = picks.Snapshot();   // the dialog opens
+
+        expected[entities[1]].Should().Be(EntityDisposition.Unknown, "what it showed when it was ticked");
+        await svc.Invoking(s => s.AssessEntitiesAsync(id, expected.Keys.ToList(), EntityDisposition.Benign, null, expected))
+            .Should().ThrowAsync<StaleEditException>();
+        (await LoadAsync(database, id)).Entities.Single(e => e.Id == entities[1]).Disposition.Should().Be(EntityDisposition.Malicious);
+
+        // Told, the analyst saves again: the picks now expect what each shows, and theirs is recorded knowingly.
+        picks.Rebase(refreshed.Entities.Select(e => (e.Id, e.Disposition)));
+        (await svc.AssessEntitiesAsync(id, entities, EntityDisposition.Benign, null, picks.Snapshot())).Should().Be(3);
+    }
+
+    [Fact]
+    public void A_pick_keeps_the_verdict_it_showed_when_ticked()
+    {
+        var picks = new IncidentManager.Web.Components.Shared.EntityPicks();
+        var (a, b) = (Guid.NewGuid(), Guid.NewGuid());
+        picks.Set(a, EntityDisposition.Unknown, on: true);
+        picks.Set(a, EntityDisposition.Malicious, on: true);   // a second tick event keeps the first
+        picks.Replace([(a, EntityDisposition.Unknown), (b, EntityDisposition.Benign)]);   // select all
+        picks.Snapshot().Should().BeEquivalentTo(new Dictionary<Guid, EntityDisposition> { [a] = EntityDisposition.Unknown, [b] = EntityDisposition.Benign });
+        picks.Set(b, EntityDisposition.Benign, on: false);
+        picks.KeepOnly([b]);
+        picks.Count.Should().Be(0, "a was removed from the case, b unticked");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task The_cap_takes_exactly_the_limit_and_refuses_one_more(string provider)
     {
         using var database = Open(provider);
