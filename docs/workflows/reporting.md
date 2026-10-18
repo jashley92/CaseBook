@@ -49,7 +49,9 @@ them. Notable behavior:
   regulators, by the reading the case page, close gate and reminders use: "Partly reported: NY notified 2026-10-18 10:00
   UTC, CA due 2026-10-19 00:00 UTC." until every jurisdiction in play has a notice (an outstanding one without a tracked
   deadline reads "not yet notified"), then "Reported to every regulator in play: …". The Outcome section's "Reported to
-  regulators" stamp and `case.reported` appear only then; template field `case.notification_standing` holds the line.
+  regulators" stamp, `case.reported` and the timeline's reported milestone appear only then, read from that standing,
+  not the case's stored reported time (which can be set over a clock still running: an older build, a restore, a hand
+  edit); template field `case.notification_standing` holds the line.
 - **Outside parties** (CAP-34) print with the legal lines (the referral and the hold): in Business Impact when the
   profile has it, else in the case facts (which then say "Outside parties: see Business Impact." when it does), in the
   order engaged: "Outside counsel: Lee & Park LLP (contact Dana Lee), reference MAT-114, engaged 2026-10-02 14:00
@@ -84,7 +86,9 @@ template filled it (name and hash, by value).
 | **Wording** | Neutral on purpose ("improvement actions", "opportunities to improve"), because these records are discoverable ([decision 0012](../decisions/0012-discovery-conscious-records.md)). |
 
 **Program › Improvement actions** (`/program/improvement-actions`) is the cross-case register, with a CSV export
-(exercises excluded unless asked for).
+(exercises excluded unless asked for). A team picker (CAP-36, `?team=`, read as the Cases list reads it) cuts it, and
+its CSV, to one team's cases or those with no team; the Program overview's *Improvement actions* link and the Program
+tabs keep the team picked there.
 
 ## Cross-case reporting
 

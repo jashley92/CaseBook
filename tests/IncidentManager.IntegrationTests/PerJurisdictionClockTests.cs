@@ -187,7 +187,7 @@ public sealed class PerJurisdictionClockTests : IDisposable
         model.ReportedAtUtc.Should().BeNull();
         model.NotificationStanding.Should().Be($"Partly reported: NY notified {Utc(ny)}, CA due {Utc(Due)}.");
         model.BusinessImpactLines.Should().Contain(model.NotificationStanding);
-        model.OutcomeStamps.Should().NotContain(s => s.StartsWith("Reported to regulators"));
+        model.OutcomeStamps.Should().NotContain(s => s.StartsWith("Reported to regulators", StringComparison.Ordinal));
         ReportTemplateFields.Scalar(model, "case.notification_standing").Should().Be(model.NotificationStanding);
         NoticeDetailText.Standing(d, Utc).Should().Be(model.NotificationStanding, "the Briefing says it in the same words");
         (await GateMetAsync(database, id)).Should().BeFalse("CA's notice isn't recorded");
@@ -364,6 +364,133 @@ public sealed class PerJurisdictionClockTests : IDisposable
         await using var db = database.NewContext();
         (await NotificationDeadlineService.OpenHeadlinesAsync(db, db.Cases.AsNoTracking(), _settings.Current,
             await Rules(database).LoadRuleSetAsync(72), _clock.UtcNow)).Should().ContainKey(id, "the dashboard counts it as awaiting report");
+
+        // CAP-38 review: nor does the report, the timeline, the narrative or the case-list CSV say "reported" beside it.
+        var model = await Reports(database).BuildPreviewModelAsync(id, null);
+        model.ReportedAtUtc.Should().BeNull("the report's reported time is the standing's, not the stored one");
+        model.OutcomeStamps.Should().NotContain(s => s.StartsWith("Reported to regulators", StringComparison.Ordinal));
+        ReportTemplateFields.Scalar(model, "case.reported").Should().BeEmpty();
+        model.InvestigationTimeline.Should().NotContain(t => t.Description.StartsWith("Reported to", StringComparison.Ordinal));
+        var full = await LoadAsync(database, id);
+        var milestones = CaseMilestones.Project(full, new MilestoneLabels(x => "", s => "", p => "", m => "", Standing: d.Standing));
+        milestones.Should().Contain(m => m.Title == "Notified NY").And.NotContain(m => m.Key.StartsWith("reported:", StringComparison.Ordinal), "no reported milestone");
+        IncidentManager.Application.Lessons.CaseNarrative.Draft(full, _ => null, s => s.ToString(), _clock.UtcNow, d.Standing)
+            .Should().NotContain("Reported to regulators");
+        (await CaseListCsv.CollectAsync(Cases(database), new CaseFilter())).Items.Single(i => i.Id == id).ReportedAtUtc.Should().BeNull();
+    }
+
+    // --- CAP-38 review: Mark reported records only the regulators the form showed as owed ---
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Mark_reported_is_refused_when_a_regulator_came_into_play_after_the_form_showed_who_is_owed(string provider)
+    {
+        using var database = Open(provider);
+        var svc = Cases(database);
+        var id = await SeedAsync(database, "SSN", "DL");
+        await svc.RecordNoticeAsync(id, "NY", _clock.UtcNow.AddHours(-3));
+        var shown = (await Deadlines(database).EvaluateAsync(id)).Standing.Outstanding;
+        shown.Should().Equal(["CA"]);
+
+        await Cases(database).UpdateImpactAssessmentAsync(id, 500, ["SSN", "DL", "PASS"], null);   // a colleague: PASS brings TX in
+
+        var at = _clock.UtcNow.AddHours(-1);
+        await svc.Invoking(s => s.MarkReportedAsync(id, at, Shown.Of<DateTimeOffset?>(null), shown))
+            .Should().ThrowAsync<StaleEditException>().WithMessage("*now CA, TX*");
+        (await LoadAsync(database, id)).JurisdictionNotices.Select(n => n.Jurisdiction).Should().Equal(["NY"], "no notice to TX (or CA) that nobody saw");
+
+        // Having looked again (the page reloads the set), the save records both, in any order and case.
+        await svc.MarkReportedAsync(id, at, Shown.Of<DateTimeOffset?>(null), ["tx", "CA"]);
+        (await LoadAsync(database, id)).JurisdictionNotices.Select(n => n.Jurisdiction).Order(StringComparer.Ordinal).Should().Equal(["CA", "NY", "TX"]);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Mark_reported_is_refused_when_a_notice_was_removed_after_the_form_opened(string provider)
+    {
+        using var database = Open(provider);
+        var svc = Cases(database);
+        var id = await SeedAsync(database, "SSN", "DL", "PASS");
+        await svc.RecordNoticeAsync(id, "NY", _clock.UtcNow.AddHours(-3));
+        await svc.RecordNoticeAsync(id, "CA", _clock.UtcNow.AddHours(-3));
+        var shown = (await Deadlines(database).EvaluateAsync(id)).Standing.Outstanding;
+        shown.Should().Equal(["TX"]);
+
+        await Cases(database).RemoveNoticeAsync(id, "CA");   // a colleague takes back CA's notice (a mis-entry)
+
+        await svc.Invoking(s => s.MarkReportedAsync(id, _clock.UtcNow.AddHours(-1), Shown.Of<DateTimeOffset?>(null), shown))
+            .Should().ThrowAsync<StaleEditException>();
+        (await LoadAsync(database, id)).JurisdictionNotices.Select(n => n.Jurisdiction).Should().Equal(["NY"], "CA's notice isn't made again");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task The_case_reported_event_is_sent_once_whichever_path_leaves_the_case_fully_reported(string provider)
+    {
+        using var database = Open(provider);
+        var svc = Cases(database);
+        IEnumerable<(string Action, string? Detail)> Reported() =>
+            _siem.Events.Where(e => e.EventId == SecurityEventIds.CaseReported).Select(e => (e.Action, e.Detail));
+
+        // Removing the element that brought in the one regulator still owed.
+        var removed = await SeedAsync(database, "SSN", "DL", "PASS");
+        await svc.RecordNoticeAsync(removed, "NY", _clock.UtcNow.AddHours(-2));
+        await svc.RecordNoticeAsync(removed, "CA", _clock.UtcNow.AddHours(-2));
+        _siem.Events.Clear();
+        await svc.UpdateImpactAssessmentAsync(removed, 500, ["SSN", "DL"], null);
+        (await Deadlines(database).EvaluateAsync(removed)).Standing.IsFullyReported.Should().BeTrue();
+        Reported().Should().Equal([("CaseReported", (string?)null)]);
+
+        // A data element's jurisdictions changed (the recheck): DL brings in no regulator any more.
+        var rechecked = await SeedAsync(database, "SSN", "DL");
+        await svc.RecordNoticeAsync(rechecked, "NY", _clock.UtcNow.AddHours(-2));
+        _siem.Events.Clear();
+        DataElement dl;
+        await using (var db = database.NewContext()) dl = await db.DataElements.AsNoTracking().SingleAsync(e => e.Key == "DL");
+        var rows = new List<DataElementRow>();
+        await using (var db = database.NewContext())
+            rows.AddRange((await db.DataElements.AsNoTracking().Where(e => e.IsActive).OrderBy(e => e.SortOrder).ToListAsync())
+                .Select(e => new DataElementRow(e.Id, e.Label, e.Id == dl.Id ? "" : e.NotificationJurisdictions)));
+        await new DataElementService(database.Factory(), _user, _clock, _siem).SaveAsync(rows);
+        (await LoadAsync(database, rechecked)).ReportedAtUtc.Should().NotBeNull();
+        Reported().Should().Equal([("CaseReported", (string?)null)]);
+
+        // Mark reported with every regulator already notified records nothing, and says nothing.
+        _siem.Events.Clear();
+        await svc.MarkReportedAsync(removed, _clock.UtcNow);
+        Reported().Should().BeEmpty("nothing was recorded");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_kept_value_too_long_for_its_elements_is_read_the_same_by_the_edit_and_every_view(string provider)
+    {
+        // When the elements don't fit beside the kept codes, just the codes are kept and every element counts as had
+        // (BUG-618). An element added later is judged that way by the edit too, so it can't unreport the case (blanking
+        // the stored time) while the clocks, reminders and close gate still read it as fully reported.
+        using var database = Open(provider);
+        await using (var db = database.NewContext())
+        {
+            for (var i = 0; i < 100; i++)
+                db.DataElements.Add(new DataElement
+                {
+                    Key = $"LONGELEMENTKEY{i:D3}", Label = $"Element {i}", NotificationJurisdictions = "", IsActive = true,
+                    CreatedBy = "system", CreatedAtUtc = _clock.UtcNow,
+                });
+            await db.SaveChangesAsync();
+        }
+        var svc = Cases(database);
+        var many = Enumerable.Range(0, 100).Select(i => $"LONGELEMENTKEY{i:D3}").Append("SSN").ToArray();
+        var id = await SeedAsync(database, many);
+        await svc.RecordNoticeAsync(id, "NY", _clock.UtcNow.AddHours(-2));
+        (await LoadAsync(database, id)).ReportedJurisdictions.Should().Be("NY", "too long to keep the elements");
+
+        await svc.UpdateImpactAssessmentAsync(id, 500, [.. many, "PASS"], null);
+
+        var standing = (await Deadlines(database).EvaluateAsync(id)).Standing;
+        var stored = (await LoadAsync(database, id)).ReportedAtUtc;
+        stored.Should().Be(standing.ReportedAtUtc, "the edit and the views read the kept value the same way");
+        (await ScanAsync(database)).ContainsKey(id).Should().Be(standing.Outstanding.Count > 0);
     }
 
     // The states a case can be in, set up on a fresh case each.
@@ -400,14 +527,20 @@ public sealed class PerJurisdictionClockTests : IDisposable
                 await svc.RecordNoticeAsync(id, "NY", ny);
                 await svc.MarkReportedAsync(id, ca);
                 break;
+            case DriftState:   // CAP-38 review: a stored time over CA's running clock (an older build, a restore, a hand edit)
+                await svc.RecordNoticeAsync(id, "NY", ny);
+                await LegacyReportAsync(database, id, ca, null);
+                break;
         }
         return id;
     }
 
+    private const string DriftState = "stored time over a running clock";
+
     private static readonly string[] States =
     [
         "unreported", "NY notified", "both notified", "legacy whole report", "whole, nothing in play", "TX brought in later",
-        "CA's notice removed", "Mark reported over NY",
+        "CA's notice removed", "Mark reported over NY", DriftState,
     ];
 
     [Theory]
@@ -439,14 +572,21 @@ public sealed class PerJurisdictionClockTests : IDisposable
             model.NotificationStanding.Should().Be(NoticeDetailText.Standing(briefing, Utc), $"{state}: the report and the Briefing say the same");
             (row.ReportedAtUtc is not null).Should().Be(fully, $"{state}: the register too");
             row.PartlyReported.Should().Be(briefing.Standing.IsPartlyReported, $"{state}: the register too");
-            (await LoadAsync(database, id)).ReportedAtUtc.Should().Be(briefing.Standing.ReportedAtUtc, $"{state}: the stored time follows the notices");
+            // CAP-38 review: the report's own "Reported" lines and the timeline's reported milestone agree with its standing.
+            model.OutcomeStamps.Any(s => s.StartsWith("Reported to regulators", StringComparison.Ordinal)).Should().Be(fully, $"{state}: the outcome stamp too");
+            (ReportTemplateFields.Scalar(model, "case.reported") != "").Should().Be(fully, $"{state}: case.reported too");
+            var full = await LoadAsync(database, id);
+            CaseMilestones.Project(full, new MilestoneLabels(x => "", s => "", p => "", m => "", Standing: briefing.Standing))
+                .Any(m => m.Key.StartsWith("reported:", StringComparison.Ordinal)).Should().Be(fully, $"{state}: the reported milestone too");
+            if (state != DriftState)
+                full.ReportedAtUtc.Should().Be(briefing.Standing.ReportedAtUtc, $"{state}: the stored time follows the notices");
         }
         // And the states read as they should.
         read.Should().Equal(new Dictionary<string, string>
         {
             ["unreported"] = "not", ["NY notified"] = "partly", ["both notified"] = "fully", ["legacy whole report"] = "fully",
             ["whole, nothing in play"] = "fully", ["TX brought in later"] = "partly", ["CA's notice removed"] = "partly",
-            ["Mark reported over NY"] = "fully",
+            ["Mark reported over NY"] = "fully", [DriftState] = "partly",
         });
     }
 

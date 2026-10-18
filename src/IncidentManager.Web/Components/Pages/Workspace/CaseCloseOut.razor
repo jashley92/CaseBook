@@ -149,7 +149,8 @@
     private async Task CopyClosingPrompt()
     {
         var labels = Case.Entities.ToDictionary(e => e.Id, e => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!);
-        var narrative = IncidentManager.Application.Lessons.CaseNarrative.Draft(Case, id => labels.GetValueOrDefault(id), s => SevLabels.For(s), Clock.UtcNow);
+        var narrative = IncidentManager.Application.Lessons.CaseNarrative.Draft(Case, id => labels.GetValueOrDefault(id), s => SevLabels.For(s), Clock.UtcNow,
+            Notify?.Standing);   // CAP-38 review: reported by the standing
         var prompt = ClosingBriefPrompt.Build(Case, narrative,
             Draft.Outcomes.Select(o => new ClosingOutcomeOption(o.Key, o.Label, o.Description)).ToList(),
             TaskResults, id => Users.DisplayFor(id));

@@ -79,7 +79,7 @@
         @if (_customError is { } err) { <span class="po-custom-err" role="alert">@err</span> }
     </form>
 }
-<ProgramNav />
+<ProgramNav Team="@TeamRaw" />
 
 @if (_metrics is null)
 {
@@ -458,7 +458,7 @@ else
 
         <div class="dash-card">
             <div class="c-head"><span class="c-title">Learning loop <span class="c-note">post-incident reviews and improvement actions</span></span>
-                <a class="u-link dash-link c-go" href="program/improvement-actions">Improvement actions →</a></div>
+                <a class="u-link dash-link c-go" href="@ActionsHref">Improvement actions →</a></div>
             @if (_cur is { } lc)
             {
                 var reviewPct = lc.Closed == 0 ? (int?)null : (int)Math.Round(lc.ClosedWithReview * 100.0 / lc.Closed);
@@ -510,6 +510,8 @@ else
     private List<IncidentManager.Application.Admin.TeamView> _teams = [];
     private string TeamSuffix => string.IsNullOrWhiteSpace(TeamRaw) ? "" : "&team=" + Uri.EscapeDataString(TeamRaw.Trim());
     private string MetricsHref => $"export/metrics.csv?exercises={(Exercises ? "true" : "false")}{TeamSuffix}";
+    // CAP-36 review (C15): the register for the team shown here (its learning-loop figures are that team's).
+    private string ActionsHref => ProgramNav.WithTeam("program/improvement-actions", TeamRaw);
 
     protected override async Task OnInitializedAsync() => _teams = await TeamsSvc.ListAsync();
 

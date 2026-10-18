@@ -39,7 +39,7 @@
 
     @if (Show != "next")
     {
-        <CaseBriefCard @ref="_brief" Pane="true" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged"
+        <CaseBriefCard @ref="_brief" Pane="true" Case="Case" Notify="Notify" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged"
                        OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
     }
 
@@ -87,7 +87,7 @@
                             <button type="button" class="btn btn-sm btn-primary" disabled="@_saving" @onclick="MarkReported">Save</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _marking = false">Cancel</button>
                         </div>
-                        <div class="im-nn-sub">One reported time stops every jurisdiction's clock.</div>
+                        <div class="im-nn-sub">@(_outstandingShown.Count > 0 ? $"Records a notice to {string.Join(", ", _outstandingShown)} at this time." : "One reported time stops every jurisdiction's clock.")</div>
                         @if (_error is not null) { <div class="text-danger small" role="alert">@_error</div> }
                     </div>
                 }
@@ -304,6 +304,12 @@
     protected override void OnParametersSet()
     {
         if (_done.Current is { } d && !CaseNext.Open(Case, Clock.UtcNow).Take(TasksShown).Any(t => t.Id == d.Key)) _done.Close();
+        // CAP-38 review: the clocks reloaded after a refused Mark reported are the form's stamps now; fully reported, it closes.
+        if (_marking && _restampAfter is not null && !ReferenceEquals(Notify, _restampAfter))
+        {
+            TakeReportedStamps();
+            if (Notify?.Headline is not { IsActive: true }) _marking = false;
+        }
     }
 
     // RD-25: completing a task, with its result, from Next. BUG-578: Done… on a second task while one is open is refused
@@ -414,14 +420,26 @@
     }
 
     // BUG-594: the reported time the pane showed when the form opened (none: Mark reported shows only while it's open).
+    // CAP-38 review: and the regulators it showed as still owed, the ones a save records.
     private DateTimeOffset? _reportedShown;
+    private IReadOnlyList<string> _outstandingShown = [];
+    // CAP-38 review (C9): after a refusal, the clocks the pane had then; the next ones the workspace passes (its reload) are
+    // the form's new stamps, so a deliberate save again works.
+    private IncidentManager.Application.Compliance.CaseNotificationDeadlines? _restampAfter;
 
     private void BeginMarkReported()
     {
         _error = null;
         _reportedAt = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
-        _reportedShown = Case.ReportedAtUtc;
+        TakeReportedStamps();
         _marking = true;
+    }
+
+    private void TakeReportedStamps()
+    {
+        _reportedShown = Case.ReportedAtUtc;
+        _outstandingShown = Notify?.Standing.Outstanding ?? [];
+        _restampAfter = null;
     }
 
     private async Task MarkReported()
@@ -433,16 +451,18 @@
         try
         {
             var utc = WallClock.ToUtc(wall, TimeDisp.Zone);
-            // BUG-594: refused if a colleague recorded it meanwhile, instead of overwriting their time.
-            await Cases.MarkReportedAsync(Case.Id, utc, Shown.Of(_reportedShown));
+            // BUG-594: refused if a colleague recorded it meanwhile, instead of overwriting their time. CAP-38 review: or if the
+            // regulators still owed changed (one brought into play, a notice removed), so none gets a notice nobody saw.
+            await Cases.MarkReportedAsync(Case.Id, utc, Shown.Of(_reportedShown), _outstandingShown);
             _marking = false;
             Toasts.Success("Reported milestone recorded");
             await OnChanged.InvokeAsync();
         }
         catch (StaleEditException ex)
         {
-            _marking = false;
-            Toasts.Error(ex.Message);
+            // CAP-38 review (C7, C9): the time typed stays; the stamps are taken from the workspace's reload.
+            _error = ex.Message;
+            _restampAfter = Notify;
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)

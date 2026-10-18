@@ -67,6 +67,14 @@ public static class SecurityEventEmit
         }
     }
 
+    /// <summary>
+    /// CAP-38 review: <see cref="SecurityEvents.CaseReported"/> for the case as a whole (5513 CaseReported), best effort. The
+    /// one place every path that leaves a case fully reported (every regulator in play has its notice) sends it from: a
+    /// notice, Mark reported, an element removed from the case, a data element's jurisdictions changed (the recheck).
+    /// </summary>
+    public static void CaseFullyReported(this ISecurityEventSink? sink, Domain.Entities.Case c, string actor, string? actorUpn) =>
+        sink.EmitSafely(() => SecurityEvents.CaseReported(CaseSubject.Of(c), null, actor, actorUpn));
+
     /// <summary>CAP-06: <see cref="SecurityEvents.ReferenceDataChanged"/> for the current user, best effort.</summary>
     public static void ReferenceDataChanged(this ISecurityEventSink? sink, Abstractions.ICurrentUser user, string kind, string name,
         ReferenceDataAction action, Guid? id = null) =>

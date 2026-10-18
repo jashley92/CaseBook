@@ -109,7 +109,7 @@ public sealed class ReportService
         {
             var labels = new Cases.MilestoneLabels(ClassificationLabel, _severityLabels.For, PhaseLabel, MaterialityLabel,
                 k => outcomeLabels?.GetValueOrDefault(k) ?? Admin.CaseOutcomeCatalog.Label(k),
-                d => TaxLabel("EntityDisposition", d.ToString()));
+                d => TaxLabel("EntityDisposition", d.ToString()), Standing: extras?.Standing);   // CAP-38 review
             // A report listing its own earlier versions reads oddly, so final-report milestones stay out; so do
             // staffing changes (INV-31), which are the team's working record rather than findings.
             foreach (var m in Cases.CaseMilestones.Project(c, labels)
@@ -727,16 +727,21 @@ public sealed class ReportService
 
     // Records the report reads beside the case aggregate: each task's latest result (HR-02) and outcome labels (HR-01).
     // HR-15: and what changed after closure.
-    // CAP-38: and where the case stands with its regulators (fully or partly reported), in the shared wording.
+    // CAP-38: and where the case stands with its regulators (fully or partly reported), in the shared wording. CAP-38 review:
+    // and the standing itself, which the report's "Reported" (the outcome stamp, case.reported, the reported milestone) is
+    // read from, so it can't say reported beside a line that says partly reported.
     private sealed record ReportExtras(IReadOnlyDictionary<Guid, TaskResult> TaskResults, IReadOnlyDictionary<string, string> OutcomeLabels,
-        AfterClosureChanges? AfterClosure = null, string? NotificationStanding = null);
+        AfterClosureChanges? AfterClosure = null, string? NotificationStanding = null, NoticeStanding? Standing = null);
 
-    private async Task<ReportExtras> ExtrasAsync(IAppDbContext db, Guid caseId, CancellationToken ct) => new(
-        TaskResults.Latest(await db.ActionItemComments.AsNoTracking()
-            .Where(x => x.CaseId == caseId && x.Body.StartsWith(TaskResults.Prefix)).ToListAsync(ct)),
-        await db.CaseOutcomes.AsNoTracking().ToDictionaryAsync(o => o.Key, o => o.Label, StringComparer.Ordinal, ct),
-        await AfterClosure.QueryAsync(db, caseId, ct),
-        await NotificationStandingAsync(db, caseId, ct));
+    private async Task<ReportExtras> ExtrasAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
+    {
+        var taskResults = TaskResults.Latest(await db.ActionItemComments.AsNoTracking()
+            .Where(x => x.CaseId == caseId && x.Body.StartsWith(TaskResults.Prefix)).ToListAsync(ct));
+        var outcomes = await db.CaseOutcomes.AsNoTracking().ToDictionaryAsync(o => o.Key, o => o.Label, StringComparer.Ordinal, ct);
+        var afterClosure = await AfterClosure.QueryAsync(db, caseId, ct);
+        var (line, standing) = await NotificationStandingAsync(db, caseId, ct);
+        return new(taskResults, outcomes, afterClosure, line, standing);
+    }
 
     /// <summary>
     /// CAP-38: "Partly reported: NY notified …, CA due …" (or fully reported), by the reading the case page, Briefing, close
@@ -744,15 +749,15 @@ public sealed class ReportService
     /// regulator was told while one's clock runs. Deadlines come from the clocks when they're tracked; otherwise an
     /// outstanding regulator reads "not yet notified".
     /// </summary>
-    private async Task<string?> NotificationStandingAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
+    private async Task<(string? Line, NoticeStanding Standing)> NotificationStandingAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
     {
         var clocks = _deadlines is null ? null : await _deadlines.EvaluateAsync(caseId, ct);
         var standing = clocks is { Enabled: true } ? clocks.Standing : await Compliance.NotificationDeadlineService.StandingAsync(db, caseId, ct);
         var dues = (clocks?.Statuses ?? []).Where(x => x.DueAtUtc is not null)
             .GroupBy(x => x.JurisdictionCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().DueAtUtc, StringComparer.OrdinalIgnoreCase);
-        return Compliance.NoticeDetailText.Standing(standing, code => dues.GetValueOrDefault(code),
-            t => t.UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) + " UTC");
+        return (Compliance.NoticeDetailText.Standing(standing, code => dues.GetValueOrDefault(code),
+            t => t.UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) + " UTC"), standing);
     }
 
     private static Task<Case?> LoadFullCaseAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
@@ -972,7 +977,9 @@ public sealed class ReportService
             MaterialityDecidedOnUtc = OrgDay(c.Materiality.DecidedOnUtc),
             MaterialityRationale = d.NullableText(c.Materiality.Rationale),
             DetectedAtUtc = c.DetectedAtUtc,
-            ReportedAtUtc = c.ReportedAtUtc,
+            // CAP-38 review: reported once every regulator in play has its notice (the standing), not the stored time, which can
+            // be set over a clock still running (an older build, a restore, a hand edit).
+            ReportedAtUtc = extras?.Standing is { } standing ? standing.ReportedAtUtc : c.ReportedAtUtc,
             NotificationStanding = extras?.NotificationStanding,   // CAP-38
             // CAP-07: each regulator's notice and how it was given (typed text defanged like the rest).
             Notices = c.JurisdictionNotices.OrderBy(n => n.NotifiedAtUtc).ThenBy(n => n.Jurisdiction, StringComparer.Ordinal)

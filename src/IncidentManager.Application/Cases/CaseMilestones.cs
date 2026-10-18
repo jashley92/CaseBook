@@ -54,7 +54,10 @@ public sealed record CaseMilestone(
     (TransitionKind Kind, Guid ChangeId)? Transition = null,
     string? Note = null);
 
-/// <summary>Display labels the projection needs, supplied by the caller (they're admin-customizable).</summary>
+/// <summary>Display labels the projection needs, supplied by the caller (they're admin-customizable). CAP-38 review:
+/// <paramref name="Standing"/> is the case's standing with its regulators (<see cref="NoticeStanding"/>, the reading every
+/// view uses); given, the reported milestone follows it, so the timeline, brief and handoff can't say "reported" while a
+/// regulator's clock runs. Without it (a caller that has no clocks to hand), the stored reported time.</summary>
 public sealed partial record MilestoneLabels(
     Func<Classification?, string> Classification,
     Func<Severity, string> Severity,
@@ -62,7 +65,8 @@ public sealed partial record MilestoneLabels(
     Func<MaterialityStatus, string> Materiality,
     Func<string, string>? Outcome = null,
     Func<EntityDisposition, string>? Disposition = null,
-    Func<DateTimeOffset, string>? Day = null)
+    Func<DateTimeOffset, string>? Day = null,
+    NoticeStanding? Standing = null)
 {
     /// <summary>BUG-112: a calendar date as the reader's zone has it (the UI passes one); the UTC date otherwise.</summary>
     public string DayLabel(DateTimeOffset at) =>
@@ -235,14 +239,16 @@ public static class CaseMilestones
         // BUG-09: with more than one regulator, each notice is its own milestone; the case is reported when the last is.
         // CAP-07: its detail says how the regulator was notified, when that's recorded. CAP-38: and while the case is partly
         // reported (a regulator in play still owed), even one notice is its own "Notified NY": the case isn't reported yet.
-        if (c.JurisdictionNotices.Count > 1 || (c.JurisdictionNotices.Count == 1 && c.ReportedAtUtc is null))
+        // CAP-38 review: reported by the standing when the caller has it, so a stored time set over a running clock isn't told.
+        var reportedAt = labels.Standing is { } standing ? standing.ReportedAtUtc : c.ReportedAtUtc;
+        if (c.JurisdictionNotices.Count > 1 || (c.JurisdictionNotices.Count == 1 && reportedAt is null))
             foreach (var n in c.JurisdictionNotices.OrderBy(n => n.NotifiedAtUtc))
                 list.Add(new CaseMilestone($"notice:{n.Id}", n.NotifiedAtUtc, MilestoneKind.Reported,
                     $"Notified {n.Jurisdiction}", Compliance.NoticeDetailText.Summary(n, c.Evidence), n.CreatedBy, "notice",
                     RecordedAtUtc: Later(n.NotifiedAtUtc, n.CreatedAtUtc)));
         // BUG-364: dated when it happened, recorded when the (last) notice was entered, so a backdated notice still counts
         // as new in the "since" windows. CAP-07: with one notice, this milestone tells it, so it carries how it was given.
-        if (c.ReportedAtUtc is { } reported)
+        if (reportedAt is { } reported)
             list.Add(new CaseMilestone($"reported:{c.Id}", reported, MilestoneKind.Reported,
                 c.JurisdictionNotices.Count > 1 ? "Reported to every regulator in play" : "Reported to regulators",
                 c.JurisdictionNotices.Count == 1 ? Compliance.NoticeDetailText.Summary(c.JurisdictionNotices[0], c.Evidence) : null,

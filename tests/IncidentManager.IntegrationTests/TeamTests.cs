@@ -278,4 +278,87 @@ public sealed class TeamTests
         As("analyst1", AppRole.Analyst);
         await Views().Invoking(v => v.SaveAsync("Late", "q=y", true, soc)).Should().ThrowAsync<InvalidOperationException>("a retired team takes no new view");
     }
+
+    // --- CAP-36 review ---
+
+    [Theory, MemberData(nameof(Providers))]
+    public async Task Retiring_a_team_moves_its_stamp_so_an_editor_open_on_it_saves_only_with_the_fresh_one(string provider)
+    {
+        // The Teams page gives an editor open on the team the stamp its own retire left (AdminTeams.RestampEditor): the
+        // stamp it opened with is refused after the retire, and the one the list shows afterwards saves what was typed.
+        using var db = Open(provider);
+        var teams = Teams(db);
+        var id = await teams.CreateAsync(new TeamEdit("Hunters", null, null, ["analyst1"]));
+        var opened = (await teams.ListAllAsync()).Single();
+
+        await teams.SetActiveAsync(id, false, opened.Stamp);
+
+        var typed = new TeamEdit("Threat hunters", "EDR", null, ["analyst1", "analyst2"]);
+        await teams.Invoking(t => t.UpdateAsync(id, typed, opened.Stamp)).Should().ThrowAsync<StaleEditException>();
+        await teams.UpdateAsync(id, typed, (await teams.ListAllAsync()).Single().Stamp);
+        var saved = (await teams.ListAllAsync()).Single();
+        (saved.Name, saved.IsActive, saved.Members.Count).Should().Be(("Threat hunters", false, 2), "the edit lands; the retire stays");
+    }
+
+    [Theory, MemberData(nameof(Providers))]
+    public async Task Setting_a_case_team_waits_for_a_retire_in_progress_and_then_refuses_the_retired_team(string provider)
+    {
+        // C1: the active-team check runs inside the gate a retire holds, so it reads the team after the retire, not before.
+        using var db = Open(provider);
+        var soc = await Teams(db).CreateAsync(new TeamEdit("SOC", null, null, []));
+        var cases = Cases(db);
+        var c = await CaseAsync(cases, "Racing a retire");
+
+        Task setting;
+        var gate = await GuardGate.EnterAsync();   // as SetActiveAsync holds it while it retires
+        try
+        {
+            setting = cases.SetTeamAsync(c.Id, soc);
+            await using var ctx = db.NewContext();
+            (await ctx.Teams.SingleAsync(t => t.Id == soc)).IsActive = false;
+            await ctx.SaveChangesAsync();
+        }
+        finally { gate.Dispose(); }
+
+        await setting.Invoking(t => t).Should().ThrowAsync<InvalidOperationException>().WithMessage("*retired*");
+        (await LoadAsync(db, c.Id)).TeamId.Should().BeNull();
+    }
+
+    [Theory, MemberData(nameof(Providers))]
+    public async Task Team_membership_ignores_case_for_sharing_a_view_and_listing_it(string provider)
+    {
+        // On SQLite "==" is case-sensitive; membership is matched ignoring case everywhere, as the Teams page shows it.
+        using var db = Open(provider);
+        var soc = await Teams(db).CreateAsync(new TeamEdit("SOC", null, null, ["Analyst1", "ANALYST2"]));
+        SavedViewService Views() => new(db.Factory(), _user, _users, _clock);
+
+        As("analyst1", AppRole.Analyst);
+        await Views().SaveAsync("SOC triage", "sla=true", isShared: true, soc);
+        (await Teams(db).MineAsync()).Select(t => t.Id).Should().Equal([soc]);
+
+        As("analyst2", AppRole.Analyst);
+        (await Views().ListAsync()).Select(v => v.Name).Should().Equal(["SOC triage"]);
+    }
+
+    [Theory, MemberData(nameof(Providers))]
+    public async Task The_improvement_action_register_and_its_csv_filter_by_team_as_the_program_page_links_them(string provider)
+    {
+        // C15: Program's "Improvement actions" link carries team=; the register reads it as the Cases list does.
+        using var db = Open(provider);
+        var soc = await Teams(db).CreateAsync(new TeamEdit("SOC", null, null, []));
+        var cases = Cases(db);
+        var owned = await CaseAsync(cases, "Owned case", soc);
+        var unowned = await CaseAsync(cases, "Unowned case");
+        var lessons = new IncidentManager.Application.Lessons.LessonsService(db.Factory(), _user, _clock, _users);
+        await lessons.AddActionAsync(owned.Id, new("Patch the VPN", "Remote access", null, null, null));
+        await lessons.AddActionAsync(unowned.Id, new("Rotate keys", "Secrets", null, null, null));
+
+        async Task<List<string>> Titles(string? team) =>
+            (await lessons.GetRegisterAsync(new(Team: await Teams(db).ScopeAsync(team)))).Rows.Select(r => r.Action.Title).ToList();
+        (await Titles("SOC")).Should().Equal(["Patch the VPN"]);
+        (await Titles("none")).Should().Equal(["Rotate keys"]);
+        (await Titles(null)).Should().BeEquivalentTo(["Patch the VPN", "Rotate keys"]);
+        (await lessons.ExportRegisterCsvAsync(new(Team: await Teams(db).ScopeAsync("SOC")))).Should().Contain("Patch the VPN").And.NotContain("Rotate keys");
+        IncidentManager.Web.Components.Shared.ProgramNav.WithTeam("program/improvement-actions", "SOC").Should().Be("program/improvement-actions?team=SOC");
+    }
 }

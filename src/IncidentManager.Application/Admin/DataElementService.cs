@@ -159,7 +159,7 @@ public sealed class DataElementService
 
         // WF-11: cases not yet reported are judged on the new jurisdictions; reported ones keep what was in play. BUG-390:
         // in the same save, so a recheck that fails doesn't leave the change saved and the cases never rechecked.
-        await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, db.DataElements.Local, _user.UserId, now, ct);
+        var reported = await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, db.DataElements.Local, _user.UserId, now, ct);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException ex) when (added.Count > 0)
         {
@@ -172,6 +172,8 @@ public sealed class DataElementService
             throw;
         }
         log.Emit(_siem, _user);
+        // CAP-38 review: a case the change left fully reported says so, as it would from a notice.
+        foreach (var c in reported) _siem.CaseFullyReported(c, _user.UserId, _user.UserPrincipalName);
     }
 
     /// <summary>Archives (<paramref name="archived"/> = true) or restores an element — built-in ones included.

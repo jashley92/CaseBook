@@ -1111,6 +1111,8 @@ else
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     /// <summary>HR-01: outcome labels by key (admin-managed), for the Closed milestone.</summary>
     [Parameter] public IReadOnlyDictionary<string, string> OutcomeLabels { get; set; } = new Dictionary<string, string>();
+    /// <summary>CAP-38 review: the case's clocks, for its standing with its regulators (the reported milestone follows it).</summary>
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
     /// <summary>HR-02: each task's latest recorded result.</summary>
     [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     [Parameter] public bool CanEdit { get; set; }
@@ -3267,7 +3269,7 @@ else
     private IReadOnlyList<CaseMilestone> Milestones() => CaseMilestones.Project(Case, new MilestoneLabels(
         c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
         k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k),
-        d => Ui.Label(d), t => TimeDisp.DateOnly(t)));
+        d => Ui.Label(d), t => TimeDisp.DateOnly(t), Notify?.Standing));   // CAP-38 review: reported by the standing
 
     // Interleave entries and milestones by when they happened; the entry list arrives already ordered.
     private List<TlRow> MergeRows(IEnumerable<TimelineEntry> entries, IEnumerable<CaseMilestone> milestones)
