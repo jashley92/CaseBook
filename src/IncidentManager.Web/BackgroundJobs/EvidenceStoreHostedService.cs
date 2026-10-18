@@ -32,6 +32,12 @@ public sealed class EvidenceStoreHostedService(IEvidenceStore store, EvidenceUpl
         {
             try
             {
+                if (first)
+                {
+                    // PROD-59: uploads cut off by the restart are put back (resumable) before the sweep, which keeps them.
+                    var restored = await EvidenceService.RestoreUploadsAsync(uploads, store, stoppingToken);
+                    if (restored > 0) logger.LogInformation("Kept {Count} unfinished large upload(s) to resume.", restored);
+                }
                 var removed = await EvidenceService.SweepUploadsAsync(uploads, store, clock.UtcNow,
                     first ? TimeSpan.Zero : EvidenceUploadSessions.IdleLimit, stoppingToken);
                 if (removed > 0) logger.LogInformation("Removed {Count} abandoned large upload(s) from the evidence store.", removed);

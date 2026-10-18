@@ -55,6 +55,15 @@ public interface IEvidenceStore
         throw new NotSupportedException();
     Task DiscardIncomingAsync(string incoming) => Task.CompletedTask;
 
-    /// <summary>Deletes parts left by uploads abandoned longer ago than <paramref name="olderThan"/>; how many.</summary>
-    Task<int> ClearIncomingAsync(TimeSpan olderThan, CancellationToken ct = default) => Task.FromResult(0);
+    /// <summary>Deletes parts left by uploads abandoned longer ago than <paramref name="olderThan"/>, except those in
+    /// <paramref name="keep"/> (uploads still held, PROD-59); how many.</summary>
+    Task<int> ClearIncomingAsync(TimeSpan olderThan, IReadOnlyCollection<string>? keep = null, CancellationToken ct = default) =>
+        Task.FromResult(0);
+
+    /// <summary>PROD-59: a large upload's state, kept beside its parts so it can be resumed after a restart.</summary>
+    Task SaveIncomingStateAsync(string incoming, string state, CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>PROD-59: the saved states of uploads whose parts are still here.</summary>
+    Task<IReadOnlyList<(string Incoming, string State)>> ReadIncomingStatesAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<(string Incoming, string State)>>([]);
 }

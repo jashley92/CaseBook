@@ -737,8 +737,43 @@ public sealed class EvidenceKeyringTests : IDisposable
         await read.CopyToAsync(copy);
         copy.ToArray().Should().Equal(bytes);
     }
-}
 
-/// <summary>Tests that add certificates to the current user's store run one at a time.</summary>
-[CollectionDefinition("CertificateStore", DisableParallelization = true)]
-public sealed class CertificateStoreCollection;
+    [Fact]
+    public async Task An_encrypted_upload_resumes_after_a_restart_and_reads_back_whole(/* PROD-59 */)
+    {
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var ring = Ring(On(server, RecoveryCer(recovery)));
+        await ring.LoadAsync();
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+        await using (var ctx = _database.NewContext()) await DevDataSeeder.SeedAsync(ctx, _clock);
+        Guid caseId;
+        await using (var ctx = _database.NewContext()) caseId = (await ctx.Cases.FirstAsync()).Id;
+        var user = new TestCurrentUser { RoleSet = [AppRole.IncidentCommander] };
+        var limits = new TestOptionsMonitor<EvidenceStorageOptions>(new EvidenceStorageOptions { MinFreeSpaceGB = 0 });
+        var bytes = RandomNumberGenerator.GetBytes(2 * EvidenceUploadSessions.PartBytes + 70_000);
+        var sample = Convert.ToHexString(SHA256.HashData(bytes.AsSpan(0, 1024 * 1024))).ToLowerInvariant();
+        var before = new EvidenceService(_database.Factory(), store, user, _clock, new NoOpAuditWriter(), limits, new EvidenceUploadSessions());
+        var started = await before.BeginUploadAsync(caseId, "memory.dmp", "", bytes.Length, null, sample);
+        await before.AppendPartAsync(started.Id, 0, bytes.AsMemory(0, EvidenceUploadSessions.PartBytes));
+
+        // The app restarts: a new keyring (the same key, from its envelope), a new store, sessions put back from disk.
+        var ring2 = Ring(On(server, RecoveryCer(recovery)));
+        (await ring2.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var store2 = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring2);
+        var uploads = new EvidenceUploadSessions();
+        (await EvidenceService.RestoreUploadsAsync(uploads, store2)).Should().Be(1);
+        var after = new EvidenceService(_database.Factory(), store2, user, _clock, new NoOpAuditWriter(), limits, uploads);
+        (await after.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length, sample)).NextPart.Should().Be(1);
+        await after.AppendPartAsync(started.Id, 1, bytes.AsMemory(EvidenceUploadSessions.PartBytes, EvidenceUploadSessions.PartBytes));
+        await after.AppendPartAsync(started.Id, 2, bytes.AsMemory(2 * EvidenceUploadSessions.PartBytes));
+        var recorded = await after.CompleteUploadAsync(started.Id);
+
+        recorded.Sha256.Should().Be(Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+        Cbe1.IsCbe1(await File.ReadAllBytesAsync(Path.Combine(Evidence, recorded.StoragePath))).Should().BeTrue();
+        await using var read = await store2.OpenReadAsync(recorded.StoragePath);
+        using var copy = new MemoryStream();
+        await read.CopyToAsync(copy);
+        copy.ToArray().Should().Equal(bytes, "parts written before and after the restart make one whole encrypted file");
+    }
+}

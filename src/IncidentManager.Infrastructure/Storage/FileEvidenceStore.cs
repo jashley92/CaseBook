@@ -61,6 +61,35 @@ public sealed class FileEvidenceStore : IEvidenceStore
         return Path.Combine(Incoming, incoming + ".part");
     }
 
+    private string StatePath(string incoming) => Path.ChangeExtension(IncomingPath(incoming), ".state.json");
+
+    public async Task SaveIncomingStateAsync(string incoming, string state, CancellationToken ct = default)
+    {
+        var path = StatePath(incoming);
+        await File.WriteAllTextAsync(path + ".new", state, ct);
+        File.Move(path + ".new", path, overwrite: true);   // never half a state
+    }
+
+    public Task<IReadOnlyList<(string Incoming, string State)>> ReadIncomingStatesAsync(CancellationToken ct = default)
+    {
+        var found = new List<(string, string)>();
+        if (Directory.Exists(Incoming))
+            foreach (var path in Directory.EnumerateFiles(Incoming, "*.state.json"))
+            {
+                var name = Path.GetFileName(path)[..^".state.json".Length];
+                if (name.Length != 32 || !name.All(char.IsAsciiHexDigitLower) || !File.Exists(IncomingPath(name))) continue;
+                try { found.Add((name, File.ReadAllText(path))); }
+                catch (IOException) { /* being written: the next start */ }
+            }
+        return Task.FromResult<IReadOnlyList<(string Incoming, string State)>>(found);
+    }
+
+    private void DeleteState(string incoming)
+    {
+        var path = StatePath(incoming);
+        if (File.Exists(path)) File.Delete(path);
+    }
+
     public async Task<string> BeginIncomingAsync(CancellationToken ct = default)
     {
         EnsureRoot();
@@ -141,6 +170,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
         Directory.CreateDirectory(Path.Combine(_root, relDir));
         var fileName = Guid.NewGuid().ToString("N") + ".bin";
         File.Move(IncomingPath(incoming), Path.Combine(_root, relDir, fileName), overwrite: false);
+        DeleteState(incoming);
         _holdsEvidence = true;
         return Task.FromResult(new StoredEvidence($"{relDir}/{fileName}", sha256, size));
     }
@@ -148,18 +178,34 @@ public sealed class FileEvidenceStore : IEvidenceStore
     public Task DiscardIncomingAsync(string incoming)
     {
         File.Delete(IncomingPath(incoming));
+        DeleteState(incoming);
         return Task.CompletedTask;
     }
 
-    public Task<int> ClearIncomingAsync(TimeSpan olderThan, CancellationToken ct = default)
+    public Task<int> ClearIncomingAsync(TimeSpan olderThan, IReadOnlyCollection<string>? keep = null, CancellationToken ct = default)
     {
         if (!Directory.Exists(Incoming)) return Task.FromResult(0);
         var cleared = 0;
         foreach (var f in Directory.EnumerateFiles(Incoming, "*.part"))
         {
+            var name = Path.GetFileNameWithoutExtension(f);
+            if (keep is not null && keep.Contains(name)) continue;   // PROD-59: an upload still held (resumable)
             if (DateTime.UtcNow - File.GetLastWriteTimeUtc(f) < olderThan) continue;
-            try { File.Delete(f); cleared++; }
+            try
+            {
+                File.Delete(f);
+                cleared++;
+                var state = Path.Combine(Incoming, name + ".state.json");
+                if (File.Exists(state)) File.Delete(state);
+            }
             catch (IOException) { /* in use; the next sweep */ }
+        }
+        // A state whose parts are gone is nothing to resume.
+        foreach (var st in Directory.EnumerateFiles(Incoming, "*.state.json"))
+        {
+            var name = Path.GetFileName(st)[..^".state.json".Length];
+            if (!File.Exists(Path.Combine(Incoming, name + ".part")))
+                try { File.Delete(st); } catch (IOException) { /* the next sweep */ }
         }
         return Task.FromResult(cleared);
     }

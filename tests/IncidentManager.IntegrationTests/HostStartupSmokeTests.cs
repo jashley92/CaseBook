@@ -126,6 +126,15 @@ public sealed class HostStartupSmokeTests : IDisposable
             forged.Headers.Add("RequestVerificationToken", "not-a-token");
             (await client.SendAsync(forged)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
+            // PROD-59: carrying on an upload is guarded the same way (and is there: a refusal, not a 404).
+            using var resume = new HttpRequestMessage(HttpMethod.Post, "/evidence/uploads/abc/resume")
+            {
+                Content = new StringContent("""{"name":"a.bin","size":100}""", System.Text.Encoding.UTF8, "application/json"),
+            };
+            var resumeRefused = await client.SendAsync(resume);
+            resumeRefused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await resumeRefused.Content.ReadAsStringAsync()).Should().Contain("security token");
+
             using var crossSite = new HttpRequestMessage(HttpMethod.Put, "/evidence/uploads/abc/0") { Content = new ByteArrayContent([1, 2, 3]) };
             crossSite.Headers.Add("Sec-Fetch-Site", "cross-site");
             (await client.SendAsync(crossSite)).StatusCode.Should().Be(HttpStatusCode.Forbidden);

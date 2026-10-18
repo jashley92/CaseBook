@@ -279,7 +279,10 @@ public sealed class EvidenceStorageTests : IDisposable
         public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default) =>
             inner.CommitIncomingAsync(incoming, caseId, sha256, size, ct);
         public Task DiscardIncomingAsync(string incoming) => inner.DiscardIncomingAsync(incoming);
-        public Task<int> ClearIncomingAsync(TimeSpan olderThan, CancellationToken ct = default) => inner.ClearIncomingAsync(olderThan, ct);
+        public Task<int> ClearIncomingAsync(TimeSpan olderThan, IReadOnlyCollection<string>? keep = null, CancellationToken ct = default) =>
+            inner.ClearIncomingAsync(olderThan, keep, ct);
+        public Task SaveIncomingStateAsync(string incoming, string state, CancellationToken ct = default) => inner.SaveIncomingStateAsync(incoming, state, ct);
+        public Task<IReadOnlyList<(string Incoming, string State)>> ReadIncomingStatesAsync(CancellationToken ct = default) => inner.ReadIncomingStatesAsync(ct);
     }
 
     [Fact]
@@ -423,6 +426,85 @@ public sealed class EvidenceStorageTests : IDisposable
         (await svc.CompleteUploadAsync(started.Id)).Sha256.Should().Be(Sha(bytes));
     }
 
+    // ---- PROD-59: resuming a large upload ----
+
+    private static string SampleOf(byte[] b) => Sha(b.AsSpan(0, Math.Min(b.Length, 1024 * 1024)).ToArray());
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_upload_cut_off_carries_on_with_the_same_file_and_refuses_another(string provider)
+    {
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var svc = Service(database, Files());
+        var bytes = Random(3 * Part + 500);
+        var started = await svc.BeginUploadAsync(caseId, "memory.dmp", "", bytes.Length, null, SampleOf(bytes));
+        await svc.AppendPartAsync(started.Id, 0, bytes.AsMemory(0, Part));
+        await svc.AppendPartAsync(started.Id, 1, bytes.AsMemory(Part, Part));
+        // The page was closed: it's listed for this person and this case.
+        (await svc.UnfinishedUploadsAsync(caseId)).Should().ContainSingle()
+            .Which.Should().Match<EvidenceService.UnfinishedUpload>(u => u.FileName == "memory.dmp" && u.Received == 2L * Part);
+
+        var other = Random(bytes.Length);
+        var wrongBytes = () => svc.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length, SampleOf(other));
+        (await wrongBytes.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("isn't the same file");
+        var wrongSize = () => svc.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length + 1, SampleOf(bytes));
+        await wrongSize.Should().ThrowAsync<ArgumentException>();
+
+        var resumed = await svc.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length, SampleOf(bytes));
+        resumed.NextPart.Should().Be(2);
+        resumed.Received.Should().Be(2L * Part);
+        await svc.AppendPartAsync(started.Id, 2, bytes.AsMemory(2 * Part, Part));
+        await svc.AppendPartAsync(started.Id, 3, bytes.AsMemory(3 * Part, 500));
+        (await svc.CompleteUploadAsync(started.Id)).Sha256.Should().Be(Sha(bytes));
+        (await svc.UnfinishedUploadsAsync(caseId)).Should().BeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_upload_survives_a_restart_and_each_part_is_checked_when_it_completes(string provider)
+    {
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var bytes = Random(2 * Part + 77);
+        var before = Service(database, Files());
+        var started = await before.BeginUploadAsync(caseId, "disk.img", "", bytes.Length, null, SampleOf(bytes));
+        await before.AppendPartAsync(started.Id, 0, bytes.AsMemory(0, Part));
+        var damaged = await before.BeginUploadAsync(caseId, "other.img", "", bytes.Length, null, SampleOf(bytes));
+        await before.AppendPartAsync(damaged.Id, 0, bytes.AsMemory(0, Part));
+
+        // The app restarts: new session memory, the store's saved states put back; the start-up sweep keeps them.
+        var afterUploads = new EvidenceUploadSessions();
+        (await EvidenceService.RestoreUploadsAsync(afterUploads, Files())).Should().Be(2);
+        await EvidenceService.SweepUploadsAsync(afterUploads, Files(), _clock.UtcNow, TimeSpan.Zero);
+        Directory.GetFiles(Path.Combine(_dir, "store", ".incoming"), "*.part").Should().HaveCount(2, "kept to resume");
+        var after = new EvidenceService(database.Factory(), Files(), _user, _clock, new NoOpAuditWriter(), _limits, afterUploads);
+
+        (await after.UnfinishedUploadsAsync(caseId)).Select(u => u.FileName).Should().BeEquivalentTo(["disk.img", "other.img"]);
+        (await after.ResumeUploadAsync(started.Id, "disk.img", bytes.Length, SampleOf(bytes))).NextPart.Should().Be(1);
+        await after.AppendPartAsync(started.Id, 1, bytes.AsMemory(Part, Part));
+        await after.AppendPartAsync(started.Id, 2, bytes.AsMemory(2 * Part, 77));
+        (await after.CompleteUploadAsync(started.Id)).Sha256.Should().Be(Sha(bytes), "the file's hash, read back after the restart");
+
+        // A part damaged on disk while the server was down is caught on the read-back, even with ReadBackCheck off.
+        _limits.CurrentValue = new EvidenceStorageOptions { ReadBackCheck = false };
+        var part = Directory.GetFiles(Path.Combine(_dir, "store", ".incoming"), "*.part").Single();
+        await using (var fs = new FileStream(part, FileMode.Open))
+        {
+            fs.Position = 1000;
+            var b = fs.ReadByte();
+            fs.Position = 1000;
+            fs.WriteByte((byte)(b ^ 0xFF));
+        }
+        await after.ResumeUploadAsync(damaged.Id, "other.img", bytes.Length, SampleOf(bytes));
+        await after.AppendPartAsync(damaged.Id, 1, bytes.AsMemory(Part, Part));
+        await after.AppendPartAsync(damaged.Id, 2, bytes.AsMemory(2 * Part, 77));
+        var complete = () => after.CompleteUploadAsync(damaged.Id);
+        (await complete.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("damaged");
+        await using var ctx = database.NewContext();
+        (await ctx.Evidence.CountAsync(e => e.OriginalFileName == "other.img")).Should().Be(0);
+    }
+
     [Theory]
     [MemberData(nameof(Providers))]
     public async Task Uploads_in_progress_are_capped_and_abandoned_or_idle_ones_are_cleared(string provider)
@@ -438,7 +520,8 @@ public sealed class EvidenceStorageTests : IDisposable
         (await fourth.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("uploads in progress");
 
         await svc.AbandonUploadAsync(ids[0]);
-        Directory.GetFiles(Path.Combine(_dir, "store", ".incoming")).Should().HaveCount(2, "the abandoned upload's parts are deleted");
+        Directory.GetFiles(Path.Combine(_dir, "store", ".incoming"), "*.part").Should().HaveCount(2, "the abandoned upload's parts are deleted");
+        Directory.GetFiles(Path.Combine(_dir, "store", ".incoming"), "*.state.json").Should().HaveCount(2, "and its saved state");
         await svc.BeginUploadAsync(caseId, "f5.bin", "", Part * 2L, null);
 
         // A day later with nothing sent, every upload is dropped and its parts deleted; so are parts no upload holds.
@@ -569,6 +652,9 @@ public sealed class EvidenceStorageTests : IDisposable
         public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default) =>
             inner.CommitIncomingAsync(incoming, caseId, sha256, size, ct);
         public Task DiscardIncomingAsync(string incoming) => inner.DiscardIncomingAsync(incoming);
-        public Task<int> ClearIncomingAsync(TimeSpan olderThan, CancellationToken ct = default) => inner.ClearIncomingAsync(olderThan, ct);
+        public Task<int> ClearIncomingAsync(TimeSpan olderThan, IReadOnlyCollection<string>? keep = null, CancellationToken ct = default) =>
+            inner.ClearIncomingAsync(olderThan, keep, ct);
+        public Task SaveIncomingStateAsync(string incoming, string state, CancellationToken ct = default) => inner.SaveIncomingStateAsync(incoming, state, ct);
+        public Task<IReadOnlyList<(string Incoming, string State)>> ReadIncomingStatesAsync(CancellationToken ct = default) => inner.ReadIncomingStatesAsync(ct);
     }
 }

@@ -5,6 +5,7 @@
    still registered by the parent against the element IDs kept here (evidence-dropzone / -file-input / -file-drop). *@
 @using Microsoft.Extensions.Logging
 @inject EvidenceService Evidence
+@inject IncidentManager.Application.Cases.CaseService Cases
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
@@ -66,6 +67,26 @@
                     </div>
                 }
                 @if (_uploadError is not null) { <div class="text-danger small mt-2">@_uploadError</div> }
+                @if (_unfinished.Count > 0)
+                {
+                    @* PROD-59: large uploads cut off part-way (a restart, the page closed, the network lost), kept to carry on.
+                       Rendered while one carries on too: its file is read from the input in this list. *@
+                    <div class="mt-2 small" role="region" aria-label="Unfinished uploads">
+                        <div class="fw-semibold">Unfinished uploads</div>
+                        @foreach (var u in _unfinished)
+                        {
+                            <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
+                                <span class="bi bi-hourglass-split text-muted" aria-hidden="true"></span>
+                                <strong>@u.FileName</strong>
+                                <span class="text-muted">@EvidenceRoom.Size(u.Received) of @EvidenceRoom.Size(u.Size) arrived; last part @TimeDisp.Long(u.LastActivity)</span>
+                                <label class="btn btn-sm btn-outline-primary mb-0 @(_busy ? "disabled" : "")" for="@($"evidence-resume-{u.Id}")">Pick it again to carry on</label>
+                                <InputFile id="@($"evidence-resume-{u.Id}")" class="d-none" OnChange="e => OnResumePicked(u, e)" disabled="@_busy" />
+                                <button type="button" class="btn btn-sm btn-link" @onclick="() => DiscardUnfinished(u)" disabled="@_busy">Discard</button>
+                            </div>
+                        }
+                        <div class="text-muted mt-1">Each is kept for 24 hours after its last part arrived.</div>
+                    </div>
+                }
 
                 @* Hidden sinks the paste-drop shim (wwwroot/js/paste-drop.js) feeds: paste stages one
                    screenshot in the picker; a drop bulk-uploads immediately. Both reuse InputFile streaming. *@
@@ -158,6 +179,9 @@
                                 {
                                     <button type="button" class="btn btn-sm btn-link" @onclick="() => ToggleTask(ev.Id)"
                                             title="Start a task about this file"><span class="bi bi-plus-lg" aria-hidden="true"></span> Task</button>
+                                    @* PROD-59: a sample's SHA-256 is nearly always an indicator. *@
+                                    <button type="button" class="btn btn-sm btn-link" @onclick="() => HashToIoc(ev)" disabled="@_iocBusy.Contains(ev.Id)"
+                                            title="Add this file's SHA-256 to IOCs &amp; entities"><span class="bi bi-fingerprint" aria-hidden="true"></span> Hash as IOC</button>
                                 }
                             </div>
                         </td>
@@ -307,6 +331,66 @@
         Edits.Track(this, "the upload in progress", () => _parts is not null, Region);
     }
 
+    // PROD-59: this person's large uploads to this case that stopped part-way, offered to carry on.
+    private IReadOnlyList<EvidenceService.UnfinishedUpload> _unfinished = [];
+
+    protected override async Task OnInitializedAsync() => await RefreshUnfinishedAsync();
+
+    private async Task RefreshUnfinishedAsync()
+    {
+        try { _unfinished = await Evidence.UnfinishedUploadsAsync(CaseId); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Couldn't list the unfinished uploads");   // the list is a convenience: never fails the tab
+        }
+    }
+
+    private async Task OnResumePicked(EvidenceService.UnfinishedUpload u, InputFileChangeEventArgs e)
+    {
+        if (_busy) return;
+        _uploadError = null;
+        var file = e.File;
+        if (!string.Equals(file.Name, u.FileName, StringComparison.Ordinal) || file.Size != u.Size)
+        {
+            _uploadError = $"That isn't the same file. Pick {u.FileName} ({u.Size:N0} bytes) to carry on.";
+            return;
+        }
+        _busy = true;
+        try
+        {
+            if (await SendInPartsAsync(file, $"evidence-resume-{u.Id}", 0, description: null, resumeId: u.Id) is not { } recorded) return;
+            await OnChanged.InvokeAsync();
+            Toasts.Success($"Uploaded {u.FileName}");
+            await NoteElsewhereAsync(recorded, u.FileName);
+            await WarnIfNearLimitAsync();
+        }
+        catch (Exception ex)
+        {
+            _uploadError = UserFacingError.Describe(ex, Logger, "resuming an upload", "Couldn't carry on the upload. Try again.");
+        }
+        finally
+        {
+            _busy = false;
+            await RefreshUnfinishedAsync();
+        }
+    }
+
+    private async Task DiscardUnfinished(EvidenceService.UnfinishedUpload u)
+    {
+        if (_busy) return;   // C8: once at a time
+        _busy = true;
+        try { await Evidence.AbandonUploadAsync(u.Id); }
+        catch (Exception ex)
+        {
+            _uploadError = UserFacingError.Describe(ex, Logger, "discarding an upload", "Couldn't discard the upload. Try again.");
+        }
+        finally
+        {
+            _busy = false;
+            await RefreshUnfinishedAsync();
+        }
+    }
+
     // PROD-58: the plain file of one that can run is a deliberate choice, asked first.
     private ConfirmDialog? _confirm;
 
@@ -329,8 +413,8 @@
         Edits.Forget(this);
         if (_parts is { } u)
         {
-            // Leaving stops the upload (and deletes its parts on the server); the page's own call may be gone with it.
-            _ = JS.InvokeVoidAsync("imChunkedUpload.cancel", u.Key).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
+            // Leaving stops the upload; PROD-59: the server keeps it, to carry on (the page's own call may be gone with it).
+            _ = JS.InvokeVoidAsync("imChunkedUpload.stop", u.Key).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
             u.Ended.TrySetResult("");
         }
         _self?.Dispose();
@@ -406,6 +490,34 @@
         return await SendInPartsAsync(file, inputId, index, description);
     }
 
+    // PROD-59: adds the file's SHA-256 to the case's indicators (or says it's already one), unjudged: the analyst sets the
+    // verdict on IOCs & entities. One add per file at a time (C8).
+    private readonly HashSet<Guid> _iocBusy = [];
+
+    private async Task HashToIoc(Evidence ev)
+    {
+        if (!_iocBusy.Add(ev.Id)) return;
+        try
+        {
+            var name = ev.OriginalFileName;
+            var r = await Cases.AddOrMatchEntityAsync(CaseId, EntityType.FileHash, ev.Sha256,
+                IncidentManager.Application.Common.TextFit.Cap(name, 400), EntityDisposition.Unknown,
+                IncidentManager.Application.Common.TextFit.Cap($"SHA-256 of evidence file {name}.", 4000), "Evidence");
+            if (_disposed) return;   // C5: the tab has gone
+            if (r.AlreadyOnCase) Toasts.Info($"{name}'s SHA-256 is already an indicator here (verdict: {r.Disposition}).");
+            else
+            {
+                Toasts.Success($"Added {name}'s SHA-256 to IOCs & entities. Set its verdict there.");
+                await OnChanged.InvokeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.Warning(UserFacingError.Describe(ex, Logger, "adding a hash as an indicator", "Couldn't add the hash. Try again."));
+        }
+        finally { _iocBusy.Remove(ev.Id); }
+    }
+
     // PROD-59: the same file is already evidence in other cases this person can see: say where (a hint, not a refusal).
     private async Task NoteElsewhereAsync(Guid evidenceId, string name)
     {
@@ -435,7 +547,7 @@
     private DotNetObjectReference<CaseEvidenceTab>? _self;
     private bool _disposed;
 
-    private async Task<Guid?> SendInPartsAsync(IBrowserFile file, string inputId, int index, string? description)
+    private async Task<Guid?> SendInPartsAsync(IBrowserFile file, string inputId, int index, string? description, string? resumeId = null)
     {
         var token = Antiforgery.GetAntiforgeryToken()?.Value
                     ?? throw new InvalidOperationException("The page's security token is missing. Reload the page and try again.");
@@ -444,10 +556,15 @@
         StateHasChanged();
         try
         {
-            await JS.InvokeVoidAsync("imChunkedUpload.start", _self, upload.Key, inputId, index, CaseId, description, token);
+            if (resumeId is null) await JS.InvokeVoidAsync("imChunkedUpload.start", _self, upload.Key, inputId, index, CaseId, description, token);
+            else await JS.InvokeVoidAsync("imChunkedUpload.resume", _self, upload.Key, inputId, index, resumeId, token);
             var failed = await upload.Ended.Task;
             if (failed is null) return upload.RecordedId ?? throw new InvalidOperationException("The upload finished without a record.");
             if (failed.Length == 0) { Toasts.Info($"Upload of {upload.Name} cancelled. Nothing was recorded."); return null; }
+            // PROD-59: one that stopped part-way is kept on the server: say so, and how to carry on.
+            await RefreshUnfinishedAsync();
+            if (!_disposed && _unfinished.Any(x => x.FileName == upload.Name && x.Size == upload.Size))
+                failed = failed.TrimEnd().TrimEnd('.') + ". What arrived is kept: pick the file again under Unfinished uploads to carry on (within 24 hours).";
             throw new ArgumentException(failed);
         }
         finally

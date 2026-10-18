@@ -5,8 +5,9 @@ namespace IncidentManager.Application.Evidence;
 
 /// <summary>
 /// PROD-56: uploads arriving in parts (files over <see cref="InPageMaxBytes"/>), held in memory between their requests.
-/// CaseBook runs as one instance, so this is the only copy; a restart drops them and the browser starts the upload again
-/// (their parts are cleared at start-up). Singleton; <see cref="EvidenceService"/> does the checks around each step.
+/// PROD-59: each one's state is also kept beside its parts, so an upload cut off (a restart, the tab closed, the network
+/// lost) resumes when the person picks the same file again, within <see cref="IdleLimit"/>. Singleton;
+/// <see cref="EvidenceService"/> does the checks around each step.
 /// </summary>
 public sealed class EvidenceUploadSessions
 {
@@ -51,9 +52,54 @@ public sealed class EvidenceUploadSessions
         public int PendingPart { get; set; } = -1;
         public byte[]? PendingHash { get; set; }
 
+        /// <summary>PROD-59: the SHA-256 of each part committed, in order: after a restart (when the running hash is gone)
+        /// the read-back checks every part against these and takes the file's hash from what it reads.</summary>
+        public List<string> PartHashes { get; init; } = [];
+
+        /// <summary>PROD-59: the SHA-256 of the file's first megabyte, from the browser, so a resume is the same file.</summary>
+        public string? Sample { get; set; }
+
+        /// <summary>PROD-59: restored after a restart: <see cref="Hash"/> holds nothing, the parts' hashes stand in.</summary>
+        public bool Resumed { get; init; }
+
+        internal State ToState() => new(Id, UserId, CaseId, FileName, ContentType, Description, Size, Incoming, NextPart, Committed,
+            [.. PartHashes], Sample, PendingPart, PendingHash is null ? null : Convert.ToHexString(PendingHash), LastActivity);
+
         /// <summary>Review finding 11: once ended, the running hash isn't needed again (every later step checks Ended first).</summary>
         public void Release() => Hash.Dispose();
     }
+
+    /// <summary>PROD-59: what's kept on disk for an upload (no secrets: names, sizes, offsets and hashes).</summary>
+    internal sealed record State(string Id, string UserId, Guid CaseId, string FileName, string ContentType, string? Description,
+        long Size, string Incoming, int NextPart, long Committed, List<string> PartHashes, string? Sample, int PendingPart,
+        string? PendingHash, DateTimeOffset LastActivity);
+
+    private static readonly System.Text.Json.JsonSerializerOptions StateJson = new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    internal static string Serialize(Session s) => System.Text.Json.JsonSerializer.Serialize(s.ToState(), StateJson);
+
+    /// <summary>PROD-59: puts back an upload from its saved state (after a restart); false when it doesn't hold together.</summary>
+    internal bool Restore(string incoming, string json)
+    {
+        State? st;
+        try { st = System.Text.Json.JsonSerializer.Deserialize<State>(json, StateJson); }
+        catch (System.Text.Json.JsonException) { return false; }
+        if (st is null || st.Incoming != incoming || st.Id.Length != 32 || st.Size <= 0 || st.Committed < 0 || st.Committed > st.Size
+            || st.NextPart < 0 || st.PartHashes.Count != st.NextPart) return false;
+        var s = new Session(st.Id, st.UserId, st.CaseId, st.FileName, st.ContentType, st.Description, st.Size, st.Incoming, st.LastActivity)
+        {
+            NextPart = st.NextPart, Committed = st.Committed, PartHashes = [.. st.PartHashes], Sample = st.Sample, Resumed = true,
+            PendingPart = st.PendingPart, PendingHash = st.PendingHash is null ? null : Convert.FromHexString(st.PendingHash),
+        };
+        return _sessions.TryAdd(s.Id, s);
+    }
+
+    /// <summary>PROD-59: this person's unfinished uploads to a case, to offer resuming.</summary>
+    internal List<Session> Unfinished(string userId, Guid caseId) =>
+        _sessions.Values.Where(s => s.UserId == userId && s.CaseId == caseId && !s.Ended).OrderBy(s => s.LastActivity).ToList();
+
+    /// <summary>The parts files of uploads still held, which a sweep keeps.</summary>
+    internal List<string> HeldIncoming() => _sessions.Values.Where(s => !s.Ended).Select(s => s.Incoming).ToList();
 
     private readonly ConcurrentDictionary<string, Session> _sessions = new(StringComparer.Ordinal);
     private readonly object _create = new();

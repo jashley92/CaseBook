@@ -167,7 +167,7 @@ public sealed class EvidenceService
     /// record's limits, the size and room) are made before anything is written.
     /// </summary>
     public async Task<UploadStarted> BeginUploadAsync(Guid caseId, string fileName, string contentType, long size,
-        string? description, CancellationToken ct = default)
+        string? description, string? sample = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         await CheckCanUploadAsync(db, caseId, fileName, description, ct);
@@ -179,6 +179,8 @@ public sealed class EvidenceService
             var s = Uploads.Create(_user.UserId, caseId, fileName,
                 string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, description, size, incoming,
                 _clock.UtcNow);
+            s.Sample = Sample(sample);
+            await SaveStateAsync(s, ct);   // PROD-59: resumable from here
             return new UploadStarted(s.Id, EvidenceUploadSessions.PartBytes, s.Parts);
         }
         catch
@@ -214,11 +216,14 @@ public sealed class EvidenceService
                 throw new InvalidOperationException("The file changed while it was uploading, so the upload was stopped. Upload it again.");
             }
             (s.PendingPart, s.PendingHash) = (part, partHash);
+            await SaveStateAsync(s, ct);   // the pending part survives a restart too (review finding 4)
             await _store.AppendIncomingAsync(s.Incoming, s.Committed, bytes, ct);
-            s.Hash.AppendData(bytes.Span);
+            if (!s.Resumed) s.Hash.AppendData(bytes.Span);
+            s.PartHashes.Add(Convert.ToHexString(partHash).ToLowerInvariant());
             s.Committed += bytes.Length;
             s.NextPart++;
             (s.PendingPart, s.PendingHash) = (-1, null);
+            await SaveStateAsync(s, ct);
             s.LastActivity = _clock.UtcNow;
             return s.Committed;
         }
@@ -244,9 +249,20 @@ public sealed class EvidenceService
                 throw new InvalidOperationException($"The upload is missing parts: {s.Committed:N0} of {s.Size:N0} bytes arrived.");
             await CheckCanUploadAsync(db, s.CaseId, s.FileName, s.Description, ct);
             await EvidenceRoom.CheckAsync(db, _store, Limits, s.Size, alreadyStored: true, ct: ct);
-            var sha = Convert.ToHexString(s.Hash.GetCurrentHash()).ToLowerInvariant();
             await _store.FinishIncomingAsync(s.Incoming, s.Size, ct);   // PROD-57: an encrypted file's final chunk
-            if (Limits.ReadBackCheck && !await ReadsBackAsync(s, sha, ct))
+            string? sha;
+            if (s.Resumed)
+            {
+                // PROD-59: resumed after a restart, so there's no running hash: read the file back once, checking every part
+                // against the hash it arrived with, and take the file's hash from what's read. Always, whatever ReadBackCheck says.
+                sha = await ReadBackPartsAsync(s, ct);
+            }
+            else
+            {
+                sha = Convert.ToHexString(s.Hash.GetCurrentHash()).ToLowerInvariant();
+                if (Limits.ReadBackCheck && !await ReadsBackAsync(s, sha, ct)) sha = null;
+            }
+            if (sha is null)
             {
                 await EndAsync(s);
                 throw new ArgumentException("The file was damaged on its way to the evidence store, so it wasn't kept. Upload it again.");
@@ -263,6 +279,85 @@ public sealed class EvidenceService
     }
 
     // PROD-56: the parts as stored hash to what arrived, so a write damaged on its way to a share isn't recorded.
+    // PROD-59: the file read back part by part, each checked against the hash it arrived with; the file's SHA-256, or null
+    // when any part (or the length) differs.
+    private async Task<string?> ReadBackPartsAsync(EvidenceUploadSessions.Session s, CancellationToken ct)
+    {
+        if (s.PartHashes.Count != s.Parts) return null;
+        await using var read = await _store.OpenIncomingAsync(s.Incoming, ct);
+        using var whole = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[EvidenceUploadSessions.PartBytes];
+        for (var i = 0; i < s.Parts; i++)
+        {
+            var length = i == s.Parts - 1 ? (int)(s.Size - (long)i * EvidenceUploadSessions.PartBytes) : EvidenceUploadSessions.PartBytes;
+            if (await read.ReadAtLeastAsync(buffer.AsMemory(0, length), length, throwOnEndOfStream: false, ct) != length) return null;
+            var expected = Convert.FromHexString(s.PartHashes[i]);
+            if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(buffer.AsSpan(0, length)), expected)) return null;
+            whole.AppendData(buffer.AsSpan(0, length));
+        }
+        if (await read.ReadAsync(buffer.AsMemory(0, 1), ct) != 0) return null;   // longer than it should be
+        return Convert.ToHexString(whole.GetHashAndReset()).ToLowerInvariant();
+    }
+
+    private Task SaveStateAsync(EvidenceUploadSessions.Session s, CancellationToken ct) =>
+        _store.SaveIncomingStateAsync(s.Incoming, EvidenceUploadSessions.Serialize(s), ct);
+
+    // A sample is 64 hex digits (the browser's SHA-256 of the file's first megabyte), or none.
+    private static string? Sample(string? sample) =>
+        sample is { Length: 64 } && sample.All(char.IsAsciiHexDigit) ? sample.ToLowerInvariant() : null;
+
+    /// <summary>PROD-59: an upload cut off part-way, offered for resuming on the Evidence tab.</summary>
+    public sealed record UnfinishedUpload(string Id, string FileName, long Size, long Received, DateTimeOffset LastActivity);
+
+    /// <summary>PROD-59: a resumed upload: where it carries on from.</summary>
+    public sealed record UploadResumed(string Id, int PartBytes, int Parts, int NextPart, long Received);
+
+    /// <summary>PROD-59: this person's unfinished uploads to a case (only theirs; a case they can no longer see has none).</summary>
+    public async Task<IReadOnlyList<UnfinishedUpload>> UnfinishedUploadsAsync(Guid caseId, CancellationToken ct = default)
+    {
+        if (_uploads is null) return [];
+        var mine = _uploads.Unfinished(_user.UserId, caseId);
+        if (mine.Count == 0) return [];
+        using var db = _factory.CreateDbContext();
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct)) return [];
+        return mine.Select(s => new UnfinishedUpload(s.Id, s.FileName, s.Size, s.Committed, s.LastActivity)).ToList();
+    }
+
+    /// <summary>
+    /// PROD-59: carries on an upload cut off part-way, from the next part the server holds. It must be the same file: the
+    /// same name and size and, when the browser could compute it, the same SHA-256 of its first megabyte; the permission
+    /// and the case are checked again.
+    /// </summary>
+    public async Task<UploadResumed> ResumeUploadAsync(string id, string fileName, long size, string? sample, CancellationToken ct = default)
+    {
+        var s = Owned(id);
+        await s.Gate.WaitAsync(ct);
+        try
+        {
+            if (s.Ended) throw new InvalidOperationException("That upload has already finished.");
+            await StillAllowedAsync(s.CaseId, ct);
+            var given = Sample(sample);
+            if (!string.Equals(fileName, s.FileName, StringComparison.Ordinal) || size != s.Size
+                || (s.Sample is not null && !string.Equals(given, s.Sample, StringComparison.Ordinal)))
+                throw new ArgumentException($"That isn't the same file. Pick {s.FileName} ({s.Size:N0} bytes) to carry on, or discard the upload.");
+            s.LastActivity = _clock.UtcNow;
+            return new UploadResumed(s.Id, EvidenceUploadSessions.PartBytes, s.Parts, s.NextPart, s.Committed);
+        }
+        finally { s.Gate.Release(); }
+    }
+
+    /// <summary>
+    /// PROD-59: at start-up, puts back the uploads whose state and parts are still in the store, so they can be resumed;
+    /// returns how many. Their running hashes are gone, so completing one reads the file back and checks every part.
+    /// </summary>
+    public static async Task<int> RestoreUploadsAsync(EvidenceUploadSessions uploads, IEvidenceStore store, CancellationToken ct = default)
+    {
+        var restored = 0;
+        foreach (var (incoming, state) in await store.ReadIncomingStatesAsync(ct))
+            if (uploads.Restore(incoming, state)) restored++;
+        return restored;
+    }
+
     private async Task<bool> ReadsBackAsync(EvidenceUploadSessions.Session s, string sha, CancellationToken ct)
     {
         await using var read = await _store.OpenIncomingAsync(s.Incoming, ct);
@@ -311,7 +406,7 @@ public sealed class EvidenceService
             }
             finally { s.Gate.Release(); }
         }
-        return dropped + await store.ClearIncomingAsync(orphansOlderThan, ct);
+        return dropped + await store.ClearIncomingAsync(orphansOlderThan, uploads.HeldIncoming(), ct);
     }
 
     private async Task StillAllowedAsync(Guid caseId, CancellationToken ct)

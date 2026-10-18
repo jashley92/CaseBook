@@ -65,9 +65,17 @@ Evidence storage shows where the store is, whether CaseBook can write and read t
 
 **Large files (PROD-56).** A file over 100 MB, such as a memory dump, uploads in 8 MB parts with a progress bar, so no
 request comes near IIS's 30 MB limit and nothing in IIS needs changing. A part lost on the network is sent again. The
-file is read back and its SHA-256 checked before it's recorded (`Evidence:ReadBackCheck`). The person must keep the
-page open until it finishes; leaving asks first. An upload abandoned for a day, or cut off by a restart, is deleted
-from `<store>\.incoming`.
+file is read back and its SHA-256 checked before it's recorded (`Evidence:ReadBackCheck`). **An upload that stops
+part-way is kept** (PROD-59): a network failure, the page closed, or the app restarting. Its state is saved beside its
+parts in `<store>\.incoming`, and the Evidence tab lists it under **Unfinished uploads** for the person who started
+it; they pick the same file again to carry on (it's checked by name, size and the SHA-256 of its first megabyte), or
+discard it. One resumed after a restart is read back in full when it completes, every part checked against the hash
+it arrived with, whatever `ReadBackCheck` says. Only **Cancel** deletes an upload at once; one with nothing sent for a
+day is deleted from `<store>\.incoming`.
+
+**The same file twice.** A file already evidence in the same case (by SHA-256) isn't stored again: the upload is
+refused, naming the first copy, whose chain of custody stands. In another case it's stored, and the uploader is told
+which other cases (among those they can see) hold it.
 
 **A store on a network share.** `EvidenceStore:RootPath` (installer `-EvidencePath`) may be a UNC path such as
 `\\files01\casebook$\evidence`.

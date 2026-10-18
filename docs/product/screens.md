@@ -277,7 +277,10 @@ Below the list, relationships are added and edited (type, description and direct
    transferred) and records a transfer; **Download** is itself a custody event, and **As zip** gives the file in a
    zip with the password `infected`. A file that can run (a program, script, shortcut, disk image, Office file with
    macros) is marked **Can run** and offers **Download safely** (the zip) first, with the plain file behind a
-   confirmation. **Task** raises a task about the file. Evidence can't be deleted.
+   confirmation. **Task** raises a task about the file; **Hash as IOC** adds its SHA-256 to IOCs & entities (unjudged,
+   or says it's already there). Evidence can't be deleted. The same file twice in one case is refused; one already in
+   another case you can see says where. A large upload that stopped part-way is listed under **Unfinished uploads**:
+   pick the file again to carry on, or discard it.
 
 ## Working notes
 

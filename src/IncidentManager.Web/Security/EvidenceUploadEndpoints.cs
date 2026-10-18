@@ -16,7 +16,10 @@ public static class EvidenceUploadEndpoints
     /// <summary>The header the page sends its antiforgery token in (the antiforgery default).</summary>
     public const string TokenHeader = "RequestVerificationToken";
 
-    public sealed record BeginRequest(Guid CaseId, string Name, string? ContentType, long Size, string? Description);
+    public sealed record BeginRequest(Guid CaseId, string Name, string? ContentType, long Size, string? Description, string? Sample = null);
+
+    /// <summary>PROD-59: carrying on an upload: the file the person picked, to check it's the same one.</summary>
+    public sealed record ResumeRequest(string Name, long Size, string? Sample);
 
     public static void MapEvidenceUploads(this IEndpointRouteBuilder app)
     {
@@ -36,7 +39,7 @@ public static class EvidenceUploadEndpoints
             Run(http, async () =>
             {
                 var started = await evidence.BeginUploadAsync(request.CaseId, request.Name ?? "", request.ContentType ?? "",
-                    request.Size, request.Description, ct);
+                    request.Size, request.Description, request.Sample, ct);
                 return Results.Json(new { started.Id, started.PartBytes, started.Parts });
             }));
 
@@ -59,6 +62,13 @@ public static class EvidenceUploadEndpoints
                     return Results.Json(new { received });
                 }
                 finally { ArrayPool<byte>.Shared.Return(buffer); }
+            }));
+
+        uploads.MapPost("/{id}/resume", (string id, ResumeRequest request, EvidenceService evidence, HttpContext http, CancellationToken ct) =>
+            Run(http, async () =>
+            {
+                var resumed = await evidence.ResumeUploadAsync(id, request.Name ?? "", request.Size, request.Sample, ct);
+                return Results.Json(new { resumed.Id, resumed.PartBytes, resumed.Parts, resumed.NextPart, resumed.Received });
             }));
 
         uploads.MapPost("/{id}/complete", (string id, EvidenceService evidence, HttpContext http, CancellationToken ct) =>
