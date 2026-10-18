@@ -1413,6 +1413,7 @@ public sealed class CaseService
         if (cleared) c.ClearReported(_user.UserId, now);
         else c.ReportedFromNotices(await InPlayAsync(db, c, ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
+        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.ReportedCleared(s, NoticeCode(jurisdiction), a, u));   // CAP-06
         // BUG-156: its clock runs again, so it's reminded again. BUG-619: only that regulator's, unless every notice went.
         if (cleared) _deadlineReminders?.ForgetCase(id);
         else
@@ -1441,6 +1442,7 @@ public sealed class CaseService
         var c = await LoadWithNoticesAsync(db, id, ct);
         c.ClearReported(_user.UserId, _clock.UtcNow);   // BUG-09: and every jurisdiction's notice
         await db.SaveChangesAsync(ct);
+        EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.ReportedCleared(s, null, a, u));   // CAP-06
         _deadlineReminders?.ForgetCase(id);   // BUG-156: its clock runs again, so it's reminded again
     }
 

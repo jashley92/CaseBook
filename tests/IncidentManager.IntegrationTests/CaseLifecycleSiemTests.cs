@@ -168,6 +168,24 @@ public sealed class CaseLifecycleSiemTests : IDisposable
     }
 
     [Fact]
+    public async Task Taking_back_a_notice_or_the_reported_mark_emits_5513_as_a_Warning()
+    {
+        var svc = Cases();
+        var c = await OpenAsync(svc, Classification.Breach, detection: null);
+        await svc.MarkReportedAsync(c.Id, _clock.UtcNow);
+        await svc.ClearReportedAsync(c.Id);
+        await svc.RecordNoticeAsync(c.Id, "NY", _clock.UtcNow);
+        await svc.RemoveNoticeAsync(c.Id, "NY");
+
+        _siem.Events.Where(e => e.EventId == SecurityEventIds.CaseReported).Select(e => (e.Action, e.Severity, e.Detail))
+            .Should().Equal(
+                ("CaseReported", SecuritySeverity.Info, null),
+                ("ReportedCleared", SecuritySeverity.Warning, null),
+                ("RegulatorNoticeRecorded", SecuritySeverity.Info, "jurisdiction=NY"),
+                ("RegulatorNoticeRemoved", SecuritySeverity.Warning, "jurisdiction=NY"));
+    }
+
+    [Fact]
     public async Task An_exercise_is_sent_marked_EXERCISE()
     {
         await OpenAsync(Cases(), exercise: true);

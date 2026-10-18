@@ -359,6 +359,16 @@ public static class SecurityEvents
             SecuritySeverity.Info, c, actor, actorUpn,
             jurisdiction is null ? null : $"jurisdiction={Common.TextFit.Cap(jurisdiction, 32, "")}");
 
+    /// <summary>
+    /// CAP-06: a record of notification was taken back: the whole case's (ReportedCleared) or one regulator's notice
+    /// (RegulatorNoticeRemoved, with its jurisdiction code). Warning: the deadline clock runs again, and a notice that
+    /// was given doesn't stop being given, so the SOC should see each one.
+    /// </summary>
+    public static SecurityEvent ReportedCleared(CaseSubject c, string? jurisdiction, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseReported, jurisdiction is null ? "ReportedCleared" : "RegulatorNoticeRemoved",
+            SecuritySeverity.Warning, c, actor, actorUpn,
+            jurisdiction is null ? null : $"jurisdiction={Common.TextFit.Cap(jurisdiction, 32, "")}");
+
     /// <summary>CAP-06: a report was approved; the target is the report. Info: approval is the expected end of drafting.</summary>
     public static SecurityEvent ReportApproved(CaseSubject c, Guid reportId, string actor, string? actorUpn) =>
         Lifecycle(SecurityEventIds.ReportApproved, "ReportApproved", SecuritySeverity.Info, c, actor, actorUpn, null,
