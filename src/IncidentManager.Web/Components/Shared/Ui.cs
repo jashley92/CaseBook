@@ -567,6 +567,7 @@ public static class Ui
         AccessType.EvidenceDownload => "Evidence download",
         AccessType.ReportDownload => "Report download",
         AccessType.Export => "Export",
+        AccessType.EvidencePackage => "Evidence package",   // CAP-12
         _ => t.ToString()
     };
 
@@ -577,6 +578,7 @@ public static class Ui
         AccessType.EvidenceDownload => "bi-paperclip",
         AccessType.ReportDownload => "bi-file-earmark-text",
         AccessType.Export => "bi-download",
+        AccessType.EvidencePackage => "bi-file-earmark-zip",
         _ => "bi-eye"
     };
 }

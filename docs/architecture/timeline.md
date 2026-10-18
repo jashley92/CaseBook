@@ -81,6 +81,7 @@ From `Application/Cases/CaseMilestones.cs`:
 | Reported to regulators / Reported to every regulator in play; with a single notice, how it was given (CAP-07) | `Case.ReportedAtUtc` | that time | none recorded |
 | Task done: *title* (unless a stored entry already logs that task's result) | `ActionItem` with status Done | completion time | |
 | Evidence added: *file* (unless it's a screenshot shown on an entry, or a file an entry cites), with its description and where from and by whom it was collected (CAP-08) | `Evidence` | when it was collected, if recorded, else the upload time; "recorded" (the upload) shows when that was a later minute | uploader |
+| Evidence withdrawn: *file* (*reason*) (CAP-21): a withdrawn file's "Evidence added" milestone, in its place (as a retracted entry's stub stays where it was), whether or not an entry cites it. Not in the Story lens or the report | `Evidence` with `WithdrawnAtUtc` | as "Evidence added" | who withdrew it |
 | Case / lessons-learned report *vN* approved as final | `Report` | approval time | approver |
 | *Entity* assessed *verdict* (was *previous*), with the reason | `EntityVerdictChange` (an existing entity re-assessed; adding one with a verdict isn't recorded). A verdict set on several at once (CAP-02) is one milestone per entity, all at the same time with the same reason | when recorded | who changed it |
 | Working assessment recorded / Assessment revised (brief v*N*), with the new assessment | `CaseBrief` versions whose working assessment differs from the version before; a closing brief's conclusion is left to the Closed milestone | when the version was saved | who saved it |
@@ -136,7 +137,7 @@ same kind. The opening state can't be re-dated. Re-dating a classification chang
 
 | Control | Effect |
 |---|---|
-| **Story** | The key entries, oldest first: event steps, decisions, handoffs and milestones, except task-done and evidence-added. A closed case's Record opens here. |
+| **Story** | The key entries, oldest first: event steps, decisions, handoffs and milestones, except task-done, evidence-added and evidence-withdrawn. A closed case's Record opens here. |
 | **Everything** | Entries and milestones together. |
 | **Attack chain** (**Attack & disclosure** on third-party cases) | Event steps only; with the attack chain strip (on a third-party case, from its attack steps, at the vendor and, after a pivot, in our network). |
 | **Response** | Investigation entries only. |
@@ -181,6 +182,9 @@ times don't settle the order (`Case.MoveEventStep`), and refuse where they do. E
 - **Cite evidence** links any number of evidence files to a current entry. The report prints them with the
   entry.
 - Evidence that isn't a pasted screenshot also appears as an "Evidence added" milestone.
+- A **withdrawn** file (CAP-21) isn't offered to cite (nor in the brief's picker, nor as a notice's file), and can't be
+  attached to a new entry. A citation made before it was withdrawn stays on the entry, struck through, and can be taken
+  off; the report leaves it out. A file shown as a current entry's screenshot can't be withdrawn: retract the entry first.
 
 ## In the case report
 
@@ -190,9 +194,10 @@ times don't settle the order (`Case.MoveEventStep`), and refuse where they do. E
 |---|---|
 | Event timeline | All event steps by occurred time: type, defanged text, source. No "By" column. |
 | Attack chain | Event steps numbered, drawn across ATT&CK tactic lanes. Empty for third-party cases. |
-| Investigation timeline | Current investigation entries (Markdown flattened; decisions printed with "Why", "Options considered", "Decided by" and "Actions taken" (the tasks started from the decision, with when, by whom and the result); cited evidence appended; "(Recorded …)" for late entries if `Reporting:MarkLateEntries`), plus milestones if `Reporting:IncludeMilestones`, **except** report approvals and team changes. Columns: time, type, description (with source), **By** (who logged it, or the milestone's actor). |
+| Investigation timeline | Current investigation entries (Markdown flattened; decisions printed with "Why", "Options considered", "Decided by" and "Actions taken" (the tasks started from the decision, with when, by whom and the result); cited evidence appended; "(Recorded …)" for late entries if `Reporting:MarkLateEntries`), plus milestones if `Reporting:IncludeMilestones`, **except** report approvals, team changes and withdrawn evidence (CAP-21). Columns: time, type, description (with source), **By** (who logged it, or the milestone's actor). |
 
-So the screen and the report agree, except that the report leaves out staffing changes and report approvals.
+So the screen and the report agree, except that the report leaves out staffing changes, report approvals and
+withdrawn evidence (which, like a retracted entry, is off the record; the timeline still shows that it was withdrawn).
 
 ## How it's queried and persisted
 

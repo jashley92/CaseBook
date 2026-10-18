@@ -114,6 +114,8 @@ public static class CaseActionPermissions
             [nameof(CaseService.AddOpenQuestionAsync)] = Permission.EditCases,
             [nameof(CaseService.CiteEvidenceAsync)] = Permission.EditCases,
             [nameof(CaseService.RecordEvidenceCollectionAsync)] = Permission.EditCases,   // CAP-08
+            [nameof(CaseService.WithdrawEvidenceAsync)] = Permission.EditCases,   // CAP-21
+            [nameof(CaseService.StageEvidencePackageAsync)] = Permission.EditCases,   // CAP-12: the download re-checks it
             [nameof(CaseService.HandOffAsync)] = Permission.EditCases,
             [nameof(CaseService.SetActionItemOwnerAsync)] = Permission.EditCases,
             [nameof(CaseService.UpdateActionItemAsync)] = Permission.EditCases,

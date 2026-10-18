@@ -22,13 +22,23 @@
         <div class="im-entity-panel-head">
             <div class="d-flex align-items-center gap-2">
                 <span class="bi @(IsImage(ev) ? "bi-file-earmark-image" : "bi-file-earmark-text") im-dossier-glyph" aria-hidden="true"></span>
-                <h2 class="im-dossier-value mb-0" id="evidence-panel-title"><span class="im-data">@ev.OriginalFileName</span></h2>
+                <h2 class="im-dossier-value mb-0" id="evidence-panel-title"><span class="im-data @(ev.IsWithdrawn ? "im-evp-withdrawn-name" : "")">@ev.OriginalFileName</span></h2>
                 <button type="button" class="btn-close ms-auto" aria-label="Close" @onclick="OnClose"></button>
             </div>
             @if (!string.IsNullOrWhiteSpace(ev.Description)) { <div class="im-dossier-label">@ev.Description</div> }
             <div class="small text-muted">
                 @(string.IsNullOrWhiteSpace(ev.ContentType) ? "File" : ev.ContentType) · @FormatSize(ev.SizeBytes) · added @TimeDisp.Brief(ev.CreatedAtUtc, Clock.UtcNow) by @Users.DisplayFor(ev.CreatedBy)
             </div>
+            @if (ev.IsWithdrawn)
+            {
+                @* CAP-21: off the record, kept: who withdrew it, when and why. *@
+                <div class="small mt-2" role="status">
+                    <span class="im-badge im-b-warn"><span class="bi bi-slash-circle" aria-hidden="true"></span> Withdrawn</span>
+                    by @Users.DisplayFor(ev.WithdrawnBy) · @TimeDisp.Long(ev.WithdrawnAtUtc!.Value)
+                    <div class="text-muted im-ev-withdrawn-why">@ev.WithdrawnReason</div>
+                    <div class="text-muted">It's left out of the report, the gates, citing and packages. The file, its hash and its chain of custody stay.</div>
+                </div>
+            }
             <div class="d-flex flex-wrap gap-2 mt-2">
                 <a class="btn btn-sm btn-outline-secondary" href="evidence/@ev.Id" target="_blank" rel="noopener"
                    title="Downloading adds a custody event in your name and an access-log entry">
@@ -43,12 +53,39 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _transferOpen = true">
                         <span class="bi bi-arrow-left-right" aria-hidden="true"></span> Record a transfer…
                     </button>
+                    @if (!ev.IsWithdrawn)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => StartWithdraw(ev)"
+                                title="Take a file filed on the wrong case off its record, with a reason">
+                            <span class="bi bi-slash-circle" aria-hidden="true"></span> Withdraw…
+                        </button>
+                    }
                 }
             </div>
             <div class="small text-muted mt-1">Downloading adds a custody event in your name and an access-log entry.</div>
         </div>
 
         <div class="im-entity-panel-body">
+            @if (_withdrawOpen && !ev.IsWithdrawn)
+            {
+                @* CAP-21: as retracting a timeline entry (BUG-413): a required reason, nothing deleted, and no way back. *@
+                <section class="im-dossier-reason">
+                    <h3 class="im-entity-panel-h">Withdraw this file</h3>
+                    <p class="small text-muted mb-2">For a file filed on the wrong case. It leaves this case's report, the gates' evidence count and
+                        citing, and can't be packaged. The file, its SHA-256 and its chain of custody stay, it can still be downloaded, and the
+                        withdrawal is recorded in the chain of custody and the audit trail. It can't be undone.</p>
+                    <label class="form-label small mb-0" for="evp-withdraw-why">Why is it being withdrawn? <span class="text-muted">(required)</span></label>
+                    <textarea id="evp-withdraw-why" class="form-control form-control-sm mb-2" rows="3" maxlength="@IncidentManager.Domain.Entities.Evidence.MaxWithdrawnReasonLength"
+                              @bind="_withdrawReason" @bind:event="oninput" disabled="@_withdrawBusy"
+                              placeholder="e.g. Uploaded to the wrong case; it belongs to 2026-0142"></textarea>
+                    @if (_withdrawError is not null) { <div class="text-danger small mb-2" role="alert">@_withdrawError</div> }
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelWithdraw">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-danger" disabled="@(_withdrawBusy || string.IsNullOrWhiteSpace(_withdrawReason))"
+                                @onclick="() => SaveWithdraw(ev)">Withdraw the file</button>
+                    </div>
+                </section>
+            }
             @if (_addingTask)
             {
                 <section>
@@ -139,7 +176,7 @@
                         <dt>Uploaded</dt>
                         <dd>@TimeDisp.Long(ev.CreatedAtUtc)@if (ev.CollectedAtUtc is { } c && IncidentManager.Domain.Entities.Case.ToMinute(c) < IncidentManager.Domain.Entities.Case.ToMinute(ev.CreatedAtUtc)) { <span class="text-muted"> · recorded @Ui.Hours((ev.CreatedAtUtc - c).TotalHours) after collection</span> }</dd>
                     </dl>
-                    @if (CanEdit)
+                    @if (CanEdit && !ev.IsWithdrawn)
                     {
                         <button type="button" class="btn btn-sm btn-link p-0 mt-1" @onclick="() => StartCollection(ev)">
                             <span class="bi bi-pencil" aria-hidden="true"></span> @(ev.HasCollection ? "Correct how it was collected" : "Record how it was collected")
@@ -253,6 +290,52 @@
         Edits.Track(this, "the transfer you're recording", () => _transferOpen
             && (!string.IsNullOrWhiteSpace(_xferTo) || !string.IsNullOrWhiteSpace(_xferHow) || !string.IsNullOrWhiteSpace(_xferWhy)), Region);
         Edits.Track(this, "how the file was collected", () => _collEditing && CollectionDirty, Region);
+        Edits.Track(this, "why the file is being withdrawn", () => _withdrawOpen && !string.IsNullOrWhiteSpace(_withdrawReason), Region);   // CAP-21
+    }
+
+    // CAP-21: withdrawing the file, with the record's row hash when the form opened (a colleague's change meanwhile is
+    // refused, as a retraction's is).
+    private bool _withdrawOpen, _withdrawBusy;
+    private string? _withdrawReason, _withdrawError, _withdrawStamp;
+
+    private void StartWithdraw(Evidence ev)
+    {
+        if (_withdrawOpen) return;   // C7: what's typed stays
+        (_withdrawOpen, _withdrawReason, _withdrawError, _withdrawStamp) = (true, null, null, ev.RowHash ?? "");
+    }
+
+    private void CancelWithdraw() => (_withdrawOpen, _withdrawError) = (false, null);
+
+    private async Task SaveWithdraw(Evidence ev)
+    {
+        if (_withdrawBusy || string.IsNullOrWhiteSpace(_withdrawReason)) return;   // C8
+        var shown = _shown;
+        _withdrawError = null;
+        _withdrawBusy = true;
+        try
+        {
+            await Cases.WithdrawEvidenceAsync(Case.Id, ev.Id, _withdrawReason.Trim(), _withdrawStamp);
+            Toasts.Success("File withdrawn. It stays in the chain of custody and the audit trail.");
+            if (!_showing.IsCurrent(shown)) return;   // BUG-601: the panel moved on meanwhile
+            (_withdrawOpen, _withdrawReason) = (false, null);
+            await OnChanged.InvokeAsync();
+            await LoadCustody(ev.Id);
+        }
+        catch (StaleEditException ex)
+        {
+            // The form stays open with the reason, expecting what's there now, so withdrawing again is a knowing choice.
+            if (!_showing.IsCurrent(shown)) { Toasts.Error(ex.Message); return; }
+            _withdrawError = ex.Message;
+            await OnChanged.InvokeAsync();
+            if (File is { } now && now.Id == ev.Id) _withdrawStamp = now.RowHash ?? "";
+        }
+        catch (Exception ex)
+        {
+            var problem = UserFacingError.Describe(ex, Logger, "withdrawing evidence", "Couldn't withdraw the file. Try again.");
+            if (_showing.IsCurrent(shown)) _withdrawError = problem;
+            else Toasts.Error(problem);
+        }
+        finally { _withdrawBusy = false; }
     }
 
     // CAP-08: the collection being edited, with what it was when the edit opened (the stamp the save sends, so a
@@ -325,8 +408,8 @@
         _custodyLoad.Invalidate();
         _custody = null;
         _preview = null;
-        _previewLoading = _previewMissing = _addingTask = _transferOpen = _collEditing = false;
-        _xferTo = _xferHow = _xferWhy = _xferError = _collError = null;
+        _previewLoading = _previewMissing = _addingTask = _transferOpen = _collEditing = _withdrawOpen = false;
+        _xferTo = _xferHow = _xferWhy = _xferError = _collError = _withdrawReason = _withdrawError = null;
         if (EvidenceId is { } id) await LoadCustody(id);
     }
 

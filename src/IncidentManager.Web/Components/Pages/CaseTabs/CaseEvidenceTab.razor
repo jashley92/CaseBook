@@ -127,6 +127,9 @@
         @* CAP-25: a filter over name, description and hash prefix (kept in the page, never the URL: C7), quick chips, and
            sortable columns. *@
         var shown = Shown();
+        // CAP-21: withdrawn files are counted apart and listed only with the Withdrawn chip on.
+        var withdrawnCount = EvidenceItems.Count(e => e.IsWithdrawn);
+        var listable = _chips.Contains(EvidenceChip.Withdrawn) ? EvidenceItems.Count : EvidenceItems.Count - withdrawnCount;
         <div class="im-ev-bar" role="search" aria-label="Filter the evidence">
             <input type="search" class="form-control form-control-sm im-ev-filter" placeholder="Filter by name, description or hash"
                    aria-label="Filter by name, description or hash" @bind="_filter" @bind:event="oninput" />
@@ -136,16 +139,45 @@
                     <button type="button" class="im-count @(_chips.Contains(chip) ? "on" : "")" aria-pressed="@Ui.Aria(_chips.Contains(chip))"
                             @onclick="() => ToggleChip(chip)">@label</button>
                 }
+                @if (withdrawnCount > 0)
+                {
+                    <button type="button" class="im-count @(_chips.Contains(EvidenceChip.Withdrawn) ? "on" : "")" aria-pressed="@Ui.Aria(_chips.Contains(EvidenceChip.Withdrawn))"
+                            title="Files withdrawn from this case: kept, but off its record" @onclick="() => ToggleChip(EvidenceChip.Withdrawn)">
+                        Withdrawn (@withdrawnCount)
+                    </button>
+                }
             </div>
-            @if (shown.Count != EvidenceItems.Count)
+            @if (shown.Count != listable)
             {
-                <span class="small text-muted" role="status">@shown.Count of @EvidenceItems.Count
+                <span class="small text-muted" role="status">@shown.Count of @listable
                     <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ClearFilter">Show all</button></span>
             }
+            @if (CanEdit && withdrawnCount < EvidenceItems.Count)
+            {
+                @* CAP-12: many files handed over at once, in one recorded zip. *@
+                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" @onclick="StartPackage" aria-expanded="@Ui.Aria(_pkgOpen)"
+                        title="Download several files as one zip for hand-over, with a manifest, recorded in each file's chain of custody">
+                    <span class="bi bi-file-earmark-zip" aria-hidden="true"></span> Package evidence…
+                </button>
+            }
         </div>
+        @if (_pkgOpen)
+        {
+            @PackageForm()
+        }
         @if (shown.Count == 0)
         {
-            <p class="small text-muted">No files match. <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ClearFilter">Show all @EvidenceItems.Count</button></p>
+            <p class="small text-muted">
+                @if (listable == 0)
+                {
+                    <text>Every file on this case has been withdrawn. </text>
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => ToggleChip(EvidenceChip.Withdrawn)">Show the withdrawn files</button>
+                }
+                else
+                {
+                    <text>No files match. </text><button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ClearFilter">Show all @(EvidenceItems.Count - withdrawnCount)</button>
+                }
+            </p>
         }
         else
         {
@@ -156,7 +188,7 @@
             <tbody>
                 @foreach (var ev in shown)
                 {
-                    <tr class="im-enter @FlashClass?.Invoke(ev.Id)" style="@FlashStyle?.Invoke(ev.Id)" @key="ev.Id" id="ev-@ev.Id">
+                    <tr class="im-enter @FlashClass?.Invoke(ev.Id) @(ev.IsWithdrawn ? "im-ev-withdrawn" : "")" style="@FlashStyle?.Invoke(ev.Id)" @key="ev.Id" id="ev-@ev.Id">
                         <td>
                             <div class="d-flex align-items-center gap-2">
                                 @if (IsImageEvidence(ev))
@@ -175,7 +207,16 @@
                                     {
                                         <span class="im-badge im-b-warn ms-1" title="@EvidenceRisk.Sentence(ev.OriginalFileName, ev.ContentType)"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span> Can run</span>
                                     }
+                                    @if (ev.IsWithdrawn)
+                                    {
+                                        <span class="im-badge im-b-neutral ms-1"><span class="bi bi-slash-circle" aria-hidden="true"></span> Withdrawn</span>
+                                    }
                                     <br /><small class="text-muted">@ev.Description</small>
+                                    @if (ev.IsWithdrawn)
+                                    {
+                                        @* CAP-21: struck through, with who withdrew it, when and why. *@
+                                        <div class="small im-ev-withdrawn-why">Withdrawn by @Users.DisplayFor(ev.WithdrawnBy) · @TimeDisp.Long(ev.WithdrawnAtUtc!.Value): @ev.WithdrawnReason</div>
+                                    }
                                     @{
                                         var citedBy = Citations.Count(x => x.EvidenceId == ev.Id && _currentEntries.Contains(x.TimelineEntryId));   // BUG-443
                                         var inBrief = BriefText?.Contains($"evidence:{ev.Id}", StringComparison.OrdinalIgnoreCase) == true;   // INV-33
@@ -228,7 +269,7 @@
                                     <a class="btn btn-sm btn-link" href="evidence/@ev.Id/safe" target="_blank"
                                        title="In a zip with the password &quot;infected&quot;">As zip</a>
                                 }
-                                @if (CanEdit)
+                                @if (CanEdit && !ev.IsWithdrawn)
                                 {
                                     <button type="button" class="btn btn-sm btn-link" @onclick="() => ToggleTask(ev.Id)"
                                             title="Start a task about this file"><span class="bi bi-plus-lg" aria-hidden="true"></span> Task</button>
@@ -384,6 +425,7 @@
         Edits.Track(this, "the evidence description you're writing", () => !string.IsNullOrWhiteSpace(_evDesc)
             || _collAt is not null || !string.IsNullOrWhiteSpace(_collFrom) || !string.IsNullOrWhiteSpace(_collBy), Region);
         Edits.Track(this, "the transfer you're recording", () => TransferDirty, Region);
+        Edits.Track(this, "the evidence package you're preparing", () => PackageDirty, Region);   // CAP-12
         // PROD-56: leaving mid-way through a large upload stops it, so it asks first.
         Edits.Track(this, "the upload in progress", () => _parts is not null, Region);
     }
@@ -891,6 +933,158 @@
         "downloaded" => "bi-download",
         "viewed" => "bi-eye",
         "transferred" => "bi-arrow-left-right",
+        "withdrawn" => "bi-slash-circle",   // CAP-21
         _ => "bi-dot"
+    };
+
+    // ---- CAP-12: package evidence for hand-over ----
+    // Pick the files (every file that stands, by default) and name the recipient, method and purpose once. Preparing it
+    // checks everything and returns a ticket; the download is a plain link to that ticket, opened in a new tab (so nothing
+    // picked or typed goes in a URL, and a failed download doesn't take the case page with it). Custody and the audit
+    // trail are written when the download finishes.
+    private bool _pkgOpen, _pkgBusy;
+    private readonly HashSet<Guid> _pkgPicked = [];
+    private string? _pkgTo, _pkgHow, _pkgWhy, _pkgError;
+    private EvidencePackageStaged? _pkgReady;
+
+    private bool PackageDirty => _pkgOpen && _pkgReady is null
+        && (!string.IsNullOrWhiteSpace(_pkgTo) || !string.IsNullOrWhiteSpace(_pkgHow) || !string.IsNullOrWhiteSpace(_pkgWhy));
+
+    private IEnumerable<Evidence> Packable => EvidenceItems.Where(e => !e.IsWithdrawn).OrderBy(e => e.CreatedAtUtc);
+
+    private void StartPackage()
+    {
+        if (_pkgOpen)
+        {
+            // C7: closing it with a hand-over typed is refused rather than losing what's typed.
+            if (PackageDirty) { Toasts.Info("Finish or cancel the package you're preparing first."); return; }
+            _pkgOpen = false;
+            return;
+        }
+        _pkgPicked.Clear();
+        foreach (var e in Packable) _pkgPicked.Add(e.Id);
+        (_pkgTo, _pkgHow, _pkgWhy, _pkgError, _pkgReady, _pkgOpen) = (null, null, null, null, null, true);
+    }
+
+    private void CancelPackage() => (_pkgOpen, _pkgReady, _pkgError) = (false, null, null);
+
+    private void TogglePicked(Guid id)
+    {
+        if (!_pkgPicked.Add(id)) _pkgPicked.Remove(id);
+        _pkgReady = null;   // a different pick is a different package
+    }
+
+    private void PickAll(bool all)
+    {
+        _pkgPicked.Clear();
+        if (all) foreach (var e in Packable) _pkgPicked.Add(e.Id);
+        _pkgReady = null;
+    }
+
+    private async Task PreparePackage()
+    {
+        if (_pkgBusy) return;   // C8
+        _pkgBusy = true;
+        _pkgError = null;
+        try
+        {
+            var picked = Packable.Where(e => _pkgPicked.Contains(e.Id)).Select(e => e.Id).ToList();
+            var ready = await Cases.StageEvidencePackageAsync(CaseId, picked, _pkgTo ?? "", _pkgHow, _pkgWhy ?? "");
+            if (_disposed) return;   // C5
+            _pkgReady = ready;
+        }
+        catch (Exception ex)
+        {
+            _pkgError = UserFacingError.Describe(ex, Logger, "preparing an evidence package", "Couldn't prepare the package. Try again.");
+        }
+        finally { _pkgBusy = false; }
+    }
+
+    // The download has been started (in its own tab): the form closes; what's recorded arrives with the next refresh.
+    private void PackageStarted()
+    {
+        Toasts.Info("The package is downloading. When it has finished, each file's chain of custody records the transfer.");
+        (_pkgOpen, _pkgReady, _pkgTo, _pkgHow, _pkgWhy) = (false, null, null, null, null);
+        foreach (var id in _custodyOpen.ToList()) _ = LoadCustodyLater(id);
+    }
+
+    // The custody list of an open row, read again once the download has had a moment to finish.
+    private async Task LoadCustodyLater(Guid id)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        if (_disposed) return;   // C5
+        await InvokeAsync(async () =>
+        {
+            if (_disposed || !_custodyOpen.Contains(id)) return;
+            await LoadCustody(id);
+            StateHasChanged();
+        });
+    }
+
+    private RenderFragment PackageForm() => __builder =>
+    {
+        var picked = Packable.Where(e => _pkgPicked.Contains(e.Id)).ToList();
+        var bytes = picked.Sum(e => e.SizeBytes);
+        <div class="card mb-3" role="region" aria-labelledby="pkg-title">
+            <div class="card-body">
+                <div class="small fw-semibold mb-1" id="pkg-title">Package evidence for hand-over</div>
+                <div class="small text-muted mb-2">
+                    One zip with the password “@EvidenceRisk.ZipPassword”, holding the files you pick and a MANIFEST.txt (the case, each file's
+                    SHA-256, size, collection and chain of custody so far). Once the download has finished, each file's chain of custody
+                    records the transfer and the audit trail records the package with its SHA-256. Up to @EvidencePackage.MaxFiles files and
+                    @EvidenceRoom.Size(Evidence.Limits.MaxUploadBytes) in all. Withdrawn files can't be packaged.
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2 small mb-1">
+                    <span>@picked.Count of @Packable.Count() files · @FormatSize(bytes)</span>
+                    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => PickAll(true)" disabled="@_pkgBusy">All</button>
+                    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => PickAll(false)" disabled="@_pkgBusy">None</button>
+                </div>
+                <div class="im-pkg-files mb-2" role="group" aria-label="Files to package">
+                    @foreach (var e in Packable)
+                    {
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="pkg-@e.Id" checked="@_pkgPicked.Contains(e.Id)" disabled="@_pkgBusy"
+                                   @onchange="() => TogglePicked(e.Id)" />
+                            <label class="form-check-label small" for="pkg-@e.Id">@e.OriginalFileName <span class="text-muted">· @FormatSize(e.SizeBytes)</span></label>
+                        </div>
+                    }
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0" for="pkg-to">Recipient</label>
+                        <input id="pkg-to" class="form-control form-control-sm" maxlength="@EvidenceHandOver.MaxRecipientLength" @bind="_pkgTo" @bind:event="oninput"
+                               @bind:after="() => _pkgReady = null" disabled="@_pkgBusy" placeholder="e.g. Outside counsel (Smith LLP)" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0" for="pkg-how">Method <span class="text-muted">(optional)</span></label>
+                        <input id="pkg-how" class="form-control form-control-sm" maxlength="@EvidenceHandOver.MaxMethodLength" @bind="_pkgHow" @bind:event="oninput"
+                               @bind:after="() => _pkgReady = null" disabled="@_pkgBusy" placeholder="e.g. Encrypted SFTP" />
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small mb-0" for="pkg-why">Purpose</label>
+                        <input id="pkg-why" class="form-control form-control-sm" maxlength="@EvidenceHandOver.MaxPurposeLength" @bind="_pkgWhy" @bind:event="oninput"
+                               @bind:after="() => _pkgReady = null" disabled="@_pkgBusy" placeholder="e.g. Forensic analysis under engagement letter" />
+                    </div>
+                </div>
+                @if (_pkgError is not null) { <div class="text-danger small mt-2" role="alert">@_pkgError</div> }
+                <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
+                    @if (_pkgReady is { } ready)
+                    {
+                        <a class="btn btn-sm btn-primary" href="evidence/package/@ready.Ticket" target="_blank" rel="noopener" @onclick="PackageStarted">
+                            <span class="bi bi-download" aria-hidden="true"></span> Download the package
+                        </a>
+                        <span class="small text-muted" role="status">Ready: @IncidentManager.Application.Common.Plural.Of(ready.Files, "file", "files"), @FormatSize(ready.Bytes). The link works once, until @TimeDisp.Short(ready.ExpiresAtUtc).</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="PreparePackage" disabled="@(_pkgBusy || picked.Count == 0)">
+                            @if (_pkgBusy) { <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> }
+                            Prepare the package
+                        </button>
+                    }
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelPackage">Cancel</button>
+                </div>
+            </div>
+        </div>
     };
 }

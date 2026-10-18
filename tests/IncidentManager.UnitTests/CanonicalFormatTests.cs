@@ -113,6 +113,33 @@ public class CanonicalFormatTests
     }
 
     [Fact]
+    public void Format_5_covers_an_evidence_withdrawal_and_a_file_that_stands_keeps_its_hash(/* CAP-21 */)
+    {
+        var ev = new IncidentManager.Domain.Entities.Evidence
+        {
+            CaseId = CaseId, OriginalFileName = "a.csv", Sha256 = new string('a', 64), CreatedBy = "a1", CreatedAtUtc = DateTimeOffset.UnixEpoch,
+        };
+        var v4 = Canonical.V4Prefix + _hasher.Hash(Canonical.InFormat(4, ev.BuildCanonicalContent));
+        Canonical.InFormat(5, ev.BuildCanonicalContent).Should().Be(Canonical.InFormat(4, ev.BuildCanonicalContent),
+            "a file that stands builds what format 4 built, so its hash doesn't change");
+        _hasher.RowHashMatches(ev, v4).Should().BeTrue();
+
+        ev.Withdraw("Filed on the wrong case", "a2", DateTimeOffset.UnixEpoch.AddDays(1));
+        Canonical.Covers(4, ev.BuildCanonicalContent).Should().BeFalse("a format-4 hash can't show a withdrawal");
+        foreach (var change in new Action<IncidentManager.Domain.Entities.Evidence>[]
+                 {
+                     e => e.WithdrawnAtUtc = DateTimeOffset.UnixEpoch.AddDays(2), e => e.WithdrawnBy = "mallory",
+                     e => e.WithdrawnReason = "nothing to see", e => e.WithdrawnAtUtc = null,
+                 })
+        {
+            var v5 = _hasher.ComputeRowHash(ev);
+            Canonical.FormatOf(v5).Should().Be(5);
+            change(ev);
+            _hasher.RowHashMatches(ev, v5).Should().BeFalse();
+        }
+    }
+
+    [Fact]
     public void Format_3_covers_an_indicators_marking_and_pin_and_earlier_formats_dont(/* BUG-316 */)
     {
         var e = Entity("seen beaconing", "EDR");
@@ -192,7 +219,7 @@ public class CanonicalFormatTests
         ["EntityRelationship/Bare"] = ["780b16ddde260c64200dacb2e5e588b6277bf7b1021b84ad1b9c1bac2b3a2d48", "780b16ddde260c64200dacb2e5e588b6277bf7b1021b84ad1b9c1bac2b3a2d48", "780b16ddde260c64200dacb2e5e588b6277bf7b1021b84ad1b9c1bac2b3a2d48", "780b16ddde260c64200dacb2e5e588b6277bf7b1021b84ad1b9c1bac2b3a2d48", "780b16ddde260c64200dacb2e5e588b6277bf7b1021b84ad1b9c1bac2b3a2d48"],
         ["EntityVerdictChange/Full"] = ["0bde333ed91d54663097a3a94a2dcdd993f8f200d8990abb756d19af140719d1", "cf47f4b36ed273cea6e988e0819e1c539ea9e453a597a93fe1a29c84eafd17f6", "cf47f4b36ed273cea6e988e0819e1c539ea9e453a597a93fe1a29c84eafd17f6", "cf47f4b36ed273cea6e988e0819e1c539ea9e453a597a93fe1a29c84eafd17f6", "cf47f4b36ed273cea6e988e0819e1c539ea9e453a597a93fe1a29c84eafd17f6"],
         ["EntityVerdictChange/Bare"] = ["983359a5f0f14c398cb3cdd428c241639a7bae971d0f262f616ebfd02f425d68", "983359a5f0f14c398cb3cdd428c241639a7bae971d0f262f616ebfd02f425d68", "983359a5f0f14c398cb3cdd428c241639a7bae971d0f262f616ebfd02f425d68", "983359a5f0f14c398cb3cdd428c241639a7bae971d0f262f616ebfd02f425d68", "983359a5f0f14c398cb3cdd428c241639a7bae971d0f262f616ebfd02f425d68"],
-        ["Evidence/Full"] = ["ec0ee009f4fe9872a9bc1c47a6b2800c26d095360c1a43b7dc9f16c71e5eee2b", "2c221e5c53985c801934f5b66ac07061a110629c60068dc5f76ccb801b8fb65a", "956c69ae70a3b1b5a7b9b7eda92e9fd58649500ba20e9a5241a34ce09e0ec652", "956c69ae70a3b1b5a7b9b7eda92e9fd58649500ba20e9a5241a34ce09e0ec652", "485e1b996201f1580a84857cb6fb43e083facf6b225e9f11c9916d4cc4ae51b8"],
+        ["Evidence/Full"] = ["ec0ee009f4fe9872a9bc1c47a6b2800c26d095360c1a43b7dc9f16c71e5eee2b", "2c221e5c53985c801934f5b66ac07061a110629c60068dc5f76ccb801b8fb65a", "956c69ae70a3b1b5a7b9b7eda92e9fd58649500ba20e9a5241a34ce09e0ec652", "956c69ae70a3b1b5a7b9b7eda92e9fd58649500ba20e9a5241a34ce09e0ec652", "09fe86edf3cc5818124ed81c5fe94fa6ef6427f08fbe21207d898fa37716e460"],
         ["Evidence/Bare"] = ["9fb3dd8ee354a06ab3884c131b419ae3634803bb9a727861b19bf8617ebd14fc", "9fb3dd8ee354a06ab3884c131b419ae3634803bb9a727861b19bf8617ebd14fc", "b89e674485d5b11b5ec1756e94b74acd47a739c4efcc0ca14ae00abdd110c2aa", "b89e674485d5b11b5ec1756e94b74acd47a739c4efcc0ca14ae00abdd110c2aa", "b89e674485d5b11b5ec1756e94b74acd47a739c4efcc0ca14ae00abdd110c2aa"],
         ["EvidenceCitation/Full"] = ["de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6"],
         ["EvidenceCitation/Bare"] = ["de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6", "de416220d4408791e5ccc8a9583fd9f3ac9a4e872de19660057dba7f92b224b6"],

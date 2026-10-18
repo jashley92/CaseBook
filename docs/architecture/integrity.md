@@ -31,9 +31,11 @@ whether a hash in an older format falls short of a record (it holds a value that
 change; `CanonicalCoverageTests` changes every stored value of every record and requires the hash to change, or the
 value to be listed with the reason it's left out.
 
-**Canonical format 5 (CAP-07, CAP-08).** Format 4 plus two sets of values, each folded in only when set:
+**Canonical format 5 (CAP-07, CAP-08, CAP-21).** Format 4 plus three sets of values, each folded in only when set:
 - how a regulator was notified: a notice's method, reference, who gave it and the evidence file holding it;
-- how evidence was collected: a file's collected-at, collected-from and collected-by.
+- how evidence was collected: a file's collected-at, collected-from and collected-by;
+- an evidence withdrawal: a file's withdrawn-at, withdrawn-by and the reason (each its own part, so a reason planted
+  without a time is caught too).
 
 New hashes are stored as `v5:`. A record without these values builds exactly what format 4 built, so nothing is re-hashed
 and the upgrade has nothing to do for it (the marker stays `4`). No hash older than format 5 can cover them, and no trail

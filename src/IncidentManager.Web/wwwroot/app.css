@@ -2901,6 +2901,15 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-evp-collect dd { margin: 0; overflow-wrap: anywhere; }
 .im-evp-open { font-size: inherit; color: var(--im-text); text-decoration: none; }
 .im-evp-open:hover { color: var(--im-accent-text); text-decoration: underline; }
+/* CAP-21: a withdrawn file: struck through and muted, as a retracted entry (shown only with the Withdrawn chip). */
+.im-ev-withdrawn > td { color: var(--bs-secondary-color); }
+.im-ev-withdrawn .im-evp-open, .im-ev-withdrawn code, .im-evp-withdrawn-name { text-decoration: line-through; color: var(--bs-secondary-color); }
+.im-ev-withdrawn-why { overflow-wrap: anywhere; }
+.tl-ms-withdrawn .tl-ms-title { color: var(--bs-secondary-color); }
+.tl-cite-withdrawn { text-decoration: line-through; opacity: .75; }
+/* CAP-12: the package form's file list scrolls in its own box when long. */
+.im-pkg-files { max-height: 14rem; overflow-y: auto; border: 1px solid var(--bs-border-color); border-radius: .375rem; padding: .35rem .6rem; }
+.im-pkg-files label { overflow-wrap: anywhere; }
 
 /* RD-07 (Casefile) the composer's five modes. */
 .im-modes { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: var(--im-radius); background: var(--im-surface-2); border: 1px solid var(--im-border); }

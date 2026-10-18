@@ -277,15 +277,24 @@ Below the list, relationships are added and edited (type, description and direct
    when evidence encryption is on. Optionally say when, where from and by whom it was collected; a drop takes those
    too (not the description).
 2. **Filter and sort** (CAP-25): a filter box (name, description, hash prefix), chips (Images, Text, Can run, Cited,
-   Not cited) and sortable File, Size, Collected and Uploaded headers. "*n* of *m*" and **Show all** appear while
-   anything is hidden. At a narrow width the table scrolls in its own box.
+   Not cited, and **Withdrawn (*n*)** when a file has been withdrawn) and sortable File, Size, Collected and Uploaded
+   headers. "*n* of *m*" and **Show all** appear while anything is hidden. At a narrow width the table scrolls in its
+   own box. Withdrawn files (CAP-21) are hidden until the Withdrawn chip is on; then they're listed struck through,
+   with who withdrew them, when and why.
+   **Package evidence…** (CAP-12, with `EditCases`) opens a form: every file that stands is ticked (*All* / *None*),
+   with the count and size, and the recipient, method (optional) and purpose are named once. *Prepare the package*
+   checks it all (at most 500 files and the largest-file limit in all) and offers *Download the package*, a link that
+   works once, for 10 minutes, and opens in a new tab: one zip with the password `infected` holding the files and a
+   `MANIFEST.txt`. When it has finished downloading, each file's chain of custody records the transfer and the audit
+   trail records the package.
 3. **An evidence row**: description, size, SHA-256, when, where from and by whom it was collected, who uploaded it and when, and what cites it ("Cited by 1
    timeline entry and the brief"). **Custody** shows the chain of custody (uploaded, viewed, downloaded,
-   transferred) and records a transfer; **Download** is itself a custody event, and **As zip** gives the file in a
+   transferred, withdrawn) and records a transfer; **Download** is itself a custody event, and **As zip** gives the file in a
    zip with the password `infected`. A file that can run (a program, script, shortcut, disk image, Office file with
    macros) is marked **Can run** and offers **Download safely** (the zip) first, with the plain file behind a
    confirmation. **Task** raises a task about the file; **Hash as IOC** adds its SHA-256 to IOCs & entities (unjudged,
-   or says it's already there). Evidence can't be deleted. The same file twice in one case is refused; one already in
+   or says it's already there). Evidence can't be deleted; a file filed on the wrong case is **withdrawn** from its
+   panel instead (below). The same file twice in one case is refused (a withdrawn copy doesn't count); one already in
    another case you can see says where. A large upload that stopped part-way is listed under **Unfinished uploads**:
    pick the file again to carry on, or discard it.
 
@@ -309,7 +318,12 @@ An evidence file name, a cited-file chip or a brief citation opens the **evidenc
 preview on request (images, or the first lines of a text file; looking records a "Viewed" custody event), the full
 SHA-256, its **Collection** (when, where from and by whom it was collected, and how long after that it was uploaded,
 with *Record how it was collected* to set or correct them: an audited change), the chain of custody, what cites it,
-tasks about it, and *Download* (a custody event), *Task about it* and *Record a transfer…*.
+tasks about it, and *Download* (a custody event), *Task about it*, *Record a transfer…* and **Withdraw…** (CAP-21,
+`EditCases`). Withdrawing asks why (required) and says what follows: the file leaves this case's report, the gates'
+evidence count and citing, and can't be packaged; the file, its SHA-256 and its chain of custody stay, it can still be
+downloaded, and it can't be undone. A withdrawn file's panel says who withdrew it, when and why; its collection can't
+be changed. A file a regulator's notice names, or one shown as a current timeline entry's screenshot, can't be
+withdrawn until that changes.
 
 ## Tasks tab
 

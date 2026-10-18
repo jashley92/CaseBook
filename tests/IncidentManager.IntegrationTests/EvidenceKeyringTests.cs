@@ -736,6 +736,47 @@ public sealed class EvidenceKeyringTests : IDisposable
     }
 
     [Fact]
+    public async Task A_malware_stand_in_in_an_evidence_package_arrives_whole_and_is_never_readable_on_disk(/* CAP-12 */)
+    {
+        // The EICAR test file, assembled here so this source file never holds it whole (as the safe-download test above).
+        var eicar = System.Text.Encoding.ASCII.GetBytes(string.Concat(@"X5O!P%@AP[4\PZX54(P^)7CC)7}$", "EICAR-STANDARD-ANTIVIRUS", "-TEST-FILE!$H+H*"));
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var ring = Ring(On(server, RecoveryCer(recovery)));
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+        await using (var ctx = _database.NewContext()) await DevDataSeeder.SeedAsync(ctx, _clock);
+        Guid caseId;
+        await using (var ctx = _database.NewContext()) caseId = (await ctx.Cases.FirstAsync()).Id;
+        var user = new TestCurrentUser { RoleSet = [AppRole.IncidentCommander] };
+        var limits = new TestOptionsMonitor<EvidenceStorageOptions>(new EvidenceStorageOptions { MinFreeSpaceGB = 0 });
+        var tickets = new EvidencePackageTickets();
+        var svc = new EvidenceService(_database.Factory(), store, user, _clock, _audit, limits, packages: tickets);
+        Guid id;
+        await using (var s = new MemoryStream(eicar)) id = (await svc.UploadAsync(caseId, "eicar.com", "application/octet-stream", s, null, eicar.Length)).Id;
+        var cases = new IncidentManager.Application.Cases.CaseService(_database.Factory(), user, _clock,
+            new CaseNumberGenerator(_database.NewContext()), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
+            new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(), evidenceLimits: limits, evidencePackages: tickets);
+
+        var staged = await cases.StageEvidencePackageAsync(caseId, [id], "Malware lab", null, "Reverse engineering");
+        var package = await svc.OpenPackageAsync(staged.Ticket);
+        using var zipped = new MemoryStream();
+        await IncidentManager.Web.Security.EvidencePackageWriter.WriteAsync(package, svc.ManifestOf(package), svc.OpenPackagedFileAsync, zipped,
+            (sha, manifestSha) => svc.RecordPackageAsync(package, sha, manifestSha), default);
+
+        Directory.GetFiles(Evidence, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith("evidence-key.json", StringComparison.Ordinal))
+            .Should().AllSatisfy(f => File.ReadAllBytes(f).AsSpan().IndexOf("EICAR"u8).Should().Be(-1, "the store stays encrypted, and no plain copy is made"));
+        zipped.ToArray().AsSpan().IndexOf("EICAR"u8).Should().Be(-1, "the package doesn't carry the sample readable either");
+        zipped.Position = 0;
+        using var reader = new ICSharpCode.SharpZipLib.Zip.ZipFile(zipped) { Password = EvidenceRisk.ZipPassword };
+        using var unzipped = new MemoryStream();
+        using (var entry = reader.GetInputStream(reader.GetEntry("eicar.com"))) await entry.CopyToAsync(unzipped);
+        unzipped.ToArray().Should().Equal(eicar, "the recipient gets the sample exactly as recorded");
+        reader.GetEntry(EvidencePackage.ManifestName).Should().NotBeNull();
+        _audit.Entries.Should().ContainSingle(e => e.StartsWith("EvidenceTransferred EvidencePackage", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task An_encrypted_upload_resumes_after_a_restart_and_reads_back_whole(/* PROD-59 */)
     {
         var server = Installed("CaseBook evidence server");

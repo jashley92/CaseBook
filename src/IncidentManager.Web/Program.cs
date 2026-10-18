@@ -655,6 +655,7 @@ app.MapGet("/agenda/feed.ics", async (string? token, IncidentManager.Application
 IncidentManager.Web.Security.EvidenceUploadEndpoints.MapEvidenceUploads(app);   // PROD-56: large uploads in parts
 
 IncidentManager.Web.Security.EvidenceDownloadEndpoints.MapEvidenceDownloads(app);   // the file, and PROD-58's safe zip
+IncidentManager.Web.Security.EvidencePackageEndpoints.MapEvidencePackages(app);   // CAP-12: many files in one zip, for hand-over
 
 // --- Inline evidence image (U-40): renders a linked screenshot as a timeline thumbnail ---
 // Same need-to-know enforcement as the download (OpenAsync scopes to ForUser cases). Restricted to

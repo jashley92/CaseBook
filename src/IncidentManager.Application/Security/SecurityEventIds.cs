@@ -34,6 +34,7 @@ public static class SecurityEventIds
     public const int RestrictedCaseAccessed = 5305; // a read of a restricted case (elevated severity)
     public const int DownloadRateLimited = 5306; // a download/export request refused by the per-user rate limit (F-13)
     public const int EvidenceExportedOffline = 5307; // evidence written out decrypted by casebook-keytool export (PROD-59)
+    public const int EvidencePackaged = 5308;        // CAP-12: a case's evidence files downloaded as one package for hand-over
 
     // 54xx — Admin / configuration
     public const int RoleChanged = 5401;
@@ -59,6 +60,7 @@ public static class SecurityEventIds
     public const int CaseReported = 5513;            // marked reported to regulators, or one regulator's notice recorded
     public const int ReportApproved = 5514;
     public const int ImportApplied = 5515;           // a case-import document applied to a case (PROD-31/33), by a reviewer
+    public const int EvidenceWithdrawn = 5516;       // CAP-21: an evidence file taken off the record (it leaves the report and the gates)
 
     // 59xx — Diagnostics
     public const int SiemTest = 5901; // an admin's "Send test event" from Diagnostics, to confirm the collector receives the stream

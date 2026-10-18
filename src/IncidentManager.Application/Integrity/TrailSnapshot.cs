@@ -151,7 +151,10 @@ public sealed class TrailSnapshot
         [typeof(JurisdictionNotice)] = [nameof(JurisdictionNotice.Method), nameof(JurisdictionNotice.Reference),
             nameof(JurisdictionNotice.NotifiedBy), nameof(JurisdictionNotice.EvidenceId)],
         [typeof(Domain.Entities.Evidence)] = [nameof(Domain.Entities.Evidence.CollectedAtUtc), nameof(Domain.Entities.Evidence.CollectedFrom),
-            nameof(Domain.Entities.Evidence.CollectedBy)],
+            nameof(Domain.Entities.Evidence.CollectedBy),
+            // CAP-21: a withdrawal
+            nameof(Domain.Entities.Evidence.WithdrawnAtUtc), nameof(Domain.Entities.Evidence.WithdrawnBy),
+            nameof(Domain.Entities.Evidence.WithdrawnReason)],
     };
 
     /// <summary>The trail of each of <paramref name="ids"/> of <paramref name="entityType"/>, read in batches.</summary>

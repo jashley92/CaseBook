@@ -22,6 +22,10 @@ public static class SecurityEvents
         },
         AccessType.EvidenceDownload => Artifact(SecurityEventIds.EvidenceDownloaded, "EvidenceDownload", wasRestricted, actor, actorUpn, caseNumber, "Evidence", targetId, label),
         AccessType.ReportDownload => Artifact(SecurityEventIds.ReportDownloaded, "ReportDownload", wasRestricted, actor, actorUpn, caseNumber, "Report", targetId, label),
+        // CAP-12: many evidence files leaving at once is a Warning (High on a restricted case), as bulk decrypted evidence
+        // from the keytool is (5307). The label is the count and size; the recipient and purpose stay in the audit trail.
+        AccessType.EvidencePackage => Artifact(SecurityEventIds.EvidencePackaged, "EvidencePackaged", wasRestricted, actor, actorUpn,
+            caseNumber, "EvidencePackage", targetId, label) with { Severity = wasRestricted ? SecuritySeverity.High : SecuritySeverity.Warning },
         _ => Artifact(SecurityEventIds.DataExported, "Export", wasRestricted, actor, actorUpn, caseNumber, "Export", targetId, label)
     };
 
@@ -382,6 +386,15 @@ public static class SecurityEvents
         Lifecycle(SecurityEventIds.ImportApplied, "ImportApplied", SecuritySeverity.Info, c, actor, actorUpn,
             createdCase ? "createdCase=true" : null,
             pendingImportId is null ? "Case" : "PendingImport", pendingImportId?.ToString());
+
+    /// <summary>
+    /// CAP-21: an evidence file was withdrawn from a case; the target is the file. Warning: it changes what the case's
+    /// report and gates count, so a withdrawal before a report goes out is what a SOC rule watches for. Ids only: the
+    /// reason and the file's name stay in the audit trail.
+    /// </summary>
+    public static SecurityEvent EvidenceWithdrawn(CaseSubject c, Guid evidenceId, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.EvidenceWithdrawn, "EvidenceWithdrawn", SecuritySeverity.Warning, c, actor, actorUpn, null,
+            "Evidence", evidenceId.ToString());
 
     private static string Rung(Domain.Enums.Classification? k) => k?.ToString() ?? "ComplexEvent";
 

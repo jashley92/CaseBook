@@ -99,6 +99,22 @@ public class EvidenceListViewTests
     }
 
     [Fact]
+    public void A_withdrawn_file_is_listed_only_with_the_Withdrawn_chip_and_the_other_chips_still_apply(/* CAP-21 */)
+    {
+        var gone = File("wrong-case.png", "image/png", 10, 5, sha: "dd00dd");
+        gone.Withdraw("Filed on the wrong case", "a1", T0.AddHours(6));
+        Evidence[] items = [.. All, gone];
+        IReadOnlyList<string> Of(params EvidenceChip[] chips) =>
+            EvidenceListView.Apply(items, null, chips.ToHashSet(), Cited, EvidenceSort.Uploaded, true).Select(e => e.OriginalFileName).ToList();
+
+        Of().Should().NotContain("wrong-case.png", "hidden by default, as a retracted entry is");
+        Of(EvidenceChip.Withdrawn).Should().StartWith("wrong-case.png").And.HaveCount(5, "the chip adds the withdrawn files to the list");
+        Of(EvidenceChip.Withdrawn, EvidenceChip.Images).Should().Equal("wrong-case.png", "phish-screenshot.png");
+        EvidenceListView.Is(gone, EvidenceChip.Withdrawn, Cited).Should().BeTrue();
+        EvidenceListView.Is(Shot, EvidenceChip.Withdrawn, Cited).Should().BeFalse();
+    }
+
+    [Fact]
     public void The_collection_reads_as_a_sentence_and_a_line()
     {
         EvidenceCollection.Source(" WKS-0142 ", " J. Rivera ").Should().Be("from WKS-0142 by J. Rivera");

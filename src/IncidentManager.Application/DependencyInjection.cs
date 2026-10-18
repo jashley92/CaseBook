@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddScoped<ApiTokens.ApiTokenService>();   // PROD-34: API-token auth (personal + system tokens)
         services.AddScoped<EvidenceService>();
         services.AddSingleton<EvidenceUploadSessions>();   // PROD-56: large uploads in progress (one instance)
+        services.AddSingleton<EvidencePackageTickets>();   // CAP-12: evidence packages prepared and waiting to download
         services.AddScoped<DashboardService>();
         services.AddScoped<Work.MyWorkService>();
         services.AddScoped<Work.DeskService>();   // RD-16

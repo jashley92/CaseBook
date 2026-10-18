@@ -1134,6 +1134,10 @@ public class Case : AuditableEntity, IHashableEntity
         var desired = evidenceIds.Distinct().ToHashSet();
         if (desired.Any(id => Evidence.All(e => e.Id != id)))
             throw new InvalidOperationException("Only evidence on this case can be cited.");
+        // CAP-21: a withdrawn file can't be newly cited; a citation made before it was withdrawn stays (and can be removed).
+        if (desired.Any(id => Evidence.Any(e => e.Id == id && e.IsWithdrawn)
+                              && !Citations.Any(x => x.TimelineEntryId == entryId && x.EvidenceId == id)))
+            throw new InvalidOperationException("A withdrawn file can't be cited.");
 
         Citations.RemoveAll(x => x.TimelineEntryId == entryId && !desired.Contains(x.EvidenceId));
         foreach (var id in desired.Where(id => !Citations.Any(x => x.TimelineEntryId == entryId && x.EvidenceId == id)))

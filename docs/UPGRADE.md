@@ -212,6 +212,19 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
+- **An evidence file filed on the wrong case can be withdrawn, with a reason (CAP-21).** One migration
+  (`EvidenceWithdrawal`) adds three nullable columns to `Evidence` (`WithdrawnAtUtc`, `WithdrawnBy`, `WithdrawnReason`);
+  the app applies it on first start, and DBAs applying the schema by hand re-run `deploy/sql/casebook-schema-sqlserver.sql`.
+  No existing row changes or re-hashes: the withdrawal is in the row hash (format 5) only when set. Withdrawn files stay
+  (bytes, hash, custody, downloads) but leave the report, the gates' evidence count, citing and packages; the "evidence
+  is immutable" wording now means the bytes. **Behavior change:** a withdrawn copy no longer blocks uploading the same
+  file to the same case again. New SIEM event **5516** (Warning); add it to any rule that watches 5506-5515.
+- **A case's evidence can be packaged for hand-over (CAP-12).** *Package evidence…* on the Evidence tab downloads the
+  files picked as one zip with the password `infected` and a `MANIFEST.txt`, from `GET /evidence/package/{ticket}`
+  (`EditCases`, the `downloads` rate limit). Each file gets a "Transferred" custody event and the audit trail one entry
+  with the package's SHA-256, written once the package has been sent. No migration or setting: a package is capped at
+  500 files and at `Evidence:MaxUploadMB` in all. New SIEM event **5308** (Warning, High on a restricted case) and a new
+  access-log type, *Evidence package*; a SIEM rule for bulk export may want both 5307 and 5308.
 - **The chat webhook URL and the SIEM webhook token can be entered in Administration (CAP-40).** One migration adds the
   `StoredSecrets` table (the app applies it on first start; DBAs applying the schema by hand, re-run
   `deploy/sql/casebook-schema-sqlserver.sql`). Nothing changes for an install that sets `Chat:Webhook:WebhookUrl` and

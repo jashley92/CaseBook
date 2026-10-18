@@ -232,7 +232,7 @@ Listed in [reference/known-issues.md](../reference/known-issues.md#security). In
 | Data | Protection |
 |---|---|
 | Case records | Need-to-know; row hashes and the audit chain; SQL Server TDE recommended at rest (not configured by CaseBook); optional ledger tables |
-| Evidence files | Outside the web root, random names, per-case folders, path-traversal checks, SHA-256 recorded and re-verifiable; downloads logged to custody, the access log and SIEM. Downloads and exports refuse a browser's passive load (`Sec-Fetch-Dest` image, script, style and the like), so only a person's request is recorded |
+| Evidence files | Outside the web root, random names, per-case folders, path-traversal checks, SHA-256 recorded and re-verifiable; downloads logged to custody, the access log and SIEM. Downloads and exports refuse a browser's passive load (`Sec-Fetch-Dest` image, script, style and the like), so only a person's request is recorded. An evidence package (CAP-12) needs `EditCases`, is fetched by a single-use ticket so nothing typed goes in the URL, and records its custody only once it has been sent in full |
 | Inline images | Served only if the bytes really are PNG, JPEG, GIF or WebP; SVG and mislabeled files refused |
 | Reports | SHA-256 recorded; downloads logged; TLP marking on every page; indicators defanged |
 | Exports | CSV cells starting with `= + - @`, tab or CR are neutralized against formula injection; exports are scoped by need-to-know and logged |

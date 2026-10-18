@@ -24,7 +24,9 @@ public enum MilestoneKind
     /// <summary>HR-06: the brief's working assessment changed: what the team believes, in sequence.</summary>
     Assessment,
     /// <summary>HR-07: when the activity began (the case's initial-activity time), the start of the story.</summary>
-    ActivityBegan
+    ActivityBegan,
+    /// <summary>CAP-21: an evidence file was withdrawn: its "Evidence added" milestone, in its place, with why.</summary>
+    EvidenceWithdrawn
 }
 
 /// <summary>
@@ -265,15 +267,22 @@ public static class CaseMilestones
             .Concat(c.Citations.Where(x => currentIds.Contains(x.TimelineEntryId)).Select(x => x.EvidenceId)).ToHashSet();
         // CAP-08: dated when it was collected, when that's recorded, and "recorded later" (at the upload) when the upload
         // was in a later minute; where from and by whom follow the description.
-        foreach (var ev in c.Evidence.Where(ev => !onEntries.Contains(ev.Id)))
+        // CAP-21: a withdrawn file's milestone stays in its place, as a retracted entry's stub does (BUG-413), and says it was
+        // withdrawn, by whom and why, whether or not an entry cites it (a citation no longer shows it).
+        foreach (var ev in c.Evidence.Where(ev => ev.IsWithdrawn || !onEntries.Contains(ev.Id)))
         {
             var collected = Evidence.EvidenceCollection.Source(ev) is { } source ? $"Collected {source}." : null;
             var detail = Blank(ev.Description) is { } d
                 ? collected is null ? d : $"{d}{(d.EndsWith('.') || d.EndsWith('?') || d.EndsWith('!') ? "" : ".")} {collected}"
                 : collected;
-            list.Add(new CaseMilestone($"ev:{ev.Id}", ev.CollectedOrUploadedAtUtc, MilestoneKind.EvidenceAdded,
-                $"Evidence added: {ev.OriginalFileName}", detail, ev.CreatedBy, "evidence",
-                RecordedAtUtc: ev.CollectedAtUtc is { } at ? Later(at, ev.CreatedAtUtc) : null));
+            var recorded = ev.CollectedAtUtc is { } at ? Later(at, ev.CreatedAtUtc) : null;
+            if (ev.IsWithdrawn)
+                list.Add(new CaseMilestone($"ev:{ev.Id}", ev.CollectedOrUploadedAtUtc, MilestoneKind.EvidenceWithdrawn,
+                    $"Evidence withdrawn: {ev.OriginalFileName} ({Common.TextFit.Cap(ev.WithdrawnReason?.Trim().TrimEnd('.'), 300)})",
+                    detail, ev.WithdrawnBy, "evidence", RecordedAtUtc: recorded));
+            else
+                list.Add(new CaseMilestone($"ev:{ev.Id}", ev.CollectedOrUploadedAtUtc, MilestoneKind.EvidenceAdded,
+                    $"Evidence added: {ev.OriginalFileName}", detail, ev.CreatedBy, "evidence", RecordedAtUtc: recorded));
         }
 
         foreach (var r in c.Reports.Where(r => r.IsFinal && r.ApprovedAtUtc is not null))

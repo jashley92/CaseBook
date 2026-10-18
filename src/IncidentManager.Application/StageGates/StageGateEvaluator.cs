@@ -93,7 +93,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         return new GateEvaluation(true, trigger, gate.Name, results, gate.CommentaryMinLength, facts);
     }
 
-    private async Task<GateCaseFacts> BuildFactsAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
+    internal async Task<GateCaseFacts> BuildFactsAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
     {
         // Scalar facts straight off the case row; collection facts as counts. AsNoTracking so a
         // concurrently-tracked, not-yet-saved mutation on the same context isn't reflected — the gate
@@ -126,9 +126,10 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         var entityCount = await db.CaseEntities.CountAsync(e => e.CaseId == caseId, ct);
         var maliciousCount = await db.CaseEntities
             .CountAsync(e => e.CaseId == caseId && e.Disposition == EntityDisposition.Malicious, ct);
-        var evidenceCount = await db.Evidence.CountAsync(e => e.CaseId == caseId, ct);
+        // CAP-21: a withdrawn file isn't the case's evidence any more, so it counts toward neither.
+        var evidenceCount = await db.Evidence.CountAsync(e => e.CaseId == caseId && e.WithdrawnAtUtc == null, ct);
         // HR-12: the facts shown beside the attestations.
-        var noCustody = await db.Evidence.CountAsync(e => e.CaseId == caseId && !e.CustodyEvents.Any(), ct);
+        var noCustody = await db.Evidence.CountAsync(e => e.CaseId == caseId && e.WithdrawnAtUtc == null && !e.CustodyEvents.Any(), ct);
         var unknown = await db.CaseEntities
             .CountAsync(e => e.CaseId == caseId && e.Disposition == EntityDisposition.Unknown, ct);
         // Only case reports count: the separate lessons-learned report is not the examiner-facing record.

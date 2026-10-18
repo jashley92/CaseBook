@@ -35,8 +35,9 @@ public static class Canonical
 
     /// <summary>
     /// CAP-07: starts a row hash over a format-5 canonical: format 4 plus how a regulator was notified (a notice's method,
-    /// reference, who gave it and the file holding it) and CAP-08's evidence collection (when, where from and by whom a
-    /// file was collected), each folded in only when set, so a record without them builds what
+    /// reference, who gave it and the file holding it), CAP-08's evidence collection (when, where from and by whom a
+    /// file was collected) and CAP-21's evidence withdrawal (when, by whom and why), each folded in only when set, so a
+    /// record without them builds what
     /// format 4 built and keeps its hash. No row written before format 5 can hold them, so there's nothing to upgrade.
     /// </summary>
     public const string V5Prefix = "v5:";
