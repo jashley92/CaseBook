@@ -112,7 +112,7 @@ happened"). Each part of a view is a component in `Pages/CaseTabs/`.
 
 | Tab | Component | Main actions |
 |---|---|---|
-| Briefing; Things › Impact, ATT&CK, Connections | `CaseOverviewTab` (its `Section` picks the part) | Briefing: brief on narrow screens, recent timeline, notification deadlines and *Mark reported*, next-gate readiness, case details, restriction. Impact: scope and impact. ATT&CK: techniques. Connections: related cases |
+| Briefing; Things › Impact, ATT&CK, Connections | `CaseOverviewTab` (its `Section` picks the part) | Briefing: brief on narrow screens, recent timeline, notification deadlines and *Mark reported*, next-gate readiness, case details, restriction. Impact: scope and impact. ATT&CK: techniques. Connections: related cases, and the outside parties (`CasePartiesSection`, CAP-34) |
 | Timeline | `CaseTimelineTab` | Lenses (including Working notes, which hosts `CaseNotesTab`), filters, the five-mode composer with follow-ups, edit, versions, cite evidence, raise task, correct time, screenshot paste |
 | IOCs & entities | `CaseEntitiesTab` | Add, paste, edit, remove; relationships; graph; also-in; related-case suggestions; defang view; STIX |
 | Evidence | `CaseEvidenceTab` | Upload, paste, drag and drop; custody; transfer; preview; raise task |

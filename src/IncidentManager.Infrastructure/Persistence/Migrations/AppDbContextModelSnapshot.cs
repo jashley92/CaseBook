@@ -1182,6 +1182,63 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("CaseOutcomes", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.CaseParty", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Contact")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("EngagedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ModifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(70)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("CaseParties", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTechnique", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3226,6 +3283,15 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.CaseParty", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("Parties")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTechnique", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)
@@ -3464,6 +3530,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Navigation("MaterialityChanges");
 
                     b.Navigation("Notes");
+
+                    b.Navigation("Parties");
 
                     b.Navigation("Reports");
 

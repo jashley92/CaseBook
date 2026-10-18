@@ -800,6 +800,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         CaseAssignment asg => string.IsNullOrWhiteSpace(asg.UserDisplayName) ? asg.UserId : asg.UserDisplayName,
         CaseTechnique tech => tech.TechniqueId,
         JurisdictionNotice n => $"Notice to {n.Jurisdiction}",
+        CaseParty p => p.Name,   // CAP-34
         ApiToken t => $"{t.Name} ({t.Kind})",   // REV-05
         _ => null
     };

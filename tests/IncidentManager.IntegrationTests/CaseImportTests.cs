@@ -158,7 +158,12 @@ public sealed class CaseImportTests : IDisposable
 
         var root = CaseImportSchema.Root();
         root["properties"]!["format"]!["const"]!.GetValue<string>().Should().Be(CaseImportJson.FormatTag);
-        root["properties"]!["schemaVersion"]!["const"]!.GetValue<int>().Should().Be(CaseImportJson.CurrentSchemaVersion);
+        // CAP-35: v1 documents are still read, so the schema takes 1 and the current version.
+        root["properties"]!["schemaVersion"]!["enum"]!.AsArray().Select(v => v!.GetValue<int>())
+            .Should().Equal(1, CaseImportJson.CurrentSchemaVersion);
+        SchemaEnum(root, "phaseChange", "phase").Should().BeEquivalentTo(Enum.GetNames<CasePhase>());
+        root["then"]!["properties"]!["target"]!["properties"]!["newCase"]!["properties"]!.AsObject().Select(p => p.Key)
+            .Should().BeEquivalentTo(CaseImportSchema.V2NewCaseFields(), "a v1 document may not carry the v2 fields");
     }
 
     [Fact]

@@ -1188,6 +1188,63 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("CaseOutcomes", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.CaseParty", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Contact")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("EngagedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("CaseParties", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTechnique", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3234,6 +3291,15 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.CaseParty", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("Parties")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTechnique", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)
@@ -3472,6 +3538,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Navigation("MaterialityChanges");
 
                     b.Navigation("Notes");
+
+                    b.Navigation("Parties");
 
                     b.Navigation("Reports");
 

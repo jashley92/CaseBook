@@ -69,3 +69,15 @@ public enum NoticeMethod
     Phone = 3,
     Other = 4
 }
+
+/// <summary>CAP-34: the part an outside party plays on a case. Stored as its number (R8: append only); read from text by
+/// name only (C16).</summary>
+public enum PartyRole
+{
+    Counsel = 0,
+    Forensics = 1,
+    Insurer = 2,
+    LawEnforcement = 3,
+    RegulatorContact = 4,
+    Other = 5
+}

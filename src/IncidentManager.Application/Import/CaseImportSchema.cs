@@ -28,17 +28,34 @@ public static class CaseImportSchema
         return new JsonObject
         {
             ["$schema"] = "https://json-schema.org/draft/2020-12/schema",
-            ["$id"] = "urn:casebook:schema:case-import:v1",
-            ["title"] = "CaseBook case import (v1)",
+            ["$id"] = $"urn:casebook:schema:case-import:v{CaseImportJson.CurrentSchemaVersion}",
+            ["title"] = $"CaseBook case import (v1 and v{CaseImportJson.CurrentSchemaVersion})",
             ["description"] = "A structured document that seeds a new or existing CaseBook case with a summary, "
-                + "timeline entries, entities/IOCs and action items. Imported as a human-confirmed draft.",
+                + "timeline entries, entities/IOCs and action items; from v2, a new case can also carry its phase history, "
+                + "outcome, conclusion, incident commander and team (a historical or closed case). Imported as a human-confirmed draft.",
             ["type"] = "object",
             ["additionalProperties"] = false,
             ["required"] = new JsonArray { "format", "schemaVersion" },
+            // CAP-35: a v1 document is what it always was: the v2 parts of a new case aren't allowed in one.
+            ["if"] = new JsonObject { ["properties"] = new JsonObject { ["schemaVersion"] = new JsonObject { ["const"] = 1 } } },
+            ["then"] = new JsonObject
+            {
+                ["properties"] = new JsonObject
+                {
+                    ["target"] = new JsonObject
+                    {
+                        ["properties"] = new JsonObject
+                        {
+                            ["newCase"] = new JsonObject { ["properties"] = V2NewCaseFields().Aggregate(new JsonObject(), (o, f) => { o[f] = false; return o; }) },
+                        },
+                    },
+                },
+            },
             ["properties"] = new JsonObject
             {
                 ["format"] = new JsonObject { ["const"] = CaseImportJson.FormatTag },
-                ["schemaVersion"] = new JsonObject { ["type"] = "integer", ["const"] = CaseImportJson.CurrentSchemaVersion },
+                // CAP-35: every version this importer reads; the current one is the last.
+                ["schemaVersion"] = new JsonObject { ["type"] = "integer", ["enum"] = new JsonArray { 1, CaseImportJson.CurrentSchemaVersion } },
                 ["origin"] = Str("Provenance recorded as the source of imported indicators and timeline entries "
                     + "(e.g. \"AI-assisted (Copilot)\", \"manual\", \"XSIAM\")."),
                 ["target"] = Ref("target"),
@@ -95,6 +112,49 @@ public static class CaseImportSchema
                         ["vendorName"] = Str("The vendor that disclosed it. Required when origin is ThirdParty. Up to 300 characters."),
                         // BUG-635
                         ["exercise"] = new JsonObject { ["type"] = "boolean", ["description"] = "A tabletop or exercise case (a drill): badged and kept out of dashboards, reminders, the IOC feed and correlation with live cases. Can't be changed once the case is created. Defaults to false." },
+                        // CAP-35 (v2): a historical or closed case.
+                        ["history"] = new JsonObject
+                        {
+                            ["type"] = "array", ["items"] = Ref("phaseChange"), ["maxItems"] = CaseImportService.MaxHistory,
+                            ["description"] = "v2: the phase transitions the case went through, oldest first, each with when it happened. "
+                                + "Needs detectedAt; no step may be in the future, before detection or before the step before it. A history "
+                                + "may close the case only at its last step, with outcome and conclusion.",
+                        },
+                        ["outcome"] = Str("v2: the outcome key (Administration › Case outcomes) for a history that ends in Closed."),
+                        ["conclusion"] = Str("v2: what the team concluded, for a history that ends in Closed."),
+                        ["incidentCommander"] = Str("v2: the incident commander, by user id or UPN (matched when it's reviewed; someone unknown is a warning, not added)."),
+                        ["assignments"] = new JsonObject
+                        {
+                            ["type"] = "array", ["items"] = Ref("assignment"), ["maxItems"] = CaseImportService.MaxAssignments,
+                            ["description"] = "v2: the rest of the case team.",
+                        },
+                    },
+                },
+                // CAP-35
+                ["phaseChange"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["additionalProperties"] = false,
+                    ["required"] = new JsonArray { "phase", "at" },
+                    ["properties"] = new JsonObject
+                    {
+                        ["phase"] = EnumOf<CasePhase>("The phase the case moved to."),
+                        ["at"] = DateTime("When it moved (the transition's effective time)."),
+                        ["reason"] = Str("Why. Defaults to \"imported record: <origin>\"."),
+                        ["containedAt"] = DateTime("On a step that goes past Containment without it: when it was contained."),
+                        ["containmentNotNeeded"] = Str("On a step that goes past Containment without it: why containment wasn't needed (instead of containedAt)."),
+                        ["resolvedAt"] = DateTime("On a step to PostIncident that skips Recovery: when it was resolved."),
+                    },
+                },
+                ["assignment"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["additionalProperties"] = false,
+                    ["required"] = new JsonArray { "user" },
+                    ["properties"] = new JsonObject
+                    {
+                        ["user"] = Str("A user id or UPN, matched in CaseBook's user directory when it's reviewed."),
+                        ["role"] = EnumProp(new JsonArray { nameof(CaseAssignmentRole.Analyst), nameof(CaseAssignmentRole.Observer) }, "Defaults to Analyst."),
                     },
                 },
                 ["timelineEntry"] = new JsonObject
@@ -152,6 +212,9 @@ public static class CaseImportSchema
             },
         };
     }
+
+    /// <summary>CAP-35: the new-case fields v2 added, which a v1 document may not carry.</summary>
+    public static IReadOnlyList<string> V2NewCaseFields() => ["history", "outcome", "conclusion", "incidentCommander", "assignments"];
 
     private static JsonObject Str(string? description)
     {

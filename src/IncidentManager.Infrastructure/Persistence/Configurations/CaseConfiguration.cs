@@ -85,6 +85,7 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
         b.HasMany(c => c.Techniques).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.TimeCorrections).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.JurisdictionNotices).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(c => c.Parties).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);   // CAP-34
         b.HasMany(c => c.Briefs).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.Citations).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.DataElements).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);

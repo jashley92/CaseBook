@@ -40,6 +40,7 @@ public static class AuditLabels
         "CaseDataElement" => "Case data element",
         "CaseEntity" => "Entity",
         "CaseLink" => "Related case link",
+        "CaseParty" => "Outside party",   // CAP-34
         "CaseTechnique" => "ATT&CK technique",
         "CaseTemplate" => "Case template",
         "CaseTemplateStep" => "Template step",

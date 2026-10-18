@@ -38,6 +38,7 @@ erDiagram
     CASES ||--o{ TRANSITION_TIME_CORRECTIONS : corrections
     CASES ||--o{ JURISDICTION_NOTICES : "regulator notices"
     EVIDENCE |o..o{ JURISDICTION_NOTICES : "notice file"
+    CASES ||--o{ CASE_PARTIES : "outside parties"
     CASES ||--o{ TIMELINE_ENTRIES : timeline
     TIMELINE_ENTRIES ||--o{ EVENT_STEP_TACTICS : tactics
     CASE_ENTITIES |o--o{ TIMELINE_ENTRIES : "actor / target (restrict)"
@@ -330,6 +331,27 @@ case's hash.
 campaign), `Description`. **One link per pair of cases in either direction** (enforced in code). Can be
 removed. A campaign is the connected group of `Part of campaign` links.
 
+### `CaseParties` (H, A)
+
+CAP-34: the outside parties on a case (counsel, a forensics firm, the insurer, law enforcement, a regulator's contact),
+each with the reference it gave the matter. Cascades from `Cases`; indexed on `CaseId`. Facts only (decision 0012): no
+column rates how a party did.
+
+| Column | Type | Null | Meaning |
+|---|---|---|---|
+| `Role` | int | no | `PartyRole`: 0 Counsel, 1 Forensics, 2 Insurer, 3 LawEnforcement, 4 RegulatorContact, 5 Other. Read from text by name only. |
+| `Name` | nvarchar(300) | no | The firm, agency or person, as typed. |
+| `Contact` | nvarchar(300) | yes | How to reach them, as typed. |
+| `Reference` | nvarchar(200) | yes | Their reference: a claim, police report or matter number. |
+| `EngagedAtUtc` | datetimeoffset | yes | When they were engaged on the matter. Not in the future. |
+| `Notes` | nvarchar(2000) | yes | Facts about the engagement. Only the `party.notes` template field prints it. |
+| `CreatedAtUtc`, `CreatedBy`, `ModifiedAtUtc`, `ModifiedBy`, `RowHash` | | | |
+
+A new table, so every column is in its row hash from the first row (in canonical format 5, with no part folded in
+later), and a row without a hash is flagged by the record check as added outside CaseBook (`HashedSinceCreation`).
+Edited and removed through `CaseService.AddPartyAsync` / `UpdatePartyAsync` / `RemovePartyAsync`; a removal is an
+audited delete.
+
 ## Reporting and review
 
 ### `Reports` (A; row-hashed from canonical format 4, BUG-633: every column but `StoragePath`)
@@ -465,7 +487,7 @@ be edited**; nothing locks them.
 | Task | any status to any status, except Cancelled to Done: a cancelled task is reopened first (REV-23, BUG-304). |
 | Report | draft → final (once, irreversible). |
 | Improvement action | any status to any status; closing needs an outcome note. |
-| Pending import | pending → applied or rejected (both final). |
+| Pending import | pending → applied or rejected (both final). Applied one at a time or in a batch from one submitter (at most 25, each its own claim and apply, CAP-35). A v2 document's history moves the new case through its phases at their effective times, last. |
 | API token | active → revoked or expired. |
 | Versioned records (notes, investigation entries, briefs) | exactly one current version per lineage. |
 

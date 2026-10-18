@@ -1,21 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:casebook:schema:case-import:v1",
-  "title": "CaseBook case import (v1)",
-  "description": "A structured document that seeds a new or existing CaseBook case with a summary, timeline entries, entities/IOCs and action items. Imported as a human-confirmed draft.",
+  "$id": "urn:casebook:schema:case-import:v2",
+  "title": "CaseBook case import (v1 and v2)",
+  "description": "A structured document that seeds a new or existing CaseBook case with a summary, timeline entries, entities/IOCs and action items; from v2, a new case can also carry its phase history, outcome, conclusion, incident commander and team (a historical or closed case). Imported as a human-confirmed draft.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "format",
     "schemaVersion"
   ],
+  "if": {
+    "properties": {
+      "schemaVersion": {
+        "const": 1
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "target": {
+        "properties": {
+          "newCase": {
+            "properties": {
+              "history": false,
+              "outcome": false,
+              "conclusion": false,
+              "incidentCommander": false,
+              "assignments": false
+            }
+          }
+        }
+      }
+    }
+  },
   "properties": {
     "format": {
       "const": "casebook-case-import"
     },
     "schemaVersion": {
       "type": "integer",
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "origin": {
       "type": "string",
@@ -68,7 +95,7 @@
         "detectionCaseId": {
           "type": "string",
           "maxLength": 100,
-          "description": "Import into the one open case carrying this detection case id (for example the XSIAM incident id), as the reviewer sees cases when it's reviewed. With none, newCase is prepared; with several, the reviewer picks. Given with caseId, both must name the same case."
+          "description": "Import into the one open case carrying this detection case id (for example the XSIAM incident id), as the reviewer sees cases when it\u0027s reviewed. With none, newCase is prepared; with several, the reviewer picks. Given with caseId, both must name the same case."
         },
         "newCase": {
           "$ref": "#/$defs/newCase"
@@ -162,6 +189,101 @@
         "exercise": {
           "type": "boolean",
           "description": "A tabletop or exercise case (a drill): badged and kept out of dashboards, reminders, the IOC feed and correlation with live cases. Can\u0027t be changed once the case is created. Defaults to false."
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/phaseChange"
+          },
+          "maxItems": 50,
+          "description": "v2: the phase transitions the case went through, oldest first, each with when it happened. Needs detectedAt; no step may be in the future, before detection or before the step before it. A history may close the case only at its last step, with outcome and conclusion."
+        },
+        "outcome": {
+          "type": "string",
+          "description": "v2: the outcome key (Administration \u203A Case outcomes) for a history that ends in Closed."
+        },
+        "conclusion": {
+          "type": "string",
+          "description": "v2: what the team concluded, for a history that ends in Closed."
+        },
+        "incidentCommander": {
+          "type": "string",
+          "description": "v2: the incident commander, by user id or UPN (matched when it\u0027s reviewed; someone unknown is a warning, not added)."
+        },
+        "assignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assignment"
+          },
+          "maxItems": 50,
+          "description": "v2: the rest of the case team."
+        }
+      }
+    },
+    "phaseChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "at"
+      ],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "New",
+            "Triage",
+            "Containment",
+            "Eradication",
+            "Recovery",
+            "PostIncident",
+            "Closed"
+          ],
+          "description": "The phase the case moved to."
+        },
+        "at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "When it moved (the transition\u0027s effective time). An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why. Defaults to \u0022imported record: \u003Corigin\u003E\u0022."
+        },
+        "containedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "On a step that goes past Containment without it: when it was contained. An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
+        },
+        "containmentNotNeeded": {
+          "type": "string",
+          "description": "On a step that goes past Containment without it: why containment wasn\u0027t needed (instead of containedAt)."
+        },
+        "resolvedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
+          "description": "On a step to PostIncident that skips Recovery: when it was resolved. An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
+        }
+      }
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "user"
+      ],
+      "properties": {
+        "user": {
+          "type": "string",
+          "description": "A user id or UPN, matched in CaseBook\u0027s user directory when it\u0027s reviewed."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "Analyst",
+            "Observer"
+          ],
+          "description": "Defaults to Analyst."
         }
       }
     },

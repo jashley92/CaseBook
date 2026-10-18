@@ -84,6 +84,48 @@ public sealed class CaseImportNewCase
     /// <summary>BUG-635: a tabletop or exercise case (PROD-43): badged, kept out of dashboards, reminders, the IOC feed and
     /// correlation with live cases. Fixed when the case is created. Optional; false when omitted.</summary>
     public bool? Exercise { get; set; }
+
+    // CAP-35 (schema v2): a historical or closed case comes in with how it went. Read only from a v2 document; a v1
+    // document that carries them has them ignored, with a warning.
+
+    /// <summary>CAP-35: the phase transitions the case went through, oldest first, each with when it happened.</summary>
+    public List<CaseImportPhaseChange>? History { get; set; }
+
+    /// <summary>CAP-35: the outcome key (Administration › Case outcomes) of a history that ends in Closed.</summary>
+    public string? Outcome { get; set; }
+
+    /// <summary>CAP-35: what the team concluded, for a history that ends in Closed (the closing brief's conclusion).</summary>
+    public string? Conclusion { get; set; }
+
+    /// <summary>CAP-35: the incident commander, by user id or UPN, resolved in the user directory when it's reviewed.</summary>
+    public string? IncidentCommander { get; set; }
+
+    /// <summary>CAP-35: the rest of the case team, each by user id or UPN with a role.</summary>
+    public List<CaseImportAssignment>? Assignments { get; set; }
+}
+
+/// <summary>CAP-35: one phase transition of an imported case's history, applied through <c>Case.ChangePhase</c> at its
+/// effective time (decisions 0010, 0011).</summary>
+public sealed class CaseImportPhaseChange
+{
+    public string? Phase { get; set; }
+    /// <summary>When it happened (the transition's effective time). Required.</summary>
+    public DateTimeOffset? At { get; set; }
+    public string? Reason { get; set; }
+    /// <summary>BUG-165: going past Containment without it, when it was contained (or <see cref="ContainmentNotNeeded"/>).</summary>
+    public DateTimeOffset? ContainedAt { get; set; }
+    public string? ContainmentNotNeeded { get; set; }
+    /// <summary>BUG-208: going to Post-incident without Recovery, when it was resolved.</summary>
+    public DateTimeOffset? ResolvedAt { get; set; }
+}
+
+/// <summary>CAP-35: one member of an imported case's team.</summary>
+public sealed class CaseImportAssignment
+{
+    /// <summary>A user id or UPN, resolved in the user directory when it's reviewed.</summary>
+    public string? User { get; set; }
+    /// <summary>Analyst (default) or Observer; IncidentCommander goes in <c>incidentCommander</c>.</summary>
+    public string? Role { get; set; }
 }
 
 /// <summary>One timeline entry to import. <see cref="Kind"/>/<see cref="Type"/> are strings (safe fallback).</summary>
@@ -138,7 +180,12 @@ public sealed class CaseImportActionItem
 public static class CaseImportJson
 {
     public const string FormatTag = "casebook-case-import";
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>CAP-35: v2 adds a new case's history, outcome, conclusion, incident commander and team. v1 documents are
+    /// read as they always were.</summary>
+    public const int CurrentSchemaVersion = 2;
+
+    /// <summary>CAP-35: the first schema version with a new case's history and team.</summary>
+    public const int HistorySchemaVersion = 2;
 
     /// <summary>Lenient, web-cased options: camelCase, case-insensitive, ignore trailing commas/comments so a
     /// hand- or AI-authored file is forgiving. Enum fields are plain strings on the DTOs, parsed with fallback.</summary>

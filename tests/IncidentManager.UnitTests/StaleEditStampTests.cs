@@ -29,7 +29,7 @@ public class StaleEditStampTests
         ["AddActionItemAsync"] = Appends, ["AddAssigneeAsync"] = Appends, ["AddEntityAsync"] = Appends,
         ["AddEventStepAsync"] = Appends, ["AddImportedActionItemsAsync"] = Appends, ["AddImportedTimelineEntriesAsync"] = Appends,
         ["AddNoteAsync"] = Appends, ["AddOrMatchEntitiesAsync"] = Appends, ["AddOrMatchEntityAsync"] = Appends,
-        ["AddTechniqueAsync"] = Appends, ["AddTimelineEntryAsync"] = Appends, ["ApplyTemplateAsync"] = Appends,
+        ["AddTechniqueAsync"] = Appends, ["AddPartyAsync"] = Appends,["AddTimelineEntryAsync"] = Appends, ["ApplyTemplateAsync"] = Appends,
         ["CreateAsync"] = Appends, ["LinkCaseAsync"] = Appends, ["LinkEntitiesAsync"] = Appends,
         ["PromoteToTimelineAsync"] = Appends, ["RaiseTaskFromQuestionAsync"] = Appends,
         ["AddOpenQuestionAsync"] = "appends one line to the brief as it stands in the same save (an appended version, WF-30)",

@@ -243,6 +243,16 @@ public sealed class CaseImportService
             }
         }
 
+        // CAP-35: the team is matched to the directory, and the outcome checked, as it's reviewed. A history belongs to the
+        // new case it describes: one going into an existing case (by id, or by detection case id, CAP-14) leaves it out.
+        if (preview.HasHistory || preview.Outcome is not null)
+        {
+            ResolveTeam(preview);
+            await CheckOutcomeAsync(preview, ct);
+            if (preview.TargetKind == CaseImportTargetKind.ExistingCase)
+                preview.Warnings.Add("The document's history, outcome and team describe a new case, so they aren't applied to an " +
+                                     "existing one. Choose a new case as the target to import them.");
+        }
         return preview;
     }
 
@@ -355,6 +365,12 @@ public sealed class CaseImportService
                $", not \"{detection}\". Give one of them.";
     }
 
+    /// <summary>
+    /// CAP-35: why a v2 document's history can't be applied (out of order, before detection, in the future, a close
+    /// without its outcome), or null. The API refuses such a document before queueing it, so the producer hears at once.
+    /// </summary>
+    public string? CheckHistory(CaseImportDocument doc) => BuildPreviewCore(doc, _clock.UtcNow).HistoryProblem;
+
     /// <summary>Resolves a case the current user is allowed to see, by id — for the existing-case target.</summary>
     public async Task<(Guid Id, string CaseNumber, string Title)?> ResolveCaseAsync(Guid id, CancellationToken ct = default)
     {
@@ -393,6 +409,9 @@ public sealed class CaseImportService
         // INV-18: checked before anything is written, so a missing why can't leave a half-applied import.
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale)))
             throw new ArgumentException("A decision on the timeline needs its why. Add it, or change the entry's type.");
+        // CAP-35: a history that breaks R4's checks is refused before anything is written.
+        if (p.TargetKind == CaseImportTargetKind.NewCase && p.HistoryProblem is { } historyProblem)
+            throw new ArgumentException(historyProblem);
 
         Guid caseId;
         string caseNumber;
@@ -501,6 +520,10 @@ public sealed class CaseImportService
         }, ct);
         var actionItems = tasks.Count;
 
+        // CAP-35: the team, then the history, last, so a case that closes does so with its content in (and nothing reads as
+        // added after closure).
+        if (p.TargetKind == CaseImportTargetKind.NewCase) await ApplyHistoryAsync(p, caseId, ct);
+
         await EmitAppliedAsync(caseId, pendingImportId, p.CreatedCaseId is not null, ct);
         return new CaseImportResult(caseId, caseNumber, created, notes, timeline, entities, actionItems);
     }
@@ -515,6 +538,148 @@ public sealed class CaseImportService
         if (c is null) return;
         _siem.EmitSafely(() => SecurityEvents.ImportApplied(new CaseSubject(c.CaseNumber, c.DetectionCaseId, c.IsExercise),
             pendingImportId, createdCase, _user.UserId, _user.UserPrincipalName));
+    }
+
+    /// <summary>
+    /// CAP-35: the team and the history of a new case, through the audited, permission-checked writes, as the confirmer.
+    /// Each phase change goes through <see cref="CaseService.ChangePhaseAsync"/> at its effective time (decisions 0010,
+    /// 0011), so the contained, resolved and closed milestones derive from it as for a change made in CaseBook. A close
+    /// runs the close gate; when its checks can't be met, it's overridden with "imported record: &lt;origin&gt;", so the
+    /// passage records that it was. Resume-safe: each written step is marked applied.
+    /// </summary>
+    private async Task ApplyHistoryAsync(CaseImportPreview p, Guid caseId, CancellationToken ct)
+    {
+        foreach (var who in (p.IncidentCommander is { } ic ? [ic] : Array.Empty<ImportAssignmentRow>()).Concat(p.Assignments))
+        {
+            if (who.Applied || who.UserId is not { } userId) continue;
+            await _cases.AssignAsync(caseId, userId, who.DisplayName ?? userId, who.Role, ct);
+            who.Applied = true;
+        }
+
+        foreach (var h in p.History)
+        {
+            if (h.Applied) continue;
+            var reason = h.Reason ?? p.ImportedRecordReason;
+            CaseService.CaseClosing? closing = null;
+            if (h.Phase == CasePhase.Closed)
+            {
+                var summary = p.NewCase?.Summary ?? p.Summary ?? p.NewCase?.Title ?? "Imported record";
+                closing = new CaseService.CaseClosing(p.Outcome ?? "", TextFit.Cap(summary, CaseBrief.MaxPartLength, ""), p.Conclusion ?? "");
+            }
+            var containment = h.ContainedAtUtc is not null || h.ContainmentNotNeeded is not null
+                ? new CaseService.ContainmentDecision(h.ContainedAtUtc, h.ContainmentNotNeeded) : null;
+            try
+            {
+                await _cases.ChangePhaseAsync(caseId, h.Phase, reason, effectiveAtUtc: h.AtUtc, closing: closing,
+                    containment: containment, resolvedAtUtc: h.ResolvedAtUtc, ct: ct);
+            }
+            catch (StageGates.GateNotSatisfiedException) when (closing is not null)
+            {
+                await _cases.ChangePhaseAsync(caseId, h.Phase, reason, overrideJustification: p.ImportedRecordReason,
+                    effectiveAtUtc: h.AtUtc, closing: closing, containment: containment, resolvedAtUtc: h.ResolvedAtUtc, ct: ct);
+            }
+            h.Applied = true;
+        }
+    }
+
+    /// <summary>CAP-35: the most queued submissions one batch confirm applies.</summary>
+    public const int MaxBatchConfirm = 25;
+
+    /// <summary>
+    /// CAP-35: the oldest waiting submissions from <paramref name="submittedBy"/> the caller may review (the queue's
+    /// need-to-know), at most <see cref="MaxBatchConfirm"/>, for the reviewer to see named before confirming them.
+    /// </summary>
+    public async Task<IReadOnlyList<PendingImportSummary>> ListBatchFromSubmitterAsync(string submittedBy, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        return await VisiblePending(db).AsNoTracking()
+            .Where(p => p.Status == PendingImportStatus.Pending && p.SubmittedBy == submittedBy)
+            .OrderBy(p => p.SubmittedAtUtc)
+            .Take(MaxBatchConfirm)
+            .Select(p => new PendingImportSummary(p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary, null, null))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// CAP-35: "Confirm all from this submitter". A person confirms (decision 0004): the reviewer saw these submissions named
+    /// (<see cref="ListBatchFromSubmitterAsync"/>) and confirms them, at most <see cref="MaxBatchConfirm"/> at a time. Each is
+    /// claimed, previewed as the reviewer sees it, and applied by the same audited writes as a single confirm, under the
+    /// reviewer's name, one after another; one that needs a person's eye (a target to choose, a filing gate to tick, a
+    /// history that breaks R4's checks, a decision without its why) or that fails is left in the queue with why. A
+    /// submission not from <paramref name="submittedBy"/>, or no longer waiting, is reported and left alone.
+    /// </summary>
+    public async Task<IReadOnlyList<BatchConfirmItem>> ConfirmBatchAsync(string submittedBy, IReadOnlyList<Guid> pendingIds,
+        CancellationToken ct = default)
+    {
+        RequireEdit();
+        if (pendingIds.Count > MaxBatchConfirm)
+            throw new ArgumentException($"Confirm up to {MaxBatchConfirm} imports at a time; this asks for {pendingIds.Count}.");
+        var results = new List<BatchConfirmItem>(pendingIds.Count);
+        foreach (var id in pendingIds.Distinct())
+            results.Add(await ConfirmOneAsync(submittedBy, id, ct));
+        return results;
+    }
+
+    private async Task<BatchConfirmItem> ConfirmOneAsync(string submittedBy, Guid id, CancellationToken ct)
+    {
+        string summary;
+        using (var db = _factory.CreateDbContext())
+        {
+            var row = await VisiblePending(db).AsNoTracking().Where(p => p.Id == id)
+                .Select(p => new { p.SubmittedBy, p.Status, p.Summary }).FirstOrDefaultAsync(ct);
+            if (row is null || row.Status != PendingImportStatus.Pending)
+                return new BatchConfirmItem(id, row?.Summary ?? "(no longer in the queue)", false, null, null,
+                    "It's no longer waiting: someone else applied or rejected it, or it's being applied.");
+            if (row.SubmittedBy != submittedBy)
+                return new BatchConfirmItem(id, row.Summary, false, null, null, "It's from another submitter, so it wasn't confirmed.");
+            summary = row.Summary;
+        }
+        var preview = await BuildPreviewForPendingAsync(id, ct);
+        if (preview is null)
+            return new BatchConfirmItem(id, summary, false, null, null, "It's no longer waiting, or can't be read.");
+        if (NeedsReview(preview) is { } why) return new BatchConfirmItem(id, summary, false, null, null, why);
+        if (preview is { TargetKind: CaseImportTargetKind.NewCase, NewCase: { } nc })
+        {
+            // As the review page files it (WF-16): the filing gate sees the indicators it brings. Nothing is ticked or
+            // overridden for a person: a filing gate it doesn't meet leaves it for review.
+            nc.PlannedEntityCount = preview.Entities.Count(e => e.Include && !e.Applied);
+            nc.PlannedDispositions = preview.Entities.Where(e => e.Include && !e.Applied).Select(e => e.Disposition).ToList();
+        }
+
+        if (await ClaimPendingAsync(id, ct) is not { } claim)
+            return new BatchConfirmItem(id, summary, false, null, null, "It's being applied (perhaps in another tab), or was just decided.");
+        try
+        {
+            var result = await ApplyAsync(preview, id, ct);
+            await MarkPendingAppliedAsync(id, result, claim, ct);
+            return new BatchConfirmItem(id, summary, true, result.CaseNumber, result.CaseId, null);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException
+                                       or StageGates.GateNotSatisfiedException or ConcurrentEditException or DbUpdateException)
+        {
+            // BUG-116: back in the queue (with what was written marked), for a person to finish.
+            try { await ReleaseClaimAsync(id, preview, claim, CancellationToken.None); }
+            catch (Exception releaseEx) when (releaseEx is not OutOfMemoryException)
+            {
+                _log?.LogWarning(releaseEx, "Couldn't put import {PendingImportId} back in the queue after a batch confirm failed.", id);
+            }
+            return new BatchConfirmItem(id, summary, false, null, null, $"Not applied: {ex.Message} It's back in the queue to review on its own.");
+        }
+    }
+
+    // CAP-35: what in a preview needs a person's eye rather than a batch confirm, or null.
+    private static string? NeedsReview(CaseImportPreview p)
+    {
+        if (!p.HasAnything) return "It has nothing to import.";
+        if (p.TargetKind == CaseImportTargetKind.ExistingCase && p.ExistingCaseId is null)
+            return "It needs a target case chosen (more than one open case carries its detection case id).";
+        if (p.TargetKind == CaseImportTargetKind.NewCase && p.HistoryProblem is { } problem) return problem;
+        if (p.TargetKind == CaseImportTargetKind.NewCase && string.IsNullOrWhiteSpace(p.NewCase?.Title)) return "Its new case has no title.";
+        if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale)))
+            return "A decision on its timeline needs its why.";
+        if (p.Warnings.Any(w => w.StartsWith("An earlier apply of this import", StringComparison.Ordinal)))
+            return "An earlier apply of it stopped part-way; check the case before applying it.";
+        return null;
     }
 
     /// <summary>BUG-152: a TLP marking as written in a document ("Red", "TLP:RED", "amber+strict"); null when absent.</summary>
@@ -870,7 +1035,8 @@ public sealed class CaseImportService
     /// <summary>Whether an apply of <paramref name="p"/> has written anything (a case, the summary note or any row).</summary>
     public static bool HasApplied(CaseImportPreview p) =>
         p.CreatedCaseId is not null || p.SummaryApplied || p.Timeline.Any(t => t.Applied)
-        || p.Entities.Any(e => e.Applied) || p.ActionItems.Any(a => a.Applied);
+        || p.Entities.Any(e => e.Applied) || p.ActionItems.Any(a => a.Applied)
+        || p.History.Any(h => h.Applied) || p.IncidentCommander?.Applied == true || p.Assignments.Any(a => a.Applied);   // CAP-35
 
     /// <summary>BUG-198: how old a claim of one's own with no case must be before it can be taken again. Younger, it's an
     /// apply still running (in another tab, say).</summary>
@@ -1159,7 +1325,130 @@ public sealed class CaseImportService
         }
         if (droppedTasks > 0) p.Warnings.Add(droppedTasks == 1 ? "1 task had no title and was skipped." : $"{droppedTasks} tasks had no title and were skipped.");
 
+        BuildHistory(doc, p, nowUtc);   // CAP-35
         return p;
+    }
+
+    /// <summary>CAP-35: the most phase transitions one imported history carries, and team members besides the IC.</summary>
+    public const int MaxHistory = 50, MaxAssignments = 50;
+
+    /// <summary>
+    /// CAP-35: a v2 document's history (phase transitions with when each happened and why), outcome, conclusion, incident
+    /// commander and team, for a new case. The history is held to R4's checks before anything is written: every step has
+    /// a time, none is in the future or before the case was detected, they're in order, a step past Containment or
+    /// Recovery without it says what the domain asks (BUG-165, BUG-208), and a history closes only at its end, with an
+    /// outcome and a conclusion. What fails sets <see cref="CaseImportPreview.HistoryProblem"/>, which Apply refuses on.
+    /// People are matched to the directory later (<see cref="ResolveTeam"/>).
+    /// </summary>
+    private static void BuildHistory(CaseImportDocument doc, CaseImportPreview p, DateTimeOffset nowUtc)
+    {
+        if (doc.Target?.NewCase is not { } nc) return;
+        var carries = nc.History is { Count: > 0 } || nc.Assignments is { Count: > 0 } || !string.IsNullOrWhiteSpace(nc.Outcome)
+                      || !string.IsNullOrWhiteSpace(nc.Conclusion) || !string.IsNullOrWhiteSpace(nc.IncidentCommander);
+        if (!carries) return;
+        if ((doc.SchemaVersion ?? 1) < CaseImportJson.HistorySchemaVersion)
+        {
+            p.Warnings.Add("The new case's history, outcome, conclusion and team need \"schemaVersion\": 2. This document is v1, so they were ignored.");
+            return;
+        }
+        if (nc.History?.Count > MaxHistory) { p.HistoryProblem = $"The history has {nc.History.Count} steps; an import takes up to {MaxHistory}."; return; }
+        if (nc.Assignments?.Count > MaxAssignments) { p.HistoryProblem = $"The team has {nc.Assignments.Count} people; an import takes up to {MaxAssignments}."; return; }
+
+        p.Outcome = Clamp(nc.Outcome, 64, "Outcome", p.Warnings);
+        p.Conclusion = Clamp(nc.Conclusion, CaseBrief.MaxPartLength, "Conclusion", p.Warnings);
+        if (Clamp(nc.IncidentCommander, MaxOwner, "Incident commander", p.Warnings) is { } ic)
+            p.IncidentCommander = new ImportAssignmentRow { Named = ic, Role = CaseAssignmentRole.IncidentCommander };
+        foreach (var a in nc.Assignments ?? [])
+        {
+            if (Clamp(a?.User, MaxOwner, "Team member", p.Warnings) is not { } who) continue;
+            var role = ParseEnum(a!.Role, CaseAssignmentRole.Analyst, "team role", p.Warnings);
+            if (role == CaseAssignmentRole.IncidentCommander)
+            {
+                p.Warnings.Add($"{who} is named incident commander in the team; the incident commander goes in \"incidentCommander\", so they're added as an analyst.");
+                role = CaseAssignmentRole.Analyst;
+            }
+            if (p.Assignments.Any(x => string.Equals(x.Named, who, StringComparison.OrdinalIgnoreCase))) continue;
+            p.Assignments.Add(new ImportAssignmentRow { Named = who, Role = role });
+        }
+
+        var steps = nc.History ?? [];
+        var detected = p.NewCase?.DetectedAtUtc;
+        var (phase, contained, resolved) = (CasePhase.New, false, false);
+        DateTimeOffset? previous = null;
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var n = i + 1;
+            string Problem(string why) => p.HistoryProblem ??= $"History step {n}: {why}";
+            if (steps[i] is not { } s) { Problem("it's empty."); return; }
+            if (!ImportEnums.TryName<CasePhase>(s.Phase, out var to)) { Problem($"\"{s.Phase}\" isn't a phase ({string.Join(", ", Enum.GetNames<CasePhase>())})."); return; }
+            if (s.At is not { } at) { Problem("say when it happened (\"at\")."); return; }
+            if (detected is not { } det) { Problem("a case with a history needs newCase.detectedAt, so its steps can be checked against it."); return; }
+            if (Case.ToMinute(at) > Case.ToMinute(nowUtc)) { Problem($"{Utc(at)} is in the future."); return; }
+            if (Case.ToMinute(at) < Case.ToMinute(det)) { Problem($"{Utc(at)} is before the case was detected ({Utc(det)})."); return; }
+            if (previous is { } prev && Case.ToMinute(at) < Case.ToMinute(prev)) { Problem($"{Utc(at)} is before the step before it ({Utc(prev)}): give the history in order."); return; }
+            if (to == phase) { Problem($"the case is already in {to}."); return; }
+            if (phase == CasePhase.Closed) { Problem("a history closes only at its end."); return; }
+            if (to == CasePhase.Closed && n != steps.Count) { Problem("a history closes only at its end."); return; }
+            var skipsContainment = phase < CasePhase.Containment && to is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident && !contained;
+            var notNeeded = Blank(Clamp(s.ContainmentNotNeeded, Case.MaxContainmentReason, "Why containment wasn't needed", p.Warnings));
+            if (skipsContainment && s.ContainedAt is null && notNeeded is null)
+            { Problem($"moving to {to} skips Containment: give \"containedAt\" or \"containmentNotNeeded\"."); return; }
+            if (!skipsContainment && (s.ContainedAt is not null || notNeeded is not null))
+            { Problem("\"containedAt\" and \"containmentNotNeeded\" belong only on a step that skips Containment."); return; }
+            var skipsRecovery = phase < CasePhase.Recovery && to == CasePhase.PostIncident && !resolved;
+            if (skipsRecovery != (s.ResolvedAt is not null))
+            { Problem(skipsRecovery ? "moving to PostIncident skips Recovery: give \"resolvedAt\"." : "\"resolvedAt\" belongs only on a step to PostIncident that skips Recovery."); return; }
+
+            contained |= to == CasePhase.Containment || skipsContainment;
+            resolved |= to == CasePhase.Recovery || skipsRecovery;
+            p.History.Add(new ImportHistoryRow
+            {
+                Phase = to, AtUtc = at, Reason = Clamp(s.Reason, 2000, "Transition reason", p.Warnings),
+                ContainedAtUtc = s.ContainedAt, ContainmentNotNeeded = notNeeded, ResolvedAtUtc = s.ResolvedAt,
+            });
+            (phase, previous) = (to, at);
+        }
+        if (phase == CasePhase.Closed)
+        {
+            if (p.Outcome is null) p.HistoryProblem ??= "The history closes the case: give its \"outcome\" (an outcome key from Administration › Case outcomes).";
+            else if (p.Conclusion is null) p.HistoryProblem ??= "The history closes the case: give its \"conclusion\" (what the team concluded).";
+        }
+        else if (p.Outcome is not null || p.Conclusion is not null)
+        {
+            p.Warnings.Add("The outcome and conclusion are recorded only when the history closes the case, so they were ignored.");
+            (p.Outcome, p.Conclusion) = (null, null);
+        }
+    }
+
+    /// <summary>
+    /// CAP-35: matches the incident commander and team to the user directory, by user id or UPN, as the reviewer reviews it.
+    /// Someone it doesn't know is a warning, and isn't added: never dropped without a word.
+    /// </summary>
+    private void ResolveTeam(CaseImportPreview p)
+    {
+        var people = (p.IncidentCommander is { } ic ? [ic] : Array.Empty<ImportAssignmentRow>()).Concat(p.Assignments).ToList();
+        if (people.Count == 0) return;
+        var all = _users?.All() ?? [];
+        foreach (var row in people)
+        {
+            var u = all.FirstOrDefault(x => string.Equals(x.UserId, row.Named, StringComparison.OrdinalIgnoreCase))
+                    ?? all.FirstOrDefault(x => string.Equals(x.UserPrincipalName, row.Named, StringComparison.OrdinalIgnoreCase));
+            (row.UserId, row.DisplayName) = (u?.UserId, u?.DisplayName);
+            if (u is null)
+                p.Warnings.Add($"{(row.Role == CaseAssignmentRole.IncidentCommander ? "The incident commander" : "Team member")} \"{row.Named}\" " +
+                               "isn't a user CaseBook knows (by user id or UPN), so they won't be added. Add them on the case once they've signed in.");
+        }
+        // The team doesn't repeat the incident commander.
+        if (p.IncidentCommander?.UserId is { } icId) p.Assignments.RemoveAll(a => a.UserId == icId);
+    }
+
+    // CAP-35: an outcome a history closes with must be one the close accepts (an active outcome).
+    private async Task CheckOutcomeAsync(CaseImportPreview p, CancellationToken ct)
+    {
+        if (p.Outcome is not { } key || p.HistoryProblem is not null) return;
+        using var db = _factory.CreateDbContext();
+        if (!await db.CaseOutcomes.AsNoTracking().AnyAsync(o => o.Key == key && o.IsActive, ct))
+            p.HistoryProblem = $"The outcome \"{key}\" isn't an active outcome (Administration › Case outcomes).";
     }
 
     private static CreateCaseRequest BuildNewCase(CaseImportNewCase? nc, DateTimeOffset nowUtc, List<string> warnings)

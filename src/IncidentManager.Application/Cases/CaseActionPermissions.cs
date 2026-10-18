@@ -87,6 +87,11 @@ public static class CaseActionPermissions
             [nameof(CaseService.RemoveCaseLinkAsync)] = Permission.EditCases,
             [nameof(CaseService.SupersedeAsync)] = Permission.EditCases,
 
+            // Outside parties (CAP-34)
+            [nameof(CaseService.AddPartyAsync)] = Permission.EditCases,
+            [nameof(CaseService.UpdatePartyAsync)] = Permission.EditCases,
+            [nameof(CaseService.RemovePartyAsync)] = Permission.EditCases,
+
             // Techniques
             [nameof(CaseService.AddTechniqueAsync)] = Permission.EditCases,
             [nameof(CaseService.RemoveTechniqueAsync)] = Permission.EditCases,

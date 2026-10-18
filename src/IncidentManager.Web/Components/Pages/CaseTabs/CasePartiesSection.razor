@@ -1,0 +1,251 @@
+@* CAP-34: the outside parties on a case (outside counsel, a forensics firm, the insurer, law enforcement, a regulator's
+   contact), each with its reference and when it was engaged, under Things › Connections. Facts only (ADR 0012): the
+   form asks who, how to reach them, their reference and when, never how they did. One form at a time (BUG-578): a second
+   Edit is refused while one is open, so what's typed is kept; a save over a colleague's change is refused (C9) and keeps
+   the form. Each save runs once at a time (C8). *@
+@implements IDisposable
+@inject CaseService Cases
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject UnsavedEdits Edits
+
+<div class="im-sec">
+    <div class="im-sec-head">
+        <h3 id="parties-head">Outside parties</h3>
+        <div class="d-flex align-items-center gap-2">
+            @if (Case.Parties.Count > 0) { <span class="im-badge im-b-neutral">@Case.Parties.Count</span> }
+            @if (CanEdit && !_edit.IsOpenFor(Guid.Empty))
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="BeginAdd">Add a party</button>
+            }
+        </div>
+    </div>
+    @if (CanEdit && _edit.IsOpenFor(Guid.Empty))
+    {
+        @Form("New outside party")
+    }
+    @if (Case.Parties.Count == 0 && !_edit.IsOpenFor(Guid.Empty))
+    {
+        <p class="text-muted small mb-0">No outside parties yet. Record outside counsel, a forensics firm, the insurer or law enforcement, with the reference they gave the matter.</p>
+    }
+    else if (Case.Parties.Count > 0)
+    {
+        <ul class="list-group list-group-flush" aria-labelledby="parties-head">
+            @foreach (var p in Ordered)
+            {
+                <li class="list-group-item px-0" @key="p.Id">
+                    @if (CanEdit && _edit.IsOpenFor(p.Id))
+                    {
+                        @Form($"Edit {p.Name}")
+                    }
+                    else
+                    {
+                        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                            <div class="text-break" style="min-width: 0">
+                                <span class="im-badge im-b-info">@PartyText.Label(p.Role)</span>
+                                <span class="ms-1 fw-semibold">@p.Name</span>
+                                @if (p.Contact is not null) { <div class="small">Contact: @p.Contact</div> }
+                                @if (p.Reference is not null) { <div class="small">Reference: <span class="font-monospace">@p.Reference</span></div> }
+                                @if (p.EngagedAtUtc is { } at) { <div class="small text-muted">Engaged @TimeDisp.Long(at)</div> }
+                                @if (p.Notes is not null) { <div class="small fst-italic text-muted" style="white-space: pre-wrap">@p.Notes</div> }
+                            </div>
+                            @if (CanEdit)
+                            {
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" @onclick="() => BeginEdit(p)"
+                                            aria-label="@($"Edit {p.Name}")">Edit</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0" title="Remove party"
+                                            aria-label="@($"Remove {p.Name}")" disabled="@_removing.Busy"
+                                            @onclick='() => RequestConfirm.InvokeAsync(($"Remove {p.Name} from the case? The audit trail keeps what it said.", "Remove", () => Remove(p.Id, p.RowHash ?? "")))'>×</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Reload the case after a write so the rest of the workspace refreshes.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>The workspace's shared confirm dialog, for the removal.</summary>
+    [Parameter] public EventCallback<(string Message, string Verb, Func<Task> OnConfirm)> RequestConfirm { get; set; }
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    // The form's key: Guid.Empty for a new party, else the party's id.
+    private readonly EditSlot<Guid> _edit = new();
+    private readonly InFlight _saving = new();
+    private readonly InFlight _removing = new();
+    private bool _disposed;
+
+    private string _role = "", _name = "", _contact = "", _reference = "", _notes = "";
+    private DateTime? _engaged, _engagedShown;   // C3: the wall time as seeded, to keep an untouched instant
+    private DateTimeOffset? _engagedAt;          // the instant it was seeded from
+    private string? _stamp;                      // C9: the party's row hash when the form opened (read at load)
+    private string? _seed;
+    private string? _error;
+
+    private IEnumerable<CaseParty> Ordered => Case.Parties.OrderBy(p => p.EngagedAtUtc ?? p.CreatedAtUtc).ThenBy(p => p.CreatedAtUtc);
+
+    protected override void OnInitialized() =>
+        Edits.Track(this, "the outside party you're editing", () => Dirty, Region);   // C7
+
+    private bool Dirty => _edit.IsOpen && Input() != _seed;
+
+    private string Input() => string.Join("\u001f", _role, _name, _contact, _reference, _notes,
+        _engaged is { } e ? WallClock.ToMinute(e).Ticks : (long?)null);
+
+    private void BeginAdd()
+    {
+        if (!_edit.TryOpen(Guid.Empty, Toasts, "outside party")) return;
+        Seed(null);
+    }
+
+    private void BeginEdit(CaseParty p)
+    {
+        if (!_edit.TryOpen(p.Id, Toasts, "outside party")) return;
+        Seed(p);
+    }
+
+    private void Seed(CaseParty? p)
+    {
+        _role = p?.Role.ToString() ?? "";
+        _name = p?.Name ?? "";
+        _contact = p?.Contact ?? "";
+        _reference = p?.Reference ?? "";
+        _notes = p?.Notes ?? "";
+        _engagedAt = p?.EngagedAtUtc;
+        _engaged = _engagedShown = p?.EngagedAtUtc is { } at ? WallClock.ToWall(at, TimeDisp.Zone) : null;
+        _stamp = p is null ? null : p.RowHash ?? "";
+        _error = null;
+        _seed = Input();
+    }
+
+    // C16: the role by name only.
+    private PartyDetails Typed()
+    {
+        if (!IncidentManager.Domain.Common.EnumNames.TryParse<PartyRole>(_role, out var role))
+            throw new ArgumentException("Choose the party's role from the list.");
+        DateTimeOffset? engaged = _engaged is { } w ? WallClock.Kept(w, _engagedShown, _engagedAt, TimeDisp.Zone) : null;
+        return new PartyDetails(role, _name, _contact, _reference, engaged, _notes);
+    }
+
+    private Task Save() => _saving.Run(SaveCore);
+
+    private async Task SaveCore()
+    {
+        if (_edit.Current is not { } open) return;
+        _error = null;
+        try
+        {
+            var details = Typed();
+            if (open.Key == Guid.Empty)
+            {
+                await Cases.AddPartyAsync(CaseId, details);
+                if (!_disposed) Toasts.Success("Party added");
+            }
+            else if (await Cases.UpdatePartyAsync(CaseId, open.Key, details, _stamp))
+            {
+                if (!_disposed) Toasts.Success("Party saved");
+            }
+            if (_disposed) return;
+            _edit.CloseIf(open);
+            await OnChanged.InvokeAsync();
+        }
+        catch (StaleEditException ex)   // C9: a colleague changed (or removed) it while this was open
+        {
+            if (_disposed || !_edit.IsCurrent(open)) return;
+            _stamp = ex.CurrentStamp;   // re-baselined, so a deliberate second Save overwrites theirs
+            _error = ex.Message;
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException or ConcurrentEditException)
+        {
+            if (!_disposed && _edit.IsCurrent(open)) _error = ex.Message;
+        }
+    }
+
+    private Task Remove(Guid partyId, string stamp) => _removing.Run(() => RemoveCore(partyId, stamp));
+
+    private async Task RemoveCore(Guid partyId, string stamp)
+    {
+        try
+        {
+            await Cases.RemovePartyAsync(CaseId, partyId, stamp);
+            if (_disposed) return;
+            Toasts.Success("Party removed");
+        }
+        catch (Exception ex) when (ex is StaleEditException or InvalidOperationException or ForbiddenException or ConcurrentEditException)
+        {
+            if (_disposed) return;
+            Toasts.Warning(ex.Message);
+        }
+        await OnChanged.InvokeAsync();
+    }
+
+    private void Cancel() => _edit.Close();
+
+    // BUG-425: Ctrl/Cmd+Enter saves this form, once (a held key doesn't repeat it).
+    private Task SaveOnKey(KeyboardEventArgs e) =>
+        e.Key != "Enter" || !(e.CtrlKey || e.MetaKey) || e.Repeat || !CanEdit ? Task.CompletedTask : Save();
+
+    private RenderFragment Form(string label) => __builder =>
+    {
+        <div class="im-own-keys border rounded p-2 mb-2" role="group" aria-label="@label" @onkeydown="SaveOnKey">
+            <div class="row g-2">
+                <div class="col-12 col-sm-4">
+                    <label class="form-label small mb-0" for="party-role">Role</label>
+                    <select id="party-role" class="form-select form-select-sm" @bind="_role" disabled="@_saving.Busy">
+                        <option value="">Choose…</option>
+                        @foreach (var r in Enum.GetValues<PartyRole>())
+                        {
+                            <option value="@r.ToString()">@PartyText.Label(r)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-sm-8">
+                    <label class="form-label small mb-0" for="party-name">Name</label>
+                    <input id="party-name" class="form-control form-control-sm" @bind="_name" @bind:event="oninput"
+                           maxlength="@CaseParty.MaxNameLength" placeholder="Firm, agency or person" disabled="@_saving.Busy" />
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label class="form-label small mb-0" for="party-contact">Contact (optional)</label>
+                    <input id="party-contact" class="form-control form-control-sm" @bind="_contact" @bind:event="oninput"
+                           maxlength="@CaseParty.MaxContactLength" placeholder="Person, phone or email" disabled="@_saving.Busy" />
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label class="form-label small mb-0" for="party-reference">Reference (optional)</label>
+                    <input id="party-reference" class="form-control form-control-sm" @bind="_reference" @bind:event="oninput"
+                           maxlength="@CaseParty.MaxReferenceLength" placeholder="Claim, report or matter number" disabled="@_saving.Busy" />
+                </div>
+                <div class="col-12 col-sm-6">
+                    <label class="form-label small mb-0" for="party-engaged">Engaged (optional, @TimeDisp.Label)</label>
+                    <DateTimeInput id="party-engaged" Past="true" class="form-control form-control-sm" @bind-Value="_engaged" disabled="@_saving.Busy" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label small mb-0" for="party-notes">Notes (optional)</label>
+                    <textarea id="party-notes" class="form-control form-control-sm" rows="2" @bind="_notes" @bind:event="oninput"
+                              maxlength="@CaseParty.MaxNotesLength" disabled="@_saving.Busy"
+                              placeholder="Facts about the engagement: its scope, when to call. Not an assessment."></textarea>
+                </div>
+            </div>
+            @if (_error is not null) { <div class="text-danger small mt-1" role="alert">@_error</div> }
+            <div class="mt-2 d-flex gap-1">
+                <button type="button" class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="Save" disabled="@_saving.Busy">Save</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    };
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Edits.Forget(this);
+    }
+}

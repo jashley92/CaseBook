@@ -251,6 +251,21 @@ first with `casebook-keytool export`.
   The access log and SIEM 5304 entry are now written as the download begins. Scoping, permissions and the downloads
   rate limit are unchanged. No migration and nothing to configure. An export holds a database connection while it
   downloads; with read-committed snapshot on (the installer sets it) it doesn't hold up other work.
+- **Historical and closed cases import, and a batch confirm (CAP-35).** No migration. The case-import schema is now v2
+  (`docs/case-import.schema.json`, `GET /api/import/cases/schema`; `$id` `urn:casebook:schema:case-import:v2`):
+  `schemaVersion` is 1 or 2, and v1 documents (the XSIAM script's included) are read exactly as before. v2 lets a new
+  case carry its phase `history`, `outcome`, `conclusion`, `incidentCommander` and `assignments`; the API now refuses
+  (400) a v2 history that's out of order, in the future or before detection. A producer validating against the
+  published schema with `"const": 1` for `schemaVersion` should accept 2 as well. The Import queue gains *Confirm all
+  from &lt;submitter&gt;…* (up to 25 at a time, each applied as its own confirm under the reviewer's name; SIEM 5515 per case).
+  Nothing to configure.
+- **Outside parties on a case (CAP-34).** One migration, `AddCaseParties`: a new `CaseParties` table (role, name,
+  contact, reference, when engaged, notes), cascading from `Cases`; no data moves. Things › Connections lists them under
+  *Outside parties* (*Add a party*, needing `EditCases`). Each row is audited and hashed from its first row, so the
+  record check flags one without a hash. The case report prints them with the legal lines (Business Impact, or the case
+  facts), Word templates get a `party` list (`party.role`, `name`, `contact`, `reference`, `engaged`, `notes`), and the
+  legal register CSV gains a last column, `outside_parties`: a script reading the register by position still reads the
+  columns before it as before. The configuration bundle is unchanged.
 - **A handoff remembers who it was handed to (CAP-20 review).** One migration, `HandoffRecipient`: a nullable
   `HandedToUserId` column on `TimelineEntries`; no data moves. The Now "watch for" card now finds the recipient by user
   id, so a renamed recipient's card still clears and a colleague with the same display name isn't taken for them.

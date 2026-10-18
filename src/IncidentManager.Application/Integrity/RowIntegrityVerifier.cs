@@ -41,6 +41,7 @@ public static class RowIntegrityVerifier
         db.ImprovementActions.AsNoTracking(),
         db.TransitionTimeCorrections.AsNoTracking(),
         db.JurisdictionNotices.AsNoTracking(),
+        db.CaseParties.AsNoTracking(),   // CAP-34
         db.CaseTemplates.AsNoTracking(),
         db.CaseTemplateSteps.AsNoTracking(),
         db.StageGates.AsNoTracking(),
@@ -326,7 +327,11 @@ public static class RowIntegrityVerifier
     /// BUG-422: tables that were hashable from the release that added them, so none of their rows predates row hashes.
     /// A table added later belongs here, not in <see cref="HashedFromUpgrade"/>.
     /// </summary>
-    private static readonly HashSet<string> HashedSinceCreation = new(StringComparer.Ordinal) { nameof(AccountDirectorySnapshot) };
+    private static readonly HashSet<string> HashedSinceCreation = new(StringComparer.Ordinal)
+    {
+        nameof(AccountDirectorySnapshot),
+        nameof(CaseParty),   // CAP-34
+    };
 
     /// <summary>
     /// Per record (type, id), the row hash its latest audit entry recorded, that entry's sequence, and whether it was a

@@ -48,7 +48,8 @@ else
                             @if (r.ReferredAtUtc is { } refd) { <div>Referred @TimeDisp.DateOnly(refd)</div> }
                             @if (!string.IsNullOrWhiteSpace(r.LegalContact)) { <div class="text-muted">@r.LegalContact</div> }
                             @if (r.LegalHold) { <div><span class="bi bi-lock" aria-hidden="true"></span> Legal hold</div> }
-                            @if (r.ReferredAtUtc is null && !r.LegalHold) { <span class="text-muted">—</span> }
+                            @if (r.OutsideParties is { } parties) { <div class="text-muted" title="Outside parties and their references">@parties</div> }   @* CAP-34 *@
+                            @if (r.ReferredAtUtc is null && !r.LegalHold && r.OutsideParties is null) { <span class="text-muted">—</span> }
                         </td>
                         <td class="small">
                             @Ui.Label(r.Materiality)

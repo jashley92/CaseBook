@@ -222,6 +222,20 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 
 Links to cases you can't see are hidden.
 
+## Outside parties
+
+Things › Connections → **Outside parties** (CAP-34) records who outside the organization is on the matter: outside
+counsel, a forensics firm, the insurer, law enforcement, a regulator's contact, or another party.
+
+| Action | How | Rules |
+|---|---|---|
+| Add | *Add a party* | Role (from the list) and name are required; contact, reference (a claim, police report or matter number), when they were engaged and notes are optional. Facts only (decision 0012): the form asks who, how to reach them, their reference and when, never how they did. Engaged can't be in the future. `EditCases`. |
+| Edit | *Edit* on the party | One party form at a time; a second *Edit* while one is open is refused, so what's typed is kept. A save after a colleague changed or removed the party is refused with what's there now; *Save* again overwrites deliberately. |
+| Remove | × on the party, confirmed | For a mis-entry. The audit trail keeps what it said. A page opened before a colleague's change refuses it. |
+
+Who can see the case sees its parties. Each change is audited and the row is hashed. They print in the case report with
+the legal lines, as `party.*` template fields, and in the legal register ([reporting](reporting.md)).
+
 ## Desk, Due work and Team
 
 | Page | Shows | Who |

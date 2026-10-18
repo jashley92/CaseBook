@@ -648,6 +648,22 @@ public sealed class JurisdictionNoticeConfiguration : IEntityTypeConfiguration<J
     }
 }
 
+public sealed class CasePartyConfiguration : IEntityTypeConfiguration<CaseParty>
+{
+    public void Configure(EntityTypeBuilder<CaseParty> b)
+    {
+        b.ToTable("CaseParties");   // CAP-34
+        b.Property(x => x.Name).HasMaxLength(CaseParty.MaxNameLength).IsRequired();
+        b.Property(x => x.Contact).HasMaxLength(CaseParty.MaxContactLength);
+        b.Property(x => x.Reference).HasMaxLength(CaseParty.MaxReferenceLength);
+        b.Property(x => x.Notes).HasMaxLength(CaseParty.MaxNotesLength);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ModifiedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(70);
+        b.HasIndex(x => x.CaseId);
+    }
+}
+
 public sealed class PostIncidentReviewConfiguration : IEntityTypeConfiguration<PostIncidentReview>
 {
     public void Configure(EntityTypeBuilder<PostIncidentReview> b)

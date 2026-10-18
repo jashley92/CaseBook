@@ -55,6 +55,26 @@ linked or superseded into each other, and filing an exercise checks for duplicat
 An *unrecognized* classification value is said back ("Filing it as a Complex Event") and the case opens as a
 **Complex Event**.
 
+### Historical and closed cases (schema v2, CAP-35)
+
+A `schemaVersion: 2` document can describe how a new case went, so a case worked before CaseBook (or in another tool)
+comes in as it stood rather than open in New. `target.newCase` may carry:
+
+- `history`: the phase transitions, oldest first, each `{ "phase", "at", "reason"? }` (plus `containedAt` or
+  `containmentNotNeeded` on a step past Containment without it, and `resolvedAt` on a step to PostIncident that skips
+  Recovery, as the phase change itself asks);
+- `outcome` (an active outcome key) and `conclusion`, when the history ends in Closed;
+- `incidentCommander` and `assignments` (`{ "user", "role"? }`, Analyst or Observer), each a user id or UPN.
+
+| | |
+|---|---|
+| **Checks (R4)** | Before anything is written: every step has a time; none is in the future or before `newCase.detectedAt` (which a history needs); they're in order; a history closes only at its last step, with an outcome and a conclusion; the outcome is active. A failing one is shown in the preview's *History and team* card and Apply is refused ("History step 3: … give the history in order."); the API refuses it with 400 before queueing (an inactive outcome is judged at review). |
+| **People** | Matched in the user directory when it's reviewed, by user id or UPN. Someone it doesn't know is a warning ("… isn't a user CaseBook knows … so they won't be added"), never dropped without a word. |
+| **Applying** | After the timeline, entities and tasks: the team (`CaseService.AssignAsync`), then each step through `CaseService.ChangePhaseAsync` at its time, so the contained, resolved and closed milestones derive from it (decisions 0010, 0011). A step without a reason gets "imported record: &lt;origin&gt;". The close runs the close gate; when its checks can't be met, it's overridden with that same reason, recorded on the passage. All under the confirmer's name; resumable step by step. |
+| **Only a new case** | A document that lands in an existing case (by `caseId`, or `detectionCaseId` matching an open case, CAP-14) leaves its history and team out, with a warning. |
+
+A v1 document reads exactly as before; v2 fields in a v1 document are ignored, with a warning.
+
 ### From the API (pending imports)
 
 A machine producer (an XSIAM playbook, a script) posts the same document to `POST /api/import/cases` with an
@@ -79,6 +99,14 @@ The queued submission records no target, so every reviewer sees it, under "Into 
 Given with `target.caseId`, the two must name the same case: if the case with that id (as the sender sees cases)
 carries another detection case id or none, the document is refused (the API's 400, the Import page's error). When they
 agree, it's an ordinary case-id target.
+
+**Confirming a batch (CAP-35).** When one submitter has two or more waiting, the queue offers *Confirm all from
+&lt;submitter&gt;…*. It lists that submitter's oldest waiting submissions by name, at most 25, and *Confirm these N* applies
+them one after another, each claimed, previewed as the reviewer sees it and applied by the same audited writes as a
+single confirm, under the reviewer's name (a person confirms, decision 0004). One that needs a person's eye (a target to
+choose among several, a filing gate to tick, a history that fails its checks, a decision without its why, an earlier
+apply that stopped) or that fails stays in the queue, and the result lists each one: applied into which case, or why
+not, with *Review*. SIEM 5515 is sent per case applied, and each one's status reads `applied` to its sender.
 
 **Asking what became of it (CAP-13).** `GET /api/import/cases/{pendingImportId}` gives the sending token the
 submission's status: `pending` (waiting, or being applied right now), `applied` (with the case's number and id when the
