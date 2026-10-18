@@ -636,7 +636,7 @@ role/mapping changes, and case-governance actions — alongside the existing aud
 **Transports: webhook (JSON), syslog (CEF) and the Windows Event Log.** Events queue in memory once and a
 background dispatcher **fans each out to every enabled transport**:
 - **Webhook** — HTTPS `POST` of a JSON body to the SIEM's HTTP collector.
-- **Syslog** — a **CEF** message over syslog (UDP or TCP) to a syslog collector.
+- **Syslog** — a **CEF** message over syslog (UDP, TCP or, CAP-33, TLS per RFC 5425) to a syslog collector.
 - **Windows Event Log** — one entry per event on the app server, for Windows Event Forwarding or an agent.
 
 Delivery is **best-effort and non-blocking**: a slow or unreachable collector never adds latency to, or

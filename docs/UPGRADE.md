@@ -397,7 +397,7 @@ first with `casebook-keytool export`.
   token that sent it (or one with `EditCases` that could review it): pending, applied (with the case's number and id
   when the token can see the case) or rejected. Anything else is a 404.
 - **Imports can name the existing case by its detection case id (CAP-14).** `target.detectionCaseId`, an optional
-  addition to import schema v1, is resolved when the import is reviewed, among the open cases the reviewer can see;
+  addition to the import schema (v1 and v2), is resolved when the import is reviewed, among the open cases the reviewer can see;
   with no match the `newCase` is prepared (with a warning), and with several the reviewer picks. A `target.caseId` and `target.detectionCaseId` that
   name different cases are refused (400). Producers sending only `caseId` or `newCase` see no change. The XSIAM
   template's README shows the new target.
@@ -418,9 +418,9 @@ first with `casebook-keytool export`.
   (CAP-21), so nothing is re-hashed
   and the integrity upgrade doesn't run again. Templates can use the new `notice` collection (`jurisdiction`,
   `notified`, `due`, `method`, `reference`, `by`, `file`). The case report's Business Impact section now lists each regulator's notice ("Notice to NY: …"), so a regenerated
-  report of a notified case reads differently from an older version. The legal-register CSV gains a last column,
-  `notice_references`: a script that reads columns by position is unaffected, one that checks the header needs it
-  added. No new SIEM event: editing how a regulator was notified sends none (recording the notice still sends 5513).
+  report of a notified case reads differently from an older version. The legal-register CSV gains two columns after
+  `deadline_status`: `notice_references` (this item) and `outside_parties` (CAP-34, the last). A script that reads
+  columns by position is unaffected; one that checks the header needs both added. No new SIEM event: editing how a regulator was notified sends none (recording the notice still sends 5513).
 
 ### v1.9.0
 
