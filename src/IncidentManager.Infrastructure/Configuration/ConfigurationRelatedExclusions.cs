@@ -21,11 +21,17 @@ public sealed class ConfigurationRelatedExclusions(IConfiguration config, IOrgan
         !bool.TryParse(config[RelatedExclusionSettings.FreeMailKey]?.Trim(), out var freeMail) || freeMail);
 
     public IReadOnlyList<DiscoveredDomain>? DiscoveredInForce =>
-        discovered is not null && List(RelatedExclusionSettings.DomainsKey) is null && discovered.Current.Domains is { Count: > 0 } found
+        discovered is not null && List(RelatedExclusionSettings.DomainsKey) is null && OwnFound() is { Count: > 0 } found
             ? found
             : null;
 
-    private IReadOnlyList<string> DiscoveredNames() => discovered?.Current.Domains.Select(d => d.Name).ToList() ?? [];
+    private IReadOnlyList<string> DiscoveredNames() => OwnFound().Select(d => d.Name).ToList();
+
+    // Owner's call (2026-10-18): only the organization's own domains (this one, its forest root, the forest's others) are
+    // in force while the setting is unset. A trusted partner's domain isn't necessarily noise, so it's only offered under
+    // "Use these" for an administrator to accept.
+    private List<DiscoveredDomain> OwnFound() =>
+        discovered?.Current.Domains.Where(d => d.Source != DiscoveredDomainSource.Trusted).ToList() ?? [];
 
     // A list setting: indexed children (an in-app value, or a JSON array in a settings file), or one string written by hand
     // ("10.0.0.0/8, fd00::/8"); null when it isn't set anywhere, so the default applies. An in-app value saved blank is

@@ -94,7 +94,8 @@ public sealed class DiscoveredDomainTests : IDisposable
         await CaseWithAsync(live.Cases);
 
         var related = await live.Cases.FindRelatedIndicatorsForIocsAsync(["shop.contoso.com", "mail.partner.example", "evil.example"]);
-        related.Select(r => r.OtherValue).Should().Equal(["cdn.evil.example"], "the organization's domains found are left out");
+        related.Select(r => r.OtherValue).Should().BeEquivalentTo(["cdn.partner.example", "cdn.evil.example"],
+            "the organization's own domains found are left out; a trusted partner's is only offered, so it still relates");
         related.ExcludedBecause("shop.contoso.com").Should().Contain("contoso.com");
 
         var setting = await DomainsSettingAsync(live);
@@ -102,9 +103,8 @@ public sealed class DiscoveredDomainTests : IDisposable
         setting.Source.Should().Be("Discovered");
         setting.Value.Should().BeEmpty("the field shows what is saved: nothing yet");
         setting.Discovered!.Select(d => (d.Name, d.Source)).Should().Equal(
-            ("corp.contoso.com", DiscoveredDomainSource.ThisDomain), ("contoso.com", DiscoveredDomainSource.ForestRoot),
-            ("partner.example", DiscoveredDomainSource.Trusted));
-        setting.InForce.Should().Be("corp.contoso.com\ncontoso.com\npartner.example");
+            ("corp.contoso.com", DiscoveredDomainSource.ThisDomain), ("contoso.com", DiscoveredDomainSource.ForestRoot));
+        setting.InForce.Should().Be("corp.contoso.com\ncontoso.com", "a trusted partner's domain is only offered (owner, 2026-10-18)");
 
         var bundle = await live.Bundles.BuildBundleAsync();
         bundle.Settings.Should().NotContain(s => s.Key == RelatedExclusionSettings.DomainsKey, "a bundle carries what was saved, never what was found");
@@ -120,8 +120,7 @@ public sealed class DiscoveredDomainTests : IDisposable
         var live = await LiveAsync(database, Contoso);
 
         // "Use these" fills the field with the found names, one per line; the section's save stores them.
-        var found = (await DomainsSettingAsync(live)).Discovered!;
-        await live.Settings.SetAsync(RelatedExclusionSettings.DomainsKey, string.Join("\n", found.Select(d => d.Name)));
+        await live.Settings.SetAsync(RelatedExclusionSettings.DomainsKey, "corp.contoso.com\ncontoso.com\npartner.example");   // every name found, partners too
 
         var setting = await DomainsSettingAsync(live);
         setting.Source.Should().Be("Database");
@@ -152,7 +151,7 @@ public sealed class DiscoveredDomainTests : IDisposable
             .Which.Value.Should().BeEmpty();
 
         await live.Settings.ResetAsync(RelatedExclusionSettings.DomainsKey);
-        live.Exclusions.Current.Domains.Should().Equal("corp.contoso.com", "contoso.com", "partner.example");
+        live.Exclusions.Current.Domains.Should().Equal("corp.contoso.com", "contoso.com");
         (await DomainsSettingAsync(live)).Source.Should().Be("Discovered");
     }
 

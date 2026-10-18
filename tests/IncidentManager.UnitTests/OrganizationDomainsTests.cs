@@ -55,6 +55,21 @@ public sealed class OrganizationDomainsTests
         new(new ConfigurationBuilder().AddInMemoryCollection(values).Build(), new FakeDomains(found ?? Contoso));
 
     [Fact]
+    public void A_trusted_partners_domain_is_offered_but_never_in_force_on_its_own()
+    {
+        var found = OrganizationDomains.Normalized(
+            [new("corp.contoso.com", DiscoveredDomainSource.ThisDomain), new("partner.example", DiscoveredDomainSource.Trusted)], At);
+        var p = Provider([], found);
+        p.Current.Domains.Should().Equal(["corp.contoso.com"], "a partner's domain isn't necessarily noise");
+        p.DiscoveredInForce!.Select(d => d.Name).Should().Equal("corp.contoso.com");
+        found.Domains.Should().Contain(d => d.Name == "partner.example", "it's still offered under Use these");
+
+        var onlyTrusted = Provider([], OrganizationDomains.Normalized([new("partner.example", DiscoveredDomainSource.Trusted)], At));
+        onlyTrusted.Current.Domains.Should().BeEmpty();
+        onlyTrusted.DiscoveredInForce.Should().BeNull();
+    }
+
+    [Fact]
     public void Never_set_the_domains_found_are_in_force()
     {
         var p = Provider([]);

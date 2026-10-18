@@ -1224,7 +1224,7 @@
         @<div id="org-domains-found" class="small mt-2">
             @if (s.Discovered is not null && _form.GetValueOrDefault(s.Definition.Key) is null)
             {
-                <div class="mb-1"><span class="im-badge im-b-info">Not set</span> Using the domains found on this server's network.</div>
+                <div class="mb-1"><span class="im-badge im-b-info">Not set</span> Using your organization's domains found on this server's network. Trusted partners' domains are only offered: <em>Use these</em> adds them for you to review.</div>
             }
             else if (s.Discovered is not null && string.IsNullOrWhiteSpace(_form.GetValueOrDefault(s.Definition.Key)))
             {

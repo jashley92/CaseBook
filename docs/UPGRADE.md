@@ -259,10 +259,11 @@ first with `casebook-keytool export`.
   domain is a built-in approximation (no Public Suffix List is downloaded). Each shared part reads the newest 500
   candidates; when that limit is reached, the panel says only the newest 500 were checked. Under Administration ›
   Integrations › Related indicators, **your organization's domains** keep internal accounts and hosts from being
-  suggested across cases. Until you save them, the domains found on the server's network are used: the AD domain it's
-  joined to, its forest root and other domains, and its trusted domains, looked up once in the background after start-up
-  (5 s limit), shown beside the field with their source, never stored and never exported in a config bundle; **Use these**
-  fills the field for you to review and save, and a saved value (blank included) always wins. A server not on a domain
+  suggested across cases. Until you save them, the organization's own domains found on the server's network are used:
+  the AD domain it's joined to, its forest root and the forest's other domains, looked up once in the background after
+  start-up (5 s limit), shown beside the field with their source, never stored and never exported in a config bundle.
+  Trusted partners' domains are found too but only offered: **Use these** fills the field with all of them for you to
+  review and save, and a saved value (blank included) always wins. A server not on a domain
   finds none (Diagnostics says why), so enter them yourself; **excluded address ranges** default to the
   private, loopback, link-local and unique local ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`,
   `169.254.0.0/16`, `::1/128`, `fe80::/10`, `fc00::/7`), editable; and free mail addresses stay left out unless you turn
