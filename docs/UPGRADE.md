@@ -212,6 +212,16 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.10.1
+
+A small maintenance release with no migration and no setting changes. Upgrade as usual with `Upgrade-CaseBook.ps1`.
+
+- **Evidence package download:** the zip is now written with asynchronous calls throughout, so a large package no longer
+  holds a server thread while it streams. The package, its encryption and its recorded SHA-256 are unchanged.
+- **Report integrity check:** releases its working copy asynchronously. No visible change.
+- **Dependencies:** FluentValidation 12.2.0, and (for builds and tests only) dotnet-ef 10.0.13, Microsoft.NET.Test.Sdk
+  18.11.0 and xunit.runner.visualstudio 4.0.1.
+
 ### v1.10.0
 
 A large release: everything below lands at once. Eight migrations, applied on first start: `StoredSecrets`, `NoticeDetails`,
