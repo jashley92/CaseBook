@@ -16,7 +16,10 @@ public sealed record HeldEmailSummary(int Count, bool AtLeast, DateTimeOffset? O
     public static async Task<HeldEmailSummary> ReadAsync(IDbContextFactory<AppDbContext> factory, TimeSpan limit, CancellationToken ct = default)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(limit);
+        // A limit already past cancels now: CancelAfter(0) cancels on a timer thread a moment later, so the check below
+        // could run first, and a provider that doesn't check the token (SQLite) would then answer.
+        if (limit <= TimeSpan.Zero) timeout.Cancel();
+        else timeout.CancelAfter(limit);
         try
         {
             timeout.Token.ThrowIfCancellationRequested();   // a limit already past: say so, whether or not the provider checks
