@@ -398,12 +398,24 @@ The template also fixes `Auth:Mode=Windows`, `Database:Provider=SqlServer`, auto
 logging at `Warning`, and CyberArk off.
 
 The installer does **not** set `App:BaseUrl`, `Agenda:FeedKey`, any SIEM or chat endpoint, or
-`ASPNETCORE_ENVIRONMENT`. Set them by editing `appsettings.Production.json` (server-side keys) or in
-Administration (in-app keys).
+`ASPNETCORE_ENVIRONMENT`. The SIEM, chat, `Agenda:FeedKey` and other server-side sections are written to the file
+at their defaults (off or blank), ready to fill in. Set them by editing `appsettings.Production.json` (server-side
+keys) or in Administration (in-app keys).
 
-**Upgrades never rewrite this file** (it is excluded from the binary copy and backed up first). The only
-change an upgrade makes is adding missing data-folder settings. Any other new setting in a later release takes
-its `appsettings.json` default until you add it.
+**Upgrades never change a setting already in this file** (it is excluded from the binary copy and backed up
+first). An upgrade only adds what's missing:
+
+- **Data-folder settings**, under your data root (see §3.3).
+- **Server-side settings from later releases**, so they can be found and set: evidence encryption
+  (`Storage:Encryption`), the signing and chain key sources (`Integrity:SigningKey`, `Integrity:ChainKey`), seal
+  copies, trusted bundle keys (`Config:TrustedBundleKeys`), CyberArk, the SIEM transports (`Siem`), the chat webhook
+  (`Chat:Webhook`), the update check's repository and proxy, `Agenda:FeedKey`, download rate limits, the backup-age
+  thresholds and the SMTP connection settings. Each is written at the value the app already uses without it (the
+  release's `appsettings.json`), so nothing changes until you edit it. The upgrade's preflight lists them first.
+  Secrets entered in Administration (the SIEM webhook token, the chat webhook URL, the SMTP sign-in) aren't added:
+  set here, they'd win over the form.
+
+In-app settings are never added: they're set in Administration.
 
 ## 5. Hard-coded values
 

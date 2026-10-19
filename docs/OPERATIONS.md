@@ -405,7 +405,8 @@ doesn't expose them and the server's antivirus can't delete a malware sample. Wh
 
 **Losing the key loses every encrypted file.** Set up the backups below before turning it on, and run a drill.
 
-`Storage:Encryption` (server configuration only, never the in-app settings):
+`Storage:Encryption` (server configuration only, never the in-app settings). It's in `appsettings.Production.json`,
+turned off: put there by the installer, or by the upgrade on a server installed before v1.7.0.
 
 | Setting | Meaning |
 |---|---|

@@ -212,6 +212,19 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.10.2
+
+A small release with no migration. **The upgrade now adds server-side settings your `appsettings.Production.json` is
+missing**, so you can see and set them there: evidence encryption (`Storage:Encryption`), the signing and chain key
+sources, seal copies, trusted bundle keys, CyberArk, the SIEM transports, the chat webhook, the update check's repository
+and proxy, `Agenda:FeedKey`, download rate limits, the backup-age thresholds and the SMTP connection settings.
+
+- Each is added at the value the app already uses without it, so **nothing changes until you edit one**. Settings
+  already in the file are never changed, and in-app settings and the secrets entered in Administration aren't added.
+- The preflight lists the sections it will add. The file is backed up first, as for the data-folder settings.
+- The upgrade rewrites the file to add them, so its layout (indenting and spacing) changes; the values don't.
+- Fresh installs get the same sections from the installer.
+
 ### v1.10.1
 
 A small maintenance release with no migration and no setting changes. Upgrade as usual with `Upgrade-CaseBook.ps1`.

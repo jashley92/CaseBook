@@ -10,7 +10,10 @@
     swaps the app binaries and lets EF Core apply the pending migrations. The one exception: when a newer
     release added a data-folder setting (e.g. ReportTemplates:RootPath) that the deployed
     appsettings.Production.json lacks, it adds that setting under the data root (after backing the config
-    up) and creates the folder, so the store doesn't fall back to App_Data in the read-only web root. It also snapshots the current binaries so a failed upgrade rolls back.
+    up) and creates the folder, so the store doesn't fall back to App_Data in the read-only web root. Likewise a
+    server-side setting from a later release (e.g. Storage:Encryption, Siem) that the file lacks is added at the
+    value the app already uses without it, so an administrator can find and set it; nothing changes until they do.
+    It also snapshots the current binaries so a failed upgrade rolls back.
     And in IIS it checks the anonymous carve-outs (/api, /health, /branding/logo, /agenda/feed.ics: anonymous on,
     Windows off), which a site installed before a release added one lacks, and sets any that differ, as the installer does.
 
@@ -555,6 +558,30 @@ if ($template) {
     Write-Warn2 "No appsettings.Production.template.json found -- skipping the data-folder settings check."
 }
 
+# 3e2. SERVER SETTINGS ADDED SINCE THIS INSTALL WAS MADE. A server-side setting from a later release (evidence encryption,
+# the SIEM transports, CyberArk, ...) isn't in an older install's appsettings.Production.json, so an administrator can't
+# see that it exists. Each missing one is added after the backup at the value the app already uses without it (the
+# release's appsettings.json), so nothing changes until someone edits it. Settings already there are left alone.
+. (Join-Path $deployDir 'lib\CaseBookSettings.ps1')
+$releaseDefaults = $null; $serverSettingsToAdd = @()
+$releaseBase = if ($appSrc) { Join-Path $appSrc 'appsettings.json' } else { $null }
+if ($releaseBase -and (Test-Path $releaseBase)) {
+    $releaseDefaults = Get-Content $releaseBase -Raw -Encoding UTF8 | ConvertFrom-Json
+    $probe = Get-Content $prodSettings -Raw -Encoding UTF8 | ConvertFrom-Json
+    $serverSettingsToAdd = @(Find-CaseBookMissingServerSettings $probe $releaseDefaults)
+    # Tried here on a copy, so a file that can't take them (a value where a section belongs) stops before anything changes.
+    try { Add-CaseBookServerSettings $probe $releaseDefaults $null $serverSettingsToAdd }
+    catch { throw "$($_.Exception.Message) Fix appsettings.Production.json and re-run." }
+    if ($serverSettingsToAdd.Count -eq 0) { Write-Info "Server settings: all present." }
+    else {
+        $sections = @(Get-CaseBookServerSettingPaths | Where-Object { $p = $_; @($serverSettingsToAdd | Where-Object { $_ -eq $p -or $_.StartsWith("${p}:") }).Count })
+        Write-Info ("Server settings to add to appsettings.Production.json at their current values (no change until you set them): " +
+                    ($sections -join ', '))
+    }
+} else {
+    Write-Warn2 "The release's appsettings.json wasn't found -- skipping the server settings check."
+}
+
 # 3f. BUG-544: KEY FILES BESIDE THE SIGNING KEY. The chain key file (Certificate source) and the retired key folders
 # default to the folder of Integrity:SigningKeyPath even when the signing key isn't a file, and with no SigningKeyPath
 # that is App_Data\keys under the site folder, which the deploy's mirror copy below empties (a lost chain key then stops
@@ -791,6 +818,18 @@ if ($missingData.Count -gt 0 -or $keyMoves.Count -gt 0) {
         Write-Info "$($m.Path) = $value"
     }
     $liveCfg | ConvertTo-Json -Depth 32 | Set-Content -Path $prodSettings -Encoding UTF8
+}
+
+# --- 5b2. Add the server settings the preflight found missing (step 3e2; the config is backed up above) ---------
+if ($serverSettingsToAdd.Count -gt 0) {
+    Write-Step "Adding server settings to appsettings.Production.json (at the values in use; read OPERATIONS.md before changing them)"
+    $liveCfg     = Get-Content $prodSettings -Raw -Encoding UTF8 | ConvertFrom-Json
+    $templateCfg = if ($template) { Get-Content $template -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
+    # Found again: step 5b may have written some of them since.
+    $toAdd = @(Find-CaseBookMissingServerSettings $liveCfg $releaseDefaults)
+    Add-CaseBookServerSettings $liveCfg $releaseDefaults $templateCfg $toAdd
+    $liveCfg | ConvertTo-Json -Depth 32 | Set-Content -Path $prodSettings -Encoding UTF8
+    foreach ($a in $toAdd) { Write-Info "$a = $(ConvertTo-Json -Compress -InputObject (Get-CaseBookJsonNode $releaseDefaults $a))" }
 }
 
 # --- 5c. CAP-37: set any anonymous carve-out the preflight found missing or wrong ---------
