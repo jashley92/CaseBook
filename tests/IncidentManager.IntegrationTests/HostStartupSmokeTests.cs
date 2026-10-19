@@ -208,8 +208,16 @@ public sealed class HostStartupSmokeTests : IDisposable
             }
             using (var wrong = new ICSharpCode.SharpZipLib.Zip.ZipFile(new MemoryStream(body.ToArray())) { Password = "not-it" })
             {
-                var open = () => wrong.GetInputStream(wrong[0]).ReadByte();
-                open.Should().Throw<ICSharpCode.SharpZipLib.Zip.ZipException>("only the password opens it");
+                // Classic zip encryption checks a password against one byte of its random header, so about one zip in 256
+                // gets past it with a wrong password and reads as noise: either way, the file doesn't come out.
+                string? read = null;
+                try
+                {
+                    using var noise = wrong.GetInputStream(wrong[0]);
+                    read = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(noise)).ToLowerInvariant();
+                }
+                catch (ICSharpCode.SharpZipLib.SharpZipBaseException) { /* refused (or, past the check, noise that won't inflate) */ }
+                read.Should().NotBe(evidence.Sha256, "only the password opens it");
             }
 
             var plain = await client.GetAsync($"/evidence/{evidence.Id}");
