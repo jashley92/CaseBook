@@ -18,7 +18,7 @@ public sealed record HeldEmailSummary(int Count, bool AtLeast, DateTimeOffset? O
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         // A limit already past cancels now: CancelAfter(0) cancels on a timer thread a moment later, so the check below
         // could run first, and a provider that doesn't check the token (SQLite) would then answer.
-        if (limit <= TimeSpan.Zero) timeout.Cancel();
+        if (limit <= TimeSpan.Zero) await timeout.CancelAsync();
         else timeout.CancelAfter(limit);
         try
         {
