@@ -405,67 +405,182 @@ doesn't expose them and the server's antivirus can't delete a malware sample. Wh
 
 **Losing the key loses every encrypted file.** Set up the backups below before turning it on, and run a drill.
 
-`Storage:Encryption` (server configuration only, never the in-app settings). It's in `appsettings.Production.json`,
-turned off: put there by the installer, or by the upgrade on a server installed before v1.7.0.
+#### How it works
+
+You don't make the evidence key. CaseBook makes it (a random 256-bit key) the first time it starts with encryption
+on, and never stores it in the clear. It stores **locked copies** of it instead, in a small file called the
+*envelope*. Each certificate you give it locks one copy with its public key; only the matching private key unlocks
+that copy.
+
+| Lock | What it is | Where its private key lives | When it's used |
+|---|---|---|---|
+| **Server lock** (one) | A certificate on the CaseBook server, in `LocalMachine\My`. It can be one you already have for the audit trail (step 1). | On the server, non-exportable, readable by the app-pool account | Every time CaseBook starts, to open the key |
+| **Recovery locks** (one per recovery certificate; make two) | Certificates made on another machine. The server is given only their public part (`.cer`). | Offline: in a safe or on a smartcard, with a custodian | Only in a disaster, by `casebook-keytool`, to get the key back |
+| **Shares** (optional, instead of or as well as recovery certificates) | The key cut into 5 pieces, any 3 of which rebuild it | On paper or USB, with 5 different people | Only in a disaster |
+
+So the **recovery certificate is not the server's certificate**, and its private key is never on the server. The
+server lock is what CaseBook uses day to day, and it's lost with the server (a rebuild, a deleted certificate, a
+ransomware wipe). The recovery locks are the way back when that happens. Because their private keys aren't on the
+server, someone who takes over the server can't use them.
+
+**Why two recovery certificates?** Any one of them recovers the key. With two, one lost `.pfx`, forgotten password or
+departed custodian doesn't lose everything. Keep them with different people, in different places.
+
+```mermaid
+flowchart LR
+    K["Evidence key<br/>made by CaseBook,<br/>never stored in the clear"]
+    K -->|locked to| S["Server certificate<br/>on the server"]
+    K -->|locked to| A["Recovery certificate A<br/>private key offline, custodian A"]
+    K -->|locked to| B["Recovery certificate B<br/>private key offline, custodian B"]
+    K -.->|optional| SH["Shares: any 3 of 5"]
+    S --> D["Daily use:<br/>CaseBook opens the key at start-up"]
+    A --> R["Disaster:<br/>casebook-keytool recover or export"]
+    B --> R
+    SH -.-> R
+```
+
+#### Choosing your setup
+
+```mermaid
+flowchart TD
+    start([Turn on evidence encryption]) --> q1{"Is the audit chain key on with a certificate or CyberArk,<br/>or the signing key in the certificate store?"}
+    q1 -->|"No: the default install,<br/>signing key is a PEM file"| make["Step 1: make a server certificate"]
+    q1 -->|Yes| q2{"Use that certificate or key,<br/>or keep the evidence key apart?"}
+    q2 -->|Use it| none["Step 1: nothing to do"]
+    q2 -->|Keep it apart| make
+    make --> rec["Step 2: make two recovery certificates<br/>on another machine"]
+    none --> rec
+    rec --> on["Step 3: turn it on"]
+    on --> q3{"Also want shares?<br/>No single person can recover alone"}
+    q3 -->|Yes| split["Step 4: issue shares"]
+    q3 -->|No| drill["Step 5: check Diagnostics shows On,<br/>then run a drill"]
+    split --> drill
+```
+
+You need a server lock and at least one backup (a recovery certificate or shares). Until both exist, nothing is
+encrypted: evidence is stored as before and Diagnostics says what's missing.
+
+#### Step 1: the server lock
+
+CaseBook uses the first of these that's set:
+
+1. `Storage:Encryption:CertificateThumbprint`: a certificate of its own, kept apart from the audit trail's.
+2. The audit chain key's certificate (`Integrity:ChainKey`, `Enabled` true, `Source` `Certificate`).
+3. The seal-signing certificate (`Integrity:SigningKey:Source` `CertificateStore`).
+4. A key derived from the chain key in CyberArk (`Integrity:ChainKey:Source` `CyberArk`).
+
+**If none is set** (the default install, whose signing key is a PEM file), make a certificate on the server, in an
+elevated PowerShell:
+
+```powershell
+$s = New-SelfSignedCertificate -Subject "CN=CaseBook evidence key" -CertStoreLocation Cert:\LocalMachine\My `
+     -KeyAlgorithm RSA -KeyLength 3072 -KeyExportPolicy NonExportable -KeyUsage KeyEncipherment -NotAfter (Get-Date).AddYears(10)
+$s.Thumbprint
+```
+
+Then let the app-pool account read its private key. In `certlm.msc`, go to *Personal › Certificates*, right-click the
+certificate, choose *All Tasks › Manage Private Keys*, and add `IIS APPPOOL\CaseBook` (your app pool's name) with
+**Read**. Put the thumbprint in `Storage:Encryption:CertificateThumbprint` (step 3).
+
+- Self-signed is fine: nothing checks its chain.
+- Non-exportable means it can be used on this server but never copied off it. That's deliberate: the recovery
+  certificates are the copy.
+- At install, setting `EvidenceKeyThumbprint` in the answers file grants the read for you.
+
+#### Step 2: two recovery certificates
+
+On a machine **other than the CaseBook server** (an admin workstation), once per custodian, changing the letter:
+
+```powershell
+$c = New-SelfSignedCertificate -Subject "CN=CaseBook evidence recovery (custodian A)" -CertStoreLocation Cert:\CurrentUser\My `
+     -KeyAlgorithm RSA -KeyLength 3072 -KeyExportPolicy Exportable -KeyUsage KeyEncipherment -NotAfter (Get-Date).AddYears(10)
+Export-Certificate -Cert $c -FilePath .\casebook-recovery-a.cer
+Export-PfxCertificate -Cert $c -FilePath .\casebook-recovery-a.pfx -Password (Read-Host -AsSecureString "PFX password")
+Remove-Item "Cert:\CurrentUser\My\$($c.Thumbprint)" -DeleteKey
+```
+
+That leaves two files per custodian:
+
+- `casebook-recovery-a.cer` is the **public** part. Copy it to the server, for example to `<DataRoot>\keys\recovery\`.
+- `casebook-recovery-a.pfx` and its password are the **private** part. They go in the custodian's safe (or onto a
+  smartcard), never onto the server. The last line removes the certificate from the workstation.
+
+Your certificate authority can issue them instead (RSA, with key-encipherment usage). Expiry doesn't stop recovery;
+Diagnostics warns 60 days ahead.
+
+#### Step 3: turn it on
+
+In `appsettings.Production.json` (the upgrade adds this section, turned off, if it's missing):
+
+```json
+"Storage": {
+  "Encryption": {
+    "Enabled": true,
+    "CertificateThumbprint": "<the thumbprint from step 1, or blank to use the integrity certificate>",
+    "StoreLocation": "LocalMachine",
+    "RecoveryCertificates": [
+      "E:\\CaseBookData\\keys\\recovery\\casebook-recovery-a.cer",
+      "E:\\CaseBookData\\keys\\recovery\\casebook-recovery-b.cer"
+    ]
+  }
+}
+```
+
+Recycle the app pool. CaseBook makes the key and locks it to the server certificate and to each recovery certificate,
+and Diagnostics shows **On**. At install, the answers file's `EvidenceEncryption`, `RecoveryCertificates` and
+`EvidenceKeyThumbprint` do the same (INSTALL.md §4).
+
+New files are encrypted from then on. Files stored before are converted in the background, starting 15 minutes after
+start-up (after `Upgrade-CaseBook.ps1`'s warm-up), or straight away with **Convert now** on Diagnostics. Each is checked
+against its recorded hash before and after, and only then replaces the original; one that doesn't match is left as it
+is and reported. Conversion needs free space for the largest file. **It's one-way:** an earlier CaseBook version can't
+read converted files, so a rollback after it also needs the evidence store restored from before it (or the files
+exported, below).
 
 | Setting | Meaning |
 |---|---|
 | `Enabled` | `false` by default. |
-| `RecoveryCertificates` | Paths to `.cer` files (public part only). The key is also encrypted to each; their private keys stay offline. |
-| `CertificateThumbprint`, `StoreLocation` | Optional: a certificate of its own to protect the key, kept apart from the audit chain's. Blank uses the integrity keys already configured (below). |
-| `EnvelopePath` | Optional: where the key's envelope is kept; blank is `evidence-key.json` beside the seal-signing key (`<DataRoot>\keys`). |
+| `RecoveryCertificates` | Paths to `.cer` files (public part only). A `.cer` added or removed later is added to or dropped from the envelope at the next check. |
+| `CertificateThumbprint`, `StoreLocation` | Optional: the server lock's own certificate (step 1). Blank uses the integrity keys already configured. |
+| `EnvelopePath` | Optional: where the envelope is kept. Blank is `evidence-key.json` beside the seal-signing key (`<DataRoot>\keys`). |
 
-**What protects the key on the server.** CaseBook makes the key once and keeps it only encrypted, in an envelope.
-The server's copy is protected by, in this order: `CertificateThumbprint` if set, else the chain key's certificate,
-else the seal-signing certificate (`Integrity:SigningKey:Source = CertificateStore`), else a key derived from the chain
-key in CyberArk. With none of these, Diagnostics says encryption can't start; configure one (this section, above).
-When that certificate is renewed and the old one is still in the store, the key is re-encrypted to the new one at
-the next check (daily, and at start-up). Leave the old certificate in the store until Diagnostics shows the new one.
+#### Step 4 (optional): shares
 
-**Its backups.** Encryption doesn't start until there's at least one of the first two; until then evidence is stored
-as before and Diagnostics says why.
+Shares need the key to exist, so issue them after step 3. On the server, as an administrator:
+`deploy\keytool\casebook-keytool split --site <site folder> [--threshold 3] [--shares 5] [--out <folder>]`.
 
-1. **Recovery certificates.** Make two, each with its own custodian, on a machine other than the CaseBook server
-   (or issue them from your certificate authority with key-encipherment usage):
+- Give each share (one line, `CBS1-…`) to a different person or safe, on paper or USB, then delete the output folder
+  (`--out` makes it readable by administrators only).
+- Any 3 rebuild the key; 2 reveal nothing.
+- CaseBook records that shares were issued, never the shares themselves.
+- A holder can check theirs, on any machine, with `casebook-keytool check-share`.
+- With shares and no recovery certificate, encryption starts once the shares are issued.
 
-   ```powershell
-   $c = New-SelfSignedCertificate -Subject "CN=CaseBook evidence recovery (custodian A)" -CertStoreLocation Cert:\CurrentUser\My `
-        -KeyAlgorithm RSA -KeyLength 3072 -KeyExportPolicy Exportable -KeyUsage KeyEncipherment -NotAfter (Get-Date).AddYears(10)
-   Export-Certificate -Cert $c -FilePath .\casebook-recovery-a.cer
-   Export-PfxCertificate -Cert $c -FilePath .\casebook-recovery-a.pfx -Password (Read-Host -AsSecureString "PFX password")
-   Remove-Item "Cert:\CurrentUser\My\$($c.Thumbprint)" -DeleteKey
-   ```
+#### Step 5: check, and drill
 
-   Copy the `.cer` to the server (for example `<DataRoot>\keys\recovery\`) and list it in `RecoveryCertificates`. Put
-   the `.pfx` and its password in the safe (or keep the key on a smartcard). Any one of them recovers the key, and the
-   chain key when it's on, without the server. Expiry doesn't matter for recovery; Diagnostics notes it.
-2. **Shares.** On the server, as an administrator: `deploy\keytool\casebook-keytool split --site <site folder>
-   [--threshold 3] [--shares 5] [--out <folder>]`. Give each share (one line, `CBS1-…`) to a different person or safe,
-   on paper or USB, and delete the output folder (`--out` makes it readable by administrators only). Any 3 rebuild the key; 2 reveal nothing. CaseBook records that
-   shares were issued, never the shares. A holder checks theirs, on any machine, with `casebook-keytool check-share`.
-3. **The envelope**, kept by CaseBook in three places: the keys folder, the database (`KeyEnvelopes`) and beside the
-   evidence (`<store>\.key\evidence-key.json`). A missing or damaged copy is rewritten from a good one at the next
-   check. Back them up with everything else (section 1); they're useless without a certificate or the shares.
-4. **CyberArk**, when the chain key comes from there: its vault backup covers the server's copy.
-
-**Checks and drills.** Every day, CaseBook checks each envelope copy, the recovery copies and the server's protection,
-and alerts the integrity distribution once per problem. Diagnostics shows the state, the copies, the backups and the
-last drill. The offline backups can't be tested by the server alone (that would let anyone who took over the server
-open them), so drill them at least yearly; Diagnostics reminds after 12 months:
+Diagnostics shows the state, the server lock, the envelope copies, the recovery certificates, the shares and the last
+drill. The server can't test the offline backups by itself (that would let anyone who took over the server open them),
+so drill each one at least once a year; Diagnostics reminds you after 12 months. The custodian brings the `.pfx` to the
+server for the drill:
 
 ```powershell
 casebook-keytool verify --site C:\inetpub\casebook --pfx E:\casebook-recovery-a.pfx   # asks for the password
 casebook-keytool verify --site C:\inetpub\casebook --shares                           # asks for the shares
 ```
 
-**Turning it on.** Configure the backups, set `Enabled` to `true` (or, at install, the answers file's
-`EvidenceEncryption`, `RecoveryCertificates` and `EvidenceKeyThumbprint`: INSTALL.md §4), restart the app pool, and
-check Diagnostics shows **On**. New files are encrypted from then on. Files stored before are converted in the background, starting 15
-minutes after start-up (after `Upgrade-CaseBook.ps1`'s warm-up), or at once with **Convert now** on Diagnostics. Each
-is checked against its recorded hash before and after, and only then replaces the original; one that doesn't match
-is left as it is and reported. Conversion needs free space for the largest file. **It's one-way:** an earlier
-CaseBook version can't read converted files, so a rollback after it also needs the evidence store restored from
-before it (or the files exported, below).
+#### What else to know
+
+**Certificate renewal.** When the server certificate is renewed and the old one is still in the store, the key is
+locked to the new one at the next check (daily, and at start-up). Leave the old certificate in the store until
+Diagnostics shows the new one.
+
+**The envelope** is kept in three places: the keys folder, the database (`KeyEnvelopes`) and beside the evidence
+(`<store>\.key\evidence-key.json`). A missing or damaged copy is rewritten from a good one at the next check. Back
+them up with everything else (section 1). Without a certificate or the shares, they're useless. When the server lock
+is the chain key in CyberArk, CyberArk's own vault backup covers it.
+
+**Checks.** Every day CaseBook checks each envelope copy, the recovery copies and the server lock, and alerts the
+integrity distribution once per problem.
 
 **When the key can't be opened** (a certificate removed or its rights changed, CyberArk down, a restore without the
 keys folder): CaseBook keeps running. Evidence and report downloads, uploads and report generation answer that the

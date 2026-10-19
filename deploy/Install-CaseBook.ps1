@@ -596,6 +596,12 @@ if ($SigningKeySource -eq 'CertificateStore') { Grant-PrivateKeyRead $SigningKey
 if ($ChainKeySource -eq 'Certificate' -and ($ChainKeyThumbprint -replace '\s','') -ne ($SigningKeyThumbprint -replace '\s','')) {
     Grant-PrivateKeyRead $ChainKeyThumbprint 'the audit chain key'
 }
+# PROD-57: a certificate of the evidence key's own (EvidenceKeyThumbprint) is opened by the app at every start.
+$evidenceThumb = $EvidenceKeyThumbprint -replace '[^0-9A-Fa-f]', ''
+if ($EvidenceEncryption -and $evidenceThumb -and $evidenceThumb -ne ($SigningKeyThumbprint -replace '[^0-9A-Fa-f]', '') -and
+    -not ($ChainKeySource -eq 'Certificate' -and $evidenceThumb -eq ($ChainKeyThumbprint -replace '[^0-9A-Fa-f]', ''))) {
+    Grant-PrivateKeyRead $evidenceThumb 'the evidence key'
+}
 # CAP-05: the app opens a Protected SMTP password with this certificate's private key (once, if it's one of the above).
 if ($smtpProtectThumbprint -and $smtpProtectThumbprint -ne ($SigningKeyThumbprint -replace '[^0-9A-Fa-f]', '') -and
     -not ($ChainKeySource -eq 'Certificate' -and $smtpProtectThumbprint -eq ($ChainKeyThumbprint -replace '[^0-9A-Fa-f]', ''))) {
