@@ -19,6 +19,9 @@ internal sealed record Site(string EnvelopePath, string EvidenceRoot, string Rep
 {
     public string RootEnvelopePath => Path.Combine(EvidenceRoot, ".key", "evidence-key.json");
 
+    /// <summary>The seal-signing key file, as the app resolves <c>Integrity:SigningKeyPath</c> (signing-public-key).</summary>
+    public string SigningKeyPath { get; init; } = "";
+
     /// <summary>CAP-05: <c>Storage:Encryption:CertificateThumbprint</c> and its store, when set (protect-secret's first choice).</summary>
     public string? EncryptionThumbprint { get; init; }
     public string EncryptionStore { get; init; } = "LocalMachine";
@@ -56,6 +59,7 @@ internal sealed record Site(string EnvelopePath, string EvidenceRoot, string Rep
             connection,
             integrity)
         {
+            SigningKeyPath = signing,
             EncryptionThumbprint = config["Storage:Encryption:CertificateThumbprint"],
             EncryptionStore = config["Storage:Encryption:StoreLocation"] ?? "LocalMachine",
         };

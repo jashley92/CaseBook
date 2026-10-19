@@ -270,15 +270,24 @@ The install step runs `dotnet publish`, which restores NuGet packages. Two commo
 
 Production must **not** let the app generate its own seal-signing key (OPERATIONS.md §2), and it won't: **if the
 key file doesn't exist, the app refuses to start** ("The seal-signing key … doesn't exist"). Do this step before
-the first browse to the site. Generate the key on a trusted
-admin workstation / HSM and install it to the path the config points at:
+the first browse to the site. [OPERATIONS.md §2, Setting up the key](OPERATIONS.md#setting-up-the-key) has each
+option step by step. The two usual ones:
 
-```
-E:\CaseBookData\keys\seal-signing.pem
-```
+- **In the certificate store** (recommended): make a non-exportable certificate on the server with
+  `New-SelfSignedCertificate`, and put its thumbprint in the answers file's `SigningKeySource = 'CertificateStore'` and
+  `SigningKeyThumbprint` (below). The installer grants the app account read on its private key.
+- **As a PEM file** (the default): on an admin workstation, run
+  `deploy\keytool\casebook-keytool new-signing-key --out .\seal-signing.pem`, then copy the file to the path the config
+  points at:
 
-Restrict the file's ACL to the app-pool identity (read) and archive the **public** key + `KeyId`
-separately so seals remain independently verifiable.
+  ```
+  E:\CaseBookData\keys\seal-signing.pem
+  ```
+
+  Restrict its ACL to the app-pool identity (read) and delete the workstation's copy.
+
+Either way, keep the **public** key and its `KeyId` separately (the `.public.pem` that `new-signing-key` writes, or
+`casebook-keytool signing-public-key`), so seals stay independently verifiable.
 
 **Or keep the key elsewhere.** The answers file chooses where the signing key comes from (`SigningKeySource`):
 

@@ -212,6 +212,21 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.10.3
+
+A small release with no migration and no setting changes.
+
+- **Clearer key instructions.** OPERATIONS.md §2 now says where the seal-signing key can live (and that a DPAPI key
+  file and cloud key services aren't options), how to set up each with exact commands, and how to move from one to
+  another. The evidence key section explains what the server certificate and the recovery certificates each do, with
+  flow charts, numbered steps, and an offline copy of the envelope for each custodian.
+- **New `casebook-keytool` commands** for what Windows PowerShell 5.1 can't do: `new-signing-key` (make a PEM key and
+  its public half), `signing-key-pfx` (put an existing PEM key in a PFX for the certificate store, keeping its key id)
+  and `signing-public-key` (write a key's public half for the retired keys folder).
+- **Installer:** with evidence encryption and `EvidenceKeyThumbprint` set, it now grants the app account read on that
+  certificate's private key, as it does for the signing and chain-key certificates. An install that set one by hand
+  needs nothing.
+
 ### v1.10.2
 
 A small release with no migration. **The upgrade now adds server-side settings your `appsettings.Production.json` is

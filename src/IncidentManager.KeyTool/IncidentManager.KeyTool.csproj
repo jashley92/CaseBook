@@ -4,7 +4,8 @@
     PROD-57: casebook-keytool, run by an administrator on the CaseBook server (or, for a recovery drill, anywhere with a
     recovery certificate or the shares). Splits the evidence key into shares, checks a share, proves a backup opens the
     key, rebuilds the server's copy onto a new certificate, and exports evidence decrypted. It reads the envelope and
-    never makes a key. Shipped in the release bundle under deploy\keytool.
+    never makes an evidence key. It also makes and converts seal-signing keys (PEM, PFX, public half), which Windows
+    PowerShell 5.1 can't. Shipped in the release bundle under deploy\keytool.
   -->
 
   <PropertyGroup>

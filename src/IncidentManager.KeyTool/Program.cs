@@ -24,6 +24,15 @@ internal static class KeyToolProgram
           check-secret [<@protected: value>]
                        Check a @protected: value opens on this machine, as this account. Prints OK or why not; never the secret.
 
+          new-signing-key    --out <file.pem>
+                       Make a seal-signing key (RSA 3072) as a PEM file, readable by this account only, and its public half
+                       beside it (<name>.public.pem). Prints the key id. Run it off the server.
+          signing-key-pfx    --pem <file.pem> --out <file.pfx>
+                       Put an existing PEM signing key in a password-protected PFX for the certificate store. Same key, same
+                       key id.
+          signing-public-key (--site <folder> | --pem <file> | --cert <thumbprint> [--store LocalMachine|CurrentUser]) [--out <file>]
+                       Write a signing key's public half (PEM), for the retired keys folder or an examiner. Prints the key id.
+
           --site is the CaseBook site folder (where appsettings.Production.json is).
           --pfx asks for the PFX's password; --shares asks for the shares one per line.
         """;
@@ -80,6 +89,31 @@ internal static class KeyToolProgram
                     var site = Opt("--site") is { } folder ? Site.Load(folder) : null;
                     var secret = ReadSecretOnce("Secret to protect: ", confirm: true);
                     Console.Out.WriteLine(KeyToolCommands.ProtectSecret(secret, Opt("--cert"), Opt("--store") ?? "LocalMachine", site, Console.Error));
+                    return 0;
+                case "new-signing-key":
+                    SigningKeyCommands.NewKey(Opt("--out") ?? throw new ArgumentException("--out is needed: where to write the key."), Console.Out);
+                    return 0;
+                case "signing-key-pfx":
+                    var pem = Opt("--pem") ?? throw new ArgumentException("--pem is needed: the PEM signing key.");
+                    var pfxOut = Opt("--out") ?? throw new ArgumentException("--out is needed: where to write the PFX.");
+                    SigningKeyCommands.ToPfx(pem, pfxOut, ReadSecretOnce("Password for the PFX: ", confirm: true), Console.Out);
+                    return 0;
+                case "signing-public-key":
+                    var signingSite = Opt("--site") is { } signingFolder ? Site.Load(signingFolder) : null;
+                    var (keyId, publicPem) = SigningKeyCommands.PublicKey(Opt("--pem"), Opt("--cert"), Opt("--store") ?? "LocalMachine", signingSite);
+                    if (Opt("--out") is { } publicOut)
+                    {
+                        var full = Path.GetFullPath(publicOut);
+                        if (File.Exists(full)) throw new InvalidOperationException($"{full} already exists; nothing was written.");
+                        File.WriteAllText(full, publicPem);
+                        Console.Out.WriteLine($"Public key of seal-signing key {keyId}: {full}");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"Seal-signing key {keyId}:");
+                        Console.Out.Write(publicPem);
+                        Console.Out.WriteLine();
+                    }
                     return 0;
                 case "check-secret":
                     var value = rest.Length > 0 && !rest[0].StartsWith("--", StringComparison.Ordinal) ? rest[0] : ReadSecretOnce("@protected: value: ", confirm: false);

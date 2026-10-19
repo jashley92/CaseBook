@@ -272,38 +272,188 @@ other environment a missing key **stops startup** ("The seal-signing key … doe
 app made for itself on the server means a host compromise could re-sign forged seals. Install the production
 key **before the app first starts**.
 
-### Production hardening
+### Where the key can live
 
-- **Provision the key out of band**, do not let the app generate it. Generate on a trusted admin
-  workstation / HSM and install it, then point `Integrity:SigningKeyPath` at it (or replace the
-  `ISealSigner` implementation with a cert-store/HSM-backed one).
-- **Protect the private key** with one of:
-  - Windows **DPAPI** (machine or, better, a dedicated service-account scope), or
-  - the **Windows certificate store** with a non-exportable key, or
-  - an **HSM / Azure Key Vault Managed HSM** for the strongest separation.
-- **Restrict file ACLs** to the app-pool identity only (the dev signer already best-effort-restricts
-  the file; verify it in prod).
-- **Export the public key** and store it separately so seals can be verified by an independent party
-  even if the app server is lost. Record the `KeyId` (public-key thumbprint) shown on the Integrity
-  page alongside your key inventory.
-- **Rotate** on a defined schedule and on suspected compromise. Rotation does not invalidate old
-  seals: each seal records the `KeyId` and `Algorithm` that produced it, and is checked with that key.
-  Keep each retired key's **public** half in the retired seal keys folder (below).
+`Integrity:SigningKey:Source` chooses. It's server configuration only, never an in-app setting.
 
-### Where the key lives (F-23)
+| Source | What protects the private key | Good for | Watch for |
+|---|---|---|---|
+| `CertificateStore` (**recommended**) | Windows keeps it in `LocalMachine\My`, encrypted with machine DPAPI, and a **non-exportable** key can be used but never copied off the server | Most installs. Made on the server in one command. | The app-pool account needs read on the private key. |
+| `File` (the default) | Only the file's permissions: a PEM at `Integrity:SigningKeyPath`, readable by the app account | Simple installs, or a key you want to move between servers | Anyone who can read the file, or a copy of the disk or a backup, has the key. |
+| `CyberArk` | Your vault. The key is fetched once at start-up and held only in memory | Organizations that already keep secrets in CyberArk | Needs `Secrets:CyberArk` (§6). CyberArk's log shows each fetch. |
 
-`Integrity:SigningKey:Source` chooses; it's server configuration only, never an in-app setting.
+**Not supported:**
+- **A DPAPI-protected key file.** CaseBook doesn't read one. The certificate store already protects its keys with
+  DPAPI, and adds non-exportability, so use `CertificateStore` for that.
+- **An HSM** works through `CertificateStore` when its vendor supplies a Windows key storage provider (KSP). The
+  certificate appears in `LocalMachine\My` while the key stays in the HSM. The KSP must support RSA-PSS signatures
+  with SHA-256.
+- **Azure Key Vault and other cloud key services** aren't: CaseBook is on-premises and calls no cloud service
+  ([ADR 0001](decisions/0001-blazor-server-on-prem.md)).
 
-| Source | Settings | What to know |
-|---|---|---|
-| `File` (default) | `Integrity:SigningKeyPath` | A PEM private key, readable only by the app account. A copy of the server's disk includes it. |
-| `CertificateStore` | `CertificateThumbprint` (spaces allowed, as copied from the certificate console); `StoreLocation` = `LocalMachine` (default) or `CurrentUser`; store `My` | Windows signs with the certificate's private key. Import it **non-exportable** so it can be used but never copied out, and grant the app account **read** on the private key (Manage Private Keys). Any RSA certificate of 2048 bits or more; a self-signed one is fine, since trust comes from the key id you record, not a chain. |
-| `CyberArk` | `Secret` = `@cyberark:Safe=…;Object=…`, the PEM private key as the object's content | Needs `Secrets:CyberArk` enabled (§6). The key is fetched once at startup and held only in memory; it's never written to disk. CyberArk's log shows each fetch. |
+**What to back up.** Losing the signing key loses no data. You install a new key, and every earlier seal still
+verifies against the old key's **public** half. So:
+- Keep the public half of every key you use (`casebook-keytool signing-public-key`, below), with its key id, in your
+  key inventory and in the retired keys folder when you replace it.
+- A non-exportable certificate-store key can't be backed up, and doesn't need to be.
+- A `File` key is in the keys folder backup (§1). Protect that backup accordingly.
+- A `CyberArk` key is covered by your vault's backup.
 
-Whichever the source, a key that can't be loaded stops startup with a message naming the setting. The Integrity
-page shows the source and the key id in force. Moving between sources is a key change if the key itself changes:
-put the old public key in the retired folder first (below). Moving the **same** key (for example, importing the
-existing PEM into the certificate store) keeps its key id, and nothing else is needed.
+Whichever the source, a key that can't be loaded stops startup with a message naming the setting. The Integrity page
+shows the source and the key id in force.
+
+#### Tools
+
+`casebook-keytool` (in `deploy\keytool`) does what Windows PowerShell 5.1 can't: it writes and reads PEM keys.
+
+| Command | Does |
+|---|---|
+| `new-signing-key --out <file.pem>` | Makes an RSA-3072 key as a PEM file readable only by you, writes its public half beside it (`<name>.public.pem`), and prints the key id. |
+| `signing-key-pfx --pem <file.pem> --out <file.pfx>` | Puts an existing PEM key into a password-protected PFX for the certificate store. Same key, same key id. |
+| `signing-public-key --site <site folder> [--out <file>]` | Writes the public half of the key the site uses (also `--pem <file>`, or `--cert <thumbprint>`). |
+
+Each step below shows the keytool command first. Where PowerShell can do the same, that's shown too, with OpenSSL as
+the alternative.
+
+### Setting up the key
+
+The app never makes a production key itself: outside Development, a missing key stops startup. Do one of these
+before the site's first start (the installer's answers file sets the same settings: INSTALL.md §4).
+
+#### A. In the certificate store (recommended)
+
+On the server, in an elevated Windows PowerShell:
+
+```powershell
+$s = New-SelfSignedCertificate -Subject "CN=CaseBook seal signing" -CertStoreLocation Cert:\LocalMachine\My `
+     -KeyAlgorithm RSA -KeyLength 3072 -KeyExportPolicy NonExportable -KeyUsage DigitalSignature -NotAfter (Get-Date).AddYears(25)
+$s.Thumbprint
+```
+
+1. Let the app account read the private key. In `certlm.msc`, go to *Personal › Certificates*, right-click the
+   certificate, choose *All Tasks › Manage Private Keys*, and add `IIS APPPOOL\CaseBook` (your app pool's name) with
+   **Read**.
+2. In `appsettings.Production.json`:
+
+   ```json
+   "Integrity": {
+     "SigningKey": { "Source": "CertificateStore", "CertificateThumbprint": "<thumbprint>", "StoreLocation": "LocalMachine" }
+   }
+   ```
+
+3. Recycle the app pool. The Integrity page shows the key id.
+4. Keep the public half (see [Saving the public half](#saving-the-public-half)).
+
+Self-signed is fine: trust comes from the key id you record, not from a chain, and nothing checks the dates. Any RSA
+certificate of 2048 bits or more works, including one from your CA or an HSM.
+
+#### B. As a PEM file
+
+On an admin workstation, not the server:
+
+```powershell
+deploy\keytool\casebook-keytool new-signing-key --out .\seal-signing.pem
+```
+
+PowerShell 7 can make one too (not Windows PowerShell 5.1, which can't write PEM). Then restrict the file yourself:
+
+```powershell
+$rsa = [System.Security.Cryptography.RSA]::Create(3072)
+Set-Content -Path .\seal-signing.pem -Value $rsa.ExportPkcs8PrivateKeyPem() -NoNewline
+```
+
+Or with OpenSSL: `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out seal-signing.pem`.
+
+1. Copy it to the server's keys folder, for example `E:\CaseBookData\keys\seal-signing.pem`, and lock it down:
+
+   ```powershell
+   icacls E:\CaseBookData\keys\seal-signing.pem /inheritance:r /grant:r "IIS APPPOOL\CaseBook:R" "BUILTIN\Administrators:F" "NT AUTHORITY\SYSTEM:F"
+   ```
+
+2. Set `Integrity:SigningKeyPath` to it (the installer sets `<DataRoot>\keys\seal-signing.pem`), and leave
+   `Integrity:SigningKey:Source` as `File`.
+3. Recycle the app pool, check the key id on the Integrity page, and delete the workstation's copy (keep the
+   `.public.pem`).
+
+#### C. In CyberArk
+
+1. Make a PEM key as in B, on an admin workstation.
+2. Store the file's whole content (from `-----BEGIN PRIVATE KEY-----` to the end line) as a CyberArk object.
+3. Set:
+
+   ```json
+   "Integrity": { "SigningKey": { "Source": "CyberArk", "Secret": "@cyberark:Safe=<safe>;Object=<object>" } }
+   ```
+
+   and turn on `Secrets:CyberArk` (§6).
+4. Recycle the app pool, check the key id, and delete the local PEM (keep the `.public.pem`).
+
+#### Saving the public half
+
+Do this for every key, now and before you replace it:
+
+```powershell
+deploy\keytool\casebook-keytool signing-public-key --site C:\inetpub\casebook --out .\<key id>.pem
+```
+
+For a key in the certificate store, Windows PowerShell 5.1 can do it alone:
+
+```powershell
+$c = Get-Item Cert:\LocalMachine\My\<thumbprint>
+"-----BEGIN RSA PUBLIC KEY-----`r`n" + [Convert]::ToBase64String($c.PublicKey.EncodedKeyValue.RawData, 'InsertLineBreaks') +
+  "`r`n-----END RSA PUBLIC KEY-----" | Set-Content .\signing-public.pem -Encoding Ascii
+```
+
+With OpenSSL, for a PEM file: `openssl pkey -in seal-signing.pem -pubout -out seal-signing.public.pem`. A
+compliance bundle also carries it as `signing-public-key.pem`.
+
+### Moving between sources
+
+```mermaid
+flowchart TD
+    from{"Where is the key now?"}
+    from -->|"File or CyberArk:<br/>you hold the PEM"| same["Move the same key.<br/>The key id stays, nothing else changes."]
+    from -->|"Certificate store,<br/>non-exportable"| rotate["The key can't leave the store:<br/>make a new key and retire the old one"]
+    same --> s1["To the certificate store:<br/>signing-key-pfx, then Import-PfxCertificate"]
+    same --> s2["Between File and CyberArk:<br/>copy the PEM's content"]
+    rotate --> r1["Save the old public half<br/>into the retired keys folder"]
+    r1 --> r2["Set up the new key: A, B or C"]
+```
+
+**The same key, from a file (or CyberArk) into the certificate store:**
+
+1. On an admin workstation, or the server: `casebook-keytool signing-key-pfx --pem .\seal-signing.pem --out .\seal.pfx`
+   (it asks for a password). With OpenSSL:
+
+   ```powershell
+   openssl req -new -x509 -key seal-signing.pem -subj "/CN=CaseBook seal signing" -days 9125 -out seal.crt
+   openssl pkcs12 -export -inkey seal-signing.pem -in seal.crt -out seal.pfx
+   ```
+
+2. On the server, import it. It isn't exportable unless you add `-Exportable`, which you shouldn't:
+
+   ```powershell
+   Import-PfxCertificate -FilePath .\seal.pfx -CertStoreLocation Cert:\LocalMachine\My -Password (Read-Host -AsSecureString "PFX password")
+   ```
+
+   An OpenSSL 3 PFX needs Windows Server 2019 or later; for Server 2016, add `-legacy` to the `pkcs12` command.
+3. Grant the app account read on its private key, and set `Integrity:SigningKey` as in A with the new thumbprint.
+4. Recycle the app pool. The key id on the Integrity page is the same as before.
+5. Delete the PFX, and the PEM file from the server and the workstation. A copy left behind keeps the old weakness.
+   Old backups of the keys folder still hold it.
+
+**The same key, between File and CyberArk:** put the PEM's content into the vault object (or the vault's content into
+the file), change `Source`, recycle. The key id stays.
+
+**From the certificate store to anywhere else:** a non-exportable key can't be moved, so this is a rotation (below):
+save its public half first, then set up the new key.
+
+> **Before switching away from a certificate, leave it in the store.** If `Storage:Encryption:CertificateThumbprint`
+> is blank, the evidence key is locked to the signing certificate (§2, Evidence key). With the old certificate still
+> in the store, a new signing certificate takes over the lock at the next check. With no certificate at all (moving
+> to `File` or `CyberArk`), set `Storage:Encryption:CertificateThumbprint` to the old certificate's thumbprint first,
+> or evidence stops opening. A `@protected:` value (the SMTP password) made with the signing certificate also needs
+> that certificate to stay. Delete the old certificate only once Diagnostics shows the evidence key **On** and the SMTP sign-in working.
 
 ### The audit chain key (F-25, off by default)
 
@@ -382,20 +532,30 @@ A failed copy never undoes the seal: it's logged, sent as SIEM event 5005 naming
 
 ### Rotating the signing key
 
-1. Export the current key's public half and put it in the **retired seal keys folder**:
-   `Integrity:RetiredPublicKeysPath`, or a `retired` folder beside the signing key when that's blank. Any `*.pem`
-   file there is read at startup; a private-key file works too (only its public half is kept), but keep private
-   keys out of that folder. A file that isn't a readable RSA key stops startup, naming the file.
-2. Install the new private key in place of the old one, and restart.
-3. On the Integrity page, check the new `KeyId` and re-verify an older seal: it reports authentic. A seal whose
-   key isn't held says so ("Signed by key …, which this server doesn't hold"); add that key's public half to the
-   folder.
+Rotate on a set schedule, and at once if the key may have been exposed. Old seals stay valid: each records the key id
+and algorithm that signed it, and is checked with that key.
+
+1. **Save the current key's public half into the retired keys folder.** That's `Integrity:RetiredPublicKeysPath`, or a
+   `retired` folder beside the signing key when that's blank:
+
+   ```powershell
+   deploy\keytool\casebook-keytool signing-public-key --site C:\inetpub\casebook --out E:\CaseBookData\keys\retired\<key id>.pem
+   ```
+
+   (or the PowerShell or OpenSSL commands in [Saving the public half](#saving-the-public-half)). Every `*.pem` there
+   is read at startup. A private-key file works too (only its public half is kept), but keep private keys out of
+   that folder. A file that isn't a readable RSA key stops startup, naming the file.
+2. **Set up the new key**, by A, B or C above, and change the settings to point at it. Recycle the app pool.
+3. **Check:** the Integrity page shows the new key id; re-verify an older seal, and it reports authentic. A seal
+   whose key isn't held says so ("Signed by key …, which this server doesn't hold"): add that key's public half to
+   the folder.
+
+**A lost key** (the server or the certificate is gone) is the same, starting from the public half in your key
+inventory or a compliance bundle.
 
 Compliance bundles include every retired public key (`retired-public-keys/<KeyId>.pem`), so an examiner can check
-seals from before the rotation offline. Public keys aren't secret; the folder only needs to be protected from
-change, like the rest of the data root.
-- Back up the key material under the same immutable/offsite regime as the database, but with tighter
-  access control.
+seals from before the rotation offline. Public keys aren't secret, but the folder must be protected from change, like
+the rest of the data root.
 
 ### Evidence key: encryption at rest, backups and recovery (PROD-57)
 
@@ -507,6 +667,25 @@ That leaves two files per custodian:
 
 Your certificate authority can issue them instead (RSA, with key-encipherment usage). Expiry doesn't stop recovery;
 Diagnostics warns 60 days ahead.
+
+**Give each custodian a copy of the envelope too, after step 3.** A recovery certificate opens the copy of the key
+locked to it, and that copy is in the envelope, so recovering with a `.pfx` needs an envelope as well. CaseBook keeps
+three (below), and the evidence store's backups carry one; an offline copy covers losing all of them while the
+encrypted files survive (say, an evidence backup that skipped the hidden `.key` folder, with the server and database
+gone too).
+
+- Once Diagnostics shows **On**, copy `evidence-key.json` from the keys folder (`<DataRoot>\keys`, or `EnvelopePath`) to each custodian, to keep with their `.pfx`.
+  It's useless without a private key, so it needs no more protection than the `.pfx` already has.
+- Take a fresh copy whenever you add a recovery certificate: a copy only holds locks for the certificates configured
+  when it was taken.
+- To use it, put it back in the keys folder as `evidence-key.json` (where `casebook-keytool` looks), then `recover` or
+  `export` as usual.
+- Shares don't need it: they rebuild the key directly.
+
+**Retiring a custodian.** Removing their `.cer` from `RecoveryCertificates` drops their lock from the live envelope at
+the next check, but not from older copies: an old copy (or any backup taken before) with their `.pfx` still opens the
+key. CaseBook can't change the evidence key today, so collect their `.pfx` and envelope copy and destroy them, and
+record that you did.
 
 #### Step 3: turn it on
 
