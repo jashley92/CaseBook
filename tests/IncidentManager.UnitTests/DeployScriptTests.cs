@@ -45,7 +45,7 @@ public partial class DeployScriptTests
         // IIS doesn't carry it into the <location path="CaseBook/api"> the installer adds, so /api went to IIS's
         // StaticFile handler (404). CaseBook ships its own web.config so publish adds the handler outside any wrapper.
         var webConfig = File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Web", "web.config"));
-        var withoutComments = Regex.Replace(webConfig, "<!--.*?-->", "", RegexOptions.Singleline);
+        var withoutComments = XmlComment().Replace(webConfig, "");
 
         withoutComments.Should().Contain("<system.webServer>");
         withoutComments.Should().NotContain("<location");
@@ -89,7 +89,7 @@ public partial class DeployScriptTests
         var lib = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "lib", "CaseBookIis.ps1"));
         var carved = AnonymousPaths().Match(lib);
         carved.Success.Should().BeTrue(@"lib\CaseBookIis.ps1 lists the carved-out paths in Get-CaseBookAnonymousPaths");
-        var paths = Regex.Matches(carved.Groups[1].Value, "'([^']+)'").Select(m => "/" + m.Groups[1].Value).ToList();
+        var paths = QuotedItem().Matches(carved.Groups[1].Value).Select(m => "/" + m.Groups[1].Value).ToList();
         paths.Should().Contain("/api", "the token-authenticated API is carved out with the rest");
         paths.Should().NotContain("/agenda", "the signed-in /agenda/agenda.ics download stays Windows-authenticated");
 
@@ -116,6 +116,12 @@ public partial class DeployScriptTests
 
     [GeneratedRegex(@"function\s+Get-CaseBookAnonymousPaths\s*\{\s*return\s+@\(([^)]*)\)", RegexOptions.None, 1000)]
     private static partial Regex AnonymousPaths();
+
+    [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline, 1000)]
+    private static partial Regex XmlComment();
+
+    [GeneratedRegex("'([^']+)'", RegexOptions.None, 1000)]
+    private static partial Regex QuotedItem();
 
     [GeneratedRegex(@"sqlcmd(\.exe)?\b.*\s-i\s", RegexOptions.None)]
     private static partial Regex SqlcmdWithInputFile();

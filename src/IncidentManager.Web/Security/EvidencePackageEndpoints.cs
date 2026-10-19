@@ -182,16 +182,16 @@ public static class EvidencePackageWriter
                     long read = 0;
                     await using (var content = await open(f, ct))
                     {
-                        zip.PutNextEntry(new ZipEntry(f.EntryName)
+                        await zip.PutNextEntryAsync(new ZipEntry(f.EntryName)
                         {
                             DateTime = f.Evidence.CreatedAtUtc.UtcDateTime, Size = f.Evidence.SizeBytes, AESKeySize = 0
-                        });
+                        }, ct);
                         int n;
                         while ((n = await content.ReadAsync(buffer.AsMemory(), ct)) > 0)
                         {
                             file.AppendData(buffer, 0, n);
                             if (read == 0) progress.Mark(i, PackagedFileOutcome.PartlySent);
-                            zip.Write(buffer, 0, n);
+                            await zip.WriteAsync(buffer.AsMemory(0, n), ct);
                             read += n;
                         }
                     }
@@ -202,29 +202,29 @@ public static class EvidencePackageWriter
                         progress.Mark(i, PackagedFileOutcome.SentNotMatching);
                         throw Mismatch(f);
                     }
-                    zip.CloseEntry();
+                    await zip.CloseEntryAsync(ct);
                     progress.Mark(i, PackagedFileOutcome.Sent);
                 }
-                zip.PutNextEntry(new ZipEntry(EvidencePackage.ManifestName)
+                await zip.PutNextEntryAsync(new ZipEntry(EvidencePackage.ManifestName)
                 {
                     DateTime = package.PreparedAtUtc.UtcDateTime, Size = manifestBytes.Length, AESKeySize = 0
-                });
-                zip.Write(manifestBytes, 0, manifestBytes.Length);
-                zip.CloseEntry();
+                }, ct);
+                await zip.WriteAsync(manifestBytes, ct);
+                await zip.CloseEntryAsync(ct);
                 progress.ManifestSent = true;
                 tap.Hold();   // the central directory is kept back until the package is recorded
-                zip.Finish();
+                await zip.FinishAsync(ct);
             }
             catch
             {
                 // Closing the zip writes its directory: never to the response. An unfinished entry may refuse to close; the
                 // first failure is the one reported.
                 tap.Hold();
-                try { zip.Dispose(); }
+                try { await zip.DisposeAsync(); }
                 catch (Exception e) when (e is ZipException or IOException or InvalidOperationException) { /* the zip is abandoned */ }
                 throw;
             }
-            zip.Dispose();
+            await zip.DisposeAsync();
             var packageSha = Convert.ToHexString(whole.GetHashAndReset()).ToLowerInvariant();
             var manifestSha = Convert.ToHexString(SHA256.HashData(manifestBytes)).ToLowerInvariant();
             await record(packageSha, manifestSha);

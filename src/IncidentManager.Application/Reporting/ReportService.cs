@@ -563,7 +563,11 @@ public sealed class ReportService
             }
             using var sha = System.Security.Cryptography.SHA256.Create();
             var actual = Convert.ToHexString(await sha.ComputeHashAsync(hashed, ct)).ToLowerInvariant();
-            if (!string.Equals(actual, recorded, StringComparison.OrdinalIgnoreCase)) { content?.Dispose(); return (false, null); }
+            if (!string.Equals(actual, recorded, StringComparison.OrdinalIgnoreCase))
+            {
+                if (content is not null) await content.DisposeAsync();
+                return (false, null);
+            }
             content?.Seek(0, SeekOrigin.Begin);
             return (true, content);
         }
@@ -574,7 +578,7 @@ public sealed class ReportService
         }
         catch
         {
-            content?.Dispose();
+            if (content is not null) await content.DisposeAsync();
             throw;
         }
     }
