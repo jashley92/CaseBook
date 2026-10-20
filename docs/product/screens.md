@@ -238,7 +238,7 @@ doesn't change the incident commander; that's a separate assignment.
    cases), Response, Decisions, Working notes.
 2. **Filter**: tactic or type, source, entity, and whether milestones show.
 3. **Clock / T+**: show times as clock times or as time since detection. Next to it, newest or oldest first.
-4. **Add** opens the composer (below).
+4. **Add** opens the composer (below). Scrolled down a long timeline, a floating **Add** stays in the bottom corner, and the composer (from it, or from *Edit* on an entry) opens docked at the bottom of the window instead of taking you back to the top; it isn't modal, so the timeline can be read and scrolled while writing, and saving or closing leaves you where you were.
 5. **Attack chain**: event steps as a one-line tactic strip; *Show* expands it.
 6. **Minimap**: the whole case on one line, the phases as bands, the adversary's steps above and the response
    below; click a mark to bring its entry into view.

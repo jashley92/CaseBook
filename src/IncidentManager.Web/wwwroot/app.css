@@ -2652,6 +2652,18 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 
 /* INV-26: the timeline's one toolbar row, its on-demand filter row, and the folded attack chain. */
 .tl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+/* Down a long timeline: Add stays to hand, and the composer it opens is docked at the bottom of the window (not a
+   modal: the timeline stays readable and scrollable behind it). */
+.tl-add-fab { display: none; position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1030; border-radius: 999px;
+    padding: 0.5rem 1rem; box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.25); }
+html[data-tl-away] .tl-add-fab { display: inline-flex; align-items: center; gap: 0.35rem; }
+.tl-composer-docked { position: fixed; right: 1rem; bottom: 1rem; z-index: 1040; width: min(46rem, calc(100vw - 2rem));
+    max-height: min(80vh, calc(100vh - 6rem)); overflow: auto; margin: 0 !important;
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.3); }
+.tl-docked-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: -0.25rem 0 0.5rem; }
+@media (max-width: 575.98px) {
+    .tl-composer-docked { right: 0; bottom: 0; width: 100vw; max-height: 85vh; border-radius: 0.5rem 0.5rem 0 0; }
+}
 .tl-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: -0.25rem 0 0.75rem; }
 .killchain-strip { display: flex; align-items: baseline; gap: 0.75rem; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: var(--im-text); text-align: left; }
 .killchain-wrap:not(.killchain-collapsed) .killchain-strip { margin-bottom: 0.35rem; }

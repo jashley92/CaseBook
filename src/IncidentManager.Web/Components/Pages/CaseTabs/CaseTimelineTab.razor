@@ -49,7 +49,7 @@
     var tlChain = AttackSteps();
 }
 
-<div class="tl-toolbar">
+<div class="tl-toolbar" id="tl-toolbar">
     @* RD-13: the Record's lenses. Story and Everything read in two lanes (the adversary, the response) either side
        of the time spine; the others are one lane. *@
     <div class="im-seg" role="group" aria-label="Record lens">
@@ -112,7 +112,7 @@
             {
                 <button type="button" class="btn btn-sm btn-primary ms-auto" aria-expanded="false" aria-controls="timeline-dropzone"
                         title="Add @(IsThirdParty ? "an attack step, a disclosure milestone" : "an adversary step") or an investigation entry. You can also paste a screenshot, or paste or drop a file."
-                        @onclick="() => _composerOpen = true">
+                        @onclick="OpenComposer">
                     <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
                 </button>
             }
@@ -179,10 +179,28 @@
 }
 
 <AuthorizeView Policy="@Policies.EditCases">
+    @* Down a long timeline, Add is always to hand (shown by CSS once the toolbar has scrolled away), and opens the
+       composer docked rather than taking the reader back to the top. *@
+    @if (_tlEditId is null && !ComposerVisible)
+    {
+        <button type="button" class="btn btn-primary tl-add-fab" @onclick="OpenComposer" aria-label="Add to the timeline">
+            <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
+        </button>
+    }
     @* Design review P5 / INV-26: the composer stays folded (opened from the toolbar's Add) so the history starts at
-       the top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted. *@
-    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none")">
+       the top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted.
+       Opened while the top of the timeline is scrolled out of view, it's docked at the bottom of the window instead:
+       the same form, so the reader keeps their place and can read the entries while writing. *@
+    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none") @(ComposerVisible && _composerDocked ? "tl-composer-docked" : "")"
+         role="@(ComposerVisible && _composerDocked ? "region" : null)" aria-label="@(ComposerVisible && _composerDocked ? (_tlEditId is null ? "Add to the timeline" : "Edit the entry") : null)">
         <div class="card-body">
+            @if (ComposerVisible && _composerDocked)
+            {
+                <div class="tl-docked-head">
+                    <strong class="small">@(_tlEditId is null ? "Add to the timeline" : "Editing an entry")</strong>
+                    <button type="button" class="btn-close" aria-label="Close the form (what's typed stays as a draft)" @onclick="CloseDocked"></button>
+                </div>
+            }
             @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. CAP-26: any file,
                pasted or dropped on the composer; one that isn't an image is cited by the entry. *@
             <InputFile id="timeline-file-paste" class="d-none" OnChange="OnTimelinePasted" aria-label="Attach a file to the entry" />
@@ -1151,6 +1169,35 @@ else
 
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
     private bool _composerOpen;
+
+    // The composer docked at the bottom of the window, when it was opened with the top of the timeline out of view.
+    private bool _composerDocked;
+
+    private async Task<bool> ToolbarAwayAsync()
+    {
+        try { return await JS.InvokeAsync<bool>("imMotion.timelineToolbarAway", "tl-toolbar"); }
+        catch (JSException) { return false; }
+        catch (InvalidOperationException) { return false; }   // prerendering
+    }
+
+    private async Task OpenComposer()
+    {
+        _composerDocked = await ToolbarAwayAsync();
+        _composerOpen = true;
+    }
+
+    // Closing the docked form: an edit is let go as Cancel does (back to the draft), a new entry's text stays as its draft.
+    private async Task CloseDocked()
+    {
+        if (_tlEditId is not null) await CancelTimelineEdit();
+        (_composerOpen, _composerDocked) = (false, false);
+    }
+
+    // After a save made in the docked form: it closes, and the reader stays where they were.
+    private void UndockAfterSave()
+    {
+        if (_composerDocked) (_composerOpen, _composerDocked) = (false, false);
+    }
     private bool _editFocusPending;
     // Open when asked, while editing, or on a case with nothing on its timeline yet (the first entry is the job).
     private bool ComposerVisible => _composerOpen || _tlEditId is not null || !Case.TimelineEntries.Any(x => x.IsCurrent);
@@ -1399,6 +1446,10 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            try { await JS.InvokeVoidAsync("imMotion.watchTimelineToolbar", "tl-toolbar"); } catch (JSException) { /* cosmetic */ }
+        }
         await ReconcileEditor();
         if (_jumpTo is { } jump)
         {
@@ -1418,7 +1469,7 @@ else
                 }
                 else
                 {
-                    await JS.InvokeVoidAsync("imMotion.scrollToId", "tl-inv-type");
+                    if (!_composerDocked) await JS.InvokeVoidAsync("imMotion.scrollToId", "tl-inv-type");   // docked: already in view
                     await JS.InvokeVoidAsync("markdownEditor.focus", InvEditorId);
                 }
             }
@@ -2057,6 +2108,7 @@ else
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
         Toasts.Success(saved ?? WithShot("Timeline entry added", withShot, shotIsFile, shotName));
+        UndockAfterSave();
         await ClearEditorIfUnchanged(sent);
     }
 
@@ -2131,6 +2183,7 @@ else
         ResetFollowUps();
         var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Event step";
         Toasts.Success(savedStep ?? WithShot($"{what} added", withShot, shotIsFile, shotName));
+        UndockAfterSave();
     }
 
     // A lens button: switch the timeline lens (All / Event / Investigation).
@@ -2186,6 +2239,7 @@ else
         if (!_tlEdit.TryOpen(e.Id, Toasts, EditWhat)) return;   // another Edit opened one while the draft was read
         _special = null;
         _tlAddKind = TimelineKind.Event;
+        _composerDocked = await ToolbarAwayAsync();
         _editFocusPending = true;   // BUG-410
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
         _evtOurs = e.Environment == StepEnvironment.Ours;
@@ -2273,6 +2327,7 @@ else
         if (!_tlEdit.TryOpen(e.Id, Toasts, EditWhat)) return;   // another Edit opened one while the draft was read
         _special = null;   // BUG-33: a Working note or Question composer hides the entry's type, time and source
         _tlAddKind = TimelineKind.Investigation;
+        _composerDocked = await ToolbarAwayAsync();
         _editFocusPending = true;   // BUG-410
         _tlReason = null;
         _tlType = e.Type;
@@ -2317,14 +2372,16 @@ else
     private async Task CancelEditToRow()
     {
         var id = _tlEditId;
+        var docked = _composerDocked;
         await CancelTimelineEdit();
-        if (id is { } back) _jumpTo = $"tl-{back}";
+        if (id is { } back && !docked) _jumpTo = $"tl-{back}";   // docked, the reader never left the row
     }
 
     // Leave edit mode and clear the composer. For Investigation, also blank the Markdown editor.
     private async Task CancelTimelineEdit()
     {
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
+        UndockAfterSave();
         _tlEdit.Close(); _tlReason = null; ClearDecision();
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtOtherTactics = []; _evtAttackMode = false; // FR-24: back to the default disclosure composer
@@ -3379,6 +3436,7 @@ else
     {
         Disposed = true;
         Edits.Forget(this);
+        try { await JS.InvokeVoidAsync("imMotion.unwatchTimelineToolbar"); } catch { /* circuit may already be gone */ }
         _mentionLoad.Invalidate();
         await StashDraft();
         foreach (var id in _mdEditors)

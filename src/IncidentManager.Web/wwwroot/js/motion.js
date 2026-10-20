@@ -47,5 +47,42 @@ window.imMotion = {
             var target = strip.scrollLeft + (t.left - st.left) - (strip.clientWidth - t.width) / 2;
             strip.scrollLeft = Math.max(0, target);
         } catch (e) { /* no-op */ }
+    },
+    // The timeline's Add (CaseTimelineTab): whether its toolbar has scrolled up under the workspace's sticky tab strip,
+    // so the composer opens docked instead of taking the reader back to the top; and, while it's away, data-tl-away on
+    // <html>, so CSS shows the floating Add.
+    timelineToolbarAway: function (id) {
+        try {
+            var el = document.getElementById(id);
+            if (!el || !el.offsetParent) return false;
+            var bar = document.getElementById('ws-sticky');
+            var under = bar ? bar.getBoundingClientRect().bottom : 0;
+            return el.getBoundingClientRect().bottom < under;
+        } catch (e) { return false; }
+    },
+    // A scroll listener rather than an IntersectionObserver: it reads the toolbar's place on every scroll (cheap: one
+    // rect), and keeps working in a page the browser has stopped painting, where an observer goes quiet.
+    watchTimelineToolbar: function (id) {
+        try {
+            window.imMotion.unwatchTimelineToolbar();
+            var self = window.imMotion;
+            var update = function () {
+                document.documentElement.toggleAttribute('data-tl-away', self.timelineToolbarAway(id));
+            };
+            window.addEventListener('scroll', update, { passive: true });
+            window.addEventListener('resize', update, { passive: true });
+            window._imTlWatch = update;
+            update();
+        } catch (e) { /* no-op */ }
+    },
+    unwatchTimelineToolbar: function () {
+        try {
+            if (window._imTlWatch) {
+                window.removeEventListener('scroll', window._imTlWatch);
+                window.removeEventListener('resize', window._imTlWatch);
+                window._imTlWatch = null;
+            }
+            document.documentElement.removeAttribute('data-tl-away');
+        } catch (e) { /* no-op */ }
     }
 };

@@ -235,6 +235,10 @@ under Administration › Evidence storage.
 
 - **A task can move to lessons learned**: Tasks → Edit → *Move to lessons learned* makes an open task an improvement
   action (its title, description, owner and due date go with it) and cancels the task with a note saying so.
+- **Writing on a long timeline doesn't jump.** Scrolled down, a floating *Add* stays in the corner, and the composer
+  (from it, or from *Edit* on an entry) opens docked at the bottom of the window instead of scrolling back to the top;
+  the timeline stays readable behind it, and saving or closing leaves you where you were. At the top it's inline, as
+  before.
 - **A task can be cancelled from its row** (the ✕ button), with an optional reason kept under it. Before, cancelling
   meant opening Edit and changing the status.
 - **The task forms line up.** In *Mark done*, the timeline choice is a label over one control, like its neighbours,
