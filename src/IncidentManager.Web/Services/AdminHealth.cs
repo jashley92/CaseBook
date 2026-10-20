@@ -207,10 +207,16 @@ public sealed class AdminHealth(
 
         // Backups.
         var b = backup.Read();
-        if (b.Overall is BackupHealthState.Missing or BackupHealthState.Stale)
-            items.Add(new(b.Overall == BackupHealthState.Missing ? AttentionLevel.Problem : AttentionLevel.Warning,
-                b.Overall == BackupHealthState.Missing ? "No backup recorded" : "Backups are out of date",
-                string.Join(" ", b.Items.Where(i => i.State is BackupHealthState.Missing or BackupHealthState.Stale).Select(i => $"{i.Label}: {i.Detail}.")),
+        if (b.Overall is BackupHealthState.Failed or BackupHealthState.Missing or BackupHealthState.Stale)
+            items.Add(new(b.Overall == BackupHealthState.Stale ? AttentionLevel.Warning : AttentionLevel.Problem,
+                b.Overall switch
+                {
+                    BackupHealthState.Failed => b.Items.Any(i => i.State == BackupHealthState.Failed && i.Label.Contains("backup", StringComparison.OrdinalIgnoreCase))
+                        ? "The latest backup failed" : "The latest restore drill failed",
+                    BackupHealthState.Missing => "No backup recorded",
+                    _ => "Backups are out of date",
+                },
+                string.Join(" ", b.Items.Where(i => i.State is BackupHealthState.Failed or BackupHealthState.Missing or BackupHealthState.Stale).Select(i => $"{i.Label}: {i.Detail}.")),
                 BackupAnchor, "Backup health"));
 
         // Evidence encryption.

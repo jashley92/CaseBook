@@ -53,7 +53,7 @@ public sealed class AlarmsHealthCheck(
             var read = ReadBackup ?? backup.Read;
             var report = await _backupRead.Get(read).WaitAsync(TimeLimit, cancellationToken);
             // Not configured is a choice (development, or backups watched elsewhere), not an alarm.
-            if (report.Overall is BackupHealthState.Stale or BackupHealthState.Missing) raised.Add("backup " + report.Overall.ToString().ToLowerInvariant());
+            if (report.Overall is BackupHealthState.Stale or BackupHealthState.Missing or BackupHealthState.Failed) raised.Add("backup " + report.Overall.ToString().ToLowerInvariant());
         }
         catch (TimeoutException)
         {

@@ -29,6 +29,51 @@ public class BackupHealthEvaluatorTests
     }
 
     [Fact]
+    public void A_failure_after_the_last_success_is_the_worst_news_and_says_why()
+    {
+        var report = Eval(new BackupStatusFile
+        {
+            LastBackupUtc = Now.AddHours(-26),
+            LastBackupFailedUtc = Now.AddHours(-2),
+            LastBackupError = "BACKUP DATABASE failed: the share is full",
+            LastVerifiedRestoreUtc = Now.AddDays(-10),
+        });
+        report.Overall.Should().Be(BackupHealthState.Failed);
+        report.Items.Should().ContainSingle(i => i.State == BackupHealthState.Failed)
+            .Which.Detail.Should().Contain("the share is full");
+    }
+
+    [Fact]
+    public void A_failure_before_the_last_success_is_old_news()
+    {
+        var report = Eval(new BackupStatusFile
+        {
+            LastBackupUtc = Now.AddHours(-1),
+            LastBackupFailedUtc = Now.AddHours(-30),
+            LastBackupError = "old",
+            LastVerifiedRestoreUtc = Now.AddDays(-10),
+            LastRestoreFailedUtc = Now.AddDays(-12),
+            LastRestoreError = "older",
+        });
+        report.Overall.Should().Be(BackupHealthState.Ok);
+        report.Items.Should().NotContain(i => i.State == BackupHealthState.Failed);
+    }
+
+    [Fact]
+    public void The_backup_set_and_the_drills_findings_are_shown()
+    {
+        var report = Eval(new BackupStatusFile
+        {
+            LastBackupUtc = Now.AddHours(-3), LastBackupSet = @"E:\Backups\CaseBook-20260814-0130", LastBackupSizeBytes = 3L << 30,
+            LastBackupBy = "Backup-CaseBook.ps1",
+            LastVerifiedRestoreUtc = Now.AddDays(-10), LastVerifiedRestoreSet = "CaseBook-20260804-0130",
+            LastRestoreSummary = "Audit chain: passed; Seals: passed",
+        });
+        report.Items[0].Detail.Should().Contain("CaseBook-20260814-0130").And.Contain("3.0 GB").And.Contain("Backup-CaseBook.ps1");
+        report.Items[1].Detail.Should().Contain("CaseBook-20260804-0130").And.Contain("Seals: passed");
+    }
+
+    [Fact]
     public void Recent_backup_and_restore_are_fresh()
     {
         var report = Eval(new BackupStatusFile

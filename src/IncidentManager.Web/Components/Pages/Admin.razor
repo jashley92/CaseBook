@@ -838,8 +838,9 @@
             else
             {
                 <p class="small text-muted mb-2">
-                    Read from <code>@_backup.Source</code>, which the SQL Agent backup and restore-verification
-                    jobs write. CaseBook only reads it. See <code>docs/OPERATIONS.md §1.3</code>.
+                    Read from <code>@_backup.Source</code>, which the backup and restore-drill scripts write
+                    (<code>deploy\Backup-CaseBook.ps1</code> or <code>Update-CaseBookBackupStatus.ps1</code>, and
+                    <code>Test-CaseBookRestore.ps1</code>). CaseBook only reads it. See OPERATIONS.md §1.
                 </p>
                 <table class="table table-sm">
                     <tbody>
@@ -2025,6 +2026,7 @@
             BackupHealthState.Ok => ("im-badge im-b-ok", "Fresh"),
             BackupHealthState.Stale => ("im-badge im-b-warn", "Stale"),
             BackupHealthState.Missing => ("im-badge im-b-danger", "Missing"),
+            BackupHealthState.Failed => ("im-badge im-b-danger", "Failed"),
             _ => ("im-badge im-b-neutral", "Not configured"),
         };
         builder.OpenElement(0, "span");
