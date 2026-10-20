@@ -519,6 +519,9 @@ shows the source and the key id in force.
 | `new-signing-key --out <file.pem>` | Makes an RSA-3072 key as a PEM file readable only by you, writes its public half beside it (`<name>.public.pem`), and prints the key id. |
 | `signing-key-pfx --pem <file.pem> --out <file.pfx>` | Puts an existing PEM key into a password-protected PFX for the certificate store. Same key, same key id. |
 | `signing-public-key --site <site folder> [--out <file>]` | Writes the public half of the key the site uses (also `--pem <file>`, or `--cert <thumbprint>`). |
+| `rotate-signing-key --site <site folder> (--pfx-out <file.pfx> \| --pem-out <file.pem>)` | Rotation's first two steps in one: saves the current key's public half into the retired keys folder and makes the new key, then says what to change (*Rotating the signing key*). |
+| `enable-chain-key --site <site folder> --cert <thumbprint> [--backup-done]` | Turns the audit chain key on with a certificate, once its backup is confirmed (*The audit chain key*). |
+| `retire-custodian --site <site folder> --cert <thumbprint> [--note "<text>"]` | Takes a recovery certificate out of the evidence key's settings and envelope, recorded in the audit trail (*Retiring a custodian*). |
 
 Each step below shows the keytool command first. Where PowerShell can do the same, that's shown too, with OpenSSL as
 the alternative.
@@ -681,6 +684,24 @@ new entries are hashed with HMAC-SHA256 under a secret the database doesn't hold
 written before keep their plain hash and still verify; the first keyed entry marks the switch, and every entry after
 it must be keyed.
 
+**Turning it on with a certificate**, in three steps:
+
+1. Make or choose the certificate (the signing certificate can serve), in `LocalMachine\My`, with the app-pool account
+   given read on its private key. **Back it up with its private key** to a password-protected PFX kept offline.
+2. On the server, as an administrator:
+
+   ```powershell
+   deploy\keytool\casebook-keytool enable-chain-key --site C:\inetpub\casebook --cert <thumbprint>
+   ```
+
+   It checks the certificate's private key works and that the key file won't land in the site folder, then stops and
+   reminds you of the backup. Run it again with `--backup-done` and it writes `Integrity:ChainKey` (`Enabled`,
+   `Source: Certificate`, the thumbprint), keeping the old settings file beside it.
+3. Restart the app pool. CaseBook makes the key and keeps it in `chain-key.json`, encrypted to the certificate: back
+   that file up too. The Integrity page shows the chain key's id.
+
+With CyberArk, set the settings below by hand.
+
 `Integrity:ChainKey` (server configuration only):
 
 | Setting | Meaning |
@@ -754,6 +775,17 @@ Rotate on a set schedule, and at once if the key may have been exposed. Diagnost
 rotation*, also under *Needs attention*) once the key has signed seals for `Integrity:RotationReminderDays` (default 365;
 0 turns it off), counted from its first seal. Old seals stay valid: each records the key id
 and algorithm that signed it, and is checked with that key.
+
+**In one command**, on the server as an administrator (steps 1 and 2 below; step 3 is still yours):
+
+```powershell
+deploy\keytool\casebook-keytool rotate-signing-key --site C:\inetpub\casebook --pfx-out E:\Temp\seal-signing-new.pfx
+```
+
+It saves the current key's public half into the retired keys folder, makes the new key (in a PFX, asking for its
+password; or `--pem-out` for a PEM file) and prints the import command and the settings to change. It changes no
+settings: install the new key, change them, recycle. A key in CyberArk can't be read by the tool: save its public half
+by hand (step 1). By hand:
 
 1. **Save the current key's public half into the retired keys folder.** That's `Integrity:RetiredPublicKeysPath`, or a
    `retired` folder beside the signing key when that's blank:
@@ -923,10 +955,17 @@ gone too).
   `export` as usual.
 - Shares don't need it: they rebuild the key directly.
 
-**Retiring a custodian.** Removing their `.cer` from `RecoveryCertificates` drops their lock from the live envelope at
-the next check, but not from older copies: an old copy (or any backup taken before) with their `.pfx` still opens the
-key. CaseBook can't change the evidence key today, so collect their `.pfx` and envelope copy and destroy them, and
-record that you did.
+**Retiring a custodian.** On the server, as an administrator:
+
+```powershell
+deploy\keytool\casebook-keytool retire-custodian --site C:\inetpub\casebook --cert <their thumbprint> --note "pfx and envelope copy collected and destroyed"
+```
+
+It removes their `.cer` from `RecoveryCertificates` and their lock from the live envelope, keeping the old settings
+file beside it, and records it with your note: CaseBook writes it to the audit trail and the SIEM (5007,
+`CustodianRetired`). It's refused when theirs is the key's only backup: add another recovery certificate first. Restart
+the app pool afterwards. Older envelope copies (and backups taken before) still open with their `.pfx`, since CaseBook
+can't change the evidence key itself, so collect their `.pfx` and envelope copy and destroy them.
 
 #### Step 3: turn it on
 
@@ -1273,7 +1312,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5004 | Integrity | Integrity seal recorded: the SIEM's copy of each seal (F-26; see *Seal copies in the SIEM* below) |
 | 5005 | Integrity | A copy of a seal failed (export folder, email digest or timestamp; the detail names it); the seal itself is recorded (F-26/F-27) |
 | 5006 | Integrity | **Evidence key unavailable**: encrypted evidence and reports are paused (High; once per episode; the detail gives the reason, never key material) |
-| 5007 | Integrity | Evidence key changed. Action: `KeyCreated`, `KeyAvailable` (back after 5006), `KeyProtectionChanged` (renewed certificate, recovery certificates changed), `SharesIssued`, `RecoveryDrill`, or **`KeyRecovered`** (moved onto another certificate; High). Target id is the key id |
+| 5007 | Integrity | Evidence key changed. Action: `KeyCreated`, `KeyAvailable` (back after 5006), `KeyProtectionChanged` (renewed certificate, recovery certificates changed), `SharesIssued`, `RecoveryDrill`, `CustodianRetired`, or **`KeyRecovered`** (moved onto another certificate; High). Target id is the key id |
 | 5101 | Authentication | Authentication failure |
 | 5201 | Authorization | Access denied (403) on a page or download **GET** (other 403s aren't streamed) |
 | 5202 | Authorization | In-app action refused for lack of a permission |

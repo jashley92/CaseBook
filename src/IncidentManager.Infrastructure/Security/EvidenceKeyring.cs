@@ -657,6 +657,7 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
                 KeyToolRecord.Exported => IncidentManager.Application.Security.SecurityEvents.EvidenceExportedOffline(r.By, r.CaseNumber, r.Summary),
                 KeyToolRecord.SharesIssued => IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("SharesIssued", envelope.KeyId, r.Summary, r.By),
                 KeyToolRecord.Drill => IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("RecoveryDrill", envelope.KeyId, r.Summary, r.By),
+                KeyToolRecord.CustodianRetired => IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("CustodianRetired", envelope.KeyId, r.Summary, r.By),
                 _ => IncidentManager.Application.Security.SecurityEvents.EvidenceKeyChanged("KeyRecovered", envelope.KeyId, r.Summary, r.By),
             });
             _recorded.Add(r.Id);

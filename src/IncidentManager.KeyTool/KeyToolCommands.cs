@@ -453,6 +453,9 @@ internal static class KeyToolCommands
         dir.SetAccessControl(acl);
     }
 
+    /// <summary>Writes the envelope to the keys folder, for the commands outside this class.</summary>
+    internal static void SaveEnvelope(Site site, KeyEnvelope e, TextWriter output) => Save(site, e, output);
+
     private static void Save(Site site, KeyEnvelope e, TextWriter output)
     {
         e.UpdatedUtc = DateTimeOffset.UtcNow;   // review finding 1: every change the tool makes is the newest copy

@@ -43,10 +43,16 @@ internal static class SigningKeyCommands
     /// </summary>
     public static string ToPfx(string pemPath, string outPath, string password, TextWriter output)
     {
+        using var rsa = ReadPrivate(pemPath);
+        return ToPfx(rsa, outPath, password, output);
+    }
+
+    /// <summary>As <see cref="ToPfx(string, string, string, TextWriter)"/>, for a key in memory (rotate-signing-key).</summary>
+    public static string ToPfx(RSA rsa, string outPath, string password, TextWriter output)
+    {
         if (string.IsNullOrEmpty(password)) throw new ArgumentException("The PFX password is empty.");
         var path = Path.GetFullPath(outPath);
         if (File.Exists(path)) throw new InvalidOperationException($"{path} already exists; nothing was written.");
-        using var rsa = ReadPrivate(pemPath);
         var keyId = RsaSealSigner.KeyIdOf(rsa);
         var request = new CertificateRequest($"CN=CaseBook seal signing {keyId}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
         request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, critical: true));

@@ -130,7 +130,8 @@ public sealed class RecoveryCopy
 /// <summary>PROD-59: one thing casebook-keytool did, for CaseBook to record (see <see cref="KeyEnvelope.Records"/>).</summary>
 public sealed class KeyToolRecord
 {
-    public const string SharesIssued = "shares-issued", Drill = "drill", Recovered = "recovered", Exported = "exported";
+    public const string SharesIssued = "shares-issued", Drill = "drill", Recovered = "recovered", Exported = "exported",
+        CustodianRetired = "custodian-retired";
 
     public Guid Id { get; set; }
     public string Kind { get; set; } = "";

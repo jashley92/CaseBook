@@ -39,6 +39,16 @@ internal static class KeyToolProgram
           signing-public-key (--site <folder> | --pem <file> | --cert <thumbprint> [--store LocalMachine|CurrentUser]) [--out <file>]
                        Write a signing key's public half (PEM), for the retired keys folder or an examiner. Prints the key id.
 
+          rotate-signing-key --site <folder> (--pem-out <file.pem> | --pfx-out <file.pfx>)
+                       Rotate the seal-signing key: save the current key's public half into the retired keys folder, make
+                       the new key (a PEM file, or a PFX for the certificate store) and say what to change. Settings untouched.
+          enable-chain-key   --site <folder> --cert <thumbprint> [--store LocalMachine|CurrentUser] [--backup-done]
+                       Turn the audit chain key on with a certificate: check its private key works here, then (with
+                       --backup-done, once it's backed up) write Integrity:ChainKey. One-way. The old settings are kept.
+          retire-custodian   --site <folder> --cert <thumbprint> [--note "<what was done with their copies>"]
+                       Remove a recovery certificate from Storage:Encryption:RecoveryCertificates and the envelope, and record it
+                       for the audit trail. Refused when it's the key's only backup. The old settings are kept.
+
           --site is the CaseBook site folder (where appsettings.Production.json is).
           --pfx asks for the PFX's password; --shares asks for the shares one per line.
         """;
@@ -127,6 +137,18 @@ internal static class KeyToolProgram
                         Console.Out.Write(publicPem);
                         Console.Out.WriteLine();
                     }
+                    return 0;
+                case "rotate-signing-key":
+                    KeyLifecycleCommands.RotateSigningKey(SiteArg(), Opt("--pem-out"), Opt("--pfx-out"),
+                        () => ReadSecretOnce("Password for the PFX: ", confirm: true), Console.Out);
+                    return 0;
+                case "enable-chain-key":
+                    KeyLifecycleCommands.EnableChainKey(SiteArg(), Opt("--cert") ?? throw new ArgumentException("--cert is needed: the certificate's thumbprint."),
+                        Opt("--store") ?? "LocalMachine", Flag("--backup-done"), Console.Out);
+                    return 0;
+                case "retire-custodian":
+                    KeyLifecycleCommands.RetireCustodian(SiteArg(), Opt("--cert") ?? throw new ArgumentException("--cert is needed: the recovery certificate's thumbprint."),
+                        Opt("--note"), Console.Out);
                     return 0;
                 case "check-secret":
                     var value = rest.Length > 0 && !rest[0].StartsWith("--", StringComparison.Ordinal) ? rest[0] : ReadSecretOnce("@protected: value: ", confirm: false);

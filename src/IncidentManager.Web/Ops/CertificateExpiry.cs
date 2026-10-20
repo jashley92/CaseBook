@@ -73,7 +73,7 @@ public sealed class CertificateExpiry(IConfiguration config)
 
     private static X509Certificate2? FindInStore(string thumbprint, string storeLocation)
     {
-        if (!Enum.TryParse<StoreLocation>(storeLocation, ignoreCase: true, out var location)) return null;
+        if (!IncidentManager.Domain.Common.EnumNames.TryParse<StoreLocation>(storeLocation, out var location, ignoreCase: true)) return null;
         try
         {
             using var store = new X509Store(StoreName.My, location);
