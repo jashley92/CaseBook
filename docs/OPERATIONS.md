@@ -463,7 +463,7 @@ jobs**.
 | Access review (§8) | Every 90 days | By hand, in Administration | Diagnostics, after `Governance:AccessReview:ReminderDays` |
 | Retention review (§8) | When cases come due | By hand, in Administration | Diagnostics, and a monthly email to Legal / Privacy if on |
 | Signing key rotation (§2) | Yearly, or your policy | By hand | Diagnostics, after `Integrity:RotationReminderDays` (365) |
-| Certificate renewals | Before each expires | By hand | Recovery certificates: Diagnostics, 60 days ahead. The others (signing, chain key, evidence lock, `@protected:`, TLS): nothing, so diary them |
+| Certificate renewals (§2, *Renewing certificates*) | Before each expires | By hand | Diagnostics, 60 days ahead, for every certificate the configuration names, and the TLS one by its host name |
 | Upgrades (UPGRADE.md) | Each release | By hand: `Upgrade-CaseBook.ps1` | Administration › Updates |
 
 The tasks run as `-TaskAccount` (SYSTEM by default) the copy of each script kept beside the site, `<site>-deploy`,
@@ -776,6 +776,27 @@ inventory or a compliance bundle.
 Compliance bundles include every retired public key (`retired-public-keys/<KeyId>.pem`), so an examiner can check
 seals from before the rotation offline. Public keys aren't secret, but the folder must be protected from change, like
 the rest of the data root.
+
+### Renewing certificates
+
+**Administration › Diagnostics** lists every certificate the configuration names, and flags one 60 days before it expires,
+once it has, or when it isn't in the store (also under *Needs attention*). The TLS certificate is found by its name
+matching `App:BaseUrl`'s host, since the app can't read IIS's binding: Diagnostics says *probably*. Recovery
+certificates are watched with the evidence key.
+
+CaseBook doesn't check the dates on the certificates that hold its keys: an expired one goes on signing and opening.
+Renew them for your policy, and before the old one is removed. The TLS and client certificates are another matter:
+the other end refuses an expired one.
+
+| Certificate | What expiry breaks | Renewing it |
+|---|---|---|
+| Seal signing key (`Integrity:SigningKey`) | Nothing in CaseBook | A new certificate is a new key: rotate (*Rotating the signing key*, above), so old seals still verify |
+| Audit chain key (`Integrity:ChainKey`, Certificate) | Nothing in CaseBook | Set `CertificateThumbprint` to the new one, move `chain-key.json` into `chain-retired`, restart. Keep the old certificate in the store: the retired file still needs it |
+| Evidence key server lock (`Storage:Encryption`) | Nothing in CaseBook | Leave the old one in the store; the key moves to the renewed one at the next check (*Evidence key*, *What else to know*, below) |
+| `@protected:` values (§6) | Nothing in CaseBook | Make each value again for the new certificate (`casebook-keytool protect-secret`) before removing the old one |
+| TLS (the IIS binding) | Browsers refuse the site | Renew it and change the site's HTTPS binding in IIS; then set `App:BaseUrl` if the host name changed |
+| CyberArk client (`Secrets:CyberArk:ClientCertificateThumbprint`) | CyberArk refuses CaseBook, so secrets from it stop resolving | Install the new one, grant the app-pool account read on its private key, set the thumbprint, recycle |
+| Syslog client (`Siem:Syslog:ClientCertificateThumbprint`) | The syslog server may refuse the connection | As for the CyberArk client certificate |
 
 ### Evidence key: encryption at rest, backups and recovery (PROD-57)
 

@@ -60,6 +60,7 @@ public sealed class AdminHealth(
     SealCopyStatus sealCopies,
     IChatNotifier chat,
     UpdateCheckService updates,
+    CertificateExpiry certificates,
     IClock clock)
 {
     // Where each kind of problem is fixed.
@@ -110,6 +111,7 @@ public sealed class AdminHealth(
         // The app doesn't start without its signing key, so one is always loaded; say which (a file, a certificate or
         // CyberArk). This checked for the PEM file, so a key in the certificate store read as missing.
         checks.Add(new HealthCheck("Seal signing key", true, $"{signer.KeyId} · {signer.KeySource}"));
+        checks.AddRange(CertificateChecks(certificates.Read(), clock.UtcNow));
         checks.Add(RotationCheck(keyFirstSealed, SigningKeyRotation.Clamp(config.GetValue(SigningKeyRotation.SettingKey, SigningKeyRotation.DefaultDays)), clock.UtcNow));
 
         // A value saved before today's limits (or set in appsettings) blocks saving its section until corrected.
@@ -297,6 +299,32 @@ public sealed class AdminHealth(
     };
 
     // BUG-531: a date in Diagnostics is Gregorian whatever the server culture.
+    // Each certificate CaseBook depends on that expires within 60 days, has expired or isn't in the store; or one line
+    // saying they're all fine and which expires first.
+    public static IEnumerable<HealthCheck> CertificateChecks(IReadOnlyList<CertificateExpiryItem> certs, DateTimeOffset now)
+    {
+        var flagged = new List<HealthCheck>();
+        foreach (var c in certs)
+        {
+            var what = $"{c.Thumbprint}{(c.Subject is { } subject ? $" ({subject})" : "")}";
+            var renew = c.Setting.StartsWith("@protected", StringComparison.Ordinal) || c.Purpose.StartsWith("@protected", StringComparison.Ordinal)
+                ? "renew it, then make the value again for the new one (casebook-keytool protect-secret)"
+                : c.Setting == "IIS binding" ? "renew it and change the site's HTTPS binding in IIS"
+                : $"renew it, then set {c.Setting} to the new thumbprint (OPERATIONS.md section 2, Renewing certificates)";
+            if (c.NotAfter is not { } at)
+                flagged.Add(new HealthCheck($"Certificate: {c.Purpose}", false, $"{what} isn't in the certificate store ({c.Setting})", KeysAnchor, AttentionLevel.Warning));
+            else if (at <= now)
+                flagged.Add(new HealthCheck($"Certificate: {c.Purpose}", false, $"{what} expired {Day(at)}: {renew}", KeysAnchor));
+            else if (at - now <= CertificateExpiry.WarnAhead)
+                flagged.Add(new HealthCheck($"Certificate: {c.Purpose}", false, $"{what} expires {Day(at)}: {renew}", KeysAnchor, AttentionLevel.Warning));
+        }
+        if (flagged.Count > 0) return flagged;
+        var first = certs.Where(c => c.NotAfter is not null).MinBy(c => c.NotAfter);
+        return [new HealthCheck("Certificates", true, first is null
+            ? "none named in the configuration (recovery certificates are checked with the evidence key)"
+            : $"{Plural.Of(certs.Count, "certificate")} watched · the first to expire is the {first.Purpose}'s, {Day(first.NotAfter)}")];
+    }
+
     // A reminder to rotate the seal-signing key, from its first seal; a key that has signed nothing yet is new.
     private static HealthCheck RotationCheck(DateTimeOffset? firstSealed, int days, DateTimeOffset now)
     {
