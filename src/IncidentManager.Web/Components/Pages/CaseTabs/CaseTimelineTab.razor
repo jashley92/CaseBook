@@ -191,13 +191,14 @@
        the top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted.
        Opened while the top of the timeline is scrolled out of view, it's docked at the bottom of the window instead:
        the same form, so the reader keeps their place and can read the entries while writing. *@
-    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none") @(ComposerVisible && _composerDocked ? "tl-composer-docked" : "")"
-         role="@(ComposerVisible && _composerDocked ? "region" : null)" aria-label="@(ComposerVisible && _composerDocked ? (_tlEditId is null ? "Add to the timeline" : "Edit the entry") : null)">
+    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none")"
+         role="region" aria-label="@(_tlEditId is null ? "Add to the timeline" : "Edit the entry")">
         <div class="card-body">
-            @if (ComposerVisible && _composerDocked)
+            @* Shown only while the composer is popped out (CSS: html[data-tl-docked]). *@
+            @if (ComposerVisible)
             {
                 <div class="tl-docked-head">
-                    <strong class="small">@(_tlEditId is null ? "Add to the timeline" : "Editing an entry")</strong>
+                    <h2 class="im-entity-panel-h mb-0">@(_tlEditId is null ? "Add to the timeline" : "Editing an entry")</h2>
                     <button type="button" class="btn-close" aria-label="Close the form (what's typed stays as a draft)" @onclick="CloseDocked"></button>
                 </div>
             }
@@ -206,7 +207,7 @@
             <InputFile id="timeline-file-paste" class="d-none" OnChange="OnTimelinePasted" aria-label="Attach a file to the entry" />
             @if (_tlEditId is null)
             {
-                <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap" aria-live="polite">
+                <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap tl-composer-paste" aria-live="polite">
                     <span><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Paste a screenshot, or paste or drop a file, to attach it.
                         It's saved as hashed evidence with chain of custody; a file that isn't an image is cited by the entry.</span>
                     @if (_tlShotBytes is not null)
@@ -269,7 +270,7 @@
                     <input class="form-check-input" type="checkbox" id="tl-question-task" @bind="_questionTask" />
                     <label class="form-check-label" for="tl-question-task">Follow it up as a task, so its answer comes back to the brief</label>
                 </div>
-                <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
+                <div class="d-flex justify-content-end align-items-center gap-2 mt-2 tl-composer-actions">
                     <span class="small text-muted me-auto">Saves a new version of the brief with the question added@(_questionTask ? ", and a task" : "").</span>
                     <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" disabled="@(string.IsNullOrWhiteSpace(_question) || _saving)" @onclick="AddQuestion">
                         <span class="bi bi-question-circle" aria-hidden="true"></span> Add question
@@ -371,7 +372,7 @@
                     </div>
                 }
                 @if (_tlEditId is null) { @ThenSection() }
-                <div class="row g-2 align-items-end mt-1">
+                <div class="row g-2 align-items-end mt-1 tl-composer-actions">
                     <div class="col-md-4">
                         <label class="form-label small mb-0" for="tl-evt-source">Source</label>
                         <input id="tl-evt-source" class="form-control form-control-sm" maxlength="200" @bind="_tlSource" @bind:event="oninput" placeholder="@EventSourcePlaceholder" />
@@ -478,7 +479,7 @@
                         </div>
                     }
                     @if (_tlEditId is null && _special != ComposerMode.Note) { @ThenSection() }
-                    <div class="mt-2 d-flex justify-content-end gap-2">
+                    <div class="mt-2 d-flex justify-content-end gap-2 tl-composer-actions">
                         @if (_tlEditId is null && _special == ComposerMode.Note)
                         {
                             <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" disabled="@_saving" @onclick="AddNote">
@@ -1170,8 +1171,27 @@ else
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
     private bool _composerOpen;
 
-    // The composer docked at the bottom of the window, when it was opened with the top of the timeline out of view.
+    // Whether the composer is popped out (the page's data-tl-docked): set here when it's opened with the top of the timeline
+    // out of view, and by the page as the reader scrolls an open composer away or comes back to the top. This is the value
+    // as last set from here; IsDockedAsync asks the page.
     private bool _composerDocked;
+
+    private async Task SetDockedAsync(bool docked)
+    {
+        _composerDocked = docked;
+        try { await JS.InvokeVoidAsync("imMotion.setTimelineDocked", docked); }
+        catch (JSException) { /* cosmetic */ }
+        catch (InvalidOperationException) { /* prerendering */ }
+    }
+
+    private bool _undockAfterRender;
+
+    private async Task<bool> IsDockedAsync()
+    {
+        try { return await JS.InvokeAsync<bool>("imMotion.isTimelineDocked"); }
+        catch (JSException) { return _composerDocked; }
+        catch (InvalidOperationException) { return false; }
+    }
 
     private async Task<bool> ToolbarAwayAsync()
     {
@@ -1182,7 +1202,7 @@ else
 
     private async Task OpenComposer()
     {
-        _composerDocked = await ToolbarAwayAsync();
+        await SetDockedAsync(await ToolbarAwayAsync());   // before the render, so it never shows inline first
         _composerOpen = true;
     }
 
@@ -1190,13 +1210,16 @@ else
     private async Task CloseDocked()
     {
         if (_tlEditId is not null) await CancelTimelineEdit();
-        (_composerOpen, _composerDocked) = (false, false);
+        _composerOpen = false;
+        _undockAfterRender = true;   // once it's hidden: cleared now, the open form would drop back into the page for a frame
     }
 
     // After a save made in the docked form: it closes, and the reader stays where they were.
-    private void UndockAfterSave()
+    private async Task UndockAfterSave()
     {
-        if (_composerDocked) (_composerOpen, _composerDocked) = (false, false);
+        if (!await IsDockedAsync()) return;
+        _composerOpen = false;
+        _undockAfterRender = true;
     }
     private bool _editFocusPending;
     // Open when asked, while editing, or on a case with nothing on its timeline yet (the first entry is the job).
@@ -1449,6 +1472,11 @@ else
         if (firstRender)
         {
             try { await JS.InvokeVoidAsync("imMotion.watchTimelineToolbar", "tl-toolbar"); } catch (JSException) { /* cosmetic */ }
+        }
+        if (_undockAfterRender)
+        {
+            _undockAfterRender = false;
+            await SetDockedAsync(false);
         }
         await ReconcileEditor();
         if (_jumpTo is { } jump)
@@ -2108,7 +2136,7 @@ else
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
         Toasts.Success(saved ?? WithShot("Timeline entry added", withShot, shotIsFile, shotName));
-        UndockAfterSave();
+        await UndockAfterSave();
         await ClearEditorIfUnchanged(sent);
     }
 
@@ -2183,7 +2211,7 @@ else
         ResetFollowUps();
         var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Event step";
         Toasts.Success(savedStep ?? WithShot($"{what} added", withShot, shotIsFile, shotName));
-        UndockAfterSave();
+        await UndockAfterSave();
     }
 
     // A lens button: switch the timeline lens (All / Event / Investigation).
@@ -2239,7 +2267,7 @@ else
         if (!_tlEdit.TryOpen(e.Id, Toasts, EditWhat)) return;   // another Edit opened one while the draft was read
         _special = null;
         _tlAddKind = TimelineKind.Event;
-        _composerDocked = await ToolbarAwayAsync();
+        await SetDockedAsync(await ToolbarAwayAsync());
         _editFocusPending = true;   // BUG-410
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
         _evtOurs = e.Environment == StepEnvironment.Ours;
@@ -2327,7 +2355,7 @@ else
         if (!_tlEdit.TryOpen(e.Id, Toasts, EditWhat)) return;   // another Edit opened one while the draft was read
         _special = null;   // BUG-33: a Working note or Question composer hides the entry's type, time and source
         _tlAddKind = TimelineKind.Investigation;
-        _composerDocked = await ToolbarAwayAsync();
+        await SetDockedAsync(await ToolbarAwayAsync());
         _editFocusPending = true;   // BUG-410
         _tlReason = null;
         _tlType = e.Type;
@@ -2372,7 +2400,7 @@ else
     private async Task CancelEditToRow()
     {
         var id = _tlEditId;
-        var docked = _composerDocked;
+        var docked = await IsDockedAsync();
         await CancelTimelineEdit();
         if (id is { } back && !docked) _jumpTo = $"tl-{back}";   // docked, the reader never left the row
     }
@@ -2381,7 +2409,7 @@ else
     private async Task CancelTimelineEdit()
     {
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
-        UndockAfterSave();
+        await UndockAfterSave();
         _tlEdit.Close(); _tlReason = null; ClearDecision();
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtOtherTactics = []; _evtAttackMode = false; // FR-24: back to the default disclosure composer

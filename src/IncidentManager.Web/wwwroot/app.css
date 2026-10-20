@@ -2652,18 +2652,33 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 
 /* INV-26: the timeline's one toolbar row, its on-demand filter row, and the folded attack chain. */
 .tl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
-/* Down a long timeline: Add stays to hand, and the composer it opens is docked at the bottom of the window (not a
-   modal: the timeline stays readable and scrollable behind it). */
+/* Down a long timeline: Add stays to hand, and the composer it opens pops out on the right as the evidence and entity
+   panels do (full height, same edge), but without their scrim: the timeline stays readable and scrollable beside it. */
 .tl-add-fab { display: none; position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1030; border-radius: 999px;
-    padding: 0.5rem 1rem; box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.25); }
+    padding: 0.5rem 1rem; box-shadow: var(--im-shadow-lg); }
 html[data-tl-away] .tl-add-fab { display: inline-flex; align-items: center; gap: 0.35rem; }
-.tl-composer-docked { position: fixed; right: 1rem; bottom: 1rem; z-index: 1040; width: min(46rem, calc(100vw - 2rem));
-    max-height: min(80vh, calc(100vh - 6rem)); overflow: auto; margin: 0 !important;
-    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.3); }
-.tl-docked-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: -0.25rem 0 0.5rem; }
-@media (max-width: 575.98px) {
-    .tl-composer-docked { right: 0; bottom: 0; width: 100vw; max-height: 85vh; border-radius: 0.5rem 0.5rem 0 0; }
+/* The composer lays itself out for its own width (inline under the toolbar, or popped out): narrow, its fields stack. */
+#timeline-dropzone { container: tlcomposer / inline-size; }
+@container tlcomposer (max-width: 40rem) {
+    #timeline-dropzone .row > [class*="col-md-"] { flex: 0 0 auto; width: 100%; }
 }
+html[data-tl-docked] #timeline-dropzone:not(.d-none) { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
+    width: min(34rem, 100vw); margin: 0 !important; overflow-y: auto; border-radius: 0; border: 0;
+    border-left: 1px solid var(--im-border-strong); background: var(--im-surface); box-shadow: var(--im-shadow-lg); }
+html[data-tl-docked] #timeline-dropzone > .card-body { display: flex; flex-direction: column; min-height: 100%; padding-bottom: 0; }
+.tl-docked-head { display: none; }
+html[data-tl-docked] .tl-docked-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    margin: calc(-1 * var(--bs-card-spacer-y, 1rem)) calc(-1 * var(--bs-card-spacer-x, 1rem)) 0.75rem;
+    padding: var(--im-space-4); border-bottom: 1px solid var(--im-border); position: sticky; top: calc(-1 * var(--bs-card-spacer-y, 1rem));
+    background: var(--im-surface); z-index: 2; }
+/* Popped out: the form first, the paste hint last, room to write, and the Add buttons always in reach at the bottom. */
+html[data-tl-docked] .tl-composer-paste { order: 99; margin-top: auto; padding: 0.75rem 0; }
+html[data-tl-docked] #timeline-dropzone textarea.form-control-sm { min-height: 6.5rem; }
+html[data-tl-docked] #timeline-dropzone .CodeMirror { min-height: 12rem; }
+html[data-tl-docked] .tl-composer-actions { position: sticky; bottom: 0; z-index: 2; background: var(--im-surface);
+    margin-left: calc(-1 * var(--bs-card-spacer-x, 1rem)); margin-right: calc(-1 * var(--bs-card-spacer-x, 1rem));
+    padding: 0.6rem var(--bs-card-spacer-x, 1rem); border-top: 1px solid var(--im-border); }
+
 .tl-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: -0.25rem 0 0.75rem; }
 .killchain-strip { display: flex; align-items: baseline; gap: 0.75rem; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: var(--im-text); text-align: left; }
 .killchain-wrap:not(.killchain-collapsed) .killchain-strip { margin-bottom: 0.35rem; }

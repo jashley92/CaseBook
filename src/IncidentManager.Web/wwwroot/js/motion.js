@@ -62,18 +62,47 @@ window.imMotion = {
     },
     // A scroll listener rather than an IntersectionObserver: it reads the toolbar's place on every scroll (cheap: one
     // rect), and keeps working in a page the browser has stopped painting, where an observer goes quiet.
+    // It also moves an open composer between its place under the toolbar and the pop-out: out once the reader has
+    // scrolled it fully out of view (the page is moved back by its height as it leaves, so nothing on screen moves),
+    // and back once the toolbar is in view again. The gap between the two keeps it from flickering.
     watchTimelineToolbar: function (id) {
         try {
             window.imMotion.unwatchTimelineToolbar();
             var self = window.imMotion;
             var update = function () {
-                document.documentElement.toggleAttribute('data-tl-away', self.timelineToolbarAway(id));
+                var root = document.documentElement;
+                var dz = document.getElementById('timeline-dropzone');
+                var open = !!dz && !dz.classList.contains('d-none');
+                var under = self._stickyBottom();
+                if (!open) root.removeAttribute('data-tl-docked');
+                else if (!root.hasAttribute('data-tl-docked')) {
+                    var r = dz.getBoundingClientRect();
+                    if (r.bottom < under) {
+                        var h = r.height + (Number.parseFloat(getComputedStyle(dz).marginBottom) || 0);
+                        root.setAttribute('data-tl-docked', '');
+                        window.scrollBy({ top: -h, behavior: 'instant' });
+                    }
+                } else {
+                    var bar = document.getElementById(id);
+                    if (bar && bar.getBoundingClientRect().bottom > under + 8) root.removeAttribute('data-tl-docked');
+                }
+                root.toggleAttribute('data-tl-away', self.timelineToolbarAway(id));
             };
             window.addEventListener('scroll', update, { passive: true });
             window.addEventListener('resize', update, { passive: true });
             window._imTlWatch = update;
             update();
         } catch (e) { /* no-op */ }
+    },
+    _stickyBottom: function () {
+        var bar = document.getElementById('ws-sticky');
+        return bar ? bar.getBoundingClientRect().bottom : 0;
+    },
+    setTimelineDocked: function (on) {
+        try { document.documentElement.toggleAttribute('data-tl-docked', !!on); } catch (e) { /* no-op */ }
+    },
+    isTimelineDocked: function () {
+        try { return document.documentElement.hasAttribute('data-tl-docked'); } catch (e) { return false; }
     },
     unwatchTimelineToolbar: function () {
         try {
@@ -83,6 +112,7 @@ window.imMotion = {
                 window._imTlWatch = null;
             }
             document.documentElement.removeAttribute('data-tl-away');
+            document.documentElement.removeAttribute('data-tl-docked');
         } catch (e) { /* no-op */ }
     }
 };
