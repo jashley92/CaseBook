@@ -58,7 +58,8 @@
         {
             case "ArrowDown" when _hits.Count > 0: _active = (_active + 1) % _hits.Count; break;
             case "ArrowUp" when _hits.Count > 0: _active = (_active - 1 + _hits.Count) % _hits.Count; break;
-            case "Enter" when _active >= 0 && _active < _hits.Count: Open(_hits[_active]); break;
+            // BUG-536: a held Enter repeats; only the first press opens a result.
+            case "Enter" when !e.Repeat && _active >= 0 && _active < _hits.Count: Open(_hits[_active]); break;
             case "Escape": Clear(); break;
         }
     }

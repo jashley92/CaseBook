@@ -140,6 +140,7 @@ public partial class CaseAudienceGateTests
     private static readonly Dictionary<string, string> WebDbContext = new(StringComparer.Ordinal)
     {
         ["Components/Pages/Admin.razor"] = "the diagnostics tab: provider name, pending migrations, can-connect; no table read",
+        ["Services/AdminHealth.cs"] = "Diagnostics and the overview's checks: can-connect and pending migrations, and the held-mail count (HeldEmailSummary); no table read",
         ["HealthChecks/DatabaseHealthCheck.cs"] = "the health endpoint's can-connect check; no table read",
         ["Program.cs"] = "start-up: migrations, seeding and back-fills, before any request",
         ["BackgroundJobs/RowHashUpgradeHostedService.cs"] = "the integrity upgrade moved out of start-up (BUG-644): records hashes, shows no case to anyone",
