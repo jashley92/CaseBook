@@ -136,7 +136,7 @@ public sealed class AdminHealth(
             checks.Add(new HealthCheck(char.ToUpperInvariant(d.Label[0]) + d.Label[1..], !saved.Unreadable, saved.Unreadable
                     ? $"The {d.Label} saved in Administration can't be decrypted on this server: re-enter the {d.Label} ({d.Where})."
                     : "saved in Administration",
-                d.Kind == StoredSecretKind.ChatWebhookUrl ? "admin/settings/notifications#chat-webhook" : "admin/settings/server#siem-token"));
+                d.Kind == StoredSecretKind.ChatWebhookUrl ? "admin/settings/notifications#chat-webhook" : "admin/settings/integrations#siem-token"));
         }
         checks.Add(new HealthCheck("Schema up to date", dbOk && pending.Count == 0,
             !dbOk ? "can't tell: the database isn't answering" : pending.Count > 0 ? $"{pending.Count} pending" : "no pending migrations",

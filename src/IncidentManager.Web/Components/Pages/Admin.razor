@@ -20,6 +20,7 @@
 @inject IncidentManager.Application.Abstractions.IChatNotifier Chat
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
 @inject IncidentManager.Web.Services.AdminHealth Health
+@inject IncidentManager.Application.Abstractions.IEvidenceKeyring EvidenceKey
 @inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor EvidenceIntegrity
 @inject IncidentManager.Application.Integrity.IntegrityCheckState IntegrityCheck
 @inject IncidentManager.Application.Evidence.EvidenceService EvidenceStorage
@@ -270,6 +271,20 @@
                                             <a class="ms-2" href="@($"integrity?entity=AppSetting&key={Uri.EscapeDataString(def.Key)}#audit-trail")"
                                                aria-label="@($"History of {DisplayLabel(def)}")">History</a></div>
                                     </div>
+                                </div>
+                            }
+                            @if (HostRows(group) is { Count: > 0 } host)
+                            {
+                                <div class="border-top pt-3">
+                                    <div class="small fw-semibold mb-2">Set on the host
+                                        <a class="fw-normal ms-1" href="admin/settings/server">Server configuration</a></div>
+                                    @foreach (var (label, value) in host)
+                                    {
+                                        <div class="row mb-1 small">
+                                            <div class="col-md-6 col-xl-5 text-muted">@label</div>
+                                            <div class="col-md-6 col-xl-7">@value</div>
+                                        </div>
+                                    }
                                 </div>
                             }
                         </div>
@@ -548,6 +563,28 @@
                     </div>
                     }
 
+                    @* The SIEM, team chat and CyberArk are set on the host; their status shows here with the settings that use them. *@
+                    @if (group == "Related indicators")
+                    {
+                        <div class="card mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><span class="bi bi-broadcast-pin me-1" aria-hidden="true"></span>SIEM, team chat and CyberArk</span>
+                                <span class="im-badge im-b-neutral">Set on the host</span>
+                            </div>
+                            <div class="card-body">
+                                <p class="small text-muted mb-2">Turned on and pointed at their endpoints in the server's configuration
+                                    (<a href="admin/settings/server">Server configuration</a>); shown here read-only.</p>
+                                <table class="table table-sm mb-0"><tbody>@IntegrationRows()</tbody></table>
+                            </div>
+                        </div>
+                @* CAP-40: the one SIEM webhook value that may be entered here rather than on the server: its token. *@
+                <div id="siem-token"></div>
+                <IncidentManager.Web.Components.Shared.StoredSecretCard Kind="IncidentManager.Web.Secrets.StoredSecretKind.SiemWebhookToken"
+                    Title="SIEM webhook token" FieldLabel="Token"
+                    Help="The collector's bearer token or API key, sent in the header set by Siem:Webhook:AuthHeader. The collector URL stays in the server's configuration."
+                    Note="@(Config.GetValue<bool>("Siem:Webhook:Enabled") ? null : "The SIEM webhook is off in the server's configuration (Siem:Webhook:Enabled), so nothing is sent until it's turned on there. The token is kept until then.")" />
+                    }
+
                     @* CAP-10: the review of closed cases past the period set above, on the same page. *@
                     @if (group == "Retention")
                     {
@@ -709,98 +746,13 @@
                             <span class="small text-muted ms-2">time limit @IncidentManager.Infrastructure.Notifications.SmtpSignIn.Timeout(EmailOptions.CurrentValue).TotalSeconds s</span>
                         </td>
                     </tr>
-                    <tr>
-                        <td>SIEM stream (webhook)</td>
-                        <td>
-                            @StatusBadge(Config.GetValue<bool>("Siem:Webhook:Enabled"), "Enabled", "Disabled")
-                            @if (Config.GetValue<bool>("Siem:Webhook:Enabled"))
-                            {
-                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Webhook:Url"]), "Endpoint configured", "No endpoint")</span>
-                                <span class="ms-2">@SecretSource(IncidentManager.Web.Secrets.StoredSecretKind.SiemWebhookToken, "Token", "No token")</span>
-                            }
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>SIEM stream (syslog CEF)</td>
-                        <td>
-                            @StatusBadge(Config.GetValue<bool>("Siem:Syslog:Enabled"), "Enabled", "Disabled")
-                            @if (Config.GetValue<bool>("Siem:Syslog:Enabled"))
-                            {
-                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Syslog:Host"]), "Collector configured", "No collector")</span>
-                                <code class="small ms-2">@(Config["Siem:Syslog:Protocol"] ?? "Udp")/@(Config["Siem:Syslog:Port"] ?? "514")</code>
-                            }
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>SIEM stream (Windows Event Log)</td>
-                        <td>
-                            @StatusBadge(Config.GetValue<bool>("Siem:EventLog:Enabled"), "Enabled", "Disabled")
-                            @if (Config.GetValue<bool>("Siem:EventLog:Enabled"))
-                            {
-                                <code class="small ms-2">@(Config["Siem:EventLog:LogName"] ?? "Application") / @(Config["Siem:EventLog:Source"] ?? "CaseBook")</code>
-                                @if (!OperatingSystem.IsWindows()) { <span class="ms-2">@StatusBadge(false, "", "Not Windows: inactive")</span> }
-                            }
-                        </td>
-                    </tr>
-                    @if (SiemTest.AnyEnabled)
-                    {
-                        <tr>
-                            <td>SIEM test</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-secondary" @onclick="SendSiemTest" disabled="@_siemTesting">
-                                    @(_siemTesting ? "Sending…" : "Send test event")
-                                </button>
-                                <span class="small text-muted ms-2">Event 5901, marked as a test. Doesn't touch case data.</span>
-                                @if (_siemResults is { } results)
-                                {
-                                    <ul class="list-unstyled small mt-2 mb-0">
-                                        @foreach (var r in results)
-                                        {
-                                            <li>@StatusBadge(r.Delivered, r.Transport, r.Transport) <span class="ms-1">@r.Detail</span></li>
-                                        }
-                                    </ul>
-                                }
-                            </td>
-                        </tr>
-                    }
-                    <tr>
-                        <td>Team chat (webhook)</td>
-                        <td>
-                            @StatusBadge(Config.GetValue<bool>("Chat:Webhook:Enabled"), "Enabled", "Disabled")
-                            @if (Config.GetValue<bool>("Chat:Webhook:Enabled"))
-                            {
-                                <span class="ms-2">@SecretSource(IncidentManager.Web.Secrets.StoredSecretKind.ChatWebhookUrl, "Webhook", "No webhook")</span>
-                                <code class="small ms-2">@(Config["Chat:Webhook:Format"] ?? "Slack")</code>
-                            }
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Secret store (CyberArk CCP)</td>
-                        <td>
-                            @StatusBadge(Config.GetValue<bool>("Secrets:CyberArk:Enabled"), "Enabled", "Disabled")
-                            @if (Config.GetValue<bool>("Secrets:CyberArk:Enabled"))
-                            {
-                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:BaseUrl"]), "Endpoint configured", "No endpoint")</span>
-                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:AppId"]), "AppID set", "No AppID")</span>
-                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:ClientCertificateThumbprint"]), "Client cert set", "Machine/OS-user auth")</span>
-                            }
-                            else
-                            {
-                                <span class="small text-muted ms-2">secrets read literally from config/env</span>
-                            }
-                        </td>
-                    </tr>
+                    @IntegrationRows()
                 </tbody>
             </table>
             <p class="small text-muted mt-2">Auto-seal is set in-app under <a href="admin/settings/integrity">Records &amp; evidence › Integrity</a>.
             To verify or seal on demand, go to <a href="integrity">Integrity &amp; audit</a>.</p>
 
-            @* CAP-40: the one SIEM webhook value that may be entered here rather than on the server: its token. *@
-            <div id="siem-token"></div>
-            <IncidentManager.Web.Components.Shared.StoredSecretCard Kind="IncidentManager.Web.Secrets.StoredSecretKind.SiemWebhookToken"
-                Title="SIEM webhook token" FieldLabel="Token"
-                Help="The collector's bearer token or API key, sent in the header set by Siem:Webhook:AuthHeader. The collector URL stays in the server's configuration."
-                Note="@(Config.GetValue<bool>("Siem:Webhook:Enabled") ? null : "The SIEM webhook is off in the server's configuration (Siem:Webhook:Enabled), so nothing is sent until it's turned on there. The token is kept until then.")" />
+            <p class="small text-muted mb-0">The SIEM webhook token is entered under <a href="admin/settings/integrations#siem-token">Integrations</a>.</p>
         }
         else if (_activeId == "source")
         {
@@ -1405,6 +1357,126 @@
         builder.AddContent(2, source);
         builder.CloseElement();
     };
+
+    // The SIEM transports, team chat and CyberArk: on Server configuration and, read-only, on Integrations.
+    private RenderFragment IntegrationRows() => @<text>
+                    <tr>
+                        <td>SIEM stream (webhook)</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Siem:Webhook:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Siem:Webhook:Enabled"))
+                            {
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Webhook:Url"]), "Endpoint configured", "No endpoint")</span>
+                                <span class="ms-2">@SecretSource(IncidentManager.Web.Secrets.StoredSecretKind.SiemWebhookToken, "Token", "No token")</span>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>SIEM stream (syslog CEF)</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Siem:Syslog:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Siem:Syslog:Enabled"))
+                            {
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Syslog:Host"]), "Collector configured", "No collector")</span>
+                                <code class="small ms-2">@(Config["Siem:Syslog:Protocol"] ?? "Udp")/@(Config["Siem:Syslog:Port"] ?? "514")</code>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>SIEM stream (Windows Event Log)</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Siem:EventLog:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Siem:EventLog:Enabled"))
+                            {
+                                <code class="small ms-2">@(Config["Siem:EventLog:LogName"] ?? "Application") / @(Config["Siem:EventLog:Source"] ?? "CaseBook")</code>
+                                @if (!OperatingSystem.IsWindows()) { <span class="ms-2">@StatusBadge(false, "", "Not Windows: inactive")</span> }
+                            }
+                        </td>
+                    </tr>
+                    @if (SiemTest.AnyEnabled)
+                    {
+                        <tr>
+                            <td>SIEM test</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="SendSiemTest" disabled="@_siemTesting">
+                                    @(_siemTesting ? "Sending…" : "Send test event")
+                                </button>
+                                <span class="small text-muted ms-2">Event 5901, marked as a test. Doesn't touch case data.</span>
+                                @if (_siemResults is { } results)
+                                {
+                                    <ul class="list-unstyled small mt-2 mb-0">
+                                        @foreach (var r in results)
+                                        {
+                                            <li>@StatusBadge(r.Delivered, r.Transport, r.Transport) <span class="ms-1">@r.Detail</span></li>
+                                        }
+                                    </ul>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    <tr>
+                        <td>Team chat (webhook)</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Chat:Webhook:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Chat:Webhook:Enabled"))
+                            {
+                                <span class="ms-2">@SecretSource(IncidentManager.Web.Secrets.StoredSecretKind.ChatWebhookUrl, "Webhook", "No webhook")</span>
+                                <code class="small ms-2">@(Config["Chat:Webhook:Format"] ?? "Slack")</code>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Secret store (CyberArk CCP)</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Secrets:CyberArk:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Secrets:CyberArk:Enabled"))
+                            {
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:BaseUrl"]), "Endpoint configured", "No endpoint")</span>
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:AppId"]), "AppID set", "No AppID")</span>
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:ClientCertificateThumbprint"]), "Client cert set", "Machine/OS-user auth")</span>
+                            }
+                            else
+                            {
+                                <span class="small text-muted ms-2">secrets read literally from config/env</span>
+                            }
+                        </td>
+                    </tr>
+    </text>;
+
+    // Server-only settings (ADR 0007) a card's settings depend on, shown read-only at its foot.
+    private IReadOnlyList<(string Label, string Value)> HostRows(string group)
+    {
+        var mail = EmailOptions.CurrentValue;
+        return group switch
+        {
+            "Email delivery" =>
+            [
+                ("Relay", string.IsNullOrWhiteSpace(mail.SmtpHost) ? "not set" : $"{mail.SmtpHost}:{mail.SmtpPort}"),
+                ("Encrypted connection (TLS)", mail.EnableSsl ? "on" : "off"),
+                ("Time limit per message", $"{IncidentManager.Infrastructure.Notifications.SmtpSignIn.Timeout(mail).TotalSeconds:0} s"),
+            ],
+            "Team chat" =>
+            [
+                ("Chat webhook", Config.GetValue<bool>("Chat:Webhook:Enabled") ? $"on, {Config["Chat:Webhook:Format"] ?? "Slack"} format" : "off (Chat:Webhook:Enabled)"),
+            ],
+            "Evidence storage" =>
+            [
+                ("Store folder", EvidenceStoreFiles.Location),
+                ("Encryption at rest", EvidenceKey.State switch
+                {
+                    EvidenceKeyState.Off => "off (Storage:Encryption)",
+                    EvidenceKeyState.Ready => "on",
+                    var state => $"{state}: see Diagnostics",
+                }),
+            ],
+            "Integrity" =>
+            [
+                ("Seal signing key", $"{Signer.KeyId} · {Signer.KeySource}"),
+                ("Audit chain key", Config.GetValue<bool>("Integrity:ChainKey:Enabled") ? $"on ({Config["Integrity:ChainKey:Source"]})" : "off"),
+            ],
+            _ => [],
+        };
+    }
 
     // --- Notification delivery readiness (PROD-01) ---
     // Config-derived, read-only. Reads the pending form values (not the saved config) so the panel updates

@@ -106,7 +106,7 @@ public sealed class WebhookTransport : ISecurityEventTransport
             return where == "server configuration"
                 ? "The webhook token (Siem:Webhook:Token) couldn't be resolved, so nothing was sent. See Diagnostics, Secret resolution."
                 : "The webhook token saved in Administration can't be decrypted on this server (its Data Protection keys aren't " +
-                  "here), so nothing was sent. Re-enter it under Server configuration, SIEM webhook token.";
+                  "here), so nothing was sent. Re-enter it under Integrations, SIEM webhook token.";
         }
         Interlocked.Exchange(ref _tokenReported, 0);
 

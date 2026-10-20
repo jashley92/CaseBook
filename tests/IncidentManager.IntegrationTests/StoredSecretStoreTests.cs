@@ -647,8 +647,9 @@ public sealed class StoredSecretStoreTests : IDisposable
         admin.Should().Contain("StoredSecretKind.ChatWebhookUrl").And.Contain("StoredSecretKind.SiemWebhookToken");
         admin.IndexOf("StoredSecretKind.ChatWebhookUrl\"", StringComparison.Ordinal).Should()
             .BeLessThan(admin.IndexOf("_activeId == \"server\"", StringComparison.Ordinal), "chat, with the notification settings");
-        admin.IndexOf("StoredSecretKind.SiemWebhookToken\"", StringComparison.Ordinal).Should()
-            .BeGreaterThan(admin.IndexOf("_activeId == \"server\"", StringComparison.Ordinal), "the SIEM token, with the SIEM rows in Server configuration");
+        var token = admin.IndexOf("StoredSecretKind.SiemWebhookToken\"", StringComparison.Ordinal);
+        token.Should().BeGreaterThan(admin.IndexOf("@if (group == \"Related indicators\")", StringComparison.Ordinal))
+            .And.BeLessThan(admin.IndexOf("_activeId == \"server\"", StringComparison.Ordinal), "the SIEM token, with the SIEM rows on Integrations");
     }
 
     // --- Helpers ---

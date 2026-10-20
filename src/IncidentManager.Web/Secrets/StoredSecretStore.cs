@@ -32,7 +32,7 @@ public sealed record StoredSecretDefinition(StoredSecretKind Kind, string Name, 
         "CaseBook.Secrets.ChatWebhookUrl.v1", "team-chat webhook URL", "Administration, Settings, Notifications, Team chat webhook", 2048);
 
     public static readonly StoredSecretDefinition SiemWebhookToken = new(StoredSecretKind.SiemWebhookToken, "Siem:Webhook:Token",
-        "CaseBook.Secrets.SiemWebhookToken.v1", "SIEM webhook token", "Administration, Server configuration, SIEM webhook token", 4096);
+        "CaseBook.Secrets.SiemWebhookToken.v1", "SIEM webhook token", "Administration, Integrations, SIEM webhook token", 4096);
 
     /// <summary>CAP-36: a team's chat webhook URL. <see cref="Name"/> is the pattern; each team's row is
     /// <see cref="StoredSecretStore.TeamWebhookName"/>, protected under <see cref="Purpose"/> with the team's id as a
