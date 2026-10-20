@@ -209,7 +209,7 @@
             {
                 <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap tl-composer-paste" aria-live="polite">
                     <span><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Paste a screenshot, or paste or drop a file, to attach it.
-                        It's saved as hashed evidence with chain of custody; a file that isn't an image is cited by the entry.</span>
+                        <span class="tl-paste-detail">It's saved as hashed evidence with chain of custody; a file that isn't an image is cited by the entry.</span></span>
                     @if (_tlShotBytes is not null)
                     {
                         <span class="im-badge im-b-info">
@@ -290,7 +290,7 @@
                                     @onclick="() => _evtOurs = true">Our environment</button>
                         </div>
                     </div>
-                    <p class="small text-muted mb-2">
+                    <p class="small text-muted mb-2 im-composer-hint">
                         @(_evtOurs
                             ? "What the attacker did in our network after pivoting from the vendor. The first step here is the pivot: its actor can be the vendor-side host and its target ours."
                             : "What the attacker did in the vendor's environment, as the vendor reported it.")
@@ -299,7 +299,7 @@
                 }
                 else if (IsThirdParty)
                 {
-                    <p class="small text-muted mb-2">A point in the disclosure: when the vendor told us something, or we confirmed something about our data.</p>
+                    <p class="small text-muted mb-2 im-composer-hint">A point in the disclosure: when the vendor told us something, or we confirmed something about our data.</p>
                 }
                 @if (!IsThirdParty || _evtAttackMode)
                 {

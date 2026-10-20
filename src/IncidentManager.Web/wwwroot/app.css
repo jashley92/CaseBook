@@ -2660,9 +2660,14 @@ html[data-tl-away] .tl-add-fab { display: inline-flex; align-items: center; gap:
 /* The composer lays itself out for its own width (inline under the toolbar, or popped out): narrow, its fields stack. */
 #timeline-dropzone { container: tlcomposer / inline-size; }
 @container tlcomposer (max-width: 40rem) {
-    #timeline-dropzone .row > [class*="col-md-"] { flex: 0 0 auto; width: 100%; }
+    /* Short fields (a type, a time, a source) two to a row; long ones (6 columns or more) a row each. */
+    #timeline-dropzone .row > [class*="col-md-"] { flex: 0 0 auto; width: 50%; }
+    #timeline-dropzone .row > :is(.col-md-6, .col-md-7, .col-md-8, .col-md-9, .col-md-10, .col-md-11, .col-md-12) { width: 100%; }
 }
-html[data-tl-docked] #timeline-dropzone:not(.d-none) { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
+@container tlcomposer (max-width: 26rem) {
+    #timeline-dropzone .row > [class*="col-md-"] { width: 100%; }
+}
+html[data-tl-docked] #timeline-dropzone:not(.d-none) { overscroll-behavior: contain; position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
     width: min(34rem, 100vw); margin: 0 !important; overflow-y: auto; border-radius: 0; border: 0;
     border-left: 1px solid var(--im-border-strong); background: var(--im-surface); box-shadow: var(--im-shadow-lg); }
 html[data-tl-docked] #timeline-dropzone > .card-body { display: flex; flex-direction: column; min-height: 100%; padding-bottom: 0; }
@@ -2672,9 +2677,19 @@ html[data-tl-docked] .tl-docked-head { display: flex; align-items: center; justi
     padding: var(--im-space-4); border-bottom: 1px solid var(--im-border); position: sticky; top: calc(-1 * var(--bs-card-spacer-y, 1rem));
     background: var(--im-surface); z-index: 2; }
 /* Popped out: the form first, the paste hint last, room to write, and the Add buttons always in reach at the bottom. */
-html[data-tl-docked] .tl-composer-paste { order: 99; margin-top: auto; padding: 0.75rem 0; }
-html[data-tl-docked] #timeline-dropzone textarea.form-control-sm { min-height: 6.5rem; }
-html[data-tl-docked] #timeline-dropzone .CodeMirror { min-height: 12rem; }
+html[data-tl-docked] .tl-composer-paste { order: 99; margin-top: auto; padding: 0.5rem 0; flex-wrap: nowrap; }
+html[data-tl-docked] .tl-composer-paste > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* The form fits the window: the prose editor takes the room the rest leaves (smaller on a short screen, larger on a
+   tall one), and the guidance lines are kept for screen readers but not shown, so the panel needn't scroll. */
+html[data-tl-docked] #timeline-dropzone textarea.form-control-sm { min-height: 3.5rem; }
+html[data-tl-docked] #timeline-dropzone .CodeMirror,
+html[data-tl-docked] #timeline-dropzone .CodeMirror-scroll { min-height: 5rem !important; }
+html[data-tl-docked] #timeline-dropzone .CodeMirror { height: clamp(4.5rem, calc(100vh - 35rem), 24rem) !important; }
+/* A decision carries its why, the options and who decided below the editor, so the editor leaves them the room. */
+html[data-tl-docked] #timeline-dropzone:has(#tl-dec-why) .CodeMirror { height: clamp(4rem, calc(100vh - 46rem), 18rem) !important; }
+html[data-tl-docked] #timeline-dropzone :is(.im-composer-hint, .im-oneline-hint, .tl-paste-detail) {
+    position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 html[data-tl-docked] .tl-composer-actions { position: sticky; bottom: 0; z-index: 2; background: var(--im-surface);
     margin-left: calc(-1 * var(--bs-card-spacer-x, 1rem)); margin-right: calc(-1 * var(--bs-card-spacer-x, 1rem));
     padding: 0.6rem var(--bs-card-spacer-x, 1rem); border-top: 1px solid var(--im-border); }
