@@ -1466,7 +1466,9 @@
                 {
                     EvidenceKeyState.Off => "off (Storage:Encryption)",
                     EvidenceKeyState.Ready => "on",
-                    var state => $"{state}: see Diagnostics",
+                    EvidenceKeyState.NeedsBackup => "on, waiting for a backup (see Diagnostics)",
+                    EvidenceKeyState.NotConfigured => "on, but nothing protects its key yet (see Diagnostics)",
+                    _ => "on, but the key can't be opened (see Diagnostics)",
                 }),
             ],
             "Integrity" =>
@@ -1930,9 +1932,14 @@
             {
                 // Say what changed and, when any of it waits for a background job or a new sign-in, when it applies.
                 var what = changes.Count is > 0 and <= 4 ? $": {string.Join("; ", changes)}" : "";
-                var later = saved.Select(SettingsCatalog.EffectOf).Where(e => e != SettingEffect.Immediate).Distinct()
-                    .Select(e => SettingsCatalog.EffectText(e)!.Replace("Applies", "applies", StringComparison.Ordinal)).ToList();
-                var when = later.Count == 0 ? "" : $" Some {string.Join(", some ", later)}.";
+                // "It applies within about 10 minutes." / "2 of them apply to new sign-ins."
+                var when = string.Concat(saved.GroupBy(SettingsCatalog.EffectOf).Where(g => g.Key != SettingEffect.Immediate).Select(g =>
+                {
+                    var phrase = SettingsCatalog.EffectText(g.Key)!["Applies ".Length..];
+                    var n = g.Count();
+                    return n == changed ? $" {(n == 1 ? "It applies" : "They apply")} {phrase}."
+                        : $" {n} of them {(n == 1 ? "applies" : "apply")} {phrase}.";
+                }));
                 Toasts.Success($"Saved {Plural(changed, "change")} to {title}{what}.{when}");
             }
         }
