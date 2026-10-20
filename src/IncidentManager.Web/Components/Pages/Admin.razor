@@ -34,6 +34,8 @@
 @inject IncidentManager.Web.Secrets.StoredSecretAdminService StoredSecretAdmin
 @inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Infrastructure.Notifications.EmailOptions> EmailOptions
 @inject ISeverityLabels SevLabels
+@inject TimeDisplay TimeDisp
+@inject IUserDirectory Users
 @inject IncidentManager.Application.Notifications.RetentionReviewState RetentionCount
 @inject AccessReviewService AccessReviews
 @inject IJSRuntime JS
@@ -195,6 +197,10 @@
                                         {
                                             <div class="mt-1">
                                                 <span class="im-badge im-b-info">Changed in CaseBook</span>
+                                                @if (s.ChangedAtUtc is { } changedAt)
+                                                {
+                                                    <span class="small text-muted ms-1">by @Users.DisplayFor(s.ChangedBy), @TimeDisp.DateOnly(changedAt)</span>
+                                                }
                                                 <button class="btn btn-link btn-sm p-0 ms-2 align-baseline"
                                                         title="@(s.ServerValueFromFile ? $"Back to the server's settings file: {ShownValue(s.ServerValue)}" : $"Back to the default: {ShownValue(s.ServerValue)}")"
                                                         @onclick="() => ResetOne(def.Key)" disabled="@_savingSection">@(s.ServerValueFromFile ? "Reset to the server's value" : "Reset to default")</button>
@@ -210,7 +216,7 @@
                                         @switch (def.Kind)
                                         {
                                             case SettingKind.Text when def.Options is { } opts:
-                                                <select class="form-select" id="@def.Key" style="max-width:20rem"
+                                                <select class="form-select @InvalidClass(def)" id="@def.Key" style="max-width:20rem"
                                                         value="@_form[def.Key]" @onchange="e => _form[def.Key] = e.Value?.ToString()">
                                                     @if (!opts.Any(o => string.Equals(o.Value, _form[def.Key], StringComparison.OrdinalIgnoreCase)) && !string.IsNullOrEmpty(_form[def.Key]))
                                                     {
@@ -231,7 +237,7 @@
                                                 </div>
                                                 break;
                                             case SettingKind.MultiText:
-                                                <textarea class="form-control font-monospace" id="@def.Key" rows="4"
+                                                <textarea class="form-control font-monospace @InvalidClass(def)" id="@def.Key" rows="4"
                                                           value="@_form[def.Key]"
                                                           aria-describedby="@(def.Key == RelatedExclusionSettings.DomainsKey ? "org-domains-found" : null)"
                                                           @oninput="e => _form[def.Key] = e.Value?.ToString()"></textarea>
@@ -241,17 +247,25 @@
                                                 }
                                                 break;
                                             case SettingKind.Int:
-                                                <input class="form-control" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
+                                                <input class="form-control @InvalidClass(def)" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
                                                        value="@_form[def.Key]"
                                                        @oninput="e => _form[def.Key] = e.Value?.ToString()" />
                                                 break;
                                             default:
-                                                <input class="form-control" id="@def.Key" type="text"
+                                                <input class="form-control @InvalidClass(def)" id="@def.Key" type="text"
                                                        value="@_form[def.Key]"
                                                        @oninput="e => _form[def.Key] = e.Value?.ToString()" />
                                                 break;
                                         }
+                                        @if (FieldProblem(def) is { } problem)
+                                        {
+                                            <div class="invalid-feedback d-block" role="alert">@problem</div>
+                                        }
                                         <div class="form-text"><code class="small">@def.Key</code>
+                                            @if (SettingsCatalog.EffectText(SettingsCatalog.EffectOf(def.Key)) is { } effect)
+                                            {
+                                                <span class="im-badge im-b-neutral ms-2" title="When a saved change applies">@effect</span>
+                                            }
                                             @* CAP-03: who changed it and when, on the Integrity page's trail (the key isn't personal data). *@
                                             <a class="ms-2" href="@($"integrity?entity=AppSetting&key={Uri.EscapeDataString(def.Key)}#audit-trail")"
                                                aria-label="@($"History of {DisplayLabel(def)}")">History</a></div>
@@ -265,7 +279,7 @@
                     @if (group == "Organization")
                     {
                         <div class="card mb-3">
-                            <div class="card-header"><span class="bi bi-image me-1"></span>Report logo</div>
+                            <div class="card-header d-flex justify-content-between align-items-center"><span><span class="bi bi-image me-1"></span>Report logo</span><span class="im-badge im-b-neutral" title="Uploading or removing the logo saves it at once; it doesn't wait for Save changes">Saves on its own</span></div>
                             <div class="card-body">
                                 <p class="small text-muted">
                                     Shown above the organization and team names in the report header. PNG or JPEG,
@@ -613,9 +627,16 @@
                 {
                     <div class="adm-savebar" role="region" aria-label="Unsaved changes">
                         <span class="bi bi-pencil-square" aria-hidden="true"></span>
-                        <span>Unsaved changes in <strong>@ActiveTitle</strong></span>
+                        @if (SectionProblems is > 0 and var problems)
+                        {
+                            <span class="text-danger">@Plural(problems, "setting") to correct before saving</span>
+                        }
+                        else
+                        {
+                            <span>Unsaved changes in <strong>@ActiveTitle</strong></span>
+                        }
                         <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="DiscardSection" disabled="@_savingSection">Discard</button>
-                        <button type="button" class="btn btn-sm btn-primary" @onclick="SaveSection" disabled="@_savingSection">Save changes</button>
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="SaveSection" disabled="@(_savingSection || SectionProblems > 0)">Save changes</button>
                     </div>
                 }
             }
@@ -1729,6 +1750,28 @@
     private bool SectionDirty =>
         SectionGroups.Any(GroupDirty) || (SectionHasBrand && BrandDirty) || (SectionHasLayout && LayoutDirty);
 
+    // A changed value that breaks its setting's rules is said under it as it's typed, and holds the section's Save; a value
+    // already saved isn't re-judged here (Diagnostics lists those).
+    private string? FieldProblem(SettingDefinition def) =>
+        _effective is not null && Differs(def.Key) ? SettingsCatalog.Problem(def, _form.GetValueOrDefault(def.Key)) : null;
+    private string InvalidClass(SettingDefinition def) => FieldProblem(def) is null ? "" : "is-invalid";
+    private int SectionProblems =>
+        _effective?.Count(e => SectionGroups.Contains(e.Definition.Group) && FieldProblem(e.Definition) is not null) ?? 0;
+    private static string Plural(int n, string word) => IncidentManager.Application.Common.Plural.Of(n, word);
+
+    // What a save changed, for its message: each setting's label, with old and new values when they're short.
+    private string Described(string key, string? before)
+    {
+        var def = SettingsCatalog.ByKey[key];
+        var label = DisplayLabel(def);
+        var after = _form.GetValueOrDefault(key);
+        static string Show(SettingDefinition d, string? v) => d.Kind == SettingKind.Bool
+            ? (bool.TryParse(v, out var on) && on ? "on" : "off")
+            : d.Options?.FirstOrDefault(o => string.Equals(o.Value, v, StringComparison.OrdinalIgnoreCase))?.Label ?? ShownValue(v);
+        var (from, to) = (Show(def, before), Show(def, after));
+        return def.Kind == SettingKind.MultiText || from.Length + to.Length > 60 ? label : $"{label} ({from} → {to})";
+    }
+
     private async Task SaveSection()
     {
         // BUG-394: a double-click mustn't run a second save, which could insert the same new AppSettings key twice.
@@ -1754,6 +1797,7 @@
         {
             var changed = 0;
             var saved = new List<string>();   // REV-40: the keys already in effect if a later one fails
+            var changes = new List<string>();   // what each saved setting changed, for the message
             var layoutSaved = false;
             // BUG-526: a key whose settings reload failed is saved all the same (not yet in effect). Treated as nothing saved,
             // the layout kept its old stamp and the retry was refused as stale. So carry on with the rest, then warn.
@@ -1764,8 +1808,10 @@
                 {
                     if (!Differs(s.Definition.Key)) continue;
                     var value = _form.GetValueOrDefault(s.Definition.Key);
+                    var described = Described(s.Definition.Key, s.Value);
                     notInEffect = await SavedEvenIfNotInEffect(() => Settings.SetAsync(s.Definition.Key, value)) ?? notInEffect;
                     saved.Add(s.Definition.Key);
+                    changes.Add(described);
                     changed++;
                 }
                 if (saveLayout)
@@ -1803,7 +1849,15 @@
             await ReloadKeepingEdits(keys, dropBrand: hasBrand, dropLayout: hasLayout);
             if (saveBrand) await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
             if (notInEffect is not null) Toasts.Error(notInEffect);
-            else Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {title}.");
+            else
+            {
+                // Say what changed and, when any of it waits for a background job or a new sign-in, when it applies.
+                var what = changes.Count is > 0 and <= 4 ? $": {string.Join("; ", changes)}" : "";
+                var later = saved.Select(SettingsCatalog.EffectOf).Where(e => e != SettingEffect.Immediate).Distinct()
+                    .Select(e => SettingsCatalog.EffectText(e)!.Replace("Applies", "applies", StringComparison.Ordinal)).ToList();
+                var when = later.Count == 0 ? "" : $" Some {string.Join(", some ", later)}.";
+                Toasts.Success($"Saved {Plural(changed, "change")} to {title}{what}.{when}");
+            }
         }
         finally
         {

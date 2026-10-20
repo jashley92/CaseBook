@@ -112,6 +112,35 @@ public sealed class AdminSettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_changed_setting_says_who_changed_it_and_when()
+    {
+        await using (var db = NewContext()) await NewService(db).SetAsync("Retention:CaseYears", "5");
+        await using (var db = NewContext())
+        {
+            var effective = await NewService(db).GetEffectiveAsync();
+            var years = effective.Single(e => e.Definition.Key == "Retention:CaseYears");
+            years.ChangedBy.Should().Be("admin1");
+            years.ChangedAtUtc.Should().Be(_clock.UtcNow);
+            effective.Single(e => e.Definition.Key == "Email:From").ChangedBy.Should().BeNull("an untouched setting has no change to name");
+        }
+    }
+
+    [Theory]
+    [InlineData("Notifications:OverdueScan:Enabled", SettingEffect.BackgroundJob)]
+    [InlineData("Notifications:ExecutiveReport:Enabled", SettingEffect.BackgroundJob)]
+    [InlineData("Integrity:AutoSeal:IntervalHours", SettingEffect.BackgroundJob)]
+    [InlineData("Retention:CaseYears", SettingEffect.BackgroundJob)]
+    [InlineData("Security:IdleTimeoutMinutes", SettingEffect.NewSessions)]
+    [InlineData("Notifications:Chat:Mentions", SettingEffect.Immediate)]
+    [InlineData("Sla:Containment:High", SettingEffect.Immediate)]
+    [InlineData("Email:From", SettingEffect.Immediate)]
+    public void Each_setting_says_when_a_change_applies(string key, SettingEffect effect)
+    {
+        SettingsCatalog.EffectOf(key).Should().Be(effect);
+        (SettingsCatalog.EffectText(effect) is null).Should().Be(effect == SettingEffect.Immediate, "only a change that waits is tagged");
+    }
+
+    [Fact]
     public async Task Set_is_audited_and_hash_chained()
     {
         await using var db = NewContext();

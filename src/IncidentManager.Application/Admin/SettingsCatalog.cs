@@ -48,6 +48,16 @@ public sealed record SettingOption(string Value, string Label);
 /// settings (auth mode, connection strings, signing keys, storage paths, AD group→role mapping) are
 /// deliberately absent and remain in server-side configuration, surfaced read-only in the panel.
 /// </summary>
+/// <summary>When a saved setting change applies.</summary>
+public enum SettingEffect
+{
+    Immediate,
+    /// <summary>When the background job that reads it next does (within about 10 minutes).</summary>
+    BackgroundJob,
+    /// <summary>For sessions started after the change.</summary>
+    NewSessions,
+}
+
 public static class SettingsCatalog
 {
     // BUG-262: an interval, a wait or a window becomes a TimeSpan; "999999999" meant as "never" overflowed it and stopped
@@ -385,6 +395,30 @@ public static class SettingsCatalog
         Editable.Select(d => d.Group).Distinct().ToList();
 
     public static bool IsEditable(string key) => ByKey.ContainsKey(key);
+
+    /// <summary>
+    /// When a saved change applies (configuration.md §1.2): most at once, as they're read per request; a background job's
+    /// options when the job next re-reads them (every few minutes; the integrity monitor every 10, the executive report
+    /// hourly); the idle timeout for sessions started after it.
+    /// </summary>
+    public static SettingEffect EffectOf(string key) => key switch
+    {
+        "Security:IdleTimeoutMinutes" => SettingEffect.NewSessions,
+        _ when key.StartsWith("Notifications:", StringComparison.Ordinal)
+               && (key.Contains("Scan:", StringComparison.Ordinal) || key.StartsWith("Notifications:ExecutiveReport:", StringComparison.Ordinal)
+                   || key.StartsWith("Notifications:RetentionReview:", StringComparison.Ordinal)) => SettingEffect.BackgroundJob,
+        _ when key.StartsWith("Retention:", StringComparison.Ordinal) || key.StartsWith("Integrity:", StringComparison.Ordinal)
+               || key.StartsWith("Updates:", StringComparison.Ordinal) => SettingEffect.BackgroundJob,
+        _ => SettingEffect.Immediate,
+    };
+
+    /// <summary>How <see cref="EffectOf"/> reads on the page, or null when the change applies at once (the unremarkable case).</summary>
+    public static string? EffectText(SettingEffect effect) => effect switch
+    {
+        SettingEffect.BackgroundJob => "Applies within about 10 minutes",
+        SettingEffect.NewSessions => "Applies to new sign-ins",
+        _ => null,
+    };
 
     /// <summary>Why <paramref name="value"/> breaks the setting's rules, or null when it's acceptable.</summary>
     public static string? Problem(SettingDefinition def, string? value)

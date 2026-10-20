@@ -14,8 +14,10 @@ namespace IncidentManager.Application.Admin;
 /// <param name="Discovered">CAP-28 discovery: the domains found on the server's network, when they're in force because the
 /// setting isn't set anywhere. <paramref name="Value"/> stays what is saved (blank), so the page's field shows what an
 /// administrator saves; "Use these" fills it from here.</param>
+/// <param name="ChangedBy">Who last saved it in Administration, and <paramref name="ChangedAtUtc"/> when (overridden only).</param>
 public sealed record EffectiveSetting(SettingDefinition Definition, string? Value, bool IsOverridden,
-    string? ServerValue = null, bool ServerValueFromFile = false, IReadOnlyList<DiscoveredDomain>? Discovered = null)
+    string? ServerValue = null, bool ServerValueFromFile = false, IReadOnlyList<DiscoveredDomain>? Discovered = null,
+    string? ChangedBy = null, DateTimeOffset? ChangedAtUtc = null)
 {
     public string Source => IsOverridden ? "Database" : ServerValueFromFile ? "Server settings file"
         : Discovered is not null ? "Discovered" : "Default";
@@ -62,7 +64,7 @@ public sealed class AdminSettingsService
     {
         using var db = _factory.CreateDbContext();
         var overrides = await db.AppSettings.AsNoTracking()
-            .ToDictionaryAsync(s => s.Key, s => s.Value, StringComparer.OrdinalIgnoreCase, ct);
+            .ToDictionaryAsync(s => s.Key, s => (s.Value, s.UpdatedBy, s.UpdatedAtUtc), StringComparer.OrdinalIgnoreCase, ct);
 
         return SettingsCatalog.Editable
             .Select(d =>
@@ -70,7 +72,7 @@ public sealed class AdminSettingsService
                 var file = _server?.ValueOf(d.Key) is { } f ? SafeNormalize(d, f) : null;
                 var server = file ?? d.Default;
                 return overrides.TryGetValue(d.Key, out var v)
-                    ? new EffectiveSetting(d, v, true, server, file is not null)
+                    ? new EffectiveSetting(d, v.Value, true, server, file is not null, null, v.UpdatedBy, v.UpdatedAtUtc)
                     : new EffectiveSetting(d, server, false, server, file is not null,
                         // CAP-28 discovery: never stored, so a bundle or a save of another setting never carries it.
                         d.Key == RelatedExclusionSettings.DomainsKey && file is null ? _exclusions?.DiscoveredInForce : null);
