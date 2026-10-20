@@ -28,7 +28,8 @@ Start with the question you have.
 | UI styling and copy rules | [STYLE-GUIDE.md](STYLE-GUIDE.md) |
 | How to install a production instance | [INSTALL.md](INSTALL.md) |
 | How to upgrade one | [UPGRADE.md](UPGRADE.md) |
-| Backups, keys, host controls, SIEM, CyberArk, ledger | [OPERATIONS.md](OPERATIONS.md) |
+| Backups, keys, host controls, SIEM, CyberArk, ledger | [OPERATIONS.md](OPERATIONS.md), the index of the operations pages |
+| What runs on a schedule, and what tells you it didn't | [operations/backup-and-recovery.md §1.6](operations/backup-and-recovery.md#16-what-runs-when) |
 | Every configuration setting | [operations/configuration.md](operations/configuration.md) |
 | How each integration works | [operations/integrations.md](operations/integrations.md) |
 | What to do when something breaks | [operations/troubleshooting.md](operations/troubleshooting.md) |
@@ -46,7 +47,7 @@ Start with the question you have.
   → [operations/troubleshooting.md](operations/troubleshooting.md).
 - **Security reviewer or examiner:** [architecture/security.md](architecture/security.md) →
   [architecture/integrity.md](architecture/integrity.md) → [reference/known-issues.md](reference/known-issues.md#security)
-  → [OPERATIONS.md §5](OPERATIONS.md#5-siem-security-event-stream-f-18).
+  → [OPERATIONS.md §5](operations/siem.md#5-siem-security-event-stream-f-18).
 - **Investigator using the app:** [product/screens.md](product/screens.md) → [workflows/](workflows/README.md).
 
 ## Layout
@@ -58,7 +59,8 @@ docs/
   architecture/           how it's built: overview, code map, data, timeline, security, integrity, frontend, backend
   workflows/              what users do and what happens
   development/            getting started, recipes, testing
-  operations/             configuration, integrations, troubleshooting
+  operations/             configuration, integrations, troubleshooting, and the operations pages
+                          (backup and recovery, keys and certificates, SIEM, secrets, ledger, full-text search)
   reference/              business rules, known issues, performance, glossary
   decisions/              architecture decision records
   screenshots/            generated images (tools/screenshots/capture.mjs)

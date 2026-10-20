@@ -151,7 +151,7 @@ is the *Retention review (Legal / Privacy)* email template. The job only counts 
 data elements and their regulatory deadline rules, case outcomes, report profiles, Word and email templates), and a configuration
 bundle import, also sends SIEM event 5405 naming what changed by its kind and name (never a template's text). A
 change to a stage gate or a regulatory deadline rule, and any delete, is a Warning. See
-[OPERATIONS.md §5](../OPERATIONS.md#event-id-catalog).
+[OPERATIONS.md §5](../operations/siem.md#event-id-catalog).
 
 ## Case templates (playbooks)
 
@@ -205,7 +205,7 @@ need-to-know ([security](../architecture/security.md)).
   users. Members get the team chosen on a new case when it's their only team, and can share saved views with it.
 - **Team chat webhook**: an incoming-webhook URL of the team's own. Posts about the team's cases (assignments, breach
   escalations, mentions, the reminder scans' summaries, and imports waiting for review for one of its cases) go there;
-  without one they go to the shared channel ([integrations](../operations/integrations.md#team-chat)). It's encrypted on
+  without one they go to the shared channel ([integrations](../operations/integrations.md#team-chat-slack-or-teams)). It's encrypted on
   this server like the shared webhook URL (CAP-40), never shown again, and has its own *Send test*.
 - **Retire** a team that's no longer used: it isn't offered for cases any more but stays on the cases that name it;
   **Restore** brings it back. Teams aren't deleted.

@@ -407,6 +407,7 @@ public static class SettingsCatalog
     public static SettingEffect EffectOf(string key) => key switch
     {
         "Security:IdleTimeoutMinutes" => SettingEffect.NewSessions,
+        Integrity.SigningKeyRotation.SettingKey => SettingEffect.Immediate,   // read when Diagnostics opens
         _ when key.StartsWith("Notifications:", StringComparison.Ordinal)
                && (key.Contains("Scan:", StringComparison.Ordinal) || key.StartsWith("Notifications:ExecutiveReport:", StringComparison.Ordinal)
                    || key.StartsWith("Notifications:RetentionReview:", StringComparison.Ordinal)) => SettingEffect.BackgroundJob,

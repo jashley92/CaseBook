@@ -95,7 +95,7 @@ Everything else is checked lazily or not at all:
   that touches evidence or reports.
 - **The seal-signing key is generated only in Development.** If the key file is missing there, the app creates a
   new RSA-3072 key at startup. In any other environment it refuses to start until the key is provisioned out
-  of band ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)), because a generated
+  of band ([OPERATIONS.md §2](keys-and-certificates.md#2-integrity-signing-key-management-f-05b)), because a generated
   key on the server can't vouch for anything. No setting turns generation on outside Development.
 - Full-text search (CAP-22) is checked, never required: the search mode is logged at startup ("Search: full-text
   (SQL Server)" or "Search: substring (…)"), and a check that fails means substring search until the next one.
@@ -143,7 +143,7 @@ certificate.
 **Full-text search (CAP-22) has no setting.** On SQL Server the app checks at startup, and again every 5 minutes (30
 seconds while the indexes are filling) and whenever Diagnostics opens, whether the instance has Full-Text Search and
 CaseBook's indexes are there and filled, and searches by word where they are, by substring where not. SQLite always
-searches by substring. See [OPERATIONS.md](../OPERATIONS.md#9-full-text-search-on-sql-server-cap-22).
+searches by substring. See [OPERATIONS.md](full-text-search.md#9-full-text-search-on-sql-server-cap-22).
 
 ### 3.3 Storage paths
 
@@ -152,14 +152,14 @@ process's working directory, which under IIS is the site folder.
 
 | Key | Holds | Code default | Edit | Sens |
 |---|---|---|---|---|
-| `EvidenceStore:RootPath` | Evidence files (per-case folders, random names). May be a UNC share path (PROD-56; installer `-EvidencePath`; [OPERATIONS.md §1.2.1](../OPERATIONS.md#121-evidence-storage-limits-large-uploads-and-network-shares)). | `App_Data/evidence-store` | Server | ⚠ |
+| `EvidenceStore:RootPath` | Evidence files (per-case folders, random names). May be a UNC share path (PROD-56; installer `-EvidencePath`; [OPERATIONS.md §1.2.1](backup-and-recovery.md#121-evidence-storage-limits-large-uploads-and-network-shares)). | `App_Data/evidence-store` | Server | ⚠ |
 | `ReportOutput:RootPath` | Generated reports | `App_Data/report-output` | Server | ⚠ |
 | `ReportBranding:RootPath` | The report and email logo | `App_Data/branding` (not in `appsettings.json`) | Server | ⚠ |
 | `ReportTemplates:RootPath` | Uploaded Word templates (`{id}.docx`) | unset: a `report-templates` folder beside the branding folder | Server | ⚠ |
 | `Integrity:SigningKeyPath` | PEM RSA private key that signs seals (with `Integrity:SigningKey:Source` `File`). Generated if missing in Development only; anywhere else the app won't start without it (§2). | `App_Data/keys/seal-signing.pem` | Server | 🔒 (the file) |
 | `Integrity:ExportPath` | Out-of-band copies of seals | `seals` (relative to the working directory, **not** `App_Data`) | Server | ⚠ |
 | `DataProtection:KeyPath` | Keyring for antiforgery and circuit protection, encrypted with machine DPAPI. Must be absolute. Blank uses the framework default, which under an app pool without a profile is lost on every recycle. | blank | Server | ⚠ |
-| `BackupStatus:FilePath` | JSON file written by your backup jobs ([OPERATIONS.md §1.3.1](../OPERATIONS.md#131-backup-health-status-file-h-04)). Relative paths resolve against the content root. | blank (not configured) | Server | ⚠ |
+| `BackupStatus:FilePath` | JSON file written by your backup jobs ([OPERATIONS.md §1.3.1](backup-and-recovery.md#131-backup-health-status-file-h-04)). Relative paths resolve against the content root. | blank (not configured) | Server | ⚠ |
 | `BackupStatus:BackupMaxAgeHours` / `RestoreMaxAgeDays` | When Diagnostics calls a backup or restore stale | `24` / `35` | Server | |
 | `BackupStatus:LogBackupMaxAgeMinutes` | When Diagnostics calls the last log backup stale (shown once there's been one) | `60` | Server | |
 
@@ -177,7 +177,7 @@ process's working directory, which under IIS is the site folder.
 | `Integrity:EvidenceVerify:Enabled` | Periodically re-hash stored evidence files (a run also at startup); alarm 5003 on drift | `false` | App |
 | `Integrity:EvidenceVerify:IntervalHours` | Hours between runs, counted from midnight UTC (`≤0` means 24) | `24` | App |
 | `Integrity:EvidenceVerify:PassDays` | Every file is re-hashed at least once in this many days: each run checks its share of the files. `1` checks every file every run. | `7` | App |
-| `Storage:Encryption:Enabled` | Encrypt evidence and reports at rest (PROD-57; [OPERATIONS.md §2, Evidence key](../OPERATIONS.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)). Starts only once a recovery certificate is listed or shares have been issued; files stored before are converted in the background, one-way. | `false` | Server |
+| `Storage:Encryption:Enabled` | Encrypt evidence and reports at rest (PROD-57; [OPERATIONS.md §2, Evidence key](keys-and-certificates.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)). Starts only once a recovery certificate is listed or shares have been issued; files stored before are converted in the background, one-way. | `false` | Server |
 | `Storage:Encryption:RecoveryCertificates` | Paths to recovery certificates (`.cer`, public part only); the key is also encrypted to each. | empty | Server |
 | `Storage:Encryption:CertificateThumbprint` / `StoreLocation` | Optional certificate of its own to protect the key; blank uses the chain key's certificate, else the seal-signing certificate, else the CyberArk chain key. | blank / `LocalMachine` | Server |
 | `Storage:Encryption:EnvelopePath` | The key's envelope file; blank is `evidence-key.json` beside the seal-signing key. | blank | Server |
@@ -331,8 +331,8 @@ whether a sender is set and which triggers are enabled, and a *Send a test email
 
 ### 3.15 SIEM, chat and secrets
 
-The full SIEM reference, including the event catalog, is in [OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18); CyberArk is in
-[§6](../OPERATIONS.md#6-secret-management-f-19). The keys:
+The full SIEM reference, including the event catalog, is in [OPERATIONS.md §5](siem.md#5-siem-security-event-stream-f-18); CyberArk is in
+[§6](secrets.md#6-secret-management-f-19). The keys:
 
 | Key | Default | Sens |
 |---|---|---|
@@ -376,7 +376,7 @@ installer's values. Sensitivity: ⚠ (names AD groups).
 
 | Key | Purpose | Default | Edit |
 |---|---|---|---|
-| `Search:Mode` | CAP-22 review: how Find and the case-list search match words on SQL Server with Full-Text Search. `Auto` by word from the full-text indexes, fast, but a word joined by `_` or `-` is one word (`backup` doesn't find `svc_backup`); `Substring` anywhere in the text, reading every row ([OPERATIONS.md §9](../OPERATIONS.md#9-full-text-search-on-sql-server-cap-22)). Read by name at each search; anything else is `Auto`. No effect without Full-Text Search. | `Auto` | App |
+| `Search:Mode` | CAP-22 review: how Find and the case-list search match words on SQL Server with Full-Text Search. `Auto` by word from the full-text indexes, fast, but a word joined by `_` or `-` is one word (`backup` doesn't find `svc_backup`); `Substring` anywhere in the text, reading every row ([OPERATIONS.md §9](full-text-search.md#9-full-text-search-on-sql-server-cap-22)). Read by name at each search; anything else is `Auto`. No effect without Full-Text Search. | `Auto` | App |
 
 ### 3.18 Design-time only
 

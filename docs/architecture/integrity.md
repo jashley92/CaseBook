@@ -176,7 +176,7 @@ sealed head hash still matches the live entry at `UpToSequence`, all history up 
 sealing. Seals are written to the database, as JSON files to `Integrity:ExportPath`, and to the SIEM as event 5004
 when a stream is configured. The SIEM copy is held apart from CaseBook's database and servers, so a seal added,
 altered or deleted later shows up when the two are compared
-([OPERATIONS.md §5](../OPERATIONS.md#seal-copies-in-the-siem-f-26)).
+([OPERATIONS.md §5](../operations/siem.md#seal-copies-in-the-siem-f-26)).
 
 ```mermaid
 flowchart TB
@@ -221,7 +221,7 @@ flowchart TB
 - **Times are stored in UTC.** The interceptor converts any `DateTimeOffset` with another offset before hashing,
   since canonicals print the offset and SQLite reads times back as UTC.
 - **The signing key is generated only in Development.** Elsewhere a missing key file stops startup; provision it
-  first ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
+  first ([OPERATIONS.md §2](../operations/keys-and-certificates.md#2-integrity-signing-key-management-f-05b)).
 - A failed copy to the export folder leaves the seal in place, logs a warning, emits SIEM event 5005 and shows in
   Diagnostics.
 
@@ -230,7 +230,7 @@ flowchart TB
 By default the chain is unkeyed. Someone with database write access who recomputes every later hash produces a
 chain that verifies on its own; the next seal catches that, because they can't re-sign without the private key, so
 the entries since the last seal are protected by database access control alone. Turning on the **chain key**
-(`Integrity:ChainKey`, [OPERATIONS.md §2](../OPERATIONS.md#the-audit-chain-key-f-25-off-by-default)) closes that:
+(`Integrity:ChainKey`, [OPERATIONS.md §2](../operations/keys-and-certificates.md#the-audit-chain-key-f-25-off-by-default)) closes that:
 new entries are hashed with HMAC-SHA256 under a key held in CyberArk or encrypted to a certificate, each entry
 records the key's id in `HashKeyId`, and a plain entry after a keyed one is a break. That rule needs a keyed entry
 that can't be rewritten, so the seal job seals at its next run (not its next interval) once keyed entries exist past

@@ -1,7 +1,7 @@
 # 0017. Evidence and reports encrypted at rest, with a key that can't be lost
 
 - **Status:** Accepted. Built as backlog item PROD-57. Configuration and procedures:
-  [OPERATIONS.md §2, Evidence key](../OPERATIONS.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57).
+  [OPERATIONS.md §2, Evidence key](../operations/keys-and-certificates.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57).
 - **Recorded:** 2026-10-17
 
 ## Context

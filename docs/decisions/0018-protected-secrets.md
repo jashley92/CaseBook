@@ -1,7 +1,7 @@
 # 0018. Secrets without CyberArk: entered in the app, or `@protected:` to a certificate
 
 - **Status:** Accepted. Built as backlog item CAP-05. Configuration:
-  [OPERATIONS.md §6](../OPERATIONS.md#6-secret-management-f-19) and
+  [OPERATIONS.md §6](../operations/secrets.md#6-secret-management-f-19) and
   [integrations.md, Email](../operations/integrations.md#email-smtp).
 - **Recorded:** 2026-10-18
 

@@ -1,7 +1,7 @@
 # 0016. Integrity keys from a file, the certificate store or CyberArk; seal copies outside CaseBook
 
 - **Status:** Accepted (v1.4.0). Closes the rest of security finding S-05 and backlog item F-05b; built as backlog
-  items F-23 to F-28. Configuration reference: [OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b).
+  items F-23 to F-28. Configuration reference: [OPERATIONS.md §2](../operations/keys-and-certificates.md#2-integrity-signing-key-management-f-05b).
 - **Recorded:** 2026-10-09
 
 ## Context
@@ -79,7 +79,7 @@ The copy is only worth something if the people who can change CaseBook's databas
     its own timestamp authority. Only an internal URL is accepted; CaseBook doesn't reach the internet
     ([0005](0005-no-outbound-ai.md)'s zero-egress stance).
 
-SQL Server ledger tables ([OPERATIONS.md §7](../OPERATIONS.md#7-sql-server-ledger-e-10)) remain a complementary,
+SQL Server ledger tables ([OPERATIONS.md §7](../operations/ledger.md#7-sql-server-ledger-e-10)) remain a complementary,
 optional layer inside the database engine.
 
 ### 4. Status and setup (F-28)

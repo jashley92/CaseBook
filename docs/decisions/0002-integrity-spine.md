@@ -21,7 +21,7 @@ Three layers, all automatic:
    to the database *and* to an out-of-band folder. A seal proves the history up to that point is unchanged.
 
 Optionally, SQL Server ledger tables make the audit log, seals and custody events append-only in the engine
-itself ([OPERATIONS.md §7](../OPERATIONS.md#7-sql-server-ledger-e-10)).
+itself ([OPERATIONS.md §7](../operations/ledger.md#7-sql-server-ledger-e-10)).
 
 ## Alternatives considered
 

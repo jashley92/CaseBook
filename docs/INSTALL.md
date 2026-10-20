@@ -236,7 +236,7 @@ Or pass every value directly instead of a config file:
   `SmtpPasswordThumbprint` or the integrity certificate, whose private key it lets the app account read), `CyberArk`
   (`SmtpPasswordSecret` = an `@cyberark:` reference) or `Literal` (plain text; not recommended). Without the keytool
   (a repo clone), run `casebook-keytool protect-secret --cert <thumbprint>` by hand later and paste the value into
-  `Email:SmtpPassword`. See [OPERATIONS.md §6](OPERATIONS.md#6-secret-management-f-19).
+  `Email:SmtpPassword`. See [OPERATIONS.md §6](operations/secrets.md#6-secret-management-f-19).
 - The template doesn't set `App:BaseUrl` (email links and logo; set it in Administration → Notifications),
   `Agenda:FeedKey` (calendar subscriptions), or any SIEM, chat or CyberArk endpoint. See
   [operations/configuration.md](operations/configuration.md).
@@ -271,7 +271,7 @@ The install step runs `dotnet publish`, which restores NuGet packages. Two commo
 
 Production must **not** let the app generate its own seal-signing key (OPERATIONS.md §2), and it won't: **if the
 key file doesn't exist, the app refuses to start** ("The seal-signing key … doesn't exist"). Do this step before
-the first browse to the site. [OPERATIONS.md §2, Setting up the key](OPERATIONS.md#setting-up-the-key) has each
+the first browse to the site. [OPERATIONS.md §2, Setting up the key](operations/keys-and-certificates.md#setting-up-the-key) has each
 option step by step. The two usual ones:
 
 - **In the certificate store** (recommended): make a non-exportable certificate on the server with

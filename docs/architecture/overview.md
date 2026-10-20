@@ -118,7 +118,7 @@ What matters operationally:
 - **Memory per user.** Each open tab holds a circuit in server memory.
 - **The data volume grows; the database stays small.** Only metadata and hashes are in SQL.
 - **The database, the file stores and the seal exports are backed up together**, or references dangle and
-  verification fails ([OPERATIONS.md §1](../OPERATIONS.md#1-backup--disaster-recovery-h-03)).
+  verification fails ([OPERATIONS.md §1](../operations/backup-and-recovery.md#1-backup--disaster-recovery-h-03)).
 - **No passwords in config.** SQL uses the app pool's Windows identity; secrets can come from CyberArk.
 
 ## How a request flows
@@ -204,7 +204,7 @@ integrity seal. Details are in [backend.md](backend.md#background-jobs).
   rejected-setting alarm (5002) is logged at Critical without an event id and sent on the SIEM stream.
 - **SIEM stream**: a stable catalog of security events (sign-in failures, denials, reads, downloads, exports,
   admin changes, governance acts) over webhook, syslog (CEF) or the Windows Event Log
-  ([OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18)).
+  ([OPERATIONS.md §5](../operations/siem.md#5-siem-security-event-stream-f-18)).
 - **Health endpoints**: `/health/live` (process up), `/health` and `/health/ready` (database reachable and
   evidence folder present). Under IIS with Windows authentication these need authentication unless you carve
   them out ([troubleshooting](../operations/troubleshooting.md#health-probe-returns-401)).

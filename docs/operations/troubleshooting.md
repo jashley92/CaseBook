@@ -21,7 +21,7 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
 | Administration → **Setting sources** | The effective value of every setting and where it comes from | Administrators |
 | **Integrity & audit** | Chain verdict, first broken sequence, seals, audit trail | *Verify now* |
 | **Access log** | Who read or downloaded what | Administrators |
-| SIEM | The security-event stream | If configured ([OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18)) |
+| SIEM | The security-event stream | If configured ([OPERATIONS.md §5](siem.md#5-siem-security-event-stream-f-18)) |
 | Browser developer tools | JS errors, failed WebSocket (`/_blazor`), 4xx/5xx on downloads | Console and Network tabs |
 
 ### The 60-second health check
@@ -53,7 +53,7 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
   2. The database is unreachable or the app identity can't log in.
   3. `Auth:Mode` isn't `Windows` outside Development (the message says so).
   4. The seal-signing key file isn't there yet ("The seal-signing key … doesn't exist"); provision it
-     ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
+     ([OPERATIONS.md §2](keys-and-certificates.md#2-integrity-signing-key-management-f-05b)).
   5. `DataProtection:KeyPath` is relative.
   6. The .NET 10 runtime is missing.
 - **Look:** Application event log (*IIS AspNetCore Module V2* and *.NET Runtime* entries), then stdout logs.
@@ -184,7 +184,7 @@ second also blocks downgrades: you can't deploy an older build over a newer data
   Server's full-text indexes".
 - **Fix:** install the feature (SQL Server setup, *Full-Text and Semantic Extractions for Search*), then *Create
   full-text indexes* on the row, or have a DBA run `deploy\sql\03-Enable-FullText.sql`
-  ([OPERATIONS.md §9](../OPERATIONS.md#9-full-text-search-on-sql-server-cap-22)). Wait for the fill; *Check again*.
+  ([OPERATIONS.md §9](full-text-search.md#9-full-text-search-on-sql-server-cap-22)). Wait for the fill; *Check again*.
   "isn't allowed to create full-text indexes" means the app account isn't `db_owner`: use the script.
 
 ### "A full-text search (…) failed with SQL Server error …" in the log (CAP-22)
@@ -256,7 +256,7 @@ the latest seal failed verification. Treat it as a **possible security incident*
 4. New seals are suspended while the chain is broken. Leave it that way.
 5. **Rule out the benign cause:** did anyone run SQL against the database, restore a partial backup, or run a
    tool that updates rows? Any of these breaks the chain.
-6. Recovery is a restore of a known-good backup with prior-seal verification ([OPERATIONS.md §1.3](../OPERATIONS.md#13-restore-verification-do-not-skip)),
+6. Recovery is a restore of a known-good backup with prior-seal verification ([OPERATIONS.md §1.3](backup-and-recovery.md#13-restore-verification-do-not-skip)),
    coordinated with security and engineering.
 
 ### Evidence drift (5003)
@@ -276,7 +276,7 @@ account's rights changed, or the folder isn't there (a remapped share, a changed
 without changing the setting). CaseBook never recreates a store that held evidence.
 **Where to look:** Administration → Evidence storage gives the reason; the log has it with the account.
 **Fix:** bring the share back or restore the rights, or point `EvidenceStore:RootPath` at where the store now is
-([OPERATIONS.md §1.2.1](../OPERATIONS.md#121-evidence-storage-limits-large-uploads-and-network-shares)). Downloads and
+([OPERATIONS.md §1.2.1](backup-and-recovery.md#121-evidence-storage-limits-large-uploads-and-network-shares)). Downloads and
 uploads resume as soon as it's reachable; no restart needed. Don't create an empty folder at the old path to make
 the error go away: every file would then read as missing.
 
@@ -291,7 +291,7 @@ chain key's CyberArk object can't be fetched; or a restore left out the keys fol
 wrong with each envelope copy; the Critical log line at start-up says the same.
 **Fix:** put the certificate back (or its rights), or bring CyberArk back; CaseBook retries every 5 minutes, no
 restart needed. If the certificate is gone for good, recover the key onto a new one with a recovery certificate or
-the shares ([OPERATIONS.md §2, Evidence key](../OPERATIONS.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)).
+the shares ([OPERATIONS.md §2, Evidence key](keys-and-certificates.md#evidence-key-encryption-at-rest-backups-and-recovery-prod-57)).
 Never delete `evidence-key.json` or the `KeyEnvelopes` row to "reset" it: CaseBook won't make a new key while files
 need the old one, and the files can't be read without it.
 
@@ -495,7 +495,7 @@ which usually names the folder's permissions.
 Diagnostics → Secret resolution shows the last error (for example `HTTP 403 (APPAP004E)`). Check
 `Secrets:CyberArk:Enabled`, `BaseUrl` (https), `AppId`, and with the CyberArk administrator that the AppID allows
 this host, its OS user and any client certificate (in `LocalMachine\My`, readable by the app pool). All CyberArk
-settings need a recycle. See [OPERATIONS.md §6](../OPERATIONS.md#6-secret-management-f-19).
+settings need a recycle. See [OPERATIONS.md §6](secrets.md#6-secret-management-f-19).
 
 ### The import API returns 401, 403, 413 or a redirect
 
@@ -511,7 +511,7 @@ See [API.md](../API.md).
 
 CaseBook only reads `BackupStatus:FilePath`; your backup and restore-verification jobs write it. *Missing*: the
 path isn't set or isn't readable, or the job never wrote `lastBackupUtc`. *Stale*: the job stopped. A future
-timestamp counts as stale (clock skew). See [OPERATIONS.md §1.3.1](../OPERATIONS.md#131-backup-health-status-file-h-04).
+timestamp counts as stale (clock skew). See [OPERATIONS.md §1.3.1](backup-and-recovery.md#131-backup-health-status-file-h-04).
 
 ## In the browser
 

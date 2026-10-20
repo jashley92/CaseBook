@@ -173,7 +173,7 @@ Then update [timeline.md](../architecture/timeline.md) and the timeline screensh
 2. Add a factory to `SecurityEvents.cs`. Include ids, labels and outcomes only; never case content or personal
    data.
 3. Emit it at the one place the action is decided: `_sink.Emit(SecurityEvents.YourEvent(...))`.
-4. Add it to the catalog in [OPERATIONS.md §5](../OPERATIONS.md#event-id-catalog).
+4. Add it to the catalog in [OPERATIONS.md §5](../operations/siem.md#event-id-catalog).
 
 ## Add a stage-gate check
 

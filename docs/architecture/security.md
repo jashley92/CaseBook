@@ -260,7 +260,7 @@ Three different records, for three different questions:
 | Who **handled an evidence file**? | Chain of custody | The file's *Custody* panel |
 
 Plus the SIEM stream, for real-time detection over all of the above
-([OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18)).
+([OPERATIONS.md §5](../operations/siem.md#5-siem-security-event-stream-f-18)).
 
 ## Security assumptions
 
@@ -270,7 +270,7 @@ Plus the SIEM stream, for real-time detection over all of the above
 - SQL Server is reached with Windows authentication. The app account is `db_owner` only if it applies its own
   migrations (otherwise datareader, datawriter and execute).
 - The seal-signing key is provisioned out of band and its public key archived separately
-  ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)). Outside Development the app
+  ([OPERATIONS.md §2](../operations/keys-and-certificates.md#2-integrity-signing-key-management-f-05b)). Outside Development the app
   refuses to start without it rather than generate one.
 - One app instance (see [overview.md](overview.md#runtime-topology-production)).
 - Database administrators are trusted not to edit data, and the chain, seals and optional ledger make it

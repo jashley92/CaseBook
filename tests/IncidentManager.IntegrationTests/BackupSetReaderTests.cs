@@ -61,7 +61,7 @@ public sealed partial class BackupSetReaderTests : IDisposable
     public void Every_path_operations_section_1_lists_is_in_the_backup_set()
     {
         // C2: the card and the runbook can't drift apart. Every setting named in §1's table is on the card.
-        var ops = File.ReadAllText(Path.Combine(RepoRoot(), "docs", "OPERATIONS.md"));
+        var ops = File.ReadAllText(Path.Combine(RepoRoot(), "docs", "operations", "backup-and-recovery.md"));
         var section = ops[ops.IndexOf("## 1. Backup", StringComparison.Ordinal)..ops.IndexOf("### 1.1", StringComparison.Ordinal)];
         var keys = SettingKey().Matches(section).Select(m => m.Groups[1].Value).Distinct().ToList();
         keys.Should().Contain(["EvidenceStore:RootPath", "Integrity:ExportPath", "ReportOutput:RootPath", "DataProtection:KeyPath",

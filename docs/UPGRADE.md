@@ -212,6 +212,27 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.13.0
+
+No migration. One new setting, `Integrity:RotationReminderDays` (365), editable under Administration › Integrity.
+
+- **Diagnostics watches certificates.** Every certificate the configuration names (the seal-signing and chain-key
+  certificates, the evidence key's server lock, `@protected:` values, the CyberArk and syslog client certificates)
+  and, best effort, the TLS certificate whose name matches `App:BaseUrl`, flagged 60 days before it expires, once it
+  has, or when it isn't in the store, with how to renew it. OPERATIONS.md §2 has a *Renewing certificates* table.
+- **A reminder to rotate the signing key** once it has signed seals for a year (`Integrity:RotationReminderDays`; 0
+  turns it off).
+- **Three `casebook-keytool` commands** for key changes that were several manual steps:
+  - `rotate-signing-key` saves the current key's public half where old seals are verified from, makes the new key
+    (PEM, or a PFX for the certificate store) and says what to change;
+  - `enable-chain-key` checks the certificate and waits for its backup to be confirmed before turning the audit chain
+    key on;
+  - `retire-custodian` takes a recovery certificate out of the settings and the evidence key's envelope, and records
+    it in the audit trail.
+- **OPERATIONS.md is split** into pages under `docs/operations/` (backup and recovery, keys and certificates, SIEM,
+  secrets, ledger, full-text search). OPERATIONS.md is the index and keeps the host controls, the checklist and the
+  periodic reviews; section numbers are unchanged.
+
 ### v1.12.0
 
 No migration. One new setting, `BackupStatus:LogBackupMaxAgeMinutes` (60). **Backups you can take, and prove, with the release's own scripts** (in `deploy\`;

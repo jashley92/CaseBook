@@ -252,12 +252,12 @@ schema, for use in the organization's own approved AI tool.
   refusals, role, mapping, setting and token changes, reference-data changes (5405), legal holds, restrictions, and the
   case lifecycle from filing to archive, including an applied import and a withdrawn evidence file (5506-5516, CAP-06,
   CAP-21), and evidence packages handed over (5308, CAP-12). Full reference, payload and
-  event-id catalog: [OPERATIONS.md §5](../OPERATIONS.md#5-siem-security-event-stream-f-18).
+  event-id catalog: [OPERATIONS.md §5](siem.md#5-siem-security-event-stream-f-18).
 - **XSIAM:** the lifecycle events end their `detail` with `detection=<id>` when the case records the detection
   platform's incident id (an elevation from `CaseBookElevate.py` sets it), so a correlation rule can join a CaseBook
   close, reopen or downgrade to the XSIAM incident it came from.
 - **Transports:** webhook (JSON over https, optional bearer or API-key header; token may be a CyberArk
-  reference or a `@protected:` value, or entered in Administration, below), syslog (RFC 5424 with a CEF payload, UDP, TCP or, CAP-33, TLS per RFC 5425 with the collector's certificate checked, an optional pinned thumbprint and an optional client certificate from `LocalMachine\My`; see [OPERATIONS §5](../OPERATIONS.md#5-siem-security-event-stream-f-18)), Windows Event Log (event id =
+  reference or a `@protected:` value, or entered in Administration, below), syslog (RFC 5424 with a CEF payload, UDP, TCP or, CAP-33, TLS per RFC 5425 with the collector's certificate checked, an optional pinned thumbprint and an optional client certificate from `LocalMachine\My`; see [OPERATIONS §5](siem.md#5-siem-security-event-stream-f-18)), Windows Event Log (event id =
   catalog id).
 - **Delivery:** events go into a bounded in-memory queue (`Siem:QueueCapacity`, 2048) and a background dispatcher
   sends each to every enabled transport. Never blocks a user action. Webhook retries up to 3 times; syslog and
@@ -293,7 +293,7 @@ schema, for use in the organization's own approved AI tool.
 - **Failure:** cached for `CacheTtlSeconds`; on error, `FailClosed=true` resolves to nothing (the dependent
   feature degrades: the SIEM webhook stops sending, email that signs in is held), `false` serves the last good value. Health in
   Diagnostics → Secret resolution.
-- **Config needs a recycle.** Full guide: [OPERATIONS.md §6](../OPERATIONS.md#6-secret-management-f-19).
+- **Config needs a recycle.** Full guide: [OPERATIONS.md §6](secrets.md#6-secret-management-f-19).
 
 ## Protected secrets (`@protected:`, without CyberArk)
 
@@ -324,7 +324,7 @@ schema, for use in the organization's own approved AI tool.
 ## Backup status file
 
 Your backup and restore-verification jobs write a small JSON file; CaseBook reads it to show backup freshness in
-Diagnostics. Format and job snippets: [OPERATIONS.md §1.3.1](../OPERATIONS.md#131-backup-health-status-file-h-04).
+Diagnostics. Format and job snippets: [OPERATIONS.md §1.3.1](backup-and-recovery.md#131-backup-health-status-file-h-04).
 
 ## Links out
 

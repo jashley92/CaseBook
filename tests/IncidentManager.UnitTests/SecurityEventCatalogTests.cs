@@ -29,7 +29,7 @@ public sealed class SecurityEventCatalogTests
     [Fact]
     public void Every_event_id_is_in_the_operations_catalog()
     {
-        var doc = File.ReadAllText(Path.Combine(ComponentSourceScanner.RepoRoot(), "docs", "OPERATIONS.md"));
+        var doc = File.ReadAllText(Path.Combine(ComponentSourceScanner.RepoRoot(), "docs", "operations", "siem.md"));
         Ids.Where(i => !doc.Contains($"| {i.Id} |", StringComparison.Ordinal)).Select(i => $"{i.Id} {i.Name}")
             .Should().BeEmpty("OPERATIONS.md §5 lists every id a SIEM rule can pin to");
     }
