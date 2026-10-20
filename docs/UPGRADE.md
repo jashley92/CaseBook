@@ -212,6 +212,14 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.11.1
+
+A fix to v1.11.0, with no migration and no setting changes.
+
+- **Administration search results opened from a settings page broke the page** ("Something went wrong. Reload the page
+  to continue."), and so did a command palette (Ctrl+K) entry opened from one. They open the page now.
+- **The rail's search results showed behind the page** beside it. They open over it now.
+
 ### v1.11.0
 
 No migration and no setting changes: every setting keeps its key and value. **Administration is rearranged** so things

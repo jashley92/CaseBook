@@ -11,6 +11,8 @@
 .admin-rail {
     position: sticky;
     top: 1rem;
+    /* Above the page pane, so the search box's results can open over it (sticky makes its own stacking context). */
+    z-index: 10;
     display: flex;
     flex-direction: column;
     gap: 2px;

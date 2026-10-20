@@ -1089,7 +1089,9 @@
     private void OnBeforeLeave(LocationChangingContext ctx)
     {
         if (_leaveConfirmed) { _leaveConfirmed = false; return; }
-        var path = Nav.ToBaseRelativePath(ctx.TargetLocation).Split('?', '#')[0].TrimEnd('/');
+        // The target is as the navigation gave it, which can be relative ("admin/settings/…" from search or the palette):
+        // made absolute first, or ToBaseRelativePath throws and takes the circuit down.
+        var path = Nav.ToBaseRelativePath(Nav.ToAbsoluteUri(ctx.TargetLocation).ToString()).Split('?', '#')[0].TrimEnd('/');
         if (path.StartsWith("admin/settings", StringComparison.OrdinalIgnoreCase)) return; // same page (the overview isn't)
         if (path.Contains("session-expired", StringComparison.OrdinalIgnoreCase) || !HasUnsavedChanges) return;
         ctx.PreventNavigation();

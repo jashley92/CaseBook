@@ -67,7 +67,7 @@
     private void Open(AdminSearchHit hit)
     {
         Clear();
-        Nav.NavigateTo(hit.Href);
+        Nav.NavigateTo(Nav.ToAbsoluteUri(hit.Href).ToString());
     }
 
     private void Clear()
