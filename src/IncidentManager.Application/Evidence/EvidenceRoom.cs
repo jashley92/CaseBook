@@ -1,3 +1,4 @@
+using IncidentManager.Application.Common;
 using IncidentManager.Application.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -68,17 +69,17 @@ public static class EvidenceRoom
     {
         if (size < 0) throw new ArgumentException("That file's size couldn't be read. Try again.");
         if (size > o.MaxUploadBytes)
-            throw new ArgumentException($"That file is {Size(size)}; the largest file CaseBook takes is {Size(o.MaxUploadBytes)}. " +
-                                        "An administrator can raise the limit (Administration › Evidence storage).");
+            throw new SettingLimitException($"That file is {Size(size)}; the largest file CaseBook takes is {Size(o.MaxUploadBytes)}. " +
+                                        "An administrator can raise the limit (Administration › Evidence storage).", "Evidence:MaxUploadMB");
         var use = await UseAsync(db, store, o, ct: ct);
         if (use.QuotaBytes is { } quota && use.UsedBytes > quota - size)
-            throw new ArgumentException($"Storing it would take evidence past its {Size(quota)} limit ({Size(use.UsedBytes)} is used). " +
-                                        "Ask an administrator to raise the limit.");
+            throw new SettingLimitException($"Storing it would take evidence past its {Size(quota)} limit ({Size(use.UsedBytes)} is used). " +
+                                        "Ask an administrator to raise the limit.", "Evidence:StorageQuotaGB");
         // Review finding 2: once the bytes are on the store (the re-check after storing, a large upload's completion), the
         // free space already reflects them; taking the size off again refused a file that fits and deleted its parts.
         if (use.FreeBytes is { } free && free - (alreadyStored ? 0 : size) < use.ReserveBytes)
-            throw new ArgumentException($"The evidence store doesn't have room for it: storing it would leave less than " +
-                                        $"{Size(use.ReserveBytes)} free. Ask an administrator to free space or move the store.");
+            throw new SettingLimitException($"The evidence store doesn't have room for it: storing it would leave less than " +
+                                        $"{Size(use.ReserveBytes)} free. Ask an administrator to free space or move the store.", "Evidence:MinFreeSpaceGB");
     }
 
     /// <summary>A size for people: 812 KB, 4.2 MB, 1.5 GB (invariant, C12).</summary>

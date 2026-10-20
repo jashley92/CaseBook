@@ -846,46 +846,7 @@
         {
             <AttentionSummary Items="_attention" CheckedAtUtc="Health.CheckedAtUtc" />
 
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-about">About this server</h6>
-            <table class="table table-sm">
-                <tbody>
-                    <tr><td style="width:32%">Application version</td><td><code>@AppVersion</code></td></tr>
-                    <tr><td>Environment</td><td><code>@Env.EnvironmentName</code></td></tr>
-                    <tr><td>Database provider</td><td><code>@_dbProvider</code></td></tr>
-                    <tr>
-                        <td>Schema migrations</td>
-                        <td>
-                            @if (_pendingMigrations is null) { <em>checking&hellip;</em> }
-                            else if (_pendingMigrations.Count == 0) { @StatusBadge(true, "Up to date", "") }
-                            else { <span class="im-badge im-b-warn">@_pendingMigrations.Count pending</span> }
-                        </td>
-                    </tr>
-                    @* CAP-22: by word (full-text) or by substring *@
-                    <IncidentManager.Web.Components.Shared.SearchModeRow />
-                    <tr><td>Authentication mode</td><td><code>@(Config["Auth:Mode"] ?? "(unset)")</code></td></tr>
-                    @* CAP-28 discovery: what was found on the server's network and when, or why nothing was. *@
-                    <tr>
-                        <td>Organization domains found</td>
-                        <td>
-                            @{ var discovery = OrgDomains.Current; }
-                            @DiscoveryBadge(discovery)
-                            <span class="small ms-2">@discovery.Summary(OrgDomains.TimeLimit)</span>
-                            @if (discovery.Refused > 0)
-                            {
-                                <span class="small text-muted ms-1">@discovery.Refused name(s) that aren't full domain names (NetBIOS names) left out.</span>
-                            }
-                            @if (discovery.AtUtc is { } lookedAt)
-                            {
-                                <span class="small text-muted ms-1">Looked @lookedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture).</span>
-                            }
-                            <span class="small text-muted ms-1">@(RelatedExclusionsInForce.DiscoveredInForce is not null
-                                ? "In use: your organization's domains aren't set."
-                                : discovery.Domains.Count > 0 ? "Not in use: your organization's domains are set." : "")</span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-
+            <h2 class="h5 mt-4 mb-2" id="diag-service">Service health</h2>
             <h6 class="text-uppercase small text-muted mt-3" id="diag-checks">Health checks</h6>
             <table class="table table-sm">
                 <tbody>
@@ -950,69 +911,17 @@
             }
 
             @* CAP-19: every path to back up, and the manifest a backup job reads. *@
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-backup-set">Backup set</h6>
-            <IncidentManager.Web.Components.Shared.BackupSetPanel />
-
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-cost">Integrity check cost</h6>
-            <p class="small text-muted mb-2">
-                The integrity check runs every 10 minutes. Each run checks every record and the audit entries written
-                since the last run, and re-hashes the whole audit trail every 6 hours. These figures show how long the
-                latest run took, so you can see the check's cost grow with your data. They're held in memory since the
-                last restart.
+            <h2 class="h5 mt-4 mb-2" id="diag-storage-keys">Storage and keys</h2>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-storage">Evidence storage</h6>
+            <p class="small mb-2">
+                @if (EvidenceStoreProbe.CheckedAtUtc is null) { <span class="im-badge im-b-neutral">Not checked yet</span> }
+                else { @StatusBadge(EvidenceStoreProbe.Problem is null, "Writable", "Problem") }
+                @if (_evidenceUse is { } storageUse)
+                {
+                    <span class="ms-2">@IncidentManager.Application.Evidence.EvidenceRoom.Size(storageUse.UsedBytes) used@(storageUse.QuotaBytes is { } q ? $" of {IncidentManager.Application.Evidence.EvidenceRoom.Size(q)}" : "")@(storageUse.FreeBytes is { } f ? $" · {IncidentManager.Application.Evidence.EvidenceRoom.Size(f)} free on the store" : "")</span>
+                }
+                <a class="ms-2" href="admin/settings/evidence">Evidence storage</a>
             </p>
-            <table class="table table-sm">
-                <tbody>
-                    @if (IntegrityCheck.LastCycle is not { } cycle)
-                    {
-                        <tr><td style="width:32%">Latest run</td><td><span class="im-badge im-b-neutral">Not run yet</span></td></tr>
-                    }
-                    else
-                    {
-                        <tr>
-                            <td style="width:32%">Latest run</td>
-                            <td>
-                                @StatusBadge(cycle.Total < IncidentManager.Application.Integrity.IntegrityCheckState.SlowCycle, "Quick", "Slow")
-                                <span class="small text-muted ms-2">
-                                    @(cycle.Full ? "Full" : "Incremental") · @cycle.Total.TotalSeconds.ToString("N1") s ·
-                                    @(cycle.Intact ? "intact" : "found a problem") · @cycle.FinishedAtUtc.ToString("u")
-                                </span>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Audit trail</td>
-                            <td class="small">@cycle.EntriesHashed.ToString("N0") entries hashed in @cycle.Chain.TotalSeconds.ToString("N1") s</td>
-                        </tr>
-                        <tr>
-                            <td>Records</td>
-                            <td class="small">
-                                @cycle.RecordsChecked.ToString("N0") checked in @cycle.Records.TotalSeconds.ToString("N1") s ·
-                                @cycle.RecordsKept.ToString("N0") held in memory between runs
-                            </td>
-                        </tr>
-                        @if (IntegrityCheck.NextWait(IncidentManager.Web.BackgroundJobs.IntegritySealHostedService.VerifyPoll) is var wait
-                             && wait > IncidentManager.Web.BackgroundJobs.IntegritySealHostedService.VerifyPoll)
-                        {
-                            <tr>
-                                <td>Next run</td>
-                                <td class="small">
-                                    <span class="im-badge im-b-warn">In @wait.TotalMinutes.ToString("N0") minutes</span>
-                                    <span class="text-muted ms-2">
-                                        The last run was slow, so the check waits longer to keep the database's load down. A
-                                        change made outside CaseBook may take that long to be found.
-                                    </span>
-                                </td>
-                            </tr>
-                        }
-                        <tr>
-                            <td>Largest tables</td>
-                            <td class="small text-muted">
-                                @string.Join(" · ", cycle.RecordsByTable.OrderByDescending(t => t.Value).Take(5).Select(t => $"{t.Key} {t.Value:N0}"))
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-
             <h6 class="text-uppercase small text-muted mt-3" id="diag-evidence-key">Evidence encryption</h6>
             <p class="small text-muted mb-2">
                 Evidence and reports encrypted at rest with a key protected by the server's integrity certificate, kept in three
@@ -1089,15 +998,111 @@
                 </table>
             }
 
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-flags">Feature flags</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-backup-set">Backup set</h6>
+            <IncidentManager.Web.Components.Shared.BackupSetPanel />
+
+            <h2 class="h5 mt-4 mb-2" id="diag-capacity">Capacity</h2>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-cost">Integrity check cost</h6>
+            <p class="small text-muted mb-2">
+                The integrity check runs every 10 minutes. Each run checks every record and the audit entries written
+                since the last run, and re-hashes the whole audit trail every 6 hours. These figures show how long the
+                latest run took, so you can see the check's cost grow with your data. They're held in memory since the
+                last restart.
+            </p>
             <table class="table table-sm">
                 <tbody>
-                    <tr><td style="width:32%">Email delivery</td><td>@StatusBadge(Config.GetValue<bool>("Email:Enabled"), "On", "Off (logged)")</td></tr>
-                    <tr><td>Auto-seal</td><td>@StatusBadge(Config.GetValue<bool>("Integrity:AutoSeal:Enabled"), "On", "Off") <span class="small text-muted ms-2">every @(Config["Integrity:AutoSeal:IntervalHours"] ?? "?") h</span></td></tr>
-                    <tr><td>Evidence re-verification</td><td>@StatusBadge(Config.GetValue<bool>("Integrity:EvidenceVerify:Enabled"), "On", "Off") <span class="small text-muted ms-2">every @(Config["Integrity:EvidenceVerify:IntervalHours"] ?? "?") h</span></td></tr>
-                    <tr><td>Windows authentication</td><td>@StatusBadge(string.Equals(Config["Auth:Mode"], "Windows", StringComparison.OrdinalIgnoreCase), "Enabled", $"Off: {Config["Auth:Mode"] ?? "not set"}")</td></tr>
+                    @if (IntegrityCheck.LastCycle is not { } cycle)
+                    {
+                        <tr><td style="width:32%">Latest run</td><td><span class="im-badge im-b-neutral">Not run yet</span></td></tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <td style="width:32%">Latest run</td>
+                            <td>
+                                @StatusBadge(cycle.Total < IncidentManager.Application.Integrity.IntegrityCheckState.SlowCycle, "Quick", "Slow")
+                                <span class="small text-muted ms-2">
+                                    @(cycle.Full ? "Full" : "Incremental") · @cycle.Total.TotalSeconds.ToString("N1") s ·
+                                    @(cycle.Intact ? "intact" : "found a problem") · @cycle.FinishedAtUtc.ToString("u")
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Audit trail</td>
+                            <td class="small">@cycle.EntriesHashed.ToString("N0") entries hashed in @cycle.Chain.TotalSeconds.ToString("N1") s</td>
+                        </tr>
+                        <tr>
+                            <td>Records</td>
+                            <td class="small">
+                                @cycle.RecordsChecked.ToString("N0") checked in @cycle.Records.TotalSeconds.ToString("N1") s ·
+                                @cycle.RecordsKept.ToString("N0") held in memory between runs
+                            </td>
+                        </tr>
+                        @if (IntegrityCheck.NextWait(IncidentManager.Web.BackgroundJobs.IntegritySealHostedService.VerifyPoll) is var wait
+                             && wait > IncidentManager.Web.BackgroundJobs.IntegritySealHostedService.VerifyPoll)
+                        {
+                            <tr>
+                                <td>Next run</td>
+                                <td class="small">
+                                    <span class="im-badge im-b-warn">In @wait.TotalMinutes.ToString("N0") minutes</span>
+                                    <span class="text-muted ms-2">
+                                        The last run was slow, so the check waits longer to keep the database's load down. A
+                                        change made outside CaseBook may take that long to be found.
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                        <tr>
+                            <td>Largest tables</td>
+                            <td class="small text-muted">
+                                @string.Join(" · ", cycle.RecordsByTable.OrderByDescending(t => t.Value).Take(5).Select(t => $"{t.Key} {t.Value:N0}"))
+                            </td>
+                        </tr>
+                    }
                 </tbody>
             </table>
+
+            <h2 class="h5 mt-4 mb-2" id="diag-server">About this server</h2>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-about">About this server</h6>
+            <table class="table table-sm">
+                <tbody>
+                    <tr><td style="width:32%">Application version</td><td><code>@AppVersion</code></td></tr>
+                    <tr><td>Environment</td><td><code>@Env.EnvironmentName</code></td></tr>
+                    <tr><td>Database provider</td><td><code>@_dbProvider</code></td></tr>
+                    <tr>
+                        <td>Schema migrations</td>
+                        <td>
+                            @if (_pendingMigrations is null) { <em>checking&hellip;</em> }
+                            else if (_pendingMigrations.Count == 0) { @StatusBadge(true, "Up to date", "") }
+                            else { <span class="im-badge im-b-warn">@_pendingMigrations.Count pending</span> }
+                        </td>
+                    </tr>
+                    @* CAP-22: by word (full-text) or by substring *@
+                    <IncidentManager.Web.Components.Shared.SearchModeRow />
+                    <tr><td>Authentication mode</td><td><code>@(Config["Auth:Mode"] ?? "(unset)")</code></td></tr>
+                    @* CAP-28 discovery: what was found on the server's network and when, or why nothing was. *@
+                    <tr>
+                        <td>Organization domains found</td>
+                        <td>
+                            @{ var discovery = OrgDomains.Current; }
+                            @DiscoveryBadge(discovery)
+                            <span class="small ms-2">@discovery.Summary(OrgDomains.TimeLimit)</span>
+                            @if (discovery.Refused > 0)
+                            {
+                                <span class="small text-muted ms-1">@discovery.Refused name(s) that aren't full domain names (NetBIOS names) left out.</span>
+                            }
+                            @if (discovery.AtUtc is { } lookedAt)
+                            {
+                                <span class="small text-muted ms-1">Looked @lookedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture).</span>
+                            }
+                            <span class="small text-muted ms-1">@(RelatedExclusionsInForce.DiscoveredInForce is not null
+                                ? "In use: your organization's domains aren't set."
+                                : discovery.Domains.Count > 0 ? "Not in use: your organization's domains are set." : "")</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
         }
 
 

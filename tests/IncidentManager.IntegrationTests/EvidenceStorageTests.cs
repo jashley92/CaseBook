@@ -75,7 +75,9 @@ public sealed class EvidenceStorageTests : IDisposable
         var svc = Service(database, Files());
 
         var declared = () => svc.UploadAsync(caseId, "dump.bin", "", new MemoryStream(new byte[2 * 1024 * 1024]), null, 2 * 1024 * 1024);
-        (await declared.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("largest file CaseBook takes is 1 MB");
+        (await declared.Should().ThrowAsync<SettingLimitException>()).Which.Should().Match<SettingLimitException>(e =>
+            e.Message.Contains("largest file CaseBook takes is 1 MB") && e.SettingKey == "Evidence:MaxUploadMB",
+            "the refusal names the setting, so an administrator is linked to it");
 
         // A size declared small doesn't let more through: the stream is held to the limit and nothing is kept.
         var lied = () => svc.UploadAsync(caseId, "dump.bin", "", new MemoryStream(new byte[2 * 1024 * 1024]), null, 10);
@@ -107,7 +109,8 @@ public sealed class EvidenceStorageTests : IDisposable
         _limits.CurrentValue = new EvidenceStorageOptions { StorageQuotaGB = 1, MinFreeSpaceGB = 0 };
         var svc = Service(database, Files());
         var over = () => svc.UploadAsync(caseId, "over.txt", "", new MemoryStream(new byte[200]), null, 200);
-        (await over.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("past its 1 GB limit");
+        (await over.Should().ThrowAsync<SettingLimitException>()).Which.Should().Match<SettingLimitException>(e =>
+            e.Message.Contains("past its 1 GB limit") && e.SettingKey == "Evidence:StorageQuotaGB");
         (await svc.UploadAsync(caseId, "fits.txt", "", new MemoryStream(new byte[50]), null, 50)).SizeBytes.Should().Be(50);
         (await svc.StorageUseAsync()).NearQuota.Should().BeTrue();
 
@@ -115,7 +118,8 @@ public sealed class EvidenceStorageTests : IDisposable
         _limits.CurrentValue = new EvidenceStorageOptions { MinFreeSpaceGB = 10 };
         var tight = Service(database, new FreeSpaceStore(Files(), 10 * gib + 100));
         var noRoom = () => tight.UploadAsync(caseId, "c.txt", "", new MemoryStream(new byte[200]), null, 200);
-        (await noRoom.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("less than 10 GB free");
+        (await noRoom.Should().ThrowAsync<SettingLimitException>()).Which.Should().Match<SettingLimitException>(e =>
+            e.Message.Contains("less than 10 GB free") && e.SettingKey == "Evidence:MinFreeSpaceGB");
         (await tight.UploadAsync(caseId, "d.txt", "", new MemoryStream(Random(50)), null, 50)).SizeBytes.Should().Be(50);
     }
 

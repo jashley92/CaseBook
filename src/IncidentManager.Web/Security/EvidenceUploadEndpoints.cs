@@ -96,6 +96,11 @@ public static class EvidenceUploadEndpoints
         try { return await step(); }
         catch (ForbiddenException) { return Problem(StatusCodes.Status403Forbidden, "You can't add evidence to this case."); }
         catch (Application.Common.NotFoundException ex) { return Problem(StatusCodes.Status404NotFound, ex.Message); }
+        // A refusal by an administrator's setting names it, so the page can link an administrator to it.
+        catch (Application.Common.SettingLimitException ex)
+        {
+            return Results.Json(new { error = ex.Message, setting = ex.SettingKey }, statusCode: StatusCodes.Status400BadRequest);
+        }
         catch (ArgumentException ex) { return Problem(StatusCodes.Status400BadRequest, ex.Message); }
         catch (IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException ex) { return Problem(StatusCodes.Status503ServiceUnavailable, ex.Message); }
         catch (InvalidOperationException ex) when (ex.Message.StartsWith("Case not found", StringComparison.Ordinal))

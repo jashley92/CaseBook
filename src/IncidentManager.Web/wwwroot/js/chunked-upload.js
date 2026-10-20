@@ -19,8 +19,10 @@ window.imChunkedUpload = (function () {
     async function answer(response) {
         if (response.ok) return response.status === 204 ? null : response.json();
         var reason = 'The upload failed (' + response.status + ').';
-        try { var body = await response.json(); if (body && body.error) reason = body.error; } catch (e) { /* not JSON */ }
+        var setting = null;
+        try { var body = await response.json(); if (body && body.error) reason = body.error; if (body && body.setting) setting = body.setting; } catch (e) { /* not JSON */ }
         var error = new Error(reason);
+        error.setting = setting;   // the administrator's setting behind a refusal, for a link to it
         error.retry = response.status === 429 || response.status >= 500;
         throw error;
     }
@@ -86,7 +88,7 @@ window.imChunkedUpload = (function () {
                     .catch(function () { });
             }
             // Anything else keeps the upload on the server, to resume (the tab lists it).
-            call(dotnet, 'OnChunkedFailed', key, job.cancelled ? '' : (e && e.message) || 'The upload stopped.');
+            call(dotnet, 'OnChunkedFailed', key, job.cancelled ? '' : (e && e.message) || 'The upload stopped.', (e && e.setting) || null);
         }
     }
 
@@ -121,7 +123,7 @@ window.imChunkedUpload = (function () {
     function picked(dotnet, key, inputId, index) {
         var input = document.getElementById(inputId);
         var file = input && input.files && input.files[index];
-        if (!file) call(dotnet, 'OnChunkedFailed', key, "The file can't be read any more. Pick it again.");
+        if (!file) call(dotnet, 'OnChunkedFailed', key, "The file can't be read any more. Pick it again.", null);
         return file;
     }
 
@@ -129,7 +131,7 @@ window.imChunkedUpload = (function () {
     function go(dotnet, key, file, token, open) {
         run(dotnet, key, file, token, open).catch(function (e) {
             delete running[key];
-            call(dotnet, 'OnChunkedFailed', key, (e && e.message) || 'The upload failed.');
+            call(dotnet, 'OnChunkedFailed', key, (e && e.message) || 'The upload failed.', (e && e.setting) || null);
         });
     }
 

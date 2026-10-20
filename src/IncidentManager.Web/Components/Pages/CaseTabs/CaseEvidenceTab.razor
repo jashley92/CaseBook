@@ -16,6 +16,7 @@
 @inject AntiforgeryStateProvider Antiforgery
 @inject NavigationManager Nav
 @inject IClock Clock
+@inject ICurrentUser CurrentUser
 @implements IDisposable
 
 <div id="evidence-dropzone">
@@ -85,7 +86,17 @@
                         <div class="small text-muted">Keep this page open until it finishes.</div>
                     </div>
                 }
-                @if (_uploadError is not null) { <div class="text-danger small mt-2">@_uploadError</div> }
+                @if (_uploadError is not null)
+                {
+                    <div class="text-danger small mt-2">
+                        @_uploadError
+                        @* A refusal by an administrator's setting: an administrator gets a link to change it. *@
+                        @if (_uploadErrorSetting is { } setting && CurrentUser.Has(Permission.Administer))
+                        {
+                            <a class="ms-1" href="@IncidentManager.Web.Services.AdminSearchIndex.SettingHref(setting)">Change the limit</a>
+                        }
+                    </div>
+                }
                 @if (_unfinished.Count > 0)
                 {
                     @* PROD-59: large uploads cut off part-way (a restart, the page closed, the network lost), kept to carry on.
@@ -447,7 +458,7 @@
     private async Task OnResumePicked(EvidenceService.UnfinishedUpload u, InputFileChangeEventArgs e)
     {
         if (_busy) return;
-        _uploadError = null;
+        _uploadError = null; _uploadErrorSetting = null;
         // BUG-341 sibling: never InputFileChangeEventArgs.File, which throws for two or more; the first is checked against the upload.
         if (DroppedFiles.First(e).First is not { } file) return;
         if (!string.Equals(file.Name, u.FileName, StringComparison.Ordinal) || file.Size != u.Size)
@@ -466,6 +477,7 @@
         }
         catch (Exception ex)
         {
+            _uploadErrorSetting = (ex as IncidentManager.Application.Common.SettingLimitException)?.SettingKey;
             _uploadError = UserFacingError.Describe(ex, Logger, "resuming an upload", "Couldn't carry on the upload. Try again.");
         }
         finally
@@ -526,6 +538,8 @@
     private IBrowserFile? _file;
     private string? _evDesc;
     private string? _uploadError;
+    // The administrator's setting behind _uploadError, when a limit refused the file (set and cleared with it).
+    private string? _uploadErrorSetting;
     // REL-03: true while an upload is streaming, so a second click / drop can't fire a duplicate upload and
     // the UI can show progress on a slow or large file.
     private bool _busy;
@@ -553,10 +567,10 @@
     private async Task Upload()
     {
         if (_file is null || _busy) return; // REL-03: ignore a re-click while an upload is in flight
-        _uploadError = null;
+        _uploadError = null; _uploadErrorSetting = null;
         // REL-06: catch the common, expected failure (over the size cap) up front with a clear message,
         // rather than letting the stream throw a generic IOException that reads as an internal error.
-        if (_file.Size > Evidence.Limits.MaxUploadBytes) { _uploadError = TooLargeMessage(_file.Name); return; }
+        if (_file.Size > Evidence.Limits.MaxUploadBytes) { _uploadError = TooLargeMessage(_file.Name); _uploadErrorSetting = "Evidence:MaxUploadMB"; return; }
         _busy = true;
         try
         {
@@ -577,6 +591,7 @@
         catch (Exception ex)
         {
             // REL-06: domain messages pass through; EF/IO/internal errors become a plain line (detail logged).
+            _uploadErrorSetting = (ex as IncidentManager.Application.Common.SettingLimitException)?.SettingKey;
             _uploadError = UserFacingError.Describe(ex, Logger, "uploading evidence",
                 "Couldn't upload the file. Try again.");
         }
@@ -661,6 +676,8 @@
         public long Sent { get; set; }
         public Guid? RecordedId { get; set; }
         public TaskCompletionSource<string?> Ended { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);   // null: done; "": cancelled
+        /// <summary>The administrator's setting behind a refusal (a limit), for a link to it.</summary>
+        public string? FailedSetting { get; set; }
     }
 
     private PartsUpload? _parts;
@@ -689,7 +706,7 @@
             await RefreshUnfinishedAsync();
             if (!_disposed && _unfinished.Any(x => x.FileName == upload.Name && x.Size == upload.Size))
                 failed = failed.TrimEnd().TrimEnd('.') + ". What arrived is kept: pick the file again under Unfinished uploads to carry on (within 24 hours).";
-            throw new ArgumentException(failed);
+            throw upload.FailedSetting is { } setting ? new IncidentManager.Application.Common.SettingLimitException(failed, setting) : new ArgumentException(failed);
         }
         finally
         {
@@ -708,7 +725,11 @@
     });
 
     [JSInvokable]
-    public Task OnChunkedFailed(string key, string reason) => Report(key, u => u.Ended.TrySetResult(reason));
+    public Task OnChunkedFailed(string key, string reason, string? setting) => Report(key, u =>
+    {
+        u.FailedSetting = setting;
+        u.Ended.TrySetResult(reason);
+    });
 
     // C5: a callback for an upload this tab no longer shows (or after it's gone) changes nothing.
     private Task Report(string key, Action<PartsUpload> apply) => InvokeAsync(() =>
@@ -751,7 +772,7 @@
     {
         // REL-03: ignore a drop while an upload batch is already streaming. BUG-483: say so; it was dropped without a word.
         if (_busy) { Toasts.Warning("An upload is still running. Drop the files again once it's finished."); return; }
-        _uploadError = null;
+        _uploadError = null; _uploadErrorSetting = null;
         // BUG-341: GetMultipleFiles throws past its limit, outside the per-file catch; DroppedFiles answers null instead.
         if (DroppedFiles.UpTo(e, MaxDropFiles) is not { } files) { _uploadError = $"Drop up to {MaxDropFiles} files at a time."; return; }
         _busy = true;
@@ -765,7 +786,7 @@
             for (var i = 0; i < files.Count; i++)
             {
                 var f = files[i];
-                if (f.Size > Evidence.Limits.MaxUploadBytes) { _uploadError = TooLargeMessage(f.Name); continue; } // REL-06
+                if (f.Size > Evidence.Limits.MaxUploadBytes) { _uploadError = TooLargeMessage(f.Name); _uploadErrorSetting = "Evidence:MaxUploadMB"; continue; } // REL-06
                 try
                 {
                     // REV-34: the description box belongs to the file staged in the picker, not to these.
@@ -778,6 +799,7 @@
                 catch (Exception ex)
                 {
                     // REL-06: per-file — keep the name, map the reason (domain verbatim / internal generic).
+                    _uploadErrorSetting = (ex as IncidentManager.Application.Common.SettingLimitException)?.SettingKey;
                     _uploadError = $"{f.Name}: {UserFacingError.Describe(ex, Logger, "uploading evidence", "couldn't be uploaded. Try again.")}";
                 }
             }

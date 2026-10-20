@@ -8,6 +8,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject CaseService Cases
 @inject TimeDisplay TimeDisp
+@inject ICurrentUser CurrentUser
 
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
     <p class="text-muted mb-0">Tamper-evident audit trail for this case (most recent first).</p>
@@ -111,6 +112,10 @@ else
         <p class="small text-muted mb-2">
             Who has opened this case, grouped into sessions. Access logs aren't part of the tamper-evident
             trail. Configure them in Administration → Security &amp; access logging.
+            @if (CurrentUser.Has(Permission.Administer))
+            {
+                <a href="@IncidentManager.Web.Services.AdminSearchIndex.SettingHref("Access:LogScope")">Change what's logged</a>
+            }
         </p>
         @if (_viewedBy is null)
         {

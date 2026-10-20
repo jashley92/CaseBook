@@ -8,6 +8,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject TimeDisplay TimeDisp
+@inject ICurrentUser CurrentUser
 
 <PageTitle>Notification settings</PageTitle>
 
@@ -30,7 +31,12 @@ else
         {
             @* BUG-97: say it, since a choice here then changes nothing: the individual reminders below keep coming. *@
             <div class="alert alert-info small py-2">Digests aren't being sent on this server yet (an administrator turns them
-                on under Settings, Notifications). Until then you get the individual reminders below, whatever you pick here.</div>
+                on under Administration, Notifications). Until then you get the individual reminders below, whatever you pick here.
+                @if (CurrentUser.Has(Permission.Administer))
+                {
+                    <a href="@IncidentManager.Web.Services.AdminSearchIndex.SettingHref("Notifications:DigestScan:Enabled")">Turn them on</a>
+                }
+            </div>
         }
         <div class="mb-1">
             @foreach (var c in new[] { DigestCadence.Off, DigestCadence.Daily, DigestCadence.Weekly })
