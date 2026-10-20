@@ -1,0 +1,215 @@
+@* The taxonomy labels editor, on Administration › Taxonomy & severity labels above the severity labels. Each taxonomy
+   saves on its own. *@
+@using IncidentManager.Application.Admin
+@inject TaxonomyAdminService Taxonomy
+@inject ToastService Toasts
+
+<p class="text-muted">
+    Match the built-in taxonomies to your incident response plan. <strong>Rename</strong> any value, and
+    <strong>hide</strong> or <strong>reorder</strong> options in the entity and timeline pick-lists. Changes
+    affect display only, including in reports. Stored values, the classification ladder, phase order and SLA
+    milestones stay the same, and hiding an option never changes a case that already uses it. Changes are
+    audited and apply without a restart.
+</p>
+
+@if (_kinds is null)
+{
+    <LoadingBlock />
+}
+else
+{
+    @foreach (var kind in _kinds)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-tag me-1"></span>@kind.Title</span>
+                <button class="btn btn-sm btn-primary" @onclick="() => SaveKind(kind.Id)" disabled="@_saving">Save @kind.Title</button>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">@kind.Description</p>
+
+                @if (kind.AllowVisibilityOrder)
+                {
+                    <ol class="list-group">
+                        @for (var i = 0; i < kind.Members.Count; i++)
+                        {
+                            var idx = i;
+                            var m = kind.Members[idx];
+                            <li class="list-group-item d-flex align-items-center gap-2">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button class="btn btn-outline-secondary" title="Move up"
+                                            disabled="@(idx == 0)" @onclick="() => Move(kind, idx, -1)">
+                                        <span class="bi bi-arrow-up"></span>
+                                    </button>
+                                    <button class="btn btn-outline-secondary" title="Move down"
+                                            disabled="@(idx == kind.Members.Count - 1)" @onclick="() => Move(kind, idx, 1)">
+                                        <span class="bi bi-arrow-down"></span>
+                                    </button>
+                                </div>
+                                <div class="form-check form-switch mb-0" title="Show this option in the picker">
+                                    <input class="form-check-input" type="checkbox" aria-label="Show @m.DefaultLabel in the picker" checked="@(!m.Hidden)"
+                                           @onchange="e => m.Hidden = !(bool)(e.Value ?? false)" />
+                                </div>
+                                <div style="min-width:11rem">
+                                    <span class="fw-semibold @(m.Hidden ? "text-muted" : "")">@m.DefaultLabel</span>
+                                    @if (m.Hidden) { <span class="im-badge im-b-neutral ms-1">Hidden</span> }
+                                    else if (IsCustom(m)) { <span class="im-badge im-b-info ms-1">Custom</span> }
+                                    <div class="small text-muted"><code>@m.Value</code></div>
+                                </div>
+                                <input class="form-control form-control-sm flex-grow-1" type="text" aria-label="Label for @m.DefaultLabel" maxlength="60"
+                                       placeholder="@m.DefaultLabel" @bind="m.Label" @bind:event="oninput" />
+                            </li>
+                        }
+                    </ol>
+                }
+                else
+                {
+                    @foreach (var m in kind.Members)
+                    {
+                        <div class="row mb-2 align-items-center">
+                            <div class="col-sm-4">
+                                <span class="fw-semibold">@m.DefaultLabel</span>
+                                @if (IsCustom(m)) { <span class="im-badge im-b-info ms-1">Custom</span> }
+                                else { <span class="im-badge im-b-neutral ms-1">Default</span> }
+                                <div class="small text-muted"><code>@m.Value</code></div>
+                            </div>
+                            <div class="col-sm-8">
+                                <input class="form-control" type="text" aria-label="Label for @m.DefaultLabel" maxlength="60"
+                                       placeholder="@m.DefaultLabel" @bind="m.Label" @bind:event="oninput" />
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    // Editable view-model: mirrors the effective taxonomy, mutated in place by the reorder/hide/label controls
+    // and diffed against the originals on save.
+    private sealed class MemberEdit
+    {
+        public required string Value { get; init; }
+        public required string DefaultLabel { get; init; }
+        public string? Label { get; set; }          // current input; blank/default => no override
+        public bool Hidden { get; set; }
+        public string? OriginalOverride { get; init; }
+        public bool OriginalHidden { get; set; }
+    }
+
+    private sealed class KindEdit
+    {
+        public required string Id { get; init; }
+        public required string Title { get; init; }
+        public required string Description { get; init; }
+        public required bool AllowVisibilityOrder { get; init; }
+        public required List<MemberEdit> Members { get; init; }
+        public required IReadOnlyList<string> OriginalOrder { get; set; }   // REV-28: as loaded
+        public required string Stamp { get; set; }   // BUG-438: the stored order and hidden rows, as loaded
+    }
+
+    private List<KindEdit>? _kinds;
+
+    private static bool IsCustom(MemberEdit m) =>
+        !string.IsNullOrWhiteSpace(m.Label) && m.Label!.Trim() != m.DefaultLabel;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _kinds = (await Taxonomy.GetEffectiveAsync()).Select(ToEdit).ToList();
+
+    // REV-28: after saving one card, only that card is reloaded; the others keep what's being typed in them.
+    private async Task ReloadKind(string kindId)
+    {
+        if (_kinds is null) return;
+        var fresh = (await Taxonomy.GetEffectiveAsync()).FirstOrDefault(k => k.Id == kindId);
+        var i = _kinds.FindIndex(k => k.Id == kindId);
+        if (fresh is not null && i >= 0) _kinds[i] = ToEdit(fresh);
+    }
+
+    private static KindEdit ToEdit(IncidentManager.Application.Admin.TaxonomyKindView k) => new()
+        {
+            Id = k.Id,
+            OriginalOrder = k.Members.Select(m => m.Value).ToList(),
+            Stamp = k.Stamp,
+            Title = k.Title,
+            Description = k.Description,
+            AllowVisibilityOrder = k.AllowVisibilityOrder,
+            Members = k.Members.Select(m => new MemberEdit
+            {
+                Value = m.Value,
+                DefaultLabel = m.DefaultLabel,
+                Label = m.Override,               // blank field when unset (default shown as placeholder)
+                Hidden = m.Hidden,
+                OriginalOverride = m.Override,
+                OriginalHidden = m.Hidden,
+            }).ToList()
+        };
+
+    private void Move(KindEdit kind, int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= kind.Members.Count) return;
+        (kind.Members[index], kind.Members[target]) = (kind.Members[target], kind.Members[index]);
+    }
+
+    // BUG-393: a double click on Save ran the save twice; the second insert of a first override hit the unique index.
+    private bool _saving;
+
+    private async Task SaveKind(string kindId)
+    {
+        if (_kinds is null || _saving) return;
+        _saving = true;
+        try { await SaveKindCore(kindId); }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveKindCore(string kindId)
+    {
+        if (_kinds is null) return;
+        var kind = _kinds.FirstOrDefault(k => k.Id == kindId);
+        if (kind is null) return;
+
+        // BUG-526: the order or labels saved but not in effect (the settings reload failed). Treated as nothing saved, the
+        // card kept its old stamp, so the retry was refused as stale, and the labels weren't saved at all.
+        string? notInEffect = null;
+        try
+        {
+            // REV-28: only when this card's order or hidden set changed. Sending the loaded ones back with a label edit
+            // reverted whatever another admin had hidden or reordered since.
+            var ordered = kind.Members.Select(m => m.Value).ToList();
+            if (kind.AllowVisibilityOrder && (!ordered.SequenceEqual(kind.OriginalOrder) || kind.Members.Any(m => m.Hidden != m.OriginalHidden)))
+            {
+                var hidden = kind.Members.Where(m => m.Hidden).Select(m => m.Value).ToList();
+                // BUG-438: refused if another admin reordered or hid options since this card loaded. Once saved, the card's
+                // baseline moves on, so a label refused below can be saved again without this being refused as stale.
+                try { kind.Stamp = await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden, kind.Stamp); }
+                catch (SettingsNotInEffectException ex) { kind.Stamp = ex.NewStamp ?? kind.Stamp; notInEffect = ex.Message; }
+                kind.OriginalOrder = ordered;
+                foreach (var m in kind.Members) m.OriginalHidden = m.Hidden;
+            }
+
+            // BUG-378: the card's changed labels in one save, so a refused one doesn't leave the others committed.
+            var labels = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var m in kind.Members)
+            {
+                var next = m.Label?.Trim() ?? "";
+                var current = m.OriginalOverride ?? "";
+                if (!string.Equals(next, current, StringComparison.Ordinal)) labels[m.Value] = next;
+            }
+            if (labels.Count > 0)
+                try { await Taxonomy.SetLabelAsync(kindId, labels); }
+                catch (SettingsNotInEffectException ex) { notInEffect = ex.Message; }
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+            if (notInEffect is not null) Toasts.Error(notInEffect);
+            return;
+        }
+
+        await ReloadKind(kindId);
+        if (notInEffect is not null) Toasts.Error(notInEffect);
+        else Toasts.Success($"Saved {kind.Title}.");
+    }
+}

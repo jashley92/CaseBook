@@ -1,0 +1,243 @@
+@* CAP-10: the retention review, under the retention settings (Administration › Retention). Closed, not-archived cases past Retention:CaseYears, with what stands in the way of
+   archiving each (a legal hold, a regulatory notice not recorded) and its open improvement actions. A person picks which
+   to archive, at most 25 at a time (E-18's metering), sees them listed, and confirms; each goes through the case's own
+   archive action, which still refuses a hold or a running deadline. Nothing is purged. The cases are the administrator's
+   own need-to-know view. *@
+@using IncidentManager.Application.Compliance
+@inject RetentionReviewService Retention
+@inject ToastService Toasts
+@inject TimeDisplay TimeDisp
+@inject IClock Clock
+@implements IDisposable
+
+<h2 class="h5 mt-4" id="retention-review">Retention review</h2>
+<p class="small text-muted">Closed cases past the case retention period, for you to archive. Nothing is archived or deleted automatically.</p>
+
+@if (_review is null)
+{
+    <LoadingBlock />
+}
+else if (_review.Off)
+{
+    <p class="text-muted">
+        The retention review is off: case retention is 0 years. Set it above (Case retention).
+    </p>
+}
+else
+{
+    <p class="text-muted small">
+        Cases closed before @TimeDisp.DateOnly(_review.CutoffUtc) (@(_review.Years == 1 ? "1 year" : $"{_review.Years} years"), set
+        above) that aren't archived. Archiving takes a case
+        off the lists and dashboards; it stays in the record and the audit trail, and can be restored from its page. A case
+        under a legal hold, or with a regulatory notice not yet recorded, can't be archived. Up to @RetentionReviewService.MaxBatch at a time.
+        Exercises aren't listed.
+    </p>
+
+    @if (_review.Rows.Count == 0)
+    {
+        <p class="text-muted">No closed case you can see is past retention.</p>
+    }
+    else
+    {
+        var archivable = _review.Rows.Where(r => r.CanArchive).ToList();
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2" role="region" aria-label="Selected cases">
+            <span class="small">
+                @* CAP-10 review: the review lists the oldest closings, at most MaxShown; the rest are counted. *@
+                @if (_review.Cut)
+                {
+                    <span>@Plural(_review.Total, "case") past retention; the first @_review.Rows.Count.ToString("N0") (oldest closed) of @_review.Total.ToString("N0") are listed</span>
+                }
+                else
+                {
+                    <span>@Plural(_review.Rows.Count, "case") past retention</span>
+                }
+                · @Plural(archivable.Count, "case") can be archived@(_review.Cut ? " of those listed" : "")
+                @if (_selected.Count > 0) { <span> · <strong>@_selected.Count selected</strong></span> }
+                @if (_selected.Count >= RetentionReviewService.MaxBatch) { <span class="text-muted"> (the most at a time)</span> }
+            </span>
+            <button type="button" class="btn btn-sm btn-primary ms-auto" disabled="@(_selected.Count == 0 || _archiving.Busy)"
+                    @onclick="() => ConfirmArchive(_review.Rows.Where(r => _selected.Contains(r.CaseId)).ToList())">
+                <span class="bi bi-archive me-1" aria-hidden="true"></span>Archive selected
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_selected.Count == 0 || _archiving.Busy)"
+                    @onclick="() => _selected.Clear()">Clear</button>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle im-table">
+                <thead>
+                    <tr>
+                        <th style="width:2rem">
+                            <input class="form-check-input" type="checkbox" aria-label="Select every case that can be archived (up to @RetentionReviewService.MaxBatch)"
+                                   checked="@AllSelected(archivable)" disabled="@(archivable.Count == 0 || _archiving.Busy)"
+                                   @onchange="e => ToggleAll(archivable, e.Value is true)" />
+                        </th>
+                        <th>Case</th>
+                        <th>Closed</th>
+                        <th>Legal hold</th>
+                        <th>Improvement actions</th>
+                        <th>Regulatory notices</th>
+                        @* position-relative: the hidden label stays inside the scrolling table, not past the page's edge. *@
+                        <th class="text-end position-relative"><span class="visually-hidden">Action</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _review.Rows)
+                    {
+                        var full = !_selected.Contains(r.CaseId) && _selected.Count >= RetentionReviewService.MaxBatch;
+                        <tr>
+                            <td>
+                                <input class="form-check-input" type="checkbox" aria-label="Select @r.CaseNumber"
+                                       checked="@_selected.Contains(r.CaseId)" disabled="@(!r.CanArchive || full || _archiving.Busy)"
+                                       title="@(r.Blocker ?? (full ? $"At most {RetentionReviewService.MaxBatch} at a time" : null))"
+                                       @onchange="e => Toggle(r.CaseId, e.Value is true)" />
+                            </td>
+                            <td>
+                                <a href="cases/@Uri.EscapeDataString(r.CaseNumber)" class="text-decoration-none"><code>@r.CaseNumber</code></a>
+                                @if (r.IsRestricted) { <span class="im-badge im-b-warn ms-1">Restricted</span> }
+                                <div class="small text-muted im-clamp-2" title="@r.Title">@r.Title</div>
+                            </td>
+                            <td class="small text-nowrap">@TimeDisp.DateOnly(r.ClosedAtUtc)</td>
+                            <td class="small">
+                                @if (r.LegalHold)
+                                {
+                                    <span class="im-badge im-b-danger"><span class="bi bi-lock me-1" aria-hidden="true"></span>On hold</span>
+                                    @if (r.HoldReleasePending) { <div class="text-muted">Release requested</div> }
+                                }
+                                else { <span class="text-muted">None</span> }
+                            </td>
+                            <td class="small">
+                                @if (r.OpenImprovementActions > 0) { <span>@r.OpenImprovementActions open</span> }
+                                else { <span class="text-muted">None open</span> }
+                            </td>
+                            <td class="small">
+                                @if (r.UnreportedDeadlines.Count == 0) { <span class="text-muted">None outstanding</span> }
+                                else
+                                {
+                                    @foreach (var d in r.UnreportedDeadlines)
+                                    {
+                                        <div class="@(d.State == SlaState.Breached ? "text-danger" : "")">
+                                            @d.Jurisdiction: not recorded@(d.DueAtUtc is { } due ? $", due {TimeDisp.DateOnly(due)}" : "")
+                                        </div>
+                                    }
+                                }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                @if (r.CanArchive)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" disabled="@_archiving.Busy"
+                                            aria-label="Archive @r.CaseNumber" @onclick="() => ConfirmArchive([r])">Archive</button>
+                                }
+                                else
+                                {
+                                    <span class="small text-muted">@r.Blocker</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (_review.Cut)
+        {
+            <p class="small text-muted">
+                Only the first @RetentionReviewService.MaxShown cases, oldest closed first, are listed at a time. Archive these and the
+                list moves on to the next.
+            </p>
+        }
+        <p class="small text-muted">Open improvement actions don't stop a case being archived: they're tracked under Program whatever their case's state.</p>
+    }
+}
+
+@* S-23: the cases are named before anything happens. *@
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = null!;
+    private RetentionReview? _review;
+    private readonly HashSet<Guid> _selected = [];
+    // C5: a reload replaces what's shown only if it's the newest; C8: one archive batch at a time.
+    private readonly LoadSequence _load = new();
+    private readonly InFlight _archiving = new();
+    private bool _disposed;
+
+    private static string Plural(int n, string one) => IncidentManager.Application.Common.Plural.Of(n, one);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var t = _load.Begin();
+        RetentionReview review;
+        try { review = await Retention.BuildAsync(); }
+        catch (ForbiddenException ex)
+        {
+            if (_load.IsCurrent(t)) Toasts.Error(ex.Message);
+            return;
+        }
+        if (!_load.IsCurrent(t)) return;
+        _review = review;
+        // A case that left the review, or can no longer be archived, leaves the selection.
+        _selected.IntersectWith(review.Rows.Where(r => r.CanArchive).Select(r => r.CaseId));
+    }
+
+    private void Toggle(Guid id, bool on)
+    {
+        if (on) { if (_selected.Count < RetentionReviewService.MaxBatch) _selected.Add(id); }
+        else _selected.Remove(id);
+    }
+
+    private bool AllSelected(IReadOnlyList<RetentionReviewRow> archivable) =>
+        archivable.Count > 0 && (archivable.All(r => _selected.Contains(r.CaseId)) || _selected.Count >= RetentionReviewService.MaxBatch);
+
+    private void ToggleAll(IReadOnlyList<RetentionReviewRow> archivable, bool on)
+    {
+        if (!on) { _selected.Clear(); return; }
+        foreach (var r in archivable)
+        {
+            if (_selected.Count >= RetentionReviewService.MaxBatch) break;
+            _selected.Add(r.CaseId);
+        }
+    }
+
+    private void ConfirmArchive(IReadOnlyList<RetentionReviewRow> rows)
+    {
+        if (rows.Count == 0 || _archiving.Busy) return;
+        // The batch is read now: the dialog names exactly the cases that will be archived.
+        var picked = rows.Take(RetentionReviewService.MaxBatch).ToList();
+        var numbers = picked.ToDictionary(r => r.CaseId, r => r.CaseNumber);
+        var names = string.Join(", ", picked.Select(r => r.CaseNumber));
+        var what = picked.Count == 1 ? $"Archive {names}?" : $"Archive these {picked.Count} cases: {names}?";
+        _confirm.Ask(this, picked.Count == 1 ? "Archive case" : "Archive cases",
+            what + " Each leaves the case lists, the dashboards and the reminders. Its record and audit trail are kept, " +
+            "nothing is deleted, and it can be restored from its case page.",
+            picked.Count == 1 ? "Archive case" : $"Archive {picked.Count} cases",
+            () => _archiving.Run(() => ArchiveCore(numbers)));
+    }
+
+    private async Task ArchiveCore(Dictionary<Guid, string> numbers)
+    {
+        IReadOnlyList<RetentionArchiveResult> results;
+        try { results = await Retention.ArchiveAsync(numbers.Keys.ToList()); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            if (!_disposed) Toasts.Error(ex.Message);
+            return;
+        }
+        if (_disposed) return;
+        var archived = results.Count(r => r.Outcome == RetentionArchiveOutcome.Archived);
+        if (archived > 0) Toasts.Success(archived == 1 ? "1 case archived" : $"{archived} cases archived");
+        foreach (var r in results.Where(r => r.Outcome is RetentionArchiveOutcome.Refused or RetentionArchiveOutcome.Failed))
+            Toasts.Error($"{numbers.GetValueOrDefault(r.CaseId)}: {r.Detail}");
+        var gone = results.Where(r => r.Outcome == RetentionArchiveOutcome.NoLongerDue).Select(r => numbers.GetValueOrDefault(r.CaseId)).ToList();
+        if (gone.Count > 0) Toasts.Info($"No longer in the review, so left as they are: {string.Join(", ", gone)}.");
+        foreach (var r in results) _selected.Remove(r.CaseId);
+        await LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _load.Invalidate();
+    }
+}

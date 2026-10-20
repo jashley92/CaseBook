@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @layout MainLayout
 @inject NavigationManager Nav
+@inject IWebHostEnvironment Env
 
 @* Administration hub shell (Option B): one left rail is the single navigation for every admin destination,
    so the main sidebar carries just a single "Administration" entry instead of repeating all of these.
@@ -36,8 +37,8 @@
 @code {
     private const string UpdatesHref = "admin/settings/updates";
 
-    private sealed record RailItem(string Title, string Icon, string Href);
-    private sealed record RailGroup(string Label, RailItem[] Items);
+    public sealed record RailItem(string Title, string Icon, string Href);
+    public sealed record RailGroup(string Label, RailItem[] Items);
 
     // UX-08: derive the breadcrumb from the active rail item so every admin page gets a consistent
     // "Administration › [section]" trail with no per-page wiring. The landing (admin) and any route not
@@ -60,62 +61,67 @@
         }
     }
 
-    // UX-18: the rail is grouped by what an admin is trying to *do*, not by the old implementation split
-    // (settings-catalog page vs standalone editor). Identity & branding is the Settings landing, so it keeps
-    // the short /admin URL; other Settings/System sections are /admin/settings/{section}. Match.All
-    // highlights the exact section.
-    private static readonly RailGroup[] Groups =
+    // UX-18: the rail is grouped by what an admin is trying to *do*, not by how a page is built (a settings section or a
+    // standalone editor). Settings sections are /admin/settings/{section} (Admin.razor lists them in the same groups).
+    // Match.All highlights the exact section.
+    public static readonly RailGroup[] AllGroups =
     [
         new("Organization",
         [
-            new("Identity & branding", "bi-building", "admin"),
+            new("Identity & branding", "bi-building", "admin/settings/identity"),
+            new("Teams", "bi-people-fill", "admin/teams"),   // CAP-36
+        ]),
+        new("Cases & workflow",
+        [
+            new("Case templates", "bi-clipboard-check", "admin/templates"),
+            new("Stage gates", "bi-shield-check", "admin/gates"),
+            new("Taxonomy & severity labels", "bi-tags", "admin/settings/taxonomy"),
+            new("Data elements", "bi-collection", "admin/data-elements"),
+            new("Case outcomes", "bi-flag", "admin/outcomes"),
+            new("Response & SLA", "bi-stopwatch", "admin/settings/sla"),
+            new("Regulatory deadlines", "bi-alarm", "admin/settings/regulatory-deadlines"),
+        ]),
+        new("Notifications",
+        [
+            new("Notifications", "bi-envelope", "admin/settings/notifications"),
+            new("Email templates", "bi-envelope-paper", "admin/email-templates"),
+        ]),
+        new("Integrations",
+        [
+            new("Integrations", "bi-plug", "admin/settings/integrations"),
         ]),
         new("Reports",
         [
             new("Reports", "bi-file-earmark-text", "admin/settings/reporting"),
         ]),
-        new("Notifications & integrations",
+        new("Records & evidence",
         [
-            new("Notifications", "bi-envelope", "admin/settings/notifications"),
-            new("Email templates", "bi-envelope-paper", "admin/email-templates"),
-            new("Integrations", "bi-plug", "admin/settings/integrations"),
-        ]),
-        new("Compliance & security",
-        [
-            new("Regulatory deadlines", "bi-alarm", "admin/settings/regulatory-deadlines"),
-            new("Governance & security", "bi-shield-lock", "admin/settings/governance"),
-            new("Retention review", "bi-archive", "admin/retention"),   // CAP-10
-        ]),
-        new("Workflow & taxonomy",
-        [
-            new("Case templates", "bi-clipboard-check", "admin/templates"),
-            new("Stage gates", "bi-shield-check", "admin/gates"),
-            new("Taxonomy labels", "bi-tags", "admin/taxonomy"),
-            new("Data elements", "bi-collection", "admin/data-elements"),
-            new("Case outcomes", "bi-flag", "admin/outcomes"),
-            new("Teams", "bi-people-fill", "admin/teams"),   // CAP-36
-            new("Response & SLA", "bi-stopwatch", "admin/settings/sla"),
+            new("Evidence storage", "bi-hdd", "admin/settings/evidence"),
+            new("Retention", "bi-archive", "admin/settings/retention"),   // CAP-10: the settings and the review
+            new("Integrity", "bi-shield-lock", "admin/settings/integrity"),
         ]),
         new("People & access",
         [
             new("Roles & access", "bi-people", "admin/roles"),
             new("API tokens", "bi-key", "admin/api-tokens"),
-            @* UX-17: the Access log viewer moved to the top-level "Audit & Exports" group (beside Integrity
-               & Audit). The access-logging *settings* stay under Governance & security. *@
+            @* UX-17: the Access log viewer is in the top-level "Audit & Exports" group; its settings are here. *@
+            new("Security & access logging", "bi-person-lock", "admin/settings/security"),
         ]),
         new("System",
         [
+            new("Diagnostics", "bi-activity", "admin/settings/diagnostics"),
             new("Server configuration", "bi-hdd-stack", "admin/settings/server"),
             new("Setting sources", "bi-diagram-3", "admin/settings/source"),
             new("Configuration bundle", "bi-box-seam", "admin/config-bundle"),
-            new("Diagnostics", "bi-activity", "admin/settings/diagnostics"),
             new("Updates", "bi-cloud-arrow-down", UpdatesHref),   // PROD-49
-        ]),
-        @* UX-18: the design-system reference is a developer/design tool, not deployment inspection, so it
-           sits in its own group rather than polluting System. *@
-        new("Developer",
-        [
-            new("Style guide", "bi-palette", "admin/style"),
+            new("Search", "bi-search", "admin/settings/search"),   // CAP-22
+            @* UX-18: the design-system reference is a developer tool, shown only in Development. *@
+            new("Style guide", "bi-palette", StyleGuideHref),
         ]),
     ];
+
+    private const string StyleGuideHref = "admin/style";
+
+    private RailGroup[] Groups => Env.IsDevelopment() ? AllGroups
+        : [.. AllGroups.Select(g => g with { Items = [.. g.Items.Where(i => i.Href != StyleGuideHref)] })];
 }

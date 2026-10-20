@@ -69,7 +69,7 @@ public static class EvidenceRoom
         if (size < 0) throw new ArgumentException("That file's size couldn't be read. Try again.");
         if (size > o.MaxUploadBytes)
             throw new ArgumentException($"That file is {Size(size)}; the largest file CaseBook takes is {Size(o.MaxUploadBytes)}. " +
-                                        "An administrator can raise the limit (Administration › Governance & security).");
+                                        "An administrator can raise the limit (Administration › Evidence storage).");
         var use = await UseAsync(db, store, o, ct: ct);
         if (use.QuotaBytes is { } quota && use.UsedBytes > quota - size)
             throw new ArgumentException($"Storing it would take evidence past its {Size(quota)} limit ({Size(use.UsedBytes)} is used). " +

@@ -71,8 +71,7 @@ public sealed class HostStartupSmokeTests : IDisposable
     [
         "/", "/access-log", "/account/access", "/account/api-tokens", "/account/keyboard", "/account/notifications",
         "/admin", "/admin/api-tokens", "/admin/config-bundle", "/admin/data-elements", "/admin/email-templates",
-        "/admin/gates", "/admin/outcomes", "/admin/retention", "/admin/roles", "/admin/taxonomy", "/admin/teams",
-        "/admin/templates", "/admin/settings/notifications", "/admin/settings/integrations", "/admin/settings/diagnostics",
+        "/admin/gates", "/admin/outcomes", "/admin/roles", "/admin/teams", "/admin/templates",
         "/cases", "/cases/import", "/cases/mine", "/cases/new", "/desk", "/exports", "/find", "/integrity",
         "/intel/attack", "/intel/campaigns", "/intel/indicators", "/program", "/program/due", "/program/improvement-actions",
         "/program/legal", "/program/report", "/program/team",
@@ -94,6 +93,38 @@ public sealed class HostStartupSmokeTests : IDisposable
             }
             failed.Should().BeEmpty("each page renders on a first visit");
         });
+    }
+
+    // Every Administration destination in the rail, and every settings section, renders on a first visit; the pages that
+    // moved send old links on; every settings group has a page of its own (none left on "Other").
+    [Fact]
+    public async Task Every_administration_page_renders_and_old_links_land_on_the_new_ones()
+    {
+        await RunWithin(TimeSpan.FromMinutes(4), async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+            var hrefs = IncidentManager.Web.Components.Layout.AdminLayout.AllGroups.SelectMany(g => g.Items).Select(i => i.Href)
+                .Concat(IncidentManager.Web.Components.Pages.Admin.Sections.Select(s => s.Href))
+                .Distinct().ToList();
+            var failed = new List<string>();
+            foreach (var href in hrefs)
+            {
+                var r = await client.GetAsync("/" + href);
+                if (r.StatusCode != HttpStatusCode.OK) failed.Add($"{href}: {(int)r.StatusCode}");
+            }
+            failed.Should().BeEmpty("each Administration page renders on a first visit");
+
+            foreach (var (old, lands) in new[] { ("/admin/retention", "admin/settings/retention"), ("/admin/taxonomy", "admin/settings/taxonomy") })
+            {
+                var r = await client.GetAsync(old);
+                r.StatusCode.Should().Be(HttpStatusCode.Redirect, old);
+                r.Headers.Location!.ToString().Should().EndWith(lands, old);
+            }
+            var governance = await (await client.GetAsync("/admin/settings/governance")).Content.ReadAsStringAsync();
+            governance.Should().Contain("Evidence storage", "the old Governance & security link opens Evidence storage");
+        });
+        IncidentManager.Web.Components.Pages.Admin.UnplacedSettingsGroups.Should().BeEmpty("every settings group has a page of its own");
     }
 
     [Fact]

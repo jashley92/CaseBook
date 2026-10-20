@@ -56,6 +56,12 @@
 
 @{ var activeGroups = ActiveGroups; }
 
+@* Pages that are more than settings: the taxonomy editor (its own saves) above the severity labels. *@
+@if (_activeId == "taxonomy")
+{
+    <TaxonomyEditor />
+}
+
 @if (activeGroups is not null)
 {
             @if (_effective is null)
@@ -71,7 +77,7 @@
                        recipient. Surface that whole chain at a glance so enabling a trigger while email is
                        off (a silent "logged, not sent") is obvious rather than a surprise. Reads the pending
                        form values so it updates live as switches flip; applies on Save. *@
-                    @if (group == "Notifications")
+                    @if (group == "Email delivery")
                     {
                         <div class="card mb-3">
                             <div class="card-header d-flex justify-content-between align-items-center">
@@ -167,7 +173,8 @@
 
                     <div class="card mb-3">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <span>@group</span>
+                            @* A page with one card doesn't repeat its own title on it. *@
+                            <span>@(group == ActiveTitle ? "Settings" : group)</span>
                             <div class="d-flex align-items-center gap-2">
                                 @if (GroupDirty(group))
                                 {
@@ -413,6 +420,126 @@
                         <RegulatoryDeadlineRules />
                     }
 
+                    @if (group == "Evidence storage")
+                    {
+                    <div class="card mb-3">
+                        <div class="card-header"><span class="bi bi-hdd me-1" aria-hidden="true"></span>Where evidence is stored</div>
+                        <div class="card-body">
+                    <p class="small text-muted mb-2">
+                        Where evidence is stored, whether CaseBook can write and read there, and how much it takes against the limits
+                        above.
+                    </p>
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <td style="width:32%">Store</td>
+                                <td>
+                                    @if (EvidenceStoreProbe.CheckedAtUtc is null)
+                                    {
+                                        <span class="im-badge im-b-neutral">Not checked yet</span>
+                                    }
+                                    else
+                                    {
+                                        @StatusBadge(EvidenceStoreProbe.Problem is null, "Writable", "Problem")
+                                    }
+                                    <code class="small ms-2" style="word-break:break-all">@EvidenceStoreFiles.Location</code>
+                                    @if (EvidenceStoreProbe.Problem is { } why) { <div class="small text-danger">@why</div> }
+                                </td>
+                            </tr>
+                            @if (_evidenceUseError is not null)
+                            {
+                                <tr><td>Used</td><td class="small text-danger">Couldn't be read: @_evidenceUseError</td></tr>
+                            }
+                            <tr>
+                                <td>Large uploads in progress</td>
+                                <td class="small">@EvidenceUploads.InProgress</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    @if (_evidenceUse is { } use)
+                    {
+                        <div class="mb-3"><IncidentManager.Web.Components.Shared.StorageMeter Use="use" /></div>
+                    }
+                        </div>
+                    </div>
+                    }
+
+                    @if (group == "Integrity")
+                    {
+                    <div class="card mb-3">
+                        <div class="card-header"><span class="bi bi-shield-check me-1" aria-hidden="true"></span>Evidence-at-rest results</div>
+                        <div class="card-body">
+                    <p class="small text-muted mb-2">
+                        A background job re-hashes stored evidence and compares it to the SHA-256 recorded in the
+                        audit chain, catching bit-rot or tampering. Each run checks a share of the files, so that every file is
+                        checked within the full-pass days. A problem found stays listed until that file is checked again. Turn it
+                        on and set the interval and full pass above. Alerts go to the integrity-alert distribution.
+                    </p>
+                    <table class="table table-sm">
+                        <tbody>
+                            @if (EvidenceIntegrity.Current is not { } ev)
+                            {
+                                <tr>
+                                    <td style="width:32%">Status</td>
+                                    <td>
+                                        <span class="im-badge im-b-neutral">Not run</span>
+                                        <span class="small text-muted ms-2">
+                                            @(Config.GetValue<bool>("Integrity:EvidenceVerify:Enabled")
+                                                ? "enabled, awaiting first pass"
+                                                : "disabled")
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                <tr>
+                                    <td style="width:32%">Overall</td>
+                                    <td>
+                                        @if (ev.IsClean)
+                                        {
+                                            <span class="im-badge im-b-ok">Clean</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="im-badge im-b-danger">Drift: @ev.DriftCount</span>
+                                        }
+                                        <span class="small text-muted ms-2">
+                                            @if (ev.TotalCount > ev.CheckedCount)
+                                            {
+                                                @($"{ev.CheckedCount:N0} of {ev.TotalCount:N0} checked in the latest run (every file at least every {Math.Max(1, Config.GetValue("Integrity:EvidenceVerify:PassDays", 7))} days)")
+                                            }
+                                            else
+                                            {
+                                                @($"{ev.CheckedCount:N0} checked")
+                                            }
+                                            · @ev.CheckedAtUtc.ToString("u")
+                                        </span>
+                                    </td>
+                                </tr>
+                                @foreach (var d in ev.Drifts)
+                                {
+                                    <tr>
+                                        <td>@(d.Kind switch { IncidentManager.Application.Integrity.EvidenceDriftKind.StoreUnreachable => "Evidence store", IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable => "Evidence key", _ => d.CaseNumber ?? d.CaseId.ToString() })</td>
+                                        <td>
+                                            <span class="im-badge im-b-danger">@d.Kind</span>
+                                            <span class="small text-muted ms-2">@d.OriginalFileName: @d.Detail</span>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                        </div>
+                    </div>
+                    }
+
+                    @* CAP-10: the review of closed cases past the period set above, on the same page. *@
+                    @if (group == "Retention")
+                    {
+                        <RetentionReviewPanel />
+                    }
+
                     @* PROD-49/50: what's newer than this build, its notes, and the one command that upgrades. *@
                     @if (group == "Updates")
                     {
@@ -420,13 +547,13 @@
                     }
 
                     @* CAP-05: how CaseBook signs in to the relay, entered here (server configuration wins when it sets one). *@
-                    @if (group == "Notifications")
+                    @if (group == "Email delivery")
                     {
                         <IncidentManager.Web.Components.Shared.EmailSignInCard />
                     }
 
                     @* CAP-40: the team-chat webhook URL, entered here (server configuration wins when it sets one). *@
-                    @if (group == "Notifications")
+                    @if (group == "Team chat")
                     {
                         <IncidentManager.Web.Components.Shared.StoredSecretCard Kind="IncidentManager.Web.Secrets.StoredSecretKind.ChatWebhookUrl"
                             Title="Team chat webhook" FieldLabel="Webhook URL"
@@ -434,8 +561,8 @@
                             Note="@(Config.GetValue<bool>("Chat:Webhook:Enabled") ? null : "Chat is off in the server's configuration (Chat:Webhook:Enabled), so nothing posts until it's turned on there. The URL is kept until then.")" />
                     }
 
-                    @* Send-a-test-email sits with the notification settings it exercises. *@
-                    @if (group == "Notifications")
+                    @* Send-a-test-email sits with the notification settings it exercises, after the last of them. *@
+                    @if (group == "Team chat")
                     {
                         <div class="card mb-3">
                             <div class="card-header">Test notifications</div>
@@ -643,7 +770,7 @@
                     </tr>
                 </tbody>
             </table>
-            <p class="small text-muted mt-2">Auto-seal is set in-app under <strong>Governance &amp; security</strong>.
+            <p class="small text-muted mt-2">Auto-seal is set in-app under <a href="admin/settings/integrity">Records &amp; evidence › Integrity</a>.
             To verify or seal on demand, go to <a href="integrity">Integrity &amp; audit</a>.</p>
 
             @* CAP-40: the one SIEM webhook value that may be entered here rather than on the server: its token. *@
@@ -856,43 +983,6 @@
                 </tbody>
             </table>
 
-            <h6 class="text-uppercase small text-muted mt-3">Evidence storage</h6>
-            <p class="small text-muted mb-2">
-                Where evidence is stored, whether CaseBook can write and read there, and how much it takes against the limits
-                set under <strong>Governance &amp; security › Evidence storage</strong>.
-            </p>
-            <table class="table table-sm">
-                <tbody>
-                    <tr>
-                        <td style="width:32%">Store</td>
-                        <td>
-                            @if (EvidenceStoreProbe.CheckedAtUtc is null)
-                            {
-                                <span class="im-badge im-b-neutral">Not checked yet</span>
-                            }
-                            else
-                            {
-                                @StatusBadge(EvidenceStoreProbe.Problem is null, "Writable", "Problem")
-                            }
-                            <code class="small ms-2" style="word-break:break-all">@EvidenceStoreFiles.Location</code>
-                            @if (EvidenceStoreProbe.Problem is { } why) { <div class="small text-danger">@why</div> }
-                        </td>
-                    </tr>
-                    @if (_evidenceUseError is not null)
-                    {
-                        <tr><td>Used</td><td class="small text-danger">Couldn't be read: @_evidenceUseError</td></tr>
-                    }
-                    <tr>
-                        <td>Large uploads in progress</td>
-                        <td class="small">@EvidenceUploads.InProgress</td>
-                    </tr>
-                </tbody>
-            </table>
-            @if (_evidenceUse is { } use)
-            {
-                <div class="mb-3"><IncidentManager.Web.Components.Shared.StorageMeter Use="use" /></div>
-            }
-
             <h6 class="text-uppercase small text-muted mt-3">Evidence encryption</h6>
             <p class="small text-muted mb-2">
                 Evidence and reports encrypted at rest with a key protected by the server's integrity certificate, kept in three
@@ -900,70 +990,6 @@
                 here.
             </p>
             <IncidentManager.Web.Components.Shared.EvidenceKeyPanel />
-
-            <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
-            <p class="small text-muted mb-2">
-                A background job re-hashes stored evidence and compares it to the SHA-256 recorded in the
-                audit chain, catching bit-rot or tampering. Each run checks a share of the files, so that every file is
-                checked within the full-pass days. A problem found stays listed until that file is checked again. Turn it
-                on and set the interval and full pass under <strong>Governance &amp; security</strong>. Alerts go to the
-                integrity-alert distribution.
-            </p>
-            <table class="table table-sm">
-                <tbody>
-                    @if (EvidenceIntegrity.Current is not { } ev)
-                    {
-                        <tr>
-                            <td style="width:32%">Status</td>
-                            <td>
-                                <span class="im-badge im-b-neutral">Not run</span>
-                                <span class="small text-muted ms-2">
-                                    @(Config.GetValue<bool>("Integrity:EvidenceVerify:Enabled")
-                                        ? "enabled, awaiting first pass"
-                                        : "disabled")
-                                </span>
-                            </td>
-                        </tr>
-                    }
-                    else
-                    {
-                        <tr>
-                            <td style="width:32%">Overall</td>
-                            <td>
-                                @if (ev.IsClean)
-                                {
-                                    <span class="im-badge im-b-ok">Clean</span>
-                                }
-                                else
-                                {
-                                    <span class="im-badge im-b-danger">Drift: @ev.DriftCount</span>
-                                }
-                                <span class="small text-muted ms-2">
-                                    @if (ev.TotalCount > ev.CheckedCount)
-                                    {
-                                        @($"{ev.CheckedCount:N0} of {ev.TotalCount:N0} checked in the latest run (every file at least every {Math.Max(1, Config.GetValue("Integrity:EvidenceVerify:PassDays", 7))} days)")
-                                    }
-                                    else
-                                    {
-                                        @($"{ev.CheckedCount:N0} checked")
-                                    }
-                                    · @ev.CheckedAtUtc.ToString("u")
-                                </span>
-                            </td>
-                        </tr>
-                        @foreach (var d in ev.Drifts)
-                        {
-                            <tr>
-                                <td>@(d.Kind switch { IncidentManager.Application.Integrity.EvidenceDriftKind.StoreUnreachable => "Evidence store", IncidentManager.Application.Integrity.EvidenceDriftKind.KeyUnavailable => "Evidence key", _ => d.CaseNumber ?? d.CaseId.ToString() })</td>
-                                <td>
-                                    <span class="im-badge im-b-danger">@d.Kind</span>
-                                    <span class="small text-muted ms-2">@d.OriginalFileName: @d.Detail</span>
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
 
             <h6 class="text-uppercase small text-muted mt-3">Integrity keys and seal copies</h6>
             <p class="small text-muted mb-2">
@@ -1109,26 +1135,47 @@
     // System sections (Groups == null) render read-only / diagnostic views keyed by Id.
     [Parameter] public string? Section { get; set; }
 
-    private sealed record AdminSection(string Id, string Title, string[]? Groups = null);
+    private sealed record AdminSection(string Id, string Title, string Subtitle, string[]? Groups = null);
 
     private string _activeId = "identity";
 
+    // Grouped by what an administrator is trying to do; AdminLayout's rail lists them in the same groups.
     private static readonly AdminSection[] NamedSettingsSections =
     [
-        new("identity", "Identity & branding", ["Organization"]),
-        new("notifications", "Notifications", ["Notifications"]),
-        new("integrations", "Integrations", ["Integrations", "Related indicators"]),   // CAP-28 exclusions beside the lookup links
-        new("sla", "Response & SLA", ["Response SLA", "Breach SLA overrides", "Severity labels"]),
-        new("regulatory-deadlines", "Regulatory deadlines", ["Deadline clock"]),
-        new("reporting", "Reports", ["Report defaults"]),
-        new("search", "Search", ["Search"]),   // CAP-22 review: by word or anywhere in the text
-        new("governance", "Governance & security", ["Retention", "Evidence storage", "Integrity", "Access logging", "Security"]),
-        new("updates", "Updates", ["Updates"]),   // PROD-49
+        new("identity", "Identity & branding", "Your organization's name, logo, colors, time zone and default jurisdictions.", ["Organization"]),
+        new("notifications", "Notifications", "How email is sent, which notifications go out, and what's posted to team chat.",
+            ["Email delivery", "Email notifications", "Team chat"]),
+        new("integrations", "Integrations", "Links to your detection system and lookups, and which indicators count as related.",
+            ["External links", "Related indicators"]),   // CAP-28 exclusions beside the lookup links
+        new("sla", "Response & SLA", "Target hours for detection, containment and resolution, by severity.", ["Response SLA", "Breach SLA overrides"]),
+        new("taxonomy", "Taxonomy & severity labels", "Rename, hide and reorder the built-in pick-lists, and name the severity levels.", ["Severity labels"]),
+        new("regulatory-deadlines", "Regulatory deadlines", "The regulatory notification-deadline clock and its per-jurisdiction rules.", ["Deadline clock"]),
+        new("reporting", "Reports", "Report defaults, the section layout, and reusable report profiles.", ["Report defaults"]),
+        new("evidence", "Evidence storage", "How large evidence may be, how much may be kept, and how it's checked and downloaded.", ["Evidence storage"]),
+        new("retention", "Retention", "How long closed cases are kept before review, and the review of those past it.", ["Retention"]),
+        new("integrity", "Integrity", "Sealing the audit trail, and re-checking stored evidence against its recorded hashes.", ["Integrity"]),
+        new("security", "Security & access logging", "Idle sessions, the access review reminder, and what the access log records.", ["Security", "Access logging"]),
+        new("search", "Search", "How searches match words: by whole word, or anywhere in the text.", ["Search"]),   // CAP-22 review
+        new("updates", "Updates", "Newer CaseBook releases, what's in them, and how to upgrade.", ["Updates"]),   // PROD-49
     ];
+
+    // Sections that moved: an old link or bookmark lands on the nearest new page.
+    private static readonly IReadOnlyDictionary<string, string> MovedSections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["governance"] = "evidence",
+    };
 
     // Any catalog group not claimed by a named section still needs a home, so a newly added group never
     // silently disappears from the console.
     private static readonly AdminSection[] SettingsSections = BuildSettingsSections();
+
+    /// <summary>Settings groups no named section shows (they land on "Other"); a test keeps it empty.</summary>
+    public static IReadOnlyList<string> UnplacedSettingsGroups =>
+        SettingsCatalog.Groups.Except(NamedSettingsSections.SelectMany(s => s.Groups!), StringComparer.Ordinal).ToList();
+
+    /// <summary>Every section's route, for the tests and the admin search.</summary>
+    public static IReadOnlyList<(string Href, string Title, string Subtitle, IReadOnlyList<string> Groups)> Sections =>
+        [.. SettingsSections.Concat(SystemSections).Select(s => ($"admin/settings/{s.Id}", s.Title, s.Subtitle, (IReadOnlyList<string>)(s.Groups ?? [])))];
 
     private static AdminSection[] BuildSettingsSections()
     {
@@ -1136,14 +1183,14 @@
         var orphans = SettingsCatalog.Groups.Where(g => !claimed.Contains(g)).ToArray();
         return orphans.Length == 0
             ? NamedSettingsSections
-            : [.. NamedSettingsSections, new AdminSection("other", "Other", orphans)];
+            : [.. NamedSettingsSections, new AdminSection("other", "Other", "Settings without a page of their own yet.", orphans)];
     }
 
     private static readonly AdminSection[] SystemSections =
     [
-        new("server", "Server configuration"),
-        new("source", "Setting sources"),
-        new("diagnostics", "Diagnostics"),
+        new("server", "Server configuration", "Managed in server-side configuration and shown read-only; change these on the host."),
+        new("source", "Setting sources", "Where each setting's effective value resolves from right now."),
+        new("diagnostics", "Diagnostics", "Whether CaseBook is healthy: checks, deliveries, scheduled jobs, backups and keys."),
     ];
 
     private static IEnumerable<AdminSection> AllSections => SettingsSections.Concat(SystemSections);
@@ -1152,6 +1199,7 @@
     protected override void OnParametersSet()
     {
         var id = string.IsNullOrWhiteSpace(Section) ? "identity" : Section.Trim().ToLowerInvariant();
+        if (MovedSections.TryGetValue(id, out var moved)) id = moved;
         _activeId = AllSections.Any(s => s.Id == id) ? id : "identity";
     }
 
@@ -1159,16 +1207,7 @@
     private string ActiveTitle => ActiveSection.Title;
     private string[]? ActiveGroups => ActiveSection.Groups;
 
-    // A one-line orientation on the two read-only System views; the Configuration sections are self-describing.
-    private string? ActiveSubtitle => _activeId switch
-    {
-        "server" => "Managed in server-side configuration and shown read-only; change these on the host.",
-        "source" => "Where each setting's effective value resolves from right now.",
-        "regulatory-deadlines" => "The regulatory notification-deadline clock and its per-jurisdiction rules.",
-        "reporting" => "Report defaults, the section layout, and reusable report profiles.",
-        "updates" => "Newer CaseBook releases, what's in them, and how to upgrade.",
-        _ => null,
-    };
+    private string ActiveSubtitle => ActiveSection.Subtitle;
 
     private const string EmptyDash = "—";
 

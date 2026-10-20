@@ -21,7 +21,7 @@
     Edit the <strong>subject</strong> and <strong>body</strong> of each notification email. Every message is
     wrapped in the same <strong>branded shell</strong> with your logo, brand colors and footer. Tokens insert live
     values, and case text is escaped so it can't break the layout. Changes are audited and apply without a restart.
-    Set a <a href="admin/settings/notifications">Public base URL</a> so links and the logo appear.
+    Set <a href="admin/settings/notifications#App:BaseUrl">this server's address</a> so links and the logo appear.
 </p>
 
 @if (_views is null)
@@ -78,7 +78,7 @@ else
                             @if (sel.CtaLabel is not null)
                             {
                                 <div class="small text-muted mt-1">
-                                    <span class="bi bi-cursor me-1"></span>A “@sel.CtaLabel” button is added automatically when a Public base URL is set.
+                                    <span class="bi bi-cursor me-1"></span>A “@sel.CtaLabel” button is added automatically when this server's address is set (Notifications, Email delivery).
                                 </div>
                             }
                         </div>

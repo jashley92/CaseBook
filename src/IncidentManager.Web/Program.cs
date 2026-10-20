@@ -344,7 +344,7 @@ builder.Services.Configure<DevAuthOptions>(builder.Configuration.GetSection("Dev
 builder.Services.Configure<IncidentManager.Web.Security.IdleTimeoutOptions>(
     builder.Configuration.GetSection("Security"));
 // F-12: optional two-person control for releasing a legal hold (admin setting, live).
-// PROD-55: the evidence store's limits (Administration › Governance & security › Evidence storage).
+// PROD-55: the evidence store's limits (Administration › Records & evidence › Evidence storage).
 builder.Services.Configure<IncidentManager.Application.Evidence.EvidenceStorageOptions>(builder.Configuration.GetSection("Evidence"));
 builder.Services.Configure<IncidentManager.Application.Cases.LegalHoldOptions>(builder.Configuration.GetSection("Governance:LegalHoldRelease"));
 builder.Services.Configure<IncidentManager.Application.Reporting.ReportingOptions>(
