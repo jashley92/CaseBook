@@ -208,6 +208,46 @@ public sealed class LessonsService
     }
 
     /// <summary>
+    /// Moves an open case task into lessons learned: an improvement action with the task's title, description (as its
+    /// details), owner and due date (as its target), and the task cancelled with a reason saying where it went, in one
+    /// audited save. For work that turned out to be a program change rather than this case's follow-up.
+    /// </summary>
+    public async Task<Guid> MoveTaskToActionAsync(Guid caseId, Guid taskId, CancellationToken ct = default)
+    {
+        Require(Permission.EditCases);
+        using var db = _factory.CreateDbContext();
+        await LoadCaseTrackedAsync(db, caseId, ct);
+        var task = await db.ActionItems.FirstOrDefaultAsync(a => a.Id == taskId && a.CaseId == caseId, ct)
+                   ?? throw new InvalidOperationException("Task not found.");
+        if (task.Status is ActionItemStatus.Done or ActionItemStatus.Cancelled)
+            throw new InvalidOperationException($"\"{task.Title}\" is {(task.Status == ActionItemStatus.Done ? "done" : "cancelled")} already; only an open task can be moved.");
+        var v = Validate(new ImprovementActionInput(task.Title, null, task.Description, task.Owner, task.DueAtUtc));
+        var now = _clock.UtcNow;
+        var action = new ImprovementAction
+        {
+            CaseId = caseId, Title = v.Title, Details = v.Details, Owner = v.Owner, TargetDateUtc = task.DueAtUtc,
+            Status = ImprovementActionStatus.Open, CreatedBy = _user.UserId, CreatedAtUtc = now
+        };
+        db.ImprovementActions.Add(action);
+        task.Status = ActionItemStatus.Cancelled;
+        task.ModifiedBy = _user.UserId;
+        task.ModifiedAtUtc = now;
+        db.ActionItemComments.Add(new ActionItemComment
+        {
+            ActionItemId = task.Id, CaseId = caseId, CreatedBy = _user.UserId, CreatedAtUtc = now,
+            Body = Cases.CaseService.CancelledPrefix + "moved to lessons learned as an improvement action."
+        });
+        if (await db.PostIncidentReviews.FirstOrDefaultAsync(r => r.CaseId == caseId, ct) is { NoActionsIdentified: true } review)
+        {
+            review.NoActionsIdentified = false;
+            review.ModifiedBy = _user.UserId;
+            review.ModifiedAtUtc = now;
+        }
+        await db.SaveChangesAsync(ct);
+        return action.Id;
+    }
+
+    /// <summary>
     /// Edits an action in one audited change. Moving to a closed status stamps <see cref="ImprovementAction.ClosedAtUtc"/>
     /// (kept if it was already closed); reopening clears it so the action re-enters the open register.
     /// </summary>

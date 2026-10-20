@@ -13,6 +13,7 @@
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject ToastService Toasts
 @inject UnsavedEdits Edits
+@inject IncidentManager.Application.Lessons.LessonsService Lessons
 
 <AuthorizeView Policy="@Policies.EditCases">
     @if (_applyTemplates is { Count: > 0 })
@@ -356,16 +357,19 @@ else
                                 </div>
                                 <div class="col-md-3">
                                     <div class="form-check mt-3">
-                                        <input class="form-check-input" type="checkbox" id="task-done-log" @bind="_doneLog" disabled="@string.IsNullOrWhiteSpace(_doneResult)" />
+                                        <input class="form-check-input" type="checkbox" id="task-done-log" @bind="_doneLog" />
                                         <label class="form-check-label small" for="task-done-log">Add the result to the timeline as</label>
                                     </div>
-                                    <select class="form-select form-select-sm mt-1" aria-label="Timeline entry type" @bind="_doneType"
-                                            disabled="@(!_doneLog || string.IsNullOrWhiteSpace(_doneResult))">
+                                    <select class="form-select form-select-sm mt-1" aria-label="Timeline entry type" @bind="_doneType" disabled="@(!_doneLog)">
                                         @foreach (var type in LoggableTypes)
                                         {
                                             <option value="@type">@Ui.Label(type)</option>
                                         }
                                     </select>
+                                    @if (_doneLog && string.IsNullOrWhiteSpace(_doneResult))
+                                    {
+                                        <div class="form-text mt-0">Only a result goes on the timeline: write one, or nothing is added.</div>
+                                    }
                                 </div>
                                 @* RD-10: what the work established can go straight into the brief's Known. *@
                                 <div class="col-12">
@@ -458,6 +462,14 @@ else
                                     <button class="btn btn-sm btn-primary" @onclick="SaveEdit"
                                             disabled="@string.IsNullOrWhiteSpace(_editTitle)">Save changes</button>
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Cancel</button>
+                                    @if (t.Status is not (ActionItemStatus.Done or ActionItemStatus.Cancelled))
+                                    {
+                                        @* Work that turned out to be a program change, not this case's follow-up. *@
+                                        <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => MoveToLessons(t)" disabled="@_moving"
+                                                title="Make it an improvement action in this case's lessons learned (title, description, owner and due date go with it), and cancel the task with a note saying so">
+                                            <span class="bi bi-lightbulb" aria-hidden="true"></span> Move to lessons learned
+                                        </button>
+                                    }
                                 </div>
                             </div>
                         </td>
@@ -1035,6 +1047,23 @@ else
     }
 
     private void CancelComplete() => _done.Close();
+
+    private bool _moving;
+
+    private async Task MoveToLessons(ActionItem t)
+    {
+        if (_moving) return;
+        _moving = true;
+        try
+        {
+            await Lessons.MoveTaskToActionAsync(CaseId, t.Id);
+            _edit.Close();
+            Toasts.Success($"\"{t.Title}\" is an improvement action in lessons learned now; the task is cancelled with a note saying so.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+        finally { _moving = false; }
+    }
 
     private async Task CompleteTask(Guid id)
     {

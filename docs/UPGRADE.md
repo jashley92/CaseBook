@@ -233,6 +233,13 @@ under Administration › Evidence storage.
   5519, High). Never on a case under a legal hold. `Backup-CaseBook.ps1` removes a purged file from the backup's
   evidence mirror at its next run.
 
+- **A task can move to lessons learned**: Tasks → Edit → *Move to lessons learned* makes an open task an improvement
+  action (its title, description, owner and due date go with it) and cancels the task with a note saying so.
+- **Completing a task: the timeline option works without a result typed first.** "Add the result to the timeline as"
+  and its type were disabled until a result was written, while the box showed ticked, so they read as stuck on. Both
+  can be changed at any time now, and the form says that only a written result goes on the timeline. The same on Now and
+  Next.
+
 The rest of this release:
 
 **The AI prompt generator** on the Import page (*Generate a prompt for your AI*)

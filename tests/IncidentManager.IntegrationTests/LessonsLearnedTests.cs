@@ -83,6 +83,43 @@ public sealed class LessonsLearnedTests : IDisposable
         new(title, "Remote access", null, "analyst1", target);
 
     [Fact]
+    public async Task An_open_task_moves_into_lessons_learned_as_an_improvement_action_and_is_cancelled_saying_so()
+    {
+        var caseId = await NewCaseAsync("Move a task");
+        var due = _clock.UtcNow.AddDays(14);
+        await using (var db = NewContext())
+            await Cases(db).AddActionItemAsync(caseId, "Extend MFA to the vendor VPN portal", "owner1", due);
+        Guid taskId;
+        await using (var db = NewContext())
+        {
+            var t = await db.ActionItems.SingleAsync(a => a.CaseId == caseId);
+            t.Description = "Found during containment";
+            await db.SaveChangesAsync();
+            taskId = t.Id;
+        }
+
+        var actionId = await Lessons().MoveTaskToActionAsync(caseId, taskId);
+
+        var lessons = await Lessons().GetForCaseAsync(caseId);
+        var action = lessons.Actions.Should().ContainSingle().Which;
+        action.Id.Should().Be(actionId);
+        action.Title.Should().Be("Extend MFA to the vendor VPN portal");
+        action.Details.Should().Be("Found during containment");
+        action.OwnerId.Should().Be("owner1");
+        action.TargetDateUtc.Should().Be(due);
+        await using (var db = NewContext())
+        {
+            (await db.ActionItems.SingleAsync(a => a.Id == taskId)).Status.Should().Be(ActionItemStatus.Cancelled);
+            (await db.ActionItemComments.SingleAsync(c => c.ActionItemId == taskId)).Body
+                .Should().StartWith(CaseService.CancelledPrefix).And.Contain("lessons learned");
+            _hasher.VerifyChain(await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync()).IsValid.Should().BeTrue();
+        }
+
+        var again = () => Lessons().MoveTaskToActionAsync(caseId, taskId);
+        await again.Should().ThrowAsync<InvalidOperationException>().WithMessage("*only an open task*");
+    }
+
+    [Fact]
     public async Task A_review_saves_and_a_stale_save_is_refused_rather_than_overwriting()
     {
         var id = await NewCaseAsync("Review Case");
