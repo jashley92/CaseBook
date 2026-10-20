@@ -248,6 +248,9 @@ public static class SettingsCatalog
         new SettingDefinition("Integrity:AutoSeal:IntervalHours", "Auto-seal interval (hours)", "Integrity", SettingKind.Int,
             "Hours between signed seals. Tamper checks still run about every 10 minutes (the whole audit chain re-hashed every 6 hours). This only limits " +
             "how much recent history waits for a seal. Default 6 (0 also means 6). Applies within a few minutes.", "6", Max: MaxIntervalHours),
+        new SettingDefinition(Integrity.SigningKeyRotation.SettingKey, "Signing key rotation reminder (days)", "Integrity", SettingKind.Int,
+            "Diagnostics reminds you to rotate the seal-signing key once it has signed seals for this many days. Rotating is done " +
+            "on the server (OPERATIONS.md section 2). 0 turns the reminder off. Default 365.", "365", Max: Integrity.SigningKeyRotation.MaxDays),
         // PROD-55: how large a file, and how much evidence in all, the store takes (EvidenceRoom).
         new SettingDefinition("Evidence:MaxUploadMB", "Largest evidence file (MB)", "Evidence storage", SettingKind.Int,
             "The largest single file that can be uploaded as evidence, in MB. Files over 100 MB upload in parts with a progress " +

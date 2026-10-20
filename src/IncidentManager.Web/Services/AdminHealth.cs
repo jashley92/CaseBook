@@ -83,6 +83,7 @@ public sealed class AdminHealth(
 
         bool dbOk;
         IReadOnlyList<string> pending = [];
+        DateTimeOffset? keyFirstSealed = null;
         await using (var db = await dbFactory.CreateDbContextAsync(ct))
         {
             try { dbOk = await db.Database.CanConnectAsync(ct); } catch (Exception ex) when (ex is not OperationCanceledException) { dbOk = false; }
@@ -91,6 +92,13 @@ public sealed class AdminHealth(
             {
                 try { pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList(); }
                 catch (Exception ex) when (ex is not OperationCanceledException) { pending = []; }
+                // The signing key's age: its first seal (by sequence; SQLite can't order by a DateTimeOffset).
+                try
+                {
+                    keyFirstSealed = await db.IntegritySeals.AsNoTracking().Where(s => s.KeyId == signer.KeyId)
+                        .OrderBy(s => s.UpToSequence).Select(s => (DateTimeOffset?)s.SealedAtUtc).FirstOrDefaultAsync(ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { keyFirstSealed = null; }
             }
         }
 
@@ -102,6 +110,7 @@ public sealed class AdminHealth(
         // The app doesn't start without its signing key, so one is always loaded; say which (a file, a certificate or
         // CyberArk). This checked for the PEM file, so a key in the certificate store read as missing.
         checks.Add(new HealthCheck("Seal signing key", true, $"{signer.KeyId} · {signer.KeySource}"));
+        checks.Add(RotationCheck(keyFirstSealed, SigningKeyRotation.Clamp(config.GetValue(SigningKeyRotation.SettingKey, SigningKeyRotation.DefaultDays)), clock.UtcNow));
 
         // A value saved before today's limits (or set in appsettings) blocks saving its section until corrected.
         var invalid = SettingsCatalog.FindInvalid(key => AdminSettingsDisplay.ConfiguredValue(config, key));
@@ -288,6 +297,22 @@ public sealed class AdminHealth(
     };
 
     // BUG-531: a date in Diagnostics is Gregorian whatever the server culture.
+    // A reminder to rotate the seal-signing key, from its first seal; a key that has signed nothing yet is new.
+    private static HealthCheck RotationCheck(DateTimeOffset? firstSealed, int days, DateTimeOffset now)
+    {
+        var due = SigningKeyRotation.DueAt(firstSealed, days);
+        var detail = (firstSealed, due) switch
+        {
+            (_, _) when days == 0 => "reminder off" + (firstSealed is { } f0 ? $" · signing seals since {Day(f0)}" : ""),
+            (null, _) => "no seal signed with this key yet",
+            ({ } f, { } d) when d <= now => $"signing seals since {Day(f)}, more than {Plural.Of(days, "day")}: rotate it (OPERATIONS.md section 2, Rotating the signing key)",
+            ({ } f, { } d) => $"signing seals since {Day(f)} · rotate by {Day(d)}",
+            _ => "",
+        };
+        return new HealthCheck("Signing key rotation", due is not { } at || at > now, detail,
+            SettingHref(SigningKeyRotation.SettingKey), AttentionLevel.Warning);
+    }
+
     private static string Day(DateTimeOffset? at) =>
         at?.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "";
 

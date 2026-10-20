@@ -462,7 +462,7 @@ jobs**.
 | Evidence key drill (§2, Step 5) | Yearly | By hand: `casebook-keytool verify` | Diagnostics, after 12 months |
 | Access review (§8) | Every 90 days | By hand, in Administration | Diagnostics, after `Governance:AccessReview:ReminderDays` |
 | Retention review (§8) | When cases come due | By hand, in Administration | Diagnostics, and a monthly email to Legal / Privacy if on |
-| Signing key rotation (§2) | Your policy | By hand | Nothing reminds you |
+| Signing key rotation (§2) | Yearly, or your policy | By hand | Diagnostics, after `Integrity:RotationReminderDays` (365) |
 | Certificate renewals | Before each expires | By hand | Recovery certificates: Diagnostics, 60 days ahead. The others (signing, chain key, evidence lock, `@protected:`, TLS): nothing, so diary them |
 | Upgrades (UPGRADE.md) | Each release | By hand: `Upgrade-CaseBook.ps1` | Administration › Updates |
 
@@ -750,7 +750,9 @@ A failed copy never undoes the seal: it's logged, sent as SIEM event 5005 naming
 
 ### Rotating the signing key
 
-Rotate on a set schedule, and at once if the key may have been exposed. Old seals stay valid: each records the key id
+Rotate on a set schedule, and at once if the key may have been exposed. Diagnostics reminds you (*Signing key
+rotation*, also under *Needs attention*) once the key has signed seals for `Integrity:RotationReminderDays` (default 365;
+0 turns it off), counted from its first seal. Old seals stay valid: each records the key id
 and algorithm that signed it, and is checked with that key.
 
 1. **Save the current key's public half into the retired keys folder.** That's `Integrity:RetiredPublicKeysPath`, or a
