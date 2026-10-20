@@ -39,6 +39,21 @@ public partial class DeployScriptTests
     }
 
     [Fact]
+    public void No_deploy_script_holds_a_stray_control_character()
+    {
+        // A script generator that wrote "files\retired" turned "\r" into a carriage return mid-line, so the path read
+        // "files" and "etired-seal-keys". Tabs and line endings only.
+        var deploy = Path.Combine(RepoRoot(), "deploy");
+        Directory.EnumerateFiles(deploy, "*.ps*1", SearchOption.AllDirectories)
+            // Split on \n only: ReadAllLines would take a lone \r as a line break and hide it.
+            .SelectMany(f => File.ReadAllText(f).Split('\n').Select(l => l.TrimEnd('\r'))
+                .Select((line, i) => (File: Path.GetRelativePath(deploy, f), Line: i + 1, Text: line)))
+            .Where(x => x.Text.Any(c => c < ' ' && c != '\t'))
+            .Select(x => $"{x.File}:{x.Line}")
+            .Should().BeEmpty("a control character in a script is almost always a lost backslash escape");
+    }
+
+    [Fact]
     public void The_shipped_web_config_lets_api_reach_the_app(/* BUG-261 */)
     {
         // The SDK's default web.config wraps the aspNetCore handler in <location inheritInChildApplications="false">, and

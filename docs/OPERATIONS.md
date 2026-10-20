@@ -34,15 +34,84 @@ as JSON for a backup job to read its folder list from, or a restore drill to com
 never a key or the connection string. Pull it with the job's Windows account, for example
 `Invoke-WebRequest https://casebook.contoso.com/export/backup-manifest.json -UseDefaultCredentials -OutFile manifest.json`.
 
-### 1.1 SQL Server backup schedule (recommended baseline)
+### 1.1 Taking backups
 
-- **Full** backup nightly.
-- **Differential** backup every 4–6 hours.
-- **Transaction-log** backup every 15 minutes (DB must be in FULL recovery model).
-- Write to a **secured, encrypted** share; keep an **immutable/offsite** copy (WORM or object-lock).
-- Enable **backup checksums** and **TDE** (transparent data encryption) at rest.
+A backup of CaseBook is the database **and** the folders in the table above, from the same point. There are two ways
+to take one; which depends on whether your organization's backup product already backs up this server.
 
-Example (adjust paths/retention to policy):
+```mermaid
+flowchart TD
+    q{"Does a backup product already back up<br/>this server's SQL Server and files?"}
+    q -->|No| own["Use Backup-CaseBook.ps1<br/>(nightly scheduled task)"]
+    q -->|Yes| product["Keep using the product.<br/>Add the CaseBook folders to its file backups,<br/>and run Update-CaseBookBackupStatus.ps1"]
+    own --> drill["Monthly: Test-CaseBookRestore.ps1<br/>restores a backup and proves it whole"]
+    product --> drill
+    drill --> diag["Administration › Diagnostics › Backup & restore health<br/>shows both, and Needs attention flags a failure"]
+```
+
+Both write the **status file** CaseBook reads (§1.3.1): set `BackupStatus:FilePath` in `appsettings.Production.json`
+first, to a file the scripts' account can write and the app-pool account can read (for example
+`E:\CaseBookData\ops\casebook-backup-status.json`).
+
+**What counts as a successful backup:** the database was backed up with checksums and the backup read back
+(`RESTORE VERIFYONLY`), and every folder was copied without an error. Only then is `lastBackupUtc` written. A failure
+writes its reason instead, and Diagnostics shows **Failed** until a later backup succeeds.
+
+#### Without a backup product: Backup-CaseBook.ps1
+
+In an elevated PowerShell on the CaseBook server, from the `deploy` folder of the release:
+
+```powershell
+.\Backup-CaseBook.ps1 -Destination \\backup01\casebook                       # one backup now, to check it works
+.\Backup-CaseBook.ps1 -Destination \\backup01\casebook -Register -TaskAccount 'CONTOSO\svc-casebook-bk$' -At 01:30
+```
+
+The second line creates the nightly scheduled task **CaseBook nightly backup**. Each run makes
+`<Destination>\CaseBook-<yyyyMMdd-HHmm>` holding the database backup (`db\`), a copy of each folder (`files\keys`,
+`files\dp-keys`, `files\seals`, `files\report-output`, `files\branding`, `files\report-templates`) and `backup-set.json`
+(what's in it). Evidence only ever grows, so it's copied into one mirror, `<Destination>\evidence`, that every set
+shares. The newest 14 sets are kept (`-Keep`).
+
+The account it runs as needs:
+
+- **SQL Server:** `db_backupoperator` on the CaseBook database (or sysadmin). SQL Server writes the `.bak` itself, as
+  its service account, so that account needs write to the destination too.
+- **Files:** read on the data folders, and write on `-Destination`. The backup holds the keys folder: lock the
+  destination down as tightly as the data root.
+
+A group managed service account (`DOMAIN\name$`) needs no password; any other account is asked for one when the task
+is registered. Without `-TaskAccount` the task runs as SYSTEM, which works only if SYSTEM has those rights.
+
+#### With a backup product: Update-CaseBookBackupStatus.ps1
+
+Don't run `Backup-CaseBook.ps1` beside a backup product without `-CopyOnly`: an ordinary full backup resets the
+product's differential base, and a log backup takes records out of its log chain. Instead:
+
+1. **The database:** the product backs it up as it does any database. SQL Server records each of those backups in its
+   own history (`msdb`), whatever takes them.
+2. **The folders:** add every folder in the table above to the product's file backups, on the same schedule as the
+   database. **Administration › Diagnostics › Backup set** lists them as this server resolves them, and
+   `/export/backup-manifest.json` gives the same list to a job.
+3. **The status:** run `Update-CaseBookBackupStatus.ps1` after each backup (as the product's post-backup step), or
+   every hour:
+
+   ```powershell
+   .\Update-CaseBookBackupStatus.ps1 -Register -TaskAccount 'CONTOSO\svc-casebook-bk$'
+   ```
+
+   It reads the newest full or differential backup of the CaseBook database from SQL Server's history and records when
+   it finished, its size, its kind and what took it (a backup product shows as *a backup product*). It takes no backup
+   itself. Its account needs read on `msdb` and write on the status file.
+
+It sees the database only, so the monthly restore drill (§1.3) is what proves the product's folder backups restore with
+it.
+
+#### Doing it by hand
+
+If you'd rather write your own SQL Agent jobs, this is the baseline the scripts follow: a nightly full backup, a
+differential every 4 to 6 hours and a log backup every 15 minutes (the database in the FULL recovery model), each
+`WITH CHECKSUM`, written to a secured, encrypted share with an immutable or offsite copy. Then stamp the status file
+yourself (§1.3.1), or run `Update-CaseBookBackupStatus.ps1` after the job.
 
 ```sql
 -- Nightly full
@@ -168,64 +237,91 @@ evidence or reports, but the database and the logs are still on those volumes.
 
 ### 1.3 Restore verification (do not skip)
 
-A backup that has never been restored is a hypothesis, not a control.
+A backup that has never been restored is a hypothesis, not a control. `Test-CaseBookRestore.ps1` is the drill: it
+restores a backup into a scratch copy, proves the copy whole, and records the result. Run it monthly.
 
-- **Monthly**: restore the latest full + logs to an isolated recovery instance.
-- **Restore as a set.** The database, the evidence store and the data root's `keys` folder must come from the same
-  point. With evidence encryption on, run `casebook-keytool verify --site <site folder> --cert <thumbprint>` (or a
-  recovery certificate, or `--shares`) on the restored server before it serves anyone: it proves the key the files
-  need opens there. A database restored from before encryption still finds the key id in the envelope kept beside
-  the evidence (`<store>\.key\evidence-key.json`).
-- After restore, run the app's **chain verification** (Integrity page → *Verify now*, or the
-  hosted auto-verify job) and confirm the chain is intact end-to-end.
-- **Verify a prior seal** against the restored DB: pick a seal whose `UpToSequence` predates the
-  restore point and confirm it still reports VALID. This proves both the backup fidelity and that
-  history was not altered.
-- Record **last successful backup** and **last verified restore** timestamps where Admin can see them
-  — the app surfaces them (below).
+```mermaid
+flowchart LR
+    pick["A backup<br/>(the newest set, or a copy<br/>your product restored)"] --> restore["Restore it as a scratch copy<br/>and run DBCC CHECKDB"]
+    restore --> check["casebook-keytool verify-restore:<br/>chain, seals, evidence, key"]
+    check -->|all pass| ok["lastVerifiedRestoreUtc written:<br/>Diagnostics shows Fresh"]
+    check -->|any fails| bad["lastRestoreError written:<br/>Diagnostics shows Failed"]
+    ok --> clean["Scratch copy removed"]
+    bad --> clean
+```
+
+**What "verified" means.** Every one of these passes on the restored copy, read as the app would read it:
+
+| Check | Proves |
+|---|---|
+| DBCC CHECKDB | The database's pages and structures are sound |
+| Database | It opens, with its cases, audit entries, evidence and seals |
+| Audit chain | Every audit entry's hash follows from the one before, first to last: the history wasn't altered |
+| Seals | Every seal's signature is authentic and the chain head it sealed is unchanged |
+| Evidence files | Every file the database lists is in the store at its recorded size |
+| Evidence hashes | 200 random files (or every one, `-HashAll`) hash to their recorded SHA-256 |
+| Evidence key | With encryption on, the key opens, so the files can be read |
+
+The findings are kept as `restore-check-<time>.json` in the backup set (or beside the status file), and the summary
+shows on Diagnostics.
+
+**With Backup-CaseBook.ps1's sets**, on the CaseBook server:
+
+```powershell
+.\Test-CaseBookRestore.ps1 -Destination \\backup01\casebook                    # the newest set, now
+.\Test-CaseBookRestore.ps1 -Destination \\backup01\casebook -Register -At 03:00 # every fourth Sunday
+```
+
+It restores the database as `CaseBook_RestoreDrill` on the same SQL Server (or `-SqlInstance` a recovery server's),
+uses the set's folders and the evidence mirror where they are, and removes the scratch database afterwards
+(`-KeepRestored` keeps it to look at). It needs disk space for one copy of the database while it runs, and an account
+that can restore databases (`dbcreator`).
+
+**With your backup product**, restore (or mount) the database and the folders from the same point with the product,
+then point the drill at them; it checks them and leaves them as they are:
+
+```powershell
+.\Test-CaseBookRestore.ps1 -RestoredDatabase CaseBook_Restored -SqlInstance SQLREC01 -EvidencePath R:\evidence-store -KeysPath R:\keys
+```
+
+**On a recovery server** without the signing certificate, give `-PublicKeys`, a folder of the signing keys' public
+halves (`casebook-keytool signing-public-key`). With evidence encryption on and the server certificate not there, give a
+recovery certificate (`-PfxPath`, or `-CertThumbprint` for one in the store); the drill then also proves that backup of
+the key works.
+
+**When it fails**, the reason says which check and what it found, for example *Evidence hashes: signin-export.csv:
+SHA-256 differs*. Restore that file from an older backup (the recorded hash says what its bytes must hash to), or find
+out why the backup didn't capture it, and run the drill again. A failed drill doesn't replace the last good one: both
+show until a drill passes.
+
+A **full disaster recovery** still restores everything as a set: the database, the evidence store and the data root's
+`keys` folder from the same point. On the restored server, before it serves anyone, run the drill against it (or, with
+encryption on, at least `casebook-keytool verify --site <site folder>`).
 
 ### 1.3.1 Backup-health status file (H-04)
 
-The app surfaces backup/restore freshness on **Administration → Diagnostics → Backup & restore health**,
-warning when either signal is older than its cadence threshold. It reads this from a small **JSON status
-file that the backup and restore-verification jobs write** — the app only ever *reads* it (never writes),
-so the signal is available even while the database itself is being restored, and it stays out of the
-tamper-evident audit chain (it is ops telemetry, not a case mutation).
-
-Point the app at the file and set thresholds in server-side config:
+CaseBook shows backup and restore health on **Administration › Diagnostics › Backup & restore health** (and in *Needs
+attention* when something's wrong), from a small JSON file the scripts write. The app only ever reads it, so it works
+while the database itself is being restored, and it stays out of the audit chain (it's operations telemetry).
 
 ```jsonc
 "BackupStatus": {
-  "FilePath": "D:\\ops\\casebook-backup-status.json", // absolute path; app-pool identity needs read
-  "BackupMaxAgeHours": 24,   // nightly full → warn if the last backup is older than this
-  "RestoreMaxAgeDays": 35    // monthly restore verification → warn if older than this
+  "FilePath": "E:\\CaseBookData\\ops\\casebook-backup-status.json", // the scripts write it; the app-pool account reads it
+  "BackupMaxAgeHours": 24,   // warn when the last backup is older than this
+  "RestoreMaxAgeDays": 35    // warn when the last verified restore is older than this
 }
 ```
 
-The jobs write this shape (UTC, ISO-8601; extra fields ignored):
+| Field | Written by | Shown as |
+|---|---|---|
+| `lastBackupUtc`, `lastBackupSizeBytes`, `lastBackupSet`, `lastBackupBy` | `Backup-CaseBook.ps1` or `Update-CaseBookBackupStatus.ps1`, after a successful backup | *Last successful backup*: Fresh, or Stale past `BackupMaxAgeHours`, or Missing |
+| `lastBackupError`, `lastBackupFailedUtc` | `Backup-CaseBook.ps1`, when a run fails | *Latest backup attempt*: **Failed**, while it's newer than the last success |
+| `lastVerifiedRestoreUtc`, `lastVerifiedRestoreSet`, `lastRestoreSummary` | `Test-CaseBookRestore.ps1`, when every check passes | *Last verified restore*: Fresh, or Stale past `RestoreMaxAgeDays`, or Missing |
+| `lastRestoreError`, `lastRestoreFailedUtc` | `Test-CaseBookRestore.ps1`, when a check fails | *Latest restore drill*: **Failed**, while it's newer than the last pass |
+| `note` | you, if you like | shown under the table |
 
-```json
-{
-  "lastBackupUtc": "2026-08-14T02:00:00Z",
-  "lastVerifiedRestoreUtc": "2026-07-20T03:00:00Z",
-  "lastBackupSizeBytes": 524288000,
-  "note": "Nightly full + 15-min logs; monthly restore verified on the recovery instance."
-}
-```
-
-- **`lastBackupUtc`** — stamp on each successful SQL full/diff backup (e.g. from the SQL Agent job's
-  final step). **`lastVerifiedRestoreUtc`** — stamp only after the monthly restore **and** its chain +
-  prior-seal verification pass (§1.3). A missing value reads as **Missing** (more serious than stale);
-  an age past the threshold reads as **Stale**; a future timestamp is treated as stale (clock skew).
-
-Example final step for the backup job (PowerShell) — merge, don't clobber the restore timestamp:
-
-```powershell
-$path = 'D:\ops\casebook-backup-status.json'
-$s = if (Test-Path $path) { Get-Content $path -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
-$s | Add-Member -NotePropertyName lastBackupUtc -NotePropertyValue (Get-Date).ToUniversalTime().ToString('o') -Force
-$s | ConvertTo-Json | Set-Content $path -Encoding utf8
-```
+Times are UTC, ISO 8601. A future time reads as Stale (clock skew). Your own jobs can write the same fields: merge
+them into the file rather than replacing it, so one job doesn't erase another's.
 
 ### 1.3.2 Evidence-at-rest re-verification (F-17)
 

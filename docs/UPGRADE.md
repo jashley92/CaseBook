@@ -212,6 +212,26 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.12.0
+
+No migration and no setting changes. **Backups you can take, and prove, with the release's own scripts** (in `deploy\`;
+OPERATIONS.md §1 has the procedures and a flow chart):
+
+- **`Backup-CaseBook.ps1`** backs up the database (with checksums, then read back) and the folders that go with it as one
+  set, with evidence in a mirror the sets share, and records it for Diagnostics. `-Register` makes it a nightly task.
+  For a server without a backup product.
+- **`Update-CaseBookBackupStatus.ps1`**, for a server a backup product backs up: records the product's latest backup
+  from SQL Server's own backup history. It takes no backup, so the product's chain is untouched.
+- **`Test-CaseBookRestore.ps1`**, the monthly restore drill: restores a backup set (or checks a copy your product
+  restored) into a scratch copy, runs DBCC CHECKDB and the new **`casebook-keytool verify-restore`** (the audit chain, every
+  seal, every evidence file present and a sample re-hashed, the evidence key), and records the restore as verified only
+  when everything passes.
+- **Diagnostics** shows which backup set, its size and what recorded it, the drill's findings, and **Failed** with the
+  reason when a backup or drill fails after the last success; *Needs attention* lists it.
+
+To use them, set `BackupStatus:FilePath` (the installer sets it to `<DataRoot>\ops\casebook-backup-status.json`), then
+follow OPERATIONS.md §1.1 and §1.3. Nothing runs until you schedule it.
+
 ### v1.11.1
 
 A fix to v1.11.0, with no migration and no setting changes.

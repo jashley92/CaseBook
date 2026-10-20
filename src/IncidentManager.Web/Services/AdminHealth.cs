@@ -271,7 +271,8 @@ public sealed class AdminHealth(
             new("Set this server's address", !string.IsNullOrWhiteSpace(config["App:BaseUrl"]),
                 "So emails and chat posts link back to CaseBook.", SettingHref("App:BaseUrl")),
             new("Report backup status", backup.Read().Overall != BackupHealthState.NotConfigured,
-                "Point CaseBook at the status file your backup jobs write, so Diagnostics can warn when they stop.", BackupAnchor),
+                "Set BackupStatus:FilePath, then schedule deploy\\Backup-CaseBook.ps1 (or, with a backup product, Update-CaseBookBackupStatus.ps1) " +
+                "and the monthly Test-CaseBookRestore.ps1 drill (OPERATIONS.md section 1).", BackupAnchor),
             new("Record an access review", lastReview is not null,
                 "Review who holds each role, and record it.", "admin/roles#ar-record-title"),
         ];

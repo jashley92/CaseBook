@@ -234,7 +234,7 @@ internal static class RestoreCheck
             if (plain != r.SizeBytes) problems.Add($"{r.OriginalFileName}: {plain:N0} bytes, recorded {r.SizeBytes:N0}");
         }
         add("Evidence files", problems.Count == 0, problems.Count == 0
-            ? $"all {rows.Count:N0} present at their recorded size"
+            ? rows.Count == 1 ? "the one file present at its recorded size" : $"all {rows.Count:N0} present at their recorded size"
             : $"{problems.Count} of {rows.Count}: {string.Join("; ", problems.Take(5))}{(problems.Count > 5 ? "; …" : "")}");
 
         var picked = hashAll ? rows : rows.OrderBy(_ => RandomNumberGenerator.GetInt32(int.MaxValue)).Take(Math.Max(0, sample)).ToList();
