@@ -422,6 +422,16 @@ flowchart TD
 
 **The same key, from a file (or CyberArk) into the certificate store:**
 
+Run these in PowerShell opened with **Run as administrator**: the key file on the server is readable only by SYSTEM,
+Administrators and the app-pool account, and an administrator's ordinary window doesn't count as Administrators. If
+it still can't be read, the file names one account only (`icacls <file>` shows who); take it over and let
+administrators read it, which leaves the app's access as it is:
+
+```powershell
+takeown /f E:\CaseBookData\keys\seal-signing.pem /a
+icacls E:\CaseBookData\keys\seal-signing.pem /grant "BUILTIN\Administrators:R"
+```
+
 1. On an admin workstation, or the server: `casebook-keytool signing-key-pfx --pem .\seal-signing.pem --out .\seal.pfx`
    (it asks for a password). With OpenSSL:
 
