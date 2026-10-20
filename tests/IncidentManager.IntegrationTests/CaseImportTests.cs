@@ -228,8 +228,41 @@ public sealed class CaseImportTests : IDisposable
     {
         var prompt = CaseImportPrompt.Build(new CaseImportPromptOptions(TargetIsExisting: true));
 
-        prompt.Should().NotContain("newCase");
+        prompt.Should().NotContain("\"newCase\": {").And.NotContain("- target.");
         prompt.Should().Contain("Do NOT include a \"target\"");
+    }
+
+    [Fact]
+    public void The_prompt_describes_every_field_the_schema_has_so_a_new_one_reaches_the_AI()
+    {
+        // The prompt's FIELDS are generated from CaseImportSchema; this walks the schema on its own and checks each
+        // field the importer reads (deprecated names aside) is there with its allowed values.
+        var schema = JsonNode.Parse(CaseImportSchema.Build())!.AsObject();
+        var defs = schema["$defs"]!.AsObject();
+        var expected = new List<(string Path, JsonArray? Values)>();
+        void Walk(string path, JsonObject obj)
+        {
+            foreach (var (name, node) in (obj["properties"] as JsonObject) ?? [])
+            {
+                var p = node!.AsObject();
+                if (p["deprecated"]?.GetValue<bool>() == true) continue;
+                var array = p["type"]?.GetValue<string>() == "array";
+                var shape = (array ? p["items"] : p)!.AsObject();
+                var full = (path.Length == 0 ? name : $"{path}.{name}") + (array ? "[]" : "");
+                if (shape["$ref"]?.GetValue<string>() is { } r) Walk(full, defs[r.Split('/')[^1]]!.AsObject());
+                else expected.Add((full, shape["enum"] as JsonArray));
+            }
+        }
+        Walk("", schema);
+
+        var prompt = CaseImportPrompt.Build();
+        expected.Should().Contain(e => e.Path == "timeline[].tactics[]", "the walk reaches nested arrays");
+        foreach (var (path, values) in expected)
+        {
+            var line = prompt.Split(Environment.NewLine.ToCharArray(), StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(l => l.StartsWith($"- {path}:", StringComparison.Ordinal) || l.StartsWith($"- {path} (required):", StringComparison.Ordinal));
+            line.Should().NotBeNull($"the schema's {path} should be in the prompt");
+            foreach (var v in values ?? []) line.Should().Contain(v!.ToString());
+        }
     }
 
     [Fact]

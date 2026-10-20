@@ -65,8 +65,9 @@ warning. A case that still ends up with the wrong origin is corrected on its Bri
 **Attack steps on a third-party case.** Each event step comes in as an attack step when it carries ATT&CK `tactics`,
 a `techniqueId` or an `environment` (`Vendor`, or `Ours` when the attacker reached our environment), and as a
 disclosure milestone when it carries none. The preview shows each event row's kind on a third-party case (*Disclosure
-milestone*, *Attack step at the vendor*, *Attack step in our environment*) with its ATT&CK detail, and the reviewer
-can change it; choosing *Disclosure milestone* drops the row's ATT&CK detail. On an internal case every step is ours,
+milestone*, *Attack step at the vendor*, *Attack step in our environment*), and the reviewer can change it; choosing
+*Disclosure milestone* drops the row's ATT&CK detail. Every event row's tactics (chips, added from a list) and
+technique can be set in the preview; a technique that isn't T1234 or T1234.001 is flagged and holds Apply. On an internal case every step is ours,
 and `environment` is ignored.
 
 ### Historical and closed cases (schema v2, CAP-35)

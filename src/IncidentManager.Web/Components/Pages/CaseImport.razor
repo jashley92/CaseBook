@@ -503,9 +503,31 @@ else if (_pending.Count > 0)
                                                     <option value="ours">Attack step in our environment</option>
                                                 </select>
                                             }
-                                            @if (t.Tactics.Count > 0 || t.TechniqueId is not null)
+                                            @* The step's ATT&CK detail, editable here: tactics as removable chips, one more from the list, and
+                                               the technique. On a third-party case, giving a milestone a tactic makes it an attack step. *@
+                                            <span class="text-muted">ATT&amp;CK:</span>
+                                            @foreach (var tac in t.Tactics.ToList())
                                             {
-                                                <span class="text-muted">ATT&amp;CK: @string.Join(", ", t.Tactics.Select(Ui.Label))@(t.TechniqueId is { } tid ? (t.Tactics.Count > 0 ? " · " : "") + tid : "")</span>
+                                                <span class="im-badge im-b-neutral d-inline-flex align-items-center gap-1">
+                                                    @Ui.Label(tac)
+                                                    <button type="button" class="btn btn-link btn-sm p-0 lh-1" aria-label="Remove @Ui.Label(tac)"
+                                                            @onclick="() => t.Tactics.Remove(tac)"><span class="bi bi-x" aria-hidden="true"></span></button>
+                                                </span>
+                                            }
+                                            <select class="form-select form-select-sm" style="width:auto" aria-label="Add an ATT&CK tactic" value=""
+                                                    @onchange="e => AddTactic(t, e.Value?.ToString())">
+                                                <option value="">@(t.Tactics.Count == 0 ? "Add a tactic" : "Add another")</option>
+                                                @foreach (var tac in Enum.GetValues<MitreTactic>().Where(x => x != MitreTactic.Unspecified && !t.Tactics.Contains(x)))
+                                                {
+                                                    <option value="@tac">@Ui.Label(tac)</option>
+                                                }
+                                            </select>
+                                            <input class="form-control form-control-sm @(TechniqueInvalid(t) ? "is-invalid" : "")" style="width:8rem"
+                                                   aria-label="ATT&CK technique" placeholder="Technique, e.g. T1566" value="@t.TechniqueId"
+                                                   @onchange="e => t.TechniqueId = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim().ToUpperInvariant()" />
+                                            @if (TechniqueInvalid(t))
+                                            {
+                                                <span class="text-danger">Use the form T1566 or T1566.001.</span>
                                             }
                                         </div>
                                     }
@@ -1197,6 +1219,7 @@ else if (_pending.Count > 0)
         if (p.TargetKind == CaseImportTargetKind.NewCase && p.HistoryProblem is not null) return false;   // CAP-35
         // INV-18: an included decision needs its why.
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale))) return false;
+        if (p.Timeline.Any(t => t.Include && !t.Applied && TechniqueInvalid(t))) return false;
         // BUG-119: and an included entry something to say.
         if (p.Timeline.Any(t => t.Include && !t.Applied && string.IsNullOrWhiteSpace(t.Description))) return false;
         return p.TargetKind == CaseImportTargetKind.NewCase
@@ -1215,6 +1238,14 @@ else if (_pending.Count > 0)
         t.OccurredAtUtc = WallClock.ToUtc(dt, TimeDisp.Zone, Clock.UtcNow);   // BUG-664: typed in the viewer's zone
         t.Warning = null; // a manual correction clears the auto-note (e.g. future/no-timestamp)
     }
+
+    private static void AddTactic(ImportTimelineRow t, string? value)
+    {
+        if (IncidentManager.Domain.Common.EnumNames.OrNull<MitreTactic>(value) is { } tactic && !t.Tactics.Contains(tactic)) t.Tactics.Add(tactic);
+    }
+
+    private static bool TechniqueInvalid(ImportTimelineRow t) =>
+        t.Kind == TimelineKind.Event && t.TechniqueId is { } id && !IncidentManager.Domain.Entities.CaseTechnique.IdPattern().IsMatch(id);
 
     private static string StepKindOf(ImportTimelineRow t) =>
         !t.HasAttackDetail ? "disclosure" : t.Environment == StepEnvironment.Ours ? "ours" : "vendor";

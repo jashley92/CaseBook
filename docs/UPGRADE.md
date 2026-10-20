@@ -219,7 +219,12 @@ now asks for what v1.14.0 added to imports: the case's origin and vendor (with a
 tell, internal detection, or a vendor told us), and, for each event step, its ATT&CK tactics and technique and, on a
 vendor-disclosed incident, whether it happened at the vendor or in our environment, so the vendor's attack steps come
 in as attack steps rather than disclosure milestones. It also says plainly that the document's own `origin` is how it
-was produced, not who found the incident.
+was produced, not who found the incident. Its field reference is now generated from the import schema, so a field the
+importer learns to read reaches the prompt without anyone updating it (a test fails if one is missing).
+
+**ATT&CK on the import preview.** Each event step's tactics and technique can be set right in the preview: tactics
+as chips you add from a list and remove, the technique typed in (checked as T1566 or T1566.001; an invalid one holds
+Apply). On a third-party case, giving a disclosure milestone a tactic makes it an attack step.
 
 ### v1.14.0
 

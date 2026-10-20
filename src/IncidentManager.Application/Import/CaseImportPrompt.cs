@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json.Nodes;
 using IncidentManager.Domain.Enums;
 
 namespace IncidentManager.Application.Import;
@@ -34,17 +35,8 @@ public static class CaseImportPrompt
         var tool = string.IsNullOrWhiteSpace(o.ToolName) ? "your AI tool" : o.ToolName.Trim();
         var originExample = string.IsNullOrWhiteSpace(o.ToolName) ? "AI-assisted" : $"AI-assisted ({o.ToolName.Trim()})";
 
-        var kinds = Names<TimelineKind>();
-        // INV-06: Decision isn't importable yet (the schema doesn't carry its rationale).
-        var timelineTypes = string.Join(", ", Enum.GetNames<TimelineEntryType>().Where(n => !CaseImportSchema.NotImportableTimelineTypes.Contains(n)));
-        var entityTypes = Names<EntityType>();
-        var dispositions = Names<EntityDisposition>();
         // null classification = Complex Event, so offer it alongside the ladder values.
         var classifications = "ComplexEvent, " + Names<Classification>();
-        var severities = Names<Severity>();
-        var origins = Names<CaseOrigin>();
-        var tactics = Names<MitreTactic>();
-        var environments = Names<StepEnvironment>();
 
         var sb = new StringBuilder();
         sb.AppendLine("You are turning raw incident material (emails, chat logs, and notes) into a single structured");
@@ -109,7 +101,7 @@ public static class CaseImportPrompt
             sb.AppendLine("    \"newCase\": {");
             sb.AppendLine("      \"title\": \"<a short, specific case title>\",");
             sb.AppendLine(CultureInfo.InvariantCulture, $"      \"classification\": {clsField},");
-            sb.AppendLine("      \"severity\": \"<one of the severities below>\",");
+            sb.AppendLine("      \"severity\": \"<one of the severities in FIELDS>\",");
             sb.AppendLine(o.Origin is { } fixedOrigin
                 ? $"      \"origin\": \"{fixedOrigin}\","
                 : "      \"origin\": \"<InternalDetection or ThirdParty>\",");
@@ -138,22 +130,14 @@ public static class CaseImportPrompt
         sb.AppendLine("  ]");
         sb.AppendLine("}");
         sb.AppendLine();
-        sb.AppendLine("ALLOWED VALUES");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.kind: {kinds}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.type: {timelineTypes}");
-        sb.AppendLine("- timeline.timePrecision (kind Event only): Exact, Day, Window, OnOrBefore, NotStated. Never invent a time the material doesn't give. A date without a time is Day; \"between March 2 and 5\" is Window with occurredUntil; \"on or before\" is OnOrBefore; a step the material puts in order but gives no date for is NotStated, listed right after the step it follows. List event steps in the order the material gives them.");
+        sb.AppendLine("GUIDANCE");
+        sb.AppendLine("- timePrecision (kind Event only): never invent a time the material doesn't give. A date without a time is Day; \"between March 2 and 5\" is Window with occurredUntil; \"on or before\" is OnOrBefore; a step the material puts in order but gives no date for is NotStated, listed right after the step it follows. List event steps in the order the material gives them.");
         sb.AppendLine("- A timeline entry of type Decision records something the team decided: put the decision in description, why in rationale (required), and optionally optionsConsidered and decidedBy.");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.tactics (kind Event only): {tactics}");
-        sb.AppendLine("- timeline.techniqueId (kind Event only): an ATT&CK technique id, T1234 or T1234.001");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.environment (kind Event, vendor-disclosed incidents only): {environments}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.type: {entityTypes}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.disposition: {dispositions}");
-        if (!o.TargetIsExisting)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"- target.newCase.classification: {classifications}");
-            sb.AppendLine(CultureInfo.InvariantCulture, $"- target.newCase.severity: {severities}");
-            sb.AppendLine(CultureInfo.InvariantCulture, $"- target.newCase.origin: {origins}");
-        }
+        sb.AppendLine();
+        // Generated from the import schema itself, so a field added to the importer is in the prompt without anyone
+        // remembering to add it here.
+        sb.AppendLine("FIELDS (every field the importer reads, with its allowed values)");
+        AppendFields(sb, o.TargetIsExisting);
         sb.AppendLine();
         sb.AppendLine("SOURCE MATERIAL");
         sb.AppendLine(CultureInfo.InvariantCulture, $"<< Paste the emails, chat logs, and notes here, then give this whole prompt to {tool}. >>");
@@ -162,4 +146,55 @@ public static class CaseImportPrompt
     }
 
     private static string Names<TEnum>() where TEnum : struct, Enum => string.Join(", ", Enum.GetNames<TEnum>());
+
+    /// <summary>
+    /// One line per field of <see cref="CaseImportSchema"/>: its path (arrays as <c>timeline[]</c>), whether it's required,
+    /// its description and its allowed values. Deprecated names are left out, and so is the target when the case is
+    /// already chosen.
+    /// </summary>
+    internal static void AppendFields(StringBuilder sb, bool targetIsExisting)
+    {
+        var root = JsonNode.Parse(CaseImportSchema.Build())!.AsObject();
+        var defs = root["$defs"]!.AsObject();
+        Walk(sb, "", root, defs, targetIsExisting);
+    }
+
+    /// <summary>The field paths <see cref="AppendFields"/> writes, for a test to hold the prompt to the schema.</summary>
+    internal static IReadOnlyList<string> FieldPaths(bool targetIsExisting)
+    {
+        var sb = new StringBuilder();
+        AppendFields(sb, targetIsExisting);
+        return sb.ToString().Split(Environment.NewLine.ToCharArray(), StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.TrimStart('-', ' ').Split(' ', ':')[0]).ToList();
+    }
+
+    private static void Walk(StringBuilder sb, string path, JsonObject obj, JsonObject defs, bool targetIsExisting)
+    {
+        if (obj["properties"] is not JsonObject props) return;
+        var required = (obj["required"] as JsonArray)?.Select(r => r?.GetValue<string>()).ToHashSet() ?? [];
+        foreach (var (name, node) in props)
+        {
+            if (node is not JsonObject p || p["deprecated"]?.GetValue<bool>() == true) continue;
+            if (path.Length == 0 && name == "target" && targetIsExisting) continue;
+            var full = path.Length == 0 ? name : $"{path}.{name}";
+            var isArray = p["type"]?.GetValue<string>() == "array";
+            var shape = isArray ? p["items"] as JsonObject : p;
+            if (shape?["$ref"]?.GetValue<string>() is { } reference)
+            {
+                var def = defs[reference.Split('/')[^1]]!.AsObject();
+                if (!string.IsNullOrWhiteSpace(p["description"]?.GetValue<string>()))
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"- {full}{(isArray ? "[]" : "")}: {p["description"]!.GetValue<string>()}");
+                Walk(sb, full + (isArray ? "[]" : ""), def, defs, targetIsExisting);
+                continue;
+            }
+            var line = new StringBuilder("- ").Append(full).Append(isArray ? "[]" : "");
+            if (required.Contains(name)) line.Append(" (required)");
+            line.Append(':');
+            if (p["description"]?.GetValue<string>() is { Length: > 0 } description) line.Append(' ').Append(description);
+            if (shape?["enum"] is JsonArray values)
+                line.Append(" One of: ").Append(string.Join(", ", values.Select(v => v?.ToString()))).Append('.');
+            if (shape?["const"] is { } constant) line.Append(" Exactly ").Append(constant.ToJsonString()).Append('.');
+            sb.AppendLine(line.ToString());
+        }
+    }
 }
