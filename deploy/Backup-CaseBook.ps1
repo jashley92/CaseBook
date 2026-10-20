@@ -17,6 +17,11 @@
     Evidence only ever grows, so it's copied into one mirror, <Destination>\evidence, that every set shares; a set and
     the mirror together are a whole CaseBook.
 
+    The database is in the FULL recovery model (the installer sets it), so its transaction log is cleared only by a log
+    backup: -Log takes one, into <Destination>\log, and -Register schedules one every -LogEveryMinutes (15) beside the
+    nightly set. Without them the log grows until the disk is full. That gives a recovery point of 15 minutes; a
+    database in the SIMPLE model has no log backups (its recovery point is the last nightly set), and -Log does nothing.
+
     A run succeeds only when the backup, its verification and every copy succeed. Then lastBackupUtc, its size and the
     set's folder go into the status file (BackupStatus:FilePath). A failure writes the reason and its time instead,
     which Diagnostics and the overview show as Failed, and exits with code 1. The newest -Keep sets are kept.
@@ -42,9 +47,15 @@
     Where SQL Server writes the .bak, as SQL Server sees the path, when it isn't this server (default: the set's db folder).
     Files written there aren't removed by -Keep: clear them as your SQL Server's maintenance does.
 
+.PARAMETER Log
+    A transaction-log backup only, into <Destination>\log (or -DatabaseBackupFolder). Logs older than the oldest set
+    kept are removed. Not with -CopyOnly: a backup product that backs up the database takes its log backups too.
+
 .PARAMETER Register
     Creates (or replaces) a nightly scheduled task that runs this script with the same -SitePath, -Destination, -Keep and
-    -CopyOnly, at -At, as -TaskAccount (default SYSTEM; a gMSA such as CONTOSO\svc-casebook-bk$ needs no password).
+    -CopyOnly, at -At, and (unless -CopyOnly, or -LogEveryMinutes 0) a log backup task every -LogEveryMinutes, as
+    -TaskAccount (default SYSTEM; a gMSA such as CONTOSO\svc-casebook-bk$ needs no password). The tasks run the copy of
+    this script kept beside the site (<site>-deploy), which upgrades keep current, when there is one.
 
 .EXAMPLE
     .\Backup-CaseBook.ps1 -Destination \\backup01\casebook
@@ -57,7 +68,9 @@ param(
     [int] $Keep = 14,
     [switch] $CopyOnly,
     [string] $DatabaseBackupFolder,
+    [switch] $Log,
     [switch] $Register,
+    [int] $LogEveryMinutes = 15,
     [string] $TaskAccount = 'SYSTEM',
     # SQL Server sign-in, where Windows authentication isn't possible (asked for with Get-Credential; never stored).
     [System.Management.Automation.PSCredential] $SqlCredential,
@@ -68,11 +81,18 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\CaseBookStamp.ps1')
 . (Join-Path $PSScriptRoot 'lib\CaseBookBackup.ps1')
 
+if ($Log -and $CopyOnly) { throw '-Log with -CopyOnly: a backup product that backs up the database takes its log backups too, and two log chains break each other.' }
+
 if ($Register) {
     $arguments = "-SitePath `"$SitePath`" -Destination `"$Destination`" -Keep $Keep" + $(if ($CopyOnly) { ' -CopyOnly' } else { '' }) +
                  $(if ($DatabaseBackupFolder) { " -DatabaseBackupFolder `"$DatabaseBackupFolder`"" } else { '' })
-    Register-CaseBookTask -Name 'nightly backup' -Script $MyInvocation.MyCommand.Path -Arguments $arguments `
+    Register-CaseBookTask -Name 'nightly backup' -Script $MyInvocation.MyCommand.Path -SitePath $SitePath -Arguments $arguments `
         -Trigger (New-ScheduledTaskTrigger -Daily -At $At) -Account $TaskAccount
+    if (-not $CopyOnly -and $LogEveryMinutes -gt 0) {
+        $logTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes $LogEveryMinutes)
+        Register-CaseBookTask -Name 'log backup' -Script $MyInvocation.MyCommand.Path -SitePath $SitePath -Arguments "$arguments -Log" `
+            -Trigger $logTrigger -Account $TaskAccount
+    }
     return
 }
 
@@ -83,6 +103,46 @@ $db = Get-CaseBookDatabase $site
 $started = Get-Date
 $stamp = Get-CaseBookStamp -Format 'yyyyMMdd-HHmm' -When $started
 $set = Join-Path $Destination "CaseBook-$stamp"
+
+if ($Log) {
+    try {
+        $conn = New-CaseBookSqlConnection -SqlInstance $db.Instance -DbName 'master' -SqlCredential $SqlCredential
+        try {
+            $model = Invoke-CaseBookSqlScalar -Connection $conn -Sql 'SELECT recovery_model_desc FROM sys.databases WHERE name = @n' -Parameters @{ '@n' = $db.Name }
+            if ("$model" -eq 'SIMPLE') { Write-Host "$($db.Name) is in the SIMPLE recovery model: it has no log to back up." -ForegroundColor Gray; exit 0 }
+            # A log backup needs a full one before it (since the database was created, or last switched to FULL).
+            $base = Invoke-CaseBookSqlScalar -Connection $conn -Sql 'SELECT COUNT(*) FROM sys.database_recovery_status WHERE database_id = DB_ID(@n) AND last_log_backup_lsn IS NOT NULL' -Parameters @{ '@n' = $db.Name }
+            if ([int]$base -eq 0) { Write-Host 'No full backup to follow yet, so no log backup: the nightly set comes first.' -ForegroundColor Yellow; exit 0 }
+            $logFolder = if ($DatabaseBackupFolder) { $DatabaseBackupFolder } else { Join-Path $Destination 'log' }
+            if (-not $DatabaseBackupFolder) { New-Item -ItemType Directory -Force -Path $logFolder | Out-Null }
+            $sep = if ($logFolder.Contains('/')) { '/' } else { '\' }
+            $trn = $logFolder.TrimEnd('\', '/') + $sep + "$($db.Name)-$(Get-CaseBookStamp -Format 'yyyyMMdd-HHmmss' -When $started).trn"
+            $express = [int](Invoke-CaseBookSqlScalar -Connection $conn -Sql "SELECT CAST(SERVERPROPERTY('EngineEdition') AS int)") -eq 4
+            $with = @('CHECKSUM', 'INIT'); if (-not $express) { $with += 'COMPRESSION' }
+            $null = Invoke-CaseBookSqlQuery -Connection $conn -Sql ("BACKUP LOG $(Get-SqlName $db.Name) TO DISK = @trn WITH " + ($with -join ', ')) -Parameters @{ '@trn' = $trn }
+        } finally { $conn.Dispose() }
+        # Logs older than the oldest set kept can't be used by any set kept.
+        if (-not $DatabaseBackupFolder) {
+            $oldest = @(Get-ChildItem -Path $Destination -Directory -Filter 'CaseBook-*' | Where-Object { Test-Path (Join-Path $_.FullName 'backup-set.json') } |
+                Sort-Object Name | Select-Object -First 1)
+            if ($oldest.Count -eq 1) {
+                Get-ChildItem -Path $logFolder -Filter '*.trn' | Where-Object { $_.LastWriteTime -lt $oldest[0].CreationTime } | Remove-Item -Force
+            }
+        }
+        if ($statusFile) { Set-CaseBookBackupStatus -Path $statusFile -Values @{ lastLogBackupUtc = Get-UtcStamp } }
+        Write-Host "Log backup: $trn" -ForegroundColor Green
+        exit 0
+    }
+    catch {
+        $reason = "Log backup failed: $($_.Exception.Message)"
+        Write-Host $reason -ForegroundColor Red
+        if ($statusFile) {
+            try { Set-CaseBookBackupStatus -Path $statusFile -Values @{ lastLogBackupFailedUtc = Get-UtcStamp; lastLogBackupError = $reason } }
+            catch { Write-Warning "The failure couldn't be recorded in $statusFile either: $($_.Exception.Message)" }
+        }
+        exit 1
+    }
+}
 
 try {
     New-Item -ItemType Directory -Force -Path (Join-Path $set 'db') | Out-Null

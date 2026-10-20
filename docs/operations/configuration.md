@@ -161,6 +161,7 @@ process's working directory, which under IIS is the site folder.
 | `DataProtection:KeyPath` | Keyring for antiforgery and circuit protection, encrypted with machine DPAPI. Must be absolute. Blank uses the framework default, which under an app pool without a profile is lost on every recycle. | blank | Server | ⚠ |
 | `BackupStatus:FilePath` | JSON file written by your backup jobs ([OPERATIONS.md §1.3.1](../OPERATIONS.md#131-backup-health-status-file-h-04)). Relative paths resolve against the content root. | blank (not configured) | Server | ⚠ |
 | `BackupStatus:BackupMaxAgeHours` / `RestoreMaxAgeDays` | When Diagnostics calls a backup or restore stale | `24` / `35` | Server | |
+| `BackupStatus:LogBackupMaxAgeMinutes` | When Diagnostics calls the last log backup stale (shown once there's been one) | `60` | Server | |
 
 > **A store with no path falls back under `App_Data` in the web root.** On a production server the web root
 > is read-only, so that store fails with *"Access to the path … is denied"* the first time it's used.

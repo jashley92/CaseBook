@@ -30,6 +30,7 @@ public sealed class BackupHealthReader
         var path = _config["BackupStatus:FilePath"];
         var backupMaxAge = TimeSpan.FromHours(_config.GetValue("BackupStatus:BackupMaxAgeHours", 24.0));
         var restoreMaxAge = TimeSpan.FromDays(_config.GetValue("BackupStatus:RestoreMaxAgeDays", 35.0));
+        var logMaxAge = TimeSpan.FromMinutes(_config.GetValue("BackupStatus:LogBackupMaxAgeMinutes", 60.0));
 
         if (string.IsNullOrWhiteSpace(path))
             return BackupHealthEvaluator.Evaluate(
@@ -50,6 +51,6 @@ public sealed class BackupHealthReader
             }
         }
 
-        return BackupHealthEvaluator.Evaluate(status, _clock.UtcNow, backupMaxAge, restoreMaxAge, full, configured: true);
+        return BackupHealthEvaluator.Evaluate(status, _clock.UtcNow, backupMaxAge, restoreMaxAge, full, configured: true, logMaxAge);
     }
 }

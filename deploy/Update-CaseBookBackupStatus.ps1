@@ -41,7 +41,7 @@ $ErrorActionPreference = 'Stop'
 
 if ($Register) {
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(5) -RepetitionInterval (New-TimeSpan -Hours 1)
-    Register-CaseBookTask -Name 'backup status' -Script $MyInvocation.MyCommand.Path -Arguments "-SitePath `"$SitePath`"" `
+    Register-CaseBookTask -Name 'backup status' -Script $MyInvocation.MyCommand.Path -SitePath $SitePath -Arguments "-SitePath `"$SitePath`"" `
         -Trigger $trigger -Account $TaskAccount
     return
 }

@@ -149,8 +149,16 @@ function Register-CaseBookTask {
         [Parameter(Mandatory)] [string] $Script,
         [Parameter(Mandatory)] [string] $Arguments,
         [Parameter(Mandatory)] $Trigger,
-        [string] $Account = 'SYSTEM'
+        [string] $Account = 'SYSTEM',
+        # The site, to find the copy of the deploy scripts kept beside it (<site>-deploy), which upgrades keep current.
+        [string] $SitePath
     )
+    if ($SitePath) {
+        $site = $SitePath.TrimEnd([char]92)
+        $kept = Join-Path (Join-Path (Split-Path -Parent $site) "$(Split-Path -Leaf $site)-deploy") (Split-Path -Leaf $Script)
+        if (Test-Path $kept) { $Script = $kept }
+        else { Write-Warning "There's no $kept, so the task runs $Script. Move or delete this folder and the task fails: install or upgrade (which keeps the deploy scripts beside the site), then run -Register again." }
+    }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$Script`" $Arguments"
     $principal = if ($Account -eq 'SYSTEM') {
         New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
@@ -167,5 +175,5 @@ function Register-CaseBookTask {
     } else {
         Register-ScheduledTask -TaskName "CaseBook $Name" -InputObject $task -Force | Out-Null
     }
-    Write-Host "Registered the scheduled task 'CaseBook $Name', running as $Account." -ForegroundColor Green
+    Write-Host "Registered the scheduled task 'CaseBook $Name', running $Script as $Account." -ForegroundColor Green
 }

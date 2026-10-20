@@ -138,4 +138,39 @@ public class BackupHealthEvaluatorTests
 
         report.Note.Should().Be("Nightly full + 15-min logs; monthly restore verified.");
     }
+
+    [Fact]
+    public void Log_backups_show_only_once_recorded_and_go_stale_past_an_hour()
+    {
+        var none = Eval(new BackupStatusFile { LastBackupUtc = Now.AddHours(-1), LastVerifiedRestoreUtc = Now.AddDays(-1) });
+        none.Items.Should().NotContain(i => i.Label == "Last log backup");
+        none.Overall.Should().Be(BackupHealthState.Ok);
+
+        var stale = Eval(new BackupStatusFile
+        {
+            LastBackupUtc = Now.AddHours(-1),
+            LastLogBackupUtc = Now.AddMinutes(-75),
+            LastVerifiedRestoreUtc = Now.AddDays(-1),
+        });
+        stale.Items.Single(i => i.Label == "Last log backup").State.Should().Be(BackupHealthState.Stale);
+        stale.Overall.Should().Be(BackupHealthState.Stale);
+    }
+
+    [Fact]
+    public void A_failed_log_backup_is_its_own_failure_and_a_later_log_backup_clears_it_not_a_nightly_one()
+    {
+        var failed = new BackupStatusFile
+        {
+            LastBackupUtc = Now.AddMinutes(-10),
+            LastLogBackupUtc = Now.AddMinutes(-50),
+            LastLogBackupFailedUtc = Now.AddMinutes(-20),
+            LastLogBackupError = "Log backup failed: the share is full",
+            LastVerifiedRestoreUtc = Now.AddDays(-1),
+        };
+        var report = Eval(failed);
+        report.Overall.Should().Be(BackupHealthState.Failed);
+        report.Items.Single(i => i.Label == "Latest log backup attempt").Detail.Should().Contain("the share is full");
+
+        Eval(failed with { LastLogBackupUtc = Now.AddMinutes(-5) }).Overall.Should().Be(BackupHealthState.Ok);
+    }
 }

@@ -41,6 +41,10 @@ public sealed record BackupStatusFile
     /// <summary>Why the latest restore drill failed, and when; stale once a later drill passes.</summary>
     public string? LastRestoreError { get; init; }
     public DateTimeOffset? LastRestoreFailedUtc { get; init; }
+    /// <summary>The last transaction-log backup (Backup-CaseBook.ps1 -Log), and the latest that failed, with why.</summary>
+    public DateTimeOffset? LastLogBackupUtc { get; init; }
+    public string? LastLogBackupError { get; init; }
+    public DateTimeOffset? LastLogBackupFailedUtc { get; init; }
 }
 
 /// <summary>One evaluated signal (e.g. "Last successful backup") with its freshness verdict.</summary>
@@ -71,7 +75,8 @@ public static class BackupHealthEvaluator
         TimeSpan backupMaxAge,
         TimeSpan restoreMaxAge,
         string source,
-        bool configured)
+        bool configured,
+        TimeSpan? logMaxAge = null)
     {
         if (!configured)
             return new BackupHealthReport(
@@ -93,9 +98,14 @@ public static class BackupHealthEvaluator
         var restore = With(Freshness("Last verified restore", status.LastVerifiedRestoreUtc, now, restoreMaxAge),
             Join(status.LastVerifiedRestoreSet is { } rset ? $"from {rset}" : null, status.LastRestoreSummary));
         var items = new List<BackupHealthItem> { backup, restore };
+        // Log backups are shown once any is recorded: a database in the SIMPLE model, or one a backup product backs up, has none here.
+        if (status.LastLogBackupUtc is not null || status.LastLogBackupFailedUtc is not null)
+            items.Insert(1, Freshness("Last log backup", status.LastLogBackupUtc, now, logMaxAge ?? TimeSpan.FromHours(1)));
         // A failure after the last success is the latest news, and the most serious.
         if (Failed(status.LastBackupFailedUtc, status.LastBackupUtc, status.LastBackupError) is { } backupFailed)
             items.Add(new BackupHealthItem("Latest backup attempt", BackupHealthState.Failed, backupFailed));
+        if (Failed(status.LastLogBackupFailedUtc, status.LastLogBackupUtc, status.LastLogBackupError) is { } logFailed)
+            items.Add(new BackupHealthItem("Latest log backup attempt", BackupHealthState.Failed, logFailed));
         if (Failed(status.LastRestoreFailedUtc, status.LastVerifiedRestoreUtc, status.LastRestoreError) is { } restoreFailed)
             items.Add(new BackupHealthItem("Latest restore drill", BackupHealthState.Failed, restoreFailed));
 

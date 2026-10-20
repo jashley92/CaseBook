@@ -74,7 +74,7 @@ if ($Register) {
         $(if ($SqlInstance) { " -SqlInstance `"$SqlInstance`"" } else { '' }) + $(if ($PublicKeys) { " -PublicKeys `"$PublicKeys`"" } else { '' })
     # Every fourth Sunday (about monthly).
     $trigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 4 -DaysOfWeek Sunday -At $At
-    Register-CaseBookTask -Name 'monthly restore drill' -Script $MyInvocation.MyCommand.Path -Arguments $arguments -Trigger $trigger -Account $TaskAccount
+    Register-CaseBookTask -Name 'monthly restore drill' -Script $MyInvocation.MyCommand.Path -SitePath $SitePath -Arguments $arguments -Trigger $trigger -Account $TaskAccount
     return
 }
 

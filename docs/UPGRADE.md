@@ -214,12 +214,14 @@ first with `casebook-keytool export`.
 
 ### v1.12.0
 
-No migration and no setting changes. **Backups you can take, and prove, with the release's own scripts** (in `deploy\`;
+No migration. One new setting, `BackupStatus:LogBackupMaxAgeMinutes` (60). **Backups you can take, and prove, with the release's own scripts** (in `deploy\`;
 OPERATIONS.md §1 has the procedures and a flow chart):
 
 - **`Backup-CaseBook.ps1`** backs up the database (with checksums, then read back) and the folders that go with it as one
   set, with evidence in a mirror the sets share, and records it for Diagnostics. `-Register` makes it a nightly task.
-  For a server without a backup product.
+  For a server without a backup product. It also takes **log backups** (`-Log`, every 15 minutes with `-Register`):
+  the database is in the FULL recovery model, and without them its log grows until the disk is full. If you've had no
+  log backups so far, check the log's size: after the first one, `DBCC SHRINKFILE` can give the space back.
 - **`Update-CaseBookBackupStatus.ps1`**, for a server a backup product backs up: records the product's latest backup
   from SQL Server's own backup history. It takes no backup, so the product's chain is untouched.
 - **`Test-CaseBookRestore.ps1`**, the monthly restore drill: restores a backup set (or checks a copy your product

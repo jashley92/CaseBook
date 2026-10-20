@@ -66,11 +66,20 @@ In an elevated PowerShell on the CaseBook server, from the `deploy` folder of th
 .\Backup-CaseBook.ps1 -Destination \\backup01\casebook -Register -TaskAccount 'CONTOSO\svc-casebook-bk$' -At 01:30
 ```
 
-The second line creates the nightly scheduled task **CaseBook nightly backup**. Each run makes
+The second line creates two scheduled tasks: **CaseBook nightly backup**, and **CaseBook log backup** every 15 minutes
+(`-LogEveryMinutes`; `0` for none). The tasks run the copy of the script kept beside the site (`<site>-deploy`, which
+every upgrade refreshes), so they keep working after the release folder is gone. Each nightly run makes
 `<Destination>\CaseBook-<yyyyMMdd-HHmm>` holding the database backup (`db\`), a copy of each folder (`files\keys`,
 `files\dp-keys`, `files\seals`, `files\report-output`, `files\branding`, `files\report-templates`) and `backup-set.json`
 (what's in it). Evidence only ever grows, so it's copied into one mirror, `<Destination>\evidence`, that every set
 shares. The newest 14 sets are kept (`-Keep`).
+
+**Log backups.** The installer creates the database in the FULL recovery model, so SQL Server keeps every change in the
+transaction log until a log backup takes it out; with no log backups, the log grows until its disk is full. Each
+`-Log` run backs the log up to `<Destination>\log\<database>-<yyyyMMdd-HHmmss>.trn` (or `-DatabaseBackupFolder`) and
+removes logs older than the oldest set kept. They let you restore to any point since the oldest set, to within 15
+minutes. A database you've put in the SIMPLE model has nothing to back up, and the run says so; a log backup waits for
+the first full one (and for a new one after a switch back to FULL).
 
 The account it runs as needs:
 
@@ -85,7 +94,8 @@ is registered. Without `-TaskAccount` the task runs as SYSTEM, which works only 
 #### With a backup product: Update-CaseBookBackupStatus.ps1
 
 Don't run `Backup-CaseBook.ps1` beside a backup product without `-CopyOnly`: an ordinary full backup resets the
-product's differential base, and a log backup takes records out of its log chain. Instead:
+product's differential base, and a log backup takes records out of its log chain. (`-CopyOnly` takes no log backups, and
+`-Register -CopyOnly` creates no log task: the product's log backups keep the log in check.) Instead:
 
 1. **The database:** the product backs it up as it does any database. SQL Server records each of those backups in its
    own history (`msdb`), whatever takes them.
@@ -308,6 +318,7 @@ while the database itself is being restored, and it stays out of the audit chain
 "BackupStatus": {
   "FilePath": "E:\\CaseBookData\\ops\\casebook-backup-status.json", // the scripts write it; the app-pool account reads it
   "BackupMaxAgeHours": 24,   // warn when the last backup is older than this
+  "LogBackupMaxAgeMinutes": 60, // warn when the last log backup is older than this (once there's been one)
   "RestoreMaxAgeDays": 35    // warn when the last verified restore is older than this
 }
 ```
@@ -316,6 +327,8 @@ while the database itself is being restored, and it stays out of the audit chain
 |---|---|---|
 | `lastBackupUtc`, `lastBackupSizeBytes`, `lastBackupSet`, `lastBackupBy` | `Backup-CaseBook.ps1` or `Update-CaseBookBackupStatus.ps1`, after a successful backup | *Last successful backup*: Fresh, or Stale past `BackupMaxAgeHours`, or Missing |
 | `lastBackupError`, `lastBackupFailedUtc` | `Backup-CaseBook.ps1`, when a run fails | *Latest backup attempt*: **Failed**, while it's newer than the last success |
+| `lastLogBackupUtc` | `Backup-CaseBook.ps1 -Log`, after a successful log backup | *Last log backup*: Fresh, or Stale past `LogBackupMaxAgeMinutes`; not shown until there's been one |
+| `lastLogBackupError`, `lastLogBackupFailedUtc` | `Backup-CaseBook.ps1 -Log`, when a log backup fails | *Latest log backup attempt*: **Failed**, while it's newer than the last log backup |
 | `lastVerifiedRestoreUtc`, `lastVerifiedRestoreSet`, `lastRestoreSummary` | `Test-CaseBookRestore.ps1`, when every check passes | *Last verified restore*: Fresh, or Stale past `RestoreMaxAgeDays`, or Missing |
 | `lastRestoreError`, `lastRestoreFailedUtc` | `Test-CaseBookRestore.ps1`, when a check fails | *Latest restore drill*: **Failed**, while it's newer than the last pass |
 | `note` | you, if you like | shown under the table |
@@ -354,8 +367,14 @@ undetected until someone tried to open the file. F-17 closes that gap: a backgro
 
 ### 1.4 RTO / RPO
 
-Document target RTO/RPO with the business. The 15-minute log cadence above implies an RPO of
-≤15 minutes; RTO depends on restore automation and hardware. Adjust to the insurer's records policy
+Document target RTO/RPO with the business. With `Backup-CaseBook.ps1`'s log backups every 15 minutes (or your
+product's at the same cadence) the database's RPO is 15 minutes; with nightly sets alone it's a day. The folders are
+copied nightly, so a file stored since the last set can be lost even when the database isn't: the drill's *Evidence
+files* check names any. RTO depends on restore automation and hardware.
+
+To restore to a point between sets, restore the set's `.bak` `WITH NORECOVERY`, then each `.trn` after it in order
+(`RESTORE LOG ... WITH NORECOVERY`, the last one `WITH STOPAT = '<time>', RECOVERY`). The restore drill restores the
+set alone. Adjust to the insurer's records policy
 and any NYDFS Part 500 expectations (Legal owns the regulatory interpretation).
 
 ---
