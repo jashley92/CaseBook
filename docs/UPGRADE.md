@@ -212,6 +212,15 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.14.1
+
+No migration and no setting changes. **The AI prompt generator** on the Import page (*Generate a prompt for your AI*)
+now asks for what v1.14.0 added to imports: the case's origin and vendor (with a new *Who found it* choice: let the AI
+tell, internal detection, or a vendor told us), and, for each event step, its ATT&CK tactics and technique and, on a
+vendor-disclosed incident, whether it happened at the vendor or in our environment, so the vendor's attack steps come
+in as attack steps rather than disclosure milestones. It also says plainly that the document's own `origin` is how it
+was produced, not who found the incident.
+
 ### v1.14.0
 
 No migration and no setting changes.

@@ -233,6 +233,34 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public void Prompt_asks_for_the_cases_origin_and_the_attack_detail_that_tells_steps_from_milestones()
+    {
+        var open = CaseImportPrompt.Build(new CaseImportPromptOptions(ToolName: "Copilot"));
+        open.Should().Contain("\"origin\": \"<InternalDetection or ThirdParty>\"").And.Contain("\"vendorName\"");
+        open.Should().Contain("It is NOT who found the", "the document's provenance and the case's origin are told apart");
+        open.Should().Contain("\"tactics\"").And.Contain("\"techniqueId\"").And.Contain("\"environment\"");
+        open.Should().Contain("InitialAccess").And.Contain("Vendor, Ours", "allowed values come from the real enums");
+        open.Should().Contain("disclosure milestones");
+
+        var vendor = CaseImportPrompt.Build(new CaseImportPromptOptions(Origin: CaseOrigin.ThirdParty));
+        vendor.Should().Contain("\"origin\": \"ThirdParty\"").And.Contain("disclosed to us by a vendor");
+
+        // Whatever the AI writes, the preview reads it back: the document the prompt describes imports as it says.
+        var p = CaseImportService.BuildPreviewCore(CaseImportService.Parse("""
+            { "format": "casebook-case-import", "schemaVersion": 1, "origin": "AI-assisted (Copilot)",
+              "target": { "newCase": { "title": "Payroll vendor breach", "origin": "ThirdParty", "vendorName": "Acme" } },
+              "timeline": [
+                { "occurredAt": "2026-10-01T10:00:00Z", "kind": "Event", "type": "Other", "tactics": ["InitialAccess"],
+                  "techniqueId": "T1190", "environment": "Vendor", "description": "Exploited the transfer server" },
+                { "occurredAt": "2026-10-03T10:00:00Z", "kind": "Event", "type": "Notified", "description": "Acme told us" } ] }
+            """).Document!, _clock.UtcNow);
+        p.NewCase!.Origin.Should().Be(CaseOrigin.ThirdParty);
+        p.Timeline[0].HasAttackDetail.Should().BeTrue();
+        p.Timeline[1].HasAttackDetail.Should().BeFalse();
+        p.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Prompt_pins_a_classification_hint_when_given()
     {
         var prompt = CaseImportPrompt.Build(new CaseImportPromptOptions(Classification: Classification.Incident));

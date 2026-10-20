@@ -13,9 +13,11 @@ namespace IncidentManager.Application.Import;
 /// the organization's America/New_York). The AI keeps such times as written and names the zone, rather than converting
 /// them to UTC itself.</param>
 /// <param name="Exercise">BUG-635: the new case is a tabletop / exercise case.</param>
+/// <param name="Origin">Who found the new case: internal detection, or a vendor (third-party); null lets the AI tell from
+/// the material.</param>
 public sealed record CaseImportPromptOptions(
     bool TargetIsExisting = false, Classification? Classification = null, string? ToolName = null,
-    string? TimeZone = null, bool Exercise = false);
+    string? TimeZone = null, bool Exercise = false, CaseOrigin? Origin = null);
 
 /// <summary>
 /// PROD-32: builds a copy-paste prompt that instructs an analyst's <b>own</b> AI (e.g. Microsoft Copilot) to
@@ -41,6 +43,8 @@ public static class CaseImportPrompt
         var classifications = "ComplexEvent, " + Names<Classification>();
         var severities = Names<Severity>();
         var origins = Names<CaseOrigin>();
+        var tactics = Names<MitreTactic>();
+        var environments = Names<StepEnvironment>();
 
         var sb = new StringBuilder();
         sb.AppendLine("You are turning raw incident material (emails, chat logs, and notes) into a single structured");
@@ -67,7 +71,25 @@ public static class CaseImportPrompt
         sb.AppendLine("- Leave indicators exactly as written, including any \"defanged\" form (hxxp://, 1.1.1[.]1,");
         sb.AppendLine("  user[at]example.com) — CaseBook normalizes them. Do not add or remove indicators.");
         sb.AppendLine("- Use only the values listed under ALLOWED VALUES for each enum field; if unsure, omit it.");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- Set \"origin\" to how this was produced: \"{originExample}\".");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Set the top-level \"origin\" to how this document was produced: \"{originExample}\". It is NOT who found the");
+        sb.AppendLine("  incident; that is the case's own origin" + (o.TargetIsExisting ? ", which is already set." : ", in the target block."));
+        if (!o.TargetIsExisting)
+        {
+            if (o.Origin == CaseOrigin.ThirdParty)
+                sb.AppendLine("- This incident was disclosed to us by a vendor (a third party): the case's origin is ThirdParty, and vendorName is the vendor's name.");
+            else if (o.Origin == CaseOrigin.InternalDetection)
+                sb.AppendLine("- This incident was found by our own monitoring or staff: the case's origin is InternalDetection.");
+            else
+                sb.AppendLine("- The case's origin: ThirdParty when a vendor or other third party told us about an incident on their side (then set vendorName to them), InternalDetection when our own monitoring or staff found it.");
+        }
+        // A third-party case's event steps are two kinds; what tells them apart is the attack detail.
+        sb.AppendLine("- Event steps (kind Event) record what happened in the incident. When a vendor disclosed it, they are of two kinds:");
+        sb.AppendLine("  * the attacker's steps: give each its ATT&CK \"tactics\" (and \"techniqueId\" when the material makes it clear), and");
+        sb.AppendLine("    \"environment\": Vendor when it happened in the vendor's systems, Ours when the attacker reached our systems;");
+        sb.AppendLine("  * the disclosure milestones (what the vendor told us and what we confirmed): no tactics, technique or environment,");
+        sb.AppendLine("    and type Notified, ScopeConfirmed, DataConfirmed, Remediation or RegulatoryNotification.");
+        sb.AppendLine("  When we found it ourselves, every event step is the attacker's: give its tactics (and technique when clear), no environment.");
+        sb.AppendLine("  Use ATT&CK only as the material supports it; never guess a technique.");
         sb.AppendLine();
         sb.AppendLine("SCHEMA");
         sb.AppendLine("{");
@@ -87,9 +109,13 @@ public static class CaseImportPrompt
             sb.AppendLine("    \"newCase\": {");
             sb.AppendLine("      \"title\": \"<a short, specific case title>\",");
             sb.AppendLine(CultureInfo.InvariantCulture, $"      \"classification\": {clsField},");
+            sb.AppendLine("      \"severity\": \"<one of the severities below>\",");
+            sb.AppendLine(o.Origin is { } fixedOrigin
+                ? $"      \"origin\": \"{fixedOrigin}\","
+                : "      \"origin\": \"<InternalDetection or ThirdParty>\",");
             sb.AppendLine(o.Exercise
-                ? "      \"severity\": \"<one of the severities below>\","
-                : "      \"severity\": \"<one of the severities below>\"");
+                ? "      \"vendorName\": \"<for ThirdParty: the vendor that disclosed it; omit otherwise>\","
+                : "      \"vendorName\": \"<for ThirdParty: the vendor that disclosed it; omit otherwise>\"");
             if (o.Exercise) sb.AppendLine("      \"exercise\": true");   // BUG-635: a tabletop case
             sb.AppendLine("    }");
             sb.AppendLine("  },");
@@ -99,6 +125,8 @@ public static class CaseImportPrompt
         sb.AppendLine("  \"timeline\": [");
         sb.AppendLine("    { \"occurredAt\": \"<ISO-8601 date-time>\", \"timePrecision\": \"<optional, Event only>\", \"occurredUntil\": \"<Window only>\",");
         sb.AppendLine("      \"kind\": \"<kind>\", \"type\": \"<type>\",");
+        sb.AppendLine("      \"tactics\": [\"<Event only, attacker's steps: ATT&CK tactics>\"], \"techniqueId\": \"<optional, e.g. T1566.001>\",");
+        sb.AppendLine("      \"environment\": \"<vendor-disclosed attacker's steps only: Vendor or Ours>\",");
         sb.AppendLine("      \"description\": \"<what happened>\", \"source\": \"<optional: where this came from>\" }");
         sb.AppendLine("  ],");
         sb.AppendLine("  \"entities\": [");
@@ -115,13 +143,16 @@ public static class CaseImportPrompt
         sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.type: {timelineTypes}");
         sb.AppendLine("- timeline.timePrecision (kind Event only): Exact, Day, Window, OnOrBefore, NotStated. Never invent a time the material doesn't give. A date without a time is Day; \"between March 2 and 5\" is Window with occurredUntil; \"on or before\" is OnOrBefore; a step the material puts in order but gives no date for is NotStated, listed right after the step it follows. List event steps in the order the material gives them.");
         sb.AppendLine("- A timeline entry of type Decision records something the team decided: put the decision in description, why in rationale (required), and optionally optionsConsidered and decidedBy.");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.tactics (kind Event only): {tactics}");
+        sb.AppendLine("- timeline.techniqueId (kind Event only): an ATT&CK technique id, T1234 or T1234.001");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.environment (kind Event, vendor-disclosed incidents only): {environments}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.type: {entityTypes}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.disposition: {dispositions}");
         if (!o.TargetIsExisting)
         {
             sb.AppendLine(CultureInfo.InvariantCulture, $"- target.newCase.classification: {classifications}");
             sb.AppendLine(CultureInfo.InvariantCulture, $"- target.newCase.severity: {severities}");
-            sb.AppendLine(CultureInfo.InvariantCulture, $"- target.newCase.origin (optional): {origins}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- target.newCase.origin: {origins}");
         }
         sb.AppendLine();
         sb.AppendLine("SOURCE MATERIAL");

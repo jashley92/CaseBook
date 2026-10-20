@@ -154,6 +154,18 @@ else if (_pending.Count > 0)
             }
             @if (!_promptExisting)
             {
+                <div class="col-md-3">
+                    <label class="form-label small mb-1" for="imp-ai-origin">Who found it</label>
+                    <select id="imp-ai-origin" class="form-select form-select-sm" value="@(_promptOrigin?.ToString() ?? "")"
+                            @onchange="e => _promptOrigin = IncidentManager.Domain.Common.EnumNames.OrNull<CaseOrigin>(e.Value?.ToString())">
+                        <option value="">Let the AI tell from the material</option>
+                        <option value="@CaseOrigin.InternalDetection">We did (internal detection)</option>
+                        <option value="@CaseOrigin.ThirdParty">A vendor told us (third-party)</option>
+                    </select>
+                </div>
+            }
+            @if (!_promptExisting)
+            {
                 @* BUG-635 *@
                 <div class="col-md-3">
                     <div class="form-check">
@@ -889,12 +901,13 @@ else if (_pending.Count > 0)
     private void OnPromptTargetChanged(ChangeEventArgs e) => _promptExisting = e.Value?.ToString() == "True";
 
     private bool _promptExercise;   // BUG-635
+    private CaseOrigin? _promptOrigin;
 
     // BUG-636: local times in the material without a zone are in the zone picked for Step 2 (the organization's by
     // default), and the AI is told to keep them as written and name it.
     private void GeneratePrompt() => _prompt = CaseImportPrompt.Build(
         new CaseImportPromptOptions(_promptExisting, _promptExisting ? null : _promptClassification, _promptTool,
-            UnzonedZone().Id, Exercise: !_promptExisting && _promptExercise));
+            UnzonedZone().Id, Exercise: !_promptExisting && _promptExercise, Origin: _promptExisting ? null : _promptOrigin));
 
     private async Task CopyPrompt()
     {
