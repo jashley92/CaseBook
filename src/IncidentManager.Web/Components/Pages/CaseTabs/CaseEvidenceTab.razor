@@ -222,6 +222,10 @@
                                     {
                                         <span class="im-badge im-b-neutral ms-1"><span class="bi bi-slash-circle" aria-hidden="true"></span> Withdrawn</span>
                                     }
+                                    @if (ev.IsPurged)
+                                    {
+                                        <span class="im-badge im-b-danger ms-1" title="Its contents were deleted by an administrator; the record stays"><span class="bi bi-trash3" aria-hidden="true"></span> Purged</span>
+                                    }
                                     <br /><small class="text-muted">@ev.Description</small>
                                     @if (ev.IsWithdrawn)
                                     {
@@ -265,8 +269,9 @@
                                         aria-expanded="@(_custodyOpen.Contains(ev.Id) ? "true" : "false")">
                                     <span class="bi @(_custodyOpen.Contains(ev.Id) ? "bi-chevron-down" : "bi-clock-history")" aria-hidden="true"></span> Custody
                                 </button>
-                                @* PROD-58: a file that can run downloads first inside a zip with the password "infected". *@
-                                @if (EvidenceRisk.ZipFirst(Evidence.Limits.SafeDownloadMode, ev.OriginalFileName, ev.ContentType))
+                                @* PROD-58: a file that can run downloads first inside a zip with the password "infected". A purged one has nothing to download. *@
+                                @if (ev.IsPurged) { }
+                                else if (EvidenceRisk.ZipFirst(Evidence.Limits.SafeDownloadMode, ev.OriginalFileName, ev.ContentType))
                                 {
                                     <a class="btn btn-sm btn-primary" href="evidence/@ev.Id/safe" target="_blank"
                                        title="A zip with the password &quot;infected&quot;, so it can't run by accident">

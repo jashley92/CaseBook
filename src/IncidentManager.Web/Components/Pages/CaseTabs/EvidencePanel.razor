@@ -13,6 +13,7 @@
 @inject IClock Clock
 @inject ILogger<EvidencePanel> Logger
 @inject UnsavedEdits Edits
+@inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Application.Evidence.EvidenceStorageOptions> EvidenceOptions
 @implements IDisposable
 
 @if (File is { } ev)
@@ -36,14 +37,41 @@
                     <span class="im-badge im-b-warn"><span class="bi bi-slash-circle" aria-hidden="true"></span> Withdrawn</span>
                     by @Users.DisplayFor(ev.WithdrawnBy) · @TimeDisp.Long(ev.WithdrawnAtUtc!.Value)
                     <div class="text-muted im-ev-withdrawn-why">@ev.WithdrawnReason</div>
-                    <div class="text-muted">It's left out of the report, the gates, citing and packages. The file, its hash and its chain of custody stay.</div>
+                    @if (ev.IsPurged)
+                    {
+                        <div class="mt-1"><span class="im-badge im-b-danger"><span class="bi bi-trash3" aria-hidden="true"></span> Contents purged</span>
+                            by @Users.DisplayFor(ev.PurgedBy) · @TimeDisp.Long(ev.PurgedAtUtc!.Value)</div>
+                        <div class="text-muted">@ev.PurgedReason</div>
+                        <div class="text-muted">The file's bytes were deleted. Its name, SHA-256 and chain of custody stay.</div>
+                    }
+                    else
+                    {
+                        <div class="text-muted">It's left out of the report, the gates, citing and packages. The file, its hash and its chain of custody stay.</div>
+                        @if (ReinstatableUntil(ev) is { } until && Clock.UtcNow <= until)
+                        {
+                            <div class="text-muted">It can be put back on the case until @TimeDisp.Long(until).</div>
+                        }
+                        else if (!ev.WasMovedOut)
+                        {
+                            <div class="text-muted">The withdrawal is final. An administrator can purge its contents (Administration › Evidence storage).</div>
+                        }
+                    }
                 </div>
             }
             <div class="d-flex flex-wrap gap-2 mt-2">
-                <a class="btn btn-sm btn-outline-secondary" href="evidence/@ev.Id" target="_blank" rel="noopener"
-                   title="Downloading adds a custody event in your name and an access-log entry">
-                    <span class="bi bi-download" aria-hidden="true"></span> Download
-                </a>
+                @if (!ev.IsPurged)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" href="evidence/@ev.Id" target="_blank" rel="noopener"
+                       title="Downloading adds a custody event in your name and an access-log entry">
+                        <span class="bi bi-download" aria-hidden="true"></span> Download
+                    </a>
+                }
+                @if (CanEdit && ev.IsWithdrawn && ReinstatableUntil(ev) is { } canUntil && Clock.UtcNow <= canUntil)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => StartReinstate(ev)">
+                        <span class="bi bi-arrow-counterclockwise" aria-hidden="true"></span> Reinstate…
+                    </button>
+                }
                 @if (CanEdit && !ev.IsWithdrawn)
                 {
                     @* BUG-578: opening one doesn't close the other, so what's typed in it stays.
@@ -65,14 +93,50 @@
         </div>
 
         <div class="im-entity-panel-body">
+            @if (_reinstateOpen && ev.IsWithdrawn)
+            {
+                <section class="im-dossier-reason">
+                    <h3 class="im-entity-panel-h">Put this file back on the case</h3>
+                    <p class="small text-muted mb-2">It counts in the report and the gates again. The withdrawal and this stay in the chain of custody and the audit trail.</p>
+                    <label class="form-label small mb-0" for="evp-reinstate-why">Why? <span class="text-muted">(required)</span></label>
+                    <textarea id="evp-reinstate-why" class="form-control form-control-sm mb-2" rows="2" maxlength="@IncidentManager.Domain.Entities.Evidence.MaxWithdrawnReasonLength"
+                              @bind="_reinstateReason" @bind:event="oninput" disabled="@_reinstateBusy" placeholder="e.g. Withdrawn by mistake; it is this case's"></textarea>
+                    @if (_reinstateError is not null) { <div class="text-danger small mb-2" role="alert">@_reinstateError</div> }
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => (_reinstateOpen, _reinstateError) = (false, null)">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-primary" disabled="@(_reinstateBusy || string.IsNullOrWhiteSpace(_reinstateReason))"
+                                @onclick="() => SaveReinstate(ev)">Reinstate the file</button>
+                    </div>
+                </section>
+            }
             @if (_withdrawOpen && !ev.IsWithdrawn)
             {
-                @* CAP-21: as retracting a timeline entry (BUG-413): a required reason, nothing deleted, and no way back. *@
+                @* CAP-21: as retracting a timeline entry (BUG-413): a required reason, nothing deleted. Or moved to the right case. *@
                 <section class="im-dossier-reason">
                     <h3 class="im-entity-panel-h">Withdraw this file</h3>
                     <p class="small text-muted mb-2">For a file filed on the wrong case. It leaves this case's report, the gates' evidence count and
                         citing, and can't be packaged. The file, its SHA-256 and its chain of custody stay, it can still be downloaded, and the
-                        withdrawal is recorded in the chain of custody and the audit trail. It can't be undone.</p>
+                        withdrawal is recorded in the chain of custody and the audit trail. @ReinstateNote</p>
+                    <div class="mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="evp-withdraw-how" id="evp-withdraw-only" checked="@(!_moveIt)"
+                                   @onchange="() => _moveIt = false" disabled="@_withdrawBusy" />
+                            <label class="form-check-label small" for="evp-withdraw-only">Withdraw it from this case</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="evp-withdraw-how" id="evp-withdraw-move" checked="@_moveIt"
+                                   @onchange="() => _moveIt = true" disabled="@_withdrawBusy" />
+                            <label class="form-check-label small" for="evp-withdraw-move">Move it to the case it belongs on</label>
+                        </div>
+                        @if (_moveIt)
+                        {
+                            <label class="form-label small mb-0 mt-1" for="evp-move-to">Case number</label>
+                            <input id="evp-move-to" class="form-control form-control-sm" style="max-width:20rem" @bind="_moveTo" @bind:event="oninput"
+                                   disabled="@_withdrawBusy" placeholder="e.g. 2026-0142" />
+                            <div class="form-text">It's copied there with its hash, collection details and description (checked against its
+                                SHA-256), with a custody entry naming this case, and withdrawn here.</div>
+                        }
+                    </div>
                     <label class="form-label small mb-0" for="evp-withdraw-why">Why is it being withdrawn? <span class="text-muted">(required)</span></label>
                     <textarea id="evp-withdraw-why" class="form-control form-control-sm mb-2" rows="3" maxlength="@IncidentManager.Domain.Entities.Evidence.MaxWithdrawnReasonLength"
                               @bind="_withdrawReason" @bind:event="oninput" disabled="@_withdrawBusy"
@@ -80,8 +144,8 @@
                     @if (_withdrawError is not null) { <div class="text-danger small mb-2" role="alert">@_withdrawError</div> }
                     <div class="d-flex gap-2 justify-content-end">
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelWithdraw">Cancel</button>
-                        <button type="button" class="btn btn-sm btn-danger" disabled="@(_withdrawBusy || string.IsNullOrWhiteSpace(_withdrawReason))"
-                                @onclick="() => SaveWithdraw(ev)">Withdraw the file</button>
+                        <button type="button" class="btn btn-sm btn-danger" disabled="@(_withdrawBusy || string.IsNullOrWhiteSpace(_withdrawReason) || (_moveIt && string.IsNullOrWhiteSpace(_moveTo)))"
+                                @onclick="() => SaveWithdraw(ev)">@(_moveIt ? "Move the file" : "Withdraw the file")</button>
                     </div>
                 </section>
             }
@@ -300,7 +364,50 @@
     private void StartWithdraw(Evidence ev)
     {
         if (_withdrawOpen) return;   // C7: what's typed stays
-        (_withdrawOpen, _withdrawReason, _withdrawError, _withdrawStamp) = (true, null, null, ev.RowHash ?? "");
+        (_withdrawOpen, _withdrawReason, _withdrawError, _withdrawStamp, _moveIt, _moveTo) = (true, null, null, ev.RowHash ?? "", false, null);
+    }
+
+    // Moving instead of only withdrawing, and to which case.
+    private bool _moveIt;
+    private string? _moveTo;
+
+    private int WindowDays => IncidentManager.Application.Evidence.EvidenceWithdrawal.WindowDays(EvidenceOptions.CurrentValue);
+
+    private DateTimeOffset? ReinstatableUntil(Evidence ev) => IncidentManager.Application.Evidence.EvidenceWithdrawal.ReinstatableUntil(ev, WindowDays);
+
+    private string ReinstateNote => WindowDays > 0
+        ? $"It can be put back within {WindowDays} day{(WindowDays == 1 ? "" : "s")}; after that the withdrawal is final."
+        : "It can't be undone.";
+
+    private bool _reinstateOpen, _reinstateBusy;
+    private string? _reinstateReason, _reinstateError, _reinstateStamp;
+
+    private void StartReinstate(Evidence ev) =>
+        (_reinstateOpen, _reinstateReason, _reinstateError, _reinstateStamp) = (true, null, null, ev.RowHash ?? "");
+
+    private async Task SaveReinstate(Evidence ev)
+    {
+        if (_reinstateBusy || string.IsNullOrWhiteSpace(_reinstateReason)) return;
+        var shown = _shown;
+        _reinstateBusy = true;
+        _reinstateError = null;
+        try
+        {
+            await Cases.ReinstateEvidenceAsync(Case.Id, ev.Id, _reinstateReason.Trim(), _reinstateStamp);
+            Toasts.Success("File reinstated. It's on the case's record again.");
+            if (!_showing.IsCurrent(shown)) return;
+            (_reinstateOpen, _reinstateReason) = (false, null);
+            await OnChanged.InvokeAsync();
+            await LoadCustody(ev.Id);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException or StaleEditException or ConcurrentEditException)
+        {
+            var problem = ex is ConcurrentEditException ? "Someone changed this case meanwhile, so the file wasn't reinstated. Try again." : ex.Message;
+            if (_showing.IsCurrent(shown)) _reinstateError = problem; else Toasts.Error(problem);
+            if (ex is StaleEditException or ConcurrentEditException) await OnChanged.InvokeAsync();
+            if (File is { } now && now.Id == ev.Id) _reinstateStamp = now.RowHash ?? "";
+        }
+        finally { _reinstateBusy = false; }
     }
 
     private void CancelWithdraw() => (_withdrawOpen, _withdrawError) = (false, null);
@@ -313,8 +420,17 @@
         _withdrawBusy = true;
         try
         {
-            await Cases.WithdrawEvidenceAsync(Case.Id, ev.Id, _withdrawReason.Trim(), _withdrawStamp);
-            Toasts.Success("File withdrawn. It stays in the chain of custody and the audit trail.");
+            if (_moveIt)
+            {
+                var to = (_moveTo ?? "").Trim();
+                await Cases.MoveEvidenceAsync(Case.Id, ev.Id, to, _withdrawReason.Trim(), _withdrawStamp);
+                Toasts.Success($"File moved to {to}, and withdrawn here. Both chains of custody say so.");
+            }
+            else
+            {
+                await Cases.WithdrawEvidenceAsync(Case.Id, ev.Id, _withdrawReason.Trim(), _withdrawStamp);
+                Toasts.Success("File withdrawn. It stays in the chain of custody and the audit trail.");
+            }
             if (!_showing.IsCurrent(shown)) return;   // BUG-601: the panel moved on meanwhile
             (_withdrawOpen, _withdrawReason) = (false, null);
             await OnChanged.InvokeAsync();
@@ -418,7 +534,8 @@
         _custodyLoad.Invalidate();
         _custody = null;
         _preview = null;
-        _previewLoading = _previewMissing = _addingTask = _transferOpen = _collEditing = _withdrawOpen = false;
+        _previewLoading = _previewMissing = _addingTask = _transferOpen = _collEditing = _withdrawOpen = _reinstateOpen = _moveIt = false;
+        _reinstateReason = _reinstateError = _moveTo = null;
         _xferTo = _xferHow = _xferWhy = _xferError = _collError = _withdrawReason = _withdrawError = null;
         if (EvidenceId is { } id) await LoadCustody(id);
     }

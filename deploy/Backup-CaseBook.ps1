@@ -195,7 +195,32 @@ FROM msdb.dbo.backupset b WHERE b.database_name = @db AND b.type = 'D' ORDER BY 
     $evidence = Get-CaseBookEvidenceFolder $site
     $mirror = Join-Path $Destination 'evidence'
     $ev = Copy-CaseBookFolder -From $evidence -To $mirror -ExcludeDirs @((Join-Path $evidence '.incoming'))
-    Write-Host "  evidence: mirror holds $($ev.Files) files" -ForegroundColor Gray
+    # The mirror only ever adds, so a file an administrator purged (its bytes deleted from the store on purpose) is
+    # removed from it here, by the paths the database records as purged. Never by what's missing from the store, which
+    # a store that's down would make look like everything.
+    $conn = New-CaseBookSqlConnection -SqlInstance $db.Instance -DbName 'master' -SqlCredential $SqlCredential
+    try {
+        # A database from before purging existed has no such column, and nothing purged.
+        $table = "$(Get-SqlName $db.Name).dbo.Evidence"
+        # Not wrapped in @(): the helper returns its rows as one array already, and wrapping it again made an empty result
+        # one blank row, whose path is the mirror folder itself.
+        $purged = Invoke-CaseBookSqlQuery -Connection $conn -Parameters @{ '@t' = $table } -Sql (
+            "IF COL_LENGTH(@t, 'PurgedAtUtc') IS NOT NULL EXEC(N'SELECT StoragePath FROM $($table.Replace("'", "''")) WHERE PurgedAtUtc IS NOT NULL')")
+    } finally { $conn.Dispose() }
+    $removed = 0
+    $mirrorRoot = [System.IO.Path]::GetFullPath($mirror).TrimEnd('\') + '\'
+    foreach ($row in $purged) {
+        $stored = [string]$row.StoragePath
+        if ([string]::IsNullOrWhiteSpace($stored)) { continue }
+        $copy = [System.IO.Path]::GetFullPath((Join-Path $mirror $stored))
+        # Only a file, and only inside the mirror: never a folder, never anywhere else.
+        if ($copy.Length -gt $mirrorRoot.Length -and $copy.StartsWith($mirrorRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
+            (Test-Path -LiteralPath $copy -PathType Leaf)) {
+            Remove-Item -LiteralPath $copy -Force
+            $removed++
+        }
+    }
+    Write-Host "  evidence: mirror holds $($ev.Files - $removed) files$(if ($removed) { "; removed $removed purged" })" -ForegroundColor Gray
 
     $manifest = [ordered]@{
         format = 1

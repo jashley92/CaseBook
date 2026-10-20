@@ -215,7 +215,8 @@ internal static class RestoreCheck
     private static void CheckEvidence(Site site, AppDbContext db, byte[]? key, string? keyId, int sample, bool hashAll,
         Action<string, bool, string> add)
     {
-        var rows = db.Evidence.AsNoTracking().IgnoreQueryFilters()
+        // A purged file's bytes were deleted on purpose, so it isn't looked for.
+        var rows = db.Evidence.AsNoTracking().IgnoreQueryFilters().Where(e => e.PurgedAtUtc == null)
             .Select(e => new { e.Id, e.StoragePath, e.SizeBytes, e.Sha256, e.OriginalFileName }).ToList();
         if (rows.Count == 0)
         {

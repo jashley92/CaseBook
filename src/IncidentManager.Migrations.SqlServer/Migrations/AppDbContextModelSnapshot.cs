@@ -1720,6 +1720,17 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<DateTimeOffset?>("PurgedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PurgedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("PurgedReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<string>("RowHash")
                         .HasMaxLength(70)
                         .HasColumnType("nvarchar(70)");

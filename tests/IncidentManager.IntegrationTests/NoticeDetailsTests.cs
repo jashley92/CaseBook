@@ -81,7 +81,7 @@ public sealed class NoticeDetailsTests : IDisposable
 
         var n = await NoticeAsync(database, id);
         (n.Method, n.Reference, n.NotifiedBy, n.EvidenceId).Should().Be((NoticeMethod.Portal, "NYDFS-2026-114", "Pat Lee (outside counsel)", file));
-        n.RowHash.Should().StartWith(Canonical.V5Prefix);
+        n.RowHash.Should().StartWith(Canonical.PrefixOf(Canonical.CurrentFormat));
         _hasher.RowHashMatches(n, n.RowHash!).Should().BeTrue();
 
         _clock.UtcNow = _clock.UtcNow.AddMinutes(30);
@@ -114,8 +114,8 @@ public sealed class NoticeDetailsTests : IDisposable
 
         var n = await NoticeAsync(database, id);
         n.HasDetails.Should().BeFalse();
-        // The stored hash is the one format 4 (v1.9.0) built: only the prefix says format 5.
-        n.RowHash.Should().Be(Canonical.V5Prefix + _hasher.Hash(Canonical.InFormat(4, n.BuildCanonicalContent)));
+        // The stored hash is the one format 4 (v1.9.0) built: only the prefix says the current format.
+        n.RowHash.Should().Be(Canonical.PrefixOf(Canonical.CurrentFormat) + _hasher.Hash(Canonical.InFormat(4, n.BuildCanonicalContent)));
         _hasher.RowHashMatches(n, Canonical.V4Prefix + _hasher.Hash(Canonical.InFormat(4, n.BuildCanonicalContent))).Should().BeTrue();
         Canonical.Covers(4, n.BuildCanonicalContent).Should().BeTrue("a v1.9.0 hash still covers everything it holds");
     }

@@ -42,6 +42,7 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.FindOpenCaseMatchesForIocsAsync),
         nameof(CaseService.FindCaseHistoryForIocsAsync),   // HR-03: closed "seen before" (scoped read)
         nameof(CaseService.ListVendorNamesAsync),   // CAP-24: vendor names to pick from (scoped read)
+        nameof(CaseService.ListWithdrawnEvidenceAsync),   // the administrator's withdrawn-evidence pane (Administer, checked in it)
         nameof(CaseService.FindVendorHistoryAsync),   // CAP-24: a vendor's "seen before" (scoped read)
         nameof(CaseService.FindRelatedIndicatorsAsync),   // CAP-28: "possibly related" (scoped read, suggestions only)
         nameof(CaseService.FindRelatedIndicatorsForIocsAsync),   // CAP-28: the same at intake (scoped read)

@@ -247,6 +247,13 @@ public sealed class FileEvidenceStore : IEvidenceStore
         return Task.CompletedTask;
     }
 
+    public Task PurgeAsync(string storagePath, CancellationToken ct = default)
+    {
+        var abs = PathOf(storagePath);   // S-07: never outside the store
+        if (File.Exists(abs)) File.Delete(abs);
+        return Task.CompletedTask;
+    }
+
     public Task<long?> FreeBytesAsync(CancellationToken ct = default) => StoreVolume.FreeBytesAsync(_root, ct);
 
     public async Task<long?> TotalBytesAsync(CancellationToken ct = default) => (await StoreVolume.SpaceAsync(_root, ct))?.Total;

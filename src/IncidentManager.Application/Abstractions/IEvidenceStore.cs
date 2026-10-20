@@ -18,6 +18,10 @@ public interface IEvidenceStore
     /// without a record, custody trail or integrity check. Never for recorded evidence.</summary>
     Task DiscardUnrecordedAsync(string storagePath) => Task.CompletedTask;
 
+    /// <summary>Deletes a recorded file's bytes, for a purge an administrator made (the record stays). A file already gone
+    /// is not an error.</summary>
+    Task PurgeAsync(string storagePath, CancellationToken ct = default) => throw new NotSupportedException("This evidence store can't delete files.");
+
     /// <summary>PROD-55: free bytes on the store's volume (a share included), or null when it can't be told in time.</summary>
     Task<long?> FreeBytesAsync(CancellationToken ct = default) => Task.FromResult<long?>(null);
 

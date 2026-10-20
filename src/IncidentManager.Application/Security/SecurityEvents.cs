@@ -396,6 +396,23 @@ public static class SecurityEvents
         Lifecycle(SecurityEventIds.EvidenceWithdrawn, "EvidenceWithdrawn", SecuritySeverity.Warning, c, actor, actorUpn, null,
             "Evidence", evidenceId.ToString());
 
+    /// <summary>A withdrawn file was put back on the record (it counts in the report and the gates again). Ids only.</summary>
+    public static SecurityEvent EvidenceReinstated(CaseSubject c, Guid evidenceId, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.EvidenceReinstated, "EvidenceReinstated", SecuritySeverity.Warning, c, actor, actorUpn, null,
+            "Evidence", evidenceId.ToString());
+
+    /// <summary>A file was moved from the case named to another (<paramref name="toCaseNumber"/>); the target is the copy on
+    /// the case it went to. Ids and case numbers only.</summary>
+    public static SecurityEvent EvidenceMoved(CaseSubject from, string toCaseNumber, Guid newEvidenceId, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.EvidenceMoved, "EvidenceMoved", SecuritySeverity.Warning, from, actor, actorUpn,
+            "to=" + Common.TextFit.Cap(toCaseNumber, 200, ""), "Evidence", newEvidenceId.ToString());
+
+    /// <summary>An administrator deleted a withdrawn file's bytes. High: evidence content is gone for good (its record,
+    /// hash and custody stay). Ids only.</summary>
+    public static SecurityEvent EvidencePurged(CaseSubject c, Guid evidenceId, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.EvidencePurged, "EvidencePurged", SecuritySeverity.High, c, actor, actorUpn, null,
+            "Evidence", evidenceId.ToString());
+
     private static string Rung(Domain.Enums.Classification? k) => k?.ToString() ?? "ComplexEvent";
 
     private static SecurityEvent Lifecycle(int id, string action, SecuritySeverity severity, CaseSubject c, string actor,

@@ -875,6 +875,9 @@
                 }
                 <a class="ms-2" href="admin/settings/evidence">Evidence storage</a>
             </p>
+            @* Withdrawn files: reinstatable for a while, then an administrator can purge their contents here. *@
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-withdrawn">Withdrawn evidence</h6>
+            <WithdrawnEvidencePanel WindowDays="@IncidentManager.Application.Evidence.EvidenceWithdrawal.WindowDays(EvidenceStorage.Limits)" />
             <h6 class="text-uppercase small text-muted mt-3" id="diag-evidence-key">Evidence encryption</h6>
             <p class="small text-muted mb-2">
                 Evidence and reports encrypted at rest with a key protected by the server's integrity certificate, kept in three

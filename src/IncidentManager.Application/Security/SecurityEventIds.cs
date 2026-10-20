@@ -61,6 +61,9 @@ public static class SecurityEventIds
     public const int ReportApproved = 5514;
     public const int ImportApplied = 5515;           // a case-import document applied to a case (PROD-31/33), by a reviewer
     public const int EvidenceWithdrawn = 5516;       // CAP-21: an evidence file taken off the record (it leaves the report and the gates)
+    public const int EvidenceReinstated = 5517;      // a withdrawn file put back on the record
+    public const int EvidenceMoved = 5518;           // a file filed on the wrong case moved to the right one
+    public const int EvidencePurged = 5519;          // a withdrawn file's bytes deleted by an administrator
 
     // 59xx — Diagnostics
     public const int SiemTest = 5901; // an admin's "Send test event" from Diagnostics, to confirm the collector receives the stream

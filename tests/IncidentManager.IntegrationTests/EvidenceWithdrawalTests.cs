@@ -107,7 +107,7 @@ public sealed class EvidenceWithdrawalTests : IDisposable
         row.IsWithdrawn.Should().BeTrue();
         (row.Sha256, row.SizeBytes, row.StoragePath, row.CreatedAtUtc).Should().Be((before.Sha256, before.SizeBytes, before.StoragePath, before.CreatedAtUtc),
             "the file itself stays (R3)");
-        row.RowHash.Should().StartWith(Canonical.V5Prefix);
+        row.RowHash.Should().StartWith(Canonical.PrefixOf(Canonical.CurrentFormat));
         _hasher.RowHashMatches(row, row.RowHash!).Should().BeTrue("the row hash covers the withdrawal");
         File.Exists(Path.Combine(_dir, "store", row.StoragePath)).Should().BeTrue("its bytes stay in the store");
 

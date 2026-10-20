@@ -67,7 +67,9 @@ every upgrade refreshes), so they keep working after the release folder is gone.
 `<Destination>\CaseBook-<yyyyMMdd-HHmm>` holding the database backup (`db\`), a copy of each folder (`files\keys`,
 `files\dp-keys`, `files\seals`, `files\report-output`, `files\branding`, `files\report-templates`) and `backup-set.json`
 (what's in it). Evidence only ever grows, so it's copied into one mirror, `<Destination>\evidence`, that every set
-shares. The newest 14 sets are kept (`-Keep`).
+shares; the one exception, a file an administrator purged (Diagnostics › *Withdrawn evidence*), is removed from the
+mirror by the next run, by the paths the database records as purged. The newest 14 sets are kept (`-Keep`). A backup
+product keeps its own copies of a purged file until its retention ages them out.
 
 **Log backups.** The installer creates the database in the FULL recovery model, so SQL Server keeps every change in the
 transaction log until a log backup takes it out; with no log backups, the log grows until its disk is full. Each

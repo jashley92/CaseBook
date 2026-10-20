@@ -71,7 +71,7 @@ public sealed class CasePartyTests : IDisposable
         (p.Id, p.Role, p.Name, p.Contact, p.Reference, p.EngagedAtUtc, p.Notes, p.CreatedBy)
             .Should().Be((partyId, PartyRole.Counsel, "Lee & Park LLP", "Dana Lee | 555-0100", "MAT-2026-114", engaged,
                 "Engaged under the breach retainer.", "ic1"));
-        p.RowHash.Should().StartWith(Canonical.V5Prefix);
+        p.RowHash.Should().StartWith(Canonical.PrefixOf(Canonical.CurrentFormat));
         _hasher.RowHashMatches(p, p.RowHash!).Should().BeTrue();
         (await svc.GetDetailAsync(id))!.Parties.Should().ContainSingle(x => x.Id == partyId);
 

@@ -93,7 +93,7 @@ public sealed class TeamTests
             trail.Count(t => t.EntityType == "Team" && t.Action == AuditAction.Update).Should().Be(3, "the edit, the retire and the restore");
             trail.Should().Contain(new { EntityType = "TeamMember", Action = AuditAction.Create });
             trail.Should().Contain(new { EntityType = "TeamMember", Action = AuditAction.Delete }, "analyst1 left the team");
-            (await ctx.Teams.AsNoTracking().SingleAsync()).RowHash.Should().StartWith(Canonical.V5Prefix, "hash-chained like other reference data");
+            (await ctx.Teams.AsNoTracking().SingleAsync()).RowHash.Should().StartWith(Canonical.PrefixOf(Canonical.CurrentFormat), "hash-chained like other reference data");
         }
         var events = _siem.Events.Where(e => e.EventId == SecurityEventIds.ReferenceDataChanged).ToList();
         events.Should().HaveCount(4, "created, changed, retired, restored (5405)");

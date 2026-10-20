@@ -42,6 +42,7 @@ public static class AdminSearchIndex
     private static readonly IReadOnlyDictionary<string, string> Synonyms = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["Evidence:MaxUploadMB"] = "upload size file size max upload largest limit",
+        ["Evidence:ReinstateWithinDays"] = "withdraw withdrawn reinstate undo restore soft delete purge retention",
         ["Evidence:StorageQuotaGB"] = "quota disk space storage limit full",
         ["Evidence:MinFreeSpaceGB"] = "disk space free space reserve full",
         ["Evidence:SafeDownload"] = "zip infected malware password",

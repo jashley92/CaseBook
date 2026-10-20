@@ -264,6 +264,10 @@ public static class SettingsCatalog
         new SettingDefinition("Evidence:ReadBackCheck", "Re-check large uploads before recording them", "Evidence storage", SettingKind.Bool,
             "Reads a file uploaded in parts back from the store and checks its SHA-256 before recording it, so a write damaged " +
             "on its way to a network share is caught at once. Doubles the reads for large files. Default on.", "true"),
+        new SettingDefinition("Evidence:ReinstateWithinDays", "Reinstating a withdrawn file (days)", "Evidence storage", SettingKind.Int,
+            "How long after a file is withdrawn it can be put back on its case, with a reason. After that the withdrawal is final " +
+            "and an administrator can purge the file's contents (Diagnostics › Withdrawn evidence). 0: a withdrawal is final at once. Default 30.",
+            "30", Max: Evidence.EvidenceStorageOptions.MaxReinstateWithinDays),
         // PROD-58: the safe download, a zip with the password "infected".
         new SettingDefinition("Evidence:SafeDownload", "Safe download as the main button", "Evidence storage", SettingKind.Text,
             "Which evidence files download by default inside a zip with the password 'infected', so a double-click can't run them and " +

@@ -55,7 +55,7 @@ public sealed class EvidenceConversion(IServiceScopeFactory scopes, IEvidenceKey
         using (var scope = scopes.CreateScope())
         await using (var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct))
         {
-            var ev = await db.Evidence.AsNoTracking().IgnoreQueryFilters()
+            var ev = await db.Evidence.AsNoTracking().IgnoreQueryFilters().Where(e => e.PurgedAtUtc == null)   // no bytes to convert
                 .Select(e => new Item(_evidenceRoot, e.StoragePath, e.Sha256)).ToListAsync(ct);
             var rp = await db.Reports.AsNoTracking().IgnoreQueryFilters()
                 .Select(r => new Item(_reportRoot, r.StoragePath, r.ContentSha256)).ToListAsync(ct);

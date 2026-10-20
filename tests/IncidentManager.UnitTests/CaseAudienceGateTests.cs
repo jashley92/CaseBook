@@ -35,6 +35,7 @@ public partial class CaseAudienceGateTests
         ["CaseService.cs:EnsureSameSideAsync"] = (1, "a bool for two cases the caller has already loaded through scoping"),
         ["CaseService.cs:SearchLinkableCasesAsync"] = (2, "the case's own exercise flag; the cases offered are read through Scoped"),
         ["CaseService.cs:GetPreviewAsync"] = (1, "after the scoped head read for the same id; related cases go through the scoped visibleIds"),
+        ["CaseService.cs:MoveEvidenceAsync"] = (1, "whether the case moved to, read through Scoped just before, holds the same file"),
         ["CaseService.cs:EnsureEvidenceOnCaseAsync"] = (1, "private: its callers loaded the case with LoadTrackedAsync; the evidence must be on it"),
         ["CaseService.cs:ApplyFollowUpsAsync"] = (1, "private: its callers loaded the case with LoadTrackedAsync"),
         ["CaseService.cs:AnswerQuestionAsync"] = (1, "CAP-23, private: called from ApplyFollowUpsAsync, whose callers loaded the case with LoadTrackedAsync"),

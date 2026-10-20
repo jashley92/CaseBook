@@ -91,6 +91,7 @@ public sealed class EvidenceIntegrityVerifier
         {
             rows = await (
                 from e in db.Evidence.AsNoTracking()
+                where e.PurgedAtUtc == null   // its bytes were deleted on purpose
                 join c in db.Cases.AsNoTracking() on e.CaseId equals c.Id into cj
                 from c in cj.DefaultIfEmpty()
                 select new Row(e.Id, e.CaseId, c != null ? c.CaseNumber : null, e.OriginalFileName,

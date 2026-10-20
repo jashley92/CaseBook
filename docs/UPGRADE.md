@@ -212,9 +212,30 @@ first with `casebook-keytool export`.
 
 ## Notes
 
-### v1.14.1
+### v1.15.0
 
-No migration and no setting changes. **The AI prompt generator** on the Import page (*Generate a prompt for your AI*)
+**A migration** adds three nullable columns to `Evidence` (`PurgedAtUtc`, `PurgedBy`, `PurgedReason`); nothing is
+backfilled. **Row hashes move to format 6**, which adds an evidence file's purge; every other record builds what format
+5 built, so existing rows keep verifying and nothing is upgraded. One new setting, `Evidence:ReinstateWithinDays` (30),
+under Administration › Evidence storage.
+
+- **A withdrawn file can be reinstated**, with a reason, for `Evidence:ReinstateWithinDays` after its withdrawal: the
+  evidence panel's *Reinstate…*. The withdrawal and the reinstatement both stay in the chain of custody and the audit
+  trail (SIEM 5517). After that period the withdrawal is final.
+- **A file on the wrong case can be moved** to the case it belongs on, from the panel's *Withdraw…* (*Move it to the case
+  it belongs on*, with the case number). It's copied there, checked against its SHA-256, with its description and
+  collection details and a custody entry naming where it came from, and withdrawn here (SIEM 5518). Needs access to
+  both cases; not between an exercise and a live case.
+- **An administrator can purge a withdrawn file's contents** once it can't be reinstated, for content that must not be
+  kept: Administration › Diagnostics › *Withdrawn evidence* lists every withdrawn file, until when each can be
+  reinstated, and which can be purged. Purging deletes the bytes from the evidence store; the record, SHA-256 and chain
+  of custody stay, downloads and the evidence re-check skip it, and it no longer counts against the storage limit (SIEM
+  5519, High). Never on a case under a legal hold. `Backup-CaseBook.ps1` removes a purged file from the backup's
+  evidence mirror at its next run.
+
+The rest of this release:
+
+**The AI prompt generator** on the Import page (*Generate a prompt for your AI*)
 now asks for what v1.14.0 added to imports: the case's origin and vendor (with a new *Who found it* choice: let the AI
 tell, internal detection, or a vendor told us), and, for each event step, its ATT&CK tactics and technique and, on a
 vendor-disclosed incident, whether it happened at the vendor or in our environment, so the vendor's attack steps come

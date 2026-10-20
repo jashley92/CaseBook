@@ -24,6 +24,12 @@ public sealed class EvidenceStorageOptions
     /// <summary>PROD-55: re-read and verify a large upload before recording it (catches a corrupted write over a share).</summary>
     public bool ReadBackCheck { get; set; } = true;
 
+    /// <summary>How many days a withdrawn file can be reinstated for (0: never). After that it can be purged.</summary>
+    public int ReinstateWithinDays { get; set; } = 30;
+
+    /// <summary>The largest <see cref="ReinstateWithinDays"/> (ten years).</summary>
+    public const int MaxReinstateWithinDays = 3650;
+
     /// <summary>PROD-58: when the password-protected zip is a file's main download (RiskyTypes, Always or Off).</summary>
     public string SafeDownload { get; set; } = nameof(SafeDownloadMode.RiskyTypes);
 
@@ -58,7 +64,8 @@ public static class EvidenceRoom
     public static async Task<EvidenceStorageUse> UseAsync(IAppDbContext db, IEvidenceStore store, EvidenceStorageOptions o,
         bool withVolume = false, CancellationToken ct = default)
     {
-        var used = await db.Evidence.AsNoTracking().SumAsync(e => (long?)e.SizeBytes, ct) ?? 0;
+        // A purged file's bytes are gone, so they don't count.
+        var used = await db.Evidence.AsNoTracking().Where(e => e.PurgedAtUtc == null).SumAsync(e => (long?)e.SizeBytes, ct) ?? 0;
         return new EvidenceStorageUse(used, o.QuotaBytes, await store.FreeBytesAsync(ct), o.ReserveBytes,
             withVolume ? await store.TotalBytesAsync(ct) : null);
     }

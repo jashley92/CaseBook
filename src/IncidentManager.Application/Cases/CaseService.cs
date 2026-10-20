@@ -3996,6 +3996,168 @@ public sealed class CaseService
     }
 
     /// <summary>
+    /// Puts a withdrawn file back on the record, with a reason, within the period an administrator set
+    /// (Evidence:ReinstateWithinDays). Refused when the case holds the same file again (a re-upload stands in for it), and
+    /// when the file's record changed since it was shown.
+    /// </summary>
+    public async Task ReinstateEvidenceAsync(Guid caseId, Guid evidenceId, string reason, string? expectedStamp = null, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var head = await Scoped(db.Cases).FirstOrDefaultAsync(c => c.Id == caseId, ct)
+                   ?? throw new InvalidOperationException("Case not found or not accessible.");
+        var ev = await db.Evidence.Include(e => e.CustodyEvents).FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
+                 ?? throw new InvalidOperationException("That evidence isn't on this case.");
+        if (expectedStamp is not null && !string.Equals(ev.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(ev.RowHash ?? "", "Someone changed this file's record since you opened it, so it wasn't reinstated. Look at it again.");
+        if (await db.Evidence.AnyAsync(e => e.CaseId == caseId && e.Id != evidenceId && e.Sha256 == ev.Sha256 && e.WithdrawnAtUtc == null, ct))
+            throw new InvalidOperationException("The same file is on this case again (uploaded since), so this copy stays withdrawn.");
+        var window = Evidence.EvidenceWithdrawal.WindowDays(_evidenceLimits?.CurrentValue ?? new());
+        ev.Reinstate(reason, _user.UserId, _clock.UtcNow, Evidence.EvidenceWithdrawal.ReinstatableUntil(ev, window));
+        db.PendingChangeReason = reason?.Trim();
+        await db.SaveChangesAsync(ct);
+        var subject = new Security.CaseSubject(head.CaseNumber, head.DetectionCaseId, head.IsExercise);
+        Security.SecurityEventEmit.EmitSafely(_siem,
+            () => Security.SecurityEvents.EvidenceReinstated(subject, ev.Id, _user.UserId, _user.UserPrincipalName));
+    }
+
+    /// <summary>
+    /// For a file filed on the wrong case: copies its bytes to the case it belongs on (checked against its SHA-256), records
+    /// it there with its description, collection details and a "MovedIn" custody event naming where it came from and who
+    /// first uploaded it, and withdraws it here with the reason and a "MovedOut" event. One save; the copy is discarded if it
+    /// fails. Needs need-to-know on both cases; refused as a withdrawal is (a notice or a screenshot names it), across
+    /// exercise and live cases, and when the other case holds the file already.
+    /// </summary>
+    public async Task<Guid> MoveEvidenceAsync(Guid caseId, Guid evidenceId, string toCaseNumber, string reason, string? expectedStamp = null,
+        CancellationToken ct = default)
+    {
+        Require();
+        if (_evidenceStore is null) throw new InvalidOperationException("Evidence can't be moved on this server.");
+        reason = (reason ?? "").Trim();
+        if (reason.Length == 0) throw new ArgumentException("Say why the file is being moved.");
+        using var db = _factory.CreateDbContext();
+        var from = await Scoped(db.Cases).FirstOrDefaultAsync(c => c.Id == caseId, ct)
+                   ?? throw new InvalidOperationException("Case not found or not accessible.");
+        var number = (toCaseNumber ?? "").Trim();
+        var to = await Scoped(db.Cases).FirstOrDefaultAsync(c => c.CaseNumber == number, ct)
+                 ?? throw new InvalidOperationException($"No case numbered '{number}' is visible to you.");
+        if (to.Id == from.Id) throw new ArgumentException("That's this case. Choose the case the file belongs on.");
+        if (to.IsExercise != from.IsExercise)
+            throw new InvalidOperationException("An exercise case and a live case don't share evidence. Upload it to the other case if it belongs there.");
+        var ev = await db.Evidence.Include(e => e.CustodyEvents).FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
+                 ?? throw new InvalidOperationException("That evidence isn't on this case.");
+        if (expectedStamp is not null && !string.Equals(ev.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(ev.RowHash ?? "", "Someone changed this file's record since you opened it, so it wasn't moved. Look at it again.");
+        if (ev.IsWithdrawn) throw new InvalidOperationException("That file has been withdrawn already.");
+        if (await db.JurisdictionNotices.AnyAsync(n => n.CaseId == caseId && n.EvidenceId == evidenceId, ct))
+            throw new InvalidOperationException("A regulator's notice names this file as the one holding the notice. Change that notice's file first.");
+        if (await db.TimelineEntries.AnyAsync(t => t.CaseId == caseId && t.EvidenceId == evidenceId && t.IsCurrent, ct))
+            throw new InvalidOperationException("This file is the screenshot on a timeline entry. Retract that entry first.");
+        if (await db.Evidence.AnyAsync(e => e.CaseId == to.Id && e.Sha256 == ev.Sha256 && e.WithdrawnAtUtc == null, ct))
+            throw new InvalidOperationException($"{to.CaseNumber} holds this file already. Withdraw it here instead.");
+
+        Abstractions.StoredEvidence copy;
+        await using (var source = await _evidenceStore.OpenReadAsync(ev.StoragePath, ct))
+            copy = await _evidenceStore.SaveAsync(to.Id, source, ct);
+        if (!string.Equals(copy.Sha256, ev.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            await _evidenceStore.DiscardUnrecordedAsync(copy.StoragePath);
+            throw new InvalidOperationException("The file read back with a different SHA-256 than recorded, so it wasn't moved. Run the evidence re-check.");
+        }
+        var now = _clock.UtcNow;
+        try
+        {
+            var moved = new Domain.Entities.Evidence
+            {
+                CaseId = to.Id, OriginalFileName = ev.OriginalFileName, ContentType = ev.ContentType, SizeBytes = copy.SizeBytes,
+                Sha256 = copy.Sha256, StoragePath = copy.StoragePath, Description = ev.Description,
+                CollectedAtUtc = ev.CollectedAtUtc, CollectedFrom = ev.CollectedFrom, CollectedBy = ev.CollectedBy,
+                CreatedBy = _user.UserId, CreatedAtUtc = now,
+            };
+            moved.CustodyEvents.Add(new ChainOfCustodyEvent
+            {
+                EvidenceId = moved.Id, AtUtc = now, Actor = _user.UserId, Action = Domain.Entities.Evidence.MovedInAction,
+                Details = $"From {from.CaseNumber} (evidence {ev.Id}, uploaded by {ev.CreatedBy} at {ev.CreatedAtUtc.UtcDateTime:yyyy-MM-dd HH:mm} UTC): {reason}"
+            });
+            db.Evidence.Add(moved);
+            ev.Withdraw($"Moved to {to.CaseNumber}: {reason}", _user.UserId, now);
+            ev.CustodyEvents.Add(new ChainOfCustodyEvent
+            {
+                EvidenceId = ev.Id, AtUtc = now, Actor = _user.UserId, Action = Domain.Entities.Evidence.MovedOutAction,
+                Details = $"To {to.CaseNumber} (evidence {moved.Id})"
+            });
+            db.PendingChangeReason = reason;
+            await db.SaveChangesAsync(ct);
+            var subject = new Security.CaseSubject(from.CaseNumber, from.DetectionCaseId, from.IsExercise);
+            Security.SecurityEventEmit.EmitSafely(_siem,
+                () => Security.SecurityEvents.EvidenceMoved(subject, to.CaseNumber, moved.Id, _user.UserId, _user.UserPrincipalName));
+            return moved.Id;
+        }
+        catch
+        {
+            await _evidenceStore.DiscardUnrecordedAsync(copy.StoragePath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// An administrator's purge of a withdrawn file whose time to be reinstated is over: the record says who, when and why
+    /// (and a "Purged" custody event), then its bytes are deleted from the store. Refused under a legal hold. The record,
+    /// SHA-256 and custody stay. A file that can't be deleted after the record is saved is reported, never left unrecorded.
+    /// </summary>
+    public async Task PurgeEvidenceAsync(Guid caseId, Guid evidenceId, string reason, string? expectedStamp = null, CancellationToken ct = default)
+    {
+        Require();
+        if (_evidenceStore is null) throw new InvalidOperationException("Evidence can't be purged on this server.");
+        using var db = _factory.CreateDbContext();
+        var head = await Scoped(db.Cases).FirstOrDefaultAsync(c => c.Id == caseId, ct)
+                   ?? throw new InvalidOperationException("Case not found or not accessible.");
+        var ev = await db.Evidence.Include(e => e.CustodyEvents).FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
+                 ?? throw new InvalidOperationException("That evidence isn't on this case.");
+        if (expectedStamp is not null && !string.Equals(ev.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(ev.RowHash ?? "", "Someone changed this file's record since you opened it, so it wasn't purged. Look at it again.");
+        var window = Evidence.EvidenceWithdrawal.WindowDays(_evidenceLimits?.CurrentValue ?? new());
+        ev.Purge(reason, _user.UserId, _clock.UtcNow, Evidence.EvidenceWithdrawal.ReinstatableUntil(ev, window), head.LegalHold);
+        db.PendingChangeReason = reason?.Trim();
+        await db.SaveChangesAsync(ct);
+        var subject = new Security.CaseSubject(head.CaseNumber, head.DetectionCaseId, head.IsExercise);
+        Security.SecurityEventEmit.EmitSafely(_siem,
+            () => Security.SecurityEvents.EvidencePurged(subject, ev.Id, _user.UserId, _user.UserPrincipalName));
+        try { await _evidenceStore.PurgeAsync(ev.StoragePath, ct); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException($"The purge is recorded, but the file couldn't be deleted from the store ({ex.Message}). " +
+                                                $"Delete {ev.StoragePath} from the evidence store by hand.", ex);
+        }
+    }
+
+    /// <summary>
+    /// The withdrawn files across every case, for the administrator's pane: when each can be reinstated until, or that it
+    /// can be purged. Administer only; purged files aren't listed.
+    /// </summary>
+    public async Task<IReadOnlyList<Evidence.WithdrawnEvidenceRow>> ListWithdrawnEvidenceAsync(CancellationToken ct = default)
+    {
+        if (!_user.Has(Permission.Administer)) throw new ForbiddenException(Permission.Administer, nameof(ListWithdrawnEvidenceAsync));
+        using var db = _factory.CreateDbContext();
+        var files = await db.Evidence.AsNoTracking().Include(e => e.CustodyEvents)
+            .Where(e => e.WithdrawnAtUtc != null && e.PurgedAtUtc == null).ToListAsync(ct);
+        var caseIds = files.Select(f => f.CaseId).Distinct().ToList();
+        var cases = await db.Cases.AsNoTracking().IgnoreQueryFilters().Where(c => caseIds.Contains(c.Id))
+            .Select(c => new { c.Id, c.CaseNumber, c.LegalHold }).ToDictionaryAsync(c => c.Id, ct);
+        var window = Evidence.EvidenceWithdrawal.WindowDays(_evidenceLimits?.CurrentValue ?? new());
+        var now = _clock.UtcNow;
+        return files.Select(e =>
+            {
+                var c = cases.GetValueOrDefault(e.CaseId);
+                return new Evidence.WithdrawnEvidenceRow(e.Id, e.CaseId, c?.CaseNumber ?? "(case not found)", c?.LegalHold ?? false,
+                    e.OriginalFileName, e.SizeBytes, e.Sha256, e.WithdrawnBy, e.WithdrawnAtUtc!.Value, e.WithdrawnReason,
+                    Evidence.EvidenceWithdrawal.ReinstatableUntil(e, window), e.WasMovedOut,
+                    Evidence.EvidenceWithdrawal.Purgeable(e, window, now) && !(c?.LegalHold ?? false));
+            })
+            .OrderBy(r => r.Purgeable ? 0 : 1).ThenBy(r => r.WithdrawnAtUtc).ToList();
+    }
+
+    /// <summary>
     /// CAP-12: prepares a package of a case's evidence for hand-over: the files picked (every file that stands when none
     /// are named; a withdrawn one is refused, CAP-21), and who it's for, how and why, named once. Checks the permission, the
     /// case (need-to-know), that each file is on it, and the package's size (<see cref="Evidence.EvidencePackage.CheckSize"/>),

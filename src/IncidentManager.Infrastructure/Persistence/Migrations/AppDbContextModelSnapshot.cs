@@ -1714,6 +1714,17 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("PurgedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PurgedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PurgedReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("RowHash")
                         .HasMaxLength(70)
                         .HasColumnType("TEXT");

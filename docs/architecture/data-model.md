@@ -240,7 +240,10 @@ nvarchar(200); hashed only when set): the latest "still accurate" confirmation o
 | `CollectedBy` | nvarchar(200), null | CAP-08: who collected it, as written (not necessarily a CaseBook user). |
 | `WithdrawnAtUtc` | datetimeoffset, null | CAP-21: when the file was withdrawn from the case (filed on the wrong one). Null while it stands. |
 | `WithdrawnBy` | nvarchar(200), null | CAP-21: who withdrew it. |
-| `WithdrawnReason` | nvarchar(2000), null | CAP-21: why (required). |
+| `WithdrawnReason` | nvarchar(2000), null | CAP-21: why (required). Cleared, with the other two, when the file is reinstated (the custody keeps both). |
+| `PurgedAtUtc` | datetimeoffset, null | When an administrator deleted the file's bytes (a withdrawn file past its time to be reinstated). Null while they're held. Hashed from format 6. |
+| `PurgedBy` | nvarchar(200), null | Who purged it. |
+| `PurgedReason` | nvarchar(2000), null | Why (required). |
 
 Created only by `EvidenceService.UploadAsync` and `CompleteUploadAsync`. The file's columns never change and there's no
 delete path. The three collection columns (CAP-08) are set on upload or later by
@@ -251,7 +254,8 @@ in the row hash (format 5) only when set. A withdrawn file's row, bytes and cust
 
 ### `ChainOfCustodyEvents` (not hashed, not audited; ledger table)
 
-`EvidenceId` (foreign key), `Action` ("Uploaded", "Viewed", "Downloaded", "Transferred", "Withdrawn", and for an evidence
+`EvidenceId` (foreign key), `Action` ("Uploaded", "Viewed", "Downloaded", "Transferred", "Withdrawn", "Reinstated",
+"MovedOut" and "MovedIn" (a file moved to the case it belongs on: on the file left behind, and on the copy), "Purged", and for an evidence
 package "Transfer begun", "Partly transferred", "Not transferred", "Transferred (SHA-256 mismatch)"), `Actor`, `AtUtc`,
 `Details`. "Viewed" is recorded once per person per 10 minutes. A transfer is also written to the audit chain; an
 evidence package (CAP-12) records "Transfer begun" on each file before its first byte and then how far each got, each

@@ -297,7 +297,7 @@ internal static class KeyToolCommands
         using var db = new AppDbContext(DbOptions(site));
         var rows = (from ev in db.Evidence.AsNoTracking().IgnoreQueryFilters()
                     join c in db.Cases.AsNoTracking().IgnoreQueryFilters() on ev.CaseId equals c.Id
-                    where caseNumber == null || c.CaseNumber == caseNumber
+                    where (caseNumber == null || c.CaseNumber == caseNumber) && ev.PurgedAtUtc == null   // no bytes left to export
                     orderby c.CaseNumber, ev.CreatedAtUtc
                     select new { c.CaseNumber, ev.OriginalFileName, ev.StoragePath, ev.Sha256 }).ToList();
         if (caseNumber is not null && rows.Count == 0) throw new InvalidOperationException($"No evidence found for case {caseNumber}.");

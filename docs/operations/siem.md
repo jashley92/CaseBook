@@ -143,6 +143,9 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5514 | Governance | Report approved; target is the report. Info |
 | 5515 | Governance | Case import applied by a reviewer; target is the pending import when it came through the queue (`PendingImport:<id>`), detail `createdCase=true` when it filed a new case. Info |
 | 5516 | Governance | **Evidence withdrawn** from a case (CAP-21); target is the file (`Evidence:<id>`). Warning: the file leaves the case's report and gate counts. Ids only: the file's name and the reason are in the audit trail |
+| 5517 | Governance | **Evidence reinstated**: a withdrawn file put back on its case's record, with a reason, within `Evidence:ReinstateWithinDays`; target is the file. Warning: it counts in the report and gates again. Ids only |
+| 5518 | Governance | **Evidence moved** from the case named to another (`to=<case number>` in the detail); target is the copy on the case it went to. Warning. The file left behind is withdrawn (its own 5516 isn't sent; this is the one event) |
+| 5519 | Governance | **Evidence purged**: an administrator deleted a withdrawn file's bytes; target is the file. **High**: evidence content is gone for good (its record, SHA-256 and chain of custody stay). Ids only: the reason is in the audit trail |
 | 5901 | Diagnostics | Test event from **Administration → Diagnostics → Send test event**. Safe to ignore; use it to confirm the collector receives the stream |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never

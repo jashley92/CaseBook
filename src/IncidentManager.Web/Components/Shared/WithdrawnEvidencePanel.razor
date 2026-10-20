@@ -1,0 +1,123 @@
+@* Withdrawn evidence across every case, for an administrator: while a file can still be reinstated (Evidence:ReinstateWithinDays)
+   it's listed with until when; after that it can be purged here, with a reason: its bytes are deleted from the store and its
+   record, SHA-256 and chain of custody stay. A case under a legal hold is shown, and its files can't be purged. *@
+@using IncidentManager.Application.Evidence
+@inject IncidentManager.Application.Cases.CaseService Cases
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IClock Clock
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+
+<p class="small text-muted mb-2">
+    Files withdrawn from their cases. Each can be put back on its case for @Window, then the withdrawal is final and its
+    contents can be purged here: the file's bytes are deleted from the evidence store (and from the backup's evidence mirror at
+    the next backup), while its name, SHA-256 and chain of custody stay. Purging can't be undone. Files moved to another case
+    are listed too: the copy there is the record.
+</p>
+@if (_rows is null)
+{
+    <p class="small"><em>Reading&hellip;</em></p>
+}
+else if (_rows.Count == 0)
+{
+    <p class="small"><span class="im-badge im-b-ok">None</span> No withdrawn files are waiting.</p>
+}
+else
+{
+    <p class="small mb-2">
+        <span class="im-badge @(_rows.Any(r => r.Purgeable) ? "im-b-warn" : "im-b-neutral")">@_rows.Count(r => r.Purgeable) can be purged</span>
+        <span class="text-muted ms-1">of @_rows.Count withdrawn · @EvidenceRoom.Size(_rows.Where(r => r.Purgeable).Sum(r => r.SizeBytes)) to free</span>
+    </p>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead><tr><th>Case</th><th>File</th><th>Withdrawn</th><th>Status</th><th style="width:7rem"></th></tr></thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td><a href="cases/@r.CaseId?evidence=@r.EvidenceId">@r.CaseNumber</a></td>
+                        <td><span class="im-data">@r.FileName</span><div class="small text-muted">@EvidenceRoom.Size(r.SizeBytes) · <code>@IncidentManager.Application.Common.ShortHash.Of(r.Sha256)</code></div></td>
+                        <td class="small">@Users.DisplayFor(r.WithdrawnBy) · @TimeDisp.Long(r.WithdrawnAtUtc)<div class="text-muted">@r.WithdrawnReason</div></td>
+                        <td class="small">
+                            @if (r.LegalHold) { <span class="im-badge im-b-info">Legal hold</span> <div class="text-muted">Can't be purged while the hold stands.</div> }
+                            else if (r.Purgeable) { <span class="im-badge im-b-warn">Can be purged</span> }
+                            else if (r.ReinstatableUntil is { } until) { <span class="im-badge im-b-neutral">Reinstatable</span> <div class="text-muted">until @TimeDisp.Long(until)</div> }
+                        </td>
+                        <td>
+                            @if (r.Purgeable)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => Begin(r)" disabled="@_busy"
+                                        aria-label="Purge the contents of @r.FileName on @r.CaseNumber">Purge…</button>
+                            }
+                        </td>
+                    </tr>
+                    @if (_purging?.EvidenceId == r.EvidenceId)
+                    {
+                        <tr>
+                            <td colspan="5">
+                                <div class="im-dossier-reason p-2">
+                                    <label class="form-label small mb-0" for="wep-why">Why is @r.FileName being purged? <span class="text-muted">(required)</span></label>
+                                    <textarea id="wep-why" class="form-control form-control-sm mb-2" rows="2" @bind="_reason" @bind:event="oninput" disabled="@_busy"
+                                              placeholder="e.g. Personal data uploaded by mistake; Legal asked for it to be deleted"></textarea>
+                                    @if (_error is not null) { <div class="text-danger small mb-2" role="alert">@_error</div> }
+                                    <div class="d-flex gap-2 justify-content-end">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => (_purging, _error) = (null, null)" disabled="@_busy">Cancel</button>
+                                        <button type="button" class="btn btn-sm btn-danger" @onclick="Purge" disabled="@(_busy || string.IsNullOrWhiteSpace(_reason))">
+                                            Delete its contents for good
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    /// <summary>The reinstate period in force, to say it in words.</summary>
+    [Parameter] public int WindowDays { get; set; }
+
+    private IReadOnlyList<WithdrawnEvidenceRow>? _rows;
+    private WithdrawnEvidenceRow? _purging;
+    private string? _reason, _error;
+    private bool _busy;
+    private readonly LoadSequence _loads = new();
+
+    private string Window => WindowDays > 0 ? $"{WindowDays} day{(WindowDays == 1 ? "" : "s")}" : "no time at all (reinstating is off)";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var t = _loads.Begin();
+        IReadOnlyList<WithdrawnEvidenceRow> rows;
+        try { rows = await Cases.ListWithdrawnEvidenceAsync(); }
+        catch (ForbiddenException) { rows = []; }
+        if (_loads.IsCurrent(t)) _rows = rows;   // a newer load (after a purge) took over
+    }
+
+    private void Begin(WithdrawnEvidenceRow r) => (_purging, _reason, _error) = (r, null, null);
+
+    private async Task Purge()
+    {
+        if (_busy || _purging is not { } r || string.IsNullOrWhiteSpace(_reason)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Cases.PurgeEvidenceAsync(r.CaseId, r.EvidenceId, _reason.Trim());
+            Toasts.Success($"{r.FileName}'s contents were purged. Its record, SHA-256 and chain of custody stay.");
+            _purging = null;
+            await Load();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException or ConcurrentEditException)
+        {
+            _error = ex is ConcurrentEditException ? "The case changed meanwhile, so nothing was purged. Try again." : ex.Message;
+            await Load();
+        }
+        finally { _busy = false; }
+    }
+}

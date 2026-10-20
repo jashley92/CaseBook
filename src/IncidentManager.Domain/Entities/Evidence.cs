@@ -9,7 +9,9 @@ namespace IncidentManager.Domain.Entities;
 /// may be set on upload or later; a later change is an audited update like any other.
 /// CAP-21: a file filed on the wrong case can be withdrawn, with a reason. Like a retracted timeline entry (BUG-413) it
 /// stays (R3): its bytes, hash and chain of custody are kept and it can still be downloaded, but it leaves the record
-/// (the report, the gates, citing and packaging). A withdrawal is final.
+/// (the report, the gates, citing and packaging). It can be reinstated, with a reason, within the period an
+/// administrator sets (Evidence:ReinstateWithinDays); it can be moved to the right case instead; and, once that period is
+/// over, an administrator can purge its bytes, for content that must not be kept, leaving its record, hash and custody.
 /// </summary>
 public class Evidence : AuditableEntity, IHashableEntity
 {
@@ -21,6 +23,10 @@ public class Evidence : AuditableEntity, IHashableEntity
 
     /// <summary>CAP-21: the custody action a withdrawal records.</summary>
     public const string WithdrawnAction = "Withdrawn";
+
+    /// <summary>The custody actions of a reinstatement, a move (on the file left behind, and on the copy on the right
+    /// case) and a purge.</summary>
+    public const string ReinstatedAction = "Reinstated", MovedOutAction = "MovedOut", MovedInAction = "MovedIn", PurgedAction = "Purged";
 
     public Guid CaseId { get; set; }
     public string OriginalFileName { get; set; } = string.Empty;
@@ -63,6 +69,19 @@ public class Evidence : AuditableEntity, IHashableEntity
 
     /// <summary>CAP-21: true once the file has been withdrawn.</summary>
     public bool IsWithdrawn => WithdrawnAtUtc is not null;
+
+    // ---- A purged file: its bytes deleted from the store by an administrator; the record stays. ----
+
+    /// <summary>When its bytes were purged; null while they're held.</summary>
+    public DateTimeOffset? PurgedAtUtc { get; set; }
+    public string? PurgedBy { get; set; }
+    public string? PurgedReason { get; set; }
+
+    /// <summary>True once the file's bytes have been purged: it can't be downloaded, checked or reinstated.</summary>
+    public bool IsPurged => PurgedAtUtc is not null;
+
+    /// <summary>True when the file was moved to another case (its custody says so): the copy there is the record now.</summary>
+    public bool WasMovedOut => CustodyEvents.Any(c => c.Action == MovedOutAction);
 
     public List<ChainOfCustodyEvent> CustodyEvents { get; set; } = new();
 
@@ -118,6 +137,60 @@ public class Evidence : AuditableEntity, IHashableEntity
         return custody;
     }
 
+    /// <summary>
+    /// Puts a withdrawn file back on the record, with a reason, while <paramref name="reinstatableUntil"/> (the end of the
+    /// period an administrator set, worked out by the caller; null when reinstating is off) hasn't passed. The withdrawal is
+    /// cleared on the file, and both it and the reinstatement stay in the chain of custody and the audit trail. Not for a
+    /// file moved to another case (the copy there is the record) or one whose bytes were purged.
+    /// </summary>
+    public ChainOfCustodyEvent Reinstate(string reason, string actor, DateTimeOffset nowUtc, DateTimeOffset? reinstatableUntil)
+    {
+        reason = CheckReason(reason, "reinstated");
+        if (!IsWithdrawn) throw new InvalidOperationException("That file hasn't been withdrawn.");
+        if (IsPurged) throw new InvalidOperationException("That file's contents were purged, so it can't be put back.");
+        if (WasMovedOut) throw new InvalidOperationException("That file was moved to another case, where it's on the record; it can't be put back here too.");
+        if (reinstatableUntil is not { } until)
+            throw new InvalidOperationException("Withdrawn files can't be reinstated on this server (an administrator has turned it off).");
+        if (nowUtc > until)
+            throw new InvalidOperationException($"The time to reinstate this file ended {until.UtcDateTime:yyyy-MM-dd HH:mm} UTC, so its " +
+                                                "withdrawal is final. Upload it again if it belongs here.");
+        (WithdrawnAtUtc, WithdrawnBy, WithdrawnReason) = (null, null, null);
+        (ModifiedBy, ModifiedAtUtc) = (actor, nowUtc);
+        var custody = new ChainOfCustodyEvent { EvidenceId = Id, AtUtc = nowUtc, Actor = actor, Action = ReinstatedAction, Details = reason };
+        CustodyEvents.Add(custody);
+        return custody;
+    }
+
+    /// <summary>
+    /// Records that a withdrawn file's bytes are purged (deleted from the store, by the caller, once this is saved): who,
+    /// when and why, and a "Purged" custody event. Only a withdrawn file whose time to be reinstated is over
+    /// (<paramref name="reinstatableUntil"/> passed, or reinstating off), and never on a case under a legal hold. The
+    /// record, its SHA-256 and its custody stay, so what was held and what became of it is known.
+    /// </summary>
+    public ChainOfCustodyEvent Purge(string reason, string actor, DateTimeOffset nowUtc, DateTimeOffset? reinstatableUntil, bool legalHold)
+    {
+        reason = CheckReason(reason, "purged");
+        if (!IsWithdrawn) throw new InvalidOperationException("Withdraw the file first: only a file off the record can be purged.");
+        if (IsPurged) throw new InvalidOperationException("That file's contents were purged already.");
+        if (legalHold) throw new InvalidOperationException("The case is under a legal hold, so nothing on it can be purged. The hold has to be released first.");
+        if (reinstatableUntil is { } until && nowUtc <= until)
+            throw new InvalidOperationException($"This file can still be reinstated until {until.UtcDateTime:yyyy-MM-dd HH:mm} UTC; it can be purged after that.");
+        (PurgedAtUtc, PurgedBy, PurgedReason) = (nowUtc, actor, reason);
+        (ModifiedBy, ModifiedAtUtc) = (actor, nowUtc);
+        var custody = new ChainOfCustodyEvent { EvidenceId = Id, AtUtc = nowUtc, Actor = actor, Action = PurgedAction, Details = reason };
+        CustodyEvents.Add(custody);
+        return custody;
+    }
+
+    private static string CheckReason(string? reason, string what)
+    {
+        reason = (reason ?? "").Trim();
+        if (reason.Length == 0) throw new ArgumentException($"Say why the file is being {what}.");
+        if (reason.Length > MaxWithdrawnReasonLength)
+            throw new ArgumentException($"Keep the reason to {MaxWithdrawnReasonLength:N0} characters or fewer.");
+        return reason;
+    }
+
     public string BuildCanonicalContent()
     {
         var content = string.Join('|',
@@ -133,7 +206,11 @@ public class Evidence : AuditableEntity, IHashableEntity
             // builds what it did.
             + Canonical.Since(5, WithdrawnAtUtc is not null, () => "|withdrawnat|" + Canonical.Time(WithdrawnAtUtc))
             + Canonical.Since(5, WithdrawnBy is not null, () => "|withdrawnby|" + Canonical.Text(WithdrawnBy))
-            + Canonical.Since(5, WithdrawnReason is not null, () => "|withdrawnwhy|" + Canonical.Text(WithdrawnReason));
+            + Canonical.Since(5, WithdrawnReason is not null, () => "|withdrawnwhy|" + Canonical.Text(WithdrawnReason))
+            // From format 6, a purge, each only when set, so a file that wasn't purged builds what it did.
+            + Canonical.Since(6, PurgedAtUtc is not null, () => "|purgedat|" + Canonical.Time(PurgedAtUtc))
+            + Canonical.Since(6, PurgedBy is not null, () => "|purgedby|" + Canonical.Text(PurgedBy))
+            + Canonical.Since(6, PurgedReason is not null, () => "|purgedwhy|" + Canonical.Text(PurgedReason));
     }
 }
 
@@ -144,7 +221,7 @@ public class ChainOfCustodyEvent : Entity
     public DateTimeOffset AtUtc { get; set; }
     public string Actor { get; set; } = string.Empty;
 
-    /// <summary>e.g. Uploaded, Downloaded, Viewed, Transferred, Withdrawn (CAP-21).</summary>
+    /// <summary>e.g. Uploaded, Downloaded, Viewed, Transferred, Withdrawn (CAP-21), Reinstated, MovedOut, MovedIn, Purged.</summary>
     public string Action { get; set; } = string.Empty;
     public string? Details { get; set; }
 }

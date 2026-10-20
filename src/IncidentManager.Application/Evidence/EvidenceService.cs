@@ -460,6 +460,8 @@ public sealed class EvidenceService
         var canAccess = await db.Cases.AsNoTracking().ForUser(_user)
             .AnyAsync(c => c.Id == evidence.CaseId, ct);
         if (!canAccess) throw new Common.NotFoundException("Evidence not found.");
+        if (evidence.IsPurged)
+            throw new Common.NotFoundException($"This file's contents were purged on {evidence.PurgedAtUtc!.Value.UtcDateTime:yyyy-MM-dd} by an administrator. Its record and SHA-256 remain.");
 
         // BUG-197: the file is opened first, so a download that can't be served (the file missing or unreadable) records
         // no custody event for bytes that never left the server.
