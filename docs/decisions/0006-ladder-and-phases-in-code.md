@@ -13,7 +13,7 @@ depends on specific members.
 ## Decision
 
 The members stay as enums. Administrators can **rename, hide or reorder their display labels**
-(Administration → Taxonomy). These are stored as display overrides that don't touch stored values or hashes.
+(Administration → Taxonomy & severity labels). These are stored as display overrides that don't touch stored values or hashes.
 
 Code that depends on specific members includes:
 

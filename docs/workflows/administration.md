@@ -7,43 +7,73 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 
 ![Administration](../screenshots/admin-settings.png)
 
+## Finding your way
+
+- **Overview** (`/admin`) is where Administration opens: **Needs attention** lists everything that needs an
+  administrator, worst first, each with a link to where it's fixed (the same list heads Diagnostics), and, while a new
+  install still needs them, **Getting started** steps.
+- **Search**, on the overview and at the top of the rail, finds a setting by its label, its key, its help text or an
+  everyday word ("upload size", "timeout", "SMTP"), a page by what it's for ("logo", "api key"), and a server-only
+  setting ("connection string", which says it's set on the host). A setting opens on its page, scrolled to it and
+  briefly highlighted. The same results appear in the command palette (Ctrl+K) under *Administration*.
+- A link from elsewhere lands on the setting too: Diagnostics' *Fix it*, and an upload refused by a limit (an
+  administrator gets *Change the limit*).
+
 ## The admin areas
 
-| Area | Route | What you can do |
-|---|---|---|
-| Identity & branding | `/admin` | Organization and team name, time zone, default jurisdictions, accent and ink colors, report logo |
-| Reports | `/admin/settings/reporting` | Report defaults (TLP, defanging, milestones, late-entry notes, separate approver, lessons legend), the section-layout designer, report profiles, the Word template library |
-| Notifications | `/admin/settings/notifications` | Email on/off, sender, distributions, reminder scans and their timing, mandatory types, chat routing, base URL; the delivery-readiness panel; the **Email sign-in** card (CAP-05: none, username and password, or Windows; the password write-only, encrypted with Data Protection, read-only when the server's configuration sets it) with a test email beside it; the **Team chat webhook** card (CAP-40: the URL write-only, https checked before it's saved, "set on … by …" with Replace and Clear, read-only when the server's configuration sets it) with *Send test* beside it; and a test email and chat message |
-| Email templates | `/admin/email-templates` | Subject and body of every notification email, with preview (the branded shell is fixed) |
-| Integrations | `/admin/settings/integrations` | Detection-source label and link template, VirusTotal link template; under *Related indicators*, your organization's domains, the excluded address ranges and the free mail switch that *Possibly related* leaves out (CAP-28). Beside the domains, the domains found on this server's network with where each came from (this domain, forest root, same forest, trusted); **Use these** fills the field without saving, so you review and save it; **Look again** looks again. While the field has never been saved, your organization's own domains found (this domain, forest root, same forest) are used, and a trusted partner's domain is only offered through **Use these**; saved, even blank, your list is used |
-| Regulatory deadlines | `/admin/settings/regulatory-deadlines` | Deadline clock on/off, start basis, default window, per-jurisdiction rules |
-| Governance & security | `/admin/settings/governance` | Retention (case retention for the retention review, the monthly retention email to Legal, access-log retention), integrity (auto-seal, evidence re-hash), access logging scope and coalescing, idle timeout, the access-review reminder, two-person legal-hold release |
-| Offboarding | `/admin/users/{reference}` (from Known users) | CAP-30: one person who leaves: their roles at last sign-in (AD stays the source; remove their groups there), the open cases they command or are on (restricted ones counted unless you're cleared for them), their open tasks, their working API tokens and whether their calendar link works. **Revoke** their tokens and **Void the calendar link** (each confirmed and audited; the link is never shown); reassign their cases with **Reassign…** in Program › Team workload |
-| Retention review | `/admin/retention` | CAP-10: closed cases past case retention, with each one's legal hold, open improvement actions and regulatory notices not recorded; archive up to 25 at a time after seeing them listed. Nothing is purged |
-| Case templates | `/admin/templates` | Playbooks: defaults for the new-case form and steps that become tasks |
-| Stage gates | `/admin/gates` | One gate per trigger: requirements, blocking or advisory, minimum reason length |
-| Taxonomy labels | `/admin/taxonomy` | Rename, hide or reorder display labels for six lists: classifications, phases, entity types, dispositions, timeline entry types and relationship types (display only; stored values don't change). Severity labels are under Response & SLA |
-| Data elements | `/admin/data-elements` | Personal-data categories and their notification jurisdictions; archive or (if unused) delete |
-| Case outcomes | `/admin/outcomes` | What a case can conclude when it closes; add, relabel, describe, reorder, archive or (if unused) delete |
-| Teams | `/admin/teams` | CAP-36: the teams that own cases; add, rename, retire or restore, set members, a detection source and a team chat webhook |
-| Response & SLA | `/admin/settings/sla` | SLA targets per severity, breach overrides, at-risk threshold, severity labels |
-| Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings; the access review (broad access, restricted cases, known users, each opening their offboarding page (CAP-30), active API tokens) with its CSV, and **Record this review** (CAP-15) |
-| API tokens | `/admin/api-tokens` | System tokens for machine producers |
-| Server configuration | `/admin/settings/server` | Read-only view of server-side settings (secrets as present or absent, and where from: the server's configuration or Administration); and the **SIEM webhook token** card (CAP-40: write-only, as the chat URL's, with *Send test event* beside it) |
-| Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from (*Discovered* for your organization's domains while the domains found on the network are in use, CAP-28) |
-| Configuration bundle | `/admin/config-bundle` | Export, diff and import editable configuration |
-| Updates | `/admin/settings/updates` | The running version and the last upgrade; the update check (off by default: one anonymous call a day to the GitHub Releases API) with each newer release's notes; the exact elevated command to upgrade this site |
-| Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, delivery health (CAP-04: email, chat and each SIEM transport; in memory since restart), the scheduled jobs (CAP-29: each background job's last run, next due and last error by type, in memory since restart; **Run now** for the read-only scans), the email relay sign-in check, a "re-enter" check for a saved chat URL or SIEM token that can't be decrypted here (CAP-40), SIEM test event, writable-path checks, the retention review's latest count (CAP-10), the access-review reminder (CAP-15), and *Organization domains found* (CAP-28: what discovery found and when, or why nothing: not on a domain, timed out, or the error's type; and whether they're in use) |
-| Style guide | `/admin/style` | Live design-system reference for developers |
-| Access log | `/access-log` (main navigation) | Who read which case or downloaded what |
+The rail groups the pages by what you're doing.
+
+| Group | Page | Route | What you can do |
+|---|---|---|---|
+| Overview | Overview | `/admin` | What needs attention, getting started, search |
+| Organization | Identity & branding | `/admin/settings/identity` | Organization and team name, time zone, default jurisdictions, accent and ink colors, report logo |
+| | Teams | `/admin/teams` | CAP-36: the teams that own cases; add, rename, retire or restore, set members, a detection source and a team chat webhook |
+| Cases & workflow | Case templates | `/admin/templates` | Playbooks: defaults for the new-case form and steps that become tasks |
+| | Stage gates | `/admin/gates` | One gate per trigger: requirements, blocking or advisory, minimum reason length |
+| | Taxonomy & severity labels | `/admin/settings/taxonomy` | Rename, hide or reorder display labels for six lists (classifications, phases, entity types, dispositions, timeline entry types and relationship types; display only, stored values don't change), each saved on its own; and the severity labels |
+| | Data elements | `/admin/data-elements` | Personal-data categories and their notification jurisdictions; archive or (if unused) delete |
+| | Case outcomes | `/admin/outcomes` | What a case can conclude when it closes; add, relabel, describe, reorder, archive or (if unused) delete |
+| | Response & SLA | `/admin/settings/sla` | SLA targets per severity, breach overrides, at-risk threshold |
+| | Regulatory deadlines | `/admin/settings/regulatory-deadlines` | Deadline clock on/off, start basis, default window, per-jurisdiction rules |
+| Notifications | Notifications | `/admin/settings/notifications` | Three cards. **Email delivery**: email on/off, sender, distributions, this server's address, the delivery-readiness panel, the relay as the server's configuration sets it (read-only), and the **Email sign-in** card (CAP-05: none, username and password, or Windows; the password write-only, encrypted with Data Protection). **Email notifications**: assignment emails, the reminder scans and their timing, digests, mandatory types, exercise escalations. **Team chat**: what's posted to chat, the chat switch (read-only), the **Team chat webhook** card (CAP-40), and test email and chat messages |
+| | Email templates | `/admin/email-templates` | Subject and body of every notification email, with preview (the branded shell is fixed) |
+| Integrations | Integrations | `/admin/settings/integrations` | **External links**: the detection-source label and link template, the VirusTotal link template. **Related indicators** (CAP-28): your organization's domains (with the domains found on this server's network, **Use these** and **Look again**), the excluded address ranges and the free mail switch. **SIEM, team chat and CyberArk**: their status as the server's configuration sets them (read-only), *Send test event*, and the **SIEM webhook token** card (CAP-40) |
+| Reports | Reports | `/admin/settings/reporting` | Report defaults (TLP, defanging, milestones, late-entry notes, separate approver, lessons legend), the section-layout designer, report profiles, the Word template library |
+| Records & evidence | Evidence storage | `/admin/settings/evidence` | Largest file, total limit, free space to keep, the read-back check, safe download; where evidence is stored, whether it's writable, what it takes (the meter), and the store folder and encryption (read-only) |
+| | Retention | `/admin/settings/retention` | Case, access-log and decided-import retention, the monthly email to Legal, the second approver to release a legal hold; and below them the **retention review** (CAP-10): closed cases past case retention, with each one's legal hold, open improvement actions and regulatory notices not recorded; archive up to 25 at a time after seeing them listed. Nothing is purged |
+| | Integrity | `/admin/settings/integrity` | Auto-seal, evidence re-verification and its full pass; the evidence-at-rest results; the signing and chain keys in force (read-only) |
+| People & access | Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings; the access review (broad access, restricted cases, known users, each opening their offboarding page (CAP-30), active API tokens) with its CSV, and **Record this review** (CAP-15) |
+| | API tokens | `/admin/api-tokens` | System tokens for machine producers |
+| | Security & access logging | `/admin/settings/security` | Idle timeout, the access-review reminder, what the access log records and how visits are grouped |
+| System | Diagnostics | `/admin/settings/diagnostics` | **Needs attention**, then **Service health** (the checks, each failed one with *Fix it*; delivery health, CAP-04; the scheduled jobs, CAP-29, with **Run now** for the read-only scans; backup and restore freshness), **Storage and keys** (evidence storage in one line, evidence encryption, the integrity keys and seal copies, CyberArk resolution, the backup set, CAP-19), **Capacity** (the integrity check's cost) and **About this server** (version, environment, database, migrations, search, sign-in mode, the organization domains found, CAP-28) |
+| | Server configuration | `/admin/settings/server` | Read-only view of server-side settings (secrets as present or absent, and where from: the server's configuration or Administration) |
+| | Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from (*Discovered* for your organization's domains while the domains found on the network are in use, CAP-28) |
+| | Configuration bundle | `/admin/config-bundle` | Export, diff and import editable configuration |
+| | Updates | `/admin/settings/updates` | The running version and the last upgrade; the update check (off by default) with each newer release's notes; the exact elevated command to upgrade this site |
+| | Search | `/admin/settings/search` | How search matches words (CAP-22) |
+| | Style guide | `/admin/style` | Live design-system reference for developers; in the rail in Development only |
+| | Offboarding | `/admin/users/{reference}` (from Known users) | CAP-30: one person who leaves: their roles at last sign-in (AD stays the source; remove their groups there), the open cases they command or are on (restricted ones counted unless you're cleared for them), their open tasks, their working API tokens and whether their calendar link works. **Revoke** their tokens and **Void the calendar link** (each confirmed and audited; the link is never shown); reassign their cases with **Reassign…** in Program › Team workload |
+| | Access log | `/access-log` (main navigation) | Who read which case or downloaded what |
+
+Old links still work: `/admin/settings/governance` opens Evidence storage, `/admin/retention` the Retention page and
+`/admin/taxonomy` the Taxonomy & severity labels page.
 
 ## Editing settings
 
-1. Open a section. Each card shows its settings; changed values are marked "Unsaved changes".
-2. **Save changes** in the bar at the bottom of the section (or *Discard*). Leaving with unsaved changes asks
-   first.
+1. Open a page. Each card shows its settings; changed values are marked "Unsaved changes". A value that breaks its
+   setting's rules (a number out of range, a malformed address) is said under it as you type, and Save waits until
+   it's corrected.
+2. **Save changes** in the bar at the bottom of the page (or *Discard*). The message says what changed (old to new
+   where it's short) and, for a setting that waits, when it applies. Leaving with unsaved changes asks first.
 3. The service checks each value against the catalog (type, range, options), writes an audited `AppSetting`
    row, reloads configuration and emits SIEM 5403.
+
+Most changes apply at once. A setting a background job reads (the reminder scans, retention, auto-seal, evidence
+re-verification, the update check) is tagged *Applies within about 10 minutes*, and the idle timeout *Applies to new
+sign-ins*. A changed setting shows **Changed in CaseBook**, who changed it and when, with *Reset* and *History* (the
+audit trail filtered to it). A card that saves with its own button (the email sign-in, the chat webhook and SIEM
+token, the report logo, each taxonomy list) says *Saves on its own*. Settings only the server's configuration sets
+are shown read-only at the foot of the card that uses them, marked *Set on the host*.
 
 Two things to know: where no override exists, the form shows the value from your server files (or the catalog
 default when they set none), so what you see is what's in effect; and **clearing a number restores the file
@@ -87,7 +117,7 @@ To find past reviews, filter the audit trail (Integrity & audit) by the entity t
 
 ## Retention review (CAP-10)
 
-`Retention:CaseYears` (Governance & security, default 7) decides when a closed case is listed under **Retention review**:
+`Retention:CaseYears` (Records & evidence › Retention, default 7) decides when a closed case is listed in the **retention review**:
 closed more than that many years ago and not archived. 0 turns the review off. Exercises aren't listed. The list is your
 own need-to-know view: an administrator without the clearance for a restricted case doesn't see it.
 

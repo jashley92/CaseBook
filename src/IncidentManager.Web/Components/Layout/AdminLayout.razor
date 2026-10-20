@@ -12,7 +12,8 @@
         <div class="admin-rail-head">
             <span class="bi bi-shield-lock" aria-hidden="true"></span><span>Administration</span>
         </div>
-        <AdminSearchBox Compact="true" />
+        @* The overview has its own, larger search box. *@
+        @if (!OnOverview) { <AdminSearchBox Compact="true" /> }
         @foreach (var group in Groups)
         {
             <div class="admin-rail-label">@group.Label</div>
@@ -126,6 +127,8 @@
     ];
 
     private const string StyleGuideHref = "admin/style";
+
+    private bool OnOverview => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/') == "admin";
 
     private RailGroup[] Groups => Env.IsDevelopment() ? AllGroups
         : [.. AllGroups.Select(g => g with { Items = [.. g.Items.Where(i => i.Href != StyleGuideHref)] })];

@@ -39,12 +39,13 @@ Things to know:
   related-indicator exclusions) is used only while no source gives the list as items. An in-app list, blank
   included, always wins over it (CAP-28 review). An empty JSON array (`"ExcludedDomains": []`) is an empty list,
   not an unset one.
-- **Administration → Settings → Configuration source map** shows the true effective value of each key and
+- **Administration → Setting sources** shows the true effective value of each key and
   which source it came from. Use it when a value isn't what you expect.
 
 ### 1.1 In-app (operational) settings
 
-Administration → Settings edits the keys in `SettingsCatalog`. A save:
+Administration edits the keys in `SettingsCatalog`, each on the page of its kind (Notifications, Evidence storage and
+so on; search finds any of them). A save:
 
 1. requires the `Administer` permission;
 2. rejects any key not in the catalog;
@@ -53,7 +54,7 @@ Administration → Settings edits the keys in `SettingsCatalog`. A save:
 4. writes an `AppSetting` row, which is audited and hash-chained like any other change;
 5. reloads configuration and emits SIEM event 5403.
 
-Two other key spaces share the table: `Taxonomy:*` (display labels, Administration → Taxonomy) and
+Two other key spaces share the table: `Taxonomy:*` (display labels, Administration → Taxonomy & severity labels) and
 `EmailTemplate:*` (Administration → Email templates).
 
 When loading, the database provider applies the same whitelist. A row whose key isn't in the catalog (and
@@ -108,7 +109,7 @@ Everything else is checked lazily or not at all:
 
 Columns:
 
-- **Edit**: **App** (Administration → Settings) or **Server** (files or environment).
+- **Edit**: **App** (Administration) or **Server** (files or environment).
 - **Sens**: 🔒 secret · ⚠ sensitive (infrastructure detail, personal data) · blank for benign.
 - A default shown as `json: …` is a value set in `appsettings.json` rather than in code.
 
@@ -215,7 +216,7 @@ process's working directory, which under IIS is the site folder.
 | Key | Purpose | Default | Edit |
 |---|---|---|---|
 | `Governance:LegalHoldRelease:RequireSecondApprover` | Two-person control for releasing a legal hold | `false` | App |
-| `Retention:CaseYears` | Years after closing before a case is listed under Administration › Retention review for an administrator to archive (CAP-10). Nothing is archived or deleted automatically. `0` turns the review (and its background count, at start-up and then every `Notifications:RetentionReview:IntervalHours`) off; at most 100 (a larger value in the file counts as 100). | `7` | App |
+| `Retention:CaseYears` | Years after closing before a case is listed under Administration › Retention for an administrator to archive (CAP-10). Nothing is archived or deleted automatically. `0` turns the review (and its background count, at start-up and then every `Notifications:RetentionReview:IntervalHours`) off; at most 100 (a larger value in the file counts as 100). | `7` | App |
 | `Notifications:RetentionReview:Email` | Once a calendar month (organization time zone), when cases are past `Retention:CaseYears`, email the Legal / Privacy distribution how many are waiting and how many are under a hold: counts only, no case named (CAP-10). Needs `Email:LegalDistribution`; a month whose email fails goes again on the next count | `false` | App |
 | `Notifications:RetentionReview:IntervalHours` | Hours between the retention review's counts (`0` also means 24; at most 744) | `24` | Server |
 | `Governance:AccessReview:ReminderDays` | Diagnostics flags the access review as due when none has been recorded under Roles & access in this many days, or none ever has (CAP-15). `0` turns the reminder off; at most 730 | `90` | App |
@@ -270,7 +271,7 @@ Classification, phase and other labels are under Administration → Taxonomy (`T
 
 CaseBook signs in to the relay one of three ways (CAP-05): **none** (an anonymous or IP-allow-listed relay, the
 default), a **username and password**, or **Windows**: integrated authentication as the app-pool account (a gMSA), with
-no password anywhere, for on-premises Exchange. The usual place to set it is **Administration → Settings →
+no password anywhere, for on-premises Exchange. The usual place to set it is **Administration →
 Notifications → Email sign-in**: the password is encrypted with ASP.NET Core Data Protection and kept in the
 database (`SmtpSignIns`), never shown again ([integrations.md](integrations.md#email-smtp)). The server's
 configuration can set it instead, with the keys below; when it sets any of them it wins, and the form shows the
@@ -317,7 +318,7 @@ scans read case data only. All deliver only when `Email:Enabled` is on (or to ch
 | `Notifications:Mandatory:{Assignment,Overdue,DueSoon}` | Users can't opt out of that type | `false` | App |
 | `Notifications:Chat:{BreachEscalations,Assignments,Mentions,OverdueReminders,DueSoonReminders,DeadlineReminders,StaleReminders,ImportSubmissions}` | Also post that type to the team chat channel. `ImportSubmissions` (CAP-01) says an API import is waiting; for a restricted case it leaves out the summary and origin | `false` | App |
 
-Administration → Settings → Notifications has a **Delivery readiness** panel. It shows whether email is on,
+Administration → Notifications has a **Delivery readiness** panel. It shows whether email is on,
 whether a sender is set and which triggers are enabled, and a *Send a test email* card.
 
 ### 3.14 Calendar feed

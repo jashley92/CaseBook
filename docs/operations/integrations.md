@@ -215,7 +215,7 @@ schema, for use in the organization's own approved AI tool.
 - **Auth:** the incoming-webhook URL is the credential (`Chat:Webhook:WebhookUrl`: a literal, a `@protected:` value or a
   CyberArk reference). Must be https (http only to loopback).
 - **Entering the URL in Administration (CAP-40):** with `Chat:Webhook:WebhookUrl` blank on the server, enter it under
-  **Administration → Settings → Notifications → Team chat webhook**. It's checked as a post checks it (https, or http
+  **Administration → Notifications → Team chat webhook**. It's checked as a post checks it (https, or http
   only to loopback) before it's saved, and a refusal says why without repeating the URL. It's write-only: encrypted with
   Data Protection (purpose `CaseBook.Secrets.ChatWebhookUrl.v1`, key ring in `DataProtection:KeyPath`) and stored in the
   `StoredSecrets` table; the card shows only "set on <date> by <user>", with Replace and Clear, and a **Send test** beside
@@ -268,7 +268,7 @@ schema, for use in the organization's own approved AI tool.
   missing (stopped until restart), no syslog host, a syslog protocol that isn't `Udp`, `Tcp` or `Tls`, a TLS pin that isn't a thumbprint or a client certificate that can't be used (CAP-33), no webhook URL or one that's refused, or a webhook token saved in
   Administration that can't be decrypted here.
 - **Webhook token in Administration (CAP-40):** with `Siem:Webhook:Token` blank on the server, enter it under
-  **Administration → Server configuration → SIEM webhook token**, with a **Send test event** beside it. It's kept as the
+  **Administration → Integrations → SIEM webhook token**, with a **Send test event** beside it. It's kept as the
   chat URL is (purpose `CaseBook.Secrets.SiemWebhookToken.v1`, the `StoredSecrets` table), write-only, audited without the
   value, sent to the SIEM as 5403, and read per event, so a change applies without a restart. The collector URL and the
   switch stay in the server's configuration, and a token set there wins.

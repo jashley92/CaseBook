@@ -212,6 +212,31 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.11.0
+
+No migration and no setting changes: every setting keeps its key and value. **Administration is rearranged** so things
+are where you'd look for them, and it tells you more:
+
+- **An overview** opens Administration: *Needs attention* lists every problem the checks, deliveries, scheduled jobs,
+  backups, keys and integrity checks found, worst first, each with a link to where it's fixed (Diagnostics opens with
+  the same list), and a new install's *Getting started* steps.
+- **Search** on the overview, at the top of the rail and in Ctrl+K finds a setting by its label, key, help text or an
+  everyday word ("upload size", "timeout"), and opens it on its page, highlighted.
+- **The rail is grouped by task.** *Governance & security* is gone: its settings are now under **Records & evidence**
+  (Evidence storage, Retention with the retention review on the same page, Integrity) and **People & access** (Security
+  & access logging). The taxonomy labels and severity labels share a page; the Notifications page has three cards
+  (email delivery, email notifications, team chat); Search mode has a rail entry; the style guide shows in Development
+  only. Old links and bookmarks land on the new pages.
+- **Feedback while you edit:** a value that breaks its rules is said under it as you type and holds Save; a setting
+  that waits for a background job or a new sign-in says so; each changed setting shows who changed it and when; a save
+  says what changed. Settings only the server's configuration sets are shown read-only where they're used ("Set on the
+  host"), and the SIEM webhook token moves to Integrations, beside the SIEM status.
+- **Diagnostics** is in order: needs attention, service health, storage and keys, capacity, about this server. The
+  *Feature flags* table, which repeated settings, is gone. Its *Seal signing key* check now reports the key in force: a
+  key in the certificate store or CyberArk used to read as missing. A list setting in the server's settings file with a
+  bad entry (a distribution list's address) is now caught by *Settings within limits*.
+- **An upload refused by a limit** names it, and an administrator gets a *Change the limit* link to it.
+
 ### v1.10.3
 
 A small release with no migration and no setting changes.

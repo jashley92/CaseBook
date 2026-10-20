@@ -226,7 +226,7 @@ Or pass every value directly instead of a config file:
   in the backup and EDR scope.
 - **Email sign-in (CAP-05)**: `SmtpSignIn` in the answers file (or `-SmtpSignIn`) says how CaseBook signs in to the
   relay. **`App` (the default) is the usual choice:** after install, an administrator enters the username and
-  password under **Administration → Settings → Notifications → Email sign-in**, where the password is encrypted with
+  password under **Administration → Notifications → Email sign-in**, where the password is encrypted with
   Data Protection and never shown again, and sends a test email beside it. `Windows` signs in as the app-pool account
   (on-premises Exchange; no password). `Password` writes `SmtpUsername` and a password into
   `appsettings.Production.json`, which then wins over the form, as `SmtpPasswordSource` says: `Protected` (the
@@ -346,7 +346,7 @@ Then, signed in as a mapped user:
 - [ ] Wire the **backup-status JSON** so Diagnostics → Backup &amp; restore health reads *Fresh* — §1.3.1.
 - [ ] Perform one **restore rehearsal** and confirm chain + prior-seal verification on the copy — §1.3.
 - [ ] Confirm the evidence/seal/report dirs are in the **EDR** monitoring policy — §3.
-- [ ] Set the **email sign-in** under Administration → Settings → Notifications → Email sign-in (unless the answers
+- [ ] Set the **email sign-in** under Administration → Notifications → Email sign-in (unless the answers
       file set it), turn email on and *Send a test email*. Back up `<DataRoot>\dp-keys` with the database: it decrypts
       that password (OPERATIONS.md §1).
 - [ ] *(Optional)* Keep the SIEM token, chat webhook URL or SMTP password out of plain text: `@protected:` values with

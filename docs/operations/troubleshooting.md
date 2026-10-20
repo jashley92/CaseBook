@@ -274,7 +274,7 @@ finding; the rest of CaseBook works.
 **Cause:** the folder in `EvidenceStore:RootPath` can't be written and read: a share or volume that's down, the app
 account's rights changed, or the folder isn't there (a remapped share, a changed drive or DFS target, a move done
 without changing the setting). CaseBook never recreates a store that held evidence.
-**Where to look:** Administration → Diagnostics → Evidence storage gives the reason; the log has it with the account.
+**Where to look:** Administration → Evidence storage gives the reason; the log has it with the account.
 **Fix:** bring the share back or restore the rights, or point `EvidenceStore:RootPath` at where the store now is
 ([OPERATIONS.md §1.2.1](../OPERATIONS.md#121-evidence-storage-limits-large-uploads-and-network-shares)). Downloads and
 uploads resume as soon as it's reachable; no restart needed. Don't create an empty folder at the old path to make

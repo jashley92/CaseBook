@@ -67,7 +67,7 @@ BACKUP LOG [IncidentManager]
 
 ### 1.2.1 Evidence storage: limits, large uploads and network shares
 
-**Limits (PROD-55).** Administration › Governance & security › Evidence storage sets the largest file
+**Limits (PROD-55).** Administration › Evidence storage sets the largest file
 (`Evidence:MaxUploadMB`, default 500 MB, up to 64 GB), the most all evidence may take (`Evidence:StorageQuotaGB`, no
 limit by default) and the free space an upload must leave on the store (`Evidence:MinFreeSpaceGB`, default 10 GB).
 Every way evidence arrives (picked, dropped, sent in parts, a pasted screenshot) is checked before a byte is stored
@@ -235,7 +235,7 @@ hash — so bit-rot, a silently substituted file, or a deletion under the eviden
 undetected until someone tried to open the file. F-17 closes that gap: a background job periodically
 **re-hashes the stored evidence files** and compares each with its recorded hash.
 
-- **Enable and schedule it** under **Administration → Settings → Integrity**
+- **Enable and schedule it** under **Administration → Integrity**
   (`Integrity:EvidenceVerify:Enabled`, default **off**; `Integrity:EvidenceVerify:IntervalHours`,
   default **24**; `Integrity:EvidenceVerify:PassDays`, default **7**). Each run re-hashes one share of the
   files, so every file is checked at least once in `PassDays` days and a large store is read a seventh at a
@@ -249,7 +249,7 @@ undetected until someone tried to open the file. F-17 closes that gap: a backgro
   (the offender list — case number, evidence id, filename). The alarm fires **once per drift** (an item and
   what's wrong with it): a drift that persists doesn't repeat it, a new one does even while an older one persists,
   and one that clears and comes back alerts again (REV-09).
-- **Status** is surfaced on **Administration → Diagnostics → Evidence-at-rest integrity** (last checked,
+- **Status** is surfaced on **Administration → Integrity → Evidence-at-rest results** (last checked,
   count verified, and any offenders) and, on drift, a persistent app-wide banner for Administer users.
 - Like the backup-health signal, the job **only reads** — it records nothing to the database and is not
   part of the audit chain (ops telemetry, not a case mutation), so a tamper that targets the store or
@@ -1128,7 +1128,7 @@ SMTP password `Email:SmtpPassword`; connection strings, `Agenda:FeedKey` and the
 literals or environment variables) needn't be kept in plain text. Each is resolved at runtime through one seam, so a
 value may be written three ways, chosen per value:
 
-**The SMTP password is usually entered in the app instead** (Administration → Settings → Notifications → Email
+**The SMTP password is usually entered in the app instead** (Administration → Notifications → Email
 sign-in): it's encrypted with Data Protection and kept in the database, with no keytool step. It's write-only, its
 changes are audited, and it needs the Data Protection key ring backed up with the database (§1). Setting
 `Email:SmtpUsername`/`SmtpPassword` or `Email:SmtpUseDefaultCredentials` in the file, as below, overrides the form
@@ -1386,7 +1386,7 @@ in the index, and a search word matches entries that **start with** it. So by wo
 "svc_backup" but `backup` doesn't, and `e-mail` finds "e-mail" but `mail` doesn't. Evidence file names, which are
 nearly always joined words, aren't indexed at all and stay a substring match (`dump` finds `lsass_dump.dmp`); the
 Evidence table is small. For the other free text, a site whose analysts need the part after the join found can set
-**Administration › Settings › Search › How search matches words** (`Search:Mode`) to *Anywhere in the text*
+**Administration › Search › How search matches words** (`Search:Mode`) to *Anywhere in the text*
 (`Substring`): every search then reads every row of every searched column, as without the feature (on the measured
 500-case database, about 340 ms a Find keystroke and 2 s a case-list search instead of 215 ms and 277 ms;
 [performance.md](reference/performance.md)), and the indexes stay in place, kept up to date, for switching back.

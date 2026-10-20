@@ -58,6 +58,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 - No per-user chat (Slack/Teams app); the webhook is a shared channel.
 - No read-only API for case status back to the detection platform.
 - No retention automation or purge. Closed cases past `Retention:CaseYears` are listed for an administrator to archive
-  (Administration › Retention review, CAP-10); nothing is archived or deleted by a job, and purging waits for two-person control.
+  (Administration › Retention, CAP-10); nothing is archived or deleted by a job, and purging waits for two-person control.
 - No configurable severity *levels* (only labels).
 - No case-type-specific workspace layouts.

@@ -48,16 +48,24 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/exports` | `Exports` | ViewCases | Download CSVs and bundles |
 | `/program/report` | `ProgramReportPage` | ViewCases | Program › Program report: quarterly program metrics |
 | `/account/access`, `/account/api-tokens`, `/account/notifications`, `/account/keyboard` | `Account*` | signed in | My access; personal tokens; notification preferences; keyboard shortcuts (RD-24) |
-| `/admin`, `/admin/settings/{Section?}` | `Admin` | Administer | Settings sections (below) |
-| `/admin/templates`, `/admin/gates`, `/admin/taxonomy`, `/admin/data-elements`, `/admin/outcomes`, `/admin/teams`, `/admin/roles`, `/admin/api-tokens`, `/admin/email-templates`, `/admin/config-bundle`, `/admin/retention`, `/admin/users/{UserRef:guid}`, `/admin/style` | `Admin*`, `StyleGuide` | Administer | Case templates, stage gates, labels, data elements, case outcomes, teams (CAP-36, `AdminTeams`, with a webhook card per team), roles and AD mappings (with the access review, CAP-15), system tokens, email wording, configuration bundle, the retention review (CAP-10), offboarding one person (CAP-30, `AdminOffboarding`; `UserRef` is the `AppUser` row's id, an opaque reference, never a name or account), live style guide |
+| `/admin` | `AdminOverview` | Administer | What needs attention (`AttentionSummary`, from `AdminHealth`), getting started, search (`AdminSearchBox`) |
+| `/admin/settings/{Section?}` | `Admin` | Administer | Settings and System sections (below) |
+| `/admin/templates`, `/admin/gates`, `/admin/data-elements`, `/admin/outcomes`, `/admin/teams`, `/admin/roles`, `/admin/api-tokens`, `/admin/email-templates`, `/admin/config-bundle`, `/admin/users/{UserRef:guid}`, `/admin/style` | `Admin*`, `StyleGuide` | Administer | Case templates, stage gates, data elements, case outcomes, teams (CAP-36, `AdminTeams`, with a webhook card per team), roles and AD mappings (with the access review, CAP-15), system tokens, email wording, configuration bundle, offboarding one person (CAP-30, `AdminOffboarding`; `UserRef` is the `AppUser` row's id, an opaque reference, never a name or account), live style guide |
 | `/access-denied`, `/not-found` | `NoAccess`, `NotFoundPage` | signed in | Friendly 403 and 404 |
 | `/Error`, `/session-expired` | `Error`, `SessionExpired` | anonymous (blank layout) | Error with a reference id; idle lock landing |
 
-**Admin sections.** `AdminLayout` adds a left rail. `/admin/settings/{section}` maps to groups in
-`SettingsCatalog`: `identity` (organization), `reporting`, `notifications`, `integrations`,
-`regulatory-deadlines`, `governance`, `sla`, plus the system views `server` (read-only server configuration),
-`source` (where each setting's value comes from) and `diagnostics`. A catalog group not claimed by a section
-appears under `/admin/settings/other`. Each section has one Save bar; leaving with unsaved changes prompts.
+**Admin sections.** `AdminLayout` adds a left rail grouped by task (`AdminLayout.AllGroups`: Overview, Organization, Cases &
+workflow, Notifications, Integrations, Reports, Records & evidence, People & access, System), with a search box at its top.
+`/admin/settings/{section}` maps to groups in `SettingsCatalog` (`Admin.NamedSettingsSections`, each with a one-line
+subtitle): `identity`, `notifications` (Email delivery, Email notifications, Team chat), `integrations`, `sla`,
+`taxonomy` (the taxonomy editor, `TaxonomyEditor`, above the severity labels), `regulatory-deadlines`, `reporting`,
+`evidence`, `retention` (with the review, `RetentionReviewPanel`), `integrity`, `security`, `search`, `updates`, plus the
+system views `server`, `source` and `diagnostics`. `/admin/settings/governance` lands on `evidence`, and `/admin/retention`
+and `/admin/taxonomy` send old links to their sections. A catalog group not claimed by a section appears under
+`/admin/settings/other` (a test keeps it empty). Each section has one Save bar, held while any changed value breaks its
+rules; leaving with unsaved changes prompts. A link ending `#<setting key>` (search, Diagnostics' fixes, an error's
+"Change the limit") scrolls to the setting and highlights it (`admin.js`, `imAdmin.reveal`). `AdminSearchIndex` indexes
+the settings, pages and server-only settings for the search box and the command palette.
 
 ## Layout and navigation
 

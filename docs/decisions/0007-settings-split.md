@@ -22,5 +22,5 @@ stream, swap the signing-key path or switch authentication off.
 ## Consequences
 
 - To add an operational setting, add it to `SettingsCatalog`. To add a sensitive one, keep it out.
-- A setting can come from three places: file, environment or database. Administration → Settings shows the
-  effective value and where it came from.
+- A setting can come from three places: file, environment or database. Administration → Setting sources shows
+  the effective value and where it came from.
