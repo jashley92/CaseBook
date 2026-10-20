@@ -1,0 +1,85 @@
+@* Administration search (AdminSearchIndex): settings by label, key, help text or an everyday word ("upload size"), pages,
+   and server-only settings. Arrow keys move through the results, Enter opens one, Escape clears. A setting opens its page
+   scrolled to it and highlighted. On the overview it's a full-width box; in the rail, a compact one. *@
+@using IncidentManager.Web.Services
+@inject NavigationManager Nav
+@inject ISeverityLabels SevLabels
+
+<div class="adm-search @(Compact ? "adm-search-compact" : "mb-3")">
+    <label class="visually-hidden" for="@_id">Search Administration</label>
+    <div class="input-group @(Compact ? "input-group-sm" : "")">
+        <span class="input-group-text"><span class="bi bi-search" aria-hidden="true"></span></span>
+        <input id="@_id" class="form-control" type="search" autocomplete="off" spellcheck="false"
+               placeholder="@(Compact ? "Search settings" : "Search settings and pages, e.g. upload size, timeout, logo")"
+               role="combobox" aria-expanded="@(_hits.Count > 0 ? "true" : "false")" aria-controls="@($"{_id}-list")"
+               aria-activedescendant="@(_active >= 0 ? $"{_id}-{_active}" : null)"
+               value="@_query" @oninput="OnInput" @onkeydown="OnKey" />
+    </div>
+    @if (_hits.Count > 0)
+    {
+        <ul class="list-group adm-search-results" id="@($"{_id}-list")" role="listbox" aria-label="Search results">
+            @for (var i = 0; i < _hits.Count; i++)
+            {
+                var hit = _hits[i];
+                var index = i;
+                <li id="@($"{_id}-{index}")" role="option" aria-selected="@(index == _active ? "true" : "false")"
+                    class="list-group-item list-group-item-action @(index == _active ? "active" : "")"
+                    @onclick="() => Open(hit)" @onmouseenter="() => _active = index">
+                    <span class="bi @Icon(hit.Kind) me-2" aria-hidden="true"></span><span class="fw-semibold">@hit.Title</span>
+                    <div class="small @(index == _active ? "" : "text-muted")">@hit.Where@(hit.Key is { } key ? $" · {key}" : "")</div>
+                </li>
+            }
+        </ul>
+    }
+    else if (_query.Trim().Length >= 2)
+    {
+        <div class="small text-muted mt-1" role="status">Nothing in Administration matches “@_query.Trim()”.</div>
+    }
+</div>
+
+@code {
+    [Parameter] public bool Compact { get; set; }
+
+    private readonly string _id = $"adm-search-{Guid.NewGuid():N}"[..20];
+    private string _query = "";
+    private IReadOnlyList<AdminSearchHit> _hits = [];
+    private int _active = -1;
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        _hits = AdminSearchIndex.Search(_query, SevLabels, Compact ? 6 : 8);
+        _active = _hits.Count > 0 ? 0 : -1;
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when _hits.Count > 0: _active = (_active + 1) % _hits.Count; break;
+            case "ArrowUp" when _hits.Count > 0: _active = (_active - 1 + _hits.Count) % _hits.Count; break;
+            case "Enter" when _active >= 0 && _active < _hits.Count: Open(_hits[_active]); break;
+            case "Escape": Clear(); break;
+        }
+    }
+
+    private void Open(AdminSearchHit hit)
+    {
+        Clear();
+        Nav.NavigateTo(hit.Href);
+    }
+
+    private void Clear()
+    {
+        _query = "";
+        _hits = [];
+        _active = -1;
+    }
+
+    private static string Icon(AdminSearchKind kind) => kind switch
+    {
+        AdminSearchKind.Page => "bi-window",
+        AdminSearchKind.ServerSetting => "bi-hdd-stack",
+        _ => "bi-sliders",
+    };
+}

@@ -2450,6 +2450,19 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 }
 .adm-savebar > .bi { color: var(--im-accent-text); }
 
+/* Administration search: a box on the overview and at the top of the rail; results open below it. A setting a search
+   result or a fix link lands on is briefly highlighted (imAdmin.reveal). */
+.adm-search { position: relative; }
+.adm-search-compact { padding: 0 .75rem .5rem; }
+.adm-search-results {
+    position: absolute; left: 0; right: 0; z-index: 30; margin-top: .25rem; max-height: 22rem; overflow-y: auto;
+    box-shadow: var(--im-shadow);
+}
+.adm-search-compact .adm-search-results { left: .75rem; right: .75rem; min-width: 18rem; }
+.adm-search-results .list-group-item { cursor: pointer; }
+.adm-highlight { outline: 2px solid var(--im-accent-strong); outline-offset: .35rem; border-radius: var(--im-radius); transition: outline-color 1.2s ease; }
+@media (prefers-reduced-motion: reduce) { .adm-highlight { transition: none; } }
+
 /* ============================================================================
    Cases toolbar (design review P2): count chips that are also filters, then the filter controls, on one
    wrapping row; rarer toggles, active-filter chips and saved views appear below only when in use.

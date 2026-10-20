@@ -1,4 +1,3 @@
-@page "/admin"
 @page "/admin/settings/{Section?}"
 @using Microsoft.EntityFrameworkCore
 @using IncidentManager.Application.Ops
@@ -20,6 +19,7 @@
 @inject IncidentManager.Application.Abstractions.IEmailSender Email
 @inject IncidentManager.Application.Abstractions.IChatNotifier Chat
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
+@inject IncidentManager.Web.Services.AdminHealth Health
 @inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor EvidenceIntegrity
 @inject IncidentManager.Application.Integrity.IntegrityCheckState IntegrityCheck
 @inject IncidentManager.Application.Evidence.EvidenceService EvidenceStorage
@@ -549,12 +549,13 @@
                     @* CAP-05: how CaseBook signs in to the relay, entered here (server configuration wins when it sets one). *@
                     @if (group == "Email delivery")
                     {
-                        <IncidentManager.Web.Components.Shared.EmailSignInCard />
+                        <div id="email-sign-in"><IncidentManager.Web.Components.Shared.EmailSignInCard /></div>
                     }
 
                     @* CAP-40: the team-chat webhook URL, entered here (server configuration wins when it sets one). *@
                     @if (group == "Team chat")
                     {
+                        <div id="chat-webhook"></div>
                         <IncidentManager.Web.Components.Shared.StoredSecretCard Kind="IncidentManager.Web.Secrets.StoredSecretKind.ChatWebhookUrl"
                             Title="Team chat webhook" FieldLabel="Webhook URL"
                             Help="The Slack incoming webhook or Teams workflow URL for the channel. It's the channel's credential, so it's kept like a password. It must be https."
@@ -774,6 +775,7 @@
             To verify or seal on demand, go to <a href="integrity">Integrity &amp; audit</a>.</p>
 
             @* CAP-40: the one SIEM webhook value that may be entered here rather than on the server: its token. *@
+            <div id="siem-token"></div>
             <IncidentManager.Web.Components.Shared.StoredSecretCard Kind="IncidentManager.Web.Secrets.StoredSecretKind.SiemWebhookToken"
                 Title="SIEM webhook token" FieldLabel="Token"
                 Help="The collector's bearer token or API key, sent in the header set by Siem:Webhook:AuthHeader. The collector URL stays in the server's configuration."
@@ -821,6 +823,9 @@
         }
         else
         {
+            <AttentionSummary Items="_attention" CheckedAtUtc="Health.CheckedAtUtc" />
+
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-about">About this server</h6>
             <table class="table table-sm">
                 <tbody>
                     <tr><td style="width:32%">Application version</td><td><code>@AppVersion</code></td></tr>
@@ -860,7 +865,7 @@
                 </tbody>
             </table>
 
-            <h6 class="text-uppercase small text-muted mt-3">Health checks</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-checks">Health checks</h6>
             <table class="table table-sm">
                 <tbody>
                     @if (_health is null)
@@ -873,21 +878,25 @@
                         {
                             <tr>
                                 <td style="width:32%">@h.Label</td>
-                                <td>@StatusBadge(h.Ok, "OK", "Problem") <span class="small text-muted ms-2">@h.Detail</span></td>
+                                <td>
+                                    @StatusBadge(h.Ok, "OK", h.Level == IncidentManager.Web.Services.AttentionLevel.Problem ? "Problem" : "See to it")
+                                    <span class="small text-muted ms-2">@h.Detail</span>
+                                    @if (!h.Ok && h.FixHref is { } fix) { <a class="small ms-2" href="@fix">Fix it</a> }
+                                </td>
                             </tr>
                         }
                     }
                 </tbody>
             </table>
 
-            <h6 class="text-uppercase small text-muted mt-3">Delivery health</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-delivery">Delivery health</h6>
             <IncidentManager.Web.Components.Shared.DeliveryHealthPanel />
 
             @* CAP-29: every background job's last run, next due and last error; Run now for the read-only scans. *@
-            <h6 class="text-uppercase small text-muted mt-3">Scheduled jobs</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-jobs">Scheduled jobs</h6>
             <IncidentManager.Web.Components.Shared.ScheduledJobsPanel />
 
-            <h6 class="text-uppercase small text-muted mt-3">Backup &amp; restore health</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-backup">Backup &amp; restore health</h6>
             @if (_backup is null)
             {
                 <p class="small text-muted mb-2"><em>Reading status&hellip;</em></p>
@@ -920,10 +929,10 @@
             }
 
             @* CAP-19: every path to back up, and the manifest a backup job reads. *@
-            <h6 class="text-uppercase small text-muted mt-3">Backup set</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-backup-set">Backup set</h6>
             <IncidentManager.Web.Components.Shared.BackupSetPanel />
 
-            <h6 class="text-uppercase small text-muted mt-3">Integrity check cost</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-cost">Integrity check cost</h6>
             <p class="small text-muted mb-2">
                 The integrity check runs every 10 minutes. Each run checks every record and the audit entries written
                 since the last run, and re-hashes the whole audit trail every 6 hours. These figures show how long the
@@ -983,7 +992,7 @@
                 </tbody>
             </table>
 
-            <h6 class="text-uppercase small text-muted mt-3">Evidence encryption</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-evidence-key">Evidence encryption</h6>
             <p class="small text-muted mb-2">
                 Evidence and reports encrypted at rest with a key protected by the server's integrity certificate, kept in three
                 places and backed up offline. Set in the server's configuration (OPERATIONS.md, Evidence key); the keys never show
@@ -991,13 +1000,13 @@
             </p>
             <IncidentManager.Web.Components.Shared.EvidenceKeyPanel />
 
-            <h6 class="text-uppercase small text-muted mt-3">Integrity keys and seal copies</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-keys">Integrity keys and seal copies</h6>
             <p class="small text-muted mb-2">
                 Set in the server's configuration (OPERATIONS §2), never here. Key ids are public thumbprints; no key is shown.
             </p>
             <div class="mb-3"><IntegrityKeyStatus /></div>
 
-            <h6 class="text-uppercase small text-muted mt-3">Secret resolution (CyberArk)</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-secrets">Secret resolution (CyberArk)</h6>
             <p class="small text-muted mb-2">
                 Whether externalized secrets, such as a SIEM webhook token written as a
                 <code>@("@cyberark:…")</code> reference, resolve from CyberArk CCP. Shows the last success and
@@ -1059,7 +1068,7 @@
                 </table>
             }
 
-            <h6 class="text-uppercase small text-muted mt-3">Feature flags</h6>
+            <h6 class="text-uppercase small text-muted mt-3" id="diag-flags">Feature flags</h6>
             <table class="table table-sm">
                 <tbody>
                     <tr><td style="width:32%">Email delivery</td><td>@StatusBadge(Config.GetValue<bool>("Email:Enabled"), "On", "Off (logged)")</td></tr>
@@ -1103,7 +1112,7 @@
     {
         if (_leaveConfirmed) { _leaveConfirmed = false; return; }
         var path = Nav.ToBaseRelativePath(ctx.TargetLocation).Split('?', '#')[0].TrimEnd('/');
-        if (path is "admin" || path.StartsWith("admin/settings", StringComparison.OrdinalIgnoreCase)) return; // same page
+        if (path.StartsWith("admin/settings", StringComparison.OrdinalIgnoreCase)) return; // same page (the overview isn't)
         if (path.Contains("session-expired", StringComparison.OrdinalIgnoreCase) || !HasUnsavedChanges) return;
         ctx.PreventNavigation();
         var target = ctx.TargetLocation;
@@ -1123,15 +1132,56 @@
 
     private bool _disposed;
 
-    public void Dispose() => _disposed = true;
+    public void Dispose()
+    {
+        _disposed = true;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    // A link to a setting (a search result, a Diagnostics fix, an error naming the setting behind it) ends in #its-key. The
+    // settings load after the page does, so it's brought into view once it's on the page, and again when a link lands on
+    // another setting of this page.
+    private string? _reveal;
+    private int _revealTries;
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        TakeFragment(Nav.Uri);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_disposed || !TakeFragment(e.Location)) return;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private bool TakeFragment(string uri)
+    {
+        var hash = uri.IndexOf('#');
+        if (hash < 0 || hash == uri.Length - 1) return false;
+        _reveal = Uri.UnescapeDataString(uri[(hash + 1)..]);
+        _revealTries = 0;
+        return true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_reveal is not { } id || _disposed) return;
+        bool shown;
+        try { shown = await JS.InvokeAsync<bool>("imAdmin.reveal", id); }
+        catch (JSDisconnectedException) { return; }
+        catch (InvalidOperationException) { return; }   // prerendering: no browser yet
+        // Not on the page yet (still loading): try again on the next renders, then give up.
+        if (shown || ++_revealTries >= 5) _reveal = null;
+    }
 
     private void ConfirmRemoveLogo() => _confirm.Ask(this, "Remove logo",
         "Remove the report logo? New reports won't show it. Reports already generated keep it.",
         "Remove logo", () => _logoBusy.Run(RemoveLogo));
 
-    // This page renders the Configuration and System sections of the admin hub; the shared AdminLayout owns
-    // the index rail. The active section comes from the route: /admin is Identity & branding, and
-    // /admin/settings/{section} selects the rest. Settings sections carry the catalog Groups they render;
+    // This page renders the settings and System sections of the admin hub; the shared AdminLayout owns the index rail.
+    // The active section comes from the route, /admin/settings/{section} (/admin is the overview, AdminOverview). Settings sections carry the catalog Groups they render;
     // System sections (Groups == null) render read-only / diagnostic views keyed by Id.
     [Parameter] public string? Section { get; set; }
 
@@ -1390,7 +1440,8 @@
     private IReadOnlyList<EffectiveSetting>? _effective;
     private readonly Dictionary<string, string?> _form = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string>? _pendingMigrations;
-    private IReadOnlyList<HealthCheck>? _health;
+    private IReadOnlyList<IncidentManager.Web.Services.HealthCheck>? _health;
+    private IReadOnlyList<IncidentManager.Web.Services.AttentionItem>? _attention;
     private BackupHealthReport? _backup;
     private string? _testRecipient;
 
@@ -1452,8 +1503,6 @@
         finally { _siemTesting = false; }
     }
 
-    private sealed record HealthCheck(string Label, bool Ok, string Detail);
-
     // PROD-49: the release the workflow stamped, e.g. "1.6.0 (a1b2c3d)"; the assembly version alone always read 1.0.0.0.
     private static string AppVersion => IncidentManager.Application.Updates.AppVersionInfo.Display;
 
@@ -1470,7 +1519,8 @@
             _pendingMigrations = (await db.Database.GetPendingMigrationsAsync()).ToList();
         }
         _smtpSignIn = await SmtpSignIns.StatusAsync();   // CAP-05: status only, never the password
-        _health = await RunHealthChecksAsync();
+        _health = await Health.CheckAsync();
+        _attention = await Health.AttentionAsync(_health);
         _backup = Backup.Read();
         try { _evidenceUse = await EvidenceStorage.StorageUseAsync(); }
         catch (Exception ex) when (ex is not OperationCanceledException) { _evidenceUseError = ex.Message; }
@@ -1500,105 +1550,6 @@
     // PROD-55/56: what evidence takes against its limits, read when Diagnostics opens.
     private IncidentManager.Application.Evidence.EvidenceStorageUse? _evidenceUse;
     private string? _evidenceUseError;
-
-    private async Task<List<HealthCheck>> RunHealthChecksAsync()
-    {
-        var checks = new List<HealthCheck>();
-
-        bool dbOk;
-        await using var db = await DbFactory.CreateDbContextAsync();
-        try { dbOk = await db.Database.CanConnectAsync(); } catch { dbOk = false; }
-        checks.Add(new HealthCheck("Database connectivity", dbOk, dbOk ? db.Database.ProviderName ?? "" : "cannot connect"));
-
-        // PROD-56: the store's own probe, in time (a share that's down answers rather than hangs the page) and never
-        // recreating a store that held evidence and has vanished (this check used to, just by being looked at).
-        var storeProblem = await EvidenceStoreFiles.ProbeAsync();
-        checks.Add(new HealthCheck("Evidence store writable", storeProblem is null, storeProblem ?? EvidenceStoreFiles.Location));
-        checks.Add(WritableCheck("Report output writable", Config["ReportOutput:RootPath"]));
-        // The app doesn't start without its signing key, so one is always loaded; say which (a file, a certificate or
-        // CyberArk). This checked for the PEM file, so a key in the certificate store read as missing.
-        checks.Add(new HealthCheck("Seal signing key", true, $"{Signer.KeyId} · {Signer.KeySource}"));
-        // A value saved before today's limits (or set in appsettings) blocks saving its section until corrected.
-        var invalid = SettingsCatalog.FindInvalid(key => IncidentManager.Web.Services.AdminSettingsDisplay.ConfiguredValue(Config, key));
-        checks.Add(new HealthCheck("Settings within limits", invalid.Count == 0, invalid.Count == 0
-            ? "every setting passes its rules"
-            : string.Join(" ", invalid.Select(i => $"{i.Problem} It's currently {i.Value}."))));
-        // CAP-05: a relay sign-in that can't be used stops every email; a plain-text password is said too.
-        var mail = EmailOptions.CurrentValue;
-        if (IncidentManager.Infrastructure.Notifications.SmtpSignIn.InServerConfig(mail))
-        {
-            var problem = IncidentManager.Infrastructure.Notifications.SmtpSignIn.Problem(mail);
-            var warnings = IncidentManager.Infrastructure.Notifications.SmtpSignIn.Warnings(mail);
-            checks.Add(new HealthCheck("Email relay sign-in", problem is null && warnings.Count == 0,
-                problem ?? (warnings.Count > 0 ? string.Join(" ", warnings) : IncidentManager.Infrastructure.Notifications.SmtpSignIn.Describe(mail))));
-        }
-        else if (_smtpSignIn is { } saved)
-        {
-            checks.Add(new HealthCheck("Email relay sign-in", !saved.PasswordUnreadable, saved.PasswordUnreadable
-                ? "The SMTP password saved in Administration can't be decrypted on this server: re-enter the SMTP password (Settings, Notifications, Email sign-in)."
-                : saved.Mode == IncidentManager.Infrastructure.Notifications.SmtpSignInMode.None ? "none (the relay takes mail without a sign-in)" : "set in Administration"));
-        }
-        // CAP-40: a secret saved in Administration that can't be decrypted here stops its sends: re-enter it.
-        foreach (var d in IncidentManager.Web.Secrets.StoredSecretDefinition.All)
-        {
-            if (StoredSecretAdmin.SetInServerConfiguration(d.Kind)) continue;
-            var saved = await StoredSecrets.StatusAsync(d.Kind);
-            if (!saved.Set) continue;
-            checks.Add(new HealthCheck(char.ToUpperInvariant(d.Label[0]) + d.Label[1..], !saved.Unreadable, saved.Unreadable
-                ? $"The {d.Label} saved in Administration can't be decrypted on this server: re-enter the {d.Label} ({d.Where})."
-                : "saved in Administration"));
-        }
-        checks.Add(new HealthCheck("Schema up to date", _pendingMigrations is { Count: 0 },
-            _pendingMigrations is { Count: > 0 } ? $"{_pendingMigrations.Count} pending" : "no pending migrations"));
-
-        // CAP-10: the nightly retention count (every case but exercises). A reminder only: the review archives nothing itself.
-        checks.Add(RetentionCount.Last switch
-        {
-            null => new HealthCheck("Retention review", true, "not counted yet (it's counted within minutes of start-up, then daily)"),
-            { Years: 0 } => new HealthCheck("Retention review", true, "off (case retention is 0 years)"),
-            { Due: 0 } c => new HealthCheck("Retention review", true,
-                $"no closed case is past {IncidentManager.Application.Common.Plural.Of(c.Years, "year")} · counted {c.CountedAtUtc:u}"),
-            var c => new HealthCheck("Retention review", false,
-                $"{IncidentManager.Application.Common.Plural.Of(c.Due, "closed case")} past {IncidentManager.Application.Common.Plural.Of(c.Years, "year")} waiting for review ({c.UnderHold:N0} under a legal hold), " +
-                $"counted {c.CountedAtUtc:u}. Review them under Retention review."),
-        });
-        // CAP-15: the periodic access review, recorded under Roles & access, reminded as the evidence-key drill is.
-        var lastReview = await AccessReviews.GetLastReviewAsync();
-        var reminder = AccessReviewService.ReminderFor(lastReview, AccessReviews.ReminderDays, DateTimeOffset.UtcNow);
-        checks.Add(new HealthCheck("Access review", !reminder.Due, reminder switch
-        {
-            { Off: true } => "reminder off" + (lastReview is { } l0 ? $" · last recorded {Day(l0.AtUtc)} by {l0.Reviewer}" : ""),
-            _ when lastReview is null => "No access review has been recorded. Review Roles & access and record it there.",
-            { Due: true } => $"Last recorded {Day(lastReview.AtUtc)} by {lastReview.Reviewer}, more than {IncidentManager.Application.Common.Plural.Of(AccessReviews.ReminderDays, "day")} ago: " +
-                             "review Roles & access and record it there.",
-            _ => $"last recorded {Day(lastReview.AtUtc)} by {lastReview.Reviewer} · next due {Day(reminder.DueAtUtc)}",
-        }));
-
-        return checks;
-    }
-
-    // BUG-531: a date in Diagnostics is Gregorian whatever the server culture.
-    private static string Day(DateTimeOffset? at) =>
-        at?.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "";
-
-    private HealthCheck WritableCheck(string label, string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return new HealthCheck(label, false, "path not configured");
-        var full = Path.IsPathRooted(path) ? path : Path.Combine(Env.ContentRootPath, path);
-        try
-        {
-            Directory.CreateDirectory(full);
-            var probe = Path.Combine(full, $".health-{Guid.NewGuid():N}.tmp");
-            File.WriteAllText(probe, "ok");
-            File.Delete(probe);
-            return new HealthCheck(label, true, full);
-        }
-        catch (Exception ex)
-        {
-            return new HealthCheck(label, false, ex.GetType().Name);
-        }
-    }
 
     // BUG-601: a logo change's reload and a section save's can overlap; only the newest lands (an older one put back the
     // values from before the newer save). False when a newer load took over.

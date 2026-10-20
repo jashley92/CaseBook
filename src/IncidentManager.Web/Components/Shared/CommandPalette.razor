@@ -310,6 +310,19 @@
             }
         }
 
+        // Administration's settings and pages, by label, key, help or an everyday word ("upload size"); a setting opens
+        // its page scrolled to it. The palette's own Administration entries come first, so no page is listed twice.
+        if (CurrentUser.Has(Permission.Administer) && q.Length >= 2)
+        {
+            var listed = items.Select(i => i.Label).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var hit in IncidentManager.Web.Services.AdminSearchIndex.Search(q, SevLabels, max: 6).Where(h => !listed.Contains(h.Title)))
+            {
+                var href = hit.Href;
+                items.Add(new Cmd("Administration", hit.Kind == IncidentManager.Web.Services.AdminSearchKind.Page ? "bi-window" : "bi-sliders",
+                    hit.Title, hit.Where, () => GoTo(href)));
+            }
+        }
+
         if (q.Length >= FindMinChars && seesCases)
         {
             _findCts?.Dispose();

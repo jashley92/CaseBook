@@ -12,6 +12,7 @@
         <div class="admin-rail-head">
             <span class="bi bi-shield-lock" aria-hidden="true"></span><span>Administration</span>
         </div>
+        <AdminSearchBox Compact="true" />
         @foreach (var group in Groups)
         {
             <div class="admin-rail-label">@group.Label</div>
@@ -66,6 +67,10 @@
     // Match.All highlights the exact section.
     public static readonly RailGroup[] AllGroups =
     [
+        new("Overview",
+        [
+            new("Overview", "bi-speedometer2", "admin"),   // what needs attention, and search
+        ]),
         new("Organization",
         [
             new("Identity & branding", "bi-building", "admin/settings/identity"),

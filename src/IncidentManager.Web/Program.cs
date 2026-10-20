@@ -336,6 +336,8 @@ builder.Services.AddScoped<IncidentManager.Web.Realtime.PresenceCircuitTracker>(
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(
     sp => sp.GetRequiredService<IncidentManager.Web.Realtime.PresenceCircuitTracker>());
 builder.Services.AddScoped<IncidentManager.Web.Ops.BackupHealthReader>();
+// What needs an administrator, for the Administration overview and Diagnostics.
+builder.Services.AddScoped<IncidentManager.Web.Services.AdminHealth>();
 builder.Services.AddSingleton<IncidentManager.Web.Ops.BackupSetReader>();   // CAP-19: a singleton, so its walks are one per path
 builder.Services.Configure<DevAuthOptions>(builder.Configuration.GetSection("DevAuth"));
 

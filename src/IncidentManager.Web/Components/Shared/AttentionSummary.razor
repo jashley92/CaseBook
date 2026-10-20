@@ -1,0 +1,71 @@
+@* What needs an administrator, worst first, each with a link to where it's fixed (AdminHealth.AttentionAsync). The same
+   list heads the Administration overview and Diagnostics, so the two never disagree. *@
+@using IncidentManager.Web.Services
+@inject TimeDisplay TimeDisp
+
+<section class="card mb-3" aria-labelledby="attention-title">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span id="attention-title"><span class="bi bi-bell me-1" aria-hidden="true"></span>Needs attention</span>
+        @if (Items is { } items)
+        {
+            @if (items.Any(i => i.Level == AttentionLevel.Problem))
+            {
+                <span class="im-badge im-b-danger">@Plural(items.Count(i => i.Level == AttentionLevel.Problem), "problem")</span>
+            }
+            else if (items.Any(i => i.Level == AttentionLevel.Warning))
+            {
+                <span class="im-badge im-b-warn">@Plural(items.Count(i => i.Level == AttentionLevel.Warning), "thing") to see to</span>
+            }
+            else
+            {
+                <span class="im-badge im-b-ok">All clear</span>
+            }
+        }
+    </div>
+    @if (Items is null)
+    {
+        <div class="card-body"><LoadingBlock /></div>
+    }
+    else if (Items.Count == 0)
+    {
+        <div class="card-body small text-muted">
+            <span class="bi bi-check-circle-fill text-success me-1" aria-hidden="true"></span>
+            Nothing needs you@(CheckedAtUtc is { } at ? $", as of {TimeDisp.Short(at)}" : "").
+        </div>
+    }
+    else
+    {
+        <ul class="list-group list-group-flush">
+            @foreach (var item in Items)
+            {
+                <li class="list-group-item d-flex align-items-start gap-2">
+                    <span class="bi @Icon(item.Level) mt-1" aria-hidden="true"></span>
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold">@item.Title <span class="visually-hidden">(@item.Level)</span></div>
+                        <div class="small text-muted">@item.Detail</div>
+                    </div>
+                    <a class="btn btn-sm btn-outline-secondary text-nowrap" href="@item.FixHref">@item.FixLabel</a>
+                </li>
+            }
+        </ul>
+        @if (CheckedAtUtc is { } checkedAt)
+        {
+            <div class="card-footer small text-muted">Checked @TimeDisp.Short(checkedAt). Reload the page to check again.</div>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>Null while loading.</summary>
+    [Parameter] public IReadOnlyList<AttentionItem>? Items { get; set; }
+    [Parameter] public DateTimeOffset? CheckedAtUtc { get; set; }
+
+    private static string Icon(AttentionLevel level) => level switch
+    {
+        AttentionLevel.Problem => "bi-x-octagon-fill text-danger",
+        AttentionLevel.Warning => "bi-exclamation-triangle-fill text-warning",
+        _ => "bi-info-circle-fill text-info",
+    };
+
+    private static string Plural(int n, string word) => IncidentManager.Application.Common.Plural.Of(n, word);
+}
