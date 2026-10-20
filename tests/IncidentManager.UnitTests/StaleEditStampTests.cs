@@ -36,7 +36,7 @@ public class StaleEditStampTests
         ["HandOffAsync"] = "adds a handoff entry, and moves only the caller's own open tasks",
         ["EditInvestigationEntryAsync"] = Supersede, ["EditNoteAsync"] = Supersede,
         ["ApproveLegalHoldReleaseAsync"] = OneWay, ["CancelLegalHoldReleaseAsync"] = OneWay, ["RequestLegalHoldReleaseAsync"] = OneWay,
-        ["ReopenAsync"] = OneWay, ["SupersedeAsync"] = OneWay, ["CompleteActionItemAsync"] = OneWay,
+        ["ReopenAsync"] = OneWay, ["SupersedeAsync"] = OneWay, ["CompleteActionItemAsync"] = OneWay, ["CancelActionItemAsync"] = OneWay,
         ["ChangePhaseAsync"] = Transition, ["ChangeSeverityAsync"] = Transition, ["ReclassifyAsync"] = Transition,
         ["ChangeOriginAsync"] = "a transition with a reason, refused when the case already has that origin (so a second one, made on a stale view, fails)",
         ["SetEntityPinnedAsync"] = Toggle, ["SetLegalHoldAsync"] = Toggle, ["SetRestrictedAsync"] = Toggle, ["SetArchivedAsync"] = Toggle,

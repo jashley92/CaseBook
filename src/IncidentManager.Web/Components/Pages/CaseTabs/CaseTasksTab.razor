@@ -302,6 +302,13 @@ else
                                 <span class="bi bi-pencil" aria-hidden="true"></span>
                             </button>
                         }
+                        @if (CanEdit && isOpen)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary me-1" title="Cancel this task"
+                                    aria-label="@($"Cancel task: {t.Title}")" @onclick="() => BeginCancel(t)">
+                                <span class="bi bi-x-circle" aria-hidden="true"></span>
+                            </button>
+                        }
                         <button class="btn btn-sm @(threadOpen ? "btn-secondary" : "btn-outline-secondary")"
                                 title="@(comments.Count == 0 ? "Add a comment" : $"{comments.Count} comment{(comments.Count == 1 ? "" : "s")}")"
                                 aria-expanded="@Ui.Aria(threadOpen)" @onclick="() => ToggleThread(t.Id)">
@@ -310,6 +317,20 @@ else
                         </button>
                     </td>
                 </tr>
+                @if (_cancelFor == t.Id)
+                {
+                    <tr class="im-task-edit" @key="@($"cancel-{t.Id}")">
+                        <td colspan="@colCount" class="bg-body-tertiary">
+                            <label class="form-label small mb-0" for="task-cancel-why">Why cancel "@t.Title"? <span class="text-muted">(optional; kept as a comment on the task)</span></label>
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                <input id="task-cancel-why" class="form-control form-control-sm" style="max-width:36rem" maxlength="2000"
+                                       @bind="_cancelWhy" @bind:event="oninput" placeholder="e.g. Covered by the containment task" disabled="@_cancelling" />
+                                <button class="btn btn-sm btn-danger" @onclick="() => ConfirmCancel(t)" disabled="@_cancelling">Cancel the task</button>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _cancelFor = null" disabled="@_cancelling">Keep it</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
                 @if (_done.IsOpenFor(t.Id))
                 {
                     @* INV-08: complete the task and, optionally, put its result on the timeline — written once. *@
@@ -356,16 +377,18 @@ else
                                     </div>
                                 </div>
                                 <div class="col-md-3">
-                                    <div class="form-check mt-3">
-                                        <input class="form-check-input" type="checkbox" id="task-done-log" @bind="_doneLog" />
-                                        <label class="form-check-label small" for="task-done-log">Add the result to the timeline as</label>
-                                    </div>
-                                    <select class="form-select form-select-sm mt-1" aria-label="Timeline entry type" @bind="_doneType" disabled="@(!_doneLog)">
+                                    <label class="form-label small mb-0 text-nowrap" for="task-done-log" title="Add the result to the timeline as">Add to the timeline as</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text">
+                                            <input class="form-check-input mt-0" type="checkbox" id="task-done-log" @bind="_doneLog" />
+                                        </span>
+                                        <select class="form-select form-select-sm" aria-label="Timeline entry type" @bind="_doneType" disabled="@(!_doneLog)">
                                         @foreach (var type in LoggableTypes)
                                         {
                                             <option value="@type">@Ui.Label(type)</option>
                                         }
-                                    </select>
+                                        </select>
+                                    </div>
                                     @if (_doneLog && string.IsNullOrWhiteSpace(_doneResult))
                                     {
                                         <div class="form-text mt-0">Only a result goes on the timeline: write one, or nothing is added.</div>
@@ -398,7 +421,7 @@ else
                     <tr class="im-task-edit im-own-keys" @key="@($"edit-{t.Id}")" @onkeydown="EditKey">
                         <td colspan="@colCount" class="bg-body-tertiary">
                             <div class="row g-2 align-items-end">
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label small mb-0" for="task-edit-title">Task</label>
                                     <input id="task-edit-title" class="form-control form-control-sm" maxlength="@ActionItem.MaxTitleLength" @bind="_editTitle" @bind:event="oninput" />
                                 </div>
@@ -418,7 +441,7 @@ else
                                                placeholder="External owner name" />
                                     }
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-md-3">
                                     <label class="form-label small mb-0" for="task-edit-kind">Kind</label>
                                     <select id="task-edit-kind" class="form-select form-select-sm" @bind="_editKind">
                                         @foreach (var k in Enum.GetValues<TaskKind>())
@@ -427,7 +450,7 @@ else
                                         }
                                     </select>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-md-3">
                                     <label class="form-label small mb-0" for="task-edit-status">Status</label>
                                     <select id="task-edit-status" class="form-select form-select-sm" @bind="_editStatus">
                                         @foreach (var s in Enum.GetValues<ActionItemStatus>())
@@ -436,11 +459,11 @@ else
                                         }
                                     </select>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-md-3">
                                     <label class="form-label small mb-0" for="task-edit-due-date">Due date</label>
                                     <DateInput id="task-edit-due-date" class="form-control form-control-sm" @bind-Value="_editDueDate" />
                                 </div>
-                                <div class="col-md-1">
+                                <div class="col-md-2">
                                     <label class="form-label small mb-0" for="task-edit-due-time">Time</label>
                                     <TimeInput id="task-edit-due-time" class="form-control form-control-sm" @bind-Value="_editDueTime"
                                            title="@($"In {TimeDisp.Label}. Leave blank for end of day.")" />
@@ -1049,6 +1072,28 @@ else
     private void CancelComplete() => _done.Close();
 
     private bool _moving;
+
+    // Cancelling a task from its row, with an optional reason.
+    private Guid? _cancelFor;
+    private string? _cancelWhy;
+    private bool _cancelling;
+
+    private void BeginCancel(ActionItem t) => (_cancelFor, _cancelWhy) = (t.Id, null);
+
+    private async Task ConfirmCancel(ActionItem t)
+    {
+        if (_cancelling) return;
+        _cancelling = true;
+        try
+        {
+            await Cases.CancelActionItemAsync(CaseId, t.Id, _cancelWhy);
+            _cancelFor = null;
+            Toasts.Success($"\"{t.Title}\" cancelled.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+        finally { _cancelling = false; }
+    }
 
     private async Task MoveToLessons(ActionItem t)
     {

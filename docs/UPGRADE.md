@@ -235,6 +235,11 @@ under Administration › Evidence storage.
 
 - **A task can move to lessons learned**: Tasks → Edit → *Move to lessons learned* makes an open task an improvement
   action (its title, description, owner and due date go with it) and cancels the task with a note saying so.
+- **A task can be cancelled from its row** (the ✕ button), with an optional reason kept under it. Before, cancelling
+  meant opening Edit and changing the status.
+- **The task forms line up.** In *Mark done*, the timeline choice is a label over one control, like its neighbours,
+  instead of a checkbox sitting lower than the other boxes; *Edit* puts its fields on two even rows instead of wrapping
+  the due date and time onto a line of their own.
 - **Completing a task: the timeline option works without a result typed first.** "Add the result to the timeline as"
   and its type were disabled until a result was written, while the box showed ticked, so they read as stuck on. Both
   can be changed at any time now, and the form says that only a written result goes on the timeline. The same on Now and

@@ -392,6 +392,27 @@ public sealed class TaskCompletionTests : IDisposable
             .Should().Be("Cancelled: Covered by the tenant-wide session revoke");
     }
 
+    [Fact]
+    public async Task A_task_is_cancelled_from_its_row_with_or_without_a_reason_and_only_while_open()
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+        await svc.CancelActionItemAsync(caseId, taskId, "  Duplicate of the containment task  ");
+
+        var t = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(x => x.Id == taskId);
+        t.Status.Should().Be(ActionItemStatus.Cancelled);
+        await using (var db = new AppDbContext(Options()))
+            (await db.ActionItemComments.SingleAsync(x => x.ActionItemId == taskId)).Body.Should().Be("Cancelled: Duplicate of the containment task");
+
+        var again = () => svc.CancelActionItemAsync(caseId, taskId, null);
+        await again.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cancelled already*");
+
+        await svc.AddActionItemAsync(caseId, "No reason needed", null, null);
+        var other = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(x => x.Title == "No reason needed");
+        await svc.CancelActionItemAsync(caseId, other.Id, " ");
+        await using (var db = new AppDbContext(Options()))
+            (await db.ActionItemComments.CountAsync(x => x.ActionItemId == other.Id)).Should().Be(0, "no reason, no comment");
+    }
+
     // --- INV-25: next steps are tasks ---
 
     [Fact]

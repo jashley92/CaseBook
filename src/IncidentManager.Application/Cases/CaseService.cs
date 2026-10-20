@@ -4590,6 +4590,32 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Cancels an open task, with an optional reason kept as a "Cancelled: …" comment (HR-17), in one save. A done or
+    /// cancelled task is refused: reopen it in Edit first.
+    /// </summary>
+    public async Task CancelActionItemAsync(Guid caseId, Guid actionItemId, string? reason, CancellationToken ct = default)
+    {
+        Require();
+        var why = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (why is { Length: > 2000 }) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
+                   ?? throw new InvalidOperationException("Task not found.");
+        if (item.Status is ActionItemStatus.Done or ActionItemStatus.Cancelled)
+            throw new InvalidOperationException($"\"{item.Title}\" is {(item.Status == ActionItemStatus.Done ? "done" : "cancelled")} already.");
+        item.Status = ActionItemStatus.Cancelled;
+        item.ModifiedBy = _user.UserId;
+        item.ModifiedAtUtc = _clock.UtcNow;
+        if (why is not null)
+            db.ActionItemComments.Add(new ActionItemComment
+            {
+                ActionItemId = item.Id, CaseId = c.Id, Body = CancelledPrefix + why, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+            });
+        await db.SaveChangesAsync(ct);
+    }
+
     // A task's owner: a directory id or an external name, null for Unassigned. BUG-50: within the column.
     private static string? CleanTaskOwner(string? owner)
     {

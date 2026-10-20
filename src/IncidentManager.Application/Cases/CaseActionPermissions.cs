@@ -113,6 +113,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.AddActionItemAsync)] = Permission.EditCases,
             [nameof(CaseService.AddImportedActionItemsAsync)] = Permission.EditCases,   // BUG-255
             [nameof(CaseService.ApplyTemplateAsync)] = Permission.EditCases,
+            [nameof(CaseService.CancelActionItemAsync)] = Permission.EditCases,
             [nameof(CaseService.SetActionItemStatusAsync)] = Permission.EditCases,
             [nameof(CaseService.CompleteActionItemAsync)] = Permission.EditCases,
             [nameof(CaseService.PromoteToTimelineAsync)] = Permission.EditCases,
