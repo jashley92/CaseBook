@@ -24,6 +24,12 @@ internal static class KeyToolProgram
           check-secret [<@protected: value>]
                        Check a @protected: value opens on this machine, as this account. Prints OK or why not; never the secret.
 
+          verify-restore --site <folder> [--sample 200 | --hash-all] [--public-keys <folder>] [--out <file.json>]
+                       [--pfx <file> | --cert <thumbprint> | --shares]
+                       Check a restored copy (the database, evidence and keys the site folder's settings point at): the
+                       audit chain, every seal, every evidence file present at its size and a sample re-hashed, and the
+                       evidence key. Read-only. Exit code 0 when every check passes, 2 when one fails.
+
           new-signing-key    --out <file.pem>
                        Make a seal-signing key (RSA 3072) as a PEM file, readable by this account only, and its public half
                        beside it (<name>.public.pem). Prints the key id. Run it off the server.
@@ -90,6 +96,13 @@ internal static class KeyToolProgram
                     var secret = ReadSecretOnce("Secret to protect: ", confirm: true);
                     Console.Out.WriteLine(KeyToolCommands.ProtectSecret(secret, Opt("--cert"), Opt("--store") ?? "LocalMachine", site, Console.Error));
                     return 0;
+                case "verify-restore":
+                    var sample = int.Parse(Opt("--sample") ?? "200", System.Globalization.CultureInfo.InvariantCulture);
+                    var report = RestoreCheck.Run(SiteArg(), sample, Flag("--hash-all"), Opt("--public-keys"),
+                        Flag("--shares") || Opt("--pfx") is not null || Opt("--cert") is not null ? OpeningArg() : null, Console.Out);
+                    if (Opt("--out") is { } reportOut) File.WriteAllText(reportOut, RestoreCheck.ToJson(report));
+                    Console.Out.WriteLine(report.Passed ? "Every check passed." : "A check failed: this restore isn't verified.");
+                    return report.Passed ? 0 : 2;
                 case "new-signing-key":
                     SigningKeyCommands.NewKey(Opt("--out") ?? throw new ArgumentException("--out is needed: where to write the key."), Console.Out);
                     return 0;

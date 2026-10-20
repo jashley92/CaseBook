@@ -19,6 +19,31 @@ internal sealed record Site(string EnvelopePath, string EvidenceRoot, string Rep
 {
     public string RootEnvelopePath => Path.Combine(EvidenceRoot, ".key", "evidence-key.json");
 
+    /// <summary>The site folder the settings were read from.</summary>
+    public string Folder { get; init; } = "";
+
+    /// <summary><see cref="Integrity"/> with its file paths resolved against the site folder, as the app (whose working
+    /// directory it is) resolves them.</summary>
+    public SealSigningOptions IntegrityResolved
+    {
+        get
+        {
+            string Full(string p) => string.IsNullOrWhiteSpace(p) ? p : Path.GetFullPath(Path.Combine(Folder, p));
+            var o = Integrity;
+            return new SealSigningOptions
+            {
+                SigningKeyPath = SigningKeyPath, AllowKeyGeneration = false, SigningKey = o.SigningKey,
+                RetiredPublicKeysPath = Full(o.RetiredPublicKeysPath), ExportPath = Full(o.ExportPath),
+                ChainKey = new ChainKeyOptions
+                {
+                    Enabled = o.ChainKey.Enabled, Source = o.ChainKey.Source, Secret = o.ChainKey.Secret, RetiredSecrets = o.ChainKey.RetiredSecrets,
+                    CertificateThumbprint = o.ChainKey.CertificateThumbprint, StoreLocation = o.ChainKey.StoreLocation,
+                    WrappedKeyPath = Full(o.ChainKey.WrappedKeyPath), RetiredWrappedKeysPath = Full(o.ChainKey.RetiredWrappedKeysPath),
+                },
+            };
+        }
+    }
+
     /// <summary>The seal-signing key file, as the app resolves <c>Integrity:SigningKeyPath</c> (signing-public-key).</summary>
     public string SigningKeyPath { get; init; } = "";
 
@@ -60,6 +85,7 @@ internal sealed record Site(string EnvelopePath, string EvidenceRoot, string Rep
             integrity)
         {
             SigningKeyPath = signing,
+            Folder = folder,
             EncryptionThumbprint = config["Storage:Encryption:CertificateThumbprint"],
             EncryptionStore = config["Storage:Encryption:StoreLocation"] ?? "LocalMachine",
         };
@@ -325,7 +351,7 @@ internal static class KeyToolCommands
     }
 
     // A stored file's content: decrypted when it's CBE1 under this key, else as it is.
-    private static Stream OpenContent(string path, string keyId, byte[] key)
+    internal static Stream OpenContent(string path, string keyId, byte[] key)
     {
         var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var head = new byte[Cbe1.HeaderSize];
@@ -397,6 +423,8 @@ internal static class KeyToolCommands
             return false;   // it doesn't open: the case recovery is for
         }
     }
+
+    internal static DbContextOptions<AppDbContext> DbOptionsFor(Site site) => DbOptions(site);
 
     private static DbContextOptions<AppDbContext> DbOptions(Site site)
     {
