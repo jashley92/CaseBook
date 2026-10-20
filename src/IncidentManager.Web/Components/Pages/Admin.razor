@@ -506,8 +506,8 @@
                     <tr>
                         <td>Seal signing key</td>
                         <td>
-                            <code>@(Config["Integrity:SigningKeyPath"] ?? "(unset)")</code>
-                            @StatusBadge(SigningKeyPresent(), "Key present", "Key missing")
+                            @StatusBadge(true, "Loaded", "")
+                            <span class="small ms-2">@Signer.KeySource</span>
                         </td>
                     </tr>
                     <tr>
@@ -1039,7 +1039,7 @@
                     <tr><td style="width:32%">Email delivery</td><td>@StatusBadge(Config.GetValue<bool>("Email:Enabled"), "On", "Off (logged)")</td></tr>
                     <tr><td>Auto-seal</td><td>@StatusBadge(Config.GetValue<bool>("Integrity:AutoSeal:Enabled"), "On", "Off") <span class="small text-muted ms-2">every @(Config["Integrity:AutoSeal:IntervalHours"] ?? "?") h</span></td></tr>
                     <tr><td>Evidence re-verification</td><td>@StatusBadge(Config.GetValue<bool>("Integrity:EvidenceVerify:Enabled"), "On", "Off") <span class="small text-muted ms-2">every @(Config["Integrity:EvidenceVerify:IntervalHours"] ?? "?") h</span></td></tr>
-                    <tr><td>Windows authentication</td><td>@StatusBadge(string.Equals(Config["Auth:Mode"], "Windows", StringComparison.OrdinalIgnoreCase), "Enabled", "Dev fallback")</td></tr>
+                    <tr><td>Windows authentication</td><td>@StatusBadge(string.Equals(Config["Auth:Mode"], "Windows", StringComparison.OrdinalIgnoreCase), "Enabled", $"Off: {Config["Auth:Mode"] ?? "not set"}")</td></tr>
                 </tbody>
             </table>
         }
@@ -1172,16 +1172,7 @@
 
     private const string EmptyDash = "—";
 
-    // The per-severity SLA rows embed the severity's name in their label (e.g. "Containment — Critical
-    // (hours)"). Show the org's configured severity label instead, so a renamed level (e.g. Critical → SEV-1)
-    // stays consistent here too. Only Sla:…:{Severity} keys (including the Breach overrides) are affected.
-    private string DisplayLabel(SettingDefinition def)
-    {
-        var parts = def.Key.Split(':');
-        return parts is ["Sla", _, .., var sevName] && EnumNames.TryParse<Severity>(sevName, out var sev)
-            ? def.Label.Replace(sev.ToString(), SevLabels.For(sev))
-            : def.Label;
-    }
+    private string DisplayLabel(SettingDefinition def) => IncidentManager.Web.Services.AdminSettingsDisplay.Label(def, SevLabels);
 
     // Server-side keys surfaced in the config-source map (secrets shown as status only).
     private static readonly (string Label, string Key, bool Secret)[] ServerKeys =
@@ -1485,10 +1476,11 @@
         var storeProblem = await EvidenceStoreFiles.ProbeAsync();
         checks.Add(new HealthCheck("Evidence store writable", storeProblem is null, storeProblem ?? EvidenceStoreFiles.Location));
         checks.Add(WritableCheck("Report output writable", Config["ReportOutput:RootPath"]));
-        checks.Add(new HealthCheck("Seal signing key present", SigningKeyPresent(),
-            SigningKeyPresent() ? Signer.KeyId : "missing, so seals can't be signed"));
+        // The app doesn't start without its signing key, so one is always loaded; say which (a file, a certificate or
+        // CyberArk). This checked for the PEM file, so a key in the certificate store read as missing.
+        checks.Add(new HealthCheck("Seal signing key", true, $"{Signer.KeyId} · {Signer.KeySource}"));
         // A value saved before today's limits (or set in appsettings) blocks saving its section until corrected.
-        var invalid = SettingsCatalog.FindInvalid(key => Config[key]);
+        var invalid = SettingsCatalog.FindInvalid(key => IncidentManager.Web.Services.AdminSettingsDisplay.ConfiguredValue(Config, key));
         checks.Add(new HealthCheck("Settings within limits", invalid.Count == 0, invalid.Count == 0
             ? "every setting passes its rules"
             : string.Join(" ", invalid.Select(i => $"{i.Problem} It's currently {i.Value}."))));
@@ -1885,14 +1877,6 @@
     {
         try { await save(); return null; }
         catch (SettingsNotInEffectException ex) { return ex.Message; }
-    }
-
-    private bool SigningKeyPresent()
-    {
-        var path = Config["Integrity:SigningKeyPath"];
-        if (string.IsNullOrWhiteSpace(path)) return false;
-        var full = Path.IsPathRooted(path) ? path : Path.Combine(Env.ContentRootPath, path);
-        return File.Exists(full);
     }
 
     private static RenderFragment StatusBadge(bool ok, string yes, string no) => builder =>
