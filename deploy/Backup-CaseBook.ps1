@@ -180,6 +180,17 @@ FROM msdb.dbo.backupset b WHERE b.database_name = @db AND b.type = 'D' ORDER BY 
         $folders += [ordered]@{ label = $f.Label; setting = $f.Key; source = $f.Path; files = $copied.Files; bytes = $copied.Bytes }
     }
 
+    # The site's own settings, as they are now (changes made since install: CyberArk, seal copies, retired keys), for a
+    # rebuild. Locked down with the rest of the set: it can hold secrets.
+    $siteSettings = Join-Path $site.Folder 'appsettings.Production.json'
+    $settingsCopy = $null
+    if (Test-Path $siteSettings) {
+        $settingsCopy = Join-Path (Join-Path $set 'files') 'site\appsettings.Production.json'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $settingsCopy) | Out-Null
+        Copy-Item -LiteralPath $siteSettings -Destination $settingsCopy -Force
+        Write-Host "  site: appsettings.Production.json" -ForegroundColor Gray
+    }
+
     # Evidence: one mirror the sets share. Uploads still arriving (.incoming) aren't evidence yet.
     $evidence = Get-CaseBookEvidenceFolder $site
     $mirror = Join-Path $Destination 'evidence'
@@ -194,6 +205,7 @@ FROM msdb.dbo.backupset b WHERE b.database_name = @db AND b.type = 'D' ORDER BY 
         site = $site.Folder
         database = [ordered]@{ instance = $db.Instance; name = $db.Name; file = $bak; bytes = $dbBytes; copyOnly = [bool]$CopyOnly; verified = $true }
         folders = $folders
+        siteSettings = $settingsCopy
         evidence = [ordered]@{ source = $evidence; mirror = $mirror; files = $ev.Files; bytes = $ev.Bytes }
     }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $set 'backup-set.json') -Encoding UTF8

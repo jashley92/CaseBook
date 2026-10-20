@@ -220,8 +220,9 @@ Or pass every value directly instead of a config file:
   Name Indication** on, so the certificate is bound to that host name only and other sites' certificates on port 443
   are left alone. Clients must use the host name (an IP address gets no certificate). Adding the binding by hand
   later, tick the same box.
-- **Re-running the installer rewrites `appsettings.Production.json`** from the template, discarding manual
-  additions (SIEM, CyberArk, `App:BaseUrl`, `Agenda:FeedKey`). Back it up first, or make later changes by hand.
+- **Re-running the installer keeps `appsettings.Production.json`** (see *Running it again* above): the new one is
+  written beside it as `.new`, and `-ReplaceSettings` replaces it, discarding changes made since (SIEM, CyberArk,
+  `App:BaseUrl`, `Agenda:FeedKey`). Back it up before using that.
 - `-SitePath` (web root) and `-DataRoot` are **deliberately separate**; keep the data root off the web root and
   in the backup and EDR scope.
 - **Email sign-in (CAP-05)**: `SmtpSignIn` in the answers file (or `-SmtpSignIn`) says how CaseBook signs in to the
@@ -342,9 +343,11 @@ Then, signed in as a mapped user:
 
 ## 6. Post-install (hand off to OPERATIONS.md)
 
-- [ ] Schedule SQL **backups** (full/diff/log) to a secured, encrypted, offsite target — §1.1.
-- [ ] Wire the **backup-status JSON** so Diagnostics → Backup &amp; restore health reads *Fresh* — §1.3.1.
-- [ ] Perform one **restore rehearsal** and confirm chain + prior-seal verification on the copy — §1.3.
+- [ ] Schedule **backups** to a secured, encrypted, offsite target: `Backup-CaseBook.ps1 -Register` (the nightly set
+      and 15-minute log backups), or, where a backup product backs the server up, add the CaseBook folders to it and
+      run `Update-CaseBookBackupStatus.ps1 -Register` — OPERATIONS.md §1.1. Diagnostics → Backup &amp; restore health
+      then reads *Fresh* (the installer sets `BackupStatus:FilePath`).
+- [ ] Run one **restore drill**, `Test-CaseBookRestore.ps1`, and schedule it with `-Register` — §1.3.
 - [ ] Confirm the evidence/seal/report dirs are in the **EDR** monitoring policy — §3.
 - [ ] Set the **email sign-in** under Administration → Notifications → Email sign-in (unless the answers
       file set it), turn email on and *Send a test email*. Back up `<DataRoot>\dp-keys` with the database: it decrypts
@@ -352,14 +355,15 @@ Then, signed in as a mapped user:
 - [ ] *(Optional)* Keep the SIEM token, chat webhook URL or SMTP password out of plain text: `@protected:` values with
       `casebook-keytool protect-secret` (no CyberArk needed), or **CyberArk CCP**; see §6.1 below and OPERATIONS.md §6.
 - [ ] *(Recommended)* Turn on the **SQL Server ledger** for the audit trail, seals and custody events with
-      `deploy\Enable-Ledger.ps1`, and schedule `Export-LedgerDigest.ps1` to an immutable share. One-way: take a
+      `deploy\Enable-Ledger.ps1`, and schedule `Export-LedgerDigest.ps1 -Register` to an immutable share. One-way: take a
       full backup first. See OPERATIONS.md §7.
 - [ ] Walk the **Deploy-time Checklist** (§4) and record sign-off.
 
 ### 6.1 Optional — externalize secrets to CyberArk (F-19)
 
-By default, config-borne secrets (today just the SIEM webhook token, if you use the webhook) live in
-`appsettings.Production.json`. If your org uses **CyberArk**, you can instead keep them in the Vault and let
+Secrets in `appsettings.Production.json` (the SIEM webhook token, the team-chat webhook URL, the SMTP password, or the
+CyberArk client settings' own values) are plain text there unless you protect them (`@protected:`, OPERATIONS.md §6) or
+keep them in CyberArk. If your org uses **CyberArk**, you can instead keep them in the Vault and let
 CaseBook fetch them at runtime. This is **opt-in and per-secret** — nothing changes unless you turn it on.
 
 **The CCP URL and all CyberArk settings go in one place: the `Secrets:CyberArk` block of the deployed
@@ -410,7 +414,7 @@ The full guide is [operations/troubleshooting.md](operations/troubleshooting.md)
 | `500.30` / `500.31` on first hit | The app couldn't start: usually the connection string or SQL login, a store path the app pool can't write (the data folders, not the web root), or a migration failure. Check the Application event log and `logs\stdout`. |
 | The app pool stops immediately | A non-gMSA account installed without `-AppPoolCredential`: the password is blank. Set it in IIS Manager. |
 | `401 Unauthorized` for everyone | Windows Auth isn't negotiating: missing **SPN** for the hostname, or the site isn't in the browser's intranet zone. |
-| `401` on `/health`, the email logo or the calendar feed | The anonymous carve-out for that path is missing (a site installed before CAP-37, or changed since). `Upgrade-CaseBook.ps1` checks and sets it; so does re-running the installer. As a fallback, apply it with `appcmd` ([UPGRADE.md](UPGRADE.md), *Unreleased*). |
+| `401` on `/health`, the email logo or the calendar feed | The anonymous carve-out for that path is missing (a site installed before CAP-37, or changed since). `Upgrade-CaseBook.ps1` checks and sets it; so does re-running the installer. As a fallback, apply it with `appcmd` ([UPGRADE.md](UPGRADE.md), *v1.10.0*). |
 | `401` calling **`POST /api/import/cases`** | Send `Authorization: Bearer <token>`. If a valid token still gets 401, the `/api` anonymous carve-out is missing (`Upgrade-CaseBook.ps1` or the installer sets it; or apply it with `appcmd`). A token without `EditCases` gets **403**. |
 | `400 Bad Request` | The hostname used isn't in `AllowedHosts`. |
 | Login OK but *access denied* everywhere | The user isn't in any mapped AD group, or the group names in the answers file don't match AD. After first start, manage mappings in Administration → Roles & access. |

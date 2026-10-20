@@ -27,6 +27,11 @@
 
 .PARAMETER SqlCredential
     Only where Windows integrated authentication isn't available. Never stored.
+
+.PARAMETER Register
+    Creates (or replaces) the scheduled task "CaseBook ledger verify", every fourth Sunday at -At, as -TaskAccount (default
+    SYSTEM), with this run's SqlInstance, DbName, DigestPath and -Latest. Its last run result is the exit code above:
+    alert on anything but 0. It runs the copy of this script kept beside -SitePath (<site>-deploy) when there is one.
 #>
 [CmdletBinding()]
 param(
@@ -35,7 +40,12 @@ param(
     [string] $DbName,
     [string] $DigestPath,
     [int] $Latest = 0,
-    [System.Management.Automation.PSCredential] $SqlCredential
+    [System.Management.Automation.PSCredential] $SqlCredential,
+    [switch] $Register,
+    [string] $TaskAccount = 'SYSTEM',
+    [string] $At = '04:00',
+    # The site, only to find the deploy scripts kept beside it (<site>-deploy) for -Register.
+    [string] $SitePath = 'C:\inetpub\casebook'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,6 +61,15 @@ try {
     if (-not $DbName) { $DbName = 'CaseBook' }
     if (-not $SqlInstance) { throw 'Missing SqlInstance.' }
     if (-not $DigestPath -or -not (Test-Path $DigestPath)) { throw "Digest folder not found: $DigestPath" }
+
+    if ($Register) {
+        # The task gets the values themselves, not -ConfigFile: the answers file stays with the release folder.
+        . (Join-Path $scriptDir 'lib\CaseBookBackup.ps1')
+        $arguments = "-SqlInstance `"$SqlInstance`" -DbName `"$DbName`" -DigestPath `"$DigestPath`" -SitePath `"$SitePath`"" + $(if ($Latest -gt 0) { " -Latest $Latest" } else { '' })
+        Register-CaseBookTask -Name 'ledger verify' -Script $MyInvocation.MyCommand.Path -SitePath $SitePath -Arguments $arguments `
+            -Trigger (New-ScheduledTaskTrigger -Weekly -WeeksInterval 4 -DaysOfWeek Sunday -At $At) -Account $TaskAccount
+        exit 0
+    }
 
     # BUG-600: oldest to newest by the ledger block each digest covers, then by the stamp in its name, not by the name:
     # a name stamped in a server culture with another calendar (Thai 2569, Hijri 1448) sorted out of order.

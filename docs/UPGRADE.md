@@ -234,6 +234,18 @@ OPERATIONS.md §1 has the procedures and a flow chart):
 To use them, set `BackupStatus:FilePath` (the installer sets it to `<DataRoot>\ops\casebook-backup-status.json`), then
 follow OPERATIONS.md §1.1 and §1.3. Nothing runs until you schedule it.
 
+Also in this release:
+
+- **Each backup set keeps the site's `appsettings.Production.json`** (`files\site`), for a rebuild.
+- **Scheduled tasks run the deploy scripts kept beside the site** (`<site>-deploy`), so they keep working when the
+  release folder is gone, and the install and the upgrade point this site's existing `CaseBook *` tasks there.
+- **The ledger scripts schedule themselves:** `Export-LedgerDigest.ps1 -Register` (daily) and `Verify-LedgerDigests.ps1
+  -Register` (every fourth Sunday) replace the `schtasks` line in OPERATIONS.md §7.2, which pointed at a release folder.
+- **OPERATIONS.md** gains §1.5, disaster recovery step by step with a flow chart, and §1.6, everything that runs on a
+  schedule and what tells you it didn't. Several statements that no longer matched the app were corrected: re-running
+  the installer keeps the site's settings; the SIEM webhook stops, rather than sending without its token, when its
+  token can't be opened; seal-copy failures are logged; the seal signature is RSA-PSS.
+
 ### v1.11.1
 
 A fix to v1.11.0, with no migration and no setting changes.

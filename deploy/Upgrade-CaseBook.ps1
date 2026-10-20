@@ -987,6 +987,7 @@ try {
     if (-not $newDeploy) { $newDeploy = $deployDir }
     $kept = Publish-CaseBookDeployScripts -SourceDeployDir $newDeploy -SitePath $SitePath -SiteName $SiteName
     if ($kept) { Write-Info "Deploy scripts kept in $kept (next time: & '$kept\Upgrade-CaseBook.ps1' -Version <vX.Y.Z>)" }
+    Update-CaseBookTaskPaths -KeptDir $kept -SitePath $SitePath
 } catch { Write-Warn2 "Couldn't keep a copy of the deploy scripts beside the site: $($_.Exception.Message)" }
 
 Write-Step "Upgrade complete."

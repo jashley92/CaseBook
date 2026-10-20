@@ -59,7 +59,8 @@ writes its reason instead, and Diagnostics shows **Failed** until a later backup
 
 #### Without a backup product: Backup-CaseBook.ps1
 
-In an elevated PowerShell on the CaseBook server, from the `deploy` folder of the release:
+In an elevated PowerShell on the CaseBook server, from the deploy scripts kept beside the site (`<site>-deploy`, for
+example `C:\inetpub\casebook-deploy`) or the `deploy` folder of the release:
 
 ```powershell
 .\Backup-CaseBook.ps1 -Destination \\backup01\casebook                       # one backup now, to check it works
@@ -304,9 +305,8 @@ SHA-256 differs*. Restore that file from an older backup (the recorded hash says
 out why the backup didn't capture it, and run the drill again. A failed drill doesn't replace the last good one: both
 show until a drill passes.
 
-A **full disaster recovery** still restores everything as a set: the database, the evidence store and the data root's
-`keys` folder from the same point. On the restored server, before it serves anyone, run the drill against it (or, with
-encryption on, at least `casebook-keytool verify --site <site folder>`).
+A **full disaster recovery** restores everything as a set, from the same point, and runs the drill against the result
+before it serves anyone: §1.5 has the steps.
 
 ### 1.3.1 Backup-health status file (H-04)
 
@@ -376,6 +376,99 @@ To restore to a point between sets, restore the set's `.bak` `WITH NORECOVERY`, 
 (`RESTORE LOG ... WITH NORECOVERY`, the last one `WITH STOPAT = '<time>', RECOVERY`). The restore drill restores the
 set alone. Adjust to the insurer's records policy
 and any NYDFS Part 500 expectations (Legal owns the regulatory interpretation).
+
+### 1.5 Disaster recovery
+
+The order to bring CaseBook back from a backup, on the same server or a rebuilt one. Everything comes from **one
+point**: the database, the folders and the evidence store from the same set, so the seals, the audit chain and the
+files agree. Nobody signs in until step 6 passes.
+
+```mermaid
+flowchart TD
+    what{"What was lost?"}
+    what -->|"The database only<br/>(the server is fine)"| db["2. Restore the database<br/>from the set (and its logs)"]
+    what -->|"The server"| build["1. Rebuild: Windows, IIS, .NET Hosting Bundle,<br/>then Install-CaseBook.ps1 with the same answers file"]
+    build --> db
+    db --> files["3. Put back the set's folders, the evidence mirror<br/>and the site's settings"]
+    files --> certs{"4. Are the certificates<br/>on this server?"}
+    certs -->|Yes| verify
+    certs -->|No| keys["Import them, or recover onto new ones:<br/>casebook-keytool recover --to-cert"]
+    keys --> verify["5. Test-CaseBookRestore.ps1 -RestoredDatabase<br/>proves the restored copy whole"]
+    verify -->|fails| fix["Fix what it names,<br/>run it again"]
+    fix --> verify
+    verify -->|passes| start["6. Start the app pool, verify the chain,<br/>re-enter what Diagnostics names, re-register tasks"]
+```
+
+1. **A rebuilt server:** install the prerequisites (INSTALL.md §1) and run `Install-CaseBook.ps1` with the same answers
+   file, so the site, the data root and the app-pool account are where they were. Then stop the app pool. With the
+   database server intact, skip INSTALL.md §2.
+2. **The database**, as an administrator on SQL Server, from the set's `db\<database>.bak`:
+
+   ```sql
+   RESTORE DATABASE [CaseBook] FROM DISK = N'\\backup01\casebook\CaseBook-20261020-0130\db\CaseBook.bak'
+     WITH CHECKSUM, REPLACE, NORECOVERY;
+   -- then each log backup taken after it, oldest first (<Destination>\log), the last one:
+   RESTORE LOG [CaseBook] FROM DISK = N'\\backup01\casebook\log\CaseBook-20261020-091500.trn' WITH RECOVERY;
+   ```
+
+   With no logs to apply, restore the `.bak` `WITH CHECKSUM, REPLACE, RECOVERY`. With your backup product, restore the
+   database to the same point with the product. Give the app-pool account its login and database role again if the
+   SQL Server is new (INSTALL.md §2).
+3. **The folders.** `backup-set.json` lists each folder the set copied and where it came from: copy `files\<name>` back
+   to that place (`keys`, `dp-keys`, `seals`, `report-output`, `branding`, `report-templates`), and the evidence mirror
+   (`<Destination>\evidence`) to `EvidenceStore:RootPath`. `files\site\appsettings.Production.json` is the site's
+   settings as they were: compare it with the one the installer just wrote and put it back, so changes made since
+   install (CyberArk, seal copies, retired keys, alert lists) come back too.
+4. **The keys.** On the same server, nothing to do. On a new one:
+   - **Seal signing key** in the certificate store: import the signing certificate with its private key if you kept
+     it. If it was non-exportable, make a new key and keep the old one's public half in the retired keys folder, so
+     the old seals still verify (§2, *Rotating the signing key*: a lost key).
+   - **Evidence key** (encryption on) and a **chain key** on a certificate: install a new certificate, then
+     `casebook-keytool recover --site <site folder> --pfx <recovery .pfx> --to-cert <new thumbprint>`, adding
+     `--chain-key` to rebuild `chain-key.json` onto it too; set the thumbprints (§2, *Recovering the key onto a new
+     certificate*).
+   - **`@protected:` values** open only with the certificate they were made for: import it, or make the values again
+     (`casebook-keytool protect-secret`).
+   - **The Data Protection key ring** is locked to the old server (machine DPAPI), so the secrets saved under
+     Administration (the SMTP password, the chat webhook URL, the SIEM token) are entered again in step 6.
+5. **Prove it**, before anyone signs in, from the `deploy` folder:
+
+   ```powershell
+   .\Test-CaseBookRestore.ps1 -RestoredDatabase CaseBook -EvidencePath E:\CaseBookData\evidence-store -KeysPath E:\CaseBookData\keys
+   ```
+
+   It runs DBCC CHECKDB and `casebook-keytool verify-restore` against the restored database and folders, and changes
+   neither (§1.3 lists the checks). A file stored after the set was taken is reported missing: restore it from a later
+   backup if there is one, or record it as lost.
+6. **Start the app pool.** Then: `Verify-Install.ps1 -Url https://<host>` (the IIS carve-outs and health);
+   **Integrity › Verify now** reports the chain valid; enter again any secret **Diagnostics** says it can't open; and,
+   on a new server, run each script's `-Register` again (§1.6), since scheduled tasks don't come back with a restore.
+   Diagnostics › Backup & restore health shows the drill from step 5.
+
+### 1.6 What runs when
+
+Everything CaseBook needs done on a schedule outside the app, and what tells you it didn't happen. The app's own
+background jobs (seals, the evidence re-check, retention counts) are on **Administration › Diagnostics › Scheduled
+jobs**.
+
+| What | How often | How it's scheduled | What tells you it's late or failed |
+|---|---|---|---|
+| Backup set (§1.1) | Nightly, 01:30 | `Backup-CaseBook.ps1 -Register` | Diagnostics: *Last successful backup* Stale after 24 hours, or **Failed** |
+| Log backup (§1.1) | Every 15 minutes | The same `-Register` | Diagnostics: *Last log backup* Stale after 60 minutes, or **Failed** |
+| Backup status, with a backup product (§1.1) | Hourly | `Update-CaseBookBackupStatus.ps1 -Register` | Diagnostics, as for the backup set |
+| Restore drill (§1.3) | Every fourth Sunday, 03:00 | `Test-CaseBookRestore.ps1 -Register` | Diagnostics: *Last verified restore* Stale after 35 days, or **Failed** |
+| Ledger digest (§7.2) | Daily, 02:00 | `Export-LedgerDigest.ps1 -Register` | The task's last run result (1 = not saved); nothing in the app |
+| Ledger verification (§7.3) | Every fourth Sunday, 04:00 | `Verify-LedgerDigests.ps1 -Register` | The task's last run result: 1 = the ledger doesn't match, 2 = it couldn't run |
+| Evidence key drill (§2, Step 5) | Yearly | By hand: `casebook-keytool verify` | Diagnostics, after 12 months |
+| Access review (§8) | Every 90 days | By hand, in Administration | Diagnostics, after `Governance:AccessReview:ReminderDays` |
+| Retention review (§8) | When cases come due | By hand, in Administration | Diagnostics, and a monthly email to Legal / Privacy if on |
+| Signing key rotation (§2) | Your policy | By hand | Nothing reminds you |
+| Certificate renewals | Before each expires | By hand | Recovery certificates: Diagnostics, 60 days ahead. The others (signing, chain key, evidence lock, `@protected:`, TLS): nothing, so diary them |
+| Upgrades (UPGRADE.md) | Each release | By hand: `Upgrade-CaseBook.ps1` | Administration › Updates |
+
+The tasks run as `-TaskAccount` (SYSTEM by default) the copy of each script kept beside the site, `<site>-deploy`,
+which every install and upgrade refreshes, and an upgrade points this site's `CaseBook *` tasks at it. See them in
+Task Scheduler, or with `Get-ScheduledTask -TaskName 'CaseBook *' | Get-ScheduledTaskInfo`.
 
 ---
 
@@ -994,7 +1087,8 @@ the tool on the server, against the site's own keys folder, or the record waits 
 
 - [ ] `Auth:Mode=Windows`; AD group → role mappings under `RoleMapping:Groups` match real groups.
 - [ ] `Database:Provider=SqlServer` and a valid integrated-auth connection string.
-- [ ] SQL Agent backup jobs (full/diff/log) scheduled to a secured, encrypted, offsite target.
+- [ ] Backups scheduled (§1.1): `Backup-CaseBook.ps1 -Register` (nightly set and 15-minute log backups) to a
+      secured, encrypted, offsite target, or your backup product with `Update-CaseBookBackupStatus.ps1 -Register`.
 - [ ] Evidence / seal / report / branding directories exist outside the webroot, ACL-restricted, and in
       the backup set and the EDR monitoring policy.
 - [ ] Web root is **read/execute-only** — on SQL Server the app writes no `App_Data` under the content
@@ -1003,19 +1097,19 @@ the tool on the server, against the site's own keys folder, or the record waits 
       at **`/health/live`** (liveness) — H-09. Both are status-only and anonymous on an installed site
       (CAP-37); `Verify-Install.ps1 -Url` checks it. A monitoring tool alerts on **`Degraded`** from
       **`/health/alarms`** (CAP-18), which is never a readiness signal.
-- [ ] Signing key provisioned out of band and protected (DPAPI/cert store/HSM); public key + `KeyId`
-      archived separately.
+- [ ] Signing key provisioned out of band and protected (the certificate store, recommended, or CyberArk; §2);
+      its public half saved apart from the server (`casebook-keytool signing-public-key`).
 - [ ] `DataProtection:KeyPath` set to an ACL-restricted folder (installer creates `DataRoot\dp-keys`) so
       the antiforgery/circuit keyring survives app-pool recycles; keys encrypted at rest (DPAPI machine
       scope). Back it up with the other stores. A scaled-out farm needs a shared key location + certificate.
 - [ ] `Integrity:AutoSeal:Enabled=true` with an interval appropriate to activity volume.
 - [ ] `Integrity:EvidenceVerify:Enabled=true` (F-17) with an interval appropriate to store size, and
       `Email:IntegrityAlertDistribution` populated so drift is actively alarmed (§1.3.2).
-- [ ] `BackupStatus:FilePath` set and the backup/restore jobs writing it (§1.3.1); Diagnostics →
+- [ ] `BackupStatus:FilePath` set (the installer sets it) and the scripts writing it (§1.3.1); Diagnostics →
       Backup &amp; restore health reads **Fresh** for both signals.
-- [ ] A restore has been performed and chain + prior-seal verification passed on the restored copy.
-- [ ] SQL Server 2022 **updatable ledger** enabled for defense-in-depth (backlog E-10), digest
-      exported externally.
+- [ ] A restore drill has passed: `Test-CaseBookRestore.ps1` (§1.3), and `-Register` for every fourth Sunday.
+- [ ] SQL Server 2022 **updatable ledger** enabled for defense-in-depth (backlog E-10), with
+      `Export-LedgerDigest.ps1 -Register` and `Verify-LedgerDigests.ps1 -Register` scheduled (§7).
 - [ ] (Optional) Email notification triggers (E-03b/E-03d) — all admin-editable under **Settings → Notifications**,
       and all requiring **Send email** on to deliver: **Assignment notifications** (email the assignee when
       assigned to a case); **Overdue after-action reminders** (a slow background scan — like AutoSeal /
@@ -1410,12 +1504,16 @@ evidence (it's soft-deleted), so nothing changes in practice.
 
 A digest is a hash over every ledger transaction so far. It's only proof if it lives outside the database
 administrator's reach: an immutable (WORM / object-lock) share, or a server owned by security rather than the
-DBAs. Set `LedgerDigestPath` in the answers file, then schedule a daily export:
+DBAs. Set `LedgerDigestPath` in the answers file, then schedule a daily export, from the release's `deploy` folder:
 
 ```powershell
-schtasks /Create /TN "CaseBook ledger digest" /SC DAILY /ST 02:00 /RU "CONTOSO\svc-casebook-ops" /RP `
-  /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\CaseBook\deploy\Export-LedgerDigest.ps1 -ConfigFile C:\CaseBook\deploy\casebook.config.psd1"
+.\Export-LedgerDigest.ps1 -ConfigFile .\casebook.config.psd1 -Register -TaskAccount 'CONTOSO\svc-casebook-ops$' -At 02:00
 ```
+
+That creates the task **CaseBook ledger digest**, with the server, database and folder written into it (the answers
+file stays with the release), running the copy of the script kept beside the site (`-SitePath`, default
+`C:\inetpub\casebook`), which upgrades keep current. A group managed service account (`DOMAIN\name$`) needs no
+password; another account is asked for one.
 
 The account needs `GENERATE LEDGER DIGEST` on the database (`db_owner` has it) and write access to the share.
 The script exits 1 on failure so the scheduler can alert. Also take a digest before and after anything
@@ -1432,8 +1530,11 @@ SQL Server recomputes every ledger row and transaction hash and checks them agai
 ledger row changed since the digests were taken. **FAIL** (exit 1) names the table and transaction: treat it as
 a possible tampering incident, preserve the database, backups and digests, and compare against the app's own
 chain check and seals (§2). **Couldn't verify** (exit 2) means the check didn't finish (SQL Server unreachable,
-sign-in or permission refused, a timeout): it isn't a tamper finding; fix the cause and run it again. Run it monthly, before an examination, and whenever the in-app chain check fails,
-and keep the output with your NYDFS Part 500 evidence.
+sign-in or permission refused, a timeout): it isn't a tamper finding; fix the cause and run it again. Run it monthly,
+before an examination, and whenever the in-app chain check fails, and keep the output with your NYDFS Part 500
+evidence. To run it every fourth Sunday, add `-Register -TaskAccount 'CONTOSO\svc-casebook-ops$'` (`-At`, default
+04:00) to the first line: the task **CaseBook ledger verify** records the exit code as its last run result, so alert on
+anything but 0.
 
 ### 7.4 Upgrades and schema changes
 

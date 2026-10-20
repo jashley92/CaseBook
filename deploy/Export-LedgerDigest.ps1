@@ -12,11 +12,10 @@
     Verify-LedgerDigests.ps1 prove later that no ledger row was changed, even by a sysadmin or by
     editing the database files directly.
 
-    Schedule it daily (and after major events). Example, as an account with GENERATE LEDGER DIGEST
+    Schedule it daily (and after major events) with -Register, as an account with GENERATE LEDGER DIGEST
     (db_owner has it) and write access to the share:
 
-      schtasks /Create /TN "CaseBook ledger digest" /SC DAILY /ST 02:00 /RU "CONTOSO\svc-casebook-ops" /RP `
-        /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\CaseBook\deploy\Export-LedgerDigest.ps1 -ConfigFile C:\CaseBook\deploy\casebook.config.psd1"
+      .\Export-LedgerDigest.ps1 -ConfigFile .\casebook.config.psd1 -Register -TaskAccount 'CONTOSO\svc-casebook-ops$' -At 02:00
 
     Exit code 0 on success, 1 on failure, so the scheduler can alert.
 
@@ -28,6 +27,11 @@
 
 .PARAMETER SqlCredential
     Only where Windows integrated authentication isn't available. Never stored.
+
+.PARAMETER Register
+    Creates (or replaces) the daily scheduled task "CaseBook ledger digest", at -At, as -TaskAccount (default SYSTEM; a
+    gMSA such as CONTOSO\svc-casebook-ops$ needs no password), with this run's SqlInstance, DbName and DigestPath. It
+    runs the copy of this script kept beside -SitePath (<site>-deploy), which upgrades keep current, when there is one.
 #>
 [CmdletBinding()]
 param(
@@ -35,7 +39,12 @@ param(
     [string] $SqlInstance,
     [string] $DbName,
     [string] $DigestPath,
-    [System.Management.Automation.PSCredential] $SqlCredential
+    [System.Management.Automation.PSCredential] $SqlCredential,
+    [switch] $Register,
+    [string] $TaskAccount = 'SYSTEM',
+    [string] $At = '02:00',
+    # The site, only to find the deploy scripts kept beside it (<site>-deploy) for -Register.
+    [string] $SitePath = 'C:\inetpub\casebook'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,6 +60,15 @@ try {
     if (-not $DbName) { $DbName = 'CaseBook' }
     if (-not $SqlInstance) { throw 'Missing SqlInstance.' }
     if (-not $DigestPath) { throw 'Missing DigestPath (or LedgerDigestPath in the config file).' }
+
+    if ($Register) {
+        # The task gets the values themselves, not -ConfigFile: the answers file stays with the release folder.
+        . (Join-Path $scriptDir 'lib\CaseBookBackup.ps1')
+        $arguments = "-SqlInstance `"$SqlInstance`" -DbName `"$DbName`" -DigestPath `"$DigestPath`" -SitePath `"$SitePath`""
+        Register-CaseBookTask -Name 'ledger digest' -Script $MyInvocation.MyCommand.Path -SitePath $SitePath -Arguments $arguments `
+            -Trigger (New-ScheduledTaskTrigger -Daily -At $At) -Account $TaskAccount
+        exit 0
+    }
 
     if (-not (Test-Path $DigestPath)) { New-Item -ItemType Directory -Path $DigestPath | Out-Null }
 

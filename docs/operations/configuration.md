@@ -73,7 +73,7 @@ inserted while the app is running is ignored silently until the next restart.
 | Immediately | Anything read per request: SLA targets, deadline settings, labels, access-log scope, time zone, base URL, branding colors, external links, the related-indicator exclusions (`RelatedIndicators:*`, from the next check), email, chat, SIEM transports, reporting options, legal-hold option |
 | Within about 5–10 minutes | Background-job options (jobs re-read them every 5 minutes; the integrity monitor every 10; the executive report hourly) |
 | New sessions only | `Security:IdleTimeoutMinutes` |
-| **Restart required** | `Auth:Mode`, `Auth:AllowDevSignInOutsideDevelopment`, `Database:*`, `ConnectionStrings:*`, `DataProtection:KeyPath`, `RateLimiting:*`, `Siem:QueueCapacity`, every `Secrets:CyberArk:*` key, all storage paths, `Integrity:SigningKeyPath`/`ExportPath`, `DevAuth:*`, `RoleMapping:*` (first run only, see §3.16) |
+| **Restart required** | `Auth:Mode`, `Auth:AllowDevSignInOutsideDevelopment`, `Database:*`, `ConnectionStrings:*`, `DataProtection:KeyPath`, `RateLimiting:*`, `Siem:QueueCapacity`, every `Secrets:CyberArk:*` key, all storage paths, `Integrity:SigningKeyPath`/`ExportPath`, every `Integrity:SigningKey:*`, `Integrity:ChainKey:*` and `Storage:Encryption:*` key, `Integrity:RetiredPublicKeysPath`, `Config:TrustedBundleKeys`, `DevAuth:*`, `RoleMapping:*` (first run only, see §3.16) |
 
 ## 2. Startup checks
 
@@ -156,7 +156,7 @@ process's working directory, which under IIS is the site folder.
 | `ReportOutput:RootPath` | Generated reports | `App_Data/report-output` | Server | ⚠ |
 | `ReportBranding:RootPath` | The report and email logo | `App_Data/branding` (not in `appsettings.json`) | Server | ⚠ |
 | `ReportTemplates:RootPath` | Uploaded Word templates (`{id}.docx`) | unset: a `report-templates` folder beside the branding folder | Server | ⚠ |
-| `Integrity:SigningKeyPath` | PEM RSA private key that signs seals. **Generated if missing.** | `App_Data/keys/seal-signing.pem` | Server | 🔒 (the file) |
+| `Integrity:SigningKeyPath` | PEM RSA private key that signs seals (with `Integrity:SigningKey:Source` `File`). Generated if missing in Development only; anywhere else the app won't start without it (§2). | `App_Data/keys/seal-signing.pem` | Server | 🔒 (the file) |
 | `Integrity:ExportPath` | Out-of-band copies of seals | `seals` (relative to the working directory, **not** `App_Data`) | Server | ⚠ |
 | `DataProtection:KeyPath` | Keyring for antiforgery and circuit protection, encrypted with machine DPAPI. Must be absolute. Blank uses the framework default, which under an app pool without a profile is lost on every recycle. | blank | Server | ⚠ |
 | `BackupStatus:FilePath` | JSON file written by your backup jobs ([OPERATIONS.md §1.3.1](../OPERATIONS.md#131-backup-health-status-file-h-04)). Relative paths resolve against the content root. | blank (not configured) | Server | ⚠ |
@@ -440,6 +440,6 @@ first.
 | Full-text search: status re-checked every **5 minutes** (**30 s** while indexes fill, 1 minute after a failed check), the check limited to **5 s**; English word breaker, no stoplist; a search term over **200** characters matched by substring | `Infrastructure/Persistence/SqlFullTextSearch.cs`, `FullTextSchema.cs`; `Application/Search/FullTextCondition.cs` |
 | Access review "dormant" after 90 days | `Application/Admin/AccessReviewService.cs` |
 | Webhook and chat retry back-off 250 ms × attempt | `Web/Siem/WebhookTransport.cs`, `Web/Notifications/ChatWebhookNotifier.cs` |
-| Seal key RSA-3072, PKCS#1 v1.5 with SHA-256 | `Infrastructure/Security/RsaSealSigner.cs` |
+| Seal key RSA-3072, RSASSA-PSS with SHA-256 (seals signed with PKCS#1 v1.5 before still verify) | `Infrastructure/Security/RsaSealSigner.cs`, `Application/Abstractions/SealAlgorithms.cs` |
 | Blazor circuit options, HSTS and Kestrel limits | framework defaults (`Web/Program.cs`) |
 | Outbound HTTP proxy | none configured; the `siem` and `chat` clients use the system proxy |

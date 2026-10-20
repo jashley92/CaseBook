@@ -687,6 +687,7 @@ Start-Website -Name $SiteName -ErrorAction SilentlyContinue
 try {
     $kept = Publish-CaseBookDeployScripts -SourceDeployDir $deployDir -SitePath $SitePath -SiteName $SiteName
     if ($kept) { Write-Host "    Deploy scripts kept in $kept (upgrades: & '$kept\Upgrade-CaseBook.ps1' -Version <vX.Y.Z>)" -ForegroundColor Gray }
+    Update-CaseBookTaskPaths -KeptDir $kept -SitePath $SitePath
 } catch { Write-Host "    Couldn't keep a copy of the deploy scripts beside the site: $($_.Exception.Message)" -ForegroundColor Yellow }
 
 Write-Step "Install complete."

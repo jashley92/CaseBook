@@ -147,3 +147,27 @@ function Publish-CaseBookDeployScripts([string] $SourceDeployDir, [string] $Site
     Set-Acl -Path $target -AclObject $acl
     return $target
 }
+
+function Update-CaseBookTaskPaths([string] $KeptDir, [string] $SitePath) {
+    # A task registered from a release folder (Backup-CaseBook.ps1 -Register and the like) runs that folder's copy of the
+    # script, and fails once the folder is gone. Point this site's CaseBook tasks at the kept copy, which every upgrade
+    # refreshes. Only tasks whose arguments name this site (-SitePath) are touched, so another site's are left alone.
+    if (-not $KeptDir -or -not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) { return }
+    $site = $SitePath.TrimEnd([char]92)
+    foreach ($task in @(Get-ScheduledTask -TaskName 'CaseBook *' -ErrorAction SilentlyContinue)) {
+        $action = @($task.Actions)[0]
+        if (-not $action -or -not $action.Arguments) { continue }
+        if ($action.Arguments -notmatch ('-SitePath "' + [regex]::Escape($site) + '[\\]?"')) { continue }
+        if ($action.Arguments -notmatch '-File "([^"]+[.]ps1)"') { continue }
+        $file = $Matches[1]
+        $want = Join-Path $KeptDir (Split-Path -Leaf $file)
+        if ($file -ieq $want -or -not (Test-Path $want)) { continue }
+        try {
+            $new = New-ScheduledTaskAction -Execute $action.Execute -Argument $action.Arguments.Replace("-File `"$file`"", "-File `"$want`"")
+            Set-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -Action $new -ErrorAction Stop | Out-Null
+            Write-Host "    Scheduled task '$($task.TaskName)' now runs $want (it ran $file)." -ForegroundColor Gray
+        } catch {
+            Write-Host "    Scheduled task '$($task.TaskName)' runs $file, which upgrades don't refresh, and couldn't be changed ($($_.Exception.Message)). Run its script's -Register again from $KeptDir." -ForegroundColor Yellow
+        }
+    }
+}

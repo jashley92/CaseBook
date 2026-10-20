@@ -13,7 +13,7 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
 
 | Source | What it tells you | How |
 |---|---|---|
-| Windows **Application** event log (app server) | Startup failures (ASP.NET Core Module, .NET Runtime), Critical alarms 5001 and 5003, warnings | Event Viewer → Windows Logs → Application. Filter by level Critical/Error. **Needs verification on your host:** the source name the app's own Critical entries appear under. |
+| Windows **Application** event log (app server) | Startup failures (ASP.NET Core Module, .NET Runtime), Critical alarms 5001 and 5003, warnings | Event Viewer → Windows Logs → Application. Filter by level Critical/Error. The app's own warnings and errors appear under the source **.NET Runtime** (the ASP.NET Core default); the security-event stream, when `Siem:EventLog` is on (OPERATIONS.md §5), writes under **CaseBook**. |
 | `logs\stdout_*.log` in the site folder | Console output when the app can't start | Set `stdoutLogEnabled="true"` in `web.config`, recycle, reproduce. Turn it off again afterwards. (An upgrade replaces `web.config`.) |
 | IIS logs (`%SystemDrive%\inetpub\logs\LogFiles`) | Status code per request (401, 403, 500.x) | |
 | `/health/live`, `/health`, `/health/alarms` | Process up; database reachable and evidence folder present; whether any alarm is up (Degraded; Diagnostics says which) | Anonymous on an installed site (CAP-37); a 401 means the carve-out is missing (below) |
@@ -97,7 +97,7 @@ set it to `Dev` on a server. The same check stops any other non-Development envi
 - **Fix:** run `Upgrade-CaseBook.ps1` (it checks each carve-out and sets any that differ; its output says which) or
   re-run `Install-CaseBook.ps1`. As a fallback, add the `<location>` entries by hand with `appcmd` (anonymous on,
   Windows off, for `<site>/health`, `<site>/branding/logo` and `<site>/agenda/feed.ics`; the commands are in
-  [UPGRADE.md](../UPGRADE.md), *Unreleased*). The email logo and calendar feed need the same carve-out to work for
+  [UPGRADE.md](../UPGRADE.md), *v1.10.0*). The email logo and calendar feed need the same carve-out to work for
   mail clients and calendar apps.
 
 ### Requests by IP or a different name get HTTP 400
@@ -305,8 +305,9 @@ while it stays, since it's ignored).
 ### No recent seal
 
 Check `Integrity:AutoSeal:Enabled` and `IntervalHours` (*Setting sources*), that the chain verifies (no seals are
-made over a broken chain), and that the app pool can write `Integrity:ExportPath`. Seal-export failures aren't
-logged today; check the folder's permissions directly.
+made over a broken chain), and that the app pool can write `Integrity:ExportPath`. A seal whose copy failed is still
+recorded: the failure is logged (event 5005, also sent to the SIEM) and shown on the Integrity page with its reason,
+which usually names the folder's permissions.
 
 ## Files, downloads and reports
 

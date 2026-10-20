@@ -26,6 +26,7 @@ refactor, no behaviour change").
 | A background job, its cadence or what it touches | [architecture/backend.md](architecture/backend.md) (jobs) and [OPERATIONS.md](OPERATIONS.md) if operators schedule or monitor it |
 | A SIEM event id | [OPERATIONS.md §5](OPERATIONS.md#5-siem-security-event-stream-f-18) (append only; ids are a contract) |
 | An integration (email, chat, SIEM, CyberArk, import formats, XSIAM) | [operations/integrations.md](operations/integrations.md) |
+| A deploy script's parameters, or a scheduled task a script registers | The script's comment help; its row in `deploy/README.md`; every command line that calls it (search `docs/` for the script's name); the *What runs when* table ([OPERATIONS.md §1.6](OPERATIONS.md#16-what-runs-when)). Register tasks with `Register-CaseBookTask -SitePath`, so they run the kept `<site>-deploy` copy and an upgrade can re-point them |
 | A deploy script, the release bundle or CI | [INSTALL.md](INSTALL.md) / [UPGRADE.md](UPGRADE.md) / [development/testing.md](development/testing.md) and `deploy/README.md` |
 | A failure mode you diagnosed | Add a *Symptom → Cause → Where to look → Fix* entry to [operations/troubleshooting.md](operations/troubleshooting.md) |
 | A deliberate design choice someone might reverse | A new record in [decisions/](decisions/) |

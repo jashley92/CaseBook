@@ -291,7 +291,7 @@ schema, for use in the organization's own approved AI tool.
 - **Data:** `GET {BaseUrl}/api/Accounts?AppID=…&Safe=…&Object=…` for a reference written as
   `@cyberark:Safe=<safe>;Object=<object>`.
 - **Failure:** cached for `CacheTtlSeconds`; on error, `FailClosed=true` resolves to nothing (the dependent
-  feature degrades, for example the webhook sends without auth), `false` serves the last good value. Health in
+  feature degrades: the SIEM webhook stops sending, email that signs in is held), `false` serves the last good value. Health in
   Diagnostics → Secret resolution.
 - **Config needs a recycle.** Full guide: [OPERATIONS.md §6](../OPERATIONS.md#6-secret-management-f-19).
 
@@ -310,7 +310,7 @@ schema, for use in the organization's own approved AI tool.
   integrity certificates). Only its public key is needed to make a value.
 - **Failure:** fail closed. A value that won't open (the certificate gone, its key unreadable, the value changed)
   resolves to nothing, logged once by thumbprint, never its content: the email is held, the chat post isn't made, the
-  SIEM webhook sends without auth.
+  SIEM webhook stops sending (CAP-40, above).
 
 ## Calendar feed
 
