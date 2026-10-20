@@ -132,11 +132,11 @@ internal static class KeyLifecycleCommands
                                                 "and let CaseBook lock the key to it first; nothing was changed.");
 
         // The .cer files listed are matched by their thumbprint, so the setting can name them however it likes.
-        var removed = new List<string>();
-        SiteSettings.Edit(site.Folder, "retire-custodian", root =>
+        var removed = SiteSettings.Edit(site.Folder, "retire-custodian", root =>
         {
+            var gone = new List<string>();
             var enc = SiteSettings.Section(root, "Storage", "Encryption");
-            if (enc["RecoveryCertificates"] is not JsonArray list) return;
+            if (enc["RecoveryCertificates"] is not JsonArray list) return gone;
             foreach (var item in list.ToList())
             {
                 var path = item?.GetValue<string>();
@@ -146,8 +146,9 @@ internal static class KeyLifecycleCommands
                 using var cer = X509CertificateLoader.LoadCertificateFromFile(full);
                 if (CertificateLookup.Normalize(cer.Thumbprint) != normalized) continue;
                 list.Remove(item);
-                removed.Add(path);
+                gone.Add(path);
             }
+            return gone;
         }, output);
         if (removed.Count == 0)
             output.WriteLine($"Storage:Encryption:RecoveryCertificates doesn't list a .cer for {normalized}; only the envelope was changed.");
@@ -179,14 +180,18 @@ internal static class SiteSettings
     private static readonly JsonDocumentOptions Read = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
     private static readonly JsonSerializerOptions Write = new() { WriteIndented = true };
 
-    public static void Edit(string siteFolder, string why, Action<JsonObject> change, TextWriter output)
+    public static void Edit(string siteFolder, string why, Action<JsonObject> change, TextWriter output) =>
+        Edit(siteFolder, why, root => { change(root); return true; }, output);
+
+    /// <summary>As <see cref="Edit(string, string, Action{JsonObject}, TextWriter)"/>, returning what the change found.</summary>
+    public static T Edit<T>(string siteFolder, string why, Func<JsonObject, T> change, TextWriter output)
     {
         var path = Path.Combine(siteFolder, "appsettings.Production.json");
         var root = File.Exists(path)
             ? JsonNode.Parse(File.ReadAllText(path), documentOptions: Read) as JsonObject
               ?? throw new InvalidOperationException($"{path} isn't a JSON object; nothing was changed.")
             : new JsonObject();
-        change(root);
+        var result = change(root);
         if (File.Exists(path))
         {
             var kept = $"{path}.before-{why}-{DateTime.UtcNow:yyyyMMddHHmmss}";
@@ -194,6 +199,7 @@ internal static class SiteSettings
             output.WriteLine($"The settings as they were are kept as {kept}.");
         }
         File.WriteAllText(path, root.ToJsonString(Write));
+        return result;
     }
 
     /// <summary>The object at <paramref name="names"/>, made when it's missing.</summary>
