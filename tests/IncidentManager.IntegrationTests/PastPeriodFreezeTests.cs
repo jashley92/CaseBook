@@ -288,6 +288,7 @@ public sealed class PastPeriodFreezeTests : IDisposable
         ["CancelLegalHoldReleaseRequest"] = "legal hold",
         ["SetReportProfile"] = "the case report's profile",
         ["SetTeam"] = "CAP-36: the owning team, which routes and filters; no period figure reads it (a team filter cuts by the team a case has now)",
+        ["ChangeOrigin"] = "a correction of a case opened or imported as the wrong origin: a period's internal and third-party counts take the corrected origin, as they would have had it been right, which is the point of correcting it",
         ["Archive"] = "REV-59, the documented exception: a never-closed case archived later drops out of a past open-at-end count",
         ["Unarchive"] = "REV-59, as Archive",
         ["ReviseBrief"] = "the brief",

@@ -55,6 +55,20 @@ linked or superseded into each other, and filing an exercise checks for duplicat
 An *unrecognized* classification value is said back ("Filing it as a Complex Event") and the case opens as a
 **Complex Event**.
 
+**Which origin the new case gets.** The preview's *Origin (who found it)* says it, and where it came from:
+`newCase.origin` as the document gives it (`InternalDetection`, `ThirdParty`, or plainly "internal", "third-party",
+"vendor"); left out, third-party when the document names a vendor, internal detection when it doesn't. The reviewer can
+change it there, and the note then says it was changed. The document's top-level `origin` is something else, where the
+import came from (*Imported from* in the preview), and one that reads like a case origin with none in `newCase` gets a
+warning. A case that still ends up with the wrong origin is corrected on its Briefing tab (*Changing the origin*, below).
+
+**Attack steps on a third-party case.** Each event step comes in as an attack step when it carries ATT&CK `tactics`,
+a `techniqueId` or an `environment` (`Vendor`, or `Ours` when the attacker reached our environment), and as a
+disclosure milestone when it carries none. The preview shows each event row's kind on a third-party case (*Disclosure
+milestone*, *Attack step at the vendor*, *Attack step in our environment*) with its ATT&CK detail, and the reviewer
+can change it; choosing *Disclosure milestone* drops the row's ATT&CK detail. On an internal case every step is ours,
+and `environment` is ignored.
+
 ### Historical and closed cases (schema v2, CAP-35)
 
 A `schemaVersion: 2` document can describe how a new case went, so a case worked before CaseBook (or in another tool)
@@ -141,6 +155,22 @@ email or post never fails the submission. Applying one sends SIEM event 5515, na
 | **Playbook offer** | After an upward move or promotion, and on a case filed straight at a rung, people who can edit the case see a notice under the header when an active template's default classification is the case's rung and some of its steps aren't tasks yet: "The Breach response playbook has 6 steps not on this case. *Add them…*" (with several such templates, one button each, "Breach: ransomware (4)…"). *Add them…* opens the Tasks tab's apply-playbook card on that template with only the missing steps ticked (others say "already a task"); nothing is added until *Add N tasks* there (ADR 0004). A step counts as on the case when any task, open, done or canceled, has its title, compared trimmed and ignoring case; a title repeated within the template is ticked once. The notice is worked out from the case each time it's shown (`PlaybookOffer.For`): it isn't shown on a closed or archived case, after a de-escalation, or on a site with no templates, and it goes once every step is a task. Dismissing it (×) hides it for you on that case and rung, kept in your browser (another browser, or a later escalation to a higher rung, shows it again). |
 
 De-escalation (down the ladder) isn't gated. There's no way back to Complex Event.
+
+### Changing the origin
+
+Briefing → *Origin* → **Change to third-party / vendor** (or **Change to internal detection**), for a case opened or
+imported as the wrong origin. `CaseService.ChangeOriginAsync` → `Case.ChangeOrigin`. Needs `ChangeClassification`,
+since it moves the case between the internal and third-party counts and changes how its timeline reads.
+
+- **To third-party:** the vendor (name, and optionally a contact and their reference) and a reason. When the case has
+  attack steps, you say where they happened, **at the vendor** or **in our environment**; they stay attack steps
+  either way (without this, a step with no ATT&CK detail would turn into a disclosure milestone), and each can be
+  changed on the timeline afterwards.
+- **To internal detection:** a reason. The vendor details and each step's environment are cleared. Refused while the
+  case has disclosure milestones, which an internal case has no place for: retract them first (the vendor's notices
+  can go on the investigation timeline as communications).
+
+The change, with the reason, goes on the investigation timeline as a note; the audit trail keeps the values before.
 
 ## 4. Changing severity
 
@@ -255,7 +285,7 @@ case can still be edited.
 | Action | Permission |
 |---|---|
 | Open, edit, phase, severity, assign, hand off, timeline, entities, evidence, notes, tasks, brief, links, supersede, restrict, materiality, mark reported | `EditCases` |
-| Promote, escalate, de-escalate; re-date a classification change; file a case straight onto the ladder | `ChangeClassification` |
+| Promote, escalate, de-escalate; re-date a classification change; file a case straight onto the ladder; change a case's origin | `ChangeClassification` |
 | Refer to Legal; place or release a legal hold | `ManageLegal` |
 | Archive, restore | `Administer` |
 | Comment on a task | `ViewCases` |

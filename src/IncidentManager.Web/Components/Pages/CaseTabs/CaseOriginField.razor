@@ -1,0 +1,138 @@
+@* The case's origin on the Case record, with Change for someone who can classify: for a case opened or imported as the
+   wrong origin. A reason is required (it goes on the investigation timeline); to third-party, the vendor too. Runs once at
+   a time, and a change not yet saved is asked about before the case is left. *@
+@implements IDisposable
+@inject CaseService Cases
+@inject ToastService Toasts
+@inject UnsavedEdits Edits
+@inject ICurrentUser CurrentUser
+
+<dt class="col-sm-3">Origin</dt>
+<dd class="col-sm-9">
+    @if (_editing)
+    {
+        <div class="im-origin-edit" style="max-width:34rem">
+            <div class="mb-2">
+                <span class="small">Change to <strong>@Label(Target)</strong>.</span>
+                @if (Target == CaseOrigin.ThirdParty)
+                {
+                    @if (StepCount == 0)
+                    {
+                        <span class="small text-muted"> The case has no attack steps yet.</span>
+                    }
+                }
+                else
+                {
+                    <span class="small text-muted"> The vendor details are cleared (the audit trail keeps them).</span>
+                }
+            </div>
+            @if (Target == CaseOrigin.ThirdParty)
+            {
+                <div class="row g-2 mb-2">
+                    <div class="col-sm-6">
+                        <label class="form-label small mb-0" for="ov-origin-vendor">Vendor</label>
+                        <input id="ov-origin-vendor" class="form-control form-control-sm" maxlength="300" @bind="_vendor" @bind:event="oninput"
+                               placeholder="Who disclosed it" disabled="@_saving.Busy" />
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label small mb-0" for="ov-origin-contact">Vendor contact <span class="text-muted">(optional)</span></label>
+                        <input id="ov-origin-contact" class="form-control form-control-sm" maxlength="300" @bind="_contact" disabled="@_saving.Busy" />
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label small mb-0" for="ov-origin-ref">Vendor's reference <span class="text-muted">(optional)</span></label>
+                        <input id="ov-origin-ref" class="form-control form-control-sm" maxlength="300" @bind="_ref" disabled="@_saving.Busy" />
+                    </div>
+                </div>
+            }
+            @if (Target == CaseOrigin.ThirdParty && StepCount > 0)
+            {
+                <fieldset class="mb-2">
+                    <legend class="form-label small mb-0">The @StepCount attack step@(StepCount == 1 ? "" : "s") recorded so far happened</legend>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="ov-origin-where" id="ov-origin-where-vendor" checked="@(_where == StepEnvironment.Vendor)"
+                               @onchange="() => _where = StepEnvironment.Vendor" disabled="@_saving.Busy" />
+                        <label class="form-check-label small" for="ov-origin-where-vendor">at the vendor</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="ov-origin-where" id="ov-origin-where-ours" checked="@(_where == StepEnvironment.Ours)"
+                               @onchange="() => _where = StepEnvironment.Ours" disabled="@_saving.Busy" />
+                        <label class="form-check-label small" for="ov-origin-where-ours">in our environment</label>
+                    </div>
+                    <div class="form-text mt-0">Either way they stay attack steps; each can be changed on the timeline afterwards.</div>
+                </fieldset>
+            }
+            <label class="form-label small mb-0" for="ov-origin-reason">Why</label>
+            <input id="ov-origin-reason" class="form-control form-control-sm mb-2" maxlength="1000" @bind="_reason" @bind:event="oninput"
+                   placeholder="e.g. imported as internal; the vendor disclosed it" disabled="@_saving.Busy" />
+            <button type="button" class="btn btn-sm btn-primary" @onclick="Save"
+                    disabled="@(_saving.Busy || string.IsNullOrWhiteSpace(_reason) || (Target == CaseOrigin.ThirdParty && (string.IsNullOrWhiteSpace(_vendor) || (StepCount > 0 && _where is null))))">Change origin</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Cancel" disabled="@_saving.Busy">Cancel</button>
+            @if (_error is { } err)
+            {
+                <div class="alert alert-warning py-1 px-2 small mt-2 mb-0" role="alert">@err</div>
+            }
+        </div>
+    }
+    else
+    {
+        <span>@Label(Case.Origin)</span>
+        @if (CanEdit && CurrentUser.Has(Permission.ChangeClassification))
+        {
+            <button type="button" class="btn btn-sm btn-link py-0" @onclick="Begin"
+                    aria-label="Change the origin to @Label(Target)">Change to @Label(Target).ToLowerInvariant()</button>
+        }
+    }
+</dd>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [CascadingParameter] public EditRegion? Region { get; set; }
+
+    private bool _editing;
+    private string _vendor = "", _contact = "", _ref = "", _reason = "";
+    private StepEnvironment? _where;   // where the steps already recorded happened: asked, never assumed
+
+    private int StepCount => Case.TimelineEntries.Count(t => t.Kind == TimelineKind.Event && t.IsCurrent && !t.IsRetracted);
+    private string? _error;
+    private readonly InFlight _saving = new();
+    private bool _disposed;
+
+    private CaseOrigin Target => Case.Origin == CaseOrigin.ThirdParty ? CaseOrigin.InternalDetection : CaseOrigin.ThirdParty;
+
+    public static string Label(CaseOrigin o) => o == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection";
+
+    protected override void OnInitialized() =>
+        Edits.Track(this, "the case's origin you're changing", () => _editing && (_reason.Length > 0 || _vendor.Length > 0), Region);
+
+    private void Begin() => (_vendor, _contact, _ref, _reason, _where, _error, _editing) = ("", "", "", "", null, null, true);
+
+    private void Cancel() => (_editing, _error) = (false, null);
+
+    private Task Save() => _saving.Run(SaveCore);
+
+    private async Task SaveCore()
+    {
+        var to = Target;
+        try
+        {
+            await Cases.ChangeOriginAsync(Case.Id, to, _vendor, _contact, _ref, _reason, _where ?? StepEnvironment.Ours);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _error = ex.Message;
+            return;
+        }
+        if (_disposed) return;
+        _editing = false;
+        Toasts.Success($"The case is {Label(to).ToLowerInvariant()} now.");
+        await OnChanged.InvokeAsync();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Edits.Forget(this);
+    }
+}

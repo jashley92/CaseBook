@@ -33,6 +33,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.ChangePhaseAsync)] = Permission.EditCases,
             [nameof(CaseService.ReopenAsync)] = Permission.EditCases,
             [nameof(CaseService.ChangeSeverityAsync)] = Permission.EditCases,
+            [nameof(CaseService.ChangeOriginAsync)] = Permission.ChangeClassification,   // a case opened or imported as the wrong origin
             [nameof(CaseService.ConfirmBriefAsync)] = Permission.EditCases,
             // INV-05b: re-dating a classification change also needs ChangeClassification (checked in the method).
             [nameof(CaseService.CorrectTransitionTimeAsync)] = Permission.EditCases,

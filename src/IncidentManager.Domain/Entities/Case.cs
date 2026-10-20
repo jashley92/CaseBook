@@ -715,6 +715,60 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     /// <summary>Changes the analyst-assessed severity, recording the transition in history.</summary>
+    /// <summary>
+    /// Corrects where the case came from (a case opened or imported as the wrong origin). To third-party, the vendor is
+    /// required, and the attack steps already recorded are marked as having happened <paramref name="stepsWhere"/> (at the
+    /// vendor, or in our environment), so none turns into a disclosure milestone. Back to internal, the vendor details are cleared and so is
+    /// each step's environment; refused while the case has disclosure milestones, which an internal case has no place for.
+    /// The reason goes on the investigation timeline; the audit trail holds the values before.
+    /// </summary>
+    public void ChangeOrigin(CaseOrigin to, string? vendorName, string? vendorContact, string? vendorReference, string reason,
+        string actor, DateTimeOffset nowUtc, StepEnvironment stepsWhere = StepEnvironment.Ours)
+    {
+        if (to == Origin) throw new ArgumentException("The case already has that origin.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("Say why the origin is being changed.");
+        var steps = TimelineEntries.Where(t => t.Kind == TimelineKind.Event && t.IsCurrent && !t.IsRetracted).ToList();
+        string from = OriginLabel(Origin);
+        if (to == CaseOrigin.ThirdParty)
+        {
+            if (string.IsNullOrWhiteSpace(vendorName)) throw new ArgumentException("Name the vendor to make this a third-party case.");
+            ThirdParty = new ThirdPartyDetails
+            {
+                VendorName = vendorName.Trim(),
+                VendorContact = string.IsNullOrWhiteSpace(vendorContact) ? null : vendorContact.Trim(),
+                VendorReference = string.IsNullOrWhiteSpace(vendorReference) ? null : vendorReference.Trim(),
+            };
+            foreach (var step in steps) step.Environment = stepsWhere;
+        }
+        else
+        {
+            var milestones = steps.Count(t => t.Tactics.Count == 0 && t.TechniqueId is null && t.ActorEntityId is null
+                                                 && t.TargetEntityId is null && t.Environment is null);
+            if (Origin == CaseOrigin.ThirdParty && milestones > 0)
+                throw new InvalidOperationException($"The case has {milestones} disclosure milestone{(milestones == 1 ? "" : "s")}, which an " +
+                                                    "internal case has no place for. Retract them first (the vendor's notices can go on the " +
+                                                    "investigation timeline as communications).");
+            ThirdParty = null;
+            foreach (var step in steps) step.Environment = null;
+        }
+        Origin = to;
+        foreach (var step in steps) { step.ModifiedBy = actor; step.ModifiedAtUtc = nowUtc; }
+        TimelineEntries.Add(new TimelineEntry
+        {
+            CaseId = Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Note, OccurredAtUtc = nowUtc,
+            Description = $"Origin changed from {from} to {OriginLabel(to)}" +
+                          (to == CaseOrigin.ThirdParty ? $" ({ThirdParty!.VendorName})" : "") + $": {reason.Trim().TrimEnd('.')}." +
+                          (to == CaseOrigin.ThirdParty && steps.Count > 0
+                              ? $" The {steps.Count} attack step{(steps.Count == 1 ? "" : "s")} recorded before {(steps.Count == 1 ? "is" : "are")} marked as " +
+                                (stepsWhere == StepEnvironment.Vendor ? "at the vendor." : "in our environment.")
+                              : ""),
+            Source = "CaseBook", CreatedBy = actor, CreatedAtUtc = nowUtc,
+        });
+        Touch(actor, nowUtc);
+    }
+
+    private static string OriginLabel(CaseOrigin o) => o == CaseOrigin.ThirdParty ? "third-party" : "internal detection";
+
     public void ChangeSeverity(Severity to, string? reason, string actor, DateTimeOffset nowUtc,
         DateTimeOffset? effectiveAtUtc = null)
     {

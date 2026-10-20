@@ -1773,6 +1773,22 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Corrects the case's origin (internal detection or third-party), for one opened or imported as the wrong one. Needs
+    /// ChangeClassification, since it changes how the case is counted and reported, and a reason. See
+    /// <see cref="Case.ChangeOrigin"/>.
+    /// </summary>
+    public async Task ChangeOriginAsync(Guid id, Domain.Enums.CaseOrigin origin, string? vendorName, string? vendorContact,
+        string? vendorReference, string reason, StepEnvironment stepsWhere = StepEnvironment.Ours, CancellationToken ct = default)
+    {
+        Require();
+        if ((vendorName?.Trim().Length ?? 0) > 300) throw new ArgumentException("Keep the vendor name to 300 characters or fewer.");
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.ChangeOrigin(origin, vendorName, vendorContact, vendorReference, reason, _user.UserId, _clock.UtcNow, stepsWhere);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task UpdateDetailsAsync(Guid id, string title, string? summary, string? detectionCaseId,
         string? dataTypesInvolved, string? impactedAssets, DateTimeOffset detectedAtUtc, DateTimeOffset? occurredAtUtc,
         string? expectedStamp = null, CancellationToken ct = default)
@@ -1990,7 +2006,11 @@ public sealed class CaseService
     /// <summary>An imported timeline entry for <see cref="AddImportedTimelineEntriesAsync"/>. <paramref name="FollowsPrevious"/>:
     /// an event step whose time wasn't stated, placed after the step before it in the list (ST-03).</summary>
     public sealed record TimelineToAdd(TimelineKind Kind, TimelineEntryType Type, DateTimeOffset OccurredAtUtc,
-        string Description, string? Source, DecisionDetails? Decision = null, StepTiming? Timing = null, bool FollowsPrevious = false);
+        string Description, string? Source, DecisionDetails? Decision = null, StepTiming? Timing = null, bool FollowsPrevious = false,
+        AttackDetail? Attack = null);
+
+    /// <summary>An imported event step's ATT&amp;CK tactics, technique and (on a third-party case) where it happened.</summary>
+    public sealed record AttackDetail(IReadOnlyList<MitreTactic> Tactics, string? TechniqueId, StepEnvironment? Environment);
 
     /// <summary>
     /// BUG-255: adds imported timeline entries in batches of <see cref="EntitiesPerSave"/> (one case load and one audited
@@ -2027,6 +2047,14 @@ public sealed class CaseService
                     DecidedBy = isDecision && !string.IsNullOrWhiteSpace(i.Decision?.DecidedBy) ? i.Decision.DecidedBy.Trim() : null,
                     PromotedFrom = TimelineEntry.Imported   // INV-23
                 };
+                if (i.Kind == TimelineKind.Event && i.Attack is { } attack)
+                {
+                    entry.TechniqueId = string.IsNullOrWhiteSpace(attack.TechniqueId) ? null : CaseTechnique.NormaliseId(attack.TechniqueId);
+                    foreach (var tactic in attack.Tactics.Distinct())
+                        entry.Tactics.Add(new EventStepTactic { TimelineEntryId = entry.Id, Tactic = tactic });
+                    // Only a third-party case says where a step happened (Case.AddEventStep); an internal case's are all ours.
+                    entry.Environment = c.Origin == CaseOrigin.ThirdParty ? attack.Environment : null;
+                }
                 if (i.Kind == TimelineKind.Event)
                 {
                     var timing = i.FollowsPrevious

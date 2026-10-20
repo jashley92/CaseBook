@@ -47,7 +47,7 @@
     },
     "origin": {
       "type": "string",
-      "description": "Provenance recorded as the source of imported indicators and timeline entries (e.g. \u0022AI-assisted (Copilot)\u0022, \u0022manual\u0022, \u0022XSIAM\u0022)."
+      "description": "Where this import came from, recorded as the source of imported indicators and timeline entries (e.g. \u0022AI-assisted (Copilot)\u0022, \u0022manual\u0022, \u0022XSIAM\u0022). Not the case\u0027s origin: that is target.newCase.origin."
     },
     "target": {
       "$ref": "#/$defs/target"
@@ -144,7 +144,8 @@
           "enum": [
             "InternalDetection",
             "ThirdParty"
-          ]
+          ],
+          "description": "Who found it: InternalDetection (our own monitoring or staff) or ThirdParty (a vendor told us, with vendorName). When omitted: ThirdParty if vendorName is given, else InternalDetection."
         },
         "summary": {
           "type": "string",
@@ -380,6 +381,43 @@
         "decidedBy": {
           "type": "string",
           "description": "For type Decision: who made the decision, e.g. \u0022Incident Commander with Legal\u0022. Optional."
+        },
+        "tactics": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Unspecified",
+              "Reconnaissance",
+              "ResourceDevelopment",
+              "InitialAccess",
+              "Execution",
+              "Persistence",
+              "PrivilegeEscalation",
+              "Stealth",
+              "CredentialAccess",
+              "Discovery",
+              "LateralMovement",
+              "Collection",
+              "CommandAndControl",
+              "Exfiltration",
+              "Impact",
+              "DefenseImpairment"
+            ]
+          },
+          "description": "For kind Event: the ATT\u0026CK tactics of the step, by name (e.g. InitialAccess, CredentialAccess). Ignored for Investigation entries."
+        },
+        "techniqueId": {
+          "type": "string",
+          "description": "For kind Event: the ATT\u0026CK technique id, T1566 or T1566.001."
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "Vendor",
+            "Ours"
+          ],
+          "description": "For kind Event on a third-party case: where the attack step happened. Vendor (in the vendor\u0027s environment, the default for an attack step) or Ours (the attacker reached our environment). Ignored on an internal case, whose steps are all ours."
         }
       }
     },

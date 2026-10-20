@@ -56,8 +56,8 @@ public static class CaseImportSchema
                 ["format"] = new JsonObject { ["const"] = CaseImportJson.FormatTag },
                 // CAP-35: every version this importer reads; the current one is the last.
                 ["schemaVersion"] = new JsonObject { ["type"] = "integer", ["enum"] = new JsonArray { 1, CaseImportJson.CurrentSchemaVersion } },
-                ["origin"] = Str("Provenance recorded as the source of imported indicators and timeline entries "
-                    + "(e.g. \"AI-assisted (Copilot)\", \"manual\", \"XSIAM\")."),
+                ["origin"] = Str("Where this import came from, recorded as the source of imported indicators and timeline entries "
+                    + "(e.g. \"AI-assisted (Copilot)\", \"manual\", \"XSIAM\"). Not the case's origin: that is target.newCase.origin."),
                 ["target"] = Ref("target"),
                 // BUG-636
                 ["timeZone"] = Str("The time zone of times written without an offset, as an IANA id such as America/New_York. "
@@ -99,7 +99,8 @@ public static class CaseImportSchema
                         ["descriptiveName"] = Str("Optional short slug source; derived from the title when omitted."),
                         ["classification"] = EnumProp(classifications, "Omit or \"ComplexEvent\" files an intake Complex Event."),
                         ["severity"] = EnumOf<Severity>(),
-                        ["origin"] = EnumOf<CaseOrigin>(),
+                        ["origin"] = EnumOf<CaseOrigin>("Who found it: InternalDetection (our own monitoring or staff) or ThirdParty (a vendor "
+                            + "told us, with vendorName). When omitted: ThirdParty if vendorName is given, else InternalDetection."),
                         ["summary"] = Str("The case's own summary field (distinct from the top-level summary note)."),
                         // BUG-663: the preferred names; the "...Utc" ones are their deprecated v1 names.
                         ["detectedAt"] = DateTime("When the matter was detected (defaults to now; not in the future)."),
@@ -185,6 +186,17 @@ public static class CaseImportSchema
                         ["rationale"] = Str("For type Decision: why it was decided (required for a decision). Ignored for other types."),
                         ["optionsConsidered"] = Str("For type Decision: the other options considered. Optional."),
                         ["decidedBy"] = Str("For type Decision: who made the decision, e.g. \"Incident Commander with Legal\". Optional."),
+                        // The attack detail of an event step. On a third-party case, an event step with any of these is an attack
+                        // step (the vendor's, or ours if the attacker pivoted in); one with none is a disclosure milestone (use
+                        // the disclosure types: Notified, ScopeConfirmed, DataConfirmed, Remediation, RegulatoryNotification).
+                        ["tactics"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = EnumOf<MitreTactic>(),
+                            ["description"] = "For kind Event: the ATT&CK tactics of the step, by name (e.g. InitialAccess, CredentialAccess). Ignored for Investigation entries.",
+                        },
+                        ["techniqueId"] = Str("For kind Event: the ATT&CK technique id, T1566 or T1566.001."),
+                        ["environment"] = EnumOf<StepEnvironment>("For kind Event on a third-party case: where the attack step happened. Vendor (in the vendor's environment, the default for an attack step) or Ours (the attacker reached our environment). Ignored on an internal case, whose steps are all ours."),
                     },
                 },
                 ["entity"] = new JsonObject

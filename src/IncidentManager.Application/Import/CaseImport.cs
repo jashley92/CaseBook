@@ -154,6 +154,13 @@ public sealed class CaseImportTimelineEntry
     public string? Rationale { get; set; }
     public string? OptionsConsidered { get; set; }
     public string? DecidedBy { get; set; }
+
+    // An event step's attack detail: ATT&CK tactics (names), a technique id, and, on a third-party case, where it happened
+    // (Vendor or Ours). On a third-party case, an event step with any of these is an attack step; one with none is a
+    // disclosure milestone.
+    public List<string>? Tactics { get; set; }
+    public string? TechniqueId { get; set; }
+    public string? Environment { get; set; }
 }
 
 /// <summary>One entity/IOC to import. <see cref="Type"/> is optional (auto-detected) and a string (safe fallback).</summary>

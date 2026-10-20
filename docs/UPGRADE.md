@@ -212,6 +212,25 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.14.0
+
+No migration and no setting changes.
+
+- **A case's origin can be corrected.** A case opened or imported as internal detection when a vendor told us about it
+  (or the other way round) is changed on its Briefing tab: *Origin* → *Change to third-party / vendor*, with the vendor
+  and a reason, saying whether the attack steps already recorded happened at the vendor or in our environment. Back
+  to internal is refused while the case has disclosure milestones. Needs the permission to change a classification;
+  the change and its reason go on the timeline.
+- **Imports say which origin the case gets.** The preview's origin shows where it came from: the document, a vendor
+  it names (a document that names a vendor but not the origin now makes a third-party case), or the default
+  (internal detection). "third-party" and "vendor" are understood as well as `ThirdParty`. The document's own
+  `origin`, where the import came from, is now labelled *Imported from*, and one written there as a case origin is
+  pointed out.
+- **Third-party imports carry the vendor's attack steps.** An event step in the document can give its ATT&CK
+  `tactics`, `techniqueId` and `environment` (`Vendor` or `Ours`); with any of them it's an attack step, and without
+  them a disclosure milestone, as when recorded by hand. The preview shows which each row is and lets the reviewer
+  change it. The JSON schema (`/api/import/cases/schema`) has the new fields.
+
 ### v1.13.0
 
 No migration. One new setting, `Integrity:RotationReminderDays` (365), editable under Administration › Integrity.

@@ -1320,5 +1320,157 @@ public sealed class CaseImportTests : IDisposable
         }
     }
 
+    // ── Origin: who found the case, and a third-party case's attack steps ────────────────────────────────────────
+
+    private static CaseImportDocument OriginDoc(string? origin = null, string? vendor = null, string? docOrigin = null,
+        params CaseImportTimelineEntry[] timeline) => new()
+    {
+        Format = CaseImportJson.FormatTag,
+        Origin = docOrigin,
+        Target = new CaseImportTarget { NewCase = new CaseImportNewCase { Title = "Vendor breach", Origin = origin, VendorName = vendor } },
+        Timeline = timeline.ToList(),
+    };
+
+    [Fact]
+    public void A_new_cases_origin_is_read_from_newCase_or_a_named_vendor_and_the_preview_says_which()
+    {
+        var plain = CaseImportService.BuildPreviewCore(OriginDoc(), _clock.UtcNow);
+        plain.NewCase!.Origin.Should().Be(CaseOrigin.InternalDetection);
+        plain.NewCaseOriginNote.Should().Contain("doesn't say");
+
+        var vendor = CaseImportService.BuildPreviewCore(OriginDoc(vendor: "Acme Payroll"), _clock.UtcNow);
+        vendor.NewCase!.Origin.Should().Be(CaseOrigin.ThirdParty, "a named vendor means a vendor told us");
+        vendor.NewCaseOriginNote.Should().Contain("names a vendor");
+
+        var word = CaseImportService.BuildPreviewCore(OriginDoc(origin: "third-party", vendor: "Acme"), _clock.UtcNow);
+        word.NewCase!.Origin.Should().Be(CaseOrigin.ThirdParty);
+        word.Warnings.Should().BeEmpty();
+
+        // The document-level origin is provenance; a case origin written there is pointed out.
+        var misplaced = CaseImportService.BuildPreviewCore(OriginDoc(docOrigin: "ThirdParty"), _clock.UtcNow);
+        misplaced.NewCase!.Origin.Should().Be(CaseOrigin.InternalDetection);
+        misplaced.Warnings.Should().Contain(w => w.Contains("where the import came from") && w.Contains("target.newCase.origin"));
+    }
+
+    [Fact]
+    public void Event_steps_carry_their_attack_detail_and_one_without_is_a_disclosure_milestone()
+    {
+        var p = CaseImportService.BuildPreviewCore(OriginDoc("ThirdParty", "Acme", null,
+            new CaseImportTimelineEntry
+            {
+                OccurredAtUtc = _clock.UtcNow.AddDays(-5), Kind = "Event", Description = "Exploited the vendor's transfer server",
+                Tactics = ["Initial Access", "defense-evasion", "NotATactic"], TechniqueId = "t1190", Environment = "Vendor",
+            },
+            new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-4), Kind = "Event", Description = "Reached our VPN", Environment = "our environment" },
+            new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-2), Kind = "Event", Type = "Notified", Description = "Vendor told us" },
+            new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-1), Kind = "Event", Description = "Bad id", TechniqueId = "X99" }), _clock.UtcNow);
+
+        p.IntoThirdParty.Should().BeTrue();
+        var exploit = p.Timeline[0];
+        exploit.Tactics.Should().Equal(MitreTactic.InitialAccess, MitreTactic.Stealth);
+        exploit.TechniqueId.Should().Be("T1190");
+        exploit.Environment.Should().Be(StepEnvironment.Vendor);
+        p.Timeline[1].Environment.Should().Be(StepEnvironment.Ours);
+        p.Timeline[1].HasAttackDetail.Should().BeTrue();
+        p.Timeline[2].HasAttackDetail.Should().BeFalse("a disclosure milestone");
+        p.Timeline[3].TechniqueId.Should().BeNull();
+        p.Warnings.Should().Contain(w => w.Contains("NotATactic")).And.Contain(w => w.Contains("X99"));
+    }
+
+    [Fact]
+    public async Task Applied_to_a_third_party_case_the_attack_steps_and_milestones_come_out_as_previewed()
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewAsync(OriginDoc("ThirdParty", "Acme Payroll", "manual",
+                new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-5), Kind = "Event", Description = "Exploited the vendor's server",
+                    Tactics = ["InitialAccess"], TechniqueId = "T1190" },
+                new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-4), Kind = "Event", Description = "Logged in to our VPN", Environment = "Ours" },
+                new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-2), Kind = "Event", Type = "Notified", Description = "Vendor told us" }));
+            caseId = (await svc.ApplyAsync(preview)).CaseId;
+        }
+        await using (var verify = NewContext())
+        {
+            var c = await verify.Cases.Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics).SingleAsync(x => x.Id == caseId);
+            c.Origin.Should().Be(CaseOrigin.ThirdParty);
+            var steps = c.TimelineEntries.OrderBy(t => t.OccurredAtUtc).ToList();
+            EventSteps.IsAttack(c, steps[0]).Should().BeTrue();
+            EventSteps.Where(c, steps[0]).Should().Be(StepEnvironment.Vendor);
+            steps[0].TechniqueId.Should().Be("T1190");
+            EventSteps.Where(c, steps[1]).Should().Be(StepEnvironment.Ours);
+            EventSteps.IsDisclosure(c, steps[2]).Should().BeTrue();
+            _hasher.VerifyChain(await verify.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync()).IsValid.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task A_case_imported_as_internal_can_be_made_third_party_and_its_steps_stay_attack_steps()
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewAsync(OriginDoc(null, null, "manual",
+                new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-3), Kind = "Event", Description = "Phish delivered" }));
+            caseId = (await svc.ApplyAsync(preview)).CaseId;
+        }
+        await using (var db = NewContext())
+        {
+            var cases = NewCaseService(db);
+            var noVendor = () => cases.ChangeOriginAsync(caseId, CaseOrigin.ThirdParty, " ", null, null, "imported as the wrong origin");
+            await noVendor.Should().ThrowAsync<ArgumentException>().WithMessage("*vendor*");
+            var noReason = () => cases.ChangeOriginAsync(caseId, CaseOrigin.ThirdParty, "Acme", null, null, " ");
+            await noReason.Should().ThrowAsync<ArgumentException>();
+            await cases.ChangeOriginAsync(caseId, CaseOrigin.ThirdParty, "Acme Payroll", "security@acme.example", null, "imported as internal; Acme disclosed it",
+                StepEnvironment.Vendor);
+        }
+        await using (var verify = NewContext())
+        {
+            var c = await verify.Cases.Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics).SingleAsync(x => x.Id == caseId);
+            c.Origin.Should().Be(CaseOrigin.ThirdParty);
+            c.ThirdParty!.VendorName.Should().Be("Acme Payroll");
+            var step = c.TimelineEntries.Single(t => t.Kind == TimelineKind.Event);
+            EventSteps.IsAttack(c, step).Should().BeTrue("it was an attack step on the internal case, and stays one");
+            EventSteps.Where(c, step).Should().Be(StepEnvironment.Vendor, "the person changing it said where the steps happened");
+            c.TimelineEntries.Should().Contain(t => t.Kind == TimelineKind.Investigation && t.Description.Contains("Origin changed from internal detection to third-party (Acme Payroll)")
+                && t.Description.Contains("1 attack step recorded before is marked as at the vendor"));
+            _hasher.VerifyChain(await verify.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync()).IsValid.Should().BeTrue();
+        }
+        await using (var db = NewContext())
+        {
+            // Back to internal: its one step is an attack step, so it's allowed, and the vendor is cleared.
+            await NewCaseService(db).ChangeOriginAsync(caseId, CaseOrigin.InternalDetection, null, null, null, "it was ours after all");
+        }
+        await using (var verify = NewContext())
+        {
+            var c = await verify.Cases.Include(x => x.TimelineEntries).SingleAsync(x => x.Id == caseId);
+            c.Origin.Should().Be(CaseOrigin.InternalDetection);
+            c.ThirdParty.Should().BeNull();
+            c.TimelineEntries.Single(t => t.Kind == TimelineKind.Event).Environment.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public async Task A_third_party_case_with_disclosure_milestones_is_not_made_internal()
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewAsync(OriginDoc("ThirdParty", "Acme", "manual",
+                new CaseImportTimelineEntry { OccurredAtUtc = _clock.UtcNow.AddDays(-2), Kind = "Event", Type = "Notified", Description = "Vendor told us" }));
+            caseId = (await svc.ApplyAsync(preview)).CaseId;
+        }
+        await using (var db = NewContext())
+        {
+            var act = () => NewCaseService(db).ChangeOriginAsync(caseId, CaseOrigin.InternalDetection, null, null, null, "wrong");
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*1 disclosure milestone*");
+        }
+        await using (var verify = NewContext())
+            (await verify.Cases.SingleAsync(x => x.Id == caseId)).Origin.Should().Be(CaseOrigin.ThirdParty);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

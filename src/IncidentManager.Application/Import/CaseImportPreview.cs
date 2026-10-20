@@ -31,10 +31,23 @@ public sealed class CaseImportPreview
     /// <summary>New-case opening fields (editable), when <see cref="TargetKind"/> is <see cref="CaseImportTargetKind.NewCase"/>.</summary>
     public CreateCaseRequest? NewCase { get; set; }
 
+    /// <summary>Where <see cref="NewCase"/>'s origin came from (the document, a vendor it names, or the default), for the preview.</summary>
+    public string? NewCaseOriginNote { get; set; }
+
+    /// <summary>The origin as read from the document, so the preview can say when the reviewer has changed it.</summary>
+    public Domain.Enums.CaseOrigin? NewCaseOriginAsRead { get; set; }
+
     /// <summary>The resolved existing target, when <see cref="TargetKind"/> is <see cref="CaseImportTargetKind.ExistingCase"/>.</summary>
     public Guid? ExistingCaseId { get; set; }
     public string? ExistingCaseNumber { get; set; }
     public string? ExistingTitle { get; set; }
+    public Domain.Enums.CaseOrigin? ExistingOrigin { get; set; }
+
+    /// <summary>Whether the case the import goes into is third-party: its event steps are then attack steps (with attack
+    /// detail) or disclosure milestones (without).</summary>
+    public bool IntoThirdParty => TargetKind == CaseImportTargetKind.ExistingCase
+        ? ExistingOrigin == Domain.Enums.CaseOrigin.ThirdParty
+        : NewCase?.Origin == Domain.Enums.CaseOrigin.ThirdParty;
 
     /// <summary>CAP-14: the detection case id the document targets, while no review has resolved it (a submission's own
     /// preview, built as the producer sent it: which case it names is the reviewer's view to decide).</summary>
@@ -148,6 +161,15 @@ public sealed class ImportTimelineRow
     public string? Rationale { get; set; }
     public string? OptionsConsidered { get; set; }
     public string? DecidedBy { get; set; }
+
+    // An Event row's attack detail (see CaseImportTimelineEntry). Environment applies on a third-party case only.
+    public List<MitreTactic> Tactics { get; set; } = [];
+    public string? TechniqueId { get; set; }
+    public StepEnvironment? Environment { get; set; }
+
+    /// <summary>An Event row that carries attack detail, so on a third-party case it's an attack step rather than a
+    /// disclosure milestone (as <c>EventSteps.HasAttackContent</c> decides).</summary>
+    public bool HasAttackDetail => Tactics.Count > 0 || TechniqueId is not null || Environment is not null;
 }
 
 /// <summary>CAP-35: one phase transition of an imported case's history.</summary>

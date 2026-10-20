@@ -225,6 +225,7 @@ public sealed class CaseImportService
                 preview.ExistingCaseId = c.Id;
                 preview.ExistingCaseNumber = c.CaseNumber;
                 preview.ExistingTitle = c.Title;
+                preview.ExistingOrigin = c.Origin;
                 // Keep NewCase populated so the UI can toggle back to a new-case target without a rebuild.
             }
             else
@@ -374,18 +375,18 @@ public sealed class CaseImportService
     public string? CheckHistory(CaseImportDocument doc) => BuildPreviewCore(doc, _clock.UtcNow).HistoryProblem;
 
     /// <summary>Resolves a case the current user is allowed to see, by id — for the existing-case target.</summary>
-    public async Task<(Guid Id, string CaseNumber, string Title)?> ResolveCaseAsync(Guid id, CancellationToken ct = default)
+    public async Task<(Guid Id, string CaseNumber, string Title, CaseOrigin Origin)?> ResolveCaseAsync(Guid id, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var c = await db.Cases.AsNoTracking().ForUser(_user)
             .Where(x => x.Id == id)
-            .Select(x => new { x.Id, x.CaseNumber, x.Title })
+            .Select(x => new { x.Id, x.CaseNumber, x.Title, x.Origin })
             .FirstOrDefaultAsync(ct);
-        return c is null ? null : (c.Id, c.CaseNumber, c.Title);
+        return c is null ? null : (c.Id, c.CaseNumber, c.Title, c.Origin);
     }
 
     /// <summary>Resolves a visible case by its case number — for entering an existing target on the import page.</summary>
-    public async Task<(Guid Id, string CaseNumber, string Title)?> ResolveCaseByNumberAsync(string caseNumber,
+    public async Task<(Guid Id, string CaseNumber, string Title, CaseOrigin Origin)?> ResolveCaseByNumberAsync(string caseNumber,
         CancellationToken ct = default)
     {
         var n = caseNumber?.Trim();
@@ -393,9 +394,9 @@ public sealed class CaseImportService
         using var db = _factory.CreateDbContext();
         var c = await db.Cases.AsNoTracking().ForUser(_user)
             .Where(x => x.CaseNumber == n)
-            .Select(x => new { x.Id, x.CaseNumber, x.Title })
+            .Select(x => new { x.Id, x.CaseNumber, x.Title, x.Origin })
             .FirstOrDefaultAsync(ct);
-        return c is null ? null : (c.Id, c.CaseNumber, c.Title);
+        return c is null ? null : (c.Id, c.CaseNumber, c.Title, c.Origin);
     }
 
     /// <summary>
@@ -487,7 +488,8 @@ public sealed class CaseImportService
                 ? earliest : t.OccurredAtUtc;
             pending.Add((t, new CaseService.TimelineToAdd(t.Kind, t.Type, when, t.Description, t.Source ?? origin,
                 t.Type == TimelineEntryType.Decision ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
-                timing, FollowsPrevious: precision == TimePrecision.NotStated)));
+                timing, FollowsPrevious: precision == TimePrecision.NotStated,
+                Attack: t.Kind == TimelineKind.Event && t.HasAttackDetail ? new CaseService.AttackDetail(t.Tactics, t.TechniqueId, t.Environment) : null)));
             if (t.Kind == TimelineKind.Event) stepBefore = true;
         }
         var next = 0;
@@ -1317,7 +1319,14 @@ public sealed class CaseImportService
     {
         var p = new CaseImportPreview { TargetKind = CaseImportTargetKind.NewCase };
         p.Origin = Clamp(doc.Origin, MaxSource, "Origin", p.Warnings);
-        p.NewCase = BuildNewCase(doc.Target?.NewCase, nowUtc, p.Warnings);
+        p.NewCase = BuildNewCase(doc.Target?.NewCase, nowUtc, p.Warnings, out var originNote);
+        p.NewCaseOriginNote = originNote;
+        p.NewCaseOriginAsRead = p.NewCase.Origin;
+        // The document's own "origin" is where the import came from, not the case's: a value that reads as a case origin
+        // there, with none in newCase, was probably meant for the case.
+        if (string.IsNullOrWhiteSpace(doc.Target?.NewCase?.Origin) && CaseOriginFrom(doc.Origin) is { } meant && meant != p.NewCase.Origin)
+            p.Warnings.Add($"The document's \"origin\" ('{doc.Origin!.Trim()}') is where the import came from, not the case's origin; " +
+                           $"for that, set target.newCase.origin. The case is {(p.NewCase.Origin == CaseOrigin.ThirdParty ? "third-party" : "internal detection")}: change it below if it should be {(meant == CaseOrigin.ThirdParty ? "third-party" : "internal detection")}.");
 
         var summary = Clamp(doc.Summary, MaxSummary, "Summary", p.Warnings);
         if (!string.IsNullOrWhiteSpace(summary))
@@ -1353,6 +1362,9 @@ public sealed class CaseImportService
                     row.Warning = "A decision needs its why. Imported as Communication; add the why and set the type back to Decision to keep it as a decision.";
                 }
             }
+            if (row.Kind == TimelineKind.Event) ReadAttackDetail(t, row, p.Warnings);
+            else if (t.Tactics is { Count: > 0 } || !string.IsNullOrWhiteSpace(t.TechniqueId) || !string.IsNullOrWhiteSpace(t.Environment))
+                p.Warnings.Add($"\"{TextFit.Cap(desc!, 60)}\" is an investigation entry, so its tactics, technique and environment were left out (they belong on an event step).");
             // ST-03: an event step can carry its time as stated. A date-based precision needs the date; a window its end.
             if (row.Kind == TimelineKind.Event && !string.IsNullOrWhiteSpace(t.TimePrecision))
             {
@@ -1684,7 +1696,93 @@ public sealed class CaseImportService
         p.HistoryProblem = await CloseGateProblemAsync(p, ct);
     }
 
-    private static CreateCaseRequest BuildNewCase(CaseImportNewCase? nc, DateTimeOffset nowUtc, List<string> warnings)
+    /// <summary>
+    /// An event step's attack detail: tactics by name (spaces, hyphens and case ignored; "Defense Evasion" is Stealth, as
+    /// ATT&amp;CK v19 renamed it), a technique id (T1566 or T1566.001), and where it happened (Vendor, Ours; "our
+    /// environment", "internal" and "at the vendor" too). Anything unrecognised is left out with a warning.
+    /// </summary>
+    private static void ReadAttackDetail(CaseImportTimelineEntry t, ImportTimelineRow row, List<string> warnings)
+    {
+        foreach (var raw in t.Tactics ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var word = new string(raw.Where(char.IsLetter).ToArray());
+            MitreTactic tactic;
+            if (word.Equals("DefenseEvasion", StringComparison.OrdinalIgnoreCase)) tactic = MitreTactic.Stealth;
+            else if (!ImportEnums.TryName(word, out tactic))
+            {
+                warnings.Add($"Unknown ATT&CK tactic '{raw.Trim()}' on \"{TextFit.Cap(row.Description, 60)}\"; left out.");
+                continue;
+            }
+            if (!row.Tactics.Contains(tactic)) row.Tactics.Add(tactic);
+        }
+        if (!string.IsNullOrWhiteSpace(t.TechniqueId))
+        {
+            var id = t.TechniqueId.Trim().ToUpperInvariant();
+            if (Domain.Entities.CaseTechnique.IdPattern().IsMatch(id)) row.TechniqueId = id;
+            else warnings.Add($"'{t.TechniqueId.Trim()}' on \"{TextFit.Cap(row.Description, 60)}\" isn't an ATT&CK technique id (T1566 or T1566.001); left out.");
+        }
+        if (!string.IsNullOrWhiteSpace(t.Environment))
+        {
+            var where = new string(t.Environment.Where(char.IsLetter).ToArray()).ToLowerInvariant();
+            row.Environment = where switch
+            {
+                "vendor" or "atthevendor" or "thevendor" or "theirs" or "vendorenvironment" => StepEnvironment.Vendor,
+                "ours" or "our" or "ourenvironment" or "internal" or "us" => StepEnvironment.Ours,
+                _ => null,
+            };
+            if (row.Environment is null)
+                warnings.Add($"Unknown environment '{t.Environment.Trim()}' on \"{TextFit.Cap(row.Description, 60)}\" (Vendor or Ours); left out.");
+        }
+    }
+
+    /// <summary>
+    /// The new case's origin: newCase.origin (InternalDetection or ThirdParty, or "internal", "third-party", "vendor"), or
+    /// when it's left out, third-party if the document names a vendor and internal detection if not. <paramref name="note"/>
+    /// says which, for the preview.
+    /// </summary>
+    private static CaseOrigin ResolveOrigin(CaseImportNewCase? nc, List<string> warnings, out string note)
+    {
+        var raw = nc?.Origin;
+        var vendor = !string.IsNullOrWhiteSpace(nc?.VendorName);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            if (vendor)
+            {
+                note = "Third-party: the document names a vendor but doesn't say the origin.";
+                return CaseOrigin.ThirdParty;
+            }
+            note = "Internal detection: the document doesn't say. Choose third-party if a vendor told us about it.";
+            return CaseOrigin.InternalDetection;
+        }
+        if (CaseOriginFrom(raw) is { } o)
+        {
+            note = o == CaseOrigin.ThirdParty ? "Third-party, as the document says." : "Internal detection, as the document says.";
+            if (o == CaseOrigin.InternalDetection && vendor)
+                warnings.Add("The document names a vendor, but its origin is internal detection, so the vendor isn't kept. Choose third-party below if a vendor told us about it.");
+            return o;
+        }
+        warnings.Add($"Unknown origin '{raw.Trim()}' (InternalDetection or ThirdParty). Using {(vendor ? "ThirdParty, since a vendor is named" : "InternalDetection")} instead.");
+        note = vendor ? "Third-party: the document's origin wasn't recognised, and it names a vendor."
+                      : "Internal detection: the document's origin wasn't recognised. Choose third-party if a vendor told us about it.";
+        return vendor ? CaseOrigin.ThirdParty : CaseOrigin.InternalDetection;
+    }
+
+    /// <summary>A case origin from its name or a plain word for it ("internal", "third-party", "third party", "vendor").</summary>
+    internal static CaseOrigin? CaseOriginFrom(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (ImportEnums.TryName<CaseOrigin>(raw.Trim(), out var o)) return o;
+        var word = new string(raw.Where(char.IsLetter).ToArray()).ToLowerInvariant();
+        return word switch
+        {
+            "internal" or "internaldetection" or "detection" => CaseOrigin.InternalDetection,
+            "thirdparty" or "vendor" or "thirdpartyvendor" or "supplier" => CaseOrigin.ThirdParty,
+            _ => null,
+        };
+    }
+
+    private static CreateCaseRequest BuildNewCase(CaseImportNewCase? nc, DateTimeOffset nowUtc, List<string> warnings, out string originNote)
     {
         // BUG-528: CreateAsync refuses a detected time in the future, activity after detection, or a dwell over
         // Case.MaxDwellYears, and the preview can't edit either time, so a bad one is left out (with a warning) and
@@ -1737,7 +1835,7 @@ public sealed class CaseImportService
             DescriptiveName = descriptive,
             Classification = classification,
             Severity = ParseEnum(nc?.Severity, Severity.Medium, "severity", warnings),
-            Origin = ParseEnum(nc?.Origin, CaseOrigin.InternalDetection, "origin", warnings),
+            Origin = ResolveOrigin(nc, warnings, out originNote),
             Summary = Clamp(nc?.Summary, MaxSummary, "Case summary", warnings),
             DetectedAtUtc = detected,
             OccurredAtUtc = occurred,

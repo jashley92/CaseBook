@@ -448,8 +448,7 @@
                 else
                 {
                     <dl class="row mb-0 im-ov-dl">
-                        <dt class="col-sm-3">Origin</dt>
-                        <dd class="col-sm-9">@(Case.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection")</dd>
+                        <CaseOriginField Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" />
                         @if (Teams is { Count: > 0 } || Case.TeamId is not null)
                         {
                             <CaseTeamField Case="Case" Teams="@(Teams ?? [])" CanEdit="CanEdit" OnChanged="OnChanged" />

@@ -223,10 +223,31 @@ Minimal example:
 Notes:
 - Set `target.newCase` to open a new case, or `target.caseId` to add to an existing one. A new case with no
   `classification` files as a **Complex Event** (intake) for a person to classify; `newCase.detectionCaseId`
-  carries the source platform's id (for example the XSIAM incident id) as the case's back-link. A new case with
-  `origin: "ThirdParty"` needs `newCase.vendorName` (the vendor that disclosed it). `newCase.exercise: true` makes it a
-  **tabletop / exercise case** (a drill: badged, kept out of dashboards, reminders, the IOC feed and correlation with
-  live cases; fixed once created).
+  carries the source platform's id (for example the XSIAM incident id) as the case's back-link. `newCase.exercise: true`
+  makes it a **tabletop / exercise case** (a drill: badged, kept out of dashboards, reminders, the IOC feed and
+  correlation with live cases; fixed once created).
+- **Two "origin" fields.** The top-level `origin` is where the *import* came from (`"XSIAM"`, `"manual"`): it becomes
+  the source of each imported item. **`newCase.origin`** is who found the *case*: `InternalDetection` (our monitoring
+  or staff) or `ThirdParty` (a vendor told us), with `newCase.vendorName`. Left out, the case is third-party when
+  `vendorName` is given and internal detection when it isn't; the reviewer's preview says which, and can change it. A
+  top-level `origin` that reads like a case origin (`"ThirdParty"`) with none in `newCase` gets a warning. A case
+  imported as the wrong origin can be corrected afterwards on its Briefing tab (*Origin* → *Change to …*, with a reason).
+- **Attack steps on a third-party case.** A third-party case's event steps (`kind: "Event"`) are of two kinds: the
+  vendor's **disclosure milestones** (what the vendor told us and what we confirmed: `type` `Notified`,
+  `ScopeConfirmed`, `DataConfirmed`, `Remediation`, `RegulatoryNotification`), and the attacker's **attack steps**. An
+  event step with any of `tactics` (ATT&CK names, such as `InitialAccess`), `techniqueId` (`T1566.001`) or
+  `environment` (`Vendor`, or `Ours` when the attacker reached our environment) is an attack step; one with none is a
+  disclosure milestone. On an internal case every event step is an attack step in our environment, and `environment`
+  is ignored.
+
+  ```json
+  "timeline": [
+    { "occurredAt": "2026-09-02T00:00:00Z", "timePrecision": "Day", "kind": "Event", "environment": "Vendor",
+      "tactics": ["InitialAccess"], "techniqueId": "T1190", "description": "Attacker exploited the vendor's file transfer server." },
+    { "occurredAt": "2026-09-10T14:00:00Z", "kind": "Event", "type": "Notified",
+      "description": "Vendor emailed us that our files were in the exposed set." }
+  ]
+  ```
 - **`target.detectionCaseId`** (CAP-14, optional, up to 100 characters) adds to an existing case by the detection
   platform's incident id rather than a CaseBook GUID: the one **open** case carrying that detection case id (compared
   without regard to letter case), found among the cases the **reviewer** can see when it's reviewed, not the cases
