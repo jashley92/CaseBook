@@ -171,7 +171,7 @@
 
     // BUG-531: invariant, whatever the server culture.
     private static string Time(DateTimeOffset? at) =>
-        at?.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture) ?? "";
+        TimeDisplay.UtcLabelled(at, "");
 
     private static string Duration(TimeSpan d) => d.TotalSeconds < 60
         ? $"{Math.Max(0, d.TotalSeconds).ToString("N1", CultureInfo.InvariantCulture)} s"

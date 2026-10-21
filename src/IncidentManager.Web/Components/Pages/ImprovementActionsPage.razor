@@ -72,7 +72,7 @@
         <div class="ms-auto">
             <a class="btn btn-sm btn-outline-primary" href="@CsvHref" download
                title="Uses the Show, team and exercise filters. Search text isn't applied.">
-                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Export CSV
+                <span class="bi bi-download me-1" aria-hidden="true"></span>Export these
             </a>
         </div>
     </div>
@@ -106,9 +106,10 @@
                             }
                         </td>
                         <td class="text-nowrap">
-                            <a href="@($"cases/{a.CaseId}?tab=Review")"><code>@r.CaseNumber</code></a>
+                            @* UX-53: the title first, the number quiet under it. *@
+                            <a href="@($"cases/{a.CaseId}?tab=Review")" class="im-list-title d-inline-block text-truncate" style="max-width:14rem" title="@r.CaseTitle">@r.CaseTitle</a>
                             @if (r.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
-                            <div class="small text-muted text-truncate" style="max-width:14rem" title="@r.CaseTitle">@r.CaseTitle</div>
+                            <div class="small text-muted"><span class="im-casenum" title="@r.CaseNumber">@r.CaseNumber</span></div>
                         </td>
                         <td>@(a.RelatedArea ?? "—")</td>
                         <td>

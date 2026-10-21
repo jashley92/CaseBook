@@ -8,7 +8,7 @@
         @if (!string.IsNullOrWhiteSpace(Title)) { <span class="im-seen-title">@Title</span> }
     </div>
     <div class="im-seen-meta">
-        @if (Classification is { } cl) { <span class="@Ui.ClassificationBadge(cl)">@Ui.Label(cl)</span> }
+        @if (Classification is { } cl) { <span class="text-nowrap"><RungMark Value="cl" /></span> }
         @if (OutcomeLabel is { } outcome) { <span class="im-outcome" title="Outcome recorded when it closed">@outcome</span> }
         <span class="text-muted">closed @(ClosedAtUtc is { } at ? TimeDisp.Short(at) : "")</span>
         @if (Verdicts is { Length: > 0 }) { <span class="text-muted">· @Verdicts</span> }

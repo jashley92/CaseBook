@@ -26,15 +26,15 @@
     {
         var p = _p;
         <div class="im-peek-head">
-            <code class="im-peek-num">@p.CaseNumber</code>
+            <span class="im-casenum im-peek-num">@p.CaseNumber</span>
             <span class="small text-muted ms-auto d-none d-lg-inline"><kbd>Esc</kbd></span>
             <button type="button" class="btn-close" aria-label="Close preview" @onclick="OnClose"></button>
         </div>
         <h2 class="im-peek-title">@p.Title</h2>
         <div class="im-peek-badges">
-            <span class="@Ui.ClassificationBadge(p.Classification)">@Ui.Label(p.Classification)</span>
-            <span class="@Ui.SeverityBadge(p.Severity)">@SevLabels.For(p.Severity)</span>
-            <span class="@Ui.PhaseBadge(p.Phase)">@Ui.Label(p.Phase)</span>
+            <span class="text-nowrap"><RungMark Value="p.Classification" /></span>
+            <span class="text-nowrap"><SeverityMark Value="p.Severity" /></span>
+            <span class="text-nowrap">@Ui.Label(p.Phase)</span>
             @if (p.LegalReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
             @if (p.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
             @if (p.Materiality != MaterialityStatus.Undetermined) { <span class="@Ui.MaterialityBadge(p.Materiality)">@Ui.Label(p.Materiality)</span> }
@@ -53,7 +53,7 @@
                         <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span>
                         @(sla.Clock is { } clk ? Ui.SlaClockLabel(clk) : "SLA"): @Ui.SlaShort(sla)
                     </span>
-                    @if (sla.IsActive && sla.DueAtUtc is { } due) { <span class="small text-muted im-data">due @TimeDisp.Short(due)</span> }
+                    @if (sla.IsActive && sla.DueAtUtc is { } due) { <span class="small text-muted im-time">due @TimeDisp.Short(due)</span> }
                 </div>
             </section>
         }

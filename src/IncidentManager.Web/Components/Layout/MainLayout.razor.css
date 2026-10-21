@@ -12,8 +12,8 @@ main {
 }
 
 .sidebar {
-    background: #0b0e12;   /* RD-01: flat ink in both themes; the content area carries the theme */
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--im-side-bg);   /* UX-63: follows the theme (RD-01 had it ink in both) */
+    border-right: 1px solid var(--im-side-border);
 }
 
 .top-row {

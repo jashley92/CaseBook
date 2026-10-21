@@ -53,7 +53,7 @@ else if (_pending.Count > 0)
                             </td>
                             <td class="small text-muted">@(pi.Origin ?? "—")</td>
                             <td class="small">@pi.SubmittedBy</td>
-                            <td class="small text-muted">@TimeDisp.Short(pi.SubmittedAtUtc)</td>
+                            <td class="small text-muted">@TimeDisp.Stamp(pi.SubmittedAtUtc)</td>
                             <td>
                                 @if (pi.StuckClaimedBy is null)
                                 {
@@ -420,7 +420,7 @@ else if (_pending.Count > 0)
             @if (p.ExistingCaseId is not null)
             {
                 <div class="alert alert-info py-2 mb-0">
-                    Importing into <code>@p.ExistingCaseNumber</code> — @p.ExistingTitle
+                    Importing into <span class="im-casenum">@p.ExistingCaseNumber</span> — @p.ExistingTitle
                     <button class="btn btn-link btn-sm p-0 ms-2 align-baseline" @onclick="() => ClearExisting(p)">change</button>
                 </div>
             }
@@ -568,7 +568,7 @@ else if (_pending.Count > 0)
                 @foreach (var m in _related)
                 {
                     <li class="mb-1">
-                        <a href="@($"cases/{m.CaseId}")" target="_blank" rel="noopener noreferrer"><code>@m.CaseNumber</code></a>
+                        <a href="@($"cases/{m.CaseId}")" target="_blank" rel="noopener noreferrer"><span class="im-casenum">@m.CaseNumber</span></a>
                         <span class="text-muted">@m.Title</span> ·
                         @string.Join(", ", m.Indicators.Take(5))@(m.Indicators.Count > 5 ? $" +{m.Indicators.Count - 5} more" : "")
                     </li>
@@ -621,7 +621,7 @@ else if (_pending.Count > 0)
                                 <td><input class="form-check-input" type="checkbox" aria-label="Include task @(p.ActionItems.IndexOf(a) + 1)" @bind="a.Include" /></td>
                                 <td><input class="form-control form-control-sm" aria-label="Title" @bind="a.Title" /></td>
                                 <td><input class="form-control form-control-sm" aria-label="Owner" @bind="a.Owner" /></td>
-                                <td class="small text-muted">@(a.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
+                                <td class="small text-muted">@(a.DueAtUtc is { } due ? TimeDisp.Stamp(due) : "—")</td>
                             </tr>
                         }
                     </tbody>
@@ -650,7 +650,7 @@ else if (_pending.Count > 0)
                             {
                                 <tr class="@(h.Applied ? "opacity-50" : "")">
                                     <td>@Ui.Label(h.Phase)</td>
-                                    <td class="small">@TimeDisp.Short(h.AtUtc)</td>
+                                    <td class="small">@TimeDisp.Stamp(h.AtUtc)</td>
                                     @* CAP-35 review: a close records its own reason, or the conclusion standing in for it. *@
                                     <td class="small text-break">@(h.Phase == IncidentManager.Domain.Enums.CasePhase.Closed ? p.CloseReason : h.Reason ?? p.ImportedRecordReason)</td>
                                 </tr>

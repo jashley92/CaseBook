@@ -39,15 +39,11 @@
             @(ActiveViewName is { } av ? av : "Views")
             <span class="bi @(_viewsOpen || _savingView ? "bi-chevron-up" : "bi-chevron-down") small" aria-hidden="true"></span>
         </button>
-        @* CAP-17: every case the list's filters match (not just this page), with its lifecycle times. *@
+        @* CAP-17: every case the list's filters match (not just this page), with its lifecycle times. UX-59: Exports is the home for the standing exports; a screen offers only "Export these", what its filters hold. *@
         <a class="btn btn-sm btn-outline-secondary" href="@_exportHref" download
            title="Every case these filters match, not only this page, as CSV with detected, contained, resolved, closed and reported times"
            aria-label="Export the cases these filters match as CSV">
-            <span class="bi bi-filetype-csv" aria-hidden="true"></span> Export CSV
-        </a>
-        <a class="btn btn-sm btn-outline-secondary d-none d-sm-inline-block" href="export/iocs.csv" download
-           title="Confirmed-malicious IOCs from your visible cases, as a blocklist for SIEM, firewall or EDR">
-            <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
+            <span class="bi bi-download" aria-hidden="true"></span> Export @(_page is { } shown ? $"these {shown.Total}" : "these")
         </a>
         <AuthorizeView Policy="@Policies.EditCases">
             <a class="btn btn-sm btn-outline-secondary" href="cases/import"
@@ -141,8 +137,9 @@
                 }
             </select>
         }
-        <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Search cases: number, title, IOC, timeline, notes, tasks…"
-               aria-label="Search cases" @bind="_search" @bind:after="ApplyFilters" />
+        @* UX-58: this narrows the list; searching everything is the palette (Ctrl K) and Find. *@
+        <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Filter: number, title, IOC, timeline, notes, tasks…"
+               aria-label="Filter cases" @bind="_search" @bind:after="ApplyFilters" />
         @* FR-16: the rarer toggles collapse behind "More filters"; they auto-reveal whenever one is active so a
            set filter is never hidden (each also shows as a chip). *@
         <button type="button" class="btn btn-sm btn-link px-1" aria-expanded="@Ui.Aria(showAdvanced)" @onclick="() => _showMoreFilters = !_showMoreFilters">
@@ -389,8 +386,8 @@ else
                                checked="@PageAllSelected" @onchange="e => TogglePage((bool)(e.Value ?? false))" />
                     </th>
                 }
-                @SortTh("Case #", CaseSort.CaseNumber)
-                <th>Title</th>
+                @* UX-53: one Case column, the title first and the number under it (it sorts by number, as before). *@
+                @SortTh("Case", CaseSort.CaseNumber)
                 <th class="case-cell-class">Classification</th>
                 @SortTh("Phase", CaseSort.Phase, "case-cell-phase")
                 @SortTh("Severity", CaseSort.Severity)
@@ -414,21 +411,21 @@ else
                                    @onchange="e => ToggleSelect(c.Id, (bool)(e.Value ?? false))" />
                         </td>
                     }
-                    <td class="case-num" style="@(i == _cursor ? "box-shadow:inset 3px 0 0 var(--im-accent)" : null)">
-                        <button type="button" class="im-peek-btn case-above" aria-pressed="@Ui.Aria(_peekId == c.Id)"
-                                aria-label="@($"Preview {c.CaseNumber}")" title="Preview (p)" @onclick="() => TogglePeek(c.Id)">
-                            <span class="bi @(_peekId == c.Id ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-reverse")" aria-hidden="true"></span>
-                        </button>
-                        <code title="@c.CaseNumber">@c.CaseNumber</code>
-                        @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
-                    </td>
-                    <td class="case-cell-title im-cell-fill">
+                    <td class="case-cell-title im-cell-fill" style="@(i == _cursor ? "box-shadow:inset 3px 0 0 var(--im-accent)" : null)">
                         <div class="case-title-line">
+                            <button type="button" class="im-peek-btn case-above" aria-pressed="@Ui.Aria(_peekId == c.Id)"
+                                    aria-label="@($"Preview {c.CaseNumber}")" title="Preview (p)" @onclick="() => TogglePeek(c.Id)">
+                                <span class="bi @(_peekId == c.Id ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-reverse")" aria-hidden="true"></span>
+                            </button>
                             <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title im-ellipsis" title="@c.Title">@c.Title</a>
                             @if (c.LegalReferred) { <span class="im-badge im-b-neutral" title="Referred to Legal / Privacy">Legal</span> }
                             @if (c.LegalHold) { <span class="im-badge im-b-danger" title="Under a legal hold: preserve, don't delete">Hold</span> }
                             @if (c.IsExercise) { <span class="im-badge im-b-info" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
                             @if (c.TeamId is { } teamId && TeamName(teamId) is { } teamName) { <span class="im-badge im-b-neutral" title="Owning team">@teamName</span> }
+                        </div>
+                        <div class="case-num-sub">
+                            <span class="im-casenum" title="@c.CaseNumber">@c.CaseNumber</span>
+                            @if (c.IsRestricted) { <span class="bi bi-lock-fill" title="Restricted" aria-label="Restricted"></span> }
                         </div>
                         @* HR-09: where a search matched, when it isn't the number, title or summary. *@
                         @if (_page.Matches?.GetValueOrDefault(c.Id) is { } matched)
@@ -436,9 +433,11 @@ else
                             <div class="case-match small text-muted im-ellipsis" title="@matched"><span class="bi bi-search" aria-hidden="true"></span> @matched</div>
                         }
                     </td>
-                    <td class="case-cell-class"><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
-                    <td class="case-cell-phase"><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
-                    <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
+                    @* UX-54: the state marks the case header uses (a form beside the word, not a coloured pill each); the phase
+                       is a word. Colour is left for what needs attention: the clock, a critical or high severity. *@
+                    <td class="case-cell-class"><RungMark Value="c.Classification" /></td>
+                    <td class="case-cell-phase">@Ui.Label(c.Phase)</td>
+                    <td class="case-cell-sev"><SeverityMark Value="c.Severity" /></td>
                     <td>
                         @{
                             var sla = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, _targets, Clock.UtcNow, c.Classification, c.ContainmentNotNeeded);
@@ -449,9 +448,7 @@ else
                         }
                         else
                         {
-                            <span class="@Ui.SlaBadge(sla.State)" title="@SlaTitle(sla)">
-                                <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span> @SlaText(sla)
-                            </span>
+                            <StatusText Tone="@SlaTone(sla.State)" Icon="@Ui.SlaGlyph(sla.State)" Title="@SlaTitle(sla)" Class="case-sla">@SlaText(sla)</StatusText>
                         }
                     </td>
                     <td class="case-cell-owner">
@@ -609,7 +606,7 @@ else
                         <ul class="small mb-0" style="max-height:16rem;overflow:auto">
                             @foreach (var c in selectedItems)
                             {
-                                <li><code>@c.CaseNumber</code> — @c.Title @(c.LegalReferred && _bulkVerb == BulkVerb.Refer ? "· already referred, skipped (its referral is kept)" : "")</li>
+                                <li><span class="im-casenum">@c.CaseNumber</span> — @c.Title @(c.LegalReferred && _bulkVerb == BulkVerb.Refer ? "· already referred, skipped (its referral is kept)" : "")</li>
                             }
                         </ul>
                     </div>
@@ -627,6 +624,14 @@ else
 }
 
 @code {
+    // UX-54: a breached clock is red, one at risk amber; the rest are words.
+    private static StatusTone SlaTone(SlaState state) => state switch
+    {
+        SlaState.Breached => StatusTone.Danger,
+        SlaState.AtRisk => StatusTone.Warn,
+        _ => StatusTone.Muted,
+    };
+
     // Filters live in the URL so views are bookmarkable and the dashboard can deep-link into them.
     [SupplyParameterFromQuery(Name = "classification")] public string? QClassification { get; set; }
     [SupplyParameterFromQuery(Name = "phase")] public string? QPhase { get; set; }

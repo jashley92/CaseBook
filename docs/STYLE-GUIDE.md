@@ -94,15 +94,19 @@ so density and elevation stay consistent; see them live at `/style`.
 | Token | Value | Use |
 |-------|-------|-----|
 | `--im-space-1…6` | 4 / 8 / 12 / 16 / 24 / 32 px | Gaps, padding, block margins (4px grid) |
-| `--im-radius-sm` | 0.4rem | Badges, chips |
-| `--im-radius` | 0.5rem | Default controls (mirrors `--bs-border-radius`) |
-| `--im-radius-lg` | 0.75rem | Cards, stat tiles, panels |
-| `--im-radius-xl` | 0.85rem | Modals |
+| `--im-radius` | 0.5rem | Controls, badges, chips (`--im-radius-sm` is an alias) |
+| `--im-radius-lg` | 0.75rem | Cards, stat tiles, panels, modals (`--im-radius-xl` is an alias) |
 | `--im-radius-pill` | 999px | Pills |
 | `--im-shadow-sm` | — | Toasts |
 | `--im-shadow` | — | Dropdowns / floating panels |
 | `--im-shadow-lg` | — | Modals |
-| `--im-text-xs…xl` | 0.75 / 0.85 / 1 / 1.05 / 1.15 / 1.6 rem | `xs` badges & labels → `xl` page/stat titles |
+| `--im-text-xs` / `-sm` / `-table` / `-base` / `-lg` / `-xl` | 0.75 / 0.85 / 0.875 / 1 / 1.15 / 1.6 rem | The six steps (UX-51): `xs` labels and badges, `sm` secondary text, `table` table cells, `base` body, `lg` section and card titles, `xl` page titles (`-md` is an alias of `base`) |
+| `--im-text-display` | 2.2rem | Stat values only |
+| `--im-label-size` / `-weight` / `-tracking` | xs / 600 / .06em | The one small-capitals label (`.im-cap`): every uppercase heading |
+
+**Guarded.** `DesignTokenGuardTests` counts the raw font sizes, colours and radii in `app.css`, the scoped
+`*.razor.css` and `style=` attributes, and fails if a count rises (use a token) or falls below its baseline (lower the
+baseline, so the gain is kept). Bootstrap's h2–h6 are mapped onto the scale (`lg`, h6 `base`).
 
 Adoption is incremental: the shared shell (`.im-card`, `.im-tiles`, `.im-stat`,
 `.im-badge`, `.im-table`), the exact-match shadows, and the Bootstrap radius bridge
@@ -124,6 +128,33 @@ Prefer these when adding a media query; avoid inventing new near-neighbors
 
 ---
 
+## 3b. The shared pieces and their rules (UX-51 to UX-63)
+
+| Piece | Use | Rule |
+|-------|-----|------|
+| `TabBar` (`TabLevel.Page`, `TabLevel.Sub`) | A page's views (underlined), the parts inside one view (segmented) | Two levels, nothing else. Links (`Href`) or buttons (`Key` + `OnSelect`); a link stands for a group of pages with `Key` and `Active`. |
+| `Card` (`Title`, `Icon`, `Info`, `Actions`, `Compact`, `Flush`) | A titled section | `Compact` is a side rail's card (the title as a label). Bootstrap `.card` and `.im-card` are drawn to match. |
+| `DataTable<TItem>` | Any list of rows | Sticky header, 50 rows a page with its pager (or the caller's pages: `TotalCount`, `Page`, `OnPage`), the row opens on click (`OnRowClick`), other actions in `RowActions` show on hover and focus. On a phone it scrolls inside itself. A plain table's row action uses `.im-row-act`. |
+| `StatusText` (`Plain`, `Muted`, `Ok`, `Warn`, `Danger`) | A state in words | Colour and an icon only for attention. |
+| `PageHeader` | The page's h1 | Inside Administration (`PageHeaderSection`) it is the section's h2. |
+
+- **A case in a list** leads with its title; the number sits small and quiet under it (`.im-casenum`), never in
+  `<code>` (guarded).
+- **Colour is for attention**: a breached or at-risk clock, overdue work, malicious, a Critical or High severity.
+  Classification and severity are `RungMark` and `SeverityMark`, the phase a word (the `Ui.*Badge` helpers for them
+  are guarded out of components; the style guide page keeps them as reference). Links in lists and tabs are in the
+  text colour; gold is for actions.
+- **Dates** go through `TimeDisplay`: `Short`/`Long` ("20 Oct 2026, 21:04 UTC-04:00"), `Stamp` under a header or
+  heading that names the zone once, `Brief` where recency matters, and `TimeDisplay.Utc`/`UtcLabelled`/`UtcDay` on the
+  audit and system pages (UTC, 24-hour, to the second). Times in tables use `.im-time`. An attack step's stated time
+  keeps `StepTime`'s wording. `ToString("u")` or a date-and-time pattern in a component fails a guard.
+- **Search** is the palette (Ctrl K); Enter on words opens the results on Find. A box on a page filters that page and
+  says so (*Filter …*, a funnel).
+- **Exports** live on Exports; a page offers *Export these* (or *Export this view*) for what its filters hold.
+- **Inputs** are one size (the small size) across the app.
+
+---
+
 ## 4. Badges
 
 The key rule: never use a raw Bootstrap badge (`badge bg-*`, `bg-info-subtle
@@ -132,7 +163,8 @@ AA-legible same-hue text, theme-aware border) plus one modifier class.
 
 Two ways to get one:
 
-1. Domain concepts go through the `Ui.*Badge(...)` helpers in `Ui.cs`. They return
+1. Domain concepts go through the `Ui.*Badge(...)` helpers in `Ui.cs` (classification, severity and phase are
+   marks in components now, see 3b; the SLA, link and disposition helpers stay). They return
    a full `im-badge ...` class string, so you spread the result onto a `<span>` and
    pair it with the matching `Ui.Label(...)`/`Ui.SlaLabel(...)` text.
 
@@ -192,7 +224,7 @@ Every top-level page follows the same skeleton.
    <PageHeader Title="Cases" Subtitle="@_asOf">
        <Actions>
            <a class="btn btn-sm btn-outline-secondary" href="export/metrics.csv" download>
-               <span class="bi bi-download" aria-hidden="true"></span> Export metrics (CSV)
+               <span class="bi bi-download" aria-hidden="true"></span> Export this view
            </a>
        </Actions>
    </PageHeader>
@@ -228,9 +260,8 @@ Every top-level page follows the same skeleton.
    | `Href` | `string?` | Optional. Renders the tile as a drill-in link. |
    | `TitleText` | `string?` | Optional. Hover title; defaults to `View {Label}`. |
 
-3. Content sits in `im-card` panels, each headed by an `im-section-head` (with an
-   optional muted `im-section-note` on the right). Tables carry `im-table` alongside
-   the Bootstrap table classes.
+3. Content sits in `Card`s (see 3b); a list is a `DataTable`. Older pages still use `im-card` panels headed by an
+   `im-section-head`, drawn to match; move them to `Card` as they're touched.
 
    ```razor
    <div class="im-card">

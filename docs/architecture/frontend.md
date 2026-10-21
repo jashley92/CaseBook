@@ -54,8 +54,10 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/access-denied`, `/not-found` | `NoAccess`, `NotFoundPage` | signed in | Friendly 403 and 404 |
 | `/Error`, `/session-expired` | `Error`, `SessionExpired` | anonymous (blank layout) | Error with a reference id; idle lock landing |
 
-**Admin sections.** `AdminLayout` adds a left rail grouped by task (`AdminLayout.AllGroups`: Overview, Organization, Cases &
-workflow, Notifications, Integrations, Reports, Records & evidence, People & access, System), with a search box at its top.
+**Admin sections.** `AdminLayout` holds the page's h1 (Administration) with its filter (`AdminSearchBox`), the groups as
+page tabs (`AdminLayout.AllGroups`: Overview, Organization, Cases & workflow, Notifications, Integrations, Reports,
+Records & evidence, People & access, System; `TabBar` at the Page level, a tab current for any page of its group) and a
+group's pages as Sub tabs (UX-60). It cascades `PageHeaderSection`, so each admin page's `PageHeader` renders an h2.
 `/admin/settings/{section}` maps to groups in `SettingsCatalog` (`Admin.NamedSettingsSections`, each with a one-line
 subtitle): `identity`, `notifications` (Email delivery, Email notifications, Team chat), `integrations`, `sla`,
 `taxonomy` (the taxonomy editor, `TaxonomyEditor`, above the severity labels), `regulatory-deadlines`, `reporting`,

@@ -9,11 +9,7 @@
 
 <PageTitle>Roles &amp; access</PageTitle>
 
-<PageHeader Title="Roles & access">
-    <Actions>
-        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
-    </Actions>
-</PageHeader>
+<PageHeader Title="Roles & access" />
 <p class="text-muted">
     A role is a set of <strong>permissions</strong>. Built-in <em>system</em> roles are locked. Build
     <strong>custom roles</strong> from the same permissions, and map any role to AD security groups.
@@ -100,7 +96,7 @@ else
                     <td>
                         @foreach (var p in r.GetPermissions().OrderBy(x => x))
                         {
-                            <span class="im-badge im-b-info me-1 mb-1">@AccessSummary.Label(p)</span>
+                            <span class="im-badge im-b-neutral me-1 mb-1">@AccessSummary.Label(p)</span>
                         }
                         @if (r.GetPermissions().Count == 0) { <span class="text-muted">—</span> }
                     </td>
@@ -258,7 +254,7 @@ else
                 @foreach (var c in _review.RestrictedCases)
                 {
                     <tr>
-                        <td><code class="small">@c.CaseNumber</code>@if (c.IsArchived) { <span class="im-badge im-b-neutral ms-1" title="Archived, but its team can still open it">Archived</span> }<div class="small text-muted">@c.Title</div></td>
+                        <td><span class="im-casenum small">@c.CaseNumber</span>@if (c.IsArchived) { <span class="im-badge im-b-neutral ms-1" title="Archived, but its team can still open it">Archived</span> }<div class="small text-muted">@c.Title</div></td>
                         <td>@(string.IsNullOrWhiteSpace(c.IncidentCommander) ? "—" : c.IncidentCommander)</td>
                         <td>
                             @if (c.Assignees.Count == 0) { <span class="text-muted">—</span> }
@@ -297,7 +293,7 @@ else
                             else { @foreach (var r in u.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> } }
                         </td>
                         <td class="small">
-                            @TimeDisp.Short(u.LastSeenUtc)
+                            @TimeDisp.Stamp(u.LastSeenUtc)
                             @if (u.IsDormant) { <span class="im-badge im-b-warn ms-1">Dormant</span> }
                         </td>
                     </tr>
@@ -326,7 +322,7 @@ else
                                 <div class="small text-muted">@(t.Kind == ApiTokenKind.System ? "System token" : $"Personal token of {t.Owner}")</div>
                             </td>
                             <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> }</td>
-                            <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "Never")</td>
+                            <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Stamp(used) : "Never")</td>
                             <td class="small">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
                         </tr>
                     }

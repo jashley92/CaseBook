@@ -18,7 +18,7 @@
 
 <p class="small text-muted mb-2">
     Whether email, team chat and the SIEM stream are getting through. Never shows a recipient or what a server answered,
-    only its status code. The figures are held in memory and reset when CaseBook restarts (since @Health.SinceUtc.ToString("u"));
+    only its status code. The figures are held in memory and reset when CaseBook restarts (since @TimeDisplay.UtcLabelled(Health.SinceUtc));
     the held emails are counted in the database.
 </p>
 <table class="table table-sm">
@@ -42,10 +42,10 @@
                     else
                     {
                         <span class="im-badge im-b-warn">@(_held.AtLeast ? $"{_held.Count}+" : _held.Count.ToString()) held</span>
-                        <span class="ms-1">the oldest since @_held.OldestUtc?.ToString("u")</span>
+                        <span class="ms-1">the oldest since @TimeDisplay.UtcLabelled(_held.OldestUtc)</span>
                     }
                 </div>
-                @if (Smtp?.NextAttemptUtc is { } next) { <div>Next try of the held emails: @next.ToString("u")</div> }
+                @if (Smtp?.NextAttemptUtc is { } next) { <div>Next try of the held emails: @TimeDisplay.UtcLabelled(next)</div> }
                 <div>Given up since start: @(Smtp?.GivenUp ?? 0)</div>
                 @Detail(Smtp)
             </td>
@@ -157,7 +157,7 @@
         var seq = 0;
         builder.OpenElement(seq++, "div");
         builder.AddAttribute(seq++, "class", "text-muted");
-        builder.AddContent(seq++, $"Last good send: {(s.LastSuccessUtc is { } ok ? ok.ToString("u") : "none since start")} · {s.SuccessCount} sent, {s.FailureCount} failed");
+        builder.AddContent(seq++, $"Last good send: {(s.LastSuccessUtc is { } ok ? TimeDisplay.UtcLabelled(ok) : "none since start")} · {s.SuccessCount} sent, {s.FailureCount} failed");
         builder.CloseElement();
         if (s.LastFailureUtc is { } failed)
         {

@@ -61,10 +61,13 @@
         @if (Notify?.Headline is { } nh && (nh.IsActive || Notify.Standing.IsFullyReported))
         {
             <div class="im-nn-ob">
-                <ClockMark State="nh.State" Label="@($"Notify {nh.JurisdictionLabel}")" />
+                <ClockMark State="nh.State" Label="@($"Notify {nh.JurisdictionLabel}")" Title="@($"Notify {nh.JurisdictionLabel}")" />
                 @if (CanEdit && nh.IsActive && !_marking)
                 {
-                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="BeginMarkReported">Mark reported…</button>
+                    @* UX-52: the row's act as the task rows have theirs (Done…): a quiet link on the title line, not a button on a
+                       line of its own between the title and its detail. *@
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto im-nn-done" @onclick="BeginMarkReported"
+                            aria-label="@($"Mark notification to {nh.JurisdictionLabel} reported")">Mark reported…</button>
                 }
                 <div class="im-nn-sub">
                     @if (!nh.IsActive && Notify.Standing.ReportedAtUtc is { } rep)

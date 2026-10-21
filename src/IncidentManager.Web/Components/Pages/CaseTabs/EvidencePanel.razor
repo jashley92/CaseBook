@@ -271,7 +271,7 @@
                         @foreach (var c in _custody)
                         {
                             <li>
-                                <span class="im-data small" title="@TimeDisp.Long(c.AtUtc)">@TimeDisp.Brief(c.AtUtc, Clock.UtcNow)</span>
+                                <span class="im-time small" title="@TimeDisp.Long(c.AtUtc)">@TimeDisp.Brief(c.AtUtc, Clock.UtcNow)</span>
                                 <span class="im-evp-dot im-evp-@c.Action.ToLowerInvariant()" aria-hidden="true"></span>
                                 <span><strong>@c.Action</strong> by @Users.DisplayFor(c.Actor)@if (!string.IsNullOrWhiteSpace(c.Details) && c.Action != "Uploaded") {<span class="d-block small text-muted">@c.Details</span>}</span>
                             </li>

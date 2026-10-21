@@ -73,6 +73,10 @@ public sealed class TimeDisplay
     private string Hms => TwelveHourClock ? "h:mm:ss tt" : "HH:mm:ss";
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+    // UX-57: one way to write an exact date ("20 Oct 2026") and an exact time ("20 Oct 2026, 21:04"), everywhere on screen.
+    // Invariant month names, so it reads the same whatever the server's culture.
+    private const string DayPattern = "d MMM yyyy";
+
     private static TimeZoneInfo Resolve(string? id)
     {
         if (string.IsNullOrWhiteSpace(id)) return TimeZoneInfo.Utc;
@@ -106,7 +110,7 @@ public sealed class TimeDisplay
     public string Long(DateTimeOffset ts)
     {
         var z = ToZone(ts);
-        return $"{z.ToString("yyyy-MM-dd " + Hms, Inv)} {OffsetLabel(z.Offset)}";
+        return $"{z.ToString(DayPattern + ", " + Hms, Inv)} {OffsetLabel(z.Offset)}";
     }
 
     public string Long(DateTimeOffset? ts, string dash = "—") => ts is { } t ? Long(t) : dash;
@@ -116,8 +120,26 @@ public sealed class TimeDisplay
     public string Short(DateTimeOffset ts)
     {
         var z = ToZone(ts);
-        return $"{z.ToString("yyyy-MM-dd " + Hm, Inv)} {OffsetLabel(z.Offset)}";
+        return $"{z.ToString(DayPattern + ", " + Hm, Inv)} {OffsetLabel(z.Offset)}";
     }
+
+    /// <summary>UX-57: <see cref="Short"/> without the zone, for a column or section whose header names it once
+    /// (<c>When (@Label)</c>).</summary>
+    public string Stamp(DateTimeOffset ts) => ToZone(ts).ToString(DayPattern + ", " + Hm, Inv);
+
+    public string Stamp(DateTimeOffset? ts, string dash = "—") => ts is { } t ? Stamp(t) : dash;
+
+    /// <summary>UX-57: the audit and system pages' time: always UTC, 24-hour, to the second, whatever the viewer's
+    /// display settings (examiners compare it with logs). Without a label: the column or line names UTC once.</summary>
+    public static string Utc(DateTimeOffset ts) => ts.ToUniversalTime().ToString(DayPattern + ", HH:mm:ss", Inv);
+
+    /// <summary>UX-57: <see cref="Utc(DateTimeOffset)"/> with its label, for a time in running text.</summary>
+    public static string UtcLabelled(DateTimeOffset ts) => Utc(ts) + " UTC";
+
+    public static string UtcLabelled(DateTimeOffset? ts, string dash = "—") => ts is { } t ? UtcLabelled(t) : dash;
+
+    /// <summary>UX-57: a UTC calendar date (an expiry, the day a secret was set), in the one date form.</summary>
+    public static string UtcDay(DateTimeOffset ts) => ts.ToUniversalTime().ToString(DayPattern, Inv);
 
     /// <summary>Time of day only, with a zone label (e.g. "04:57 UTC") — for the dashboard "as of" line.</summary>
     public string TimeOnly(DateTimeOffset ts)
@@ -142,7 +164,7 @@ public sealed class TimeDisplay
 
     /// <summary>Calendar date in the active zone (no time), for due dates and month labels.</summary>
     // BUG-530: invariant like the other helpers, so a non-Gregorian server calendar can't print a different year here.
-    public string DateOnly(DateTimeOffset ts) => ToZone(ts).ToString("yyyy-MM-dd", Inv);
+    public string DateOnly(DateTimeOffset ts) => ToZone(ts).ToString(DayPattern, Inv);
 
     public string DateOnly(DateTimeOffset? ts, string dash = "—") => ts is { } t ? DateOnly(t) : dash;
 
@@ -151,8 +173,8 @@ public sealed class TimeDisplay
     /// <summary>WF-103: a due time as its form shows it: a bare day when it's 23:59 on the organization's calendar (picked
     /// without a time), else <see cref="Short"/>.</summary>
     public string Due(DateTimeOffset ts, TimeZoneInfo organization) =>
-        Components.Pages.Workspace.DayValues.FromUtc(ts, Zone, organization) is (var d, null) ? d.ToString("yyyy-MM-dd", Inv) : Short(ts);
+        Components.Pages.Workspace.DayValues.FromUtc(ts, Zone, organization) is (var d, null) ? d.ToString(DayPattern, Inv) : Short(ts);
 
     public string Day(DateTimeOffset? ts, TimeZoneInfo organization, string dash = "—") =>
-        ts is { } t ? Components.Pages.Workspace.DayValues.DayOf(t, Zone, organization).ToString("yyyy-MM-dd", Inv) : dash;
+        ts is { } t ? Components.Pages.Workspace.DayValues.DayOf(t, Zone, organization).ToString(DayPattern, Inv) : dash;
 }

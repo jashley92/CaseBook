@@ -151,7 +151,7 @@
             {
                 var closed = r.Phase == CasePhase.Closed;
                 <button type="button" class="btn btn-sm btn-link d-block text-start p-0 mb-1" disabled="@closed" @onclick="() => PickSupersedeTarget(r.Id, r.CaseNumber)">
-                    <code>@r.CaseNumber</code> <span class="text-muted">@r.Title@(closed ? " · closed: reopen it to keep it" : "")</span>
+                    <span class="im-casenum">@r.CaseNumber</span> <span class="text-muted">@r.Title@(closed ? " · closed: reopen it to keep it" : "")</span>
                 </button>
             }
             <div class="form-text">A closed case can't be kept. Reopen it first if work continues there.</div>
@@ -279,12 +279,12 @@
         }
         else
         {
-            <p class="mb-0">Archive <code>@Case.CaseNumber</code>? It's hidden from active queues and can be restored later.</p>
+            <p class="mb-0">Archive <span class="im-casenum">@Case.CaseNumber</span>? It's hidden from active queues and can be restored later.</p>
         }
     }
     else if (D.Name == "reopen")
     {
-        <p class="small text-muted mb-2">Reopen <code>@Case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
+        <p class="small text-muted mb-2">Reopen <span class="im-casenum">@Case.CaseNumber</span>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
         <label class="form-label small" for="ws-reopen-reason">Reason <span class="text-muted">(required)</span></label>
         <input id="ws-reopen-reason" class="form-control" maxlength="2000" placeholder="Why is this case being reopened?" @bind="D.ReopenReason" @bind:event="oninput" />
         @SkipQuestions(Case.ReopenPhase(), "ws-reopen")

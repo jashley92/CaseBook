@@ -13,7 +13,7 @@
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
     <p class="text-muted mb-0">Tamper-evident audit trail for this case (most recent first).</p>
     <a class="btn btn-sm btn-outline-secondary" href="@AuditExportHref()">
-        <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
+        <span class="bi bi-download me-1" aria-hidden="true"></span>Export these
     </a>
 </div>
 
@@ -60,7 +60,7 @@ else
                             }
                             @a.Sequence
                         </td>
-                        <td class="small im-data">@a.AtUtc.ToString("u")</td>
+                        <td class="small im-time">@TimeDisplay.Utc(a.AtUtc)</td>
                         <td>@Users.DisplayFor(a.Actor)</td>
                         <td>@AuditLabels.Label(a.Action)</td>
                         <td>
@@ -135,8 +135,8 @@ else
                         <tr>
                             <td>@Users.DisplayFor(v.ActorUserId)@if (v.WasRestricted) { <span class="im-badge im-b-warn ms-2">restricted</span> }</td>
                             <td class="text-end">@v.Count</td>
-                            <td class="small im-data">@TimeDisp.Short(v.FirstSeenUtc)</td>
-                            <td class="small im-data">@TimeDisp.Short(v.LastSeenUtc)</td>
+                            <td class="small im-time">@TimeDisp.Short(v.FirstSeenUtc)</td>
+                            <td class="small im-time">@TimeDisp.Short(v.LastSeenUtc)</td>
                         </tr>
                     }
                 </tbody>

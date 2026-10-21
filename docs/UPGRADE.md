@@ -212,6 +212,35 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.16.0
+
+**No migrations and no new settings**: a release of how CaseBook looks and reads. Nothing about a case, its record or
+its integrity changes. Browsers pick up the new stylesheets on the first load (they're versioned).
+
+- **One visual language.** One six-step type scale and one small-capitals label, two corner radii, four button styles,
+  and shared pieces every screen now uses: one tab bar (page tabs underlined, sub-tabs segmented), one card, one list
+  table (a sticky header, 50 rows a page, the row opens on click, its other actions on hover and keyboard focus), and
+  state written in words, with colour kept for what needs attention.
+- **A case reads title first** in every list, its number small and quiet under it, never in a code face.
+  Classification and severity are the header's marks (not a coloured pill each), the phase a word.
+- **The case workspace**: the title is the heading, with *Cases ›* and the number under it; the state is one line;
+  *Paper* is now *Report & lessons*; the Record's lenses, *View* (filter, clock or T+, order) and *Add* fit one row.
+- **The Program overview is redesigned.** One sentence first (what's open, a regulator notice overdue, what's past
+  due); then each card is a question answered in a line (*Do we owe a regulator anything?*, *What needs action?*, *How
+  much is open?*, *Where are open cases stuck?*, *Anything from our vendors?*, *What are attackers doing?*) with its
+  evidence beneath, and a rail with every answer at a glance, the numbers, the targets and the learning loop.
+- **Dates have one form**: "20 Oct 2026, 21:04", the zone named once in a column or day heading. The audit and system
+  pages show UTC to the second. An attack step's stated time keeps its wording.
+- **Search is the palette** (Ctrl K): words and Enter open the full results on Find; a page's own box is a filter and
+  says so. **Exports live on Exports**; a page offers *Export these* for what its filters hold, and Cases, Indicators
+  and the Legal register no longer repeat the IOC feed and the register's CSV.
+- **Administration** is one column: the groups as tabs and a group's pages as sub-tabs (no second sidebar), its filter
+  beside the heading, configuration keys behind *Show configuration keys*, one *Change history* per page, and the same
+  input size as the rest of the app.
+- **The audit trail and the Access log** page by 50 under a sticky header (they were 100 and 500 on one page).
+- **The sidebar follows the light theme.** Due work and the Desk are cards over the shared table; on a phone, wide
+  tables and tab bars scroll inside themselves rather than running off the screen.
+
 ### v1.15.0
 
 **Two migrations** add nullable columns: three to `Evidence` (`PurgedAtUtc`, `PurgedBy`, `PurgedReason`) and two to

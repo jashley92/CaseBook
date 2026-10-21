@@ -69,7 +69,7 @@
         @(_rows?.Count ?? 0) session@(_rows?.Count == 1 ? "" : "s")@(_rows is { Count: >= PageSize } ? $" (showing the most recent {PageSize})" : "")
     </span>
     <a class="btn btn-sm btn-outline-secondary" href="@ExportHref()">
-        <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
+        <span class="bi bi-download me-1" aria-hidden="true"></span>Export these
     </a>
 </div>
 
@@ -83,29 +83,23 @@ else if (_rows.Count == 0)
 }
 else
 {
-    <table class="table table-sm align-middle">
-        <thead>
-            <tr><th>Actor</th><th>Type</th><th>Case</th><th>Target</th><th class="text-end">Count</th><th>First seen</th><th>Last seen</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var r in _rows)
-            {
-                <tr>
+    @* UX-61: fifty sessions a page under the shared table's sticky header (all 500 on one page were 6,900px). *@
+    <DataTable TItem="IncidentManager.Domain.Entities.CaseAccessEvent" Items="_rows" PageSize="50" Label="Sessions">
+        <Header><th>Actor</th><th>Type</th><th>Case</th><th>Target</th><th class="text-end">Count</th><th>First seen (@TimeDisp.Label)</th><th>Last seen (@TimeDisp.Label)</th></Header>
+        <Row Context="r">
                     <td>@Users.DisplayFor(r.ActorUserId)</td>
-                    <td><span class="bi @Ui.AccessTypeGlyph(r.AccessType) me-1" aria-hidden="true"></span>@Ui.AccessTypeLabel(r.AccessType)</td>
+                    <td class="text-nowrap"><span class="bi @Ui.AccessTypeGlyph(r.AccessType) me-1" aria-hidden="true"></span>@Ui.AccessTypeLabel(r.AccessType)</td>
                     <td>
                         @if (string.IsNullOrEmpty(r.CaseNumber)) { <span class="text-muted">—</span> }
-                        else { <code>@r.CaseNumber</code> }
+                        else { <span class="im-casenum" title="@r.CaseNumber">@r.CaseNumber</span> }
                         @if (r.WasRestricted) { <span class="im-badge im-b-warn ms-2">Restricted</span> }
                     </td>
                     <td class="small">@(string.IsNullOrWhiteSpace(r.TargetLabel) ? "" : r.TargetLabel)</td>
                     <td class="text-end">@r.Count</td>
-                    <td class="small im-data">@TimeDisp.Short(r.FirstSeenUtc)</td>
-                    <td class="small im-data">@TimeDisp.Short(r.LastSeenUtc)</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+                    <td class="small im-time">@TimeDisp.Stamp(r.FirstSeenUtc)</td>
+                    <td class="small im-time">@TimeDisp.Stamp(r.LastSeenUtc)</td>
+        </Row>
+    </DataTable>
 }
 
 @code {

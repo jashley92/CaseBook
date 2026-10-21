@@ -10,11 +10,7 @@
 
 <PageTitle>Configuration bundle</PageTitle>
 
-<PageHeader Title="Configuration bundle">
-    <Actions>
-        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
-    </Actions>
-</PageHeader>
+<PageHeader Title="Configuration bundle" />
 <p class="text-muted">
     Export this instance's <strong>editable configuration</strong> as one signed, versioned JSON file. Use it to
     <strong>snapshot</strong> the current setup, <strong>diff</strong> it against an IRP revision,
@@ -94,7 +90,7 @@
                             _ => "signed by another instance",
                         })
                         (key <code>@(_verification.CarriedKeyId ?? _verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
-                        from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
+                        from <strong>@_verification.SourceHost</strong> on @TimeDisplay.UtcLabelled(_verification.ExportedAtUtc).
                         @if (_verification.Trust == ConfigBundleTrust.Unknown)
                         {
                             @* BUG-19: say what the signature does and doesn't prove, before anyone relies on it. CAP-16: the admin

@@ -73,13 +73,15 @@
         @if (c.IsArchived) { <span title="Archived: no deadline reminders. Restore it to change its classification, materiality or impact assessment."><span class="bi bi-archive" aria-hidden="true"></span>Archived</span> }
         @if (!string.IsNullOrWhiteSpace(c.IncidentCommander))
         {
-            <span title="Incident commander"><span class="bi bi-person" aria-hidden="true"></span>@Users.DisplayFor(c.IncidentCommander), commander</span>
+            @* UX-55: the name, with the role in its title and the rail's Team card, so the state stays one line. *@
+            <span title="Incident commander"><span class="bi bi-person-badge" aria-hidden="true"></span><span class="visually-hidden">Incident commander: </span>@Users.DisplayFor(c.IncidentCommander)</span>
         }
     </span>
 }
 @if (UrgentClock() is { } uc)
 {
-    <span class="im-ch-clock"><ClockMark State="uc.State" Label="@uc.Label" Detail="@(Slim ? uc.Short : uc.Detail)" Title="@uc.Title" /></span>
+    @* UX-55: the short form (the due time is in its title and in Next), so the state stays one line. *@
+    <span class="im-ch-clock"><ClockMark State="uc.State" Label="@uc.Label" Detail="@uc.Short" Title="@($"{uc.Title} · {uc.Detail}")" />@if (MoreAttention() is > 0 and var more) { <span class="im-ch-more" title="Another clock needs attention too: see Next">+@more</span> }</span>
 }
 
 @code {
@@ -114,6 +116,16 @@
         DateTimeOffset? at = c.StatusChanges.Where(x => x.To == c.Phase).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault()
             ?? (c.Phase == CasePhase.New ? c.CreatedAtUtc : null);   // BUG-311
         return at is { } t ? $"since {TimeDisp.Brief(t, Clock.UtcNow)}" : "";
+    }
+
+    // UX-55: clocks needing attention beyond the one shown (a notification deadline and the SLA clock both at risk or over).
+    private int MoreAttention()
+    {
+        var now = Clock.UtcNow;
+        var notify = Notify?.Headline is { IsActive: true } nh && nh.State is SlaState.AtRisk or SlaState.Breached ? 1 : 0;
+        var sla = SlaPolicy.Evaluate(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc, Case.ResolvedAtUtc,
+            SlaProvider.Current, now, Case.Classification, Case.ContainmentNotNeededReason is not null).State is SlaState.AtRisk or SlaState.Breached ? 1 : 0;
+        return Math.Max(0, notify + sla - 1);
     }
 
     private sealed record UrgentClockInfo(SlaState State, string Label, string Detail, string Short, string Title);

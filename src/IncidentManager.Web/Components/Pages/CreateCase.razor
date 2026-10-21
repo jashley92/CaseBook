@@ -324,9 +324,9 @@
                     {
                         <div class="d-flex flex-wrap align-items-center gap-2 mb-2 pb-2 border-bottom">
                             <a href="cases/@m.CaseId" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
-                                <code>@m.CaseNumber</code> @m.Title
+                                <span class="im-casenum">@m.CaseNumber</span> @m.Title
                             </a>
-                            <span class="@Ui.PhaseBadge(m.Phase)">@Ui.Label(m.Phase)</span>
+                            <span class="text-nowrap">@Ui.Label(m.Phase)</span>
                             <span class="small text-muted">shared: @string.Join(", ", m.Indicators)</span>
                             <div class="ms-auto">
                                 <select class="form-select form-select-sm d-inline-block w-auto" aria-label="Link to @m.CaseNumber"
@@ -443,7 +443,7 @@
             @if (_created is not null)
             {
                 <div class="alert alert-warning mb-0">
-                    <div class="fw-semibold"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Case <code>@_created.CaseNumber</code> was created, but its setup didn’t finish.</div>
+                    <div class="fw-semibold"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Case <span class="im-casenum">@_created.CaseNumber</span> was created, but its setup didn’t finish.</div>
                     <div class="small mt-1">Click <strong>Finish setup</strong> to add the remaining indicators, links and tasks without creating a duplicate. Or open the case and add them there.</div>
                     <div class="small text-muted mt-1">Detail: @_error</div>
                 </div>

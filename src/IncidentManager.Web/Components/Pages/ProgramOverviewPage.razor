@@ -2,6 +2,7 @@
 @* RD-17: Program › Overview, the leadership dashboard (it was the landing at /). *@
 @attribute [Authorize(Policy = Policies.ViewAllCases)]
 @using IncidentManager.Application.Sla
+@using IncidentManager.Application.Common
 @inject DashboardService Dashboard
 @inject ISeverityLabels SevLabels
 @inject ProgramReportService ProgramFigures
@@ -58,7 +59,7 @@
         }
         <a class="btn btn-sm btn-outline-secondary" href="@MetricsHref" download
            title="Current metrics and 12-month trend, for a board or regulatory pack">
-            <span class="bi bi-download" aria-hidden="true"></span> Export metrics (CSV)
+            <span class="bi bi-download" aria-hidden="true"></span> Export this view
         </a>
     </Actions>
 </PageHeader>
@@ -84,144 +85,105 @@
 @if (_metrics is null)
 {
     <span class="visually-hidden" role="status">Loading dashboard…</span>
-    <div class="kpi-strip">
-        @for (var i = 0; i < 5; i++)
-        {
-            <div class="skel" style="min-height:6.5rem;border-radius:0.9rem"></div>
-        }
-    </div>
-    <div class="skel" style="min-height:17rem;border-radius:0.9rem;margin-bottom:14px"></div>
-    <div class="dash-secondary">
-        <div class="skel" style="min-height:11rem;border-radius:0.9rem"></div>
-        <div class="skel" style="min-height:11rem;border-radius:0.9rem"></div>
+    <div class="skel" style="height:1.5rem;max-width:36rem;border-radius:var(--im-radius);margin-bottom:var(--im-space-5)"></div>
+    <div class="po-split">
+        <div class="po-main">
+            <div class="skel" style="min-height:10rem;border-radius:var(--im-radius-lg)"></div>
+            <div class="skel" style="min-height:17rem;border-radius:var(--im-radius-lg)"></div>
+        </div>
+        <div class="po-rail">
+            <div class="skel" style="min-height:16rem;border-radius:var(--im-radius-lg)"></div>
+        </div>
     </div>
 }
 else
 {
     var m = _metrics;
     var compTotal = m.Breaches + m.Incidents + m.AdverseEvents;
+    var qs = Questions();
 
-    @* ─── Needs action, and the running notification clocks ─────────────────── *@
-    @if (_needs is { } na)
+    @* Program redesign (B with C): one sentence first, then a question per card in the main column, each answered in a
+       line (coloured only when it needs attention) with its evidence beneath; the rail holds the answers at a glance,
+       the period's numbers, the targets and the learning loop. One gap and one card padding throughout. *@
+    <p class="po-lede">@Lede()</p>
+
+    <div class="po-split">
+    <div class="po-main">
+
+    @if (qs.FirstOrDefault(q => q.Id == "po-q-reg") is { } qReg && _needs is { } na0)
     {
-        <div class="na-row">
-            <section class="dash-card na-card" aria-labelledby="na-title">
-                <div class="c-head"><span class="c-title" id="na-title">Needs action
-                    <span class="c-note">@(na.Items.Count == 0 ? "nothing right now" : $"notices first, then what fell due earliest · {na.Items.Count} item{(na.Items.Count == 1 ? "" : "s")}")</span></span></div>
-                @if (na.Items.Count == 0)
-                {
-                    <div class="sla-line ok"><span class="bi bi-check-circle" aria-hidden="true"></span>
-                        <span>No notices at risk, no response targets missed, no overdue tasks.</span></div>
-                }
-                else
-                {
-                    <ul class="na-list">
-                        @foreach (var it in _showAllNeeds ? na.Items : na.Items.Take(NeedsShown))
-                        {
-                            <li class="na-item">
-                                <span class="na-kind @KindTone(it)">@KindLabel(it.Kind)</span>
-                                <span class="na-body">
-                                    @if (it.CaseId is { } id)
-                                    {
-                                        <a class="na-case" href="cases/@id">@it.CaseNumber</a>
-                                    }
-                                    else if (it.Href is { } href)
-                                    {
-                                        <a class="na-case" href="@href">Improvement actions</a>
-                                    }
-                                    <span class="na-what">@it.What</span>
-                                </span>
-                                <span class="na-when @(it.Over && it.Kind != NeedsActionKind.Brief ? "over" : it.Kind == NeedsActionKind.Notify ? "soon" : "")">@When(it)</span>
-                            </li>
-                        }
-                    </ul>
-                    @if (na.Items.Count > NeedsShown)
-                    {
-                        <button type="button" class="btn btn-link btn-sm na-more" @onclick="() => _showAllNeeds = !_showAllNeeds">
-                            @(_showAllNeeds ? "Show fewer" : $"Show {na.Items.Count - NeedsShown} more")
-                        </button>
-                    }
-                }
-            </section>
-
-            @if (na.NotifyDeadlinesEnabled)
+        <section class="po-q" id="@qReg.Id" aria-labelledby="@($"{qReg.Id}-t")">
+            @QHead(qReg, null, null)
+            @foreach (var nc in na0.Clocks)
             {
-                <section class="dash-card na-clocks" aria-labelledby="nc-title">
-                    <div class="c-head"><span class="c-title" id="nc-title">Notification clocks
-                        <span class="c-note">obligations triggered, not yet reported</span></span></div>
-                    @if (na.Clocks.Count == 0)
-                    {
-                        <div class="sla-line ok"><span class="bi bi-check-circle" aria-hidden="true"></span><span>No notification clock is running.</span></div>
-                    }
-                    @foreach (var nc in na.Clocks)
-                    {
-                        <a class="nc-clock dash-link" href="cases/@nc.CaseId">
-                            <span class="nc-top"><span class="na-case">@nc.CaseNumber</span>
-                                <span class="na-when @(nc.State == SlaState.Breached ? "over" : nc.State == SlaState.AtRisk ? "soon" : "")">@ClockDue(nc)</span></span>
-                            <span class="nc-rule">@nc.Jurisdiction · @nc.WindowHours h window</span>
-                            <span class="cmp-track"><span class="cmp-fill @(nc.State == SlaState.Breached ? "bad" : nc.State == SlaState.AtRisk ? "warn" : "ok")"
-                                                          style="width:@(Math.Min(100, (int)(nc.ElapsedHours * 100 / Math.Max(1, nc.WindowHours))))%"></span></span>
-                            <span class="cmp-note">@Num(Math.Min(nc.ElapsedHours, nc.WindowHours)) of @nc.WindowHours h used</span>
-                        </a>
-                    }
-                    @if (_cur is { } rc)
-                    {
-                        <div class="rt-foot">
-                            @rc.ReportedToRegulators reported in @_windows!.Current.Label@(rc.NoticesMet + rc.NoticesMissed > 0 ? $", {rc.NoticesMet} of {rc.NoticesMet + rc.NoticesMissed} regulator notices inside their window" : "")@(rc.DetectToReport.MedianHours is { } dr ? $" · median detect → report {Num(dr)} h" : "").
-                        </div>
-                    }
-                </section>
+                <a class="nc-clock dash-link" href="cases/@nc.CaseId">
+                    <span class="nc-top"><span class="nc-rule">@nc.Jurisdiction · @nc.WindowHours h window</span>
+                        <span class="na-when @(nc.State == SlaState.Breached ? "over" : nc.State == SlaState.AtRisk ? "soon" : "")">@ClockDue(nc)</span></span>
+                    <span class="na-case">@nc.CaseNumber</span>
+                    <span class="cmp-track"><span class="cmp-fill @(nc.State == SlaState.Breached ? "bad" : nc.State == SlaState.AtRisk ? "warn" : "ok")"
+                                                  style="width:@(Math.Min(100, (int)(nc.ElapsedHours * 100 / Math.Max(1, nc.WindowHours))))%"></span></span>
+                    <span class="cmp-note">@Num(Math.Min(nc.ElapsedHours, nc.WindowHours)) of @nc.WindowHours h used</span>
+                </a>
             }
-        </div>
+            @if (_cur is { } rc)
+            {
+                <div class="po-note">@rc.ReportedToRegulators reported in @_windows!.Current.Label@(rc.NoticesMet + rc.NoticesMissed > 0 ? $", {rc.NoticesMet} of {rc.NoticesMet + rc.NoticesMissed} regulator notices inside their window" : "")@(rc.DetectToReport.MedianHours is { } dr ? $" · median detect → report {Num(dr)} h" : "").</div>
+            }
+        </section>
     }
 
-    @* ─── KPI strip: what's open now, then the period's timings (medians lead, means beneath) ─── *@
-    <div class="kpi-strip">
-        <div class="kpi kpi-lead">
-            <a class="kpi-open dash-link" href="@CasesHref()" title="View all open cases">
-                <span class="k-label">Open cases</span>
-                <span class="k-row">
-                    <span class="k-value">@m.OpenCount</span>
-                    @if (_openDelta != 0)
+    @if (_needs is { } na)
+    {
+        var qLate = qs.First(q => q.Id == "po-q-late");
+        <section class="po-q" id="@qLate.Id" aria-labelledby="@($"{qLate.Id}-t")">
+            @QHead(qLate, null, null)
+            @if (na.Items.Count > 0)
+            {
+                <ul class="na-list">
+                    @foreach (var it in _showAllNeeds ? na.Items : na.Items.Take(NeedsShown))
                     {
-                        <span class="k-delta @(_openDelta > 0 ? "up" : "down")">
-                            @(_openDelta > 0 ? "▲" : "▼") @Math.Abs(_openDelta)<span class="k-delta-note"> vs last month</span>
-                        </span>
+                        <li class="na-item">
+                            <span class="na-kind @KindTone(it)">@KindLabel(it.Kind)</span>
+                            <span class="na-body">
+                                <span class="na-what">@it.What</span>
+                                @if (it.CaseId is { } id) { <a class="na-case" href="cases/@id">@it.CaseNumber</a> }
+                                else if (it.Href is { } href) { <a class="na-case" href="@href">Improvement actions</a> }
+                            </span>
+                            <span class="na-when @(it.Over && it.Kind != NeedsActionKind.Brief ? "over" : it.Kind == NeedsActionKind.Notify ? "soon" : "")">@When(it)</span>
+                        </li>
                     }
-                </span>
-            </a>
-            <div class="compo" role="img" aria-label="Classification mix of open cases">
-                @if (compTotal == 0)
+                </ul>
+                @if (na.Items.Count > NeedsShown)
                 {
-                    <span class="seg empty" style="flex:1"></span>
+                    <button type="button" class="btn btn-link btn-sm na-more" @onclick="() => _showAllNeeds = !_showAllNeeds">
+                        @(_showAllNeeds ? "Show fewer" : $"Show {na.Items.Count - NeedsShown} more")
+                    </button>
                 }
-                else
-                {
-                    <span class="seg danger" style="flex:@Flex(m.Breaches)" title="Breaches"></span>
-                    <span class="seg amber" style="flex:@Flex(m.Incidents)" title="Incidents"></span>
-                    <span class="seg low" style="flex:@Flex(m.AdverseEvents)" title="Adverse events"></span>
-                }
-            </div>
-            <div class="legend">
-                <a class="dash-link" href="@CasesHref("classification=Breach")"><i class="sw danger"></i>@m.Breaches Breach@(m.Breaches == 1 ? "" : "es")@(m.BreachesAtVendor > 0 ? $" ({m.BreachesAtVendor} at a vendor)" : "")</a>
-                <a class="dash-link" href="@CasesHref("classification=Incident")"><i class="sw amber"></i>@m.Incidents Incident@(m.Incidents == 1 ? "" : "s")</a>
-                <a class="dash-link" href="@CasesHref("classification=AdverseEvent")"><i class="sw low"></i>@m.AdverseEvents Adverse</a>
-            </div>
-        </div>
-        @if (_cur is { } cur && _prev is { } prev)
-        {
-            @TimingTile("Time to detect", cur.TimeToDetect, prev.TimeToDetect, x => x.TimeToDetect)
-            @TimingTile("Time to contain", cur.TimeToContain, prev.TimeToContain, x => x.TimeToContain)
-            @TimingTile("Time to resolve", cur.TimeToResolve, prev.TimeToResolve, x => x.TimeToResolve)
-            @TimingTile("Detect → report", cur.DetectToReport, prev.DetectToReport, x => x.DetectToReport)
-        }
-    </div>
+            }
+        </section>
+    }
 
-    @* ─── Case activity: new and carried-over cases above the line, closed below it ─── *@
-    <div class="dash-card chart-card">
+    @{ var qOpen = qs.First(q => q.Id == "po-q-open"); }
+    <section class="po-q" id="@qOpen.Id" aria-labelledby="@($"{qOpen.Id}-t")">
+        @QHead(qOpen, "All open cases", CasesHref())
+        <div class="compo" role="img" aria-label="Classification mix of open cases">
+            @if (compTotal == 0) { <span class="seg empty" style="flex:1"></span> }
+            else
+            {
+                <span class="seg danger" style="flex:@Flex(m.Breaches)" title="Breaches"></span>
+                <span class="seg amber" style="flex:@Flex(m.Incidents)" title="Incidents"></span>
+                <span class="seg low" style="flex:@Flex(m.AdverseEvents)" title="Adverse events"></span>
+            }
+        </div>
+        <div class="legend po-legend">
+            <a class="dash-link" href="@CasesHref("classification=Breach")"><i class="sw danger"></i>@m.Breaches Breach@(m.Breaches == 1 ? "" : "es")@(m.BreachesAtVendor > 0 ? $" ({m.BreachesAtVendor} at a vendor)" : "")</a>
+            <a class="dash-link" href="@CasesHref("classification=Incident")"><i class="sw amber"></i>@m.Incidents Incident@(m.Incidents == 1 ? "" : "s")</a>
+            <a class="dash-link" href="@CasesHref("classification=AdverseEvent")"><i class="sw low"></i>@m.AdverseEvents Adverse</a>
+        </div>
+
         <div class="c-head ca-head">
             <span class="c-title">Case activity
-                <span class="c-note" title="Months follow the reporting time zone@(_metrics?.TrendZone is { } z ? $": {z}" : "")">last 12 months · @_openedTotal opened · @_closedTotal closed · @m.OpenCount still open</span></span>
+                <span class="c-note" title="Months follow the reporting time zone@(_metrics?.TrendZone is { } z ? $": {z}" : "")">last 12 months · @_openedTotal opened · @_closedTotal closed</span></span>
             <span class="ca-split">
                 <span id="ca-split-label">Color by</span>
                 <span class="btn-group btn-group-sm" role="group" aria-labelledby="ca-split-label">
@@ -245,7 +207,6 @@ else
             <span><i class="lg carry"></i>Carried over, still open</span>
             <span><i class="lg @(_byClass ? "closed-faded" : "ok")"></i>Closed (below the line@(_byClass ? ", faded" : ""))</span>
         </div>
-
         <div class="ca-scroll">
             <div class="ca-plot">
                 @for (var i = 0; i < _bars.Count; i++)
@@ -292,7 +253,6 @@ else
                 }
             </div>
         </div>
-
         @if (_bars.Count > 0)
         {
             var sel = _bars[_sel];
@@ -305,13 +265,129 @@ else
                 <a class="ca-go" href="@CasesHref($"opened={sel.Key}&closed=true")">Cases opened in @sel.Short →</a>
             </div>
         }
+    </section>
+
+    @{ var qStuck = qs.First(q => q.Id == "po-q-stuck"); var maxPhase = Math.Max(1, _phases.Count == 0 ? 1 : _phases.Max(p => p.Count)); }
+    <section class="po-q" id="@qStuck.Id" aria-labelledby="@($"{qStuck.Id}-t")">
+        @QHead(qStuck, null, null)
+        <div class="pipe">
+            @foreach (var ph in _phases)
+            {
+                <a class="prow dash-link @(ph.Count == 0 ? "off" : "")" href="@CasesHref($"phase={ph.Phase}")"
+                   aria-label="@($"{Ui.Label(ph.Phase)}: {ph.Count} open{PhaseDetail(ph)}")">
+                    <span class="pl">@Ui.Label(ph.Phase)</span>
+                    <span class="pbar">
+                        <span class="track">
+                            @foreach (var sv in ph.BySeverity.Where(x => x.Count > 0))
+                            {
+                                <span class="pseg sev-@sv.Key.ToString().ToLowerInvariant()" style="width:@Num(sv.Count * 100.0 / maxPhase)%"
+                                      title="@($"{SevLabels.For(sv.Key)}: {sv.Count}")"></span>
+                            }
+                        </span>
+                        <span class="pdetail">@(ph.Count == 0 ? "none open" : PhaseDetail(ph).TrimStart(' ', '·'))</span>
+                    </span>
+                    <span class="pc">@ph.Count</span>
+                </a>
+            }
+        </div>
+        <div class="bc-legend plegend">
+            @foreach (var sv in Enum.GetValues<Severity>().OrderByDescending(x => x))
+            {
+                <span><i class="lg sev-@sv.ToString().ToLowerInvariant()"></i>@SevLabels.For(sv)</span>
+            }
+        </div>
+    </section>
+
+    @if (_vendor is { } v)
+    {
+        var qVendor = qs.First(q => q.Id == "po-q-vendor");
+        <section class="po-q" id="@qVendor.Id" aria-labelledby="@($"{qVendor.Id}-t")">
+            @QHead(qVendor, v.OpenCases.Count > 4 ? $"All {v.OpenCases.Count} vendor cases" : null, CasesHref("origin=ThirdParty"))
+            @if (v.OpenCases.Count > 0)
+            {
+                <ul class="na-list">
+                    @foreach (var vc in v.OpenCases.Take(4))
+                    {
+                        <li class="na-item po-vc">
+                            <span class="na-body">
+                                <span class="na-what">@vc.Vendor · @(vc.StepsAtVendor + vc.StepsInOurs == 0 ? "no attack steps recorded yet" : $"{vc.StepsAtVendor} attack step{(vc.StepsAtVendor == 1 ? "" : "s")} at the vendor{(vc.StepsInOurs > 0 ? $", {vc.StepsInOurs} in ours" : "")}")</span>
+                                <a class="na-case" href="cases/@vc.Id">@vc.CaseNumber</a>
+                            </span>
+                            @if (vc.StepsInOurs > 0) { <span class="na-when over">In our environment</span> }
+                            else if (!vc.Notified) { <span class="na-when soon">Not yet notified</span> }
+                        </li>
+                    }
+                </ul>
+            }
+            <div class="po-note">
+                @v.Vendors vendor@(v.Vendors == 1 ? "" : "s") with a case opened in @_windows?.Current.Label ·
+                <span title="@(v.TellUsBasis > 0 ? $"Over {v.TellUsBasis} case{(v.TellUsBasis == 1 ? "" : "s")} with a first attack step at the vendor and a 'vendor notified us' milestone" : "No case yet has both a first attack step at the vendor and a 'vendor notified us' milestone")">median from the first attack step at the vendor to them telling us: @(v.MedianDaysToTellUs is { } d ? $"{Num(d)} d" : "—")</span>
+            </div>
+        </section>
+    }
+
+    @{ var qAttack = qs.First(q => q.Id == "po-q-attack"); }
+    <section class="po-q" id="@qAttack.Id" aria-labelledby="@($"{qAttack.Id}-t")">
+        @QHead(qAttack, "ATT&CK coverage", "intel/attack")
+        @if (_techniques.Count > 0)
+        {
+            var maxTech = Math.Max(1, _techniques.Max(t => t.Cases));
+            <ul class="na-list">
+                @foreach (var t in _techniques)
+                {
+                    <li class="tq-row">
+                        <span class="tq-id">@t.Id</span>
+                        <span class="pbar">
+                            <span class="tq-name">@t.Name</span>
+                            <span class="track tq-track">
+                                <span class="pseg tq-ours" style="width:@Num((t.Cases - t.AtVendor) * 100.0 / maxTech)%"></span>
+                                <span class="pseg tq-vendor" style="width:@Num(t.AtVendor * 100.0 / maxTech)%"></span>
+                            </span>
+                        </span>
+                        <span class="tq-tag">@(t.AtVendor > 0 ? $"at a vendor ×{t.AtVendor}" : "")</span>
+                        <span class="pc">@t.Cases</span>
+                    </li>
+                }
+            </ul>
+            <div class="bc-legend plegend">
+                <span><i class="lg tq-ours"></i>Seen in our environment</span>
+                <span><i class="lg tq-vendor"></i>At a vendor</span>
+            </div>
+        }
+    </section>
+
     </div>
 
-    @* ─── Secondary row: response & SLA · phase pipeline ────────────────────── *@
-    <div class="dash-secondary">
-        <div class="dash-card">
-            <div class="c-head"><span class="c-title">Within target <span class="c-note">@_windows?.Current.Label · per-severity targets</span></span></div>
+    <aside class="po-rail" aria-label="At a glance">
+        <section class="po-rc" aria-labelledby="po-glance-h">
+            <h2 class="po-rc-h" id="po-glance-h">At a glance · @_windows?.Current.Label</h2>
+            @foreach (var q in qs)
+            {
+                <a class="po-glance" href="@Anchor(q.Id)">
+                    <span class="po-dot @q.Tone" aria-hidden="true"></span>
+                    <span class="po-glance-q">@q.Short</span>
+                    <span class="po-glance-a">@q.Brief</span>
+                </a>
+            }
+        </section>
 
+        <section class="po-rc" aria-labelledby="po-num-h">
+            <h2 class="po-rc-h" id="po-num-h">The numbers</h2>
+            <a class="po-num dash-link" href="@CasesHref()" title="View all open cases">
+                <span class="po-num-l">Open cases</span><span class="po-num-v">@m.OpenCount</span>
+                <span class="po-num-f">@if (_openDelta != 0) { <span class="k-delta @(_openDelta > 0 ? "up" : "down")">@(_openDelta > 0 ? "▲" : "▼") @Math.Abs(_openDelta)</span><span class="k-delta-note"> vs last month</span> } else { <span class="k-delta-note">same as last month</span> }</span>
+            </a>
+            @if (_cur is { } cur && _prev is { } prev)
+            {
+                @TimingRow("Time to detect", cur.TimeToDetect, prev.TimeToDetect, x => x.TimeToDetect)
+                @TimingRow("Time to contain", cur.TimeToContain, prev.TimeToContain, x => x.TimeToContain)
+                @TimingRow("Time to resolve", cur.TimeToResolve, prev.TimeToResolve, x => x.TimeToResolve)
+                @TimingRow("Detect → report", cur.DetectToReport, prev.DetectToReport, x => x.DetectToReport)
+            }
+        </section>
+
+        <section class="po-rc" id="po-q-target" aria-labelledby="po-target-h">
+            <h2 class="po-rc-h" id="po-target-h">Within target</h2>
             @if (_cur is { } c)
             {
                 var det = c.Sla.First(x => x.Clock == SlaClock.Detection);
@@ -320,15 +396,14 @@ else
                 @if (det.Met + det.Missed > 0)
                 {
                     @* PROD-08: only once a detection target is set and cases carry an occurred time. *@
-                    @ComplianceRow("Detection (occurred → detected)", det.Percent, det.Met, det.Missed)
+                    @ComplianceRow("Detection", det.Percent, det.Met, det.Missed)
                 }
                 @ComplianceRow("Containment", con.Percent, con.Met, con.Missed)
                 @ComplianceRow("Resolution", res.Percent, res.Met, res.Missed)
                 @if (m.NotifyDeadlinesEnabled)
                 {
-                    @ComplianceRow("Regulatory notice, within each jurisdiction's window", c.NoticesPercent, c.NoticesMet, c.NoticesMissed)
+                    @ComplianceRow("Regulatory notice", c.NoticesPercent, c.NoticesMet, c.NoticesMissed)
                 }
-
                 @if (c.ContainmentBySeverity?.Where(x => x.TargetHours is not null || x.Met + x.Missed > 0).ToList() is { Count: > 0 } sev
                      && sev.Any(x => x.Met + x.Missed > 0))
                 {
@@ -348,131 +423,25 @@ else
                     </div>
                 }
             }
+            <div class="po-note">Per-severity targets in <a class="dash-link u-link" href="admin/settings/sla">Response &amp; SLA</a>, over the milestones reached in @_windows?.Current.Label.</div>
+        </section>
 
-            <div class="rt-foot">Measured against the per-severity targets in
-                <a class="dash-link u-link" href="admin/settings/sla">Administration → Response &amp; SLA</a>,
-                over the milestones reached in @_windows?.Current.Label.</div>
-        </div>
-
-        <div class="dash-card">
-            <div class="c-head"><span class="c-title">Where open cases are <span class="c-note">by phase · severity · longest in the phase</span></span></div>
-            @{ var maxPhase = Math.Max(1, _phases.Count == 0 ? 1 : _phases.Max(p => p.Count)); }
-            <div class="pipe">
-                @foreach (var ph in _phases)
-                {
-                    <a class="prow dash-link @(ph.Count == 0 ? "off" : "")" href="@CasesHref($"phase={ph.Phase}")"
-                       aria-label="@($"{Ui.Label(ph.Phase)}: {ph.Count} open{PhaseDetail(ph)}")">
-                        <span class="pl">@Ui.Label(ph.Phase)</span>
-                        <span class="pbar">
-                            <span class="track">
-                                @foreach (var sv in ph.BySeverity.Where(x => x.Count > 0))
-                                {
-                                    <span class="pseg sev-@sv.Key.ToString().ToLowerInvariant()" style="width:@Num(sv.Count * 100.0 / maxPhase)%"
-                                          title="@($"{SevLabels.For(sv.Key)}: {sv.Count}")"></span>
-                                }
-                            </span>
-                            <span class="pdetail">@(ph.Count == 0 ? "none open" : PhaseDetail(ph).TrimStart(' ', '·'))</span>
-                        </span>
-                        <span class="pc">@ph.Count</span>
-                    </a>
-                }
-            </div>
-            <div class="bc-legend plegend">
-                @foreach (var sv in Enum.GetValues<Severity>().OrderByDescending(x => x))
-                {
-                    <span><i class="lg sev-@sv.ToString().ToLowerInvariant()"></i>@SevLabels.For(sv)</span>
-                }
-            </div>
-        </div>
-
-        <div class="dash-card vc-card">
-            <div class="c-head"><span class="c-title">Vendor cases <span class="c-note">open now · opened in @_windows?.Current.Label</span></span></div>
-            @if (_vendor is { } v)
-            {
-                <div class="vc-figs">
-                    <a class="vc-fig dash-link" href="@CasesHref("origin=ThirdParty")"><b>@v.Open</b><span>open vendor case@(v.Open == 1 ? "" : "s")</span></a>
-                    <div class="vc-fig"><b>@v.Vendors</b><span>vendor@(v.Vendors == 1 ? "" : "s") with a case opened</span></div>
-                    <div class="vc-fig"><b class="@(v.Pivoted > 0 ? "vc-ours" : "")">@v.Pivoted</b><span>with attack steps in our environment</span></div>
-                    <div class="vc-fig" title="@(v.TellUsBasis > 0 ? $"Over {v.TellUsBasis} case{(v.TellUsBasis == 1 ? "" : "s")} with a first attack step at the vendor and a 'vendor notified us' milestone" : "No case yet has both a first attack step at the vendor and a 'vendor notified us' milestone")">
-                        <b>@(v.MedianDaysToTellUs is { } d ? $"{Num(d)} d" : "—")</b><span>median, first attack step at the vendor → they told us</span></div>
-                </div>
-                @if (v.OpenCases.Count == 0)
-                {
-                    <div class="pdetail">No vendor case is open.</div>
-                }
-                <ul class="na-list vc-list">
-                    @foreach (var vc in v.OpenCases.Take(4))
-                    {
-                        <li class="vc-item">
-                            <span class="vc-top"><a class="na-case" href="cases/@vc.Id">@vc.CaseNumber</a>
-                                @if (vc.StepsInOurs > 0) { <span class="na-kind bad">In our environment</span> }
-                                else if (!vc.Notified) { <span class="na-kind neutral">Not yet notified</span> }</span>
-                            <span class="na-what">@vc.Vendor · @(vc.StepsAtVendor + vc.StepsInOurs == 0 ? "no attack steps recorded yet" : $"{vc.StepsAtVendor} step{(vc.StepsAtVendor == 1 ? "" : "s")} at the vendor{(vc.StepsInOurs > 0 ? $", {vc.StepsInOurs} in ours" : "")}")</span>
-                        </li>
-                    }
-                </ul>
-                @if (v.OpenCases.Count > 4)
-                {
-                    <a class="na-more" href="@CasesHref("origin=ThirdParty")">All @v.OpenCases.Count open vendor cases →</a>
-                }
-            }
-        </div>
-    </div>
-
-    @* ─── What attackers did · the learning loop ──────────────────────────── *@
-    <div class="dash-tertiary">
-        <div class="dash-card">
-            <div class="c-head"><span class="c-title">What attackers did <span class="c-note">top ATT&amp;CK techniques · @_windows?.Current.Label</span></span>
-                <a class="u-link dash-link c-go" href="intel/attack">ATT&amp;CK coverage →</a></div>
-            @if (_techniques.Count == 0)
-            {
-                <div class="pdetail">No ATT&amp;CK techniques recorded on cases detected in @_windows?.Current.Label.</div>
-            }
-            else
-            {
-                var maxTech = Math.Max(1, _techniques.Max(t => t.Cases));
-                <ul class="na-list">
-                    @foreach (var t in _techniques)
-                    {
-                        <li class="tq-row">
-                            <span class="tq-id">@t.Id</span>
-                            <span class="pbar">
-                                <span class="tq-name">@t.Name</span>
-                                <span class="track tq-track">
-                                    <span class="pseg tq-ours" style="width:@Num((t.Cases - t.AtVendor) * 100.0 / maxTech)%"></span>
-                                    <span class="pseg tq-vendor" style="width:@Num(t.AtVendor * 100.0 / maxTech)%"></span>
-                                </span>
-                            </span>
-                            <span class="tq-tag">@(t.AtVendor > 0 ? $"at a vendor ×{t.AtVendor}" : "")</span>
-                            <span class="pc">@t.Cases</span>
-                        </li>
-                    }
-                </ul>
-                <div class="bc-legend plegend">
-                    <span><i class="lg tq-ours"></i>Seen in our environment</span>
-                    <span><i class="lg tq-vendor"></i>At a vendor</span>
-                    <span>@_tacticsSeen of @_tacticsAll tactics seen</span>
-                </div>
-            }
-        </div>
-
-        <div class="dash-card">
-            <div class="c-head"><span class="c-title">Learning loop <span class="c-note">post-incident reviews and improvement actions</span></span>
-                <a class="u-link dash-link c-go" href="@ActionsHref">Improvement actions →</a></div>
+        <section class="po-rc" id="po-q-learn" aria-labelledby="po-learn-h">
+            <h2 class="po-rc-h" id="po-learn-h">Learning loop</h2>
             @if (_cur is { } lc)
             {
                 var reviewPct = lc.Closed == 0 ? (int?)null : (int)Math.Round(lc.ClosedWithReview * 100.0 / lc.Closed);
                 <div class="cmp @(reviewPct is null ? "cmp-na" : "")">
-                    <div class="cmp-head"><span class="cmp-label">Cases closed in @_windows!.Current.Label with a post-incident review</span>
+                    <div class="cmp-head"><span class="cmp-label">Closed with a post-incident review</span>
                         <span class="cmp-val">@(reviewPct is { } rp ? $"{rp}%" : "—")</span></div>
                     <div class="cmp-track">@if (reviewPct is { } rpv) { <span class="cmp-fill @ComplianceTone(rpv)" style="width:@rpv%"></span> }</div>
-                    <div class="cmp-note">@(lc.Closed == 0 ? "no cases closed" : $"{lc.ClosedWithReview} of {lc.Closed} · {lc.Closed - lc.ClosedWithReview} without one")</div>
+                    <div class="cmp-note">@(lc.Closed == 0 ? $"no cases closed in {_windows!.Current.Label}" : $"{lc.ClosedWithReview} of {lc.Closed} · {lc.Closed - lc.ClosedWithReview} without one")</div>
                 </div>
-                <div class="vc-figs ll-figs">
-                    <div class="vc-fig"><b>@lc.ActionsOpenAtEnd</b><span>improvement actions open</span></div>
-                    <div class="vc-fig"><b class="@(lc.ActionsPastTargetAtEnd > 0 ? "ll-warn" : "")">@lc.ActionsPastTargetAtEnd</b><span>past their target date</span></div>
-                    <div class="vc-fig"><b class="@(lc.ActionsCompleted > 0 ? "ll-ok" : "")">@lc.ActionsCompleted</b><span>completed in @_windows.Current.Label</span></div>
-                    <div class="vc-fig"><b>@lc.ActionsNotPursued</b><span>not pursued</span></div>
+                <div class="po-figs">
+                    <div><b>@lc.ActionsOpenAtEnd</b><span>actions open</span></div>
+                    <div><b class="@(lc.ActionsPastTargetAtEnd > 0 ? "ll-warn" : "")">@lc.ActionsPastTargetAtEnd</b><span>past target</span></div>
+                    <div><b class="@(lc.ActionsCompleted > 0 ? "ll-ok" : "")">@lc.ActionsCompleted</b><span>completed</span></div>
+                    <div><b>@lc.ActionsNotPursued</b><span>not pursued</span></div>
                 </div>
                 @if (lc.OpenActionAreas is { Count: > 0 } areas)
                 {
@@ -490,7 +459,9 @@ else
                     </div>
                 }
             }
-        </div>
+            <a class="po-rc-go" href="@ActionsHref">Improvement actions →</a>
+        </section>
+    </aside>
     </div>
 
     <p class="dash-foot">Medians lead and means sit beneath them, since one long case pulls a mean far off. Every figure
@@ -687,38 +658,192 @@ else
         return parts.Count == 0 ? "" : $" ({string.Join(", ", parts)})";
     }
 
-    // A timing tile: the period's median (mean beneath), its change on the period before, and a trend line of
-    // the monthly medians over the last 12 months. Lower is better for every timing here.
-    private RenderFragment TimingTile(string label, Interval cur, Interval prev, Func<ProgramSnapshot, Interval> pick) => __builder =>
+    // A timing row in the rail: the period's median, a 12-month trend line of the monthly medians, its change on the period
+    // before and the mean. Lower is better for every timing here.
+    private RenderFragment TimingRow(string label, Interval cur, Interval prev, Func<ProgramSnapshot, Interval> pick) => __builder =>
     {
         var points = _monthly.Select(pick).Select(i => i.MedianHours).ToList();
-        <div class="kpi kpi-time">
-            <span class="k-label">@label</span>
-            <span class="k-row">
-                <span class="k-value k-value-sm">@(cur.MedianHours is { } md ? Num(md) : "—")</span>
-                @if (cur.MedianHours is not null) { <span class="k-unit">h median</span> }
-            </span>
+        <div class="po-num">
+            <span class="po-num-l">@label</span>
+            <span class="po-num-v">@(cur.MedianHours is { } md ? $"{Num(md)} h" : "—")</span>
             @if (Spark(points) is { } line)
             {
-                <svg class="k-spark" viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
+                <svg class="po-spark" viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
                      aria-label="@($"{label}, monthly median over the last 12 months")">
                     <polyline points="@line" fill="none" stroke-width="2" vector-effect="non-scaling-stroke"
                               stroke-linejoin="round" stroke-linecap="round" style="stroke: var(--accent)" />
                 </svg>
             }
-            <span class="k-foot">
+            <span class="po-num-f">
                 @if (cur.MedianHours is { } c && prev.MedianHours is { } p && Math.Abs(c - p) >= 0.05)
                 {
-                    <span class="k-delta @(c < p ? "down" : "up")">@(c < p ? "▼" : "▲") @Num(Math.Abs(c - p)) h<span class="k-delta-note"> vs @_windows!.Previous.Label</span></span>
+                    <span class="k-delta @(c < p ? "down" : "up")">@(c < p ? "▼" : "▲") @Num(Math.Abs(c - p)) h</span><span class="k-delta-note"> vs @_windows!.Previous.Label</span>
                 }
                 else if (cur.MedianHours is null)
                 {
                     <span class="k-delta-note">none in @_windows!.Current.Label</span>
                 }
-                @if (cur.MeanHours is { } mean) { <span class="k-delta-note">mean @Num(mean) h · @cur.Count case@(cur.Count == 1 ? "" : "s")</span> }
+                @if (cur.MeanHours is { } mean) { <span class="k-delta-note"> · median; mean @Num(mean) h, @Plural.Of(cur.Count, "case")</span> }
             </span>
         </div>
     };
+
+    // Program redesign: each card's question, its one-line answer (Lead coloured by Tone when it needs attention), and
+    // the short form the rail's "At a glance" shows. Tone: dan, warn, ok, mut (a dot's colour; mut is no signal).
+    private sealed record Q(string Id, string Question, string Short, string Tone, RenderFragment Answer, string Brief);
+
+    private static RenderFragment Ans(string prefix, string? tone, string lead, string rest) => __builder =>
+    {
+        <text>@prefix</text>
+        if (tone is null) { <text>@lead</text> }
+        else { <span class="po-a-@tone">@lead</span> }
+        <text>@rest</text>
+    };
+
+    private static string S(int n, string one, string many) => n == 1 ? one : many;
+
+    private List<Q> Questions()
+    {
+        var now = Clock.UtcNow;
+        var list = new List<Q>();
+
+        if (_needs is { NotifyDeadlinesEnabled: true } n)
+        {
+            var worst = n.Clocks.OrderBy(c => c.State == SlaState.Breached ? 0 : c.State == SlaState.AtRisk ? 1 : 2).ThenBy(c => c.DueAtUtc).FirstOrDefault();
+            const string q = "Do we owe a regulator anything?";
+            if (worst is null)
+                list.Add(new("po-q-reg", q, "Owed to a regulator", "ok", Ans("", "ok", "No.", " No notification clock is running."), "nothing running"));
+            else
+            {
+                var span = Dur((worst.DueAtUtc - now).Duration());
+                var more = n.Clocks.Count > 1 ? $" {n.Clocks.Count - 1} more running." : "";
+                list.Add(worst.State switch
+                {
+                    SlaState.Breached => new Q("po-q-reg", q, "Owed to a regulator", "dan",
+                        Ans("", "dan", $"Yes. {worst.Jurisdiction} is {span} overdue", $" on {worst.CaseNumber}.{more}"), $"{worst.Jurisdiction}, {span} overdue"),
+                    SlaState.AtRisk => new Q("po-q-reg", q, "Owed to a regulator", "warn",
+                        Ans("", "warn", $"Yes. {worst.Jurisdiction} is due in {span}", $" on {worst.CaseNumber}.{more}"), $"{worst.Jurisdiction}, due in {span}"),
+                    _ => new Q("po-q-reg", q, "Owed to a regulator", "mut",
+                        Ans("", null, $"Yes, {n.Clocks.Count} {S(n.Clocks.Count, "notice", "notices")} running", $"; the next is due in {span}."), $"{n.Clocks.Count} running, none at risk"),
+                });
+            }
+        }
+
+        if (_needs is { } na)
+        {
+            const string q = "What needs action?";
+            var over = na.Items.Where(i => i.Over && i.Kind != NeedsActionKind.Brief).ToList();
+            if (over.Count > 0)
+            {
+                var oldest = Dur(over.Max(i => now - i.DueAtUtc));
+                list.Add(new("po-q-late", q, "Needs action", "dan", Ans("", "dan", $"{over.Count} past due", $"; the oldest by {oldest}."), $"{over.Count} past due, oldest {oldest}"));
+            }
+            else if (na.Items.Count > 0)
+                list.Add(new("po-q-late", q, "Needs action", "warn", Ans("", "warn", $"{na.Items.Count} {S(na.Items.Count, "item needs", "items need")} action", ", none past due yet."), $"{na.Items.Count}, none past due"));
+            else
+                list.Add(new("po-q-late", q, "Needs action", "ok", Ans("", "ok", "Nothing.", " No notice at risk, no target missed, no overdue task."), "nothing"));
+        }
+
+        var open = _metrics?.OpenCount ?? 0;
+        var delta = _openDelta == 0 ? ", the same as last month." : $", {(_openDelta > 0 ? "up" : "down")} {Math.Abs(_openDelta)} on last month.";
+        list.Add(new("po-q-open", "How much is open?", "How much is open", "mut",
+            Ans("", null, Plural.Of(open, "open case"), delta), _openDelta == 0 ? $"{open}" : $"{open}, {(_openDelta > 0 ? "up" : "down")} {Math.Abs(_openDelta)}"));
+
+        if (_cur?.Sla.FirstOrDefault(x => x.Clock == SlaClock.Containment) is { } con)
+        {
+            var judged = con.Met + con.Missed;
+            list.Add(con.Percent is { } pct
+                ? new Q("po-q-target", "Are we containing in time?", "Containing in time", pct >= 90 ? "ok" : pct >= 75 ? "warn" : "dan",
+                    Ans("", null, "", ""), $"{con.Met} of {judged} within target")
+                : new Q("po-q-target", "Are we containing in time?", "Containing in time", "mut", Ans("", null, "", ""), "no case with a target yet"));
+        }
+
+        {
+            const string q = "Where are open cases stuck?";
+            var busy = _phases.Where(p => p.Count > 0).ToList();
+            if (busy.Count == 0)
+                list.Add(new("po-q-stuck", q, "Where cases are stuck", "ok", Ans("", "ok", "Nowhere.", " No case is open."), "none open"));
+            else
+            {
+                var top = busy.OrderByDescending(p => p.Count).ThenByDescending(p => p.LongestInPhase).First();
+                var overTarget = busy.Sum(p => p.OverTarget);
+                var longest = top.LongestInPhase is { } l ? $", the longest {Dur(l)}" : "";
+                list.Add(new("po-q-stuck", q, "Where cases are stuck", overTarget > 0 ? "warn" : "mut",
+                    Ans($"{Ui.Label(top.Phase)} holds the most: ", overTarget > 0 ? "warn" : null, $"{top.Count}{longest}", "."),
+                    $"{Ui.Label(top.Phase)}: {top.Count}{(top.LongestInPhase is { } l2 ? $", longest {Dur(l2)}" : "")}"));
+            }
+        }
+
+        if (_vendor is { } v)
+        {
+            const string q = "Anything from our vendors?";
+            var inOurs = v.OpenCases.Count(x => x.StepsInOurs > 0);
+            var notTold = v.OpenCases.Count(x => !x.Notified);
+            var cases = Plural.Of(v.Open, "open vendor case");
+            if (v.Open == 0)
+                list.Add(new("po-q-vendor", q, "Vendors", "mut", Ans("", null, "No vendor case is open.", ""), "none open"));
+            else if (inOurs > 0)
+                list.Add(new("po-q-vendor", q, "Vendors", "dan", Ans("", "dan", cases, $"; {inOurs} with attack steps in our environment."), $"{v.Open} open, {inOurs} in ours"));
+            else if (notTold > 0)
+            {
+                var who = notTold == v.Open ? (v.Open == 1 ? "the vendor hasn't" : v.Open == 2 ? "neither vendor has" : "no vendor has") : $"{notTold} vendors haven't";
+                list.Add(new("po-q-vendor", q, "Vendors", "warn", Ans("", "warn", $"{cases}, and {who} told us yet.", ""), $"{v.Open} open, {notTold} not told us"));
+            }
+            else
+                list.Add(new("po-q-vendor", q, "Vendors", "mut", Ans("", null, cases, "; every vendor has told us."), $"{v.Open} open"));
+        }
+
+        {
+            const string q = "What are attackers doing?";
+            if (_techniques.FirstOrDefault() is { } t)
+                list.Add(new("po-q-attack", q, "What attackers do", "mut",
+                    Ans("", null, $"{t.Name} ({t.Id}), on {Plural.Of(t.Cases, "case")}.", $" {_tacticsSeen} of {_tacticsAll} tactics seen."), $"{t.Name}, {Plural.Of(t.Cases, "case")}"));
+            else
+                list.Add(new("po-q-attack", q, "What attackers do", "mut", Ans("", null, $"No ATT&CK technique recorded in {_windows?.Current.Label}.", ""), "none recorded"));
+        }
+
+        if (_cur is { } lc)
+        {
+            var (openA, past) = (lc.ActionsOpenAtEnd, lc.ActionsPastTargetAtEnd);
+            list.Add(new("po-q-learn", "Are we learning?", "Are we learning", past > 0 ? "warn" : openA > 0 ? "ok" : "mut", Ans("", null, "", ""),
+                past > 0 ? $"{openA} open, {past} past target" : openA > 0 ? $"{openA} open, none late" : "no action open"));
+        }
+        return list;
+    }
+
+    // The page's first line: what's open, then what is overdue to a regulator and past due.
+    private RenderFragment Lede() => __builder =>
+    {
+        var open = _metrics?.OpenCount ?? 0;
+        var late = _needs?.Clocks.Count(c => c.State == SlaState.Breached) ?? 0;
+        var over = _needs?.Items.Count(i => i.Over && i.Kind != NeedsActionKind.Brief) ?? 0;
+        <b>@open open</b><text>@(_openDelta == 0 ? "" : $", {(_openDelta > 0 ? "up" : "down")} {Math.Abs(_openDelta)} on last month").</text>
+        if (late > 0)
+        {
+            <text>@(" ")</text><span class="po-a-dan">@late regulator @S(late, "notice is", "notices are") overdue</span><text>@(over > 0 ? " and" : ".")</text>
+        }
+        if (over > 0)
+        {
+            <text>@($" {over} {S(over, "item is", "items are")} past due.")</text>
+        }
+        else if (late == 0)
+        {
+            <text>@(" Nothing is past due.")</text>
+        }
+    };
+
+    private RenderFragment QHead(Q q, string? goText, string? goHref) => __builder =>
+    {
+        <div class="po-q-head">
+            <span class="po-dot @q.Tone" aria-hidden="true"></span>
+            <h2 class="po-q-q" id="@($"{q.Id}-t")">@q.Question</h2>
+            @if (goText is not null && goHref is not null) { <a class="po-q-go" href="@goHref">@goText →</a> }
+        </div>
+        <p class="po-q-a">@q.Answer</p>
+    };
+
+    // The rail's links to a card on this page: the page's own address (base-relative, so not the site root) with the anchor.
+    private string Anchor(string id) => $"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{id}";
 
     private static string PhaseDetail(PhaseAging p) =>
         p.Count == 0 ? "" : $" · longest {Dur(p.LongestInPhase ?? TimeSpan.Zero)}{(p.OverTarget > 0 ? $" · {p.OverTarget} over target" : "")}";

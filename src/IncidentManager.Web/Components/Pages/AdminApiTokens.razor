@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Policies.Administer)]
 @layout AdminLayout
 @using IncidentManager.Application.ApiTokens
+@inject TimeDisplay TimeDisp
 @inject ApiTokenService Tokens
 @inject RoleService Roles
 @inject ToastService Toasts
@@ -9,11 +10,7 @@
 
 <PageTitle>API tokens</PageTitle>
 
-<PageHeader Title="API tokens">
-    <Actions>
-        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
-    </Actions>
-</PageHeader>
+<PageHeader Title="API tokens" />
 <p class="text-muted">
     <strong>System</strong> tokens are named machine identities for the import API, such as XSIAM/SOAR playbooks
     or scripts. Grant each only the roles it needs. The audit trail records API actions under the token's name.
@@ -124,8 +121,8 @@ else
                     <td>@t.Kind</td>
                     <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-info me-1 mb-1">@r</span> }</td>
                     <td class="small">@t.OwnerDisplayName</td>
-                    <td class="small text-muted">@(t.LastUsedAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
-                    <td class="small text-muted">@t.ExpiresAtUtc.UtcDateTime.ToString("yyyy-MM-dd")</td>
+                    <td class="small text-muted">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "—")</td>
+                    <td class="small text-muted">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
                     <td>
                         @if (t.RevokedAtUtc is not null) { <span class="im-badge im-b-danger">Revoked</span> }
                         else if (!t.IsActive) { <span class="im-badge im-b-warn">Expired</span> }

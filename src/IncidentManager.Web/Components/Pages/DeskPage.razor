@@ -16,6 +16,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IAuthorizationService Authz
 @inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
 
 <PageTitle>Desk</PageTitle>
 
@@ -59,11 +60,10 @@
 
         <div class="im-desk-grid">
             <div class="im-desk-main">
-                <section class="im-desk-sec" aria-labelledby="desk-needs">
-                    <div class="im-desk-head">
-                        <h2 id="desk-needs">Needs you</h2>
-                        <span class="im-desk-note">@(_desk.Needs.Count == 0 ? "nothing right now" : $"{_desk.Needs.Count} · most consequential first")</span>
-                    </div>
+                @* UX-52: the Desk's sections are the shared Card (main column) and its Compact form (side rail). *@
+                <Card Title="Needs you" Icon="bi-bell">
+                    <Info>@(_desk.Needs.Count == 0 ? "nothing right now" : $"{_desk.Needs.Count} · most consequential first")</Info>
+                    <ChildContent>
                     @if (_desk.Needs.Count > 0)
                     {
                         <ul class="im-desk-needs">
@@ -81,7 +81,7 @@
                                         }
                                         else
                                         {
-                                            <div class="im-desk-sub"><code class="im-casenum" title="@n.CaseNumber">@n.CaseNumber</code>@NeedDetail(n, now)</div>
+                                            <div class="im-desk-sub"><span class="im-casenum" title="@n.CaseNumber">@n.CaseNumber</span>@NeedDetail(n, now)</div>
                                         }
                                     </div>
                                     <a class="btn btn-sm btn-outline-secondary" href="@href">@act</a>
@@ -89,13 +89,12 @@
                             }
                         </ul>
                     }
-                </section>
+                    </ChildContent>
+                </Card>
 
-                <section class="im-desk-sec" aria-labelledby="desk-cases">
-                    <div class="im-desk-head">
-                        <h2 id="desk-cases">Your cases</h2>
-                        <span class="im-desk-note">@_desk.Cases.Count open</span>
-                    </div>
+                <Card Title="Your cases" Icon="bi-folder2-open" Flush="@(_desk.Cases.Count > 0)">
+                    <Info>@_desk.Cases.Count open</Info>
+                    <ChildContent>
                     @if (_desk.Cases.Count == 0)
                     {
                         @* BUG-501: a bare "cases" opens the user's default view, not All. *@
@@ -103,58 +102,51 @@
                     }
                     else
                     {
-                        <div class="table-responsive">
-                            @* FR-57: the case leads with its title; the number (a long generated slug, unbreakable) sits small under
-                               it, cut with an ellipsis, so the table fits beside the side column without scrolling. *@
-                            <table class="table table-sm align-middle im-table im-desk-cases mb-0">
-                                <thead><tr><th>Case</th><th>State</th><th>Phase</th><th>You</th><th>Next for you</th><th>Since you looked</th><th></th></tr></thead>
-                                <tbody>
-                                    @foreach (var c in _desk.Cases)
+                        @* FR-57 / UX-53: the case leads with its title; the number sits small under it, cut with an ellipsis, so the table
+                           fits beside the side column. UX-62: the row opens the case; the preview shows on hover and focus. *@
+                        <DataTable TItem="DeskCase" Items="_desk.Cases" Label="Your cases" Key="c => c.Id" Class="im-desk-cases"
+                                   OnRowClick="c => Nav.NavigateTo(CaseHref(c.Id))">
+                            <Header><th>Case</th><th>State</th><th>Phase</th><th>You</th><th>Next for you</th><th>Since you looked</th></Header>
+                            <Row Context="c">
+                                <td>
+                                    <div class="im-desk-casecell">
+                                        <a href="@CaseHref(c.Id)" class="fw-semibold im-clamp-2" title="@c.Title">@c.Title</a>
+                                        <div class="im-desk-sub">
+                                            @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
+                                            <span class="im-casenum" title="@c.CaseNumber">@c.CaseNumber</span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><span class="text-nowrap"><RungMark Value="c.Classification" /></span> <span class="text-nowrap"><SeverityMark Value="c.Severity" /></span></td>
+                                <td><span class="text-nowrap">@Ui.Label(c.Phase)</span> <span class="im-desk-sub text-nowrap">· @Ui.Age(c.PhaseSinceUtc, now)</span></td>
+                                <td>@(c.Role is { } r ? Ui.Label(r) : "—")</td>
+                                <td>
+                                    @if (c.NextForYou is { } nx)
                                     {
-                                        <tr>
-                                            <td>
-                                                <div class="im-desk-casecell">
-                                                    <a href="cases/@c.Id" class="fw-semibold text-decoration-none im-clamp-2" title="@c.Title">@c.Title</a>
-                                                    <div class="im-desk-sub">
-                                                        @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
-                                                        <code class="im-casenum" title="@c.CaseNumber">@c.CaseNumber</code>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td><span class="text-nowrap"><RungMark Value="c.Classification" /></span> <span class="text-nowrap"><SeverityMark Value="c.Severity" /></span></td>
-                                            <td><span class="text-nowrap">@Ui.Label(c.Phase)</span> <span class="im-desk-sub text-nowrap">· @Ui.Age(c.PhaseSinceUtc, now)</span></td>
-                                            <td class="small">@(c.Role is { } r ? Ui.Label(r) : "—")</td>
-                                            <td class="small">
-                                                @if (c.NextForYou is { } nx)
-                                                {
-                                                    <span>@nx</span>
-                                                    @if (c.NextDueUtc is { } nd) { <span class="im-desk-sub @(nd < now ? "im-desk-late" : "")"> · @TimeDisp.Brief(nd, now)</span> }
-                                                }
-                                                else { <span class="text-muted">nothing assigned</span> }
-                                            </td>
-                                            <td class="small">
-                                                @if (c.ChangesSince == 0) { <span class="text-muted">@(c.LastViewedUtc is null ? "not opened yet" : "no changes")</span> }
-                                                else { <span>@c.ChangesSince · @People(c.ChangedBy)</span> }
-                                            </td>
-                                            <td class="text-end text-nowrap">
-                                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 im-peek-open" title="Preview this case"
-                                                        aria-label="@($"Preview {c.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == c.Id)" @onclick="() => TogglePeek(c.Id)">
-                                                    <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
-                                                </button>
-                                            </td>
-                                        </tr>
+                                        <span>@nx</span>
+                                        @if (c.NextDueUtc is { } nd) { <span class="im-desk-sub @(nd < now ? "im-desk-late" : "")"> · @TimeDisp.Brief(nd, now)</span> }
                                     }
-                                </tbody>
-                            </table>
-                        </div>
+                                    else { <StatusText Tone="StatusTone.Muted">nothing assigned</StatusText> }
+                                </td>
+                                <td>
+                                    @if (c.ChangesSince == 0) { <StatusText Tone="StatusTone.Muted">@(c.LastViewedUtc is null ? "not opened yet" : "no changes")</StatusText> }
+                                    else { <span>@c.ChangesSince · @People(c.ChangedBy)</span> }
+                                </td>
+                            </Row>
+                            <RowActions Context="c">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" title="Preview this case"
+                                        aria-label="@($"Preview {c.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == c.Id)" @onclick="() => TogglePeek(c.Id)">
+                                    <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
+                                </button>
+                            </RowActions>
+                        </DataTable>
                     }
-                </section>
+                    </ChildContent>
+                </Card>
 
-                <section class="im-desk-sec" aria-labelledby="desk-next">
-                    <div class="im-desk-head">
-                        <h2 id="desk-next">Your next</h2>
-                        <span class="im-desk-note">@_desk.Next.Count open · <a href="account/notifications#calendar">in your calendar</a></span>
-                    </div>
+                <Card Title="Your next" Icon="bi-check2-square">
+                    <Info>@_desk.Next.Count open · <a href="account/notifications#calendar">in your calendar</a></Info>
+                    <ChildContent>
                     @* PROD-21: add one of your own tasks without opening its case. *@
                     <AuthorizeView Policy="@Policies.EditCases">
                         @if (_desk.Cases.Count > 0)
@@ -189,7 +181,7 @@
                                             <a href="cases/@t.CaseId?tab=Tasks" class="text-decoration-none">@t.Title</a>
                                             <div class="im-desk-sub">
                                                 @if (why is { } w) { <WhyChip Icon="@w.Icon" Text="@w.Text" /> }
-                                                <span class="im-casenum" title="@t.CaseNumber"><code>@t.CaseNumber</code></span>
+                                                <span class="im-casenum" title="@t.CaseNumber">@t.CaseNumber</span>
                                                 @if (t.DueAtUtc is { } due) { <span class="@(due < now ? "im-desk-late" : "")" title="@TimeDisp.Long(due)">@TimeDisp.Brief(due, now)</span> }
                                             </div>
                                         </div>
@@ -203,12 +195,12 @@
                             </ul>
                         }
                     }
-                </section>
+                    </ChildContent>
+                </Card>
             </div>
 
             <aside class="im-desk-side" aria-label="Clocks and changes">
-                <section class="im-desk-card" aria-labelledby="desk-clocks">
-                    <h2 id="desk-clocks" class="im-cap">Clocks on your cases</h2>
+                <Card Title="Clocks on your cases" Compact="true">
                     @if (_desk.Clocks.Count == 0) { <p class="im-desk-empty mb-0">None running.</p> }
                     @foreach (var k in _desk.Clocks)
                     {
@@ -216,62 +208,59 @@
                             @if (k.Notify is { } n)
                             {
                                 <ClockMark State="n.State" Label="@($"Notify {n.JurisdictionCode} {n.WindowHours} h")" />
-                                <div class="im-desk-sub im-desk-clock-sub"><code class="im-casenum" title="@k.CaseNumber">@k.CaseNumber</code>@if (n.DueAtUtc is { } d) { <text> · due @TimeDisp.Brief(d, now)</text> }</div>
+                                <div class="im-desk-sub im-desk-clock-sub"><span class="im-casenum" title="@k.CaseNumber">@k.CaseNumber</span>@if (n.DueAtUtc is { } d) { <text> · due @TimeDisp.Brief(d, now)</text> }</div>
                             }
                             else if (k.Sla is { } s)
                             {
                                 <ClockMark State="s.State" Label="@(s.Clock is { } sc ? Ui.SlaClockLabel(sc) : "SLA")" Detail="@Ui.SlaShort(s)" />
-                                <div class="im-desk-sub im-desk-clock-sub"><code class="im-casenum" title="@k.CaseNumber">@k.CaseNumber</code></div>
+                                <div class="im-desk-sub im-desk-clock-sub"><span class="im-casenum" title="@k.CaseNumber">@k.CaseNumber</span></div>
                             }
                         </div>
                     }
-                </section>
+                </Card>
 
-                <section class="im-desk-card" aria-labelledby="desk-quiet">
-                    <h2 id="desk-quiet" class="im-cap">Quiet changes</h2>
+                <Card Title="Quiet changes" Compact="true">
                     @if (_quiet.Count == 0) { <p class="im-desk-empty mb-0">Nothing from others lately.</p> }
                     <ul class="im-desk-quiet">
                         @foreach (var q in _quiet)
                         {
                             <li>
                                 <span>@q.ActorDisplay @Lower(q.Summary)</span>
-                                <span class="im-desk-sub"><a href="cases/@q.CaseId" class="im-casenum" title="@q.CaseNumber"><code>@q.CaseNumber</code></a> · @TimeDisp.Brief(q.AtUtc, now)</span>
+                                <span class="im-desk-sub"><a href="cases/@q.CaseId" class="im-casenum" title="@q.CaseNumber">@q.CaseNumber</a> · @TimeDisp.Brief(q.AtUtc, now)</span>
                             </li>
                         }
                     </ul>
-                </section>
+                </Card>
 
                 @if (_pinned is { Count: > 0 })
                 {
-                    <section class="im-desk-card" aria-labelledby="desk-pinned">
-                        <h2 id="desk-pinned" class="im-cap">Pinned</h2>
+                    <Card Title="Pinned" Compact="true">
                         <ul class="im-desk-quiet">
                             @foreach (var c in _pinned)
                             {
                                 <li>
-                                    <a href="cases/@c.Id" class="im-casenum" title="@c.CaseNumber"><code>@c.CaseNumber</code></a>
+                                    <a href="cases/@c.Id" class="im-casenum" title="@c.CaseNumber">@c.CaseNumber</a>
                                     <span class="im-desk-sub im-clamp-2">@c.Title</span>
                                     <button class="btn btn-link btn-sm p-0 text-muted" title="Unpin" aria-label="@($"Unpin {c.CaseNumber}")" @onclick="() => Unpin(c.Id)" disabled="@_unpinning">Unpin</button>
                                 </li>
                             }
                         </ul>
-                    </section>
+                    </Card>
                 }
 
                 @if (_desk.RecentEscalations.Count > 0)
                 {
-                    <section class="im-desk-card" aria-labelledby="desk-esc">
-                        <h2 id="desk-esc" class="im-cap">Escalated lately</h2>
+                    <Card Title="Escalated lately" Compact="true">
                         <ul class="im-desk-quiet">
                             @foreach (var e in _desk.RecentEscalations)
                             {
                                 <li>
-                                    <a href="cases/@e.CaseId" class="im-casenum" title="@e.CaseNumber"><code>@e.CaseNumber</code></a>
+                                    <a href="cases/@e.CaseId" class="im-casenum" title="@e.CaseNumber">@e.CaseNumber</a>
                                     <span class="im-desk-sub">@Ui.Label(e.From) → @Ui.Label(e.To) · @TimeDisp.Brief(e.ChangedAtUtc, now)</span>
                                 </li>
                             }
                         </ul>
-                    </section>
+                    </Card>
                 }
             </aside>
         </div>
@@ -293,6 +282,7 @@
     private Guid _newTaskCaseId;
 
     private void TogglePeek(Guid id) => _peekId = _peekId == id ? null : id;
+    private static string CaseHref(Guid id) => $"cases/{id}";
 
     // "Revised the brief" reads "Ivy revised the brief" after a name.
     private static string Lower(string s) => s.Length == 0 ? s : char.ToLowerInvariant(s[0]) + s[1..];

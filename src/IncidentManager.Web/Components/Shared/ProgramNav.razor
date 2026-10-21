@@ -3,15 +3,15 @@
    program report are open to anyone with case access (need-to-know scoped by their services). CAP-36 review (C15):
    the team a page is filtered to stays on the links to the pages that filter by team (overview, team workload,
    improvement actions). *@
-<nav class="im-program-nav" aria-label="Program">
+<nav class="im-program-nav im-tabbar im-tabbar-page" aria-label="Program">
     <AuthorizeView Policy="@Policies.ViewAllCases">
-        <NavLink class="im-part" href="@WithTeam("program", Team)" Match="NavLinkMatch.All">Overview</NavLink>
-        <NavLink class="im-part" href="@WithTeam("program/team", Team)" Match="NavLinkMatch.All">Team</NavLink>
-        <NavLink class="im-part" href="program/due" Match="NavLinkMatch.All">Due work</NavLink>
+        <NavLink class="im-tabbar-item" href="@WithTeam("program", Team)" Match="NavLinkMatch.All">Overview</NavLink>
+        <NavLink class="im-tabbar-item" href="@WithTeam("program/team", Team)" Match="NavLinkMatch.All">Team</NavLink>
+        <NavLink class="im-tabbar-item" href="program/due" Match="NavLinkMatch.All">Due work</NavLink>
     </AuthorizeView>
-    <NavLink class="im-part" href="@WithTeam("program/improvement-actions", Team)" Match="NavLinkMatch.All">Improvement actions</NavLink>
-    <NavLink class="im-part" href="program/legal" Match="NavLinkMatch.All">Legal register</NavLink>
-    <NavLink class="im-part" href="program/report" Match="NavLinkMatch.All">Program report</NavLink>
+    <NavLink class="im-tabbar-item" href="@WithTeam("program/improvement-actions", Team)" Match="NavLinkMatch.All">Improvement actions</NavLink>
+    <NavLink class="im-tabbar-item" href="program/legal" Match="NavLinkMatch.All">Legal register</NavLink>
+    <NavLink class="im-tabbar-item" href="program/report" Match="NavLinkMatch.All">Program report</NavLink>
 </nav>
 
 @code {

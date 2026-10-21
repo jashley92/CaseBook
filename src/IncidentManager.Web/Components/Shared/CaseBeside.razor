@@ -14,7 +14,7 @@
         @if (_case is { } c)
         {
             <div class="im-beside-id">
-                <code>@c.CaseNumber</code>
+                <span class="im-casenum">@c.CaseNumber</span>
                 <span class="im-beside-title" title="@c.Title">@c.Title</span>
                 <span class="im-beside-marks"><RungMark Value="c.Classification" /> <SeverityMark Value="c.Severity" /> <span>@Ui.Label(c.Phase)</span></span>
             </div>

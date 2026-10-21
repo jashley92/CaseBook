@@ -76,25 +76,46 @@
     </div>
     @if (totalAll > 0 && !_notesOnly)
     {
-        <button type="button" class="btn btn-sm @(FiltersActive ? "btn-secondary" : "btn-outline-secondary")" aria-expanded="@Ui.Aria(FiltersShown)"
-                aria-controls="tl-filter-row" @onclick="() => _showFilters = !_showFilters">
-            <span class="bi bi-funnel" aria-hidden="true"></span> Filter@(FilterCount > 0 ? $" ({FilterCount})" : "")
-        </button>
-        @if (Case.DetectedAtUtc is not null)
-        {
-            @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
-            <div class="im-seg" role="group" aria-label="How times are shown">
-                <button type="button" class="btn btn-sm @(_tPlus ? "" : "active")" aria-pressed="@Ui.Aria(!_tPlus)" @onclick="() => _tPlus = false">Clock</button>
-                <button type="button" class="btn btn-sm @(_tPlus ? "active" : "")" aria-pressed="@Ui.Aria(_tPlus)" @onclick="() => _tPlus = true"
-                        title="Time since the case was detected (T+ detection)">T+</button>
-            </div>
-        }
-        <button type="button" class="btn btn-sm btn-outline-secondary"
-                @onclick="() => _tlOldestFirst = !_tlOldestFirst"
-                title="@(_tlOldestFirst ? "Oldest first. Click for newest first." : "Newest first. Click for oldest first.")">
-            <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
-            @(_tlOldestFirst ? "Oldest" : "Newest")
-        </button>
+        @* UX-55: Filter, how times are shown and the order behind one View button, so the lenses, View and Add fit one row
+           beside the rail (they took two). Pressed while the view isn't the default, so a filter or T+ is never hidden. *@
+        <div class="tl-viewmenu" @onkeydown="ViewMenuKey">
+            <button type="button" class="btn btn-sm @(ViewCustomised ? "btn-secondary" : "btn-outline-secondary")"
+                    aria-expanded="@Ui.Aria(_viewMenu)" aria-controls="tl-viewmenu" @onclick="() => _viewMenu = !_viewMenu"
+                    title="Filter, clock or T+, and order">
+                <span class="bi bi-sliders" aria-hidden="true"></span> View@(FilterCount > 0 ? $" ({FilterCount})" : "")
+                <span class="bi bi-chevron-down" aria-hidden="true"></span>
+            </button>
+            @if (_viewMenu)
+            {
+                <div class="tl-viewmenu-scrim" @onclick="() => _viewMenu = false"></div>
+                <div id="tl-viewmenu" class="tl-viewmenu-pop" role="group" aria-label="View options">
+                    <button type="button" class="btn btn-sm @(FiltersActive ? "btn-secondary" : "btn-outline-secondary") w-100 text-start"
+                            aria-expanded="@Ui.Aria(FiltersShown)" aria-controls="tl-filter-row"
+                            @onclick="() => { _showFilters = !_showFilters; _viewMenu = false; }">
+                        <span class="bi bi-funnel" aria-hidden="true"></span> @(FiltersShown ? "Hide filters" : "Filter…")@(FilterCount > 0 ? $" ({FilterCount} on)" : "")
+                    </button>
+                    @if (Case.DetectedAtUtc is not null)
+                    {
+                        @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
+                        <div class="tl-viewmenu-row">
+                            <span class="tl-viewmenu-label" id="tl-vm-times">Times</span>
+                            <div class="im-seg" role="group" aria-labelledby="tl-vm-times">
+                                <button type="button" class="btn btn-sm @(_tPlus ? "" : "active")" aria-pressed="@Ui.Aria(!_tPlus)" @onclick="() => _tPlus = false">Clock</button>
+                                <button type="button" class="btn btn-sm @(_tPlus ? "active" : "")" aria-pressed="@Ui.Aria(_tPlus)" @onclick="() => _tPlus = true"
+                                        title="Time since the case was detected (T+ detection)">T+</button>
+                            </div>
+                        </div>
+                    }
+                    <div class="tl-viewmenu-row">
+                        <span class="tl-viewmenu-label" id="tl-vm-order">Order</span>
+                        <div class="im-seg" role="group" aria-labelledby="tl-vm-order">
+                            <button type="button" class="btn btn-sm @(_tlOldestFirst ? "" : "active")" aria-pressed="@Ui.Aria(!_tlOldestFirst)" @onclick="() => _tlOldestFirst = false">Newest first</button>
+                            <button type="button" class="btn btn-sm @(_tlOldestFirst ? "active" : "")" aria-pressed="@Ui.Aria(_tlOldestFirst)" @onclick="() => _tlOldestFirst = true">Oldest first</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
         @if (ChangedSinceUtc is { } sinceChip)
         {
             @* INV-04: only what was added or changed since the viewer last had the case open. *@
@@ -663,7 +684,7 @@ else
             {
                 lastDay = day;
                 @* INV-03: a day header, counted from the day the case was detected. *@
-                <li class="tl-day" @key="@($"day-{day}")"><span>@DayLabel(day)</span></li>
+                <li class="tl-day" @key="@($"day-{day}")"><span>@DayLabel(day) · @TimeDisp.Label</span></li>   @* UX-57: the zone once, for the day's entries *@
             }
             if (row.Milestone is { } m)
             {
@@ -694,7 +715,7 @@ else
                             @if (m.RecordedAtUtc is { } rec)
                             {
                                 @* INV-05: dated to when it happened; say openly that it was entered later. *@
-                                <span class="tl-late" title="Entered @TimeDisp.Long(rec)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(rec)</span>
+                                <span class="tl-late" title="Entered @TimeDisp.Long(rec)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Stamp(rec)</span>
                             }
                             @if (m.Transition is { } tr)
                             {
@@ -722,7 +743,7 @@ else
                                 {
                                     <div class="tl-history-item small">
                                         <div class="text-muted">@Users.DisplayFor(k.CreatedBy) · @TimeDisp.Long(k.CreatedAtUtc)</div>
-                                        <div>Moved from <span class="im-data">@TimeDisp.Long(k.FromEffectiveUtc)</span> to <span class="im-data">@TimeDisp.Long(k.ToEffectiveUtc)</span>. @k.Reason</div>
+                                        <div>Moved from <span class="im-time">@TimeDisp.Long(k.FromEffectiveUtc)</span> to <span class="im-time">@TimeDisp.Long(k.ToEffectiveUtc)</span>. @k.Reason</div>
                                     </div>
                                 }
                             </div>
@@ -915,12 +936,12 @@ else
                             @if (e.IsImported)
                             {
                                 @* INV-23: dated as the imported summary gave it; the import time is on hover. *@
-                                <span class="tl-late" title="Imported @TimeDisp.Long(firstRecorded) from a structured summary"><span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> imported @TimeDisp.Short(firstRecorded)</span>
+                                <span class="tl-late" title="Imported @TimeDisp.Long(firstRecorded) from a structured summary"><span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> imported @TimeDisp.Stamp(firstRecorded)</span>
                             }
                             else if (firstRecorded - e.OccurredAtUtc > CaseService.BackdateReasonThreshold)
                             {
                                 @* INV-03: entered well after it happened — said openly, as on milestones and in the report. *@
-                                <span class="tl-late" title="Entered @TimeDisp.Long(firstRecorded)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(firstRecorded)</span>
+                                <span class="tl-late" title="Entered @TimeDisp.Long(firstRecorded)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Stamp(firstRecorded)</span>
                             }
                             @AfterClosureMark(firstRecorded, e.CreatedAtUtc)
                             @if (history.Count > 0)
@@ -1036,8 +1057,8 @@ else
                 <div class="modal-body">
                     <p class="small mb-2"><strong>@cm.Title</strong></p>
                     <dl class="row g-1 mb-2 small">
-                        <dt class="col-4 fw-normal text-muted">Recorded</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.RecordedAtUtc ?? cm.AtUtc)</dd>
-                        <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.AtUtc)</dd>
+                        <dt class="col-4 fw-normal text-muted">Recorded</dt><dd class="col-8 mb-0 im-time">@TimeDisp.Long(cm.RecordedAtUtc ?? cm.AtUtc)</dd>
+                        <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-time">@TimeDisp.Long(cm.AtUtc)</dd>
                     </dl>
                     <label class="form-label small mb-0" for="tl-corr-when">When it happened (@TimeDisp.Label)</label>
                     <DateTimeInput Past="true" id="tl-corr-when" class="form-control form-control-sm" @bind-Value="_corrWhen" />
@@ -1169,6 +1190,15 @@ else
     private string? _tlSource;
 
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
+    // UX-55: the View menu (filter, clock or T+, order), and whether the view differs from the default.
+    private bool _viewMenu;
+    private bool ViewCustomised => FiltersActive || _tPlus || _tlOldestFirst;
+
+    private void ViewMenuKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") _viewMenu = false;
+    }
+
     private bool _composerOpen;
 
     // Whether the composer is popped out (the page's data-tl-docked): set here when it's opened with the top of the timeline
@@ -1831,7 +1861,7 @@ else
                 <span class="bi bi-link-45deg" aria-hidden="true"></span>
                 @if (_fuLink is { } picked)
                 {
-                    <span class="small">Link <code>@picked.CaseNumber</code> as</span>
+                    <span class="small">Link <span class="im-casenum">@picked.CaseNumber</span> as</span>
                     <select class="form-select form-select-sm" aria-label="Link type" @bind="_fuLinkType">
                         <option value="@CaseLinkType.RelatedTo">Related to</option>
                         <option value="@CaseLinkType.PartOfCampaign">Part of campaign</option>
@@ -1851,7 +1881,7 @@ else
                     @foreach (var r in _fuLinkResults)
                     {
                         <button type="button" class="btn btn-sm btn-link p-0 d-block text-start" @onclick="() => PickFuLink(r)">
-                            <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
+                            <span class="im-casenum">@r.CaseNumber</span> <span class="text-muted">@r.Title</span>
                         </button>
                     }
                 </div>
@@ -2747,7 +2777,7 @@ else
             @if (_lastWhen is { } last && last != _tlWhen)
             {
                 <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = last"
-                        title="The time of the entry you just added">Same as last (@(last.Date == NowWall().Date ? last.ToString("HH:mm") : last.ToString("yyyy-MM-dd HH:mm")))</button>
+                        title="The time of the entry you just added">Same as last (@(last.Date == NowWall().Date ? last.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) : last.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)))</button>
             }
             @* BUG-480: Shifted stops at year 1 and 9999; AddHours threw there and the tab showed its error fallback. *@
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
@@ -3262,11 +3292,11 @@ else
     private RenderFragment TimeLabel(DateTimeOffset at) => @<text>
         @if (_tPlus && Case.DetectedAtUtc is { } detected)
         {
-            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@SinceDetection(at - detected)</span><span class="tl-time-rel">@TimeDisp.Short(at)</span></time>
+            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@SinceDetection(at - detected)</span><span class="tl-time-rel">@TimeDisp.Stamp(at)</span></time>
         }
         else
         {
-            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@TimeDisp.Short(at)</span><span class="tl-time-rel">@Ui.RelativeTime(at, Clock.UtcNow)</span></time>
+            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@TimeDisp.Stamp(at)</span><span class="tl-time-rel">@Ui.RelativeTime(at, Clock.UtcNow)</span></time>
         }
     </text>;
 
@@ -3365,7 +3395,7 @@ else
                     <button type="button" class="tl-mini-mark is-@p.Kind" style="left:@Pct(Pos(p.At))" title="@p.Title" aria-label="@p.Title" @onclick="() => JumpTo(p.Key)"></button>
                 }
             </div>
-            <div class="tl-mini-scale"><span>@TimeDisp.Short(start)</span><span class="tl-mini-legend"><i class="is-adv"></i> adversary <i class="is-resp"></i> response <i class="is-dec"></i> decision</span><span>@TimeDisp.Short(end)</span></div>
+            <div class="tl-mini-scale"><span>@TimeDisp.Stamp(start)</span><span class="tl-mini-legend"><i class="is-adv"></i> adversary <i class="is-resp"></i> response <i class="is-dec"></i> decision</span><span>@TimeDisp.Stamp(end)</span></div>
         </div>
     };
 

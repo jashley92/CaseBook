@@ -21,6 +21,9 @@ public static class CaseViews
         ("Paper", ["Report", "Review", "Audit"]),
     ];
 
+    /// <summary>UX-56: what a view is called; its key stays the routing key ("Paper" in links and shortcuts).</summary>
+    public static string ViewLabel(string view) => view == "Paper" ? "Report & lessons" : view;
+
     public static string ViewOf(string part) =>
         part == "Closeout" ? "Close-out" : All.FirstOrDefault(v => v.Parts.Contains(part)).View ?? "Record";
 
@@ -125,5 +128,4 @@ public sealed record CaseViewFacts(Case Case, CaseNotificationDeadlines? Notify,
         _ => null
     };
     public bool ViewHasNew(string view) => view != ActiveView && CaseViews.All.First(v => v.View == view).Parts.Any(TabHasNew);
-    public string? ViewWhy(string view) => view == "Paper" ? TabWhy("Report") ?? TabWhy("Review") : null;
 }

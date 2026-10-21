@@ -46,24 +46,25 @@
             </div>
             <table class="table table-sm table-hover align-middle im-table mb-0">
                 <thead>
-                    <tr><th>Campaign</th><th>Cases</th><th>Highest sev.</th><th>Class.</th><th>Open</th><th>Latest activity</th><th></th></tr>
+                    <tr><th>Campaign</th><th>Cases</th><th>Highest sev.</th><th>Class.</th><th>Open</th><th>Latest activity (@TimeDisp.Label)</th><th></th></tr>
                 </thead>
                 <tbody>
                     @foreach (var c in _campaigns)
                     {
                         <tr>
-                            <td><code>@c.AnchorCaseNumber</code></td>
+                            <td><span class="im-casenum">@c.AnchorCaseNumber</span></td>
                             <td>
-                                <span class="im-badge im-b-info">@c.MemberCount</span>
+                                <span>@c.MemberCount</span>
                                 <span class="d-block text-muted small">@string.Join(", ", c.MemberCaseNumbers)</span>
                             </td>
                             <td>
-                                @if (c.HighestSeverity is { } sev) { <span class="@Ui.SeverityBadge(sev)">@SevLabels.For(sev)</span> }
+                                @* UX-54: the marks the case lists use, not a coloured pill each. *@
+                                @if (c.HighestSeverity is { } sev) { <span class="text-nowrap"><SeverityMark Value="sev" /></span> }
                                 else { <span class="text-muted">—</span> }
                             </td>
-                            <td><span class="@Ui.ClassificationBadge(c.HighestClassification)">@Ui.Label(c.HighestClassification)</span></td>
+                            <td class="text-nowrap"><RungMark Value="c.HighestClassification" /></td>
                             <td>@c.OpenCount</td>
-                            <td class="small im-data">@TimeDisp.Long(c.LatestActivityUtc)</td>
+                            <td class="small im-time" title="@TimeDisp.Long(c.LatestActivityUtc)">@TimeDisp.Stamp(c.LatestActivityUtc)</td>
                             <td><a class="btn btn-sm btn-outline-primary py-0" href="intel/campaigns/@c.AnchorCaseId">Open</a></td>
                         </tr>
                     }

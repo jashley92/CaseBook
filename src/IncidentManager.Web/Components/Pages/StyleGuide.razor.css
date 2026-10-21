@@ -4,10 +4,10 @@
 .sg-tok-group:last-child { margin-bottom: 0; }
 
 .sg-tok-label {
-    font-size: .72rem;
-    font-weight: 600;
+    font-size: var(--im-label-size);
+    font-weight: var(--im-label-weight);
     text-transform: uppercase;
-    letter-spacing: .02em;
+    letter-spacing: var(--im-label-tracking);
     color: var(--im-text-muted);
     margin-bottom: 6px;
 }
@@ -22,13 +22,13 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: .8rem;
+    font-size: var(--im-text-sm);
 }
 
 .sg-chip {
     width: 26px;
     height: 26px;
-    border-radius: 6px;
+    border-radius: var(--im-radius);
     border: 1px solid var(--im-border);
     flex: 0 0 auto;
 }
