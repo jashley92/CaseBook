@@ -28,7 +28,9 @@ public enum MilestoneKind
     /// <summary>CAP-21: an evidence file was withdrawn: its "Evidence added" milestone, in its place, with why.</summary>
     EvidenceWithdrawn,
     /// <summary>FR-51: the case was contained (marked contained, or said when moving on), the end of time-to-contain.</summary>
-    Contained
+    Contained,
+    /// <summary>HR-07: when the activity was detected or reported, its own row when that was before the case was opened.</summary>
+    Detected
 }
 
 /// <summary>
@@ -107,13 +109,19 @@ public static class CaseMilestones
         // The opening state: the initial classification (a Complex Event has none) and severity.
         var initialClass = c.ClassificationChanges.FirstOrDefault(IsInitial(c));
         var initialSev = c.SeverityChanges.Where(x => x.From is null).OrderBy(x => x.ChangedAtUtc).FirstOrDefault();
-        // HR-07: a case filed well after detection starts the story at detection, marked as recorded later.
-        var filedLater = c.DetectedAtUtc is { } detected && c.CreatedAtUtc - detected > CaseService.BackdateReasonThreshold;
-        list.Add(new CaseMilestone($"open:{c.Id}", filedLater ? c.DetectedAtUtc!.Value : c.CreatedAtUtc, MilestoneKind.Opened,
-            (filedLater ? $"Detected{(string.IsNullOrWhiteSpace(c.DetectionCaseId) ? "" : $" ({c.DetectionCaseId.Trim()})")}; case opened as "
-                        : "Case opened as ") + labels.Classification(initialClass?.To) +
+        // HR-07: detection before the case was opened is its own row, at its own time; the case is opened when it was.
+        // (One row at detection titled "Detected; case opened as …" read as the case opened then.) Filed well after
+        // detection, the detection row is marked as recorded later and the opening says how long after.
+        var lead = c.DetectedAtUtc is { } detected ? c.CreatedAtUtc - detected : TimeSpan.Zero;
+        var filedLater = lead > CaseService.BackdateReasonThreshold;
+        if (lead >= TimeSpan.FromMinutes(1))
+            list.Add(new CaseMilestone($"detected:{c.Id}", c.DetectedAtUtc!.Value, MilestoneKind.Detected,
+                $"Detected{(string.IsNullOrWhiteSpace(c.DetectionCaseId) ? "" : $" ({c.DetectionCaseId.Trim()})")}",
+                null, null, "case record", RecordedAtUtc: filedLater ? c.CreatedAtUtc : null));
+        list.Add(new CaseMilestone($"open:{c.Id}", c.CreatedAtUtc, MilestoneKind.Opened,
+            "Case opened as " + labels.Classification(initialClass?.To) +
             (initialSev is null ? "" : $" · {labels.Severity(initialSev.To)}"),
-            null, c.CreatedBy, "case creation", RecordedAtUtc: filedLater ? c.CreatedAtUtc : null));
+            filedLater ? $"{Span(lead)} after detection" : null, c.CreatedBy, "case creation"));
 
         foreach (var x in c.ClassificationChanges.Where(x => !IsInitial(c)(x)))
             list.Add(new CaseMilestone($"cls:{x.Id}", x.EffectiveAt, MilestoneKind.Classification,

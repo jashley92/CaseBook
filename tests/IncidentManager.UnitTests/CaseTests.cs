@@ -1074,10 +1074,13 @@ public class CaseTests
         var ms = IncidentManager.Application.Cases.CaseMilestones.Project(c,
             new IncidentManager.Application.Cases.MilestoneLabels(x => x?.ToString() ?? "Complex Event", s => s.ToString(), p => p.ToString(), m => ""));
 
+        // Detection and opening are two rows, each at its own time: one at detection read as the case opened then.
+        var detected = ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Detected);
+        (detected.AtUtc, detected.Title, detected.RecordedAtUtc).Should().Be((Now.AddDays(-3), "Detected (XSIAM-88231)", Now));
         var opened = ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Opened);
-        opened.AtUtc.Should().Be(Now.AddDays(-3));
-        opened.RecordedAtUtc.Should().Be(Now);
-        opened.Title.Should().StartWith("Detected (XSIAM-88231); case opened as");
+        (opened.AtUtc, opened.RecordedAtUtc).Should().Be((Now, (DateTimeOffset?)null));
+        opened.Title.Should().StartWith("Case opened as");
+        opened.Detail.Should().Be("3 d 0 h after detection");
         var began = ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.ActivityBegan);
         (began.AtUtc, began.Detail).Should().Be((Now.AddDays(-3).AddMinutes(-21), "21 min before detection"));
 
@@ -1088,7 +1091,8 @@ public class CaseTests
         gate.AtUtc.Should().Be(Now.AddDays(-1), "at the close it guarded, not when it was recorded");
         gate.RecordedAtUtc.Should().Be(Now.AddMinutes(20));
         ms.Select(m => m.Kind).Should().ContainInOrder(
-            IncidentManager.Application.Cases.MilestoneKind.ActivityBegan, IncidentManager.Application.Cases.MilestoneKind.Opened);
+            IncidentManager.Application.Cases.MilestoneKind.ActivityBegan, IncidentManager.Application.Cases.MilestoneKind.Detected,
+            IncidentManager.Application.Cases.MilestoneKind.Opened);
     }
 
     [Fact]

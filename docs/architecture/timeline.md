@@ -71,7 +71,8 @@ From `Application/Cases/CaseMilestones.cs`:
 | Milestone | From | Time used | Actor |
 |---|---|---|---|
 | Activity began (*N* before detection) | the case's initial-activity time, when set | that time | none |
-| Case opened as *classification · severity*; when filed more than an hour after detection: "Detected (*SIEM id*); case opened as …", marked recorded later | the case and its opening history rows | creation, or detection when filed later | creator |
+| Detected (*SIEM id*), when detection was a minute or more before the case was opened; marked recorded later when that was more than an hour | the case's detected time | that time | none |
+| Case opened as *classification · severity* (*N* after detection, when filed more than an hour after it) | the case and its opening history rows | creation | creator |
 | Classification *X → Y* (including promotion from Complex Event) | `ClassificationChange`, except the opening one | **effective** time | who changed it |
 | Severity *X → Y* | `SeverityChange` | effective time | |
 | Phase *X → Y* (including reopen) | `StatusChange` | effective time | |

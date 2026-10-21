@@ -483,6 +483,8 @@
     // FR-03: intake detection/dwell timestamps entered as wall-clock in the viewer's display zone (U-29),
     // converted to UTC on submit. Detected defaults to now; initial-activity is optional.
     private DateTime? _detectedWall;
+    // The default Detected was seeded with: left as it is, the case is detected when it's filed, not when the page opened.
+    private DateTime? _detectedSeed;
     private DateTime? _occurredWall;
 
     private List<TemplateView>? _templates;
@@ -701,7 +703,7 @@
         // FR-03: default Detected to now in the viewer's display zone. If the display zone resolves after
         // first render (U-29 reconfigures TimeDisp, remounting this page via the layout @key), this re-seeds
         // with the correct zone — the user hasn't interacted yet at that point.
-        _detectedWall = IncidentManager.Web.Components.Pages.Workspace.WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone);
+        _detectedWall = _detectedSeed = IncidentManager.Web.Components.Pages.Workspace.WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
         await RefreshGates();
     }
 
@@ -841,7 +843,10 @@
         _overlapPrompt = false;
         try
         {
-            // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
+            // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC. A Detected left at its
+            // default is now: a form open for an hour otherwise filed a case detected an hour before it was opened.
+            if (_detectedWall is not null && _detectedWall == _detectedSeed)
+                _detectedWall = _detectedSeed = IncidentManager.Web.Components.Pages.Workspace.WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
             _request.DetectedAtUtc = _detectedWall is { } dw ? IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(dw, TimeDisp.Zone) : null;
             _request.OccurredAtUtc = _occurredWall is { } ow ? IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(ow, TimeDisp.Zone) : null;
             PlanIndicators();
