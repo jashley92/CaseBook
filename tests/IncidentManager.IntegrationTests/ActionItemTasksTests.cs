@@ -57,6 +57,7 @@ public sealed class ActionItemTasksTests : IDisposable
     [Theory]
     [InlineData("Result: pending")]
     [InlineData("cancelled: not needed")]
+    [InlineData("Canceled: not needed")]   // FR-63: the spelling reasons are kept with now, and the old one above
     public async Task A_comment_cannot_pass_for_a_result_or_a_cancel_reason(string body /* BUG-110 */)
     {
         var (caseId, taskId) = await SeededCaseWithTaskAsync();

@@ -69,9 +69,10 @@ public sealed class ActionItemCommentService
         // BUG-110: a task's recorded result and cancel reason are kept as comments with these openings, so a comment
         // that starts the same way would pass for one (and answer the brief's question the task follows up).
         if (text.StartsWith(TaskResults.Prefix.TrimEnd(), StringComparison.OrdinalIgnoreCase)
-            || text.StartsWith(CaseService.CancelledPrefix.TrimEnd(), StringComparison.OrdinalIgnoreCase))
+            || text.StartsWith(CaseService.CancelledPrefix.TrimEnd(), StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith(CaseService.LegacyCancelledPrefix.TrimEnd(), StringComparison.OrdinalIgnoreCase))   // FR-63: either spelling
             throw new ArgumentException(
-                "A comment can't start with \"Result:\" or \"Cancelled:\", which is how a task's result and cancel reason are kept. " +
+                "A comment can't start with \"Result:\" or \"Canceled:\", which is how a task's result and cancel reason are kept. " +
                 "Use Mark done to record a result, or reword the comment.");
 
         using var db = _factory.CreateDbContext();

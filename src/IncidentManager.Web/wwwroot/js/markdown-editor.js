@@ -138,8 +138,15 @@
                 menu.appendChild(el);
             });
             const coords = cm.cursorCoords(true, 'page');
-            menu.style.left = coords.left + 'px';
-            menu.style.top = (coords.bottom + 2) + 'px';
+            // FR-61: kept inside the window. Near the right edge (the timeline's pop-out sits there) the list shifts left
+            // rather than running off it, and near the bottom it opens above the caret.
+            const view = document.documentElement, gap = 8;
+            menu.style.left = '0px'; menu.style.top = '0px';   // measured at its natural width, not squeezed at the edge
+            const maxLeft = window.scrollX + view.clientWidth - menu.offsetWidth - gap;
+            menu.style.left = Math.max(window.scrollX + gap, Math.min(coords.left, maxLeft)) + 'px';
+            const below = coords.bottom + 2, h = menu.offsetHeight;
+            const fitsBelow = below + h <= window.scrollY + view.clientHeight - gap;
+            menu.style.top = (fitsBelow || coords.top - 2 - h < window.scrollY ? below : coords.top - 2 - h) + 'px';
         }
 
         cm.on('inputRead', update);

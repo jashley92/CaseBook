@@ -1241,4 +1241,27 @@ public class CaseTests
     [InlineData("///", "Case")]
     public void Slug_produces_identifier_safe_names(string input, string expected)
         => Case.Slug(input).Should().Be(expected);
+
+    [Theory]   // FR-58: four meaningful words at most, never ending on a stop-word, within 42 characters, whole words
+    [InlineData("Walkthrough credential phishing against Finance mailboxes", "Walkthrough credential phishing")]
+    [InlineData("Walkthrough: credential phishing against Finance mailboxes in the claims team", "Walkthrough: credential phishing")]
+    [InlineData("Credential phishing against", "Credential phishing")]
+    [InlineData("Ransomware on the file server in Building 4", "Ransomware on the file server in Building")]
+    [InlineData("Lost laptop - finance", "Lost laptop - finance")]
+    [InlineData("Lost laptop -", "Lost laptop")]
+    [InlineData("Odd Beaconing", "Odd Beaconing")]
+    [InlineData("The", "The")]
+    [InlineData("   ", "")]
+    [InlineData(null, "")]
+    public void Slug_source_stops_at_four_meaningful_words_and_never_on_a_stop_word(string? title, string expected)
+        => Case.SlugSource(title).Should().Be(expected);
+
+    [Fact]
+    public void Slug_source_keeps_within_its_length_and_never_cuts_a_word()
+    {
+        Case.SlugSource(new string('x', 60)).Should().HaveLength(Case.SlugSourceMaxLength);
+        Case.SlugSource("Supercalifragilistic expialidocious compromise everywhere").Should().Be("Supercalifragilistic expialidocious");
+        foreach (var title in new[] { "A very long title about an incident with many words in it", "Exfiltration of the payroll data to a personal cloud drive" })
+            Case.SlugSource(title).Length.Should().BeLessThanOrEqualTo(Case.SlugSourceMaxLength);
+    }
 }

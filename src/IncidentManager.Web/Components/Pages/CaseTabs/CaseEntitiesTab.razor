@@ -283,7 +283,7 @@ else
                 @if (!_crossView)
                 {
                     <button class="btn @(_showAttackEdges ? "btn-primary" : "btn-outline-secondary")" @onclick="ToggleAttackEdges"
-                            title="Show event steps (actor → target) as dashed edges, colored by tactic">Attack steps</button>
+                            title="Show attack steps (actor → target) as dashed edges, colored by tactic">Attack steps</button>
                 }
                 <button class="btn btn-outline-secondary" @onclick="GraphFit" title="Fit graph to view">Fit</button>
                 <button class="btn btn-outline-secondary" @onclick="GraphTogglePhysics">
@@ -334,7 +334,7 @@ else
         </div>
     </div>
 
-    <div class="card mb-3">
+    <div class="card mb-3 im-entity-list">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
             <span>Entities (@Case.Entities.Count)</span>
             @* CAP-02: pick several, then record one verdict on all of them (each keeps its own history row and milestone). *@
@@ -383,7 +383,7 @@ else
                                            checked="@_picked.Contains(e.Id)" @onchange="ev => Pick(e.Id, e.Disposition, (bool)(ev.Value ?? false))" /></td>
                             }
                             <td class="text-nowrap">@Ui.EntityGlyph(e.Type) @Ui.Label(e.Type)</td>
-                            <td><code class="small im-entity-value">@DisplayValue(e)</code>
+                            <td class="im-entity-valuecell"><code class="small im-entity-value">@ValueWithBreaks(e)</code>
                                 @if (!string.IsNullOrWhiteSpace(e.Description)) { <br /><small class="text-muted">@e.Description</small> }
                                 @if (_overlaps.TryGetValue(e.Id, out var alsoIn) && alsoIn.Count > 0)
                                 {
@@ -391,7 +391,7 @@ else
                                     <small><span class="im-badge im-b-info">also in</span>
                                         @foreach (var o in alsoIn)
                                         {
-                                            <a class="ms-1" href="cases/@o.OtherCaseId" title="@AlsoInTitle(o)"><code class="small">@o.OtherCaseNumber</code></a>
+                                            <a class="ms-1" href="cases/@o.OtherCaseId" title="@AlsoInTitle(o)"><code class="small im-casenum">@o.OtherCaseNumber</code></a>
                                         }
                                         @* PROD-10: pivot to every case carrying it (by id, so the value stays out of the URL). *@
                                         <a class="ms-2" href="intel/indicators?entity=@e.Id" title="Every case this indicator appears on">
@@ -404,18 +404,30 @@ else
                             <td class="text-nowrap"><span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span>
                                 @if (e.Tlp is { } tlp) { <span class="im-tlp im-tlp-sm ms-1" style="color:#@Tlp.Color(tlp)">@Tlp.Label(tlp)</span> }</td>
                             <td class="small text-muted">@(e.Source ?? "—")</td>
+                            @* FR-60: the row's acts as one compact group; where the list is narrow they show as icons (the words
+                               stay for screen readers and in each title), so the Value column keeps its room. *@
                             <td class="text-nowrap">
-                                @{ var vtUrl = VirusTotalUrl(e); }
-                                @if (vtUrl is not null)
-                                {
-                                    <a class="btn btn-sm btn-outline-secondary py-0 me-1" href="@vtUrl" target="_blank" rel="noopener noreferrer">VirusTotal</a>
-                                }
-                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)"
-                                        title="Where it appears on this case and on others">Details</button>
-                                <AuthorizeView Policy="@Policies.EditCases" Context="rm">
-                                    <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEntityEdit(e)">Edit</button>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick='() => Confirm($"Remove entity {e.Value}? Its relationships are removed too. (An entity an attack step names as actor or target stays until the step changes.)", () => RemoveEntity(e.Id))'>Remove</button>
-                                </AuthorizeView>
+                                <div class="btn-group btn-group-sm im-ent-acts" role="group" aria-label="@($"Actions for {e.Label ?? e.Value}")">
+                                    @{ var vtUrl = VirusTotalUrl(e); }
+                                    @if (vtUrl is not null)
+                                    {
+                                        <a class="btn btn-outline-secondary" href="@vtUrl" target="_blank" rel="noopener noreferrer" title="Look it up on VirusTotal">
+                                            <span class="bi bi-box-arrow-up-right" aria-hidden="true"></span><span class="im-ent-act-word">VirusTotal</span>
+                                        </a>
+                                    }
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)"
+                                            title="Where it appears on this case and on others">
+                                        <span class="bi bi-info-circle" aria-hidden="true"></span><span class="im-ent-act-word">Details</span>
+                                    </button>
+                                    <AuthorizeView Policy="@Policies.EditCases" Context="rm">
+                                        <button type="button" class="btn btn-outline-secondary" title="Edit" @onclick="() => StartEntityEdit(e)">
+                                            <span class="bi bi-pencil" aria-hidden="true"></span><span class="im-ent-act-word">Edit</span>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger" title="Remove" @onclick='() => Confirm($"Remove entity {e.Value}? Its relationships are removed too. (An entity an attack step names as actor or target stays until the step changes.)", () => RemoveEntity(e.Id))'>
+                                            <span class="bi bi-trash3" aria-hidden="true"></span><span class="im-ent-act-word">Remove</span>
+                                        </button>
+                                    </AuthorizeView>
+                                </div>
                             </td>
                         </tr>
                     }
@@ -437,7 +449,7 @@ else
                             <option value="">Select…</option>
                             @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                             {
-                                <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                <option value="@e.Id">@EntityOption(e)</option>
                             }
                         </select>
                     </div>
@@ -456,7 +468,7 @@ else
                             <option value="">Select…</option>
                             @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                             {
-                                <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                <option value="@e.Id">@EntityOption(e)</option>
                             }
                         </select>
                     </div>
@@ -491,7 +503,7 @@ else
                                                 <select id="rel-edit-source" class="form-select form-select-sm" @bind="_relEditSource">
                                                     @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                                                     {
-                                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                                        <option value="@e.Id">@EntityOption(e)</option>
                                                     }
                                                 </select>
                                             </div>
@@ -509,7 +521,7 @@ else
                                                 <select id="rel-edit-target" class="form-select form-select-sm" @bind="_relEditTarget">
                                                     @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                                                     {
-                                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                                        <option value="@e.Id">@EntityOption(e)</option>
                                                     }
                                                 </select>
                                             </div>
@@ -872,6 +884,36 @@ else
 
     private string DisplayValue(CaseEntity e) =>
         _defangView && IocObservable.IsRefangable(e.Type) ? IocObservable.Defang(e.Value) : e.Value;
+
+    // FR-60: a long value may wrap only after a . @ / \ (a domain's labels, an address's halves, a path's parts), never
+    // mid-token; an IP address never wraps at all ("203.0.113." over "45" read as two values).
+    private RenderFragment ValueWithBreaks(CaseEntity e) => __builder =>
+    {
+        var v = DisplayValue(e);
+        if (e.Type == EntityType.IpAddress)
+        {
+            <span class="text-nowrap">@v</span>
+            return;
+        }
+        foreach (var part in BreakParts(v))
+        {
+            @part<wbr />
+        }
+    };
+
+    // The value cut after each separator. A defanged dot ("[.]") stays whole: the break goes after its bracket.
+    private static IEnumerable<string> BreakParts(string v)
+    {
+        var start = 0;
+        for (var i = 0; i < v.Length; i++)
+        {
+            var sep = v[i] is '.' or '@' or '/' or '\\' or ']';
+            if (!sep || (i + 1 < v.Length && v[i + 1] == ']')) continue;
+            yield return v[start..(i + 1)];
+            start = i + 1;
+        }
+        if (start < v.Length) yield return v[start..];
+    }
 
     // BUG-425: the relationship forms, the paste and the suggestions each save themselves on Ctrl/Cmd+Enter (they're marked
     // .im-own-keys, which keymap.js leaves alone), as their buttons do; one save at a time per form (a paste waiting on the
@@ -1313,6 +1355,11 @@ else
         await OnChanged.InvokeAsync();
         Toasts.Success("Relationship removed");
     }
+
+    // FR-63: a relationship picker's line: the label alone left two accounts labelled alike looking the same, so the
+    // value follows it.
+    private static string EntityOption(CaseEntity e) =>
+        string.IsNullOrWhiteSpace(e.Label) ? $"{Ui.Label(e.Type)}: {e.Value}" : $"{Ui.Label(e.Type)}: {e.Label} ({e.Value})";
 
     private string EntityName(Guid entityId)
     {

@@ -101,7 +101,7 @@ public static class EvidencePackageEndpoints
             var why = recording ? "its completion couldn't be recorded"
                 : ex switch
                 {
-                    OperationCanceledException when ct.IsCancellationRequested => "the download was cancelled or cut off",
+                    OperationCanceledException when ct.IsCancellationRequested => "the download was canceled or cut off",
                     OperationCanceledException => "it ran past its time limit",
                     InvalidDataException => "a file didn't match its recorded SHA-256",
                     EvidenceKeyUnavailableException => "the evidence key wasn't available",

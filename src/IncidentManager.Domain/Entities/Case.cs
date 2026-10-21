@@ -2246,6 +2246,60 @@ public class Case : AuditableEntity, IHashableEntity
     public bool MaterialityApplies => Classification is Domain.Enums.Classification.Incident or Domain.Enums.Classification.Breach
         || (Classification == Domain.Enums.Classification.AdverseEvent && Materiality.Status != MaterialityStatus.Undetermined);
 
+    /// <summary>Most meaningful words a title gives its case number's slug (FR-58).</summary>
+    public const int SlugWords = 4;
+
+    /// <summary>Longest slug source taken from a title, in characters.</summary>
+    public const int SlugSourceMaxLength = 42;
+
+    // Words that carry no meaning on their own: not counted towards SlugWords, and never the slug's last word.
+    private static readonly HashSet<string> SlugStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "a", "an", "the", "of", "for", "to", "in", "on", "at", "by", "with", "and", "or", "from", "against",
+    };
+
+    /// <summary>
+    /// The case-number slug source for a title, as the New case form and the import derive it: the title's words up to
+    /// the <see cref="SlugWords"/>th meaningful one, within <see cref="SlugSourceMaxLength"/> characters, never ending on
+    /// a stop-word ("Walkthrough credential phishing against" read as cut off). Empty for an empty title.
+    /// </summary>
+    public static string SlugSource(string? title)
+    {
+        var words = (title ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return "";
+        var kept = new List<string>();
+        var length = 0;
+        var meaningful = 0;
+        foreach (var w in words)
+        {
+            var added = (kept.Count == 0 ? 0 : 1) + w.Length;
+            if (length + added > SlugSourceMaxLength) break;
+            kept.Add(w);
+            length += added;
+            if (!IsSlugFiller(w) && ++meaningful == SlugWords) break;
+        }
+        // Never end on a stop-word (or a bare "-"), unless that leaves nothing: a title of stop-words keeps its first word.
+        while (kept.Count > 1 && IsSlugFiller(kept[^1])) kept.RemoveAt(kept.Count - 1);
+        if (kept.Count == 0) kept.Add(CapChars(words[0], SlugSourceMaxLength));   // a first word longer than the cap
+        return string.Join(' ', kept);
+    }
+
+    // A stop-word (compared without the punctuation the slug drops: "against," is still "against"), or a word with no
+    // letter or digit in it, which the slug drops altogether.
+    private static bool IsSlugFiller(string word)
+    {
+        var bare = new string(word.Where(char.IsLetterOrDigit).ToArray());
+        return bare.Length == 0 || SlugStopWords.Contains(bare);
+    }
+
+    // At most max characters, never half a surrogate pair.
+    private static string CapChars(string s, int max)
+    {
+        if (s.Length <= max) return s;
+        var cut = char.IsHighSurrogate(s[max - 1]) ? max - 1 : max;
+        return s[..cut];
+    }
+
     /// <summary>Turns free text into an identifier-safe slug for the case number.</summary>
     public static string Slug(string s)
     {

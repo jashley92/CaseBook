@@ -121,13 +121,13 @@ public sealed class TaskCompletionTests : IDisposable
         var dropped = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == "Dropped");
         await svc.SetActionItemStatusAsync(caseId, dropped.Id, ActionItemStatus.Cancelled);
         await svc.Invoking(s => s.CompleteActionItemAsync(caseId, dropped.Id, null, null, null))
-            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*cancelled*");
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*canceled*");
         // REV-23: nor by setting its status (the bulk "Mark N done").
         await svc.Invoking(s => s.SetActionItemStatusAsync(caseId, dropped.Id, ActionItemStatus.Done))
-            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*was cancelled*");
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*was canceled*");
         // BUG-304: nor by editing it.
         await svc.Invoking(s => s.UpdateActionItemAsync(caseId, dropped.Id, "Dropped", null, null, ActionItemStatus.Done, null))
-            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*was cancelled*");
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*was canceled*");
         (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == "Dropped").Status.Should().Be(ActionItemStatus.Cancelled);
     }
 
@@ -389,7 +389,7 @@ public sealed class TaskCompletionTests : IDisposable
 
         await using var db = new AppDbContext(Options());
         (await db.ActionItemComments.SingleAsync(x => x.ActionItemId == taskId)).Body
-            .Should().Be("Cancelled: Covered by the tenant-wide session revoke");
+            .Should().Be("Canceled: Covered by the tenant-wide session revoke");
     }
 
     [Fact]
@@ -401,10 +401,10 @@ public sealed class TaskCompletionTests : IDisposable
         var t = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(x => x.Id == taskId);
         t.Status.Should().Be(ActionItemStatus.Cancelled);
         await using (var db = new AppDbContext(Options()))
-            (await db.ActionItemComments.SingleAsync(x => x.ActionItemId == taskId)).Body.Should().Be("Cancelled: Duplicate of the containment task");
+            (await db.ActionItemComments.SingleAsync(x => x.ActionItemId == taskId)).Body.Should().Be("Canceled: Duplicate of the containment task");
 
         var again = () => svc.CancelActionItemAsync(caseId, taskId, null);
-        await again.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cancelled already*");
+        await again.Should().ThrowAsync<InvalidOperationException>().WithMessage("*canceled already*");
 
         await svc.AddActionItemAsync(caseId, "No reason needed", null, null);
         var other = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(x => x.Title == "No reason needed");

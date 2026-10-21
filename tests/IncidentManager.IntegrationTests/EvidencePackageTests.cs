@@ -371,7 +371,7 @@ public sealed class EvidencePackageTests : IDisposable
         var trail = await PackageAuditAsync(database, package.Id);
         trail.Should().HaveCount(2);
         trail[0].Should().StartWith("Began sending");
-        trail[1].Should().Contain("stopped after 1 of 3 files (the download was cancelled or cut off)").And.Contain("Sent in full: one.bin.")
+        trail[1].Should().Contain("stopped after 1 of 3 files (the download was canceled or cut off)").And.Contain("Sent in full: one.bin.")
             .And.Contain("Sent in part: two.bin.").And.Contain("Not sent: three.bin.").And.Contain("MANIFEST.txt wasn't sent in full");
         log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Which.Message.Should()
             .Contain("stopped after 1 of 3 files").And.Contain("recorded as partial");

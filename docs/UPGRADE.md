@@ -290,6 +290,21 @@ From an analyst walkthrough (one case filed, worked and readied for close in a r
   form says the case shows on your Desk (not "My work"), says "Tick what's true" only when there is something to
   tick, and "No open case already has these indicators" rather than a "no open cases" that a possibly-related open case
   then contradicted.
+- **The Desk's *Your cases* fits.** Each case leads with its title, the number small underneath, so *Next for you*
+  and *Since you looked* no longer sit behind a horizontal scroll; numbers in the side column are cut with "…" rather
+  than broken mid-word.
+- **Long case numbers are cut with "…"** (the full number on hover) in the strip shown once you scroll and on phones;
+  the strip's *Advance* button stays on one line. **New case numbers are shorter:** up to four meaningful words of the
+  title, never ending on a word like "against" or "the" (`2026-130_Walkthrough_credential_phishing`). Existing numbers
+  don't change.
+- **Tasks:** the due date stays on one line with the time under it (it wrapped over five or six lines once a task had a
+  result), and the add form lays out cleanly beside the side panel.
+- **IOCs & entities:** values wrap only at `.`, `@` and `/`, never inside an IP address; the row actions are one compact
+  group (icons only when narrow); relationship pickers show "Account: label (value)", so two with one label differ.
+- **Small fixes:** the `[[` list stays on screen beside the timeline's pop-out; the floating Add no longer covers the
+  side panel's last link; the Evidence file picker clears after an upload; the *Paper* tab no longer looks disabled.
+- **"Canceled" is spelled one way**, including the reason note a canceled task keeps (older "Cancelled:" notes are
+  still read as reasons).
 
 The rest of this release:
 
