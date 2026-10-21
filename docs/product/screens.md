@@ -57,7 +57,7 @@ From top to bottom:
 - **Header**: the **period** the timing, target and panel figures cover (30 days, this quarter to date, 12
   months, the default, or a **Custom** range of dates, both included, up to five years) and **Include exercises**
   (exercise cases are left out unless included). A custom range is compared with the same number of days just
-  before it. All of it lives in the URL (`/program?period=quarter&exercises=true`, `/program?from=2026-07-01&to=2026-09-30`). **Export metrics (CSV)** downloads the figures.
+  before it. All of it lives in the URL (`/program?period=quarter&exercises=true`, `/program?from=2026-07-01&to=2026-09-30`). **Export this view** downloads the figures.
   A **team** picker (CAP-36, shown once teams exist) cuts every figure to one team's cases, or those with no team, by
   the team each case belongs to now (`&team=SocTier1`, `&team=none`); its drill-ins to the case list and the CSV keep it.
 - **Needs action**: what someone should act on now. Regulatory notices at risk of or past their window come first,
@@ -94,7 +94,7 @@ From top to bottom:
    window. A vendor filter (`?vendor=`, shown as a *Vendor:* chip) comes from the New case form's *Seen before* link
    (CAP-24). A **team** filter (CAP-36, shown once teams exist: *Any team*, *No team*, or one team; `?team=SocTier1`)
    narrows to a team's cases after need-to-know; a row names its team. Saved under **Views**, a view is *Only me*,
-   *Everyone*, or one of your teams (`<team> only`), which only that team's members see. All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export CSV**, beside
+   *Everyone*, or one of your teams (`<team> only`), which only that team's members see. All filters live in the URL, so a view can be bookmarked or saved under **Views**. **Export these N**, beside
    Views, downloads every case the filters match (not only the page shown), with the list's columns and the detected,
    contained, resolved, closed and reported times (CAP-17; up to 10,000 cases) and, last, the case's team (CAP-36).
 4. **A case row.** The left edge is marked for High or Critical cases. In the list, `j`/`k` move, `p` opens a
@@ -388,7 +388,7 @@ lessons-learned report.
 | Screen | What it's for | Image |
 |---|---|---|
 | Campaigns | Cases linked "same campaign", rolled up: shared indicators, combined ATT&CK, merged event timeline | ![](../screenshots/campaign-rollup.png) |
-| Indicators | Every indicator across cases you can see, most-shared first, 300 a page (*Previous* / *Next*). *Export CSV* downloads everything the filters match, every verdict, with each indicator's cases; *Export IOC feed* is the malicious-only blocklist | ![](../screenshots/indicators.png) |
+| Indicators | Every indicator across cases you can see, most-shared first, 300 a page (*Previous* / *Next*). *Export these* downloads everything the filters match, every verdict, with each indicator's cases; the malicious-only blocklist (the IOC feed) is on Exports | ![](../screenshots/indicators.png) |
 | ATT&CK coverage | Techniques and tactics seen across cases, shaded by count | ![](../screenshots/attack-coverage.png) |
 | Improvement actions | The cross-case register of post-incident follow-up | ![](../screenshots/improvement-actions.png) |
 | Program report | Quarter-on-quarter figures for leadership | ![](../screenshots/program-report.png) |
@@ -399,7 +399,7 @@ lessons-learned report.
 |---|---|---|
 | Integrity & audit | Verify the audit chain, see seals, search the whole audit trail (case, actor, action, entity type, dates; paged by sequence, so new entries don't shift the pages) and export it as CSV, export a compliance bundle. A setting's *History* link in Administration opens it filtered to that setting | ![](../screenshots/integrity-audit.png) |
 | Access log | Who read which case or downloaded which artifact (administrators). Its CSV, like the audit trail's, holds up to 1,000,000 rows of the filter, streamed; a cut file says so (CAP-32) | ![](../screenshots/access-log.png) |
-| Administration | Opens on an **Overview**: *Needs attention* (every problem the checks, deliveries, jobs, backups, keys and integrity checks found, worst first, each with a link to its fix) and, on a new install, *Getting started*. A left rail of every admin area, grouped by task (Organization, Cases & workflow, Notifications, Integrations, Reports, Records & evidence, People & access, System), with a **search** at its top that finds a setting by label, key, help or an everyday word and opens it highlighted (also in Ctrl+K). Settings pages check values as they're typed, tag the ones that wait for a background job or a new sign-in, say who changed each and when, and show the server-only settings they depend on read-only. *Diagnostics* opens with the same *Needs attention*, then service health (with **Scheduled jobs**, CAP-29), storage and keys (with the **Backup set**, CAP-19), capacity and about this server | ![](../screenshots/admin-settings.png) |
+| Administration | Opens on an **Overview**: *Needs attention* (every problem the checks, deliveries, jobs, backups, keys and integrity checks found, worst first, each with a link to its fix) and, on a new install, *Getting started*. The admin areas are tabs, grouped by task (Organization, Cases & workflow, Notifications, Integrations, Reports, Records & evidence, People & access, System), with a group's pages as sub-tabs and a **filter** beside the heading that finds a setting by label, key, help or an everyday word and opens it highlighted (also in Ctrl+K). Settings pages check values as they're typed, tag the ones that wait for a background job or a new sign-in, say who changed each and when (one *Change history* per page; *Show configuration keys* shows each setting's key), and show the server-only settings they depend on read-only. *Diagnostics* opens with the same *Needs attention*, then service health (with **Scheduled jobs**, CAP-29), storage and keys (with the **Backup set**, CAP-19), capacity and about this server | ![](../screenshots/admin-settings.png) |
 | Offboarding (CAP-30) | One person who leaves, opened from Known users: roles at last sign-in, open cases they command or are on (restricted ones counted unless you're cleared), open tasks, working API tokens with **Revoke**, and whether their calendar link is live with **Void the calendar link**; a link to Team workload's reassign | |
 | Roles & access | System and custom roles, AD group mappings, and the access review: who sees across cases, restricted cases' teams, known users (each a link to their offboarding page) and active API tokens, with a CSV and **Record this review** ("Last reviewed … by …", CAP-15) | ![](../screenshots/roles-access.png) |
 | Retention review | Closed cases past case retention with their legal hold, open improvement actions and unrecorded regulatory notices; archive up to 25 at a time after confirming the list (CAP-10). No screenshot yet | — |

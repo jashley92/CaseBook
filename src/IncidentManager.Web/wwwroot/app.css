@@ -3567,3 +3567,17 @@ h6, .h6 { font-size: var(--im-text-base); }
 tr:hover > .im-row-act > *, tr:focus-within > .im-row-act > *, .im-row-act > [aria-expanded="true"] { opacity: 1; }
 @media (hover: none) { .im-row-act > * { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .im-row-act > * { transition: none; } }
+/* Walkthrough (phone): what is wider than a phone scrolls inside itself, never past the screen edge. The shared table
+   scrolls in its wrap (the sticky header gives way there, as the page doesn't scroll under it); a tab bar scrolls along
+   its row; a long unbroken value in a table cell (a path, a hash) breaks rather than widening the table. */
+@media (max-width: 767.98px) {
+    .im-c-table-wrap { overflow-x: auto; }
+    .im-c-table > thead > tr > th { position: static; }
+    .im-tabbar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+    .im-tabbar::-webkit-scrollbar { display: none; }
+    main .table td { overflow-wrap: anywhere; }
+    /* A plain table (no scrolling wrapper) scrolls inside itself too. */
+    main table.table:not(.im-c-table) { display: block; overflow-x: auto; }
+}
+/* A grid item can't shrink below its content: the task list's rows would take the width of an unbroken case number. */
+.im-desk-tasks > li, .im-desk-needs > li { min-width: 0; }
