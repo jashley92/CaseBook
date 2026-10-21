@@ -14,6 +14,7 @@
 @inject ToastService Toasts
 @inject UnsavedEdits Edits
 @inject IncidentManager.Application.Lessons.LessonsService Lessons
+@inject IJSRuntime JS
 
 <AuthorizeView Policy="@Policies.EditCases">
     @if (_applyTemplates is { Count: > 0 })
@@ -109,7 +110,18 @@
             aria-controls="task-add-form" @onclick="() => _addOpen = !_addOpen">
         <span class="bi @(_addOpen ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(_addOpen ? "Hide form" : "Add task")
     </button>
-    <div id="task-add-form" class="card mb-3 @(_addOpen ? "" : "im-phone-collapsed")">
+    @* Down a long task list, Add stays to hand (shown by CSS once the form has scrolled away), and opens the same form
+       popped out at the right, so the reader keeps their place. Its slot keeps its height meanwhile, so nothing moves. *@
+    <button type="button" class="btn btn-primary tl-add-fab task-add-fab" @onclick="OpenAddDocked">
+        <span class="bi bi-plus-lg" aria-hidden="true"></span> Add task
+    </button>
+    <div id="task-add-slot" class="mb-3">
+    <div id="task-add-form" class="card @(_addOpen ? "" : "im-phone-collapsed")" role="region" aria-label="Add a task">
+        @* Shown only while the form is popped out (CSS: html[data-task-docked]). *@
+        <div class="task-docked-head">
+            <h2 class="im-entity-panel-h mb-0">Add a task</h2>
+            <button type="button" class="btn-close" aria-label="Close the form (what's typed stays)" @onclick="CloseAddDocked"></button>
+        </div>
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-3">
                 <label class="form-label small mb-0" for="task-title">Task</label>
@@ -150,10 +162,11 @@
                 <TimeInput id="task-due-time" class="form-control form-control-sm" @bind-Value="_taskDueTime"
                        title="Leave blank for end of day." />
             </div>
-            <div class="col-md-1">
+            <div class="col-md-1 task-add-actions">
                 <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add task</button>
             </div>
         </div>
+    </div>
     </div>
 </AuthorizeView>
 
@@ -805,12 +818,44 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            try { await JS.InvokeVoidAsync("imMotion.watchTaskAdd"); }
+            catch (JSException) { /* cosmetic */ }
+        }
         if (!AutofocusComposer || !CanEdit) return;
         _addOpen = true;
         try { await _titleInput.FocusAsync(); }
         catch (InvalidOperationException) { /* not rendered yet */ }
         catch (JSException) { /* circuit/JS not ready */ }
         await OnAutofocusHandled.InvokeAsync();
+    }
+
+    // --- The add form popped out (the page's data-task-docked; motion.js watchTaskAdd) ---
+    private async Task OpenAddDocked()
+    {
+        _addOpen = true;
+        await SetAddDockedAsync(true);
+        try { await _titleInput.FocusAsync(); }
+        catch (JSException) { /* cosmetic */ }
+        catch (InvalidOperationException) { /* not rendered yet */ }
+    }
+
+    // Closed from its ✕ or by an add: it goes back to its place on the page, and what's typed stays.
+    private Task CloseAddDocked() => SetAddDockedAsync(false);
+
+    private async Task SetAddDockedAsync(bool docked)
+    {
+        try { await JS.InvokeVoidAsync("imMotion.setTaskDocked", docked); }
+        catch (JSException) { /* cosmetic */ }
+        catch (InvalidOperationException) { /* prerendering */ }
+    }
+
+    private async Task UnwatchAddAsync()
+    {
+        try { await JS.InvokeVoidAsync("imMotion.unwatchTaskAdd"); }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
+        { /* the circuit may already be gone */ }
     }
 
     // --- INV-13: task kinds ---
@@ -937,6 +982,7 @@ else
         Disposed = true;
         _commentLoads.Invalidate();
         Edits.Forget(this);   // BUG-578
+        _ = UnwatchAddAsync();
     }
 
     private async Task CompleteKey(KeyboardEventArgs e, ActionItem t)
@@ -987,6 +1033,7 @@ else
         if (_taskDueTime == dueTime) _taskDueTime = null;
         await OnChanged.InvokeAsync();
         Toasts.Success("Task added");
+        await CloseAddDocked();   // popped out: back to its place (inline, a no-op)
     }
 
     // A due deadline is entered in the viewer's active display zone (U-29) — so "what you pick is what you

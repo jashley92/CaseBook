@@ -1300,7 +1300,7 @@ h1:focus {
 .im-panel-scrim { position: fixed; inset: 0; background: var(--im-scrim); z-index: 1040; }
 .im-entity-panel {
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
-    width: min(26rem, 100vw);
+    width: min(26rem, 100%);   /* 100vw counts a scrollbar, and would push it off the left edge */
     display: flex; flex-direction: column;
     background: var(--im-surface); color: var(--im-text);
     border-left: 1px solid var(--im-border-strong); box-shadow: var(--im-shadow-lg);
@@ -2657,6 +2657,26 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .tl-add-fab { display: none; position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1030; border-radius: 999px;
     padding: 0.5rem 1rem; box-shadow: var(--im-shadow-lg); }
 html[data-tl-away] .tl-add-fab { display: inline-flex; align-items: center; gap: 0.35rem; }
+/* The Tasks tab's add form, the same way: a floating Add once the form has scrolled away, opening the form popped out. */
+html[data-task-away]:not([data-task-docked]) .task-add-fab { display: inline-flex; align-items: center; gap: 0.35rem; }
+#task-add-form { container: taskadd / inline-size; }
+@container taskadd (max-width: 40rem) {
+    /* The task's title a row of its own, the rest two to a row. */
+    #task-add-form > .card-body > [class*="col-md-"] { flex: 0 0 auto; width: 50%; }
+    #task-add-form > .card-body > .col-md-3 { width: 100%; }
+}
+.task-docked-head { display: none; }
+html[data-task-docked] #task-add-form { display: block !important; position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
+    width: min(28rem, 100%); overflow-y: auto; border-radius: 0; border: 0; border-left: 1px solid var(--im-border-strong);
+    background: var(--im-surface); box-shadow: var(--im-shadow-lg); }
+html[data-task-docked] .task-docked-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    padding: var(--im-space-4); border-bottom: 1px solid var(--im-border); }
+/* Its Add is the sheet's footer, at the bottom of the window. */
+html[data-task-docked] #task-add-form > .card-body { padding-bottom: 4rem; }
+html[data-task-docked] .task-add-actions { position: absolute; left: 0; right: 0; bottom: 0; width: auto !important; margin: 0;
+    display: flex; justify-content: flex-end; padding: 0.6rem var(--im-space-4); border-top: 1px solid var(--im-border);
+    background: var(--im-surface); }
+html[data-task-docked] .task-add-actions .btn { width: auto !important; white-space: nowrap; }
 /* The composer lays itself out for its own width (inline under the toolbar, or popped out): narrow, its fields stack. */
 #timeline-dropzone { container: tlcomposer / inline-size; }
 @container tlcomposer (max-width: 40rem) {
@@ -2668,7 +2688,7 @@ html[data-tl-away] .tl-add-fab { display: inline-flex; align-items: center; gap:
     #timeline-dropzone .row > [class*="col-md-"] { width: 100%; }
 }
 html[data-tl-docked] #timeline-dropzone:not(.d-none) { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
-    width: min(34rem, 100vw); margin: 0 !important; overflow-y: auto; border-radius: 0; border: 0;
+    width: min(34rem, 100%); margin: 0 !important; overflow-y: auto; border-radius: 0; border: 0;
     border-left: 1px solid var(--im-border-strong); background: var(--im-surface); box-shadow: var(--im-shadow-lg); }
 html[data-tl-docked] #timeline-dropzone > .card-body { display: flex; flex-direction: column; min-height: 100%; padding-bottom: 0; }
 .tl-docked-head { display: none; }

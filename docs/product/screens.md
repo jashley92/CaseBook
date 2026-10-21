@@ -362,7 +362,8 @@ withdrawn until that changes.
    notice under the case header offers that rung's playbook ("The Breach response playbook has 6 steps not on this
    case. *Add them…*"); it opens this card with the missing steps ticked, and adds nothing until you apply them.
    Dismiss it with ×.
-2. **Add a task**: title, owner (a person, or a free-text external name), kind, due date and time.
+2. **Add a task**: title, owner (a person, or a free-text external name), kind, due date and time. Scrolled down a long
+   list, a floating *Add task* opens this form popped out on the right, so you keep your place.
 3. **Grouped by kind** (Investigate, Contain, Eradicate, Recover, Notify, General), with progress.
 4. **"About" chip**: the entity, evidence file or timeline entry the task was raised from. Click to jump there.
 5. **Mark done** (with a result that can go on the timeline), **edit**, **comment**.

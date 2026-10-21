@@ -114,5 +114,64 @@ window.imMotion = {
             document.documentElement.removeAttribute('data-tl-away');
             document.documentElement.removeAttribute('data-tl-docked');
         } catch (e) { /* no-op */ }
+    },
+    // The Tasks tab's add form (CaseTasksTab): data-task-away on <html> while it has scrolled up under the sticky tab
+    // strip (CSS shows the floating Add), and data-task-docked while it's popped out at the right. Its slot keeps its
+    // height while it's out, so nothing on the page moves. A title being written pops it out as it's scrolled away
+    // (unless the reader closed the pop-out, until the form has been back in view), and it goes back once its place is.
+    watchTaskAdd: function () {
+        try {
+            window.imMotion.unwatchTaskAdd();
+            var self = window.imMotion;
+            var update = function () {
+                var root = document.documentElement;
+                var slot = document.getElementById('task-add-slot');
+                if (!slot) return;
+                var under = self._stickyBottom();
+                var bottom = slot.getBoundingClientRect().bottom;
+                var away = bottom < under;
+                if (root.hasAttribute('data-task-docked')) {
+                    if (bottom > under + 8) self.setTaskDocked(false);
+                } else if (away && !window._imTaskHeld) {
+                    var title = document.getElementById('task-title');
+                    if (title && title.value.trim()) self.setTaskDocked(true);
+                }
+                if (!away) window._imTaskHeld = false;
+                root.toggleAttribute('data-task-away', away);
+            };
+            window.addEventListener('scroll', update, { passive: true });
+            window.addEventListener('resize', update, { passive: true });
+            window._imTaskWatch = update;
+            update();
+        } catch (e) { /* no-op */ }
+    },
+    setTaskDocked: function (on) {
+        try {
+            var root = document.documentElement;
+            var slot = document.getElementById('task-add-slot');
+            if (on) {
+                if (slot) slot.style.minHeight = slot.offsetHeight + 'px';
+                root.setAttribute('data-task-docked', '');
+                return;
+            }
+            if (!root.hasAttribute('data-task-docked')) return;
+            root.removeAttribute('data-task-docked');
+            if (slot) slot.style.minHeight = '';
+            window._imTaskHeld = true;
+            var form = document.getElementById('task-add-form');
+            if (form && form.contains(document.activeElement)) document.activeElement.blur();
+        } catch (e) { /* no-op */ }
+    },
+    unwatchTaskAdd: function () {
+        try {
+            if (window._imTaskWatch) {
+                window.removeEventListener('scroll', window._imTaskWatch);
+                window.removeEventListener('resize', window._imTaskWatch);
+                window._imTaskWatch = null;
+            }
+            window._imTaskHeld = false;
+            document.documentElement.removeAttribute('data-task-away');
+            document.documentElement.removeAttribute('data-task-docked');
+        } catch (e) { /* no-op */ }
     }
 };

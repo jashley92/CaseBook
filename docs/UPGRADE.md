@@ -238,8 +238,16 @@ under Administration › Evidence storage.
 - **Writing on a long timeline doesn't jump.** Scrolled down, a floating *Add* stays in the corner, and the composer
   (from it, or from *Edit* on an entry) pops out on the right, full height like the other panels, instead of scrolling
   back to the top. An open composer you scroll past pops out the same way, and returns under the toolbar at the top.
-  There's no backdrop, so the timeline stays readable beside it; in the pop-out the fields are one column and the Add
-  button stays in view. Saving or closing leaves you where you were.
+  There's no backdrop, so the timeline stays readable beside it. The pop-out is laid out as a side sheet: the fields
+  from the top (short ones two to a row), and the Add button as its footer at the bottom of the window. Saving or
+  closing leaves you where you were.
+- **Adding a task down a long list works the same way.** Scrolled down the Tasks tab, a floating *Add task* opens the
+  add form popped out on the right; a task you'd started typing pops out as you scroll past it, and the form goes back
+  to the top of the tab when you scroll up. Closing it keeps what you typed.
+- **The case header strip shown once you scroll** has its marks on one line: the severity (*High*) sat higher than
+  the category and the phase, and the deadline clock lower.
+- **Side panels fit a narrow window.** The entity panel and the pop-outs were as wide as the window plus its
+  scrollbar, so in a narrow window their left edge was cut off.
 - **A task can be cancelled from its row** (the ✕ button), with an optional reason kept under it. Before, cancelling
   meant opening Edit and changing the status.
 - **The task forms line up.** In *Mark done*, the timeline choice is a label over one control, like its neighbours,
