@@ -253,7 +253,8 @@ public enum TransitionKind
     Classification = 0,
     Phase = 1,
     Severity = 2,
-    Verdict = 3   // BUG-414: an entity verdict change (EntityVerdictChange)
+    Verdict = 3,   // BUG-414: an entity verdict change (EntityVerdictChange)
+    Contained = 4  // FR-51: when the case was contained (its change id is the case's own id)
 }
 
 /// <summary>BUG-416: why an account's directory details were recorded. Stored and hashed: append only.</summary>

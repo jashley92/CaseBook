@@ -214,9 +214,10 @@ first with `casebook-keytool export`.
 
 ### v1.15.0
 
-**A migration** adds three nullable columns to `Evidence` (`PurgedAtUtc`, `PurgedBy`, `PurgedReason`); nothing is
-backfilled. **Row hashes move to format 6**, which adds an evidence file's purge; every other record builds what format
-5 built, so existing rows keep verifying and nothing is upgraded. One new setting, `Evidence:ReinstateWithinDays` (30),
+**Two migrations** add nullable columns: three to `Evidence` (`PurgedAtUtc`, `PurgedBy`, `PurgedReason`) and two to
+`Cases` (`ContainedBy`, `ContainedRecordedAtUtc`); nothing is backfilled. **Row hashes move to format 7** (format 6 adds
+an evidence file's purge, format 7 who recorded a case's containment and when); every other record builds what format 5
+built, so existing rows keep verifying and nothing is upgraded. One new setting, `Evidence:ReinstateWithinDays` (30),
 under Administration › Evidence storage.
 
 - **A withdrawn file can be reinstated**, with a reason, for `Evidence:ReinstateWithinDays` after its withdrawal: the
@@ -309,7 +310,8 @@ From an analyst walkthrough (one case filed, worked and readied for close in a r
 **Time to contain now runs to when containment was done, not when it began.** Moving a case into Containment starts
 containment and no longer records it as contained. While a case is in Containment, *Mark contained…* (beside the
 containment clock in Next, and in Actions) records when it was contained, defaulting to now with the usual time nudges;
-the containment SLA clock and time to contain stop there, and the timeline shows a "Contained" milestone. Moving on from
+the containment SLA clock and time to contain stop there, and the timeline shows a "Contained" milestone with who recorded
+it; its time can be corrected afterwards, with a reason, like a phase change's (*Correct the time*). Moving on from
 Containment (to Eradication, Recovery or Post-incident, or closing it) before it has been marked contained asks when it
 was: required, not before the case entered Containment, not after the move, and not in the future. Skipping Containment
 works as before. Cases from earlier releases keep the contained time they were given on entering Containment, and an

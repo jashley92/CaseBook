@@ -682,6 +682,13 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<long?>("ContainedAtUtc")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ContainedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ContainedRecordedAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ContainmentNotNeededReason")
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");

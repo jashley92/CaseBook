@@ -139,7 +139,10 @@ public static class CaseMilestones
         if (c.ContainedAtUtc is { } contained && c.ContainmentNotNeededReason is null
             && !c.StatusChanges.Any(x => x.To == CasePhase.Containment && x.From is not null && x.EffectiveAt == contained))
             list.Add(new CaseMilestone($"contained:{c.Id}", contained, MilestoneKind.Contained, "Contained",
-                c.DetectedAtUtc is { } det && contained > det ? $"{Span(contained - det)} after detection" : null, null, "case record"));
+                c.DetectedAtUtc is { } det && contained > det ? $"{Span(contained - det)} after detection" : null,
+                c.ContainedBy, "containment",   // FR-51: who recorded it; its time is corrected like a transition's
+                RecordedAtUtc: c.ContainedRecordedAtUtc is { } rec ? Later(contained, rec) : null,
+                Transition: (TransitionKind.Contained, c.Id)));
 
         // HR-05: findings: an entity re-assessed (e.g. Unknown → Compromised), with the reason given.
         foreach (var x in c.VerdictChanges)

@@ -3117,6 +3117,8 @@ else
             if (label is not null && current == m.AtUtc)
                 yield return $"{label} moves with it, so the response-time and SLA figures are recalculated.";
         }
+        if (moves && t.Kind == TransitionKind.Contained)   // FR-51
+            yield return "Time to contain and the containment target are measured to the new time.";
         if (t.Kind == TransitionKind.Verdict)   // BUG-414
             yield return "The entity's verdict history shows it as determined then.";
         else

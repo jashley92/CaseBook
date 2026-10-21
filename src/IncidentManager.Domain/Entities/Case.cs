@@ -228,6 +228,11 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public DateTimeOffset? ContainedAtUtc { get; set; }
 
+    /// <summary>FR-51: who recorded the containment (marked it, or said when moving on) and when they did, so the
+    /// Contained milestone says who and shows a time given after the fact as such. Null before FR-51.</summary>
+    public string? ContainedBy { get; set; }
+    public DateTimeOffset? ContainedRecordedAtUtc { get; set; }
+
     /// <summary>FR-51: while the case is in Containment, when it entered it (the latest move in, at its effective time):
     /// the earliest it can have been contained. Null in any other phase.</summary>
     public DateTimeOffset? ContainmentStartedAtUtc => Phase != CasePhase.Containment ? null
@@ -514,11 +519,11 @@ public class Case : AuditableEntity, IHashableEntity
 
         // BUG-165: going past Containment without it, the containment milestone is what was said: when it was contained,
         // or that it wasn't needed (the clock stops at this move).
-        if ((skips || leaves) && containedAtUtc is { } contained) ContainedAtUtc = contained;   // checked above
+        if ((skips || leaves) && containedAtUtc is { } contained) SetContained(contained, actor, nowUtc);   // checked above
         else if (skips)
         {
             ContainmentNotNeededReason = notNeeded;
-            ContainedAtUtc = at;
+            SetContained(at, actor, nowUtc);
         }
 
         if (skipsRecovery && resolvedAtUtc is { } resolved) ResolvedAtUtc = resolved;   // BUG-208, checked above
@@ -529,7 +534,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (to == CasePhase.Containment && ContainmentNotNeededReason is not null)
         {
             ContainmentNotNeededReason = null;
-            ContainedAtUtc = null;
+            (ContainedAtUtc, ContainedBy, ContainedRecordedAtUtc) = (null, null, null);
             // REV-11: and so it wasn't resolved before that. A resolution recorded on the way past (the skip to Recovery)
             // would now read as before the containment; it's resolved again when the case next reaches Recovery.
             if (ResolvedAtUtc < at) ResolvedAtUtc = null;
@@ -595,8 +600,47 @@ public class Case : AuditableEntity, IHashableEntity
             throw new InvalidOperationException($"This case was already marked contained ({already.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
         var at = containedAtUtc ?? nowUtc;
         CheckContainedAt(at, nowUtc, null);
-        ContainedAtUtc = at;
+        SetContained(at, actor, nowUtc);
         Touch(actor, nowUtc);
+    }
+
+    private void SetContained(DateTimeOffset at, string actor, DateTimeOffset nowUtc) =>
+        (ContainedAtUtc, ContainedBy, ContainedRecordedAtUtc) = (at, actor, nowUtc);
+
+    /// <summary>
+    /// FR-51: corrects when the case was contained, as <see cref="CorrectTransitionTime"/> does a transition's time:
+    /// append-only, with why. Not in the future, before detection or the move into Containment that it ended, nor after the
+    /// move on from Containment or the resolution. Who recorded it, and when, stay as they were.
+    /// </summary>
+    private TransitionTimeCorrection CorrectContainedTime(Guid changeId, DateTimeOffset newAt, string reason, string actor,
+        DateTimeOffset nowUtc)
+    {
+        if (changeId != Id || ContainedAtUtc is not { } old || ContainmentNotNeededReason is not null)
+            throw new InvalidOperationException("This case has no containment time to correct.");
+        if (newAt > nowUtc) throw new ArgumentException("When it was contained can't be in the future.");
+        if (DetectedAtUtc is { } det && ToMinute(newAt) < ToMinute(det))
+            throw new ArgumentException("It can't have been contained before it was detected.");
+        var into = StatusChanges.Where(x => x.To == CasePhase.Containment && x.From is not null && x.EffectiveAt <= old)
+            .Select(x => (DateTimeOffset?)x.EffectiveAt).Max();
+        if (into is { } started && ToMinute(newAt) < ToMinute(started))
+            throw new ArgumentException($"It can't have been contained before it entered Containment ({started.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+        var outOf = StatusChanges.Where(x => x.From == CasePhase.Containment && x.EffectiveAt >= old)
+            .Select(x => (DateTimeOffset?)x.EffectiveAt).Min();
+        if (outOf is { } moved && newAt > moved)
+            throw new ArgumentException($"It can't have been contained after the case moved on from Containment ({moved.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+        if (ResolvedAtUtc is { } resolved && newAt > resolved)
+            throw new ArgumentException("That would date the containment after the resolution.");
+        if (newAt == old) throw new ArgumentException("That's already when it happened.");
+
+        ContainedAtUtc = newAt;
+        var correction = new TransitionTimeCorrection
+        {
+            CaseId = Id, Kind = TransitionKind.Contained, ChangeId = Id, FromEffectiveUtc = old, ToEffectiveUtc = newAt,
+            Reason = reason, CreatedBy = actor, CreatedAtUtc = nowUtc
+        };
+        TimeCorrections.Add(correction);
+        Touch(actor, nowUtc);
+        return correction;
     }
 
     // FR-51: a contained time stated for a move (a skip, BUG-165, or leaving Containment) or marked on its own. Compared to
@@ -1978,6 +2022,7 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException("Give a reason for correcting when this happened.");
         if (reason.Length > 2000)
             throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+        if (kind == TransitionKind.Contained) return CorrectContainedTime(changeId, newEffectiveUtc, reason, actor, nowUtc);
 
         // The changes of this kind that can be re-dated, in the order they were made.
         var changes = kind switch
@@ -2276,7 +2321,10 @@ public class Case : AuditableEntity, IHashableEntity
             () => "|holdrelease|" + Canonical.Text(LegalHoldReleaseRequestedBy) + "|" + Canonical.Time(LegalHoldReleaseRequestedAtUtc)
                   + "|" + Canonical.Text(LegalHoldReleaseReason))
         // CAP-36: from format 5, the owning team, only when there is one (a case without a team keeps its exact hash).
-        + Canonical.Since(5, TeamId is not null, () => "|team|" + TeamId!.Value.ToString("N"));
+        + Canonical.Since(5, TeamId is not null, () => "|team|" + TeamId!.Value.ToString("N"))
+        // FR-51: from format 7, who recorded the containment and when, only when set (a case not marked keeps its hash).
+        + Canonical.Since(7, ContainedBy is not null || ContainedRecordedAtUtc is not null,
+            () => "|containedby|" + Canonical.Text(ContainedBy) + "|" + Canonical.Time(ContainedRecordedAtUtc));
 
     public static string FormatCaseNumber(int year, int sequence, string descriptiveName)
         => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{year:0000}-{sequence:00}_{descriptiveName}");

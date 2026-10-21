@@ -598,6 +598,40 @@ public class CaseTests
     }
 
     [Fact]
+    public void The_contained_milestone_says_who_and_its_time_is_corrected_like_a_transition(/* FR-51 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        c.MarkContained("an1", Now.AddHours(5), Now.AddHours(2));   // recorded three hours after it happened
+        (c.ContainedBy, c.ContainedRecordedAtUtc).Should().Be(("an1", Now.AddHours(5)));
+        var labels = new IncidentManager.Application.Cases.MilestoneLabels(x => x?.ToString() ?? "CE", s => s.ToString(), p => p.ToString(), s => s.ToString());
+        IncidentManager.Application.Cases.MilestoneKind Contained() => IncidentManager.Application.Cases.MilestoneKind.Contained;
+        var m = IncidentManager.Application.Cases.CaseMilestones.Project(c, labels).Single(x => x.Kind == Contained());
+        (m.Actor, m.RecordedAtUtc, m.Transition).Should().Be(("an1", Now.AddHours(5), (TransitionKind.Contained, c.Id)));
+
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Contained, c.Id, Now.AddHours(3), "", "ic1", Now.AddHours(6)))
+            .Should().Throw<ArgumentException>().WithMessage("*reason*");
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Contained, c.Id, Now.AddMinutes(30), "earlier", "ic1", Now.AddHours(6)))
+            .Should().Throw<ArgumentException>().WithMessage("*before it entered Containment*");
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Contained, c.Id, Now.AddHours(7), "later", "ic1", Now.AddHours(6)))
+            .Should().Throw<ArgumentException>().WithMessage("*future*");
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Contained, Guid.NewGuid(), Now.AddHours(3), "x", "ic1", Now.AddHours(6)))
+            .Should().Throw<InvalidOperationException>();
+
+        var fix = c.CorrectTransitionTime(TransitionKind.Contained, c.Id, Now.AddMinutes(150), "EDR shows the last host isolated at 02:30", "ic1", Now.AddHours(6));
+        c.ContainedAtUtc.Should().Be(Now.AddMinutes(150));
+        (fix.Kind, fix.ChangeId, fix.FromEffectiveUtc, fix.ToEffectiveUtc).Should().Be((TransitionKind.Contained, c.Id, Now.AddHours(2), Now.AddMinutes(150)));
+        c.ContainedBy.Should().Be("an1", "who recorded it stays as it was");
+
+        // Once the case has moved on, not past that move; nor past the resolution.
+        c.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(7), effectiveAtUtc: Now.AddHours(4));
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Contained, c.Id, Now.AddMinutes(270), "later", "ic1", Now.AddHours(8)))
+            .Should().Throw<ArgumentException>().WithMessage("*moved on from Containment*");
+        c.CorrectTransitionTime(TransitionKind.Contained, c.Id, Now.AddHours(3), "later after all", "ic1", Now.AddHours(8));
+        c.ContainedAtUtc.Should().Be(Now.AddHours(3));
+    }
+
+    [Fact]
     public void Coming_back_into_containment_takes_back_a_resolution_recorded_on_the_way_past(/* REV-11 */)
     {
         var c = NewCase();

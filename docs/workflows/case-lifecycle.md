@@ -199,11 +199,11 @@ notification. Severity drives the SLA targets and stale-case thresholds. Timelin
 |---|---|
 | **Trigger** | While the case is in Containment and not yet contained: *Mark contained…* beside the containment clock in Next (or on its own there, "Containing since …", when no containment target applies), or Actions → *Mark contained…* (FR-51). |
 | **The user sees** | Since when the case has been in Containment, and *When it was contained*: now, or the time it was, with the Now / −1 h / −15 min / +15 min nudges. |
-| **Behind the scenes** | `CaseService.MarkContainedAsync` → `Case.MarkContained` → one save; the change to `ContainedAtUtc` is on the audit trail. |
+| **Behind the scenes** | `CaseService.MarkContainedAsync` → `Case.MarkContained` → one save; the change to `ContainedAtUtc`, `ContainedBy` and `ContainedRecordedAtUtc` is on the audit trail. A correction goes through `CorrectTransitionTimeAsync` with `TransitionKind.Contained` (the change id is the case's). |
 | **Rules** | Only in Containment and only once; the time is not in the future, not before detection, and not before the case entered Containment. The case stays in Containment until it's moved on. Time-to-contain (detected to contained) and the containment target stop at this time. The move into Containment can't afterwards be re-dated past it. |
 | **Permission** | `EditCases` |
 | **Errors** | "A case is marked contained while it's in Containment." · "This case was already marked contained (…)." · "It can't have been contained before it entered Containment (…)." · "When it was contained can't be in the future." |
-| **Afterwards** | Milestone "Contained" on the timeline (and in the handoff draft and Overview's recent list); the containment clock stops in the header, Next, the brief, lists and dashboards. |
+| **Afterwards** | Milestone "Contained" on the timeline, saying who recorded it, with *Correct the time* (a reason is required and kept as a correction record, as for a phase change) (and in the handoff draft and Overview's recent list); the containment clock stops in the header, Next, the brief, lists and dashboards. |
 
 ### Closing: outcome and closing brief
 

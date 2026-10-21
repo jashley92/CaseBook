@@ -27,6 +27,7 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
 
         b.Property(c => c.DescriptiveName).HasMaxLength(200).IsRequired();
         b.Property(c => c.ContainmentNotNeededReason).HasMaxLength(Case.MaxContainmentReason);   // BUG-165
+        b.Property(c => c.ContainedBy).HasMaxLength(200);   // FR-51: who recorded the containment
         b.Property(c => c.Title).HasMaxLength(300).IsRequired();
         b.Property(c => c.Summary).HasMaxLength(8000);
         b.Property(c => c.ReportedJurisdictions).HasMaxLength(Case.MaxReportedJurisdictionsLength);   // WF-11
