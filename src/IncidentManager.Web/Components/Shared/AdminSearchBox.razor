@@ -6,11 +6,12 @@
 @inject ISeverityLabels SevLabels
 
 <div class="adm-search @(Compact ? "adm-search-compact" : "mb-3")">
-    <label class="visually-hidden" for="@_id">Search Administration</label>
+    @* UX-58: it finds a setting or page within Administration; searching everything is the palette and Find. *@
+    <label class="visually-hidden" for="@_id">Filter Administration</label>
     <div class="input-group @(Compact ? "input-group-sm" : "")">
-        <span class="input-group-text"><span class="bi bi-search" aria-hidden="true"></span></span>
+        <span class="input-group-text"><span class="bi bi-funnel" aria-hidden="true"></span></span>
         <input id="@_id" class="form-control" type="search" autocomplete="off" spellcheck="false"
-               placeholder="@(Compact ? "Search settings" : "Search settings and pages, e.g. upload size, timeout, logo")"
+               placeholder="@(Compact ? "Filter settings" : "Filter settings and pages, e.g. upload size, timeout, logo")"
                role="combobox" aria-expanded="@(_hits.Count > 0 ? "true" : "false")" aria-controls="@($"{_id}-list")"
                aria-activedescendant="@(_active >= 0 ? $"{_id}-{_active}" : null)"
                value="@_query" @oninput="OnInput" @onkeydown="OnKey" />

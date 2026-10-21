@@ -141,8 +141,9 @@
                 }
             </select>
         }
-        <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Search cases: number, title, IOC, timeline, notes, tasks…"
-               aria-label="Search cases" @bind="_search" @bind:after="ApplyFilters" />
+        @* UX-58: this narrows the list; searching everything is the palette (Ctrl K) and Find. *@
+        <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Filter: number, title, IOC, timeline, notes, tasks…"
+               aria-label="Filter cases" @bind="_search" @bind:after="ApplyFilters" />
         @* FR-16: the rarer toggles collapse behind "More filters"; they auto-reveal whenever one is active so a
            set filter is never hidden (each also shows as a chip). *@
         <button type="button" class="btn btn-sm btn-link px-1" aria-expanded="@Ui.Aria(showAdvanced)" @onclick="() => _showMoreFilters = !_showMoreFilters">

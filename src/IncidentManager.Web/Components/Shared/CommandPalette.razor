@@ -376,11 +376,28 @@
         }
 
         if (seq != _searchSeq) return;   // a newer refresh (or closing) took over while this one awaited
+        // UX-58: the palette is the search. Typed words that name no page, command or case number lead with Find's full
+        // results, so Enter shows them there; a direct hit ("Desk", "2026-131…", a setting by its name) stays first.
+        var findAt = items.FindIndex(i => i.Group == "Find");
+        if (findAt > 0 && !items.Any(i => IsDirectHit(i, q)))
+        {
+            var find = items[findAt];
+            items.RemoveAt(findAt);
+            items.Insert(0, find);
+        }
         _results = items;
         if (_selected >= _results.Count) _selected = _results.Count - 1;
         if (_selected < 0) _selected = 0;
         StateHasChanged();
     }
+
+    // UX-58: an entry the query names outright: a page, command or setting it begins, or a case by its number.
+    private static bool IsDirectHit(Cmd c, string q) => c.Group switch
+    {
+        "Find" or "Entities" or "Record" or "Tasks" or "Evidence" => false,
+        "Cases" => c.Label.StartsWith(q, StringComparison.OrdinalIgnoreCase),   // its number, or the start of it
+        _ => c.Label.StartsWith(q, StringComparison.OrdinalIgnoreCase),
+    };
 
     // PROD-20: a palette entry that jumps to a case (used by the Pinned / Recent groups).
     private Cmd CaseCmd(string group, string icon, IncidentManager.Application.Cases.CaseListItem c) =>
