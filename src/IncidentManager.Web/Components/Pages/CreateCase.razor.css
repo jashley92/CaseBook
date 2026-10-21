@@ -15,10 +15,10 @@
     align-items: flex-start;
     padding: 12px 14px;
     border: 1px dashed var(--im-border-strong);
-    border-radius: 12px;
+    border-radius: var(--im-radius-lg);
     background: var(--im-surface-2);
 }
-.nc-template-ic { color: var(--im-accent-text); font-size: 1.1rem; margin-top: 2px; }
+.nc-template-ic { color: var(--im-accent-text); font-size: var(--im-text-lg); margin-top: 2px; }
 .nc-template-body { flex: 1; min-width: 0; }
 
 /* Progressive disclosure for the rarely-used custom case number. */
@@ -29,7 +29,7 @@
 }
 .nc-advanced > summary {
     cursor: pointer;
-    font-size: .85rem;
+    font-size: var(--im-text-sm);
     font-weight: 600;
     color: var(--im-text-muted);
     list-style: none;

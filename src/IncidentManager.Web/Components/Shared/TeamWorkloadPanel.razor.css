@@ -2,12 +2,12 @@
    (app.css); this file keeps only the panel's bespoke graphical bits — the per-analyst avatar, the
    stacked severity bar, and the stale/SLA chips. Colours derive from the global --im-* tokens. */
 
-.wl-open { font-size: 1.15rem; font-weight: 700; color: var(--im-text); }
+.wl-open { font-size: var(--im-text-lg); font-weight: 700; color: var(--im-text); }
 
 .wl-avatar {
     display: inline-grid; place-items: center;
     width: 30px; height: 30px; border-radius: 50%;
-    color: #fff; font-size: .72rem; font-weight: 700; vertical-align: middle;
+    color: #fff; font-size: var(--im-text-xs); font-weight: 700; vertical-align: middle;
 }
 .wl-avatar-none { background: var(--im-text-muted); }
 
@@ -22,10 +22,10 @@
 }
 .wl-seg { display: block; min-width: 3px; }
 .wl-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.wl-chip { font-size: .74rem; color: var(--im-text-muted); display: inline-flex; align-items: center; }
+.wl-chip { font-size: var(--im-text-xs); color: var(--im-text-muted); display: inline-flex; align-items: center; }
 .wl-chip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 4px; }
 
 .wl-stale {
     display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 999px;
-    background: var(--im-warn-bg); color: var(--im-warn); font-size: .78rem; font-weight: 600;
+    background: var(--im-warn-bg); color: var(--im-warn); font-size: var(--im-text-xs); font-weight: 600;
 }

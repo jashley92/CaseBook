@@ -6,14 +6,14 @@
     height: 3.5rem;
     padding: 0 1.25rem;
     color: #fff;
-    font-size: 1.05rem;
+    font-size: var(--im-text-base);
     font-weight: 600;
     letter-spacing: 0.2px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .brand-mark {
-    font-size: 1.35rem;
+    font-size: var(--im-text-lg);
     color: var(--im-accent, #4f8cff);
     line-height: 1;
 }
@@ -32,7 +32,7 @@
 }
 
 .brand-org {
-    font-size: 0.7rem;
+    font-size: var(--im-text-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     color: rgba(255, 255, 255, 0.6);
@@ -54,7 +54,7 @@
     right: 1rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
+    border-radius: var(--im-radius);
 }
 
 .navbar-toggler:checked {
@@ -64,9 +64,9 @@
 /* --- Section labels --- */
 .nav-group-label {
     padding: 1rem 1.5rem 0.35rem;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.09em;
+    font-size: var(--im-label-size);
+    font-weight: var(--im-label-weight);
+    letter-spacing: var(--im-label-tracking);
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.6);
 }
@@ -74,7 +74,7 @@
 /* --- Nav items --- */
 .nav-item {
     padding: 0.1rem 0.75rem;
-    font-size: 0.92rem;
+    font-size: var(--im-text-table);
 }
 
 .nav-item ::deep .nav-link {
@@ -86,13 +86,13 @@
     padding: 0 0.85rem;
     border: none;
     background: none;
-    border-radius: 8px;
+    border-radius: var(--im-radius);
     width: 100%;
     transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .nav-item ::deep .nav-link .bi {
-    font-size: 1.05rem;
+    font-size: var(--im-text-base);
     width: 1.25rem;
     text-align: center;
     opacity: 0.85;
@@ -135,7 +135,7 @@
     flex: 0 0 auto;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--im-radius);
     background: none;
     color: rgba(255, 255, 255, 0.5);
     cursor: pointer;
@@ -148,7 +148,7 @@
 }
 
 .sidebar-collapse-btn .bi {
-    font-size: 0.9rem;
+    font-size: var(--im-text-table);
     line-height: 1;
     transition: transform 0.15s ease;
 }
@@ -187,7 +187,7 @@
     }
 
     html[data-nav="collapsed"] .brand-mark {
-        font-size: 1.2rem;
+        font-size: var(--im-text-lg);
     }
 
     html[data-nav="collapsed"] .sidebar-collapse-btn {
@@ -197,7 +197,7 @@
     }
 
     html[data-nav="collapsed"] .sidebar-collapse-btn .bi {
-        font-size: 0.8rem;
+        font-size: var(--im-text-sm);
         transform: rotate(180deg);
     }
 

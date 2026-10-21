@@ -6,6 +6,7 @@ namespace IncidentManager.UnitTests;
 
 /// <summary>
 /// UX-51: one visual language. Sizes, colours and corner radii come from the design tokens in app.css's <c>:root</c>
+/// (in app.css, the components' scoped *.razor.css and their style attributes)
 /// (<c>--im-text-*</c>, <c>--im-*</c> colours, <c>--im-radius*</c>), not from values written into a rule or a
 /// component's <c>style</c>. The 2026-10-21 audit found 31 font sizes in use and 9 label styles because screens wrote
 /// their own. This is a ratchet: the counts may only go down. A new raw value fails (use a token, or add one); a screen
@@ -14,16 +15,20 @@ namespace IncidentManager.UnitTests;
 public sealed partial class DesignTokenGuardTests
 {
     // The counts as of the design-system branch's start (v1.15.0). Lower them as screens move onto the tokens.
-    private const int CssRawFontSizes = 186;
-    private const int CssRawColours = 112;
-    private const int CssRawRadii = 72;
+    private const int CssRawFontSizes = 9;
+    private const int CssRawColours = 148;
+    private const int CssRawRadii = 33;
     private const int InlineRawFontSizes = 3;
     private const int InlineRawColours = 9;
 
     [Fact]
     public void Stylesheet_sizes_colours_and_radii_come_from_the_tokens()
     {
-        var css = StripComments(File.ReadAllText(Path.Combine(WebRoot(), "wwwroot", "app.css")));
+        // app.css and the components' scoped stylesheets (*.razor.css).
+        var css = StripComments(string.Join('\n',
+            Directory.EnumerateFiles(Path.Combine(WebRoot(), "Components"), "*.razor.css", SearchOption.AllDirectories)
+                .Append(Path.Combine(WebRoot(), "wwwroot", "app.css"))
+                .Select(File.ReadAllText)));
         var decls = Declaration().Matches(css).Select(m => (Prop: m.Groups[1].Value, Value: m.Groups[2].Value.Trim())).ToList();
 
         var sizes = decls.Count(d => d.Prop == "font-size" && Digit().IsMatch(d.Value) && !d.Value.Contains("var(", StringComparison.Ordinal));
@@ -31,9 +36,9 @@ public sealed partial class DesignTokenGuardTests
         var radii = decls.Count(d => d.Prop.Contains("radius", StringComparison.Ordinal) && !d.Prop.StartsWith("--", StringComparison.Ordinal)
                                      && !d.Value.Contains("var(", StringComparison.Ordinal) && !AllowedRadius.Contains(d.Value));
 
-        Ratchet("raw font sizes in app.css (use --im-text-*)", sizes, CssRawFontSizes);
-        Ratchet("raw colours in app.css (use the --im-* colour tokens)", colours, CssRawColours);
-        Ratchet("raw corner radii in app.css (use --im-radius*)", radii, CssRawRadii);
+        Ratchet("raw font sizes in the stylesheets (use --im-text-*)", sizes, CssRawFontSizes);
+        Ratchet("raw colours in the stylesheets (use the --im-* colour tokens)", colours, CssRawColours);
+        Ratchet("raw corner radii in the stylesheets (use --im-radius*)", radii, CssRawRadii);
     }
 
     [Fact]

@@ -19,7 +19,7 @@
 }
 
 .sm-big {
-    font-size: 1.35rem;
+    font-size: var(--im-text-lg);
     font-weight: 650;
     letter-spacing: -.01em;
     color: var(--im-text);
@@ -28,13 +28,13 @@
 
 .sm-of {
     margin-left: .35rem;
-    font-size: .82rem;
+    font-size: var(--im-text-sm);
     color: var(--im-text-muted);
 }
 
 .sm-sub {
     margin-top: .55rem;
-    font-size: .82rem;
+    font-size: var(--im-text-sm);
     font-weight: 600;
     color: var(--im-text);
 }
@@ -42,7 +42,7 @@
 .sm-sub .sm-of { margin-left: 0; font-weight: 400; }
 
 .sm-pct {
-    font-size: .8rem;
+    font-size: var(--im-text-sm);
     font-weight: 650;
     padding: .1rem .55rem;
     border-radius: 999px;
@@ -106,7 +106,7 @@
     margin: .1rem 0 0;
     padding: 0;
     list-style: none;
-    font-size: .78rem;
+    font-size: var(--im-text-xs);
     color: var(--im-text-muted);
 }
 
@@ -123,7 +123,7 @@
 .sm-swatch.sm-free { box-shadow: inset 0 0 0 1px var(--im-border-strong); background: var(--im-surface); }
 .sm-swatch.sm-reserve { box-shadow: inset 0 0 0 1px var(--im-warn); }
 
-.sm-note { font-size: .78rem; color: var(--im-text-muted); }
+.sm-note { font-size: var(--im-text-xs); color: var(--im-text-muted); }
 .sm-warn-text { color: var(--im-warn); }
 .sm-danger-text { color: var(--im-danger); }
 

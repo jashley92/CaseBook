@@ -19,7 +19,7 @@
     padding: 0.5rem;
     background: var(--im-surface, #fff);
     border: 1px solid var(--im-border, #e5e7eb);
-    border-radius: 12px;
+    border-radius: var(--im-radius-lg);
 }
 
 .admin-rail-head {
@@ -37,9 +37,9 @@
 
 .admin-rail-label {
     padding: 0.75rem 0.75rem 0.35rem;
-    font-size: 0.66rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-size: var(--im-label-size);
+    font-weight: var(--im-label-weight);
+    letter-spacing: var(--im-label-tracking);
     text-transform: uppercase;
     color: var(--im-text-muted, #6b7280);
 }
@@ -50,9 +50,9 @@
     gap: 0.65rem;
     width: 100%;
     padding: 0.5rem 0.75rem;
-    border-radius: 8px;
+    border-radius: var(--im-radius);
     text-decoration: none;
-    font-size: 0.9rem;
+    font-size: var(--im-text-table);
     color: var(--im-text, #1f2937);
     transition: background-color .12s ease, color .12s ease;
 }
