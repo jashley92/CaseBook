@@ -2333,8 +2333,10 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
    ============================================================================ */
 .im-case-list > tbody > tr { position: relative; }
 .im-case-list .case-cell-title { min-width: 12rem; }
-.im-case-list .case-num { max-width: 20rem; }
-.im-case-list .case-num code { max-width: 20rem; }
+.im-case-list .case-num { width: 14rem; max-width: 14rem; }
+/* The number is cut to its column (whole in its title): wider, a long one ran into the Title column, and the table
+   pushed Opened off the page. */
+.im-case-list .case-num code { max-width: 11rem; vertical-align: bottom; }
 .im-case-list .case-title-line { display: flex; align-items: center; gap: .35rem; min-width: 0; }
 .im-case-list .case-title-line .im-badge { flex: none; }
 .im-case-list .case-cell-origin { white-space: nowrap; }

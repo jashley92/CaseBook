@@ -79,8 +79,9 @@
                             {
                                 <tr>
                                     <td class="im-cell-fill" style="min-width:12rem"><span class="im-ellipsis" title="@i.Title">@i.Title</span></td>
-                                    <td style="max-width:18rem">
-                                        <code>@i.CaseNumber</code>
+                                    <td style="width:15rem;max-width:15rem">
+                                        @* Cut to the column, whole in its title: a long number ran into Sev. *@
+                                        <code class="im-casenum" title="@i.CaseNumber">@i.CaseNumber</code>
                                         <span class="im-ellipsis text-muted small" title="@i.CaseTitle">@i.CaseTitle</span>
                                     </td>
                                     <td><span class="@Ui.SeverityBadge(i.Severity)">@SevLabels.For(i.Severity)</span></td>
