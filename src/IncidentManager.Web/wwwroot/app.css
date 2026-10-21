@@ -3581,3 +3581,9 @@ tr:hover > .im-row-act > *, tr:focus-within > .im-row-act > *, .im-row-act > [ar
 }
 /* A grid item can't shrink below its content: the task list's rows would take the width of an unbroken case number. */
 .im-desk-tasks > li, .im-desk-needs > li { min-width: 0; }
+/* Legal register: room in the rows, and the state as its marks with a gap, the phase quiet under them. */
+.im-legal-reg > :not(caption) > * > * { padding: .6rem .9rem; }
+.im-legal-reg > :not(caption) > * > :first-child { padding-left: .25rem; }
+.im-lr-state { white-space: nowrap; }
+.im-lr-marks { display: flex; align-items: center; gap: .75rem; font-size: var(--im-text-sm); }
+.im-lr-phase { margin-top: .15rem; font-size: var(--im-text-sm); color: var(--im-text-muted); }

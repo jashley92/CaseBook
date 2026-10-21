@@ -26,7 +26,7 @@ else
 {
     var now = Clock.UtcNow;
     <div class="table-responsive">
-        <table class="table table-sm align-middle im-table">
+        <table class="table table-sm align-middle im-table im-legal-reg">
             <thead>
                 <tr><th>Case</th><th>State</th><th>Legal</th><th>Materiality</th><th>Affected</th><th>Notification</th></tr>
             </thead>
@@ -39,7 +39,7 @@ else
                             <a href="cases/@Uri.EscapeDataString(r.CaseNumber)?tab=Briefing" class="im-list-title im-clamp-2" title="@r.Title">@r.Title</a>
                             <div class="small text-muted"><span class="im-casenum" title="@r.CaseNumber">@r.CaseNumber</span></div>
                         </td>
-                        <td class="text-nowrap small"><RungMark Value="r.Classification" /> <SeverityMark Value="r.Severity" /><div class="text-muted">@Ui.Label(r.Phase)</div></td>
+                        <td class="im-lr-state"><div class="im-lr-marks"><RungMark Value="r.Classification" /><SeverityMark Value="r.Severity" /></div><div class="im-lr-phase">@Ui.Label(r.Phase)</div></td>
                         <td class="small">
                             @if (r.ReferredAtUtc is { } refd) { <div>Referred @TimeDisp.DateOnly(refd)</div> }
                             @if (!string.IsNullOrWhiteSpace(r.LegalContact)) { <div class="text-muted">@r.LegalContact</div> }
