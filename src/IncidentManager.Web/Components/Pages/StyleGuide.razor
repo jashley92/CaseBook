@@ -16,6 +16,75 @@
     </Actions>
 </PageHeader>
 
+@* UX-52: the shared components. Build screens from these; DesignTokenGuardTests keeps sizes, colours and radii on the
+   tokens. *@
+<Card Title="Components" Icon="bi-grid-1x2">
+    <Meta>UX-52 · use these, don't restyle</Meta>
+    <ChildContent>
+        <p class="text-muted small">Two tab levels, one card, status as words, one list table. Each replaces several screen-specific
+            versions (the 2026-10-21 audit counted six tab styles and four card styles).</p>
+
+        <div class="sg-tok-group">
+            <div class="sg-tok-label"><code>&lt;TabBar Level="Page"&gt;</code> · a page's or a case's views</div>
+            <TabBar Label="Example views" Items="_pageTabs" Active="@_pageTab" OnSelect="k => _pageTab = k ?? _pageTab">
+                <End><button type="button" class="btn btn-sm btn-outline-secondary"><span class="bi bi-sliders" aria-hidden="true"></span> View</button></End>
+            </TabBar>
+        </div>
+        <div class="sg-tok-group">
+            <div class="sg-tok-label"><code>&lt;TabBar Level="Sub"&gt;</code> · lenses or parts inside one view</div>
+            <TabBar Label="Example lenses" Level="TabLevel.Sub" Items="_subTabs" Active="@_subTab" OnSelect="k => _subTab = k ?? _subTab" />
+        </div>
+
+        <div class="sg-tok-group">
+            <div class="sg-tok-label"><code>&lt;Card&gt;</code> · and <code>Compact</code> for a side rail</div>
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <Card Title="Improvement actions" Icon="bi-arrow-up-right-circle">
+                        <Meta>3 open</Meta>
+                        <Actions><button type="button" class="btn btn-sm btn-outline-secondary">Add</button></Actions>
+                        <ChildContent><p class="mb-0">A card is a titled section: title, quiet meta, actions at the end, then the body.</p></ChildContent>
+                    </Card>
+                </div>
+                <div class="col-md-4">
+                    <Card Title="Clocks" Compact="true">
+                        <Meta><StatusText Tone="StatusTone.Danger">2 overdue</StatusText></Meta>
+                        <ChildContent><p class="mb-0 small">A rail card's title is the label style.</p></ChildContent>
+                    </Card>
+                </div>
+            </div>
+        </div>
+
+        <div class="sg-tok-group">
+            <div class="sg-tok-label"><code>&lt;StatusText&gt;</code> · colour only for attention</div>
+            <div class="d-flex flex-wrap gap-4">
+                <StatusText>Containment</StatusText>
+                <StatusText Tone="StatusTone.Muted">Unassigned</StatusText>
+                <StatusText Tone="StatusTone.Ok">Met · took 4h</StatusText>
+                <StatusText Tone="StatusTone.Warn">Due in 3h</StatusText>
+                <StatusText Tone="StatusTone.Danger">27d overdue</StatusText>
+            </div>
+        </div>
+
+        <div class="sg-tok-group">
+            <div class="sg-tok-label"><code>&lt;DataTable&gt;</code> · sticky header, row click, actions on hover, a pager</div>
+            <DataTable TItem="ExampleRow" Items="_rows" PageSize="4" Label="Example tasks" Key="r => r.Title" OnRowClick="r => _clicked = r.Title">
+                <Header><th>Task</th><th>Owner</th><th>Due</th><th>Status</th></Header>
+                <Row Context="r">
+                    <td><a href="admin/style" @onclick:preventDefault="true">@r.Title</a></td>
+                    <td><StatusText Tone="@(r.Owner is null ? StatusTone.Muted : StatusTone.Plain)">@(r.Owner ?? "Unassigned")</StatusText></td>
+                    <td>@r.Due</td>
+                    <td><StatusText Tone="r.Tone">@r.Status</StatusText></td>
+                </Row>
+                <RowActions Context="r">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="@($"Mark {r.Title} done")"><span class="bi bi-check2" aria-hidden="true"></span></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="@($"Edit {r.Title}")"><span class="bi bi-pencil" aria-hidden="true"></span></button>
+                </RowActions>
+            </DataTable>
+            @if (_clicked is not null) { <p class="small text-muted mt-2 mb-0">Row click: @_clicked</p> }
+        </div>
+    </ChildContent>
+</Card>
+
 @* Color tokens *@
 <div class="im-card mb-3">
     <div class="im-section-head"><span>🎨 Color tokens</span><span class="im-section-note">var(--im-*) · themed light + dark</span></div>
@@ -243,6 +312,29 @@
 
 @code {
     private sealed record TokenGroup(string Name, string[] Tokens);
+
+    // UX-52 examples.
+    private string? _pageTab = "record", _subTab = "all", _clicked;
+    private static readonly TabBarItem[] _pageTabs =
+    [
+        new("Record", Key: "record", Count: 10), new("Things", Key: "things", Count: 5), new("Tasks", Key: "tasks", Count: 1),
+        new("Briefing", Key: "briefing"), new("Report & lessons", Key: "report", Attention: "NY 72h")
+    ];
+    private static readonly TabBarItem[] _subTabs =
+    [
+        new("Story", Key: "story", Count: 8), new("Everything", Key: "all", Count: 10), new("Attack chain", Key: "attack", Count: 1),
+        new("Decisions", Key: "decisions", Count: 0)
+    ];
+    private sealed record ExampleRow(string Title, string? Owner, string Due, string Status, StatusTone Tone);
+    private static readonly ExampleRow[] _rows =
+    [
+        new("Notify New York (NYDFS 500)", "Ivy Commander", "23 Sep 2026", "27d overdue", StatusTone.Danger),
+        new("Reset credentials for anyone who clicked", "Alex Analyst", "21 Oct 2026, 5:04 AM", "Due in 3h", StatusTone.Warn),
+        new("Identify all recipients", null, "21 Oct 2026, 1:04 AM", "Open", StatusTone.Plain),
+        new("Preserve the message and headers", "Dev Analyst", "21 Oct 2026, 1:04 AM", "Done", StatusTone.Muted),
+        new("Block the sender at the mail gateway", null, "22 Oct 2026", "Open", StatusTone.Plain),
+        new("Hunt for post-delivery execution", "Alex Analyst", "22 Oct 2026", "Open", StatusTone.Plain),
+    ];
 
     private static readonly TokenGroup[] TokenGroups =
     [

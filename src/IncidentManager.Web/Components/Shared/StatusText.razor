@@ -1,0 +1,31 @@
+@* UX-54: a status as words. Plain text unless it needs attention: then the tone's colour and an icon (never colour alone).
+   A Cases row carried four coloured pills, and orange meant three things; colour now means "look at this". *@
+<span class="im-status @ToneClass @Class" title="@Title">
+    @if (IconFor is { } icon) { <span class="bi @icon" aria-hidden="true"></span> }
+    @ChildContent
+</span>
+
+@code {
+    [Parameter] public StatusTone Tone { get; set; } = StatusTone.Plain;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>An icon in place of the tone's own.</summary>
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string ToneClass => Tone switch
+    {
+        StatusTone.Danger => "is-danger",
+        StatusTone.Warn => "is-warn",
+        StatusTone.Ok => "is-ok",
+        StatusTone.Muted => "is-muted",
+        _ => ""
+    };
+
+    private string? IconFor => Icon ?? Tone switch
+    {
+        StatusTone.Danger => "bi-exclamation-triangle-fill",
+        StatusTone.Warn => "bi-clock-history",
+        _ => null
+    };
+}

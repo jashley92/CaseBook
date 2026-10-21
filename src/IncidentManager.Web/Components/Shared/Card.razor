@@ -1,0 +1,35 @@
+@* UX-52: the one card. A titled section of a page: Title as a heading (a section title in the content, or the small-capitals
+   label in a side rail with Compact), an optional quiet Meta beside it, Actions at its end, then the body. The audit found
+   four card styles (header-band cards, small-caps rail cards, plain cards, stat tiles); stat tiles stay StatTile. *@
+<section class="im-c-card @(Compact ? "is-compact" : "") @Class" aria-labelledby="@(Title is null ? null : _id)">
+    @if (Title is not null || Actions is not null)
+    {
+        <header class="im-c-card-head">
+            @if (Title is not null)
+            {
+                <h2 id="@_id" class="im-c-card-title">
+                    @if (Icon is not null) { <span class="bi @Icon" aria-hidden="true"></span> }
+                    @Title
+                </h2>
+            }
+            @if (Meta is not null) { <span class="im-c-card-meta">@Meta</span> }
+            @if (Actions is not null) { <div class="im-c-card-actions">@Actions</div> }
+        </header>
+    }
+    <div class="im-c-card-body @(Flush ? "is-flush" : "")">@ChildContent</div>
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public RenderFragment? Meta { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>A side rail's card: the title as a small-capitals label, tighter padding.</summary>
+    [Parameter] public bool Compact { get; set; }
+    /// <summary>The body without padding (a table or a list edge to edge).</summary>
+    [Parameter] public bool Flush { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private readonly string _id = $"card-{Guid.NewGuid():N}"[..13];
+}

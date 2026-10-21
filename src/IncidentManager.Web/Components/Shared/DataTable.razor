@@ -1,0 +1,91 @@
+@* UX-52 / UX-61 / UX-62: the one list table. A sticky header row, pages of PageSize rows with a pager (client-side over
+   Items, or the caller's own pages with TotalCount, Page and OnPage for a server-side query such as the audit trail),
+   a row that opens on click (OnRowClick; the row should still hold a link for the keyboard), and row actions that show on
+   hover and keyboard focus (always, on a touch screen) instead of a column of buttons on every row. *@
+@typeparam TItem
+
+<div class="im-c-table-wrap @Class">
+    <table class="table table-sm align-middle im-c-table @(OnRowClick.HasDelegate ? "is-clickable" : "")">
+        <thead><tr>@Header @if (RowActions is not null) { <th class="im-c-rowacts-h"><span class="visually-hidden">Actions</span></th> }</tr></thead>
+        <tbody>
+            @if (Shown.Count == 0)
+            {
+                <tr><td colspan="99" class="im-c-table-empty">@(Empty ?? DefaultEmpty)</td></tr>
+            }
+            @foreach (var item in Shown)
+            {
+                var row = item;
+                <tr @key="KeyOf(row)" class="@RowClass?.Invoke(row)" @onclick="() => RowClicked(row)">
+                    @Row(row)
+                    @if (RowActions is not null)
+                    {
+                        <td class="im-c-rowacts" @onclick:stopPropagation="true">@RowActions(row)</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (Pages > 1)
+    {
+        <nav class="im-c-pager" aria-label="@($"{Label} pages")">
+            <span class="im-c-pager-at">@(First + 1)–@(First + Shown.Count) of @Total</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(CurrentPage <= 1)" @onclick="() => GoTo(CurrentPage - 1)"
+                    aria-label="Previous page"><span class="bi bi-chevron-left" aria-hidden="true"></span></button>
+            <span class="im-c-pager-page">Page @CurrentPage of @Pages</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(CurrentPage >= Pages)" @onclick="() => GoTo(CurrentPage + 1)"
+                    aria-label="Next page"><span class="bi bi-chevron-right" aria-hidden="true"></span></button>
+        </nav>
+    }
+</div>
+
+@code {
+    /// <summary>The rows: all of them (paged here), or the current page when the caller pages (<see cref="OnPage"/>).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<TItem> Items { get; set; } = [];
+    /// <summary>The header cells (<c>&lt;th&gt;</c>), in order.</summary>
+    [Parameter, EditorRequired] public RenderFragment Header { get; set; } = null!;
+    /// <summary>A row's cells (<c>&lt;td&gt;</c>), in the header's order.</summary>
+    [Parameter, EditorRequired] public RenderFragment<TItem> Row { get; set; } = null!;
+    /// <summary>The row's other actions, shown on hover and keyboard focus.</summary>
+    [Parameter] public RenderFragment<TItem>? RowActions { get; set; }
+    [Parameter] public EventCallback<TItem> OnRowClick { get; set; }
+    [Parameter] public Func<TItem, string?>? RowClass { get; set; }
+    [Parameter] public Func<TItem, object>? Key { get; set; }
+    [Parameter] public RenderFragment? Empty { get; set; }
+    [Parameter] public int PageSize { get; set; } = 50;
+    /// <summary>The table's name, for the pager's label ("Audit entries").</summary>
+    [Parameter] public string Label { get; set; } = "Rows";
+    [Parameter] public string? Class { get; set; }
+
+    // Server-side paging: the caller holds the page and loads it.
+    [Parameter] public int? TotalCount { get; set; }
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public EventCallback<int> OnPage { get; set; }
+
+    private int _page = 1;
+    private int _seenCount = -1;
+    private bool External => OnPage.HasDelegate;
+
+    // A different set of rows (a filter changed) starts again at the first page; a live refresh of the same set keeps it.
+    protected override void OnParametersSet()
+    {
+        if (_seenCount != Items.Count) { if (_seenCount >= 0 && !External) _page = 1; _seenCount = Items.Count; }
+    }
+    private int Total => External ? TotalCount ?? Items.Count : Items.Count;
+    private int Pages => Math.Max(1, (Total + PageSize - 1) / PageSize);
+    private int CurrentPage => Math.Clamp(External ? Page : _page, 1, Pages);
+    private int First => (CurrentPage - 1) * PageSize;
+    private IReadOnlyList<TItem> Shown => External ? Items : Items.Skip(First).Take(PageSize).ToList();
+
+    private object KeyOf(TItem item) => Key?.Invoke(item) ?? item!;
+
+    private async Task GoTo(int page)
+    {
+        page = Math.Clamp(page, 1, Pages);
+        if (External) await OnPage.InvokeAsync(page);
+        else _page = page;
+    }
+
+    private Task RowClicked(TItem item) => OnRowClick.HasDelegate ? OnRowClick.InvokeAsync(item) : Task.CompletedTask;
+
+    private static readonly RenderFragment DefaultEmpty = b => b.AddContent(0, "Nothing to show.");
+}
