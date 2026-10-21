@@ -5,11 +5,11 @@
     gap: 0.6rem;
     height: 3.5rem;
     padding: 0 1.25rem;
-    color: #fff;
+    color: var(--im-side-strong);
     font-size: var(--im-text-base);
     font-weight: 600;
     letter-spacing: 0.2px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid var(--im-side-border);
 }
 
 .brand-mark {
@@ -19,7 +19,7 @@
 }
 
 .brand-accent {
-    color: var(--im-accent, #4f8cff);
+    color: var(--im-accent-text);   /* UX-63: legible on the light sidebar too */
 }
 
 /* Org name under the wordmark (white-label identity, X-01). */
@@ -35,7 +35,7 @@
     font-size: var(--im-text-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--im-side-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -48,17 +48,17 @@
     cursor: pointer;
     width: 3.5rem;
     height: 2.5rem;
-    color: white;
+    color: var(--im-side-strong);
     position: absolute;
     top: 0.5rem;
     right: 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--im-side-control);
+    background: var(--im-side-burger) no-repeat center/1.75rem var(--im-side-control);
     border-radius: var(--im-radius);
 }
 
 .navbar-toggler:checked {
-    background-color: rgba(255, 255, 255, 0.3);
+    background-color: var(--im-side-hover);
 }
 
 /* --- Section labels --- */
@@ -68,7 +68,7 @@
     font-weight: var(--im-label-weight);
     letter-spacing: var(--im-label-tracking);
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--im-side-muted);
 }
 
 /* --- Nav items --- */
@@ -78,7 +78,7 @@
 }
 
 .nav-item ::deep .nav-link {
-    color: rgba(255, 255, 255, 0.74);
+    color: var(--im-side-text);
     display: flex;
     align-items: center;
     gap: 0.7rem;
@@ -100,13 +100,13 @@
 }
 
 .nav-item ::deep .nav-link:hover {
-    background-color: rgba(255, 255, 255, 0.07);
-    color: #fff;
+    background-color: var(--im-side-hover);
+    color: var(--im-side-strong);
 }
 
 .nav-item ::deep a.active {
-    background-color: rgba(79, 140, 255, 0.16);
-    color: #fff;
+    background-color: var(--im-side-active);
+    color: var(--im-side-strong);
     box-shadow: inset 3px 0 0 var(--im-accent, #4f8cff);
 }
 
@@ -137,14 +137,14 @@
     border: none;
     border-radius: var(--im-radius);
     background: none;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--im-side-muted);
     cursor: pointer;
     transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .sidebar-collapse-btn:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background-color: var(--im-side-control);
+    color: var(--im-side-strong);
 }
 
 .sidebar-collapse-btn .bi {
@@ -217,6 +217,6 @@
         padding: 0;
         margin: 0.4rem 0.6rem;
         font-size: 0;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        border-top: 1px solid var(--im-side-border);
     }
 }

@@ -153,6 +153,17 @@ h1:focus {
    dark values overridden under [data-bs-theme="dark"].
    ============================================================================ */
 :root {
+    /* UX-63: the sidebar follows the theme (it was ink in both). */
+    --im-side-bg: var(--im-surface);
+    --im-side-border: var(--im-border);
+    --im-side-text: #3b4350;
+    --im-side-strong: var(--im-text);
+    --im-side-muted: var(--im-text-muted);
+    --im-side-hover: rgba(0, 0, 0, 0.05);
+    --im-side-active: rgba(79, 140, 255, 0.12);
+    --im-side-control: rgba(0, 0, 0, 0.06);
+    --im-side-burger: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%2835, 42, 51, 0.7%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+
     /* Brand */
     --im-gold: #ffcf31;
     --im-gold-strong: #e0af12;
@@ -286,6 +297,15 @@ h1:focus {
 }
 
 [data-bs-theme="dark"] {
+    --im-side-bg: #0b0e12;
+    --im-side-border: rgba(255, 255, 255, 0.06);
+    --im-side-text: rgba(255, 255, 255, 0.74);
+    --im-side-strong: #fff;
+    --im-side-muted: rgba(255, 255, 255, 0.6);
+    --im-side-hover: rgba(255, 255, 255, 0.07);
+    --im-side-active: rgba(79, 140, 255, 0.16);
+    --im-side-control: rgba(255, 255, 255, 0.1);
+    --im-side-burger: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
     --im-action-bg: #e6edf5;
     --im-action-hover: #c9d3de;
     --im-action-fg: #12171e;
