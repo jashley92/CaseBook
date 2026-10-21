@@ -465,7 +465,7 @@
     private static string EntryKind(IncidentManager.Application.Search.FindEntry e) =>
         e.IsClosingBrief ? "Closing brief"
         : e.Type == TimelineEntryType.Decision ? "Decision"
-        : e.Kind == TimelineKind.Event ? "Adversary step"
+        : e.Kind == TimelineKind.Event ? "Attack step"
         : e.Type is { } t ? Ui.Label(t) : "Entry";
 
     // Display label for a tab key; matches the case workspace tab bar.

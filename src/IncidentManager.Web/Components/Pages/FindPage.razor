@@ -404,7 +404,7 @@
         e.IsClosingBrief ? "Closing brief"
         : e.Type == TimelineEntryType.Decision ? "Decision"
         : e.Type == TimelineEntryType.Handoff ? "Handoff"
-        : e.Kind == TimelineKind.Event ? $"Adversary step · {Ui.Label(e.Type!.Value)}"
+        : e.Kind == TimelineKind.Event ? $"Attack step · {Ui.Label(e.Type!.Value)}"
         : Ui.Label(e.Type!.Value);
 
     private RenderFragment More(FindKind k, int shown) => __builder =>

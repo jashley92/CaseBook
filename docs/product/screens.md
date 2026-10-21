@@ -359,14 +359,16 @@ withdrawn until that changes.
 ![Tasks](../screenshots/doc-tasks.png)
 
 1. **Apply playbook**: add the steps of a case template as tasks. After a case is escalated, or filed at a rung, a
-   notice under the case header offers that rung's playbook ("The Breach response playbook has 6 steps not on this
+   notice at the top of this tab offers that rung's playbook ("The Breach response playbook has 6 steps not on this
    case. *Add them…*"); it opens this card with the missing steps ticked, and adds nothing until you apply them.
-   Dismiss it with ×.
+   Dismiss it with ×. None is offered once one of the rung's playbooks is all on the case (filed from it, say).
 2. **Add a task**: title, owner (a person, or a free-text external name), kind, due date and time. Scrolled down a long
    list, a floating *Add task* opens this form popped out on the right, so you keep your place.
 3. **Grouped by kind** (Investigate, Contain, Eradicate, Recover, Notify, General), with progress.
 4. **"About" chip**: the entity, evidence file or timeline entry the task was raised from. Click to jump there.
 5. **Mark done** (with a result that can go on the timeline), **edit**, **comment**.
+6. **Owner**: on an open task, click the owner (or *Unassigned*) to pick another, *Me* first; *Take it* claims an
+   unassigned one.
 
 ## Report and lessons learned
 

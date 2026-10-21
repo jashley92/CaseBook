@@ -52,9 +52,13 @@ public sealed class CreateCaseRequest
     /// wouldn't otherwise see restricted cases.</summary>
     public bool IsRestricted { get; set; }
 
-    /// <summary>Put the filer on the case team as an analyst, so it shows in their My work. The intake form
+    /// <summary>Put the filer on the case team as an analyst, so it shows on their Desk. The intake form
     /// offers it ticked; the filer can untick it to leave the case unassigned.</summary>
     public bool AssignToMe { get; set; }
+
+    /// <summary>FR-62: the incident commander named at filing (a directory user id), or null. Held to the same rules as
+    /// naming one later (the assign permission; on a restricted case, someone who could lift it), and told of it.</summary>
+    public string? IncidentCommanderId { get; set; }
 
     /// <summary>CAP-36: the team that owns the case (an active <c>Team</c>), or null for none. Routes its chat posts and
     /// detection link; never changes who can see it.</summary>

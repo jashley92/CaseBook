@@ -273,6 +273,23 @@ From an analyst walkthrough (one case filed, worked and readied for close in a r
 - **Filing a case writes one milestone.** "Case opened as Incident · High", noting the gates passed, instead of a
   row per gate each repeating the summary (in the timeline and the report). A gate with commentary of its own, or one
   overridden, keeps its row.
+- **Filed from a playbook, the case isn't offered the others.** Once all of one of the rung's playbooks is on the case
+  (two steps or more), no other playbook is suggested: filed from Phishing, a case was offered Ransomware, BEC and
+  vendor-breach steps at once. The suggestion now shows on the Tasks tab only, not over every tab.
+- **Playbook tasks have an owner, and taking one is a click.** Steps without an owner of their own go to the
+  incident commander, else to whoever filed the case and ticked *Assign it to me* (they came in Unassigned). On the
+  Tasks tab, an open task's owner opens a picker (*Me* first), and an unassigned one has *Take it*.
+- **The brief asks for review when it matters.** "N changes since" counts entries and the changes that move where a
+  case stands (phase, classification, severity, materiality, a regulator notice, a verdict), not filing, team, evidence
+  or task-done milestones: a new case read "2 changes since" before anything had happened. The prompt says "since the
+  brief was last reviewed (v1)": "after this version" was wrong when CaseBook had appended a version since.
+- **One name: Attack step.** The composer's *Adversary step*, the "Event step added" toast and the EVENT badge are
+  now *Attack step* (Find, the command palette and the side panels too). A vendor case's steps keep "Attack at the vendor".
+- **New case can name the incident commander**, an optional picker under *Assign it to me*, held to the same rules as
+  naming one later and told of it; an "Incident Commander is assigned" readiness check now has somewhere to be met. The
+  form says the case shows on your Desk (not "My work"), says "Tick what's true" only when there is something to
+  tick, and "No open case already has these indicators" rather than a "no open cases" that a possibly-related open case
+  then contradicted.
 
 The rest of this release:
 

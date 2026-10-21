@@ -185,7 +185,7 @@ public sealed class FindService
         if (by is not null) filters.Add($"recorded by {_users.DisplayFor(by)}");
         if (owner is not null) filters.Add($"tasks of {_users.DisplayFor(owner)}");
         if (q.EntryType is { } et) filters.Add(et == TimelineEntryType.Decision ? "decisions" : et == TimelineEntryType.Handoff ? "handoffs" : $"{et} entries");
-        else if (q.EntryKind is { } ek) filters.Add(ek == TimelineKind.Event ? "adversary steps" : "response entries");
+        else if (q.EntryKind is { } ek) filters.Add(ek == TimelineKind.Event ? "attack steps" : "response entries");
         if (q.After is { } af) filters.Add($"from {af:d MMM yyyy}");
         if (q.Before is { } bf) filters.Add($"before {bf:d MMM yyyy}");
         if (q.Notes) filters.Add("working notes included");

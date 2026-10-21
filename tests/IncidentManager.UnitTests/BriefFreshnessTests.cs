@@ -34,7 +34,7 @@ public class BriefFreshnessTests
 
         appended.Appended.Should().BeTrue();
         BriefFreshness.Baseline(c, appended).Should().Be(reviewed.CurrentAsOfUtc);
-        BriefFreshness.Since(c, appended, Labels).Prompt.Should().Be("A decision was recorded after this version.");
+        BriefFreshness.Since(c, appended, Labels).Prompt.Should().Be("A decision was recorded since the brief was last reviewed (v1).");
 
         c.ConfirmBrief("ic1", T0.AddHours(3));   // someone looks and says it stands
         BriefFreshness.Since(c, appended, Labels).Prompt.Should().BeNull();
@@ -111,7 +111,7 @@ public class BriefFreshnessTests
 
         fresh.Count.Should().Be(4);
         fresh.Breakdown.Should().Equal(("timeline entries", 3), ("phase change", 1));
-        fresh.Prompt.Should().Be("The case moved to Containment after this version.", "the phase change is the latest turning point");
+        fresh.Prompt.Should().Be("The case moved to Containment since the brief was last reviewed (v1).", "the phase change is the latest turning point");
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public class BriefFreshnessTests
         c.ChangePhase(CasePhase.Containment, null, "ic1", T0.AddHours(2));
         Entry(c, TimelineEntryType.Decision, T0.AddHours(3));
 
-        BriefFreshness.Since(c, brief, Labels).Prompt.Should().Be("A decision was recorded after this version.");
+        BriefFreshness.Since(c, brief, Labels).Prompt.Should().Be("A decision was recorded since the brief was last reviewed (v1).");
     }
 
     [Fact]

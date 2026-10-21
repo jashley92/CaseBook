@@ -981,6 +981,17 @@ public sealed class CaseService
             if (request.TeamId is { } team) c.SetTeam(team, _user.UserId, now);   // CAP-36
             if (request.AssignToMe)
                 c.Assign(_user.UserId, SelfDisplayName, CaseAssignmentRole.Analyst, _user.UserId, now);
+            var commander = IntakeCommander(request);
+            if (commander is { } ic)
+            {
+                Require(nameof(AssignAsync));
+                // BUG-128, as naming one later: a restricted case's commander can lift it, so only someone who could.
+                if (request.IsRestricted && !string.Equals(ic.Id, _user.UserId, StringComparison.OrdinalIgnoreCase)
+                    && !CaseRestrictionPolicy.CanLift(_user, null))
+                    throw new InvalidOperationException(
+                        "On a restricted case, only someone cleared for restricted cases can name another person incident commander.");
+                c.Assign(ic.Id, ic.Name, CaseAssignmentRole.IncidentCommander, _user.UserId, now);
+            }
             if (request.IsRestricted)
             {
                 // S-08: keep the filer on a case they're restricting (they have no IC/assignment yet).
@@ -1021,6 +1032,10 @@ public sealed class CaseService
                 }
                 else await db.SaveChangesAsync(ct);
                 EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CaseCreated(s, c.Classification, c.Severity, a, u));   // CAP-06
+                // FR-62: the incident commander named at filing is told, as when named later (not oneself; only if entitled).
+                if (commander is { } named && !string.Equals(named.Id, _user.UserId, StringComparison.OrdinalIgnoreCase)
+                    && (await RecipientsAsync(c, [named.Id], ct)).Count > 0)
+                    await _notifications.OnAssignedAsync(c, named.Id, named.Name, CaseAssignmentRole.IncidentCommander, _user.UserId, ct);
                 if (c.Classification == Classification.Breach)
                 {
                     // Filed as a Breach: the same alerts as an escalation to one (Legal distribution, SIEM).
@@ -1401,6 +1416,16 @@ public sealed class CaseService
     /// BUG-61: the gates a case filed as <paramref name="request"/> would pass, judged from what the form holds (the
     /// summary, the indicators to be filed), as one checklist; null for a Complex Event, which no gate guards.
     /// </summary>
+    // FR-62: the incident commander named at filing, as a directory user, or null. One not in the directory is refused.
+    private (string Id, string Name)? IntakeCommander(CreateCaseRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.IncidentCommanderId)) return null;
+        var id = request.IncidentCommanderId.Trim();
+        if (string.Equals(id, _user.UserId, StringComparison.OrdinalIgnoreCase)) return (_user.UserId, SelfDisplayName);
+        var u = _users?.Resolve(id) ?? throw new ArgumentException("Choose the incident commander from the directory.");
+        return (u.UserId, string.IsNullOrWhiteSpace(u.DisplayName) ? u.UserId : u.DisplayName);
+    }
+
     public async Task<GateEvaluation?> EvaluateNewCaseGatesAsync(CreateCaseRequest request, CancellationToken ct = default)
     {
         if (request.Classification is not { } cls) return null;
@@ -1409,6 +1434,8 @@ public sealed class CaseService
             request.Title, cls, request.Severity, request.Origin, _user.UserId, now, request.IsExercise);
         c.SetInitialSummary(request.Summary, _user.UserId, now);
         c.DetectionCaseId = request.DetectionCaseId?.Trim();   // CAP-14 review: trimmed, as the import matches it
+        if (IntakeCommander(request) is { } ic)   // FR-62: an "IC assigned" requirement sees the one named
+            c.Assign(ic.Id, ic.Name, CaseAssignmentRole.IncidentCommander, _user.UserId, now);
         using var db = _factory.CreateDbContext();
         var gates = new List<GateEvaluation>();
         foreach (var t in StageGateTriggers.Climb(null, cls))

@@ -51,16 +51,20 @@ public static class PlaybookOffer
     /// <summary>
     /// The playbooks to offer on <paramref name="c"/>: active ones for its rung with at least one step missing, in the
     /// pickers' order. None for a Complex Event, a closed or archived case, or one de-escalated to where it is.
+    /// FR-53: none either once one of the rung's playbooks is in use (all its steps on the case): filed from the
+    /// Phishing playbook, a case was offered Ransomware, BEC and vendor-breach steps the moment it opened.
     /// </summary>
     public static IReadOnlyList<PlaybookSuggestion> For(Case c, IEnumerable<TemplateView> templates)
     {
         if (c.Phase == CasePhase.Closed || c.IsArchived || !ReachedByEscalation(c)) return [];
         var titles = c.ActionItems.Select(t => t.Title).ToList();
-        return templates.Where(t => t.IsActive && t.DefaultClassification == c.Classification)
+        var forRung = templates.Where(t => t.IsActive && t.DefaultClassification == c.Classification)
             .OrderBy(t => t.SortOrder).ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .Select(t => new PlaybookSuggestion(t, MissingSteps(t, titles)))
-            .Where(s => s.Missing.Count > 0)
             .ToList();
+        // In use: all of a playbook's steps are tasks. Two at least, as one title shared with a task can be a coincidence.
+        if (forRung.Any(s => s.Template.Steps.Count >= 2 && s.Missing.Count == 0)) return [];
+        return forRung.Where(s => s.Missing.Count > 0).ToList();
     }
 
     /// <summary>

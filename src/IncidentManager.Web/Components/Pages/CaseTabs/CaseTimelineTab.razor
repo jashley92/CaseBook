@@ -54,7 +54,7 @@
        of the time spine; the others are one lane. *@
     <div class="im-seg" role="group" aria-label="Record lens">
         <button class="btn btn-sm @(StoryLens ? "active" : "")" aria-pressed="@Ui.Aria(StoryLens)"
-                title="The turning points, oldest first: adversary steps, decisions, handoffs, and the phase, classification, severity, materiality, gate and reporting milestones."
+                title="The turning points, oldest first: attack steps, decisions, handoffs, and the phase, classification, severity, materiality, gate and reporting milestones."
                 @onclick="SwitchToStory">Story <span class="tl-count">@(CurrentEntries.Count(IsKeyEntry) + Milestones().Count(IsKeyMilestone))</span></button>
         <button class="btn btn-sm @(_tlLens is null && !_keyOnly && !_notesOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_keyOnly && !_notesOnly)"
                 title="The full chronology: what happened, what the team did, and the response milestones."
@@ -111,7 +111,7 @@
             @if (!ComposerVisible)
             {
                 <button type="button" class="btn btn-sm btn-primary ms-auto" aria-expanded="false" aria-controls="timeline-dropzone"
-                        title="Add @(IsThirdParty ? "an attack step, a disclosure milestone" : "an adversary step") or an investigation entry. You can also paste a screenshot, or paste or drop a file."
+                        title="Add @(IsThirdParty ? "an attack step, a disclosure milestone" : "an attack step") or an investigation entry. You can also paste a screenshot, or paste or drop a file."
                         @onclick="OpenComposer">
                     <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
                 </button>
@@ -761,7 +761,7 @@ else
                     </span>
                     <div class="tl-body">
                         <div class="tl-head">
-                            <span class="tl-kind-label"><span class="bi @(asAttack ? "bi-lightning-charge" : "bi-megaphone")" aria-hidden="true"></span> @(asAttack ? (IsThirdParty ? $"Attack {IncidentManager.Application.Cases.EventSteps.WhereLabel(Case, e)}" : "Event") : "Disclosure milestone")</span>
+                            <span class="tl-kind-label"><span class="bi @(asAttack ? "bi-lightning-charge" : "bi-megaphone")" aria-hidden="true"></span> @(asAttack ? (IsThirdParty ? $"Attack {IncidentManager.Application.Cases.EventSteps.WhereLabel(Case, e)}" : "Attack step") : "Disclosure milestone")</span>
                             @if (asAttack)
                             {
                                 <span class="tl-tactics">
@@ -1717,7 +1717,7 @@ else
         {
             ComposerMode.Decision => "1 decision",
             ComposerMode.Disclosure => "1 disclosure milestone",
-            ComposerMode.Adversary => IsThirdParty ? "1 attack step" : "1 adversary step",
+            ComposerMode.Adversary => "1 attack step",   // FR-56: one name for it everywhere
             _ => "1 entry"
         };
         var parts = new List<string> { what };
@@ -1902,7 +1902,7 @@ else
     {
         yield return (ComposerMode.Finding, "bi-search", "Finding");
         if (DecisionOffered) yield return (ComposerMode.Decision, "bi-signpost-split", "Decision");   // C16
-        yield return (ComposerMode.Adversary, "bi-lightning", IsThirdParty ? "Attack step" : "Adversary step");
+        yield return (ComposerMode.Adversary, "bi-lightning", "Attack step");   // FR-56: was "Adversary step" on our own cases
         if (IsThirdParty) yield return (ComposerMode.Disclosure, "bi-megaphone", "Disclosure milestone");
         yield return (ComposerMode.Question, "bi-question-circle", "Question");
         yield return (ComposerMode.Note, "bi-journal-text", "Working note");
@@ -2227,7 +2227,7 @@ else
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
         ResetFollowUps();
-        var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Event step";
+        var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Attack step";
         Toasts.Success(savedStep ?? WithShot($"{what} added", withShot, shotIsFile, shotName));
         await UndockAfterSave();
     }
@@ -2328,7 +2328,7 @@ else
         if (_tlEdit.Current is not { } edit || string.IsNullOrWhiteSpace(_tlDesc)) return;
         var id = edit.Key;
         // Captured before CancelTimelineEdit resets the composer mode, so the toast names what was edited.
-        var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure milestone updated" : IsThirdParty ? "Attack step updated" : "Event step updated";
+        var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure milestone updated" : "Attack step updated";
         try
         {
             if (IsThirdParty && !_evtAttackMode)

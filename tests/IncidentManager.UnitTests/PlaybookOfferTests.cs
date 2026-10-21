@@ -75,6 +75,23 @@ public class PlaybookOfferTests
     }
 
     [Fact]
+    public void Nothing_is_offered_once_a_playbook_for_the_rung_is_in_use(/* FR-53 */)
+    {
+        // Filed from the phishing playbook: every one of its steps is a task, so the rung's other playbooks aren't pushed.
+        var c = NewCase(Classification.Incident);
+        Task(c, "Identify recipients"); Task(c, "Block the sender");
+        var phishing = Playbook("Phishing", Classification.Incident, "Identify recipients", "Block the sender");
+        var ransomware = Playbook("Ransomware", Classification.Incident, "Isolate hosts", "Check backups");
+
+        PlaybookOffer.For(c, [phishing, ransomware]).Should().BeEmpty();
+
+        // One of its steps cancelled out (the task is gone): not all there, so the offer stands again.
+        var partly = NewCase(Classification.Incident);
+        Task(partly, "Identify recipients");
+        PlaybookOffer.For(partly, [phishing, ransomware]).Select(o => o.Template.Name).Should().Equal("Phishing", "Ransomware");
+    }
+
+    [Fact]
     public void Offered_when_filed_at_or_escalated_to_the_rung_not_after_a_de_escalation_or_on_a_closed_case()
     {
         var incident = Playbook("Incident", Classification.Incident, "Scope the access");

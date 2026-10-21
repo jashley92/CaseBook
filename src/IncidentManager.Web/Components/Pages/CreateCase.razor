@@ -14,6 +14,7 @@
 @inject TimeDisplay TimeDisp
 @inject IJSRuntime JS
 @inject ICurrentUser CurrentUser
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IOrganizationTimeZone OrgZone
 @inject IClock Clock
 @inject CaseListMemory ListMemory
@@ -187,7 +188,7 @@
                     </div>
                 </div>
 
-                @* Whoever files a case usually works it: put them on the team so it lands in My work. *@
+                @* Whoever files a case usually works it: put them on the team so it lands on their Desk. *@
                 <div class="col-12">
                     <div class="form-check">
                         <InputCheckbox class="form-check-input" id="assignToMe" @bind-Value="_request.AssignToMe" />
@@ -195,8 +196,25 @@
                             <span class="bi bi-person-check me-1" aria-hidden="true"></span>Assign it to me
                         </label>
                     </div>
-                    <div class="form-text">Adds you to the case team as an analyst, so it shows in My work. Untick to leave it unassigned.</div>
+                    <div class="form-text">Adds you to the case team as an analyst, so it shows on your Desk. Untick to leave it unassigned.</div>
                 </div>
+
+                @* FR-62: the readiness checks can ask for an incident commander; this is where one can be named at filing. *@
+                @if (CurrentUser.Has(Permission.EditCases))
+                {
+                    <div class="col-md-6">
+                        <label class="form-label" for="nc-ic">Incident commander <span class="text-muted">(optional)</span></label>
+                        <InputSelect id="nc-ic" class="form-select" @bind-Value="_request.IncidentCommanderId" @bind-Value:after="RefreshGates">
+                            <option value="">Not named yet</option>
+                            <option value="@CurrentUser.UserId">Me</option>
+                            @foreach (var u in Users.All().Where(u => !string.Equals(u.UserId, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                <option value="@u.UserId">@u.DisplayName</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="w-100"></div>   @* the times keep their own row *@
+                }
 
                 @* FR-03: capture the real detection time at intake — it anchors the response-SLA clock and
                    the dwell metric. Defaults to now (in the viewer's display zone); set it back to when the
@@ -275,7 +293,7 @@
                until each was re-marked on Things. *@
             <div class="d-flex align-items-center gap-2 mt-2">
                 <label class="form-label small mb-0" for="nc-indicator-verdict">File them as</label>
-                <select id="nc-indicator-verdict" class="form-select form-select-sm w-auto" @bind="_indicatorVerdict">
+                <select id="nc-indicator-verdict" class="form-select form-select-sm w-auto" @bind="_indicatorVerdict" @bind:after="RefreshGates">
                     @foreach (var v in IndicatorVerdicts)
                     {
                         <option value="@v">@Ui.Label(v)</option>
@@ -292,7 +310,7 @@
             {
                 <div class="alert alert-success py-2 mt-2 mb-0">
                     <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>
-                    No open cases reference these indicators.
+                    No open case already has these indicators.
                 </div>
             }
             else if (_matches.Count > 0)
@@ -409,8 +427,10 @@
         {
             <section class="mb-3" aria-labelledby="nc-gate-h">
                 <h2 class="h6 mb-1" id="nc-gate-h">Filing as @(Ui.Label(_request.Classification)): @gate.GateName</h2>
-                <p class="small text-muted mb-0">The same readiness checks as escalating a case to this rung. Tick what's true;
-                    anything required that's still unmet needs an override reason, which is recorded with the case.</p>
+                <p class="small text-muted mb-0">The same readiness checks as escalating a case to this rung.
+                    @* FR-62: "Tick what's true" only when there is something to tick. *@
+                    @(gate.Requirements.Any(r => r.Kind == GateRequirementKind.Attestation) ? "Tick what's true; anything" : "Anything")
+                    required that's still unmet needs an override reason, which is recorded with the case.</p>
                 <IncidentManager.Web.Components.Pages.Workspace.GateSection Draft="_gate" OnChanged="StateHasChanged" />
             </section>
         }
@@ -496,6 +516,14 @@
 
     // WF-51: what the seeding will add: one entity per distinct value as stored (refanged, normalised), since a value
     // already on the case is kept, not added again. Counting raw lines let "1.2.3.4", "1.2.3[.]4" meet "at least 2 entities".
+    // FR-48: what the gate counts: how many indicators will be filed, and with the verdict chosen for them (a "malicious
+    // indicator" requirement sees them as they'll be).
+    private void PlanIndicators()
+    {
+        _request.PlannedEntityCount = PlannedIndicatorCount();
+        _request.PlannedDispositions = Enumerable.Repeat(_indicatorVerdict, _request.PlannedEntityCount).ToList();
+    }
+
     private int PlannedIndicatorCount() => IndicatorLines(_indicators)
         .Select(l => DetectedOr(l) is var t ? (t, IocObservable.Normalize(t, l).ToLowerInvariant()) : default)
         .Distinct().Count();
@@ -558,7 +586,7 @@
     {
         if (_created is not null) return;
         var seq = ++_gateSeq;
-        _request.PlannedEntityCount = PlannedIndicatorCount();
+        PlanIndicators();
         var eval = await Cases.EvaluateNewCaseGatesAsync(_request);
         if (seq != _gateSeq) return;
         if (eval is not { GateExists: true }) { _gate.UseGate(null); return; }
@@ -821,7 +849,7 @@
             // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
             _request.DetectedAtUtc = _detectedWall is { } dw ? IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(dw, TimeDisp.Zone) : null;
             _request.OccurredAtUtc = _occurredWall is { } ow ? IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(ow, TimeDisp.Zone) : null;
-            _request.PlannedEntityCount = PlannedIndicatorCount();
+            PlanIndicators();
             _request.AttestedRequirementIds = _gate.Attested.ToHashSet();
             _request.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
             // REL-04: create exactly once — a retry after a partial-seed failure reuses this case rather
@@ -848,7 +876,10 @@
             // Seed the template's playbook steps as action items on the fresh case (once).
             if (_selectedTemplate is { Steps.Count: > 0 } && !_templateApplied)
             {
-                await Cases.ApplyTemplateAsync(_created.Id, _selectedTemplate.Id);
+                // FR-54: steps with no owner of their own go to the case's IC, else to whoever filed it and took it on;
+                // they all came in Unassigned, and taking one meant opening it to edit.
+                await Cases.ApplyTemplateAsync(_created.Id, _selectedTemplate.Id,
+                    defaultOwner: _request.AssignToMe ? CurrentUser.UserId : null);
                 _templateApplied = true;
             }
             // PROD-26: remember this filing's severity/origin to prefill the next new case.

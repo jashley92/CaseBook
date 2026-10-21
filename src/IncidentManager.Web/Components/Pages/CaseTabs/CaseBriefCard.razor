@@ -63,7 +63,7 @@
             @if (Freshness is { Count: > 0 } fresh)
             {
                 <button type="button" class="im-badge im-b-warn im-brief-fresh" @onclick="() => OnShowSince.InvokeAsync(IncidentManager.Application.Cases.BriefFreshness.Baseline(Case, cur))"
-                        title="@($"Recorded since this version: {string.Join(", ", fresh.Breakdown.Select(b => $"{b.Count} {b.What}"))}. Click to see them on the timeline.")">
+                        title="@($"Recorded since the brief was last reviewed (v{fresh.ReviewedVersion}): {string.Join(", ", fresh.Breakdown.Select(b => $"{b.Count} {b.What}"))}. Click to see them on the timeline.")">
                     @IncidentManager.Application.Common.Plural.Of(fresh.Count, "change") since
                 </button>
                 @if (CanEdit && !_editing)

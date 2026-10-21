@@ -98,6 +98,25 @@ public sealed class CaseIntakeTimestampTests : IDisposable
     }
 
     [Fact]
+    public async Task An_incident_commander_can_be_named_at_intake_from_the_directory(/* FR-62 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+
+        var led = await svc.CreateAsync(Req("Led", r => { r.AssignToMe = true; r.IncidentCommanderId = _user.UserId; }));
+
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == led.Id)).IncidentCommander.Should().Be(_user.UserId);
+        (await db.Assignments.AsNoTracking().Where(a => a.CaseId == led.Id).Select(a => a.Role).ToListAsync())
+            .Should().Equal([CaseAssignmentRole.IncidentCommander], "one seat for the filer, the commander's");
+
+        // Someone the directory doesn't know isn't named (here there is no directory at all), and nothing is filed.
+        var before = await db.Cases.CountAsync();
+        await svc.Invoking(s => s.CreateAsync(Req("Stranger", r => r.IncidentCommanderId = "S-1-5-21-NOBODY")))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*from the directory*");
+        (await db.Cases.CountAsync()).Should().Be(before);
+    }
+
+    [Fact]
     public async Task An_omitted_detection_time_defaults_to_filing_time()
     {
         await using var db = NewContext();

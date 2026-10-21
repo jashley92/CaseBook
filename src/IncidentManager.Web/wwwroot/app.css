@@ -3329,3 +3329,8 @@ a.im-find-quote:hover { text-decoration: underline; }
 @media (max-width: 767.98px) { .btn-group { flex-wrap: wrap; } }
 /* RD-26: a case number in the Desk's case table stays on one line (the table scrolls on a phone). */
 .im-desk table td code { white-space: nowrap; }
+
+/* FR-54: a task's owner, changed in place: the name (or Unassigned) opens a picker; "Take it" on unassigned rows. */
+.im-owner-btn { border: 0; background: none; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.im-owner-btn:hover, .im-owner-btn:focus-visible { text-decoration: underline; }
+.im-owner-pick { min-width: 9rem; }

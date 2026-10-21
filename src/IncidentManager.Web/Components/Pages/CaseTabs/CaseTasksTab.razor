@@ -278,6 +278,36 @@ else
                         {
                             <span class="text-muted">—</span>
                         }
+                        else if (CanEdit && t.IsOpen && _ownerFor == t.Id)
+                        {
+                            @* FR-54: the owner picked in place, you first; an external name is still set in Edit. *@
+                            <select @ref="_ownerPick" class="form-select form-select-sm im-owner-pick" aria-label="@($"Owner of {t.Title}")"
+                                    @onchange="e => SetOwner(t, e.Value as string)" @onblur="() => _ownerFor = null">
+                                <option value="@KeepOwner" selected>Choose…</option>
+                                <option value="@CurrentUser.UserId">Me (@Users.DisplayFor(CurrentUser.UserId))</option>
+                                <option value="">Unassigned</option>
+                                @foreach (var u in Users.All().Where(u => !string.Equals(u.UserId, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    <option value="@u.UserId">@u.DisplayName</option>
+                                }
+                            </select>
+                        }
+                        else if (CanEdit && t.IsOpen)
+                        {
+                            <button type="button" class="im-owner-btn" title="Change the owner" @onclick="() => (_ownerFor, _ownerFocus) = (t.Id, true)"
+                                    aria-label="@($"Owner of {t.Title}: {(string.IsNullOrWhiteSpace(t.Owner) ? "unassigned" : Users.DisplayFor(t.Owner))}. Change")">
+                                @if (string.IsNullOrWhiteSpace(t.Owner))
+                                {
+                                    <span class="im-badge im-b-warn">Unassigned</span>
+                                }
+                                else { @Users.DisplayFor(t.Owner) }
+                            </button>
+                            @if (string.IsNullOrWhiteSpace(t.Owner))
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 ms-1 text-nowrap" @onclick="() => SetOwner(t, CurrentUser.UserId)"
+                                        aria-label="@($"Take {t.Title}")">Take it</button>
+                            }
+                        }
                         else if (string.IsNullOrWhiteSpace(t.Owner))
                         {
                             <span class="im-badge im-b-warn" title="No owner assigned">Unassigned</span>
@@ -818,6 +848,12 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_ownerFocus && _ownerFor is not null)
+        {
+            _ownerFocus = false;
+            try { await _ownerPick.FocusAsync(); }
+            catch (Exception ex) when (ex is JSException or InvalidOperationException) { /* cosmetic */ }
+        }
         if (firstRender)
         {
             try { await JS.InvokeVoidAsync("imMotion.watchTaskAdd"); }
@@ -1121,6 +1157,33 @@ else
     private bool _moving;
 
     // Cancelling a task from its row, with an optional reason.
+    // --- FR-54: a task's owner changed in place (the owner chip, "Take it") ---
+    private const string KeepOwner = "keep";
+    private Guid? _ownerFor;
+    private bool _owning, _ownerFocus;
+    private ElementReference _ownerPick;   // focused when it opens, so leaving it closes it
+
+    private async Task SetOwner(ActionItem t, string? owner)
+    {
+        if (owner == KeepOwner) return;
+        if (_owning) return;
+        _owning = true;
+        _ownerFor = null;
+        try
+        {
+            await Cases.SetActionItemOwnerAsync(CaseId, t.Id, owner);
+            await OnChanged.InvokeAsync();
+            Toasts.Success(string.IsNullOrWhiteSpace(owner) ? "Task unassigned"
+                : string.Equals(owner, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase) ? "Task is yours"
+                : $"Task assigned to {Users.DisplayFor(owner)}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error($"Couldn't change the owner. {ex.Message}");
+        }
+        finally { _owning = false; }
+    }
+
     private Guid? _cancelFor;
     private string? _cancelWhy;
     private bool _cancelling;

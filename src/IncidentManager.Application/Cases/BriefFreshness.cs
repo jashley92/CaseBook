@@ -16,7 +16,18 @@ public static class BriefFreshness
     /// <param name="Breakdown">The same, by kind, e.g. ("timeline entries", 3), ("phase changes", 1).</param>
     /// <param name="Prompt">Why the brief may need updating, from the latest decision / handoff / phase /
     /// classification / materiality change after it, or null when there's none.</param>
-    public sealed record Result(int Count, IReadOnlyList<(string What, int Count)> Breakdown, string? Prompt);
+    /// <param name="ReviewedVersion">FR-55: the version the count runs from: the one last written or confirmed, which is
+    /// the current one unless CaseBook has appended to it since.</param>
+    public sealed record Result(int Count, IReadOnlyList<(string What, int Count)> Breakdown, string? Prompt, int ReviewedVersion = 0);
+
+    /// <summary>
+    /// FR-55: the milestones that usually change where a case stands, and so the brief. Filing (opened, gates passed), the
+    /// team, evidence added, a task done or a report finalised are the record keeping up, not news for the brief: counted,
+    /// a new case read "2 changes since" before anything had happened, and the count reached 9 within minutes.
+    /// </summary>
+    private static readonly HashSet<MilestoneKind> Counted =
+        [MilestoneKind.Classification, MilestoneKind.Severity, MilestoneKind.Phase, MilestoneKind.Materiality,
+         MilestoneKind.Reported, MilestoneKind.Verdict];
 
     /// <summary>
     /// WF-30: when the brief was last brought up to date: the version written or confirmed, stepping back over versions
@@ -25,7 +36,10 @@ public static class BriefFreshness
     public static DateTimeOffset Baseline(Case c, CaseBrief brief) => Baseline(c.Briefs, brief);
 
     /// <summary>BUG-407: <see cref="Baseline(Case, CaseBrief)"/> from the case's brief versions, for a reader without the case.</summary>
-    public static DateTimeOffset Baseline(IEnumerable<CaseBrief> versions, CaseBrief brief)
+    public static DateTimeOffset Baseline(IEnumerable<CaseBrief> versions, CaseBrief brief) => Reviewed(versions, brief).CurrentAsOfUtc;
+
+    /// <summary>FR-55: the version <see cref="Baseline(IEnumerable{CaseBrief}, CaseBrief)"/> is taken from.</summary>
+    public static CaseBrief Reviewed(IEnumerable<CaseBrief> versions, CaseBrief brief)
     {
         var b = brief;
         for (var guard = 0; b.Appended && b.ConfirmedAtUtc is null && b.SupersedesBriefId is { } prev && guard < 1000; guard++)
@@ -33,7 +47,7 @@ public static class BriefFreshness
             if (versions.FirstOrDefault(x => x.Id == prev) is not { } earlier) break;
             b = earlier;
         }
-        return b.CurrentAsOfUtc;
+        return b;
     }
 
     /// <summary>
@@ -49,7 +63,10 @@ public static class BriefFreshness
 
     public static Result Since(Case c, CaseBrief brief, MilestoneLabels labels)
     {
-        var since = Baseline(c, brief);   // written, or last confirmed as still accurate (WF-30: not an appended version)
+        var reviewed = Reviewed(c.Briefs, brief);
+        var since = reviewed.CurrentAsOfUtc;   // written, or last confirmed as still accurate (WF-30: not an appended version)
+        // FR-55: named for the version it counts from; "after this version" read wrong on an appended one, written after.
+        var after = $"since the brief was last reviewed (v{reviewed.Version}).";
 
         // BUG-301: an entry recorded since, not an old one edited since (an edit is a new version, dated now): correcting a
         // typo in last week's decision said "A decision was recorded after this version."
@@ -57,7 +74,7 @@ public static class BriefFreshness
         DateTimeOffset FirstRecorded(TimelineEntry e) => BriefFreshness.FirstRecorded(e, byId);
         var entries = c.TimelineEntries.Where(e => e.IsCurrent && FirstRecorded(e) > since).ToList();
         var milestones = CaseMilestones.Project(c, labels)
-            .Where(m => m.Kind != MilestoneKind.Opened && (m.RecordedAtUtc ?? m.AtUtc) > since)
+            .Where(m => Counted.Contains(m.Kind) && (m.RecordedAtUtc ?? m.AtUtc) > since)
             .ToList();
 
         var breakdown = new List<(string, int)>();
@@ -69,19 +86,19 @@ public static class BriefFreshness
         var candidates = entries
             .Where(e => e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff)
             .Select(e => (At: FirstRecorded(e), Text: e.Type == TimelineEntryType.Decision
-                ? "A decision was recorded after this version."
-                : "The case was handed off after this version."))
+                ? $"A decision was recorded {after}"
+                : $"The case was handed off {after}"))
             .Concat(milestones
                 .Where(m => m.Kind is MilestoneKind.Phase or MilestoneKind.Classification or MilestoneKind.Materiality)
                 .Select(m => (At: m.RecordedAtUtc ?? m.AtUtc, Text: m.Kind switch
                 {
-                    MilestoneKind.Phase => $"The case moved to {After(m.Title)} after this version.",
-                    MilestoneKind.Classification => $"The case was reclassified as {After(m.Title)} after this version.",
-                    _ => "The materiality determination changed after this version."
+                    MilestoneKind.Phase => $"The case moved to {After(m.Title)} {after}",
+                    MilestoneKind.Classification => $"The case was reclassified as {After(m.Title)} {after}",
+                    _ => $"The materiality determination changed {after}"
                 })));
         var prompt = candidates.OrderByDescending(x => x.At).Select(x => x.Text).FirstOrDefault();
 
-        return new Result(entries.Count + milestones.Count, breakdown, prompt);
+        return new Result(entries.Count + milestones.Count, breakdown, prompt, reviewed.Version);
     }
 
     // "Phase Containment → Eradication" → "Eradication".

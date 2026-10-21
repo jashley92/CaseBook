@@ -69,7 +69,9 @@ On Apply, `CaseService.ApplyGateAsync`:
    `[UNMET(advisory)]`).
 
 The timeline shows "<Gate> gate passed" or "**overridden**" (flagged, with the justification). If no active gate
-exists for a trigger, nothing is recorded.
+exists for a trigger, nothing is recorded. Gates passed when a case is filed show on its "Case opened as …" milestone
+("Promotion and Incident escalation gates passed") rather than as rows of their own; one overridden, or with commentary
+other than the filed summary, keeps its row.
 
 ### Default gates
 

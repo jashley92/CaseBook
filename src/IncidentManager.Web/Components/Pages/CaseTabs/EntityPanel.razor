@@ -484,7 +484,7 @@
             {
                 var why = t.ActorEntityId == id ? "actor" : t.TargetEntityId == id ? "target" : Why(t.Description);
                 if (why is null) continue;
-                var kind = t.Kind == TimelineKind.Event ? "Event" : t.Type == TimelineEntryType.Decision ? "Decision" : "Investigation";
+                var kind = t.Kind == TimelineKind.Event ? "Attack step" : t.Type == TimelineEntryType.Decision ? "Decision" : "Investigation";
                 list.Add(new(kind, Snippet(t.Description), why, t.OccurredAtUtc, "Timeline"));
             }
             foreach (var n in Case.Notes.Where(n => n.IsCurrent))
