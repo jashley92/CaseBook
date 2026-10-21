@@ -42,6 +42,7 @@ The rail groups the pages by what you're doing.
 | Records & evidence | Evidence storage | `/admin/settings/evidence` | Largest file, total limit, free space to keep, the read-back check, safe download; where evidence is stored, whether it's writable, what it takes (the meter), and the store folder and encryption (read-only) |
 | | Retention | `/admin/settings/retention` | Case, access-log and decided-import retention, the monthly email to Legal, the second approver to release a legal hold; and below them the **retention review** (CAP-10): closed cases past case retention, with each one's legal hold, open improvement actions and regulatory notices not recorded; archive up to 25 at a time after seeing them listed. Nothing is purged |
 | | Integrity | `/admin/settings/integrity` | Auto-seal, evidence re-verification and its full pass; the evidence-at-rest results; the signing and chain keys in force (read-only) |
+| | Removed cases | `/admin/removed-cases` | Archived cases removed because they were opened by mistake or imported badly: restore one, or purge it now; the purged ones, with the number each gave up |
 | People & access | Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings; the access review (broad access, restricted cases, known users, each opening their offboarding page (CAP-30), active API tokens) with its CSV, and **Record this review** (CAP-15) |
 | | API tokens | `/admin/api-tokens` | System tokens for machine producers |
 | | Security & access logging | `/admin/settings/security` | Idle timeout, the access-review reminder, what the access log records and how visits are grouped |
@@ -152,6 +153,24 @@ data elements and their regulatory deadline rules, case outcomes, report profile
 bundle import, also sends SIEM event 5405 naming what changed by its kind and name (never a template's text). A
 change to a stage gate or a regulatory deadline rule, and any delete, is a Warning. See
 [OPERATIONS.md §5](../operations/siem.md#event-id-catalog).
+
+## Removing a case opened by mistake
+
+A case opened by mistake, or a bad import, can be removed by an administrator once it's archived: on the case, **Actions ›
+Remove case…**, with a reason and its number typed to confirm. Never one under a legal hold.
+
+- **Removed**: it's left out of everything at once: lists, Find and the palette, lookup by number, IOC matching and the
+  indicators, related cases and campaigns, the Desk, the dashboards and exports, and open case tabs. It still holds its
+  number. Audited, and SIEM 5520 (High).
+- **Restorable** for `Retention:RemovedCaseDays` (Records & evidence › Retention, default 30) from **Records & evidence ›
+  Removed cases**: it comes back archived, as it was (SIEM 5521).
+- **Purged** after that, nightly (or at once with **Purge now…**, the number typed again, to take the number back): what
+  was filed under it is deleted (each deletion in the audit trail), its evidence files' bytes are purged (each file's
+  record, SHA-256 and chain of custody stay), and its reports' files are deleted. The case is left a stub (who removed it,
+  when, why, the number it had) and its number is free: the next case takes it if it was the latest, and any case can be
+  given it with *Change case number*. SIEM 5522 (High). A purge can't be undone.
+- The audit trail is never changed: it keeps what was recorded on the case. What was written under the number before the
+  purge stays the removed case's; the number's next holder doesn't show it (its Audit tab, the activity feed, the Desk).
 
 ## Case templates (playbooks)
 

@@ -261,6 +261,11 @@ public sealed class PastPeriodFreezeTests : IDisposable
     private static readonly Dictionary<string, string> DoesNotTouchPeriodInputs = new()
     {
         ["RenumberToIrp"] = "the case number; no figure reads it",
+        // Removal takes a case out of every figure, past periods' too, on purpose: it was never a real case (opened by
+        // mistake, a bad import), so a report regenerated after it is the truer one. Not a period input changing.
+        ["Remove"] = "leaves the case out of every figure, past periods' too, by design: it was opened by mistake or imported badly",
+        ["RestoreRemoved"] = "puts a removed case back into the figures it was in, as Remove takes it out",
+        ["MarkPurged"] = "a removed case, already out of every figure, made a stub",
         ["SetComplexEventNumber"] = "the case number",
         ["AssignCustomNumber"] = "the case number",
         ["RecordGatePassage"] = "a stage-gate passage; no figure reads it",

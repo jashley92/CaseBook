@@ -1,0 +1,138 @@
+@page "/admin/removed-cases"
+@* The archived cases an administrator removed (opened by mistake, or a bad import): who removed each, when and why, until
+   when it can be restored, and the ones purged since (a stub: the number it gave up, who, when, why). Restore puts one
+   back, archived as it was; "Purge now" doesn't wait out the undo window (to take its number back at once), with the
+   number typed again. Removing is on the case itself, once it's archived (Actions › Remove case…). *@
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using IncidentManager.Application.Admin
+@using IncidentManager.Application.Common
+@inject CaseRemovalService Removal
+@inject ToastService Toasts
+@inject TimeDisplay TimeDisp
+
+<PageTitle>Removed cases</PageTitle>
+
+<PageHeader Title="Removed cases"
+            Subtitle="@($"Archived cases removed because they were opened by mistake or imported badly. Each can be restored for {IncidentManager.Application.Common.Plural.Of(Removal.UndoDays, "day")}; then what was filed under it is deleted and its number is free again.")" />
+
+@if (_rows is null)
+{
+    <LoadingBlock />
+}
+else
+{
+    <Card Title="Removed" Icon="bi-trash3" Flush="true">
+        <Info>@(Live.Count == 0 ? "none" : Plural.Of(Live.Count, "case"))</Info>
+        <ChildContent>
+            <DataTable TItem="RemovedCaseRow" Items="Live" Label="Removed cases" Key="r => r.CaseId">
+                <Header><th>Case</th><th>Removed</th><th>Reason</th><th>Restorable until (@TimeDisp.Label)</th><th></th></Header>
+                <Row Context="r">
+                    <td>
+                        <div class="fw-semibold">@r.Title</div>
+                        <span class="im-casenum" title="@r.Number">@r.Number</span>
+                    </td>
+                    <td class="small">@Users(r.RemovedBy)<div class="text-muted im-time">@TimeDisp.Stamp(r.RemovedAtUtc)</div></td>
+                    <td class="small">@r.Reason</td>
+                    <td class="small im-time">
+                        @if (r.LegalHold) { <StatusText Tone="StatusTone.Warn">Under legal hold: kept</StatusText> }
+                        else { @TimeDisp.Stamp(r.RestorableUntilUtc) }
+                    </td>
+                    <td class="text-end text-nowrap">
+                        @if (_confirming == r.CaseId)
+                        {
+                            <span class="d-inline-flex gap-2 align-items-center">
+                                <label class="visually-hidden" for="@($"purge-{r.CaseId}")">Type @r.Number to confirm</label>
+                                <input id="@($"purge-{r.CaseId}")" class="form-control form-control-sm" style="width:14rem" placeholder="Type the case number"
+                                       autocomplete="off" spellcheck="false" @bind="_typed" @bind:event="oninput" />
+                                <button type="button" class="btn btn-sm btn-danger" disabled="@(_busy || !Typed(r))" @onclick="() => PurgeNow(r)">Purge</button>
+                                <button type="button" class="btn btn-sm btn-link" @onclick="() => _confirming = null">Cancel</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="() => Restore(r)">Restore</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" disabled="@(_busy || r.LegalHold)"
+                                    title="Delete what was filed under it now and free its number" @onclick="() => (_confirming, _typed) = (r.CaseId, null)">Purge now…</button>
+                        }
+                    </td>
+                </Row>
+                <Empty>No case is removed. To remove one, archive it, then use Actions › Remove case… on the case.</Empty>
+            </DataTable>
+        </ChildContent>
+    </Card>
+
+    @if (Purged.Count > 0)
+    {
+        <Card Title="Purged" Icon="bi-archive" Flush="true" Class="mt-4">
+            <Info>@Plural.Of(Purged.Count, "case")</Info>
+            <ChildContent>
+                <DataTable TItem="RemovedCaseRow" Items="Purged" Label="Purged cases" Key="r => r.CaseId">
+                    <Header><th>Number it gave up</th><th>Removed</th><th>Reason</th><th>Purged (@TimeDisp.Label)</th></Header>
+                    <Row Context="r">
+                        <td><span class="im-casenum" title="@r.Number">@r.Number</span></td>
+                        <td class="small">@Users(r.RemovedBy)<div class="text-muted im-time">@TimeDisp.Stamp(r.RemovedAtUtc)</div></td>
+                        <td class="small">@r.Reason</td>
+                        <td class="small im-time">@TimeDisp.Stamp(r.PurgedAtUtc)</td>
+                    </Row>
+                </DataTable>
+            </ChildContent>
+        </Card>
+    }
+}
+
+@code {
+    [Inject] private IncidentManager.Application.Abstractions.IUserDirectory Directory { get; set; } = null!;
+
+    private IReadOnlyList<RemovedCaseRow>? _rows;
+    private Guid? _confirming;
+    private string? _typed;
+    private bool _busy;
+
+    private IReadOnlyList<RemovedCaseRow> Live => _rows?.Where(r => !r.Purged).ToList() ?? [];
+    private IReadOnlyList<RemovedCaseRow> Purged => _rows?.Where(r => r.Purged).ToList() ?? [];
+    private string Users(string id) => Directory.DisplayFor(id);
+    private bool Typed(RemovedCaseRow r) => string.Equals(_typed?.Trim(), r.Number, StringComparison.OrdinalIgnoreCase);
+
+    protected override Task OnInitializedAsync() => Reload();
+
+    // An older list landing after a newer one (a restore, then a purge) would show what's no longer so.
+    private readonly LoadSequence _loads = new();
+
+    private async Task Reload()
+    {
+        var load = _loads.Begin();
+        var rows = await Removal.ListAsync();
+        if (_loads.IsCurrent(load)) _rows = rows;
+    }
+
+    private async Task Restore(RemovedCaseRow r)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Removal.RestoreAsync(r.CaseId);
+            Toasts.Success($"{r.Number} restored. It's archived, as it was.");
+            await Reload();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { Toasts.Error(ex.Message); }
+        finally { _busy = false; }
+    }
+
+    private async Task PurgeNow(RemovedCaseRow r)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var problem = await Removal.PurgeNowAsync(r.CaseId, _typed ?? "");
+            if (problem is null) Toasts.Success($"{r.Number} purged. Its number is free.");
+            else Toasts.Error(problem);
+            (_confirming, _typed) = (null, null);
+            await Reload();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { Toasts.Error(ex.Message); }
+        finally { _busy = false; }
+    }
+}

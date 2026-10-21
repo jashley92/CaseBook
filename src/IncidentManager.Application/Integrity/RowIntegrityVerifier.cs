@@ -22,55 +22,57 @@ public static class RowIntegrityVerifier
     /// <summary>The first record that fails, or null when every checked record matches.</summary>
     public sealed record RowMismatch(string EntityType, Guid Id, long? LastSequence, string Detail);
 
-    /// <summary>The hashable tables checked, each loaded with what its hash covers (a case's data elements, a step's tactics).</summary>
+    /// <summary>The hashable tables checked, each loaded with what its hash covers (a case's data elements, a step's tactics).
+    /// Every row, past the context's filter: a removed case's rows are checked like any other, and a row planted under a
+    /// case that isn't there is caught rather than left out.</summary>
     public static IEnumerable<IQueryable<IHashableEntity>> Tables(IAppDbContext db) =>
     [
-        db.Cases.AsNoTracking().Include(c => c.DataElements),
-        db.TimelineEntries.AsNoTracking().Include(t => t.Tactics),
-        db.Notes.AsNoTracking(),
-        db.Evidence.AsNoTracking(),
-        db.ActionItems.AsNoTracking(),
-        db.ActionItemComments.AsNoTracking(),
-        db.CaseEntities.AsNoTracking(),
-        db.EntityRelationships.AsNoTracking(),
-        db.CaseTechniques.AsNoTracking(),
-        db.CaseLinks.AsNoTracking(),
-        db.CaseBriefs.AsNoTracking(),
-        db.CaseOutcomes.AsNoTracking(),
-        db.Teams.AsNoTracking(),         // CAP-36
-        db.TeamMembers.AsNoTracking(),
-        db.PostIncidentReviews.AsNoTracking(),
-        db.ImprovementActions.AsNoTracking(),
-        db.TransitionTimeCorrections.AsNoTracking(),
-        db.JurisdictionNotices.AsNoTracking(),
-        db.CaseParties.AsNoTracking(),   // CAP-34
-        db.CaseTemplates.AsNoTracking(),
-        db.CaseTemplateSteps.AsNoTracking(),
-        db.StageGates.AsNoTracking(),
-        db.StageGateRequirements.AsNoTracking(),
-        db.GatePassages.AsNoTracking(),
-        db.ReportProfiles.AsNoTracking(),
-        db.ReportTemplates.AsNoTracking(),
-        db.DataElements.AsNoTracking(),
-        db.NotificationRules.AsNoTracking(),
-        db.AppSettings.AsNoTracking(),
-        db.Roles.AsNoTracking(),
-        db.RoleMappings.AsNoTracking(),
+        db.Cases.AsNoTracking().IgnoreQueryFilters().Include(c => c.DataElements),
+        db.TimelineEntries.AsNoTracking().IgnoreQueryFilters().Include(t => t.Tactics),
+        db.Notes.AsNoTracking().IgnoreQueryFilters(),
+        db.Evidence.AsNoTracking().IgnoreQueryFilters(),
+        db.ActionItems.AsNoTracking().IgnoreQueryFilters(),
+        db.ActionItemComments.AsNoTracking().IgnoreQueryFilters(),
+        db.CaseEntities.AsNoTracking().IgnoreQueryFilters(),
+        db.EntityRelationships.AsNoTracking().IgnoreQueryFilters(),
+        db.CaseTechniques.AsNoTracking().IgnoreQueryFilters(),
+        db.CaseLinks.AsNoTracking().IgnoreQueryFilters(),
+        db.CaseBriefs.AsNoTracking().IgnoreQueryFilters(),
+        db.CaseOutcomes.AsNoTracking().IgnoreQueryFilters(),
+        db.Teams.AsNoTracking().IgnoreQueryFilters(),         // CAP-36
+        db.TeamMembers.AsNoTracking().IgnoreQueryFilters(),
+        db.PostIncidentReviews.AsNoTracking().IgnoreQueryFilters(),
+        db.ImprovementActions.AsNoTracking().IgnoreQueryFilters(),
+        db.TransitionTimeCorrections.AsNoTracking().IgnoreQueryFilters(),
+        db.JurisdictionNotices.AsNoTracking().IgnoreQueryFilters(),
+        db.CaseParties.AsNoTracking().IgnoreQueryFilters(),   // CAP-34
+        db.CaseTemplates.AsNoTracking().IgnoreQueryFilters(),
+        db.CaseTemplateSteps.AsNoTracking().IgnoreQueryFilters(),
+        db.StageGates.AsNoTracking().IgnoreQueryFilters(),
+        db.StageGateRequirements.AsNoTracking().IgnoreQueryFilters(),
+        db.GatePassages.AsNoTracking().IgnoreQueryFilters(),
+        db.ReportProfiles.AsNoTracking().IgnoreQueryFilters(),
+        db.ReportTemplates.AsNoTracking().IgnoreQueryFilters(),
+        db.DataElements.AsNoTracking().IgnoreQueryFilters(),
+        db.NotificationRules.AsNoTracking().IgnoreQueryFilters(),
+        db.AppSettings.AsNoTracking().IgnoreQueryFilters(),
+        db.Roles.AsNoTracking().IgnoreQueryFilters(),
+        db.RoleMappings.AsNoTracking().IgnoreQueryFilters(),
         // BUG-70: when things happened and who could see a case, which were outside the check before.
-        db.ClassificationChanges.AsNoTracking(),
-        db.StatusChanges.AsNoTracking(),
-        db.MaterialityChanges.AsNoTracking(),
-        db.SeverityChanges.AsNoTracking(),
-        db.AssignmentChanges.AsNoTracking(),
-        db.EntityVerdictChanges.AsNoTracking(),
-        db.AccountDirectorySnapshots.AsNoTracking(),   // BUG-416
-        db.Assignments.AsNoTracking(),
-        db.EvidenceCitations.AsNoTracking(),
+        db.ClassificationChanges.AsNoTracking().IgnoreQueryFilters(),
+        db.StatusChanges.AsNoTracking().IgnoreQueryFilters(),
+        db.MaterialityChanges.AsNoTracking().IgnoreQueryFilters(),
+        db.SeverityChanges.AsNoTracking().IgnoreQueryFilters(),
+        db.AssignmentChanges.AsNoTracking().IgnoreQueryFilters(),
+        db.EntityVerdictChanges.AsNoTracking().IgnoreQueryFilters(),
+        db.AccountDirectorySnapshots.AsNoTracking().IgnoreQueryFilters(),   // BUG-416
+        db.Assignments.AsNoTracking().IgnoreQueryFilters(),
+        db.EvidenceCitations.AsNoTracking().IgnoreQueryFilters(),
         // REV-05: who the API lets in. A token row inserted in the database would otherwise be an admin identity no
         // check flagged.
-        db.ApiTokens.AsNoTracking(),
+        db.ApiTokens.AsNoTracking().IgnoreQueryFilters(),
         // BUG-633: who generated a report (the approver must be someone else), whether it's the approved final, its version.
-        db.Reports.AsNoTracking(),
+        db.Reports.AsNoTracking().IgnoreQueryFilters(),
     ];
 
     /// <summary>
@@ -190,11 +192,11 @@ public static class RowIntegrityVerifier
     /// so the trail it records first is the baseline.
     /// </summary>
     private static async Task<RowMismatch?> HiddenAsync(IAppDbContext db, CancellationToken ct) =>
-        Hidden(nameof(AnalystNote), await db.Notes.AsNoTracking()
-            .Where(n => !n.IsCurrent && !db.Notes.Any(later => later.SupersedesNoteId == n.Id))
+        Hidden(nameof(AnalystNote), await db.Notes.AsNoTracking().IgnoreQueryFilters()
+            .Where(n => !n.IsCurrent && !db.Notes.IgnoreQueryFilters().Any(later => later.SupersedesNoteId == n.Id))
             .Select(n => n.Id).FirstOrDefaultAsync(ct))
-        ?? Hidden(nameof(TimelineEntry), await db.TimelineEntries.AsNoTracking()
-            .Where(t => !t.IsCurrent && t.RetractedAtUtc == null && !db.TimelineEntries.Any(later => later.SupersedesEntryId == t.Id))
+        ?? Hidden(nameof(TimelineEntry), await db.TimelineEntries.AsNoTracking().IgnoreQueryFilters()
+            .Where(t => !t.IsCurrent && t.RetractedAtUtc == null && !db.TimelineEntries.IgnoreQueryFilters().Any(later => later.SupersedesEntryId == t.Id))
             .Select(t => t.Id).FirstOrDefaultAsync(ct));
 
     private static RowMismatch? Hidden(string type, Guid id) =>
@@ -203,18 +205,18 @@ public static class RowIntegrityVerifier
                 $"{type} {id} is marked not current, but no later version replaced it and it wasn't retracted: hidden outside CaseBook.");
 
     private static async Task<RowMismatch?> ReplacedButCurrentAsync(IAppDbContext db, CancellationToken ct) =>
-        Lineage(nameof(AnalystNote), await (from later in db.Notes.AsNoTracking() where later.SupersedesNoteId != null
-                                            join earlier in db.Notes.AsNoTracking() on later.SupersedesNoteId equals (Guid?)earlier.Id
+        Lineage(nameof(AnalystNote), await (from later in db.Notes.AsNoTracking().IgnoreQueryFilters() where later.SupersedesNoteId != null
+                                            join earlier in db.Notes.AsNoTracking().IgnoreQueryFilters() on later.SupersedesNoteId equals (Guid?)earlier.Id
                                             where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
-        ?? Lineage(nameof(TimelineEntry), await (from later in db.TimelineEntries.AsNoTracking() where later.SupersedesEntryId != null
-                                                 join earlier in db.TimelineEntries.AsNoTracking() on later.SupersedesEntryId equals (Guid?)earlier.Id
+        ?? Lineage(nameof(TimelineEntry), await (from later in db.TimelineEntries.AsNoTracking().IgnoreQueryFilters() where later.SupersedesEntryId != null
+                                                 join earlier in db.TimelineEntries.AsNoTracking().IgnoreQueryFilters() on later.SupersedesEntryId equals (Guid?)earlier.Id
                                                  where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
-        ?? Lineage(nameof(CaseBrief), await (from later in db.CaseBriefs.AsNoTracking() where later.SupersedesBriefId != null
-                                             join earlier in db.CaseBriefs.AsNoTracking() on later.SupersedesBriefId equals (Guid?)earlier.Id
+        ?? Lineage(nameof(CaseBrief), await (from later in db.CaseBriefs.AsNoTracking().IgnoreQueryFilters() where later.SupersedesBriefId != null
+                                             join earlier in db.CaseBriefs.AsNoTracking().IgnoreQueryFilters() on later.SupersedesBriefId equals (Guid?)earlier.Id
                                              where earlier.IsCurrent select earlier.Id).FirstOrDefaultAsync(ct))
         // BUG-421: retracting an entry makes it not current in the same change, and nothing makes it current again, so a
         // retracted entry marked current (back on the timeline and in every report) was changed outside CaseBook.
-        ?? RetractedButCurrent(await db.TimelineEntries.AsNoTracking().Where(t => t.RetractedAtUtc != null && t.IsCurrent)
+        ?? RetractedButCurrent(await db.TimelineEntries.AsNoTracking().IgnoreQueryFilters().Where(t => t.RetractedAtUtc != null && t.IsCurrent)
             .Select(t => t.Id).FirstOrDefaultAsync(ct));
 
     private static RowMismatch? Lineage(string type, Guid replacedButCurrent) =>

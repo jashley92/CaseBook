@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Access;
+using IncidentManager.Application.Admin;
 using IncidentManager.Application.Import;
 using Microsoft.Extensions.Options;
 
@@ -18,7 +19,8 @@ public sealed class RetentionOptions
 /// <summary>
 /// PROD-52: once a day (and once after startup), deletes access-log entries older than <c>Retention:AccessLogYears</c>
 /// (<see cref="AccessLogRetention"/>). CAP-31: and, as a second step, clears the stored documents of imports decided more
-/// than <c>Retention:DecidedImportDays</c> ago (<see cref="DecidedImportRetention"/>). Each step runs on its own, so one
+/// than <c>Retention:DecidedImportDays</c> ago (<see cref="DecidedImportRetention"/>). And, a third, purges the cases an
+/// administrator removed more than <c>Retention:RemovedCaseDays</c> ago (<see cref="CaseRemovalService"/>). Each step runs on its own, so one
 /// that fails doesn't hold up the other, and each is retried after a failure. Polls the settings every few minutes, so a
 /// change applies without a restart. Singleton hosted service; the retention services are scoped, so a new scope is
 /// created per run.
@@ -35,14 +37,18 @@ public sealed class AccessLogRetentionHostedService(IServiceScopeFactory scopeFa
     public static readonly JobDefinition ImportJob = new("decided-import-retention", "Decided import retention",
         "daily (UTC), and when the setting changes");
 
+    /// <summary>The purge of removed cases past their undo window has a row of its own.</summary>
+    public static readonly JobDefinition RemovedCaseJob = new("removed-case-purge", "Removed case purge", "daily (UTC)");
+
     // Per step: the UTC day of its last successful run, and the setting it ran with (a change runs it again the same day).
-    private DateOnly? _lastRunDay, _lastImportRunDay;
+    private DateOnly? _lastRunDay, _lastImportRunDay, _lastPurgeDay;
     private int? _lastYears, _lastImportDays;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         jobs?.Register(Job);
         jobs?.Register(ImportJob);
+        jobs?.Register(RemovedCaseJob);
         while (!stoppingToken.IsCancellationRequested)
         {
             // BUG-262: a setting that can't be read skips this pass; it doesn't stop the app.
@@ -54,10 +60,12 @@ public sealed class AccessLogRetentionHostedService(IServiceScopeFactory scopeFa
                     await RunAsync(current.AccessLogYears, today, stoppingToken);
                 if (today != _lastImportRunDay || current.DecidedImportDays != _lastImportDays)
                     await RunImportsAsync(current.DecidedImportDays, today, stoppingToken);
+                if (today != _lastPurgeDay) await RunPurgeAsync(today, stoppingToken);
                 // CAP-29: the next UTC day's first poll; 0 keeps everything, so that step is off.
                 var tomorrow = new DateTimeOffset(today.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
                 jobs?.Scheduled(Job, current.AccessLogYears > 0, _lastRunDay == today ? tomorrow : DateTimeOffset.UtcNow);
                 jobs?.Scheduled(ImportJob, current.DecidedImportDays > 0, _lastImportRunDay == today ? tomorrow : DateTimeOffset.UtcNow);
+                jobs?.Scheduled(RemovedCaseJob, true, _lastPurgeDay == today ? tomorrow : DateTimeOffset.UtcNow);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -112,6 +120,29 @@ public sealed class AccessLogRetentionHostedService(IServiceScopeFactory scopeFa
         {
             run.Failed(ex);
             logger.LogError(ex, "Import retention failed; it will try again in a few minutes.");
+        }
+    }
+
+    // The removed cases past their undo window, as the steps above.
+    private async Task RunPurgeAsync(DateOnly today, CancellationToken ct)
+    {
+        using var run = jobs.Begin(RemovedCaseJob);
+        if (run is null) return;
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var purged = await scope.ServiceProvider.GetRequiredService<CaseRemovalService>().PurgeDueAsync(ct);
+            _lastPurgeDay = today;
+            run.Succeeded(purged);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Shutdown in progress; nothing to log.
+        }
+        catch (Exception ex)
+        {
+            run.Failed(ex);
+            logger.LogError(ex, "The purge of removed cases failed; it will try again in a few minutes.");
         }
     }
 }

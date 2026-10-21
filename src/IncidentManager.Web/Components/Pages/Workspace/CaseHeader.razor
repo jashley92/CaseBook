@@ -147,6 +147,8 @@
                         @if (Case.IsArchived)
                         {
                             <button class="dropdown-item" @onclick="() => Run(() => OnSetArchived.InvokeAsync(false))">Restore from archive</button>
+                            @* An archived case opened by mistake, or a bad import: left out of everything, restorable for a while. *@
+                            <button class="dropdown-item text-danger" @onclick='() => Open("remove")'>Remove case…</button>
                         }
                         else
                         {

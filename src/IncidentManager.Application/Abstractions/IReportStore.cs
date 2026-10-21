@@ -7,6 +7,9 @@ public interface IReportStore
 {
     Task<StoredReport> SaveAsync(Guid caseId, string fileName, byte[] content, CancellationToken ct = default);
     Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default);
+
+    /// <summary>Deletes a report's file (a removed case's purge). Absent already is fine.</summary>
+    Task DeleteAsync(string storagePath, CancellationToken ct = default) => throw new NotSupportedException("This report store can't delete files.");
 }
 
 /// <summary>

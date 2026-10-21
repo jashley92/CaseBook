@@ -122,6 +122,7 @@ public static class DependencyInjection
         services.AddSingleton<EvidenceConversion>();   // PROD-57: plain files stored before encryption, encrypted in batches
         services.AddSingleton<IEvidenceStore, FileEvidenceStore>();
         services.AddSingleton<IReportStore, FileReportStore>();
+        services.AddScoped<ICaseContentPurger, Persistence.CaseContentPurger>();   // a removed case's purge
         services.AddSingleton<IReportBrandingStore, FileReportBrandingStore>();
         services.AddSingleton<IReportGenerator, ReportGenerator>();
         services.AddSingleton<Application.Reporting.IReportDiagrams, SkiaReportDiagrams>();   // PROD-46: attack chain + entity graph pictures

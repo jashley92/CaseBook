@@ -775,6 +775,24 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<int>("Phase")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("PurgedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RemovedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RemovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RemovedNumber")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RemovedReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("ReportProfileId")
                         .HasColumnType("TEXT");
 

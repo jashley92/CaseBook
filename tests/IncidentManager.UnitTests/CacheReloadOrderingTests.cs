@@ -26,6 +26,7 @@ public partial class CacheReloadOrderingTests
         ["DueSoonActionItemHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",
         ["EvidenceIntegrityHostedService.VerifyAsync"] = "stores the interval it ran in (_lastSlot), one loop; a Run now (CAP-29) never stores it",
         ["AccessLogRetentionHostedService.RunAsync"] = "PROD-52: stores the day and setting it ran with (_lastRunDay, _lastYears), one loop",
+        ["AccessLogRetentionHostedService.RunPurgeAsync"] = "the removed cases' purge: stores the day it ran (_lastPurgeDay), the same one loop",
         ["AccessLogRetentionHostedService.RunImportsAsync"] = "CAP-31: stores the day and setting it ran with (_lastImportRunDay, _lastImportDays), the same one loop",
         ["RetentionReviewHostedService.RunAsync"] = "CAP-10: stores the clock time and settings it ran with (_lastRunUtc, _lastYears, _lastEmail), one loop",
         ["NotificationDeadlineHostedService.RunCycleAsync"] = "stores the cycle's clock time (_lastRunUtc), one loop",

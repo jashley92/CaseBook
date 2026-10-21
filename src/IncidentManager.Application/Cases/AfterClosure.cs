@@ -1,3 +1,4 @@
+using IncidentManager.Application.Integrity;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -58,7 +59,7 @@ public static class AfterClosure
         var result = cases.ToDictionary(c => c.Current, c => c.Id, StringComparer.Ordinal);
         if (cases.Count == 0) return result;
         var ids = cases.Select(c => c.Id.ToString()).ToList();
-        var held = await db.AuditLog.AsNoTracking()
+        var held = await db.AuditLog.AsNoTracking().HeldNow(db)
             .Where(a => a.EntityType == nameof(Case) && a.EntityId != null && ids.Contains(a.EntityId) && a.CaseNumber != null)
             .Select(a => new { a.EntityId, a.CaseNumber }).Distinct().ToListAsync(ct);
         foreach (var h in held)
@@ -88,7 +89,7 @@ public static class AfterClosure
         // WF-49: under every number the case has held (REV-01): an entry carries the number at save time, so renumbering a
         // closed case hid the changes made before it under the old number.
         var numbers = await NumbersHeldAsync(db, caseId, c.CaseNumber, ct);
-        var rows = await db.AuditLog.AsNoTracking()
+        var rows = await db.AuditLog.AsNoTracking().HeldNow(db)
             .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.AtUtc > closedAt && !NotTheCaseRecord.Contains(a.EntityType)
                         // C18: nor CaseBook's own upkeep (a kept value filled in, a row hash recorded at the upgrade).
                         && a.Reason != Integrity.IntegrityUpkeep.Reason

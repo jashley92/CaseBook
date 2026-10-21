@@ -84,14 +84,24 @@ public sealed class FileReportStore : IReportStore
         return stem + ext;
     }
 
-    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
+    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) =>
+        Task.FromResult(EncryptedFiles.OpenContent(new FileStream(PathOf(storagePath), FileMode.Open, FileAccess.Read, FileShare.Read), _keys));
+
+    /// <summary>A removed case's purge: deletes the report's file (one already gone is fine).</summary>
+    public Task DeleteAsync(string storagePath, CancellationToken ct = default)
+    {
+        var abs = PathOf(storagePath);
+        if (File.Exists(abs)) File.Delete(abs);
+        return Task.CompletedTask;
+    }
+
+    private string PathOf(string storagePath)
     {
         var abs = Path.GetFullPath(Path.Combine(_root, storagePath));
         // Root + separator, so a sibling folder sharing the root's name prefix can't pass (S-07).
         var rootPrefix = _root.EndsWith(Path.DirectorySeparatorChar) ? _root : _root + Path.DirectorySeparatorChar;
         if (!abs.StartsWith(rootPrefix, StringComparison.Ordinal))
             throw new ReportPathOutsideStoreException();
-
-        return Task.FromResult(EncryptedFiles.OpenContent(new FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.Read), _keys));
+        return abs;
     }
 }

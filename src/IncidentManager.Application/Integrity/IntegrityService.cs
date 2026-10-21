@@ -453,7 +453,8 @@ public sealed class IntegrityService
         var all = db.AuditLog.AsNoTracking();
         if (_user.Has(Permission.ViewAllCases) || _user.Has(Permission.Administer)) return all;
         var visible = db.Cases.AsNoTracking().ForUser(_user).Select(c => c.CaseNumber);
-        return all.Where(a => a.CaseNumber != null && visible.Contains(a.CaseNumber));
+        // A number a removed case gave up: what was written under it before is that case's, not its next holder's.
+        return all.HeldNow(db).Where(a => a.CaseNumber != null && visible.Contains(a.CaseNumber));
     }
 
     /// <summary>
@@ -477,7 +478,7 @@ public sealed class IntegrityService
             .Where(a => a.EntityType == nameof(Case) && a.EntityId == id && a.CaseNumber != null)
             .Select(a => a.CaseNumber!).Distinct().ToListAsync(ct);
         if (!numbers.Contains(caseNumber)) numbers.Add(caseNumber);
-        return db.AuditLog.AsNoTracking().Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber));
+        return db.AuditLog.AsNoTracking().HeldNow(db).Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber));
     }
 
     /// <summary>

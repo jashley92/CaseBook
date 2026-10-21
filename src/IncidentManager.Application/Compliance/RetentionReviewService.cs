@@ -14,6 +14,10 @@ public sealed class CaseRetentionOptions
 {
     /// <summary>Years after closing before a case is listed in the retention review. 0 turns the review off.</summary>
     public int CaseYears { get; set; } = 7;
+
+    /// <summary>Days a case an administrator removed can be restored before its content is purged (0: at the next nightly
+    /// run). See <see cref="Admin.CaseRemovalService"/>.</summary>
+    public int RemovedCaseDays { get; set; } = 30;
 }
 
 /// <summary>One regulatory deadline still running on a case in the retention review (its notice isn't recorded).</summary>

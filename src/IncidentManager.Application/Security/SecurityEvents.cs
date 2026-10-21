@@ -413,6 +413,20 @@ public static class SecurityEvents
         Lifecycle(SecurityEventIds.EvidencePurged, "EvidencePurged", SecuritySeverity.High, c, actor, actorUpn, null,
             "Evidence", evidenceId.ToString());
 
+    /// <summary>An administrator removed an archived case: it's left out of every list, search and IOC match from now on.
+    /// High: a case leaves the record (restorable until it's purged).</summary>
+    public static SecurityEvent CaseRemoved(CaseSubject c, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseRemoved, "CaseRemoved", SecuritySeverity.High, c, actor, actorUpn, null);
+
+    /// <summary>A removed case was put back within its undo window.</summary>
+    public static SecurityEvent CaseRemovalUndone(CaseSubject c, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CaseRemovalUndone, "CaseRemovalUndone", SecuritySeverity.Warning, c, actor, actorUpn, null);
+
+    /// <summary>A removed case's content was purged: its rows, evidence files and reports deleted, its number freed. High:
+    /// the content is gone for good (a stub, the audit trail and the chain of custody stay).</summary>
+    public static SecurityEvent CasePurged(CaseSubject c, string actor, string? actorUpn) =>
+        Lifecycle(SecurityEventIds.CasePurged, "CasePurged", SecuritySeverity.High, c, actor, actorUpn, null);
+
     private static string Rung(Domain.Enums.Classification? k) => k?.ToString() ?? "ComplexEvent";
 
     private static SecurityEvent Lifecycle(int id, string action, SecuritySeverity severity, CaseSubject c, string actor,

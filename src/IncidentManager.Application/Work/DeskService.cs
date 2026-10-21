@@ -1,3 +1,4 @@
+using IncidentManager.Application.Integrity;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
@@ -123,7 +124,7 @@ public sealed class DeskService
 
         // What others changed on each case since the caller last opened it (from the audit log).
         var floor = now.AddDays(-SinceWindowDays);
-        var audit = await db.AuditLog.AsNoTracking()
+        var audit = await db.AuditLog.AsNoTracking().HeldNow(db)
             .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.Actor != me && a.AtUtc > floor
                         && a.Reason != Integrity.IntegrityUpkeep.Reason)   // C18: CaseBook's upkeep isn't a change anyone made
             .Select(a => new { a.CaseNumber, a.Actor, a.AtUtc })

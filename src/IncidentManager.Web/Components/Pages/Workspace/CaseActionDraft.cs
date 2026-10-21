@@ -48,6 +48,10 @@ public sealed class CaseActionDraft
     public string? SeverityReason { get; set; }
     public string? ReopenReason { get; set; }
 
+    /// <summary>Removing an archived case: why, and its number typed to confirm.</summary>
+    public string? RemoveReason { get; set; }
+    public string? RemoveTyped { get; set; }
+
     // Assign
     public string AssignUserId { get; set; } = "";
     public CaseAssignmentRole AssignRole { get; set; } = CaseAssignmentRole.Analyst;
@@ -116,7 +120,7 @@ public sealed class CaseActionDraft
     public string InputSnapshot() => string.Join("\u001f", new object?[]
     {
         Name, ReclassReason, PhaseReason, WasContained, ContainedAt, ContainmentNotNeededReason, ResolvedAt, SeverityReason,
-        ReopenReason, AssignUserId, LegalContact, LegalNote, HoldReleaseReason, MaterialityStatus, MaterialityDecisionMaker,
+        ReopenReason, RemoveReason, RemoveTyped, AssignUserId, LegalContact, LegalNote, HoldReleaseReason, MaterialityStatus, MaterialityDecisionMaker,
         MaterialityDecidedOn, MaterialityRationale, RestrictReason, SupersedeTargetId, SupersedeReason, SupersedeCopy,
         SupersedeAck, HandoffTo, HandoffState, HandoffDone, HandoffOpen, HandoffWatch, HandoffEmail, HandoffTasks,
         Transition.Edited, Transition.Edited ? Transition.When : null, Transition.Override,

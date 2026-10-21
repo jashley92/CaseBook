@@ -48,6 +48,10 @@ public partial class CaseAudienceGateTests
         ["CaseService.cs:EnsureQuestionAnsweredAsync"] = (1, "private: its callers loaded the task's case with LoadTrackedAsync"),
         ["CaseService.cs:AttachScreenshotAsync"] = (1, "CAP-26, private: its callers loaded the case with LoadTrackedAsync; the duplicate check reads only that case's evidence"),
         // Activity, administration, campaigns
+        ["CaseRemovalService.cs:PurgeDueAsync"] = (1, "the nightly purge, a system run: the ids of removed cases past their undo window"),
+        ["CaseRemovalService.cs:PurgeCoreAsync"] = (3, "private: called by PurgeNowAsync (Administer) and the nightly PurgeDueAsync; the removed case, its evidence and its reports"),
+        ["ReleasedNumbers.cs:HeldNow"] = (1, "an existence test only (a purged case that gave up the entry's number); no case row comes back"),
+        ["CaseContentPurger.cs:RemoveContentAsync"] = (1, "the purge's links to the removed case from other cases, deleted with it; called by CaseRemovalService only"),
         ["ActivityFeedService.cs:RecentAsync"] = (1, "an existence test only (audit rows under a number no case holds now, BUG-277); no case row comes back"),
         ["CaseOutcomeService.cs:ListAllAsync"] = (1, "how many closes recorded each outcome, for the administration list; no case named"),
         ["DataElementService.cs:ListAllAsync"] = (1, "which element keys any case references (delete is offered only where none does); no case named"),

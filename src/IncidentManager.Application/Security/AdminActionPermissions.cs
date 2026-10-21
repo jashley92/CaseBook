@@ -33,7 +33,7 @@ public static class AdminActionPermissions
         typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService), typeof(ReportTemplateService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
         typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
-        typeof(ApiTokenService), typeof(AccessReviewService), typeof(RetentionReviewService), typeof(OffboardingService),
+        typeof(ApiTokenService), typeof(AccessReviewService), typeof(RetentionReviewService), typeof(OffboardingService), typeof(CaseRemovalService),
         typeof(Search.FullTextAdminService),
         typeof(TeamService),   // CAP-36
     ];
@@ -108,6 +108,11 @@ public static class AdminActionPermissions
             [Key<RetentionReviewService>(nameof(RetentionReviewService.ArchiveAsync))] = Permission.Administer,
             // CAP-30: the offboarding page: what a leaver holds, their tokens revoked, their calendar link voided.
             [Key<OffboardingService>(nameof(OffboardingService.BuildAsync))] = Permission.Administer,
+            // Removing an archived case opened by mistake (or a bad import), undoing it, purging it.
+            [Key<CaseRemovalService>(nameof(CaseRemovalService.ListAsync))] = Permission.Administer,
+            [Key<CaseRemovalService>(nameof(CaseRemovalService.RemoveAsync))] = Permission.Administer,
+            [Key<CaseRemovalService>(nameof(CaseRemovalService.RestoreAsync))] = Permission.Administer,
+            [Key<CaseRemovalService>(nameof(CaseRemovalService.PurgeNowAsync))] = Permission.Administer,
             [Key<OffboardingService>(nameof(OffboardingService.RevokeTokensAsync))] = Permission.Administer,
             [Key<OffboardingService>(nameof(OffboardingService.VoidCalendarLinkAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.QueryAsync))] = Permission.Administer,

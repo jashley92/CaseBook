@@ -8,6 +8,9 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.IExerciseEscalationPolicy ExercisePolicy
 @inject ToastService Toasts
+@inject IncidentManager.Application.Admin.CaseRemovalService Removal
+@inject NavigationManager Nav
+@inject IncidentManager.Web.Services.CaseTabsState CaseTabs
 @implements IDisposable
 
 @{ var T = D.Transition; var backdated = T.Backdated(TimeDisp.Zone, Clock.UtcNow); }
@@ -282,6 +285,19 @@
             <p class="mb-0">Archive <span class="im-casenum">@Case.CaseNumber</span>? It's hidden from active queues and can be restored later.</p>
         }
     }
+    else if (D.Name == "remove")
+    {
+        <p class="small mb-2">Remove <span class="im-casenum">@Case.CaseNumber</span> if it was opened by mistake or imported badly.
+            It's left out of every list, search, lookup and IOC match from now on, and can be restored for
+            @IncidentManager.Application.Common.Plural.Of(Removal.UndoDays, "day") from Administration › Removed cases. After
+            that, what was filed under it, its evidence files and its reports are deleted, and its number is free for
+            another case. The audit trail keeps what was done.</p>
+        <label class="form-label small" for="ws-remove-reason">Reason <span class="text-muted">(required)</span></label>
+        <input id="ws-remove-reason" class="form-control mb-2" maxlength="@Case.MaxRemovedReasonLength" placeholder="Why is this case being removed?"
+               @bind="D.RemoveReason" @bind:event="oninput" />
+        <label class="form-label small" for="ws-remove-typed">Type <span class="im-casenum">@Case.CaseNumber</span> to confirm</label>
+        <input id="ws-remove-typed" class="form-control" autocomplete="off" spellcheck="false" @bind="D.RemoveTyped" @bind:event="oninput" />
+    }
     else if (D.Name == "reopen")
     {
         <p class="small text-muted mb-2">Reopen <span class="im-casenum">@Case.CaseNumber</span>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
@@ -330,7 +346,7 @@
 </div>
 <div class="modal-footer">
     <button class="btn btn-outline-secondary" @onclick="() => OnClose.InvokeAsync()">Cancel</button>
-    <button class="@(D.Name == "archive" ? "btn btn-danger" : "btn btn-primary")" @onclick="Apply" disabled="@PrimaryDisabled()">@PrimaryLabel()</button>
+    <button class="@(D.Name is "archive" or "remove" ? "btn btn-danger" : "btn btn-primary")" @onclick="Apply" disabled="@PrimaryDisabled()">@PrimaryLabel()</button>
 </div>
 
 @code {
@@ -420,6 +436,7 @@
         "unrestrict" => "Lift restriction",
         "materiality" => "Record materiality determination",
         "archive" => "Archive case",
+        "remove" => "Remove case",
         "assign" => "Add someone to the team",
         "reopen" => "Reopen case",
         _ => ""
@@ -428,6 +445,7 @@
     private string PrimaryLabel() => D.Name switch
     {
         "archive" => "Archive",
+        "remove" => "Remove",
         "contained" => "Mark contained",
         "assign" => CurrentRole(D.AssignUserId) is null ? "Assign" : "Change role",
         "reopen" => "Reopen",
@@ -454,6 +472,8 @@
                 || (Case.SkipsContainment(Case.ReopenPhase()) && !ContainmentSaid)   // WF-50
                 || (Case.SkipsRecovery(Case.ReopenPhase()) && D.ResolvedAt is null),
             "holdrelease" => string.IsNullOrWhiteSpace(D.HoldReleaseReason),
+            "remove" => string.IsNullOrWhiteSpace(D.RemoveReason)
+                || !string.Equals(D.RemoveTyped?.Trim(), Case.CaseNumber, StringComparison.OrdinalIgnoreCase),
             "supersede" => D.SupersedeTargetId is null || string.IsNullOrWhiteSpace(D.SupersedeReason)
                 || (D.SupersedeExposure is not null && !D.SupersedeAck),
             "unrestrict" => string.IsNullOrWhiteSpace(D.RestrictReason),
@@ -544,7 +564,7 @@
     /// disabled, and never an archive, which takes a click.</summary>
     public async Task SubmitAsync()
     {
-        if (D.Name is null or "archive" || PrimaryDisabled()) return;
+        if (D.Name is null or "archive" or "remove" || PrimaryDisabled()) return;
         await Apply();
         StateHasChanged();   // a refusal's message (D.Error) shows without another event
     }
@@ -670,6 +690,18 @@
                     await Cases.SetArchivedAsync(id, true);
                     done = "Case archived";
                     break;
+                case "remove":
+                    await Removal.RemoveAsync(id, D.RemoveTyped ?? "", D.RemoveReason ?? "");
+                    // The case is left out of everything now, this page included: to the list where it can be restored.
+                    Toasts.Success($"{Case.CaseNumber} removed. It can be restored from Removed cases.");
+                    // What was typed did its work: it isn't unsaved text to ask about on the way out.
+                    (D.RemoveReason, D.RemoveTyped) = (null, null);
+                    await CaseTabs.RefreshAsync();   // its tab goes too (the list leaves out a removed case)
+                    // The case's own page rebuilds this dialog as the case leaves it (so it's disposed), but a viewer who went
+                    // elsewhere meanwhile isn't taken from what's showing now.
+                    if (_gone && !StillOnCase(id)) return;
+                    Nav.NavigateTo("admin/removed-cases");
+                    return;
                 case "reopen":
                     if (string.IsNullOrWhiteSpace(D.ReopenReason)) { D.Error = "Enter a reason."; return; }
                     var back = Case.ReopenPhase();
@@ -734,6 +766,9 @@
     // discarded the draft) would set its message where nobody sees it. Say it as a toast naming the case instead, as the
     // close-out does (BUG-337).
     private bool _gone;
+
+    private bool StillOnCase(Guid caseId) =>
+        string.Equals(Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0], $"cases/{caseId}", StringComparison.OrdinalIgnoreCase);
     public void Dispose() => _gone = true;
 
     // BUG-448: the dialog this save was applied from (CaseActionDraft.Opening). Once another opening has replaced it, the

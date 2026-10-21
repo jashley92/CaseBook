@@ -72,6 +72,7 @@ public sealed class AdminActionPermissionsTests
         K<IntegrityService>(nameof(IntegrityService.RecentSealsAsync)),
         // The background seal job's cadence path — a system act, not an admin action.
         K<IntegrityService>(nameof(IntegrityService.SealIfDueAsync)),
+        K<CaseRemovalService>(nameof(CaseRemovalService.PurgeDueAsync)),   // the nightly purge of removed cases past their undo window
         // S-18: building/previewing a bundle reads configuration only; the page itself is Administer-gated.
         K<IncidentManager.Application.Config.ConfigBundleService>(nameof(IncidentManager.Application.Config.ConfigBundleService.BuildBundleAsync)),
         K<IncidentManager.Application.Config.ConfigBundleService>(nameof(IncidentManager.Application.Config.ConfigBundleService.PreviewAsync)),

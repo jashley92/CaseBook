@@ -226,6 +226,10 @@ public static class SettingsCatalog
             "How long after closing a case is listed under Administration › Retention, for an administrator to archive. " +
             "Nothing is archived or deleted automatically, and a case under a legal hold or with a regulatory notice not yet " +
             "recorded can't be archived. 0 turns the review off. Default 7.", "7", Max: 100),
+        new SettingDefinition("Retention:RemovedCaseDays", "Removed case undo (days)", "Retention", SettingKind.Int,
+            "How long a case an administrator removed (Administration › Removed cases) can be restored. After that its content " +
+            "is purged nightly: what was filed under it, its evidence files and its reports. Who removed it, when and why stay, " +
+            "and its number becomes free. 0 purges at the next nightly run. Default 30.", "30", Max: CaseRemovalService.MaxUndoDays),
         new SettingDefinition("Notifications:RetentionReview:Email", "Monthly retention-review email to Legal", "Retention", SettingKind.Bool,
             "Once a month, when closed cases are past the case retention period, emails the Legal / Privacy distribution how many " +
             "are waiting for review (a count only, no case named). Nothing is archived by it.", "false"),

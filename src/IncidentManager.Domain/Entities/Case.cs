@@ -233,6 +233,29 @@ public class Case : AuditableEntity, IHashableEntity
     public string? ContainedBy { get; set; }
     public DateTimeOffset? ContainedRecordedAtUtc { get; set; }
 
+    /// <summary>
+    /// When an administrator removed the archived case (one opened by mistake, or a bad import), who did and why. A
+    /// removed case is left out of every query (the context's filter): lists, search, lookup by number, IOC matching,
+    /// related cases, counts and exports. It can be restored until its content is purged (<see cref="PurgedAtUtc"/>).
+    /// </summary>
+    public DateTimeOffset? RemovedAtUtc { get; private set; }
+    public string? RemovedBy { get; private set; }
+    public string? RemovedReason { get; private set; }
+
+    /// <summary>The number the case had when it was removed (it gives it up when purged, for another case to take).</summary>
+    public string? RemovedNumber { get; private set; }
+
+    /// <summary>When a removed case's content was purged: the case is a stub (who removed it, when, why, its former
+    /// number) that the audit trail and the chain of custody point to, and its number is free.</summary>
+    public DateTimeOffset? PurgedAtUtc { get; private set; }
+
+    public bool IsRemoved => RemovedAtUtc is not null;
+    public bool IsPurged => PurgedAtUtc is not null;
+    public const int MaxRemovedReasonLength = 1000;
+
+    /// <summary>The number a purged case's stub holds: unique, and never one an analyst would type.</summary>
+    public string PurgedNumber => $"REMOVED-{Id:N}";
+
     /// <summary>FR-51: while the case is in Containment, when it entered it (the latest move in, at its effective time):
     /// the earliest it can have been contained. Null in any other phase.</summary>
     public DateTimeOffset? ContainmentStartedAtUtc => Phase != CasePhase.Containment ? null
@@ -1900,6 +1923,56 @@ public class Case : AuditableEntity, IHashableEntity
                                                 "gets no deadline reminders, so a change that could start its notification clock waits until it's restored.");
     }
 
+    /// <summary>
+    /// Removes the archived case (opened by mistake, or a bad import): it's left out of everything from now on, and can be
+    /// restored until it's purged. Only an archived case, never one under a legal hold, and only with its number typed
+    /// to confirm, and a reason.
+    /// </summary>
+    public void Remove(string reason, string typedNumber, string actor, DateTimeOffset nowUtc)
+    {
+        reason = (reason ?? "").Trim();
+        if (reason.Length == 0) throw new ArgumentException("Say why the case is being removed.");
+        if (reason.Length > MaxRemovedReasonLength)
+            throw new ArgumentException($"Keep the reason to {MaxRemovedReasonLength:N0} characters or fewer.");
+        if (!string.Equals((typedNumber ?? "").Trim(), CaseNumber, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"Type the case number ({CaseNumber}) to confirm.");
+        if (IsRemoved) throw new InvalidOperationException("This case is removed already.");
+        if (!IsArchived) throw new InvalidOperationException("Only an archived case can be removed. Archive it first.");
+        if (LegalHold) throw new InvalidOperationException("This case is under legal hold and can't be removed. Release the hold first.");
+        (RemovedAtUtc, RemovedBy, RemovedReason, RemovedNumber) = (nowUtc, actor, reason, CaseNumber);
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>Puts a removed case back (archived, as it was) while its content hasn't been purged.</summary>
+    public void RestoreRemoved(string actor, DateTimeOffset nowUtc)
+    {
+        if (!IsRemoved) throw new InvalidOperationException("This case isn't removed.");
+        if (IsPurged) throw new InvalidOperationException("This case's content was purged, so it can't be restored.");
+        (RemovedAtUtc, RemovedBy, RemovedReason, RemovedNumber) = (null, null, null, null);
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// Makes a removed case a stub once its content is purged (by the caller, in the same save): its number becomes
+    /// <see cref="PurgedNumber"/> and leaves the IRP sequence, so another case can take the old one; its free text is
+    /// cleared. Who removed it, when, why and its former number stay.
+    /// </summary>
+    public void MarkPurged(string actor, DateTimeOffset nowUtc)
+    {
+        if (!IsRemoved) throw new InvalidOperationException("Only a removed case can be purged.");
+        if (IsPurged) return;
+        if (LegalHold) throw new InvalidOperationException("This case is under legal hold, so nothing on it can be purged.");
+        CaseNumber = PurgedNumber;
+        HasCustomNumber = true;
+        Title = "Removed case";
+        DescriptiveName = "Removed";
+        (Summary, ImpactedAssets, DataTypesInvolved, AffectedStates, DetectionCaseId, ThirdParty, IncidentCommander) =
+            (null, null, null, null, null, null, null);
+        AffectedIndividualsCount = null;
+        PurgedAtUtc = nowUtc;
+        Touch(actor, nowUtc);
+    }
+
     /// <summary>Restores an archived case to active status.</summary>
     public void Unarchive(string actor, DateTimeOffset nowUtc)
     {
@@ -2324,7 +2397,13 @@ public class Case : AuditableEntity, IHashableEntity
         + Canonical.Since(5, TeamId is not null, () => "|team|" + TeamId!.Value.ToString("N"))
         // FR-51: from format 7, who recorded the containment and when, only when set (a case not marked keeps its hash).
         + Canonical.Since(7, ContainedBy is not null || ContainedRecordedAtUtc is not null,
-            () => "|containedby|" + Canonical.Text(ContainedBy) + "|" + Canonical.Time(ContainedRecordedAtUtc));
+            () => "|containedby|" + Canonical.Text(ContainedBy) + "|" + Canonical.Time(ContainedRecordedAtUtc))
+        // From format 8, an administrator's removal and the purge that follows, only when set (a case never removed keeps
+        // its hash).
+        + Canonical.Since(8, RemovedAtUtc is not null || RemovedBy is not null || RemovedReason is not null || RemovedNumber is not null
+                             || PurgedAtUtc is not null,
+            () => "|removed|" + Canonical.Text(RemovedBy) + "|" + Canonical.Time(RemovedAtUtc) + "|" + Canonical.Text(RemovedReason)
+                  + "|" + Canonical.Text(RemovedNumber) + "|" + Canonical.Time(PurgedAtUtc));
 
     public static string FormatCaseNumber(int year, int sequence, string descriptiveName)
         => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{year:0000}-{sequence:00}_{descriptiveName}");

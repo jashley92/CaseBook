@@ -146,6 +146,9 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5517 | Governance | **Evidence reinstated**: a withdrawn file put back on its case's record, with a reason, within `Evidence:ReinstateWithinDays`; target is the file. Warning: it counts in the report and gates again. Ids only |
 | 5518 | Governance | **Evidence moved** from the case named to another (`to=<case number>` in the detail); target is the copy on the case it went to. Warning. The file left behind is withdrawn (its own 5516 isn't sent; this is the one event) |
 | 5519 | Governance | **Evidence purged**: an administrator deleted a withdrawn file's bytes; target is the file. **High**: evidence content is gone for good (its record, SHA-256 and chain of custody stay). Ids only: the reason is in the audit trail |
+| 5520 | Governance | **Case removed**: an administrator removed an archived case (opened by mistake, or a bad import); it's left out of every list, search, lookup and IOC match from then on, and can be restored until it's purged. **High**. The reason is in the audit trail |
+| 5521 | Governance | **Case removal undone**: a removed case was restored within its undo window (`Retention:RemovedCaseDays`). Warning |
+| 5522 | Governance | **Case purged**: a removed case's content was purged (nightly after the undo window, or an administrator's *Purge now*): what was filed under it, its evidence files' bytes and its reports deleted, its number freed. **High**: gone for good (a stub, the audit trail and the chain of custody stay). Actor `system` for the nightly run |
 | 5901 | Diagnostics | Test event from **Administration → Diagnostics → Send test event**. Safe to ignore; use it to confirm the collector receives the stream |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never

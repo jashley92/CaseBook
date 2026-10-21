@@ -196,6 +196,8 @@ public sealed class AppDbContext : DbContext, IAppDbContext
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
 
+        LeaveOutRemovedCases(modelBuilder);
+
         // Keys are client-generated Guids assigned in the entity constructor. Tell EF not to
         // treat them as store-generated, otherwise a new child added to a tracked aggregate
         // (its Id already set) is mistaken for an existing row and issued an UPDATE, not INSERT.
@@ -264,5 +266,40 @@ public sealed class AppDbContext : DbContext, IAppDbContext
                     new SqlConstantExpression(100, intMapping), typeof(int), intMapping),
                 typeof(long), longMapping));
         }
+    }
+
+    /// <summary>
+    /// An administrator's removal of a case (one opened by mistake, or a bad import): a removed case, and everything filed
+    /// under it, is left out of every query, so nothing finds it again by its number, a search, a count or an IOC it held.
+    /// A row with a case id is kept only while its case is there and not removed (a case link: both its cases). The
+    /// forensic records keep it: the audit trail, the chain of custody and the seals carry no case id, and the access log,
+    /// alert deliveries and held mail (an optional case id) are left alone. What must see a removed case asks with
+    /// <c>IgnoreQueryFilters</c>: Administration's removed cases, the purge, the number checks, the integrity checks.
+    /// </summary>
+    private void LeaveOutRemovedCases(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Case>().HasQueryFilter(c => c.RemovedAtUtc == null);
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes().ToList())
+        {
+            var clr = entityType.ClrType;
+            if (clr == typeof(Case) || entityType.IsOwned()) continue;
+            if (entityType.FindProperty("CaseId") is not { } caseId || caseId.ClrType != typeof(Guid)) continue;
+            var e = System.Linq.Expressions.Expression.Parameter(clr, "e");
+            var body = LiveCase(e, "CaseId");
+            if (clr == typeof(CaseLink)) body = System.Linq.Expressions.Expression.AndAlso(body, LiveCase(e, nameof(CaseLink.RelatedCaseId)));
+            modelBuilder.Entity(clr).HasQueryFilter(System.Linq.Expressions.Expression.Lambda(body, e));
+        }
+    }
+
+    // this.Cases.Any(c => c.Id == e.<property>): the Case filter applies inside, so a removed case's rows drop out with it.
+    private System.Linq.Expressions.Expression LiveCase(System.Linq.Expressions.ParameterExpression e, string property)
+    {
+        var c = System.Linq.Expressions.Expression.Parameter(typeof(Case), "c");
+        var match = System.Linq.Expressions.Expression.Lambda<Func<Case, bool>>(
+            System.Linq.Expressions.Expression.Equal(System.Linq.Expressions.Expression.Property(c, nameof(Case.Id)),
+                System.Linq.Expressions.Expression.Property(e, property)), c);
+        var cases = System.Linq.Expressions.Expression.Property(System.Linq.Expressions.Expression.Constant(this), nameof(Cases));
+        return System.Linq.Expressions.Expression.Call(typeof(Queryable), nameof(Queryable.Any), [typeof(Case)], cases,
+            System.Linq.Expressions.Expression.Quote(match));
     }
 }

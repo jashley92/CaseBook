@@ -57,6 +57,7 @@ public sealed class ImportWriterGateTests : IDisposable
         [typeof(IAccessLogService)] = "reads only",
         [typeof(AccessReviewService)] = "reads, and CAP-15's recorded review, which is an audit entry, not configuration",
         [typeof(IncidentManager.Application.Compliance.RetentionReviewService)] = "CAP-10: archives cases (case state), not configuration",
+        [typeof(CaseRemovalService)] = "removes, restores and purges cases (case state), not configuration",
         [typeof(OffboardingService)] = "CAP-30: revokes a person's API tokens and voids their calendar link, neither of which a configuration bundle carries",
         [typeof(IncidentManager.Application.Search.FullTextAdminService)] = "CAP-22: creates full-text indexes (schema), which no configuration bundle carries",
     };

@@ -4767,3 +4767,56 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261021193542_CaseRemoval'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [PurgedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261021193542_CaseRemoval'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [RemovedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261021193542_CaseRemoval'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [RemovedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261021193542_CaseRemoval'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [RemovedNumber] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261021193542_CaseRemoval'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [RemovedReason] nvarchar(1000) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261021193542_CaseRemoval'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261021193542_CaseRemoval'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

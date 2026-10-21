@@ -780,6 +780,24 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<int>("Phase")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset?>("PurgedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("RemovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RemovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RemovedNumber")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RemovedReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<Guid?>("ReportProfileId")
                         .HasColumnType("uniqueidentifier");
 

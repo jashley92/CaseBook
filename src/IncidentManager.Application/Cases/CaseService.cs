@@ -1,3 +1,4 @@
+using IncidentManager.Application.Integrity;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using FluentValidation;
@@ -364,11 +365,13 @@ public sealed class CaseService
     /// </summary>
     private static async Task<bool> NumberTakenAsync(IAppDbContext db, string number, Guid? caseId, CancellationToken ct)
     {
-        if (await db.Cases.AnyAsync(x => (caseId == null || x.Id != caseId) && x.CaseNumber == number, ct)) return true;
+        // A removed case keeps its number until it's purged (it can still be restored); a purge gives it up, and the
+        // entries written under it before then stay the removed case's (ReleasedNumbers).
+        if (await db.Cases.IgnoreQueryFilters().AnyAsync(x => (caseId == null || x.Id != caseId) && x.CaseNumber == number, ct)) return true;
         var own = caseId?.ToString();
-        if (own is not null && await db.AuditLog.AnyAsync(a => a.CaseNumber == number && a.EntityType == "Case" && a.EntityId == own, ct))
+        if (own is not null && await db.AuditLog.HeldNow(db).AnyAsync(a => a.CaseNumber == number && a.EntityType == "Case" && a.EntityId == own, ct))
             return false;   // this case's own former number
-        return await db.AuditLog.AnyAsync(a => a.CaseNumber == number, ct);
+        return await db.AuditLog.HeldNow(db).AnyAsync(a => a.CaseNumber == number, ct);
     }
 
     private static string NumberTakenMessage(string number) =>
@@ -969,7 +972,7 @@ public sealed class CaseService
             // and the activity feed, stale-case and closure checks read the audit trail by case number. A new Complex
             // Event never takes a number the trail already holds, so those entries can't attach to the wrong case.
             if (isComplexEvent && custom is null)
-                for (var n = attempt + 2; await db.AuditLog.AnyAsync(a => a.CaseNumber == c.CaseNumber, ct); n++)
+                for (var n = attempt + 2; await db.AuditLog.HeldNow(db).AnyAsync(a => a.CaseNumber == c.CaseNumber, ct); n++)
                     c.SetComplexEventNumber(local, n);
 
             c.SetInitialSummary(request.Summary, _user.UserId, now);   // INV-36: brief v1 holds it

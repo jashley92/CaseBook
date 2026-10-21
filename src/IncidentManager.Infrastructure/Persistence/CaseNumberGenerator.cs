@@ -27,8 +27,10 @@ public sealed class CaseNumberGenerator : ICaseNumberGenerator
     {
         using var owned = _factory?.CreateDbContext();
         var cases = owned?.Cases ?? _db!.Cases;
-        var max = await cases
-            .Where(c => c.Year == year && c.Classification != null)
+        // A removed case keeps its sequence until it's purged (it can still be restored); a purged one gives it up, so the
+        // next case can take the number again.
+        var max = await cases.IgnoreQueryFilters()
+            .Where(c => c.Year == year && c.Classification != null && c.PurgedAtUtc == null)
             .Select(c => (int?)c.Sequence)
             .MaxAsync(ct);
         return (max ?? 0) + 1;

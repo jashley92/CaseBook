@@ -1,3 +1,4 @@
+using IncidentManager.Application.Integrity;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Domain.Enums;
@@ -47,7 +48,7 @@ public sealed class ActivityFeedService
         var me = _user.UserId;
         // WF-99: under every number the case has held, so a promotion since doesn't hide what was done before it.
         var numbers = await Cases.AfterClosure.NumbersHeldAsync(db, caseId, number, ct);
-        var rows = await db.AuditLog.AsNoTracking()
+        var rows = await db.AuditLog.AsNoTracking().HeldNow(db)
             .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.Actor != me && a.AtUtc > sinceUtc
                         && a.Reason != Integrity.IntegrityUpkeep.Reason)   // C18: CaseBook's upkeep isn't a change anyone made
             .Select(a => a.Actor)
@@ -77,7 +78,7 @@ public sealed class ActivityFeedService
         // Join audit entries to the caller's visible cases on the denormalized case number, so the
         // feed honours need-to-know and we recover the case id for deep-linking.
         var me = _user.UserId;
-        var rows = await (from a in db.AuditLog.AsNoTracking()
+        var rows = await (from a in db.AuditLog.AsNoTracking().HeldNow(db)
                           join c in scoped on a.CaseNumber equals c.CaseNumber
                           where (!othersOnly || a.Actor != me) && a.Reason != Integrity.IntegrityUpkeep.Reason   // C18
                           orderby a.Sequence descending
@@ -91,7 +92,7 @@ public sealed class ActivityFeedService
         // Only rows newer than the oldest the window above holds can come into it, so with a full window the scan stops
         // there (without one, the query above has already read as far back).
         long? floor = rows.Count >= take * 2 ? rows.Min(r => r.Sequence) : null;
-        var former = await db.AuditLog.AsNoTracking()
+        var former = await db.AuditLog.AsNoTracking().HeldNow(db)
             .Where(a => (floor == null || a.Sequence > floor) && a.CaseNumber != null
                         && !db.Cases.Any(c => c.CaseNumber == a.CaseNumber) && (!othersOnly || a.Actor != me)
                         && a.Reason != Integrity.IntegrityUpkeep.Reason)
@@ -102,7 +103,7 @@ public sealed class ActivityFeedService
         if (former.Count > 0)
         {
             var numbers = former.Select(f => f.CaseNumber!).Distinct().ToList();
-            var holders = (await db.AuditLog.AsNoTracking()
+            var holders = (await db.AuditLog.AsNoTracking().HeldNow(db)
                     .Where(a => a.EntityType == "Case" && a.EntityId != null && a.CaseNumber != null && numbers.Contains(a.CaseNumber))
                     .Select(a => new { a.CaseNumber, a.EntityId }).Distinct().ToListAsync(ct))
                 .Select(h => (h.CaseNumber, Id: Guid.TryParse(h.EntityId, out var id) ? id : Guid.Empty))

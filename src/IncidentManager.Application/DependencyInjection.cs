@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.ReportTemplateService>();   // PROD-47: the Word template library
         services.AddScoped<Admin.StageGateService>();
         services.AddScoped<Admin.AccessReviewService>();
+        services.AddScoped<Admin.CaseRemovalService>();     // an archived case removed by an administrator, restored or purged
         services.AddScoped<Admin.OffboardingService>();   // CAP-30: one page per leaver (Administer)
         services.AddScoped<Access.AccessLogRetention>();      // PROD-52: deletes access-log entries past retention
         services.AddScoped<Import.DecidedImportRetention>();  // CAP-31: clears decided imports' stored documents

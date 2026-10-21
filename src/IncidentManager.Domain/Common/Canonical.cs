@@ -56,8 +56,15 @@ public static class Canonical
     /// </summary>
     public const string V7Prefix = "v7:";
 
+    /// <summary>
+    /// Starts a row hash over a format-8 canonical: format 7 plus an administrator's removal of a case (who, when, why, its
+    /// number then) and its purge, folded in only when set, so every record builds what format 7 built until a case is
+    /// removed. No row written before format 8 can hold them, so there's nothing to upgrade.
+    /// </summary>
+    public const string V8Prefix = "v8:";
+
     /// <summary>The format row hashes are written in.</summary>
-    public const int CurrentFormat = 7;
+    public const int CurrentFormat = 8;
 
     /// <summary>Whether the canonical being built is in <paramref name="format"/> or later (an entity adds the fields
     /// that format brought in only then).</summary>
@@ -90,7 +97,7 @@ public static class Canonical
     /// a record without it builds the same canonical in that format as before it.</summary>
     public static string Since(int format, bool isSet, Func<string> part) => isSet ? From(format, true, part) : "";
 
-    /// <summary>Builds a canonical in the given format (1 to 7). Canonicals are built synchronously, so the format is
+    /// <summary>Builds a canonical in the given format (1 to 8). Canonicals are built synchronously, so the format is
     /// per thread.</summary>
     public static string InFormat(int format, Func<string> build)
     {
@@ -119,7 +126,8 @@ public static class Canonical
 
     /// <summary>The format a stored row hash was written in, from its prefix (none: the first).</summary>
     public static int FormatOf(string storedHash) =>
-        storedHash.StartsWith(V7Prefix, StringComparison.Ordinal) ? 7
+        storedHash.StartsWith(V8Prefix, StringComparison.Ordinal) ? 8
+        : storedHash.StartsWith(V7Prefix, StringComparison.Ordinal) ? 7
         : storedHash.StartsWith(V6Prefix, StringComparison.Ordinal) ? 6
         : storedHash.StartsWith(V5Prefix, StringComparison.Ordinal) ? 5
         : storedHash.StartsWith(V4Prefix, StringComparison.Ordinal) ? 4
@@ -128,7 +136,7 @@ public static class Canonical
         : 1;
 
     /// <summary>The prefix a row hash in <paramref name="format"/> starts with.</summary>
-    public static string PrefixOf(int format) => format switch { 7 => V7Prefix, 6 => V6Prefix, 5 => V5Prefix, 4 => V4Prefix, 3 => V3Prefix, 2 => V2Prefix, _ => "" };
+    public static string PrefixOf(int format) => format switch { 8 => V8Prefix, 7 => V7Prefix, 6 => V6Prefix, 5 => V5Prefix, 4 => V4Prefix, 3 => V3Prefix, 2 => V2Prefix, _ => "" };
 
     public static string Time(DateTimeOffset t) => t.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 

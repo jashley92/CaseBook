@@ -64,6 +64,9 @@ public static class SecurityEventIds
     public const int EvidenceReinstated = 5517;      // a withdrawn file put back on the record
     public const int EvidenceMoved = 5518;           // a file filed on the wrong case moved to the right one
     public const int EvidencePurged = 5519;          // a withdrawn file's bytes deleted by an administrator
+    public const int CaseRemoved = 5520;             // an archived case removed by an administrator (opened by mistake, a bad import)
+    public const int CaseRemovalUndone = 5521;       // a removed case restored within its undo window
+    public const int CasePurged = 5522;              // a removed case's content purged (nightly, or an administrator's "Purge now")
 
     // 59xx — Diagnostics
     public const int SiemTest = 5901; // an admin's "Send test event" from Diagnostics, to confirm the collector receives the stream
