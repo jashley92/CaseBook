@@ -131,14 +131,14 @@ public sealed class ApiEndpointTests : IDisposable
             foreach (var url in new[] { "/api/export/iocs.csv", "/api/export/iocs.stix.json" })
             {
                 // The development sign-in (or Windows, on a server) doesn't count here: only a token.
-                (await client.SendAsync(Get(url, null))).StatusCode.Should().Be(HttpStatusCode.Unauthorized, url);
-                (await client.SendAsync(Get(url, "cbk_not-a-real-token"))).StatusCode.Should().Be(HttpStatusCode.Unauthorized, url);
-                (await client.SendAsync(Get(url, revoked))).StatusCode.Should().Be(HttpStatusCode.Unauthorized, url);
-                (await client.SendAsync(Get(url, clerk))).StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{url}: an API caller gets its 403, not a redirect");
+                await ShouldBe(await client.SendAsync(Get(url, null)), HttpStatusCode.Unauthorized, url);
+                await ShouldBe(await client.SendAsync(Get(url, "cbk_not-a-real-token")), HttpStatusCode.Unauthorized, url);
+                await ShouldBe(await client.SendAsync(Get(url, revoked)), HttpStatusCode.Unauthorized, url);
+                await ShouldBe(await client.SendAsync(Get(url, clerk)), HttpStatusCode.Forbidden, $"{url}: an API caller gets its 403, not a redirect");
             }
 
             var csv = await client.SendAsync(Get("/api/export/iocs.csv", reader));
-            csv.StatusCode.Should().Be(HttpStatusCode.OK);
+            await ShouldBe(csv, HttpStatusCode.OK);
             csv.Content.Headers.ContentType!.MediaType.Should().Be("text/csv");
             var text = await csv.Content.ReadAsStringAsync();
             text.Should().StartWith("# CaseBook malicious-IOC feed").And.Contain(OpenIoc).And.NotContain(RestrictedIoc).And.NotContain(DrillIoc);
@@ -148,7 +148,7 @@ public sealed class ApiEndpointTests : IDisposable
             all.Should().Contain(OpenIoc).And.Contain($"ip,{RestrictedIoc},malicious,").And.Contain("TLP:RED").And.NotContain(DrillIoc);
 
             var stix = await client.SendAsync(Get("/api/export/iocs.stix.json", reader));
-            stix.StatusCode.Should().Be(HttpStatusCode.OK);
+            await ShouldBe(stix, HttpStatusCode.OK);
             using var bundle = JsonDocument.Parse(await stix.Content.ReadAsStringAsync());
             bundle.RootElement.GetProperty("type").GetString().Should().Be("bundle");
             var values = bundle.RootElement.GetProperty("objects").EnumerateArray()
@@ -181,12 +181,12 @@ public sealed class ApiEndpointTests : IDisposable
             first.Headers.CacheControl!.NoCache.Should().BeTrue();
 
             var same = await client.SendAsync(Get("/api/export/iocs.csv", token, tag));
-            same.StatusCode.Should().Be(HttpStatusCode.NotModified);
+            await ShouldBe(same, HttpStatusCode.NotModified);
             (await same.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
-            (await client.SendAsync(Get("/api/export/iocs.csv", token, "\"something-else\", " + tag))).StatusCode.Should().Be(HttpStatusCode.NotModified);
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.csv", token, "\"something-else\", " + tag)), HttpStatusCode.NotModified);
             var stixTag = (await client.SendAsync(Get("/api/export/iocs.stix.json", token))).Headers.ETag!.ToString();
             stixTag.Should().StartWith("W/\"stix-");
-            (await client.SendAsync(Get("/api/export/iocs.csv", token, stixTag))).StatusCode.Should().Be(HttpStatusCode.OK, "one format's tag isn't the other's");
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.csv", token, stixTag)), HttpStatusCode.OK, "one format's tag isn't the other's");
 
             using (var scope = factory.Services.CreateScope())
             await using (var db = await DbAsync(scope))
@@ -198,7 +198,7 @@ public sealed class ApiEndpointTests : IDisposable
                 await db.SaveChangesAsync();
             }
             var changed = await client.SendAsync(Get("/api/export/iocs.csv", token, tag));
-            changed.StatusCode.Should().Be(HttpStatusCode.OK, "a new indicator is a new feed");
+            await ShouldBe(changed, HttpStatusCode.OK, "a new indicator is a new feed");
             changed.Headers.ETag!.ToString().Should().NotBe(tag);
 
             var since = Uri.EscapeDataString(DateTimeOffset.UtcNow.AddHours(-1).ToString("o"));
@@ -209,7 +209,7 @@ public sealed class ApiEndpointTests : IDisposable
                 bundle.RootElement.GetProperty("objects").EnumerateArray().Count(o => o.TryGetProperty("value", out _)).Should().Be(0);
 
             var bad = await client.SendAsync(Get("/api/export/iocs.csv?since=last-tuesday", token));
-            bad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await ShouldBe(bad, HttpStatusCode.BadRequest);
             (await bad.Content.ReadAsStringAsync()).Should().Contain("ISO 8601");
         });
     }
@@ -226,14 +226,14 @@ public sealed class ApiEndpointTests : IDisposable
             var busy = await TokenAsync(factory, "busy", "Feed reader");
             var other = await TokenAsync(factory, "other", "Feed reader");
 
-            (await client.SendAsync(Get("/api/export/iocs.csv", busy))).StatusCode.Should().Be(HttpStatusCode.OK);
-            (await client.SendAsync(Get("/api/export/iocs.stix.json", busy))).StatusCode.Should().Be(HttpStatusCode.OK);
+            await ShouldBeOk(await client.SendAsync(Get("/api/export/iocs.csv", busy)));
+            await ShouldBeOk(await client.SendAsync(Get("/api/export/iocs.stix.json", busy)));
             var refused = await client.SendAsync(Get("/api/export/iocs.csv", busy));
-            refused.StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "both formats share the token's budget");
+            await ShouldBe(refused, HttpStatusCode.TooManyRequests, "both formats share the token's budget");
             refused.Headers.RetryAfter.Should().NotBeNull();
             _siem.Events.Should().Contain(e => e.EventId == SecurityEventIds.DownloadRateLimited && e.Actor == "apitoken:busy");
 
-            (await client.SendAsync(Get("/api/export/iocs.csv", other))).StatusCode.Should().Be(HttpStatusCode.OK, "each token has its own budget");
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.csv", other)), HttpStatusCode.OK, "each token has its own budget");
         });
     }
 
@@ -251,12 +251,12 @@ public sealed class ApiEndpointTests : IDisposable
             var firewall = await TokenAsync(factory, "owner-firewall", "Feed reader", owner: "apitoken:shared-owner");
             var tip = await TokenAsync(factory, "owner-tip", "Feed reader", owner: "apitoken:shared-owner");
 
-            (await client.SendAsync(Get("/api/export/iocs.csv", firewall))).StatusCode.Should().Be(HttpStatusCode.OK);
-            (await client.SendAsync(Get("/api/export/iocs.csv", firewall))).StatusCode.Should().Be(HttpStatusCode.OK);
-            (await client.SendAsync(Get("/api/export/iocs.csv", firewall))).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.csv", firewall)), HttpStatusCode.OK);
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.csv", firewall)), HttpStatusCode.OK);
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.csv", firewall)), HttpStatusCode.TooManyRequests);
 
-            (await client.SendAsync(Get("/api/export/iocs.csv", tip))).StatusCode.Should().Be(HttpStatusCode.OK, "the same owner, another token");
-            (await client.SendAsync(Get("/api/export/iocs.stix.json", tip))).StatusCode.Should().Be(HttpStatusCode.OK);
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.csv", tip)), HttpStatusCode.OK, "the same owner, another token");
+            await ShouldBe(await client.SendAsync(Get("/api/export/iocs.stix.json", tip)), HttpStatusCode.OK);
         });
     }
 
@@ -280,22 +280,22 @@ public sealed class ApiEndpointTests : IDisposable
             using var post = new HttpRequestMessage(HttpMethod.Post, "/api/import/cases") { Content = new StringContent(doc, System.Text.Encoding.UTF8, "application/json") };
             post.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", producer);
             var created = await client.SendAsync(post);
-            created.StatusCode.Should().Be(HttpStatusCode.Created);
+            await ShouldBe(created, HttpStatusCode.Created);
             var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("pendingImportId").GetGuid();
 
             var status = await client.SendAsync(Get($"/api/import/cases/{id}", producer));
-            status.StatusCode.Should().Be(HttpStatusCode.OK);
+            await ShouldBe(status, HttpStatusCode.OK);
             var body = await status.Content.ReadFromJsonAsync<JsonElement>();
             body.GetProperty("status").GetString().Should().Be("pending");
             body.GetProperty("decidedAtUtc").ValueKind.Should().Be(JsonValueKind.Null);
             body.GetProperty("resolvedCaseNumber").ValueKind.Should().Be(JsonValueKind.Null);
             body.GetProperty("resolvedCaseId").ValueKind.Should().Be(JsonValueKind.Null);
 
-            (await client.SendAsync(Get($"/api/import/cases/{id}", reader))).StatusCode.Should().Be(HttpStatusCode.NotFound, "not its own, and it reviews nothing");
-            (await client.SendAsync(Get($"/api/import/cases/{Guid.NewGuid()}", producer))).StatusCode.Should().Be(HttpStatusCode.NotFound);
-            (await client.SendAsync(Get($"/api/import/cases/{id}", null))).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-            (await client.SendAsync(Get($"/api/import/cases/{id}", revoked))).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-            (await client.SendAsync(Get("/api/import/cases/schema", null))).StatusCode.Should().Be(HttpStatusCode.OK, "the schema keeps its own route");
+            await ShouldBe(await client.SendAsync(Get($"/api/import/cases/{id}", reader)), HttpStatusCode.NotFound, "not its own, and it reviews nothing");
+            await ShouldBe(await client.SendAsync(Get($"/api/import/cases/{Guid.NewGuid()}", producer)), HttpStatusCode.NotFound);
+            await ShouldBe(await client.SendAsync(Get($"/api/import/cases/{id}", null)), HttpStatusCode.Unauthorized);
+            await ShouldBe(await client.SendAsync(Get($"/api/import/cases/{id}", revoked)), HttpStatusCode.Unauthorized);
+            await ShouldBe(await client.SendAsync(Get("/api/import/cases/schema", null)), HttpStatusCode.OK, "the schema keeps its own route");
 
             // CAP-14: a case id and a detection case id that name different cases.
             Guid openId;
@@ -306,9 +306,19 @@ public sealed class ApiEndpointTests : IDisposable
             using var bad = new HttpRequestMessage(HttpMethod.Post, "/api/import/cases") { Content = new StringContent(conflicting, System.Text.Encoding.UTF8, "application/json") };
             bad.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", producer);
             var refused = await client.SendAsync(bad);
-            refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await ShouldBe(refused, HttpStatusCode.BadRequest);
             (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString().Should().Contain("name different cases");
         });
+    }
+
+    // A failed request says why: in Development the response body carries the exception, which a bare status hides.
+    private static Task ShouldBeOk(HttpResponseMessage response) => ShouldBe(response, HttpStatusCode.OK);
+
+    private static async Task ShouldBe(HttpResponseMessage response, HttpStatusCode expected, string? why = null)
+    {
+        if (response.StatusCode == expected) return;
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(expected, $"{why}{(why is null ? "" : "; ")}the response said: {(body.Length > 4000 ? body[..4000] : body)}");
     }
 
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)

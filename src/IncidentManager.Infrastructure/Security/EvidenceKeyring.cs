@@ -593,7 +593,11 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
         }
         try
         {
-            return await Task.Run(() => ScanForKeyId(recorded, ct), ct).WaitAsync(ScanTimeLimit, ct);
+            return await Task.Run(async () =>
+            {
+                if (ScanGate is { } gate) await gate.WaitAsync(ct);
+                return ScanForKeyId(recorded, ct);
+            }, ct).WaitAsync(ScanTimeLimit, ct);
         }
         catch (TimeoutException)
         {
@@ -609,6 +613,11 @@ public sealed class EvidenceKeyring : IEvidenceKeyring, IDisposable
     /// turned on for the first time, or a disaster), so it can afford to be thorough. Per keyring, so a test that shortens
     /// it can't cut short another test's check running alongside.</summary>
     internal TimeSpan ScanTimeLimit { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>Tests only: a scan waits for this before it starts, so a test can hold it past <see cref="ScanTimeLimit"/>
+    /// for certain. A zero limit raced the scan: on a busy machine the thread pool read every file before the wait began,
+    /// and the check found "no encrypted files" instead of timing out.</summary>
+    internal Task? ScanGate { get; set; }
 
     private string? ScanForKeyId(Dictionary<string, long> recorded, CancellationToken ct)
     {

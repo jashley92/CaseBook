@@ -165,6 +165,8 @@ public static class DependencyInjection
             else
             {
                 options.UseSqlite(connectionString ?? "Data Source=App_Data/incidentmanager.db");
+                // A long read no longer holds off every write (the "database is locked" flaky tests).
+                options.AddInterceptors(new Persistence.SqliteWalInterceptor());
             }
 
             options.AddInterceptors(sp.GetRequiredService<AuditChainInterceptor>());

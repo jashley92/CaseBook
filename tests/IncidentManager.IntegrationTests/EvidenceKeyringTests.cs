@@ -464,10 +464,11 @@ public sealed class EvidenceKeyringTests : IDisposable
 
         // A check that can't finish isn't "no encrypted files" either.
         File.Delete(Path.Combine(Evidence, encrypted.StoragePath));
-        // No time at all: a limit of one tick sometimes let 600 small files be read before its timer fired, and then the
-        // check truly found none (the flaky run). With zero, the scan can't have finished when the wait begins.
+        // A scan held past its limit. A tick, then a zero limit, both raced the scan (on a busy machine the 600 files were
+        // read before the wait began, and the check truly found none); a gate that never opens can't finish in time.
         var slow = Ring(options);
-        slow.ScanTimeLimit = TimeSpan.Zero;
+        slow.ScanTimeLimit = TimeSpan.FromMilliseconds(50);
+        slow.ScanGate = new TaskCompletionSource().Task;
         (await slow.LoadAsync()).Should().Be(EvidenceKeyState.Unavailable);
         slow.Problem.Should().Contain("unknown").And.Contain("No new key was made");
         File.Exists(KeysFile).Should().BeFalse();
