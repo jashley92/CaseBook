@@ -2667,7 +2667,7 @@ html[data-tl-away] .tl-add-fab { display: inline-flex; align-items: center; gap:
 @container tlcomposer (max-width: 26rem) {
     #timeline-dropzone .row > [class*="col-md-"] { width: 100%; }
 }
-html[data-tl-docked] #timeline-dropzone:not(.d-none) { overscroll-behavior: contain; position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
+html[data-tl-docked] #timeline-dropzone:not(.d-none) { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
     width: min(34rem, 100vw); margin: 0 !important; overflow-y: auto; border-radius: 0; border: 0;
     border-left: 1px solid var(--im-border-strong); background: var(--im-surface); box-shadow: var(--im-shadow-lg); }
 html[data-tl-docked] #timeline-dropzone > .card-body { display: flex; flex-direction: column; min-height: 100%; padding-bottom: 0; }
@@ -2676,8 +2676,12 @@ html[data-tl-docked] .tl-docked-head { display: flex; align-items: center; justi
     margin: calc(-1 * var(--bs-card-spacer-y, 1rem)) calc(-1 * var(--bs-card-spacer-x, 1rem)) 0.75rem;
     padding: var(--im-space-4); border-bottom: 1px solid var(--im-border); position: sticky; top: calc(-1 * var(--bs-card-spacer-y, 1rem));
     background: var(--im-surface); z-index: 2; }
-/* Popped out: the form first, the paste hint last, room to write, and the Add buttons always in reach at the bottom. */
-html[data-tl-docked] .tl-composer-paste { order: 99; margin-top: auto; padding: 0.5rem 0; flex-wrap: nowrap; }
+/* Popped out, laid out as a side sheet: the fields from the top, and the Add row (with the paste hint under it) as its
+   footer at the bottom of the window, however short the form, rather than floating part way down. */
+html[data-tl-docked] #timeline-dropzone .tl-inv-main { display: flex; flex-direction: column; flex: 1 1 auto; }
+html[data-tl-docked] .tl-composer-actions { margin-top: auto !important; }
+html[data-tl-docked] .tl-composer-actions .btn { white-space: nowrap; flex-shrink: 0; }
+html[data-tl-docked] .tl-composer-paste { order: 99; margin-bottom: 0 !important; padding: 0 0 0.6rem; flex-wrap: nowrap; }
 html[data-tl-docked] .tl-composer-paste > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* The form fits the window: the prose editor takes the room the rest leaves (smaller on a short screen, larger on a
    tall one), and the guidance lines are kept for screen readers but not shown, so the panel needn't scroll. */

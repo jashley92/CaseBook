@@ -371,8 +371,7 @@
                         @OneLineHint("the report's disclosure milestones table")
                     </div>
                 }
-                @if (_tlEditId is null) { @ThenSection() }
-                <div class="row g-2 align-items-end mt-1 tl-composer-actions">
+                <div class="row g-2 align-items-end mt-1">
                     <div class="col-md-4">
                         <label class="form-label small mb-0" for="tl-evt-source">Source</label>
                         <input id="tl-evt-source" class="form-control form-control-sm" maxlength="200" @bind="_tlSource" @bind:event="oninput" placeholder="@EventSourcePlaceholder" />
@@ -384,21 +383,22 @@
                             <input id="tl-evt-reason" class="form-control form-control-sm" maxlength="2000" @bind="_tlReason" @bind:event="oninput" placeholder="e.g. corrected source IP" />
                         </div>
                     }
-                    <div class="col d-flex justify-content-end align-items-end gap-2">
-                        @if (_tlEditId is null)
-                        {
-                            <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddEventStep">
-                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add step
-                            </button>
-                        }
-                        else
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEditToRow">Cancel</button>
-                            <button class="btn btn-sm btn-primary" @onclick="SaveEventEdit">
-                                <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
-                            </button>
-                        }
-                    </div>
+                </div>
+                @if (_tlEditId is null) { @ThenSection() }
+                <div class="d-flex justify-content-end align-items-end gap-2 mt-2 tl-composer-actions">
+                    @if (_tlEditId is null)
+                    {
+                        <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddEventStep">
+                            <span class="bi bi-plus-lg" aria-hidden="true"></span> Add step
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEditToRow">Cancel</button>
+                        <button class="btn btn-sm btn-primary" @onclick="SaveEventEdit">
+                            <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
+                        </button>
+                    }
                 </div>
             }
             else
@@ -431,7 +431,7 @@
                     </div>
                 </div>
                 }
-                <div class="@(_special == ComposerMode.Note ? "" : "mt-3")">
+                <div class="tl-inv-main @(_special == ComposerMode.Note ? "" : "mt-3")">
                     <label class="form-label small mb-1" for="@InvEditorId">
                         @(_special == ComposerMode.Note ? "Working note" : IsDecision ? "The decision" : "What you found or did") <span class="text-muted">· Markdown · <code>[[</code> to tag an entity@(_special == ComposerMode.Note ? " · " : "")@if (_special == ComposerMode.Note) {<code>@@</code><text> to mention a teammate</text>}</span>
                     </label>
