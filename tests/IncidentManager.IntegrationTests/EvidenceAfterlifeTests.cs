@@ -93,10 +93,12 @@ public sealed class EvidenceAfterlifeTests : IDisposable
 
         var noReason = () => Cases(db).ReinstateEvidenceAsync(caseId, a, " ");
         await noReason.Should().ThrowAsync<ArgumentException>();
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);   // a later moment, so the custody log orders them by time
         await Cases(db).ReinstateEvidenceAsync(caseId, a, "It was this case's after all");
         var back = await RowAsync(db, a);
         back.IsWithdrawn.Should().BeFalse();
-        back.CustodyEvents.Select(c => c.Action).Should().ContainInOrder("Withdrawn", "Reinstated");
+        // In time order: SQL Server returns the rows in no particular order.
+        back.CustodyEvents.OrderBy(c => c.AtUtc).Select(c => c.Action).Should().ContainInOrder("Withdrawn", "Reinstated");
         _siem.Events.Should().Contain(e => e.EventId == SecurityEventIds.EvidenceReinstated);
 
         _clock.UtcNow = Start.AddDays(31);
