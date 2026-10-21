@@ -3424,8 +3424,9 @@ a.im-find-quote:hover { text-decoration: underline; }
 .im-owner-pick { min-width: 9rem; }
 
 /* A task row's actions: one line where there is room, two beside the side panel, rather than pushing the table under it. */
-.im-task-acts { min-width: 5.5rem; }
-.im-task-acts .btn { margin-block: .1rem; }
+/* A task's actions on one row (they folded into a 2x2 block): the cell takes their width, the buttons compact. */
+.im-task-acts { white-space: nowrap; width: 1%; }
+.im-task-acts .btn { padding: .2rem .45rem; margin-block: 0; }
 
 /* ============================================================================
    UX-52: shared components (TabBar, Card, StatusText, DataTable). Tokens only (DesignTokenGuardTests).

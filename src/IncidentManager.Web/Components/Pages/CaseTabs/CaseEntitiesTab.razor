@@ -449,7 +449,7 @@ else
                             <option value="">Select…</option>
                             @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                             {
-                                <option value="@e.Id">@EntityOption(e)</option>
+                                <option value="@e.Id" title="@e.Value">@EntityOption(e)</option>
                             }
                         </select>
                     </div>
@@ -468,7 +468,7 @@ else
                             <option value="">Select…</option>
                             @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                             {
-                                <option value="@e.Id">@EntityOption(e)</option>
+                                <option value="@e.Id" title="@e.Value">@EntityOption(e)</option>
                             }
                         </select>
                     </div>
@@ -503,7 +503,7 @@ else
                                                 <select id="rel-edit-source" class="form-select form-select-sm" @bind="_relEditSource">
                                                     @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                                                     {
-                                                        <option value="@e.Id">@EntityOption(e)</option>
+                                                        <option value="@e.Id" title="@e.Value">@EntityOption(e)</option>
                                                     }
                                                 </select>
                                             </div>
@@ -521,7 +521,7 @@ else
                                                 <select id="rel-edit-target" class="form-select form-select-sm" @bind="_relEditTarget">
                                                     @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                                                     {
-                                                        <option value="@e.Id">@EntityOption(e)</option>
+                                                        <option value="@e.Id" title="@e.Value">@EntityOption(e)</option>
                                                     }
                                                 </select>
                                             </div>
@@ -1359,7 +1359,7 @@ else
     // FR-63: a relationship picker's line: the label alone left two accounts labelled alike looking the same, so the
     // value follows it.
     private static string EntityOption(CaseEntity e) =>
-        string.IsNullOrWhiteSpace(e.Label) ? $"{Ui.Label(e.Type)}: {e.Value}" : $"{Ui.Label(e.Type)}: {e.Label} ({e.Value})";
+        string.IsNullOrWhiteSpace(e.Label) ? $"{Ui.Label(e.Type)}: {Ui.Fit(e.Value)}" : $"{Ui.Label(e.Type)}: {Ui.Fit(e.Label, 28)} ({Ui.Fit(e.Value, 28)})";
 
     private string EntityName(Guid entityId)
     {

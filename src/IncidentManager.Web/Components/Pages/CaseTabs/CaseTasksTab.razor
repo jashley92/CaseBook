@@ -834,7 +834,8 @@ else
     // FR-59: a due as its date and, when it has one, the time with its zone ("2026-10-21", "1:04 AM UTC-04:00"), for the
     // Due column's two lines. TimeDisplay.Due leads with the date (yyyy-MM-dd), then a space.
     private static (string Day, string? Time) SplitDue(string due) =>
-        due.IndexOf(' ') is var i and > 0 ? (due[..i], due[(i + 1)..]) : (due, null);
+        // UX-57: "21 Oct 2026, 1:48 AM UTC-04:00" splits at its comma (a bare day has none); the first space cut the day.
+        due.IndexOf(", ", StringComparison.Ordinal) is var i and > 0 ? (due[..i], due[(i + 2)..]) : (due, null);
 
     // --- Edit a task (all fields, behind the Edit button) — consistent with how IOCs/entities are edited;
     // each save is one audited change (before → after) rather than a separate version chain. ---

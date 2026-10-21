@@ -186,7 +186,7 @@
                     <option value="">Any entity</option>
                     @foreach (var en in Case.Entities.OrderBy(x => x.Type).ThenBy(EntityShort))
                     {
-                        <option value="@en.Id">@Ui.Label(en.Type): @EntityShort(en)</option>
+                        <option value="@en.Id" title="@EntityShort(en)">@Ui.Label(en.Type): @Ui.Fit(EntityShort(en), 40)</option>
                     }
                 </select>
         }
@@ -336,7 +336,7 @@
                                 <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
-                                    <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                    <option value="@en.Id" title="@en.Value">@EntityOptionLabel(en)</option>
                                 }
                                 <option value="@NewIoc">+ New IOC…</option>
                             </select>
@@ -347,7 +347,7 @@
                                 <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
-                                    <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                    <option value="@en.Id" title="@en.Value">@EntityOptionLabel(en)</option>
                                 }
                                 <option value="@NewIoc">+ New IOC…</option>
                             </select>
@@ -3483,8 +3483,9 @@ else
 
     private static string EntityShort(CaseEntity e) => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!;
 
+    // A long value is cut in the middle (Ui.Fit): a native dropdown grows to its longest option.
     private static string EntityOptionLabel(CaseEntity e) =>
-        $"{Ui.EntityGlyph(e.Type)} {(string.IsNullOrWhiteSpace(e.Label) ? e.Value : $"{e.Label} ({e.Value})")}";
+        $"{Ui.EntityGlyph(e.Type)} {(string.IsNullOrWhiteSpace(e.Label) ? Ui.Fit(e.Value) : $"{Ui.Fit(e.Label, 28)} ({Ui.Fit(e.Value, 28)})")}";
 
     /// <summary>ATT&CK technique ID → URL path segment (sub-techniques nest, e.g. T1078.001 → T1078/001).</summary>
     private static string TechniquePath(string techniqueId) => techniqueId.Replace('.', '/');

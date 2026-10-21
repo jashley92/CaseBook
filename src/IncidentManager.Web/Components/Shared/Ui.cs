@@ -581,4 +581,17 @@ public static class Ui
         AccessType.EvidencePackage => "bi-file-earmark-zip",
         _ => "bi-eye"
     };
+
+    /// <summary>
+    /// Text for a dropdown's option, cut to <paramref name="max"/> characters with an ellipsis in the middle: a native
+    /// &lt;select&gt; grows its list to its longest option, so one long URL or hash made the whole picker as wide as the screen.
+    /// The start and the end stay, which is where a URL, a hash or a file name is told apart. Put the whole text in the
+    /// option's title.
+    /// </summary>
+    public static string Fit(string? text, int max = 56)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= max) return text ?? "";
+        var tail = (max - 1) / 3;
+        return string.Concat(text.AsSpan(0, max - 1 - tail), "…", text.AsSpan(text.Length - tail));
+    }
 }

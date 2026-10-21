@@ -102,7 +102,7 @@
                         <option value="">Cite evidence…</option>
                         @foreach (var ev in Case.Evidence.Where(x => !x.IsWithdrawn).OrderByDescending(x => x.CreatedAtUtc))   @* CAP-21 *@
                         {
-                            <option value="@ev.Id">@ev.OriginalFileName</option>
+                            <option value="@ev.Id" title="@ev.OriginalFileName">@Ui.Fit(ev.OriginalFileName)</option>
                         }
                     </select>
                 }
