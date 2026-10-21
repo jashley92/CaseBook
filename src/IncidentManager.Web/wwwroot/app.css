@@ -3364,7 +3364,9 @@ a.im-find-quote:hover { text-decoration: underline; }
 /* FR-57: the case column holds the title (two lines at most) over its number, capped so the other columns keep room. */
 .im-desk-casecell { min-width: 10rem; max-width: 14rem; }
 .im-desk-casecell > .im-desk-sub { display: flex; align-items: center; gap: .3rem; min-width: 0; }
-.im-desk-cases th { white-space: nowrap; }
+/* Headers wrap between words, never inside one ("NEXT FOR YOU" read "N / FO"); the state words may wrap too. */
+.im-desk-cases th { white-space: normal; word-break: keep-all; overflow-wrap: normal; }
+.im-desk-cases td > .text-nowrap { display: inline-block; }   /* the rung and severity marks wrap as wholes */
 /* The clocks column: the number gives way to the due time beside it. */
 .im-desk-clock-sub { display: flex; gap: .25rem; min-width: 0; white-space: nowrap; }
 /* The side column's lists: a row as wide as the card, so a number in it is cut rather than widening it. */
@@ -3374,3 +3376,7 @@ a.im-find-quote:hover { text-decoration: underline; }
 .im-owner-btn { border: 0; background: none; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .im-owner-btn:hover, .im-owner-btn:focus-visible { text-decoration: underline; }
 .im-owner-pick { min-width: 9rem; }
+
+/* A task row's actions: one line where there is room, two beside the side panel, rather than pushing the table under it. */
+.im-task-acts { min-width: 5.5rem; }
+.im-task-acts .btn { margin-block: .1rem; }

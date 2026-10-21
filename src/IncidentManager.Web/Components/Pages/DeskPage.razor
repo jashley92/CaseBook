@@ -121,7 +121,7 @@
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td class="text-nowrap"><RungMark Value="c.Classification" /> <SeverityMark Value="c.Severity" /></td>
+                                            <td><span class="text-nowrap"><RungMark Value="c.Classification" /></span> <span class="text-nowrap"><SeverityMark Value="c.Severity" /></span></td>
                                             <td><span class="text-nowrap">@Ui.Label(c.Phase)</span> <span class="im-desk-sub text-nowrap">· @Ui.Age(c.PhaseSinceUtc, now)</span></td>
                                             <td class="small">@(c.Role is { } r ? Ui.Label(r) : "—")</td>
                                             <td class="small">
