@@ -2968,6 +2968,10 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-nn-empty { font-size: var(--im-text-sm); color: var(--im-text-muted); margin: .2rem 0; }
 .im-nn-ob { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .5rem; padding: .4rem 0; border-bottom: 1px solid var(--im-border); }
 .im-nn-ob .im-nn-sub, .im-nn-mark { flex-basis: 100%; }
+/* The clock's label gives way (ellipsis, whole in its title) so the row's act stays on the title line. */
+.im-nn-ob { flex-wrap: wrap; }
+.im-nn-ob > .im-clock { flex: 0 1 auto; min-width: 0; }
+.im-nn-ob > .im-clock > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .im-nn-mark { margin-top: .35rem; display: grid; gap: .3rem; }
 .im-nn-tasks { list-style: none; margin: .35rem 0 0; padding: 0; }
 .im-nn-tasks li { padding: .45rem 0; }
