@@ -60,11 +60,17 @@ From top to bottom:
   before it. All of it lives in the URL (`/program?period=quarter&exercises=true`, `/program?from=2026-07-01&to=2026-09-30`). **Export this view** downloads the figures.
   A **team** picker (CAP-36, shown once teams exist) cuts every figure to one team's cases, or those with no team, by
   the team each case belongs to now (`&team=SocTier1`, `&team=none`); its drill-ins to the case list and the CSV keep it.
+- **The page reads as answers.** One sentence first: what's open, any regulator notice overdue, what's past due.
+  Then each card in the main column is a question answered in a line, coloured only when it needs attention, with
+  its evidence beneath: *Do we owe a regulator anything?*, *What needs action?*, *How much is open?*, *Where are open
+  cases stuck?*, *Anything from our vendors?*, *What are attackers doing?* A rail beside them holds every answer **at a
+  glance** (each with a status dot, linking to its card), **the numbers**, **Within target** and the **Learning
+  loop**, and stays in view while the cards scroll; on a narrow screen it comes first.
 - **Needs action**: what someone should act on now. Regulatory notices at risk of or past their window come first,
   then whatever fell due earliest: cases past or near a response target, briefs that predate a decision, handoff,
   phase, classification or materiality change, overdue tasks, and improvement actions past their target date.
-  **Notification clocks**, beside it, shows every running notice clock and how much of its window is used.
-- **Tiles**: the open-case mix (breaches at a vendor noted), then the period's median time to detect, contain,
+  The regulator card shows every running notice clock and how much of its window is used.
+- **The numbers** (in the rail): open cases and their change on last month, then the period's median time to detect, contain,
   resolve and report (detected → reported). Each has its mean beneath, its change on the period before, and a trend
   line of the monthly medians over the last 12 months. Medians lead because one long case pulls a mean far off.
 - **Case activity**: 12 months of new cases above the line, with the cases carried over from earlier months hatched
