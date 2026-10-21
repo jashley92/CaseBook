@@ -2740,7 +2740,7 @@ button.im-phase-seg { cursor: pointer; }
 /* Beside the context panel (which carries the clocks) the chip would repeat it. */
 @media (min-width: 1400px) { .im-head-alert:not(.im-head-alert-always) { display: none; } }
 .ws-slim .im-phasebar strong { font-weight: 600; font-size: var(--im-text-sm); }
-.ws-slim .im-state-words { font-size: var(--im-text-sm); }
+.ws-slim .im-state-words { font-size: var(--im-text-sm); align-items: center; }   /* the marks lead with bars, so baselines misalign */
 
 /* INV-38: tabs keep their places; later-phase and record tabs are quiet until they matter. */
 .nav-tabs.im-workspace-tabs .nav-link.im-tab-quiet { font-size: var(--im-text-sm); color: var(--im-text-muted); padding-inline: .6rem; }
@@ -2857,7 +2857,7 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-flags > .im-flag-hot { color: var(--im-text); }
 .im-flags > .im-flag-hot .bi { color: var(--im-danger); }
 .im-ch-clock { margin-left: auto; }
-.ws-slim .im-ch-clock { margin-left: 0; }
+.ws-slim .im-ch-clock { margin-left: 0; display: inline-flex; align-items: center; }
 .ws-slim .im-sevmark, .ws-slim .im-rungmark { font-size: var(--im-text-sm); }
 /* Phase segments in the Casefile look: earlier phases muted, the current one brass and taller. Hover still names them. */
 .im-phase-seg { width: 1.1rem; height: 5px; border-radius: 1.5px; }
