@@ -65,50 +65,37 @@
             @foreach (var bucket in _board.Buckets)
             {
                 var meta = Meta(bucket.Kind);
-                <section class="im-card">
-                    <div class="im-section-head">
-                        <span><span class="bi @meta.Icon" aria-hidden="true"></span> @meta.Label</span>
-                        <span class="im-badge @meta.Badge">@bucket.Items.Count</span>
-                    </div>
-                    <table class="table table-sm table-hover align-middle im-table im-list mb-0">
-                        <thead>
-                            <tr><th>Task</th><th>Case</th><th>Sev.</th><th>Owner</th><th>Due</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var i in Shown(bucket))
-                            {
-                                <tr>
-                                    <td class="im-cell-fill" style="min-width:12rem"><span class="im-ellipsis" title="@i.Title">@i.Title</span></td>
-                                    <td style="width:15rem;max-width:15rem">
-                                        @* Cut to the column, whole in its title: a long number ran into Sev. *@
-                                        <code class="im-casenum" title="@i.CaseNumber">@i.CaseNumber</code>
-                                        <span class="im-ellipsis text-muted small" title="@i.CaseTitle">@i.CaseTitle</span>
-                                    </td>
-                                    <td><span class="@Ui.SeverityBadge(i.Severity)">@SevLabels.For(i.Severity)</span></td>
-                                    <td class="small">
-                                        @if (i.OwnedByMe) { <span class="im-badge im-b-info">You</span> }
-                                        else if (!string.IsNullOrWhiteSpace(i.OwnerUserId)) { @Users.DisplayFor(i.OwnerUserId) }
-                                        else { <span class="text-muted">Unassigned</span> }
-                                    </td>
-                                    <td>@DueCell(i.DueAtUtc, bucket.Kind)</td>
-                                    <td class="text-nowrap">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 me-1 im-peek-open" title="Preview this case"
-                                                    aria-label="@($"Preview {i.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == i.CaseId)" @onclick="() => TogglePeek(i.CaseId)">
-                                                <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
-                                            </button>
-                                        <a class="btn btn-sm btn-outline-primary py-0" href="cases/@i.CaseId?tab=Tasks">Open</a>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                    @if (bucket.Items.Count > PageRows && !_expanded.Contains(bucket.Kind))
-                    {
-                        <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="() => _expanded.Add(bucket.Kind)">
-                            Show all @bucket.Items.Count
-                        </button>
-                    }
-                </section>
+                @* UX-52 / UX-53 / UX-62: a card per band, its tasks in the shared table: the task opens its case's Tasks tab (the row
+                   too), the case reads title first, the preview is a row action, and the pager replaces "Show all". *@
+                <Card Title="@meta.Label" Icon="@meta.Icon" Flush="true">
+                    <Info><StatusText Tone="@meta.Tone">@bucket.Items.Count</StatusText></Info>
+                    <ChildContent>
+                        <DataTable TItem="AgendaItem" Items="bucket.Items" PageSize="PageRows" Label="@meta.Label" Key="i => i.ActionItemId"
+                                   OnRowClick="i => Nav.NavigateTo(TasksHref(i))">
+                            <Header><th>Task</th><th>Case</th><th>Severity</th><th>Owner</th><th>Due</th></Header>
+                            <Row Context="i">
+                                <td class="im-cell-fill" style="min-width:12rem"><a href="@TasksHref(i)" class="im-ellipsis" title="@i.Title">@i.Title</a></td>
+                                <td class="im-agenda-case">
+                                    <span class="im-ellipsis" title="@i.CaseTitle">@i.CaseTitle</span>
+                                    <span class="im-casenum im-agenda-num" title="@i.CaseNumber">@i.CaseNumber</span>
+                                </td>
+                                <td class="text-nowrap"><SeverityMark Value="i.Severity" /></td>
+                                <td class="text-nowrap">
+                                    @if (i.OwnedByMe) { <span>You</span> }
+                                    else if (!string.IsNullOrWhiteSpace(i.OwnerUserId)) { @Users.DisplayFor(i.OwnerUserId) }
+                                    else { <StatusText Tone="StatusTone.Muted">Unassigned</StatusText> }
+                                </td>
+                                <td class="text-nowrap">@DueCell(i.DueAtUtc, bucket.Kind)</td>
+                            </Row>
+                            <RowActions Context="i">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" title="Preview this case"
+                                        aria-label="@($"Preview {i.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == i.CaseId)" @onclick="() => TogglePeek(i.CaseId)">
+                                    <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
+                                </button>
+                            </RowActions>
+                        </DataTable>
+                    </ChildContent>
+                </Card>
             }
         }
 
@@ -132,8 +119,7 @@
 
     // A long bucket (a backlog of overdue tasks) shows its first rows until asked for the rest.
     private const int PageRows = 25;
-    private readonly HashSet<AgendaBucketKind> _expanded = [];
-    private IEnumerable<AgendaItem> Shown(AgendaBucket b) => _expanded.Contains(b.Kind) ? b.Items : b.Items.Take(PageRows);
+    private static string TasksHref(AgendaItem i) => $"cases/{i.CaseId}?tab=Tasks";
 
     // BUG-343: the query is read whenever parameters are set, so a nav link or palette pivot to this page while it is
     // open applies its owner. The last value seen keeps the page's own owner change (written to the address) from
@@ -149,7 +135,6 @@
         _lastOwnerQuery = OwnerQuery;
         _owner = string.IsNullOrWhiteSpace(OwnerQuery) ? "" : OwnerQuery!;
         _board = null;
-        _expanded.Clear();
         await Load();
     }
 
@@ -169,22 +154,22 @@
     {
         _owner = owner;
         _board = null;
-        _expanded.Clear();
         // Keep the choice in the address so Back, a refresh or a shared link returns to the same view.
         _lastOwnerQuery = string.IsNullOrEmpty(owner) ? null : owner;   // BUG-343: already applied
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("owner", string.IsNullOrEmpty(owner) ? null : owner), replace: true);
         await Load();
     }
 
-    private sealed record BucketMeta(string Label, string Icon, string Badge);
+    private sealed record BucketMeta(string Label, string Icon, StatusTone Tone);
 
+    // UX-54: the count is red for overdue and amber for today; the later bands are quiet.
     private static BucketMeta Meta(AgendaBucketKind kind) => kind switch
     {
-        AgendaBucketKind.Overdue => new("Overdue", "bi-alarm", "im-b-danger"),
-        AgendaBucketKind.Today => new("Due today", "bi-hourglass-split", "im-b-warn"),
-        AgendaBucketKind.ThisWeek => new("Due this week", "bi-calendar-week", "im-b-info"),
-        AgendaBucketKind.Later => new("Later", "bi-calendar3", "im-b-neutral"),
-        _ => new("No due date", "bi-dash-circle", "im-b-neutral"),
+        AgendaBucketKind.Overdue => new("Overdue", "bi-alarm", StatusTone.Danger),
+        AgendaBucketKind.Today => new("Due today", "bi-hourglass-split", StatusTone.Warn),
+        AgendaBucketKind.ThisWeek => new("Due this week", "bi-calendar-week", StatusTone.Muted),
+        AgendaBucketKind.Later => new("Later", "bi-calendar3", StatusTone.Muted),
+        _ => new("No due date", "bi-dash-circle", StatusTone.Muted),
     };
 
     private RenderFragment DueCell(DateTimeOffset? due, AgendaBucketKind kind)
@@ -194,7 +179,7 @@
         {
             var by = Clock.UtcNow - d;
             var span = by.TotalDays >= 1 ? $"{(int)by.TotalDays}d" : $"{Math.Max(1, (int)by.TotalHours)}h";
-            return @<span class="im-badge im-b-danger" title="Due @TimeDisp.Short(d)">overdue @span</span>;
+            return @<StatusText Tone="StatusTone.Danger" Title="@($"Due {TimeDisp.Short(d)}")">@span overdue</StatusText>;
         }
         return @<span class="small">@TimeDisp.Short(d)</span>;
     }

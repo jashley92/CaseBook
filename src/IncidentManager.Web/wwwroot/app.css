@@ -2349,8 +2349,9 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 .im-case-list .case-num-sub .bi { color: var(--im-warn); }
 @media (min-width: 768px) { .im-case-list .case-num-sub { padding-left: 2.25rem; } }   /* under the title, past the preview button */
 /* UX-54: in lists a medium or low severity is a word (its bars keep the level); colour stays for critical and high. */
-.im-case-list .im-sevmark-2, .im-case-list .im-sevmark-1, .im-case-list .im-sevmark-0 { color: var(--im-text-muted); }
-.im-case-list .im-sevmark-2 > span:last-child, .im-case-list .im-sevmark-1 > span:last-child, .im-case-list .im-sevmark-0 > span:last-child { color: var(--im-text); }
+.im-case-list .im-sevmark-2, .im-case-list .im-sevmark-1, .im-case-list .im-sevmark-0,
+.im-c-table .im-sevmark-2, .im-c-table .im-sevmark-1, .im-c-table .im-sevmark-0 { color: var(--im-text-muted); }
+.im-case-list .im-sevmark-2 > span:last-child, .im-case-list .im-sevmark-1 > span:last-child, .im-case-list .im-sevmark-0 > span:last-child, .im-c-table .im-sevmark-2 > span:last-child, .im-c-table .im-sevmark-1 > span:last-child, .im-c-table .im-sevmark-0 > span:last-child { color: var(--im-text); }
 .im-case-list .case-cell-sev, .im-case-list .case-cell-phase, .im-case-list .case-sla { white-space: nowrap; }
 .im-case-list .case-title-line { display: flex; align-items: center; gap: .35rem; min-width: 0; }
 .im-case-list .case-title-line .im-badge { flex: none; }
@@ -3093,7 +3094,7 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-part:hover { color: var(--im-text); background: var(--im-surface-2); }
 .im-part:focus-visible { outline: 2px solid var(--im-focus); outline-offset: 1px; }
 .im-part.active { color: var(--im-text); font-weight: 600; background: var(--im-surface); border-color: var(--im-border-strong); }
-.im-part.is-quiet:not(.active) { font-size: var(--im-text-xs); }
+/* UX-52: sub-tabs are one size (the quiet ones were smaller: "mixed sizes" in the audit). */
 .im-part-n { font-variant-numeric: tabular-nums; font-weight: 400; color: var(--im-text-muted); }
 .im-part .im-tab-why { margin-left: 0; }
 
@@ -3261,8 +3262,8 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-desk-quiet li { display: grid; gap: .05rem; }
 
 /* RD-17: Program's parts, under its header (same look as a view's parts). */
-.im-program-nav { display: flex; flex-wrap: wrap; gap: .25rem; margin: -.25rem 0 1.25rem; padding-bottom: .55rem; border-bottom: 1px solid var(--im-border); }
-.im-program-nav .im-part { text-decoration: none; }
+.im-program-nav { margin: -.25rem 0 1.25rem; }   /* UX-52: Program and Intel use the TabBar page level */
+.im-program-nav .im-tabbar-item { text-decoration: none; }
 @media print { .im-program-nav { display: none; } }
 
 /* RD-19: a notification task due after the running notification deadline. */
@@ -3489,3 +3490,8 @@ a.im-find-quote:hover { text-decoration: underline; }
 .tl-viewmenu-pop .im-seg > .btn { white-space: nowrap; }
 .tl-viewmenu-label { font-size: var(--im-label-size); font-weight: var(--im-label-weight); letter-spacing: var(--im-label-tracking);
     text-transform: uppercase; color: var(--im-text-muted); }
+
+/* UX-53: Due work names a case title first, its number quiet under it. */
+.im-agenda-case { max-width: 18rem; }
+.im-agenda-case > span { display: block; }
+.im-agenda-num { font-size: var(--im-text-xs); color: var(--im-text-muted); max-width: 100%; }

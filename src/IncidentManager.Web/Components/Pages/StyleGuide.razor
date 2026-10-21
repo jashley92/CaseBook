@@ -19,7 +19,7 @@
 @* UX-52: the shared components. Build screens from these; DesignTokenGuardTests keeps sizes, colours and radii on the
    tokens. *@
 <Card Title="Components" Icon="bi-grid-1x2">
-    <Meta>UX-52 · use these, don't restyle</Meta>
+    <Info>UX-52 · use these, don't restyle</Info>
     <ChildContent>
         <p class="text-muted small">Two tab levels, one card, status as words, one list table. Each replaces several screen-specific
             versions (the 2026-10-21 audit counted six tab styles and four card styles).</p>
@@ -40,14 +40,14 @@
             <div class="row g-3">
                 <div class="col-md-8">
                     <Card Title="Improvement actions" Icon="bi-arrow-up-right-circle">
-                        <Meta>3 open</Meta>
+                        <Info>3 open</Info>
                         <Actions><button type="button" class="btn btn-sm btn-outline-secondary">Add</button></Actions>
                         <ChildContent><p class="mb-0">A card is a titled section: title, quiet meta, actions at the end, then the body.</p></ChildContent>
                     </Card>
                 </div>
                 <div class="col-md-4">
                     <Card Title="Clocks" Compact="true">
-                        <Meta><StatusText Tone="StatusTone.Danger">2 overdue</StatusText></Meta>
+                        <Info><StatusText Tone="StatusTone.Danger">2 overdue</StatusText></Info>
                         <ChildContent><p class="mb-0 small">A rail card's title is the label style.</p></ChildContent>
                     </Card>
                 </div>
