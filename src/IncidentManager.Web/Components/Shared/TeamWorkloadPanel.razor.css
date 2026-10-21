@@ -2,7 +2,7 @@
    (app.css); this file keeps only the panel's bespoke graphical bits — the per-analyst avatar, the
    stacked severity bar, and the stale/SLA chips. Colours derive from the global --im-* tokens. */
 
-.wl-open { font-size: var(--im-text-lg); font-weight: 700; color: var(--im-text); }
+a.wl-open { font-size: var(--im-text-lg); font-weight: 700; color: var(--im-text); }
 
 .wl-avatar {
     display: inline-grid; place-items: center;
@@ -12,7 +12,7 @@
 .wl-avatar-none { background: var(--im-text-muted); }
 
 .wl-unassigned { background: rgba(217, 152, 43, .07); }
-.wl-unassigned .wl-open { color: var(--im-warn); }
+.wl-unassigned a.wl-open { color: var(--im-warn); }
 [data-bs-theme="dark"] .wl-unassigned { background: rgba(224, 168, 59, .10); }
 
 .wl-sev { min-width: 160px; }

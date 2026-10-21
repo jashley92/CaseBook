@@ -69,7 +69,7 @@ else
                         {
                             <tr>
                                 <td>
-                                    <a href="cases/@c.CaseId" class="text-decoration-none"><code>@c.CaseNumber</code></a>
+                                    <a href="cases/@c.CaseId" class="text-decoration-none"><span class="im-casenum">@c.CaseNumber</span></a>
                                     @if (c.IsRestricted) { <span class="im-badge im-b-info ms-1">Restricted</span> }
                                     @if (c.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
                                     <div class="small text-muted" style="overflow-wrap:anywhere">@c.Title</div>
@@ -104,7 +104,7 @@ else
             @foreach (var t in v.Tasks)
             {
                 <li class="mb-1">
-                    <a href="cases/@t.CaseId" class="text-decoration-none"><code>@t.CaseNumber</code></a>
+                    <a href="cases/@t.CaseId" class="text-decoration-none"><span class="im-casenum">@t.CaseNumber</span></a>
                     <span style="overflow-wrap:anywhere">@t.Title</span>
                     @if (t.DueAtUtc is { } due) { <span class="text-muted">· due @TimeDisp.Short(due)</span> }
                 </li>

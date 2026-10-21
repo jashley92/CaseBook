@@ -420,7 +420,7 @@ else if (_pending.Count > 0)
             @if (p.ExistingCaseId is not null)
             {
                 <div class="alert alert-info py-2 mb-0">
-                    Importing into <code>@p.ExistingCaseNumber</code> — @p.ExistingTitle
+                    Importing into <span class="im-casenum">@p.ExistingCaseNumber</span> — @p.ExistingTitle
                     <button class="btn btn-link btn-sm p-0 ms-2 align-baseline" @onclick="() => ClearExisting(p)">change</button>
                 </div>
             }
@@ -568,7 +568,7 @@ else if (_pending.Count > 0)
                 @foreach (var m in _related)
                 {
                     <li class="mb-1">
-                        <a href="@($"cases/{m.CaseId}")" target="_blank" rel="noopener noreferrer"><code>@m.CaseNumber</code></a>
+                        <a href="@($"cases/{m.CaseId}")" target="_blank" rel="noopener noreferrer"><span class="im-casenum">@m.CaseNumber</span></a>
                         <span class="text-muted">@m.Title</span> ·
                         @string.Join(", ", m.Indicators.Take(5))@(m.Indicators.Count > 5 ? $" +{m.Indicators.Count - 5} more" : "")
                     </li>

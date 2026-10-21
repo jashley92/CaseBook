@@ -606,7 +606,7 @@ else
                         <ul class="small mb-0" style="max-height:16rem;overflow:auto">
                             @foreach (var c in selectedItems)
                             {
-                                <li><code>@c.CaseNumber</code> — @c.Title @(c.LegalReferred && _bulkVerb == BulkVerb.Refer ? "· already referred, skipped (its referral is kept)" : "")</li>
+                                <li><span class="im-casenum">@c.CaseNumber</span> — @c.Title @(c.LegalReferred && _bulkVerb == BulkVerb.Refer ? "· already referred, skipped (its referral is kept)" : "")</li>
                             }
                         </ul>
                     </div>

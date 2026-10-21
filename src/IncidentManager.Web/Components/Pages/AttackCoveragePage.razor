@@ -110,7 +110,7 @@
                     @foreach (var c in st.Cases)
                     {
                         <li>
-                            <a href="@($"cases/{c.CaseId}")"><code class="small">@c.CaseNumber</code></a> <span class="small text-muted">@c.Title</span>
+                            <a href="@($"cases/{c.CaseId}")"><span class="im-casenum small">@c.CaseNumber</span></a> <span class="small text-muted">@c.Title</span>
                             @if (c.ThirdParty) { <span class="im-badge im-b-neutral ms-1" title="Seen in the vendor's environment, as the vendor reported it">At a vendor</span> }
                         </li>
                     }

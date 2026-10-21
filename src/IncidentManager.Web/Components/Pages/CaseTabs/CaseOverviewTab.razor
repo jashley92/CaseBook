@@ -616,7 +616,7 @@
                                 {
                                     <button type="button" class="list-group-item list-group-item-action py-1 small text-start" @onclick="() => SelectLinkTarget(r)">
                                         <strong>@r.CaseNumber</strong> — @r.Title
-                                        <span class="@Ui.ClassificationBadge(r.Classification) ms-1">@Ui.Label(r.Classification)</span>
+                                        <span class="text-nowrap ms-1"><RungMark Value="r.Classification" /></span>
                                     </button>
                                 }
                             </div>

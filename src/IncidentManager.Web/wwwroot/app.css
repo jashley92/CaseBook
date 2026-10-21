@@ -3526,12 +3526,12 @@ a.im-find-quote:hover { text-decoration: underline; }
 .im-page-title.is-section { font-size: var(--im-text-lg); font-weight: 600; margin: 0; }
 .admin-pane .im-page-head { margin-bottom: var(--im-space-3); }
 .admin-pane .im-page-actions { align-items: center; gap: var(--im-space-3); }
-/* UX-60: the same input size as the rest of the app (Administration's were a size larger). */
-.admin-pane .form-control:not(.form-control-sm):not(.form-control-lg),
-.admin-pane .form-select:not(.form-select-sm):not(.form-select-lg) {
+/* UX-60 (and the walkthrough): one input size across the app; forms that used the default were a size larger. */
+main .form-control:not(.form-control-sm):not(.form-control-lg),
+main .form-select:not(.form-select-sm):not(.form-select-lg) {
     padding: .25rem .5rem; font-size: var(--im-text-table); border-radius: var(--im-radius); }
-.admin-pane .form-select:not(.form-select-sm):not(.form-select-lg) { padding-right: 2rem; }
-.admin-pane .input-group:not(.input-group-sm) > .input-group-text { padding: .25rem .5rem; font-size: var(--im-text-table); }
+main .form-select:not(.form-select-sm):not(.form-select-lg) { padding-right: 2rem; }
+main .input-group:not(.input-group-sm) > .input-group-text { padding: .25rem .5rem; font-size: var(--im-text-table); }
 /* UX-52: a tab is a link but not a gold one: the theme's link colour ([data-bs-theme] a:not(.btn)) outranked the tab's. */
 [data-bs-theme] .im-tabbar .im-tabbar-item { color: var(--im-text-muted); text-decoration: none; }
 [data-bs-theme] .im-tabbar .im-tabbar-item:hover, [data-bs-theme] .im-tabbar .im-tabbar-item.active { color: var(--im-text); }
@@ -3539,3 +3539,31 @@ a.im-find-quote:hover { text-decoration: underline; }
 .admin-pane .card-body .row input.form-control:not([type=checkbox]), .admin-pane .card-body .row .form-select { max-width: 26rem; }
 /* UX-57: a time in a table or line reads in the text face with even-width digits (the data face was for values: hashes, IPs). */
 .im-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* UX-52 (walkthrough): the workspace's view bar reads as the page-level tab bar: underlined, muted until current. */
+.nav-tabs.im-workspace-tabs { border-bottom: 1px solid var(--im-border); }
+.nav-tabs.im-workspace-tabs .nav-link { color: var(--im-text-muted); background: none; border: 0; border-bottom: 2px solid transparent;
+    border-radius: 0; margin-bottom: -1px; }
+.nav-tabs.im-workspace-tabs .nav-link:hover { color: var(--im-text); border-bottom-color: var(--im-border-strong); }
+.nav-tabs.im-workspace-tabs .nav-link.active { color: var(--im-text); font-weight: 600; background: none; border-bottom-color: var(--im-accent); }
+/* UX-52 (walkthrough): Bootstrap's header-band cards read as the shared Card: the title sits on the card, not on a band. */
+.card > .card-header { background: transparent; border-bottom: 0; font-weight: 600; padding-bottom: 0; }
+/* UX-51 (walkthrough): section headings on the type scale (Bootstrap's ran 2rem to 1rem): one section size, h6 the body
+   size. Only Bootstrap's defaults are replaced (same specificity, loaded after it); a heading a component styles keeps it. */
+h2, h3, h4, h5, .h2, .h3, .h4, .h5 { font-size: var(--im-text-lg); }
+h6, .h6 { font-size: var(--im-text-base); }
+/* UX-53 (walkthrough): Find's case leads with its title, in the text colour like a list row. */
+[data-bs-theme] a.im-find-case { color: var(--im-text); font-weight: 600; text-decoration: none; }
+[data-bs-theme] a.im-find-case:hover { text-decoration: underline; }
+/* Walkthrough: a table set straight in a card (no card-body) keeps the card's inset at its edges. */
+.card > .table > :not(caption) > * > :first-child, .card > .table-responsive > .table > :not(caption) > * > :first-child { padding-left: 1rem; }
+.card > .table > :not(caption) > * > :last-child, .card > .table-responsive > .table > :not(caption) > * > :last-child { padding-right: 1rem; }
+/* UX-53 (walkthrough): a case in a list reads title first, in the text colour (the number goes under it). */
+[data-bs-theme] a.im-list-title { color: var(--im-text); font-weight: 600; text-decoration: none; }
+[data-bs-theme] a.im-list-title:hover { text-decoration: underline; }
+/* UX-62 (walkthrough): a plain table's row action shows on hover and keyboard focus, as the shared table's do; it stays
+   while what it opened is open, and always on a touch screen. */
+.im-row-act > * { opacity: 0; transition: opacity .12s; }
+tr:hover > .im-row-act > *, tr:focus-within > .im-row-act > *, .im-row-act > [aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .im-row-act > * { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .im-row-act > * { transition: none; } }

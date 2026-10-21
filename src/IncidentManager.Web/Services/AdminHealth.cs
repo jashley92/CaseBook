@@ -159,10 +159,10 @@ public sealed class AdminHealth(
             null => new HealthCheck("Retention review", true, "not counted yet (it's counted within minutes of start-up, then daily)"),
             { Years: 0 } => new HealthCheck("Retention review", true, "off (case retention is 0 years)"),
             { Due: 0 } c => new HealthCheck("Retention review", true,
-                $"no closed case is past {Plural.Of(c.Years, "year")} · counted {c.CountedAtUtc:u}"),
+                $"no closed case is past {Plural.Of(c.Years, "year")} · counted {TimeDisplay.UtcLabelled(c.CountedAtUtc)}"),
             var c => new HealthCheck("Retention review", false,
                 $"{Plural.Of(c.Due, "closed case")} past {Plural.Of(c.Years, "year")} waiting for review ({c.UnderHold:N0} under a legal hold), " +
-                $"counted {c.CountedAtUtc:u}.", "admin/settings/retention#retention-review", AttentionLevel.Warning),
+                $"counted {TimeDisplay.UtcLabelled(c.CountedAtUtc)}.", "admin/settings/retention#retention-review", AttentionLevel.Warning),
         });
         // CAP-15: the periodic access review, recorded under Roles & access, reminded as the evidence-key drill is.
         var lastReview = await accessReviews.GetLastReviewAsync(ct);
@@ -202,7 +202,7 @@ public sealed class AdminHealth(
         {
             if (!s.LastAttemptFailed && !s.BackedOff(now)) continue;
             items.Add(new(AttentionLevel.Warning, $"{ChannelLabel(name)} is failing",
-                s.BackedOff(now) ? $"Paused after repeated failures until {s.BackedOffUntilUtc:u}. Last error: {s.LastFailure}" : $"Last error: {s.LastFailure}",
+                s.BackedOff(now) ? $"Paused after repeated failures until {TimeDisplay.UtcLabelled(s.BackedOffUntilUtc)}. Last error: {s.LastFailure}" : $"Last error: {s.LastFailure}",
                 DeliveryAnchor, "Delivery health"));
         }
         if (chat.StoppedReason is { } chatStopped)
@@ -210,11 +210,11 @@ public sealed class AdminHealth(
         var held = await HeldEmailSummary.ReadAsync(dbFactory, HeldEmailSummary.DefaultLimit, ct);
         if (held.Count > 0)
             items.Add(new(AttentionLevel.Warning, $"{Plural.Of(held.Count, "email")} held for the relay",
-                $"Waiting since {held.OldestUtc:u}; they're sent when the relay takes mail again.", DeliveryAnchor, "Delivery health"));
+                $"Waiting since {TimeDisplay.UtcLabelled(held.OldestUtc)}; they're sent when the relay takes mail again.", DeliveryAnchor, "Delivery health"));
 
         // Scheduled jobs whose last run failed.
         foreach (var j in jobs.Snapshot().Where(j => j.Outcome == JobOutcome.Failed))
-            items.Add(new(AttentionLevel.Warning, $"{j.Job.Name} failed", $"Last run {j.FinishedAtUtc:u}: {j.LastErrorType}.", JobsAnchor, "Scheduled jobs"));
+            items.Add(new(AttentionLevel.Warning, $"{j.Job.Name} failed", $"Last run {TimeDisplay.UtcLabelled(j.FinishedAtUtc)}: {j.LastErrorType}.", JobsAnchor, "Scheduled jobs"));
 
         // Backups.
         var b = backup.Read();
@@ -250,12 +250,12 @@ public sealed class AdminHealth(
         // Integrity.
         if (evidenceIntegrity.Current is { IsClean: false } ev)
             items.Add(new(AttentionLevel.Problem, "Stored evidence doesn't match its record",
-                $"{Plural.Of(ev.DriftCount, "finding")} in the last check ({ev.CheckedAtUtc:u}).", "admin/settings/integrity", "Evidence-at-rest results"));
+                $"{Plural.Of(ev.DriftCount, "finding")} in the last check ({TimeDisplay.UtcLabelled(ev.CheckedAtUtc)}).", "admin/settings/integrity", "Evidence-at-rest results"));
         if (integrityCheck.LastCycle is { Intact: false } cycle)
             items.Add(new(AttentionLevel.Problem, "The integrity check found a problem",
-                $"The last check ({cycle.FinishedAtUtc:u}) found the audit trail or a record altered.", "integrity", "Integrity & audit"));
+                $"The last check ({TimeDisplay.UtcLabelled(cycle.FinishedAtUtc)}) found the audit trail or a record altered.", "integrity", "Integrity & audit"));
         foreach (var copy in sealCopies.Snapshot().Where(c => !c.Ok))
-            items.Add(new(AttentionLevel.Warning, $"Seal copy to {copy.Destination} failed", $"{copy.LastError} ({copy.LastAttemptUtc:u})", KeysAnchor, "Seal copies"));
+            items.Add(new(AttentionLevel.Warning, $"Seal copy to {copy.Destination} failed", $"{copy.LastError} ({TimeDisplay.UtcLabelled(copy.LastAttemptUtc)})", KeysAnchor, "Seal copies"));
         if (config.GetValue<bool>("Secrets:CyberArk:Enabled") && secretHealth.Current is { LastAttemptFailed: true } sh)
             items.Add(new(AttentionLevel.Problem, "A secret couldn't be fetched from CyberArk",
                 $"{sh.LastFailureReference}: {sh.LastFailureReason}", SecretsAnchor, "Secret resolution"));
@@ -342,7 +342,7 @@ public sealed class AdminHealth(
     }
 
     private static string Day(DateTimeOffset? at) =>
-        at?.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        at is { } t ? TimeDisplay.UtcDay(t) : "";   // UX-57: the one date form
 
     private HealthCheck WritableCheck(string label, string? path)
     {

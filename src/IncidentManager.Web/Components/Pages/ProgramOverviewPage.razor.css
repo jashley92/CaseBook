@@ -45,7 +45,7 @@
 .na-kind.info { color: var(--low); }
 .na-kind.neutral { color: var(--im-text-muted); }
 .na-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.na-case { font-family: var(--im-font-data); font-size: var(--im-text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.na-case { font-size: var(--im-text-sm);   /* UX-53: a case number in the text face */ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .na-what { font-size: var(--im-text-sm); color: var(--im-text); }
 .na-when { font-size: var(--im-text-xs); color: var(--im-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .na-when.over { color: var(--im-danger); font-weight: 650; }

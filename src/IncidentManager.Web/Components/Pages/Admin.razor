@@ -769,7 +769,7 @@
             <p class="text-muted">For operational settings, a database override wins over <code>appsettings.json</code>.
             Everything else is server-side only. Secrets show status only.</p>
 
-            <h6 class="text-uppercase small text-muted mt-3">Operational (admin-editable)</h6>
+            <h6 class="im-cap mt-3">Operational (admin-editable)</h6>
             <table class="table table-sm">
                 <thead><tr><th style="width:34%">Key</th><th>Effective value</th><th style="width:22%">Source</th></tr></thead>
                 <tbody>
@@ -785,7 +785,7 @@
                 </tbody>
             </table>
 
-            <h6 class="text-uppercase small text-muted mt-4">Server-side (read-only)</h6>
+            <h6 class="im-cap mt-4">Server-side (read-only)</h6>
             <table class="table table-sm">
                 <thead><tr><th style="width:34%">Key</th><th>Effective value</th><th style="width:22%">Source</th></tr></thead>
                 <tbody>
@@ -809,7 +809,7 @@
             <AttentionSummary Items="_attention" CheckedAtUtc="Health.CheckedAtUtc" />
 
             <h2 class="h5 mt-4 mb-2" id="diag-service">Service health</h2>
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-checks">Health checks</h6>
+            <h6 class="im-cap mt-3" id="diag-checks">Health checks</h6>
             <table class="table table-sm">
                 <tbody>
                     @if (_health is null)
@@ -833,14 +833,14 @@
                 </tbody>
             </table>
 
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-delivery">Delivery health</h6>
+            <h6 class="im-cap mt-3" id="diag-delivery">Delivery health</h6>
             <IncidentManager.Web.Components.Shared.DeliveryHealthPanel />
 
             @* CAP-29: every background job's last run, next due and last error; Run now for the read-only scans. *@
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-jobs">Scheduled jobs</h6>
+            <h6 class="im-cap mt-3" id="diag-jobs">Scheduled jobs</h6>
             <IncidentManager.Web.Components.Shared.ScheduledJobsPanel />
 
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-backup">Backup &amp; restore health</h6>
+            <h6 class="im-cap mt-3" id="diag-backup">Backup &amp; restore health</h6>
             @if (_backup is null)
             {
                 <p class="small text-muted mb-2"><em>Reading status&hellip;</em></p>
@@ -875,7 +875,7 @@
 
             @* CAP-19: every path to back up, and the manifest a backup job reads. *@
             <h2 class="h5 mt-4 mb-2" id="diag-storage-keys">Storage and keys</h2>
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-storage">Evidence storage</h6>
+            <h6 class="im-cap mt-3" id="diag-storage">Evidence storage</h6>
             <p class="small mb-2">
                 @if (EvidenceStoreProbe.CheckedAtUtc is null) { <span class="im-badge im-b-neutral">Not checked yet</span> }
                 else { @StatusBadge(EvidenceStoreProbe.Problem is null, "Writable", "Problem") }
@@ -886,9 +886,9 @@
                 <a class="ms-2" href="admin/settings/evidence">Evidence storage</a>
             </p>
             @* Withdrawn files: reinstatable for a while, then an administrator can purge their contents here. *@
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-withdrawn">Withdrawn evidence</h6>
+            <h6 class="im-cap mt-3" id="diag-withdrawn">Withdrawn evidence</h6>
             <WithdrawnEvidencePanel WindowDays="@IncidentManager.Application.Evidence.EvidenceWithdrawal.WindowDays(EvidenceStorage.Limits)" />
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-evidence-key">Evidence encryption</h6>
+            <h6 class="im-cap mt-3" id="diag-evidence-key">Evidence encryption</h6>
             <p class="small text-muted mb-2">
                 Evidence and reports encrypted at rest with a key protected by the server's integrity certificate, kept in three
                 places and backed up offline. Set in the server's configuration (OPERATIONS.md, Evidence key); the keys never show
@@ -896,13 +896,13 @@
             </p>
             <IncidentManager.Web.Components.Shared.EvidenceKeyPanel />
 
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-keys">Integrity keys and seal copies</h6>
+            <h6 class="im-cap mt-3" id="diag-keys">Integrity keys and seal copies</h6>
             <p class="small text-muted mb-2">
                 Set in the server's configuration (OPERATIONS §2), never here. Key ids are public thumbprints; no key is shown.
             </p>
             <div class="mb-3"><IntegrityKeyStatus /></div>
 
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-secrets">Secret resolution (CyberArk)</h6>
+            <h6 class="im-cap mt-3" id="diag-secrets">Secret resolution (CyberArk)</h6>
             <p class="small text-muted mb-2">
                 Whether externalized secrets, such as a SIEM webhook token written as a
                 <code>@("@cyberark:…")</code> reference, resolve from CyberArk CCP. Shows the last success and
@@ -964,11 +964,11 @@
                 </table>
             }
 
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-backup-set">Backup set</h6>
+            <h6 class="im-cap mt-3" id="diag-backup-set">Backup set</h6>
             <IncidentManager.Web.Components.Shared.BackupSetPanel />
 
             <h2 class="h5 mt-4 mb-2" id="diag-capacity">Capacity</h2>
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-cost">Integrity check cost</h6>
+            <h6 class="im-cap mt-3" id="diag-cost">Integrity check cost</h6>
             <p class="small text-muted mb-2">
                 The integrity check runs every 10 minutes. Each run checks every record and the audit entries written
                 since the last run, and re-hashes the whole audit trail every 6 hours. These figures show how long the
@@ -1029,7 +1029,7 @@
             </table>
 
             <h2 class="h5 mt-4 mb-2" id="diag-server">About this server</h2>
-            <h6 class="text-uppercase small text-muted mt-3" id="diag-about">About this server</h6>
+            <h6 class="im-cap mt-3" id="diag-about">About this server</h6>
             <table class="table table-sm">
                 <tbody>
                     <tr><td style="width:32%">Application version</td><td><code>@AppVersion</code></td></tr>

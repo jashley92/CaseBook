@@ -153,11 +153,11 @@ else
                         <div class="small text-muted">@t.Description</div>
                     </td>
                     <td>
-                        @if (t.DefaultClassification is { } c) { <span class="@Ui.ClassificationBadge(c) me-1">@Ui.Label(c)</span> }
-                        @if (t.DefaultSeverity is { } s) { <span class="@Ui.SeverityBadge(s) me-1">@SevLabels.For(s)</span> }
+                        @if (t.DefaultClassification is { } c) { <span class="text-nowrap me-1"><RungMark Value="c" /></span> }
+                        @if (t.DefaultSeverity is { } s) { <span class="text-nowrap me-1"><SeverityMark Value="s" /></span> }
                         @if (t.DefaultClassification is null && t.DefaultSeverity is null && string.IsNullOrEmpty(t.DefaultDataTypes)) { <span class="text-muted">—</span> }
                     </td>
-                    <td><span class="im-badge im-b-info">@t.Steps.Count</span></td>
+                    <td>@t.Steps.Count</td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(t)">Edit</button>
                         <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmDeleteTemplate(t)">Delete</button>

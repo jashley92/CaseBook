@@ -93,7 +93,7 @@ else
                                        @onchange="e => Toggle(r.CaseId, e.Value is true)" />
                             </td>
                             <td>
-                                <a href="cases/@Uri.EscapeDataString(r.CaseNumber)" class="text-decoration-none"><code>@r.CaseNumber</code></a>
+                                <a href="cases/@Uri.EscapeDataString(r.CaseNumber)" class="text-decoration-none"><span class="im-casenum">@r.CaseNumber</span></a>
                                 @if (r.IsRestricted) { <span class="im-badge im-b-warn ms-1">Restricted</span> }
                                 <div class="small text-muted im-clamp-2" title="@r.Title">@r.Title</div>
                             </td>

@@ -57,6 +57,38 @@ public sealed partial class DesignTokenGuardTests
         Ratchet("raw colours in a component's style attribute", colours, InlineRawColours);
     }
 
+    [Fact]
+    public void Case_numbers_are_not_set_in_code(/* UX-53 */)
+    {
+        // A case is shown title first with its number small and quiet under it (im-casenum), never in the data face: the
+        // number is a long generated slug, and in <code> it led every list it was in.
+        var offenders = Directory.EnumerateFiles(Path.Combine(WebRoot(), "Components"), "*.razor", SearchOption.AllDirectories)
+            .SelectMany(f => CodeCaseNumber().Matches(File.ReadAllText(f)).Select(m => $"{Path.GetFileName(f)}: {m.Value}"))
+            .ToList();
+
+        offenders.Should().BeEmpty("a case number is <span class=\"im-casenum\">, not <code>");
+    }
+
+    [GeneratedRegex(@"<code[^>]*>@\(?[\w.?!]*CaseNumber")]
+    private static partial Regex CodeCaseNumber();
+
+    [Fact]
+    public void Classification_severity_and_phase_are_marks_not_pills(/* UX-54 */)
+    {
+        // Colour is for what needs attention: a case's classification and severity are the header's marks (RungMark,
+        // SeverityMark) and its phase a word. A coloured pill each made orange mean Incident, Containment and Medium at
+        // once. The style guide still shows the old helpers, as reference.
+        var offenders = Directory.EnumerateFiles(Path.Combine(WebRoot(), "Components"), "*.razor", SearchOption.AllDirectories)
+            .Where(f => Path.GetFileName(f) != "StyleGuide.razor")
+            .SelectMany(f => StatePill().Matches(File.ReadAllText(f)).Select(m => $"{Path.GetFileName(f)}: {m.Value}"))
+            .ToList();
+
+        offenders.Should().BeEmpty("classification and severity are RungMark and SeverityMark, and the phase a word");
+    }
+
+    [GeneratedRegex(@"Ui\.(ClassificationBadge|SeverityBadge|PhaseBadge)\(")]
+    private static partial Regex StatePill();
+
     private static readonly HashSet<string> AllowedRadius = new(StringComparer.Ordinal) { "0", "50%", "999px", "inherit", "0 !important" };
 
     private static void Ratchet(string what, int actual, int baseline)

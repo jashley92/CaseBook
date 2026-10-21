@@ -68,13 +68,13 @@
                     <div class="stat">
                         <div class="stat-label">Highest severity</div>
                         <div class="stat-value">
-                            @if (_rollup.HighestSeverity is { } sev) { <span class="@Ui.SeverityBadge(sev)">@SevLabels.For(sev)</span> }
+                            @if (_rollup.HighestSeverity is { } sev) { <span class="text-nowrap"><SeverityMark Value="sev" /></span> }
                             else { <span class="text-muted">—</span> }
                         </div>
                     </div>
                     <div class="stat">
                         <div class="stat-label">Highest classification</div>
-                        <div class="stat-value"><span class="@Ui.ClassificationBadge(_rollup.HighestClassification)">@Ui.Label(_rollup.HighestClassification)</span></div>
+                        <div class="stat-value"><span class="text-nowrap"><RungMark Value="_rollup.HighestClassification" /></span></div>
                     </div>
                     <div class="stat">
                         <div class="stat-label">First detected</div>
@@ -115,13 +115,13 @@
                         @foreach (var m in _rollup.Members)
                         {
                             <tr>
-                                <td><code>@m.CaseNumber</code>
+                                <td><span class="im-casenum">@m.CaseNumber</span>
                                     @if (m.IsRestricted) { <span class="bi bi-lock-fill text-muted ms-1" title="Restricted" aria-label="Restricted"></span> }
                                 </td>
                                 <td><span class="im-clamp-2" title="@m.Title">@m.Title</span></td>
-                                <td><span class="@Ui.ClassificationBadge(m.Classification)">@Ui.Label(m.Classification)</span></td>
-                                <td><span class="@Ui.PhaseBadge(m.Phase)">@Ui.Label(m.Phase)</span></td>
-                                <td><span class="@Ui.SeverityBadge(m.Severity)">@SevLabels.For(m.Severity)</span></td>
+                                <td><span class="text-nowrap"><RungMark Value="m.Classification" /></span></td>
+                                <td><span class="text-nowrap">@Ui.Label(m.Phase)</span></td>
+                                <td><span class="text-nowrap"><SeverityMark Value="m.Severity" /></span></td>
                                 <td class="small">@(string.IsNullOrWhiteSpace(m.IncidentCommander) ? "—" : Users.DisplayFor(m.IncidentCommander))</td>
                                 <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@m.CaseId">Open</a></td>
                             </tr>
@@ -206,7 +206,7 @@
                             {
                                 <tr>
                                     <td class="small im-time @(e.Stated is null ? "text-nowrap" : "")">@(e.Stated ?? TimeDisp.Stamp(e.OccurredAtUtc))</td>
-                                    <td><a href="cases/@e.CaseId" class="text-decoration-none"><code>@e.CaseNumber</code></a></td>
+                                    <td><a href="cases/@e.CaseId" class="text-decoration-none"><span class="im-casenum">@e.CaseNumber</span></a></td>
                                     <td class="small">@Ui.Label(e.Type)</td>
                                     <td>@e.Description
                                         @if (!string.IsNullOrWhiteSpace(e.TechniqueId)) { <span class="im-badge im-b-neutral ms-1">@e.TechniqueId</span> }

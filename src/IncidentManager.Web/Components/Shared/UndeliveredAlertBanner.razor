@@ -25,7 +25,7 @@
                             IncidentManager.Domain.Entities.AlertDelivery.EvidenceDriftAlarm => "Evidence integrity alarm",
                             _ => "Audit-chain integrity alarm",
                         })
-                        @if (a.CaseId is { } caseId) { <span>for <a href="@($"cases/{caseId}")"><code>@a.CaseNumber</code></a></span> }
+                        @if (a.CaseId is { } caseId) { <span>for <a href="@($"cases/{caseId}")"><span class="im-casenum">@a.CaseNumber</span></a></span> }
                         to @string.Join(", ", a.Recipients), first tried @TimeDisp.Short(a.FirstFailedAtUtc).
                         <button type="button" class="btn btn-sm btn-light py-0 ms-1" disabled="@_dismissing.Busy" @onclick="() => Dismiss(a.Id)">Mark handled</button>
                     </li>

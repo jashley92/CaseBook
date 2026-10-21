@@ -85,7 +85,7 @@
                                     @foreach (var c in e.Cases)
                                     {
                                         <li>
-                                            <a href="cases/@c.CaseId?entity=@c.EntityId"><code>@c.CaseNumber</code></a>
+                                            <a href="cases/@c.CaseId?entity=@c.EntityId"><span class="im-casenum">@c.CaseNumber</span></a>
                                             <span class="im-find-sub">@(c.Phase == CasePhase.Closed ? "closed" : c.IsArchived ? "archived" : "open")@(c.Phase == CasePhase.Closed && c.IsArchived ? ", archived" : "")@(c.IsExercise ? " · exercise" : "") · @Ui.Label(c.Classification)</span>
                                             <VerdictMark Value="c.Verdict" />
                                         </li>
@@ -105,8 +105,10 @@
                         @foreach (var c in res2.Cases)
                         {
                             <li>
-                                <div><a href="@CaseHref(c)"><code>@c.CaseNumber</code></a> @Mark(c.Title)</div>
+                                @* UX-53: the title first (it carries the match), the number quiet in the line under it. *@
+                                <div><a href="@CaseHref(c)" class="im-find-case">@Mark(c.Title)</a></div>
                                 <div class="im-find-sub">
+                                    <span class="im-casenum" title="@c.CaseNumber">@c.CaseNumber</span>
                                     <RungMark Value="c.Classification" /> <SeverityMark Value="c.Severity" />
                                     @if (c.ClosedAtUtc is { } closed) { <span>closed @TimeDisp.DateOnly(closed)</span> }
                                     else { <span>@Ui.Label(c.Phase), opened @TimeDisp.DateOnly(c.OpenedAtUtc)</span> }
@@ -133,7 +135,7 @@
                             <li>
                                 <a class="im-find-quote im-rec" href="@EntryHref(e)">@Mark(e.Text)</a>
                                 @if (e.Why is { } why) { <div class="im-find-why">Why: @Mark(why)</div> }
-                                <div class="im-find-sub">@EntryKind(e) · <code>@e.CaseNumber</code> · @TimeDisp.Short(e.AtUtc)</div>
+                                <div class="im-find-sub">@EntryKind(e) · <span class="im-casenum">@e.CaseNumber</span> · @TimeDisp.Short(e.AtUtc)</div>
                             </li>
                         }
                     </ul>
@@ -154,7 +156,7 @@
                                 <div class="im-find-sub">
                                     @(t.Owner is null ? "Unassigned" : Users.DisplayFor(t.Owner))
                                     @if (t.DueAtUtc is { } due) { <span class="@(due < now && !done ? "text-danger" : "")"> · due @TimeDisp.Brief(due, now)</span> }
-                                    · @(t.Status == ActionItemStatus.InProgress ? "In progress" : t.Status.ToString()) · <code>@t.CaseNumber</code>
+                                    · @(t.Status == ActionItemStatus.InProgress ? "In progress" : t.Status.ToString()) · <span class="im-casenum">@t.CaseNumber</span>
                                 </div>
                             </li>
                         }
@@ -176,7 +178,7 @@
                                 <div class="im-find-sub">
                                     @if (x.HashMatch) { <span>the file's SHA-256 matches ·</span> }
                                     @if (!string.IsNullOrWhiteSpace(x.Description)) { <span>@Mark(x.Description) ·</span> }
-                                    <code>@x.CaseNumber</code> · added @TimeDisp.DateOnly(x.AddedAtUtc)
+                                    <span class="im-casenum">@x.CaseNumber</span> · added @TimeDisp.DateOnly(x.AddedAtUtc)
                                 </div>
                             </li>
                         }
@@ -193,7 +195,7 @@
                         {
                             <li>
                                 <a class="im-find-quote" href="cases/@n.CaseId?tab=Notes&note=@n.Id">@Mark(n.Text)</a>
-                                <div class="im-find-sub">@n.By · <code>@n.CaseNumber</code> · @TimeDisp.Short(n.AtUtc)</div>
+                                <div class="im-find-sub">@n.By · <span class="im-casenum">@n.CaseNumber</span> · @TimeDisp.Short(n.AtUtc)</div>
                             </li>
                         }
                     </ul>

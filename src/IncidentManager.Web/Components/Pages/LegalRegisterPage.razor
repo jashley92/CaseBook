@@ -35,8 +35,9 @@ else
                 {
                     <tr>
                         <td>
-                            <a href="cases/@Uri.EscapeDataString(r.CaseNumber)?tab=Briefing" class="text-decoration-none"><code>@r.CaseNumber</code></a>
-                            <div class="small text-muted im-clamp-2" title="@r.Title">@r.Title</div>
+                            @* UX-53: the title first, the number quiet under it. *@
+                            <a href="cases/@Uri.EscapeDataString(r.CaseNumber)?tab=Briefing" class="im-list-title im-clamp-2" title="@r.Title">@r.Title</a>
+                            <div class="small text-muted"><span class="im-casenum" title="@r.CaseNumber">@r.CaseNumber</span></div>
                         </td>
                         <td class="text-nowrap small"><RungMark Value="r.Classification" /> <SeverityMark Value="r.Severity" /><div class="text-muted">@Ui.Label(r.Phase)</div></td>
                         <td class="small">

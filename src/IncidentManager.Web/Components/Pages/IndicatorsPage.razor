@@ -151,7 +151,8 @@
                         </td>
                         <td class="small im-time text-nowrap">@TimeDisp.DateOnly(r.FirstSeenUtc)</td>
                         <td class="small im-time text-nowrap">@TimeDisp.DateOnly(r.LastSeenUtc)</td>
-                        <td class="text-end">
+                        @* UX-62: the row's action shows on hover and keyboard focus (and stays while its cases are open). *@
+                        <td class="text-end im-row-act">
                             <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Toggle(key)"
                                     aria-expanded="@(open ? "true" : "false")" title="Show the cases this indicator appears on">
                                 <span class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span> Cases
@@ -169,12 +170,12 @@
                                         {
                                             <tr>
                                                 <td>
-                                                    <a href="@($"cases/{c.CaseId}?tab=Entities")"><code class="small">@c.CaseNumber</code></a>
+                                                    <a href="@($"cases/{c.CaseId}?tab=Entities")"><span class="im-casenum small">@c.CaseNumber</span></a>
                                                     @if (c.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
                                                     <div class="small text-muted text-truncate" style="max-width:22rem" title="@c.Title">@c.Title</div>
                                                 </td>
-                                                <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
-                                                <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
+                                                <td><span class="text-nowrap"><RungMark Value="c.Classification" /></span></td>
+                                                <td><span class="text-nowrap">@Ui.Label(c.Phase)</span></td>
                                                 <td><span class="@Ui.DispositionBadge(c.Disposition)">@Ui.Label(c.Disposition)</span></td>
                                                 <td class="small im-time text-nowrap">@TimeDisp.DateOnly(c.AddedAtUtc)</td>
                                             </tr>

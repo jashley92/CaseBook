@@ -37,9 +37,9 @@
                 @foreach (var r in _related)
                 {
                     <li class="d-flex flex-wrap align-items-center gap-2 py-2 border-top">
-                        <a href="cases/@r.CaseId" class="fw-semibold text-decoration-none"><code>@r.CaseNumber</code></a>
+                        <a href="cases/@r.CaseId" class="fw-semibold text-decoration-none"><span class="im-casenum">@r.CaseNumber</span></a>
                         <span>@r.Title</span>
-                        <span class="@Ui.ClassificationBadge(r.Classification)">@Ui.Label(r.Classification)</span>
+                        <span class="text-nowrap"><RungMark Value="r.Classification" /></span>
                         <span class="text-muted small">shares:</span>
                         @foreach (var ind in r.SharedIndicators.Take(6))
                         {
@@ -391,7 +391,7 @@ else
                                     <small><span class="im-badge im-b-info">also in</span>
                                         @foreach (var o in alsoIn)
                                         {
-                                            <a class="ms-1" href="cases/@o.OtherCaseId" title="@AlsoInTitle(o)"><code class="small im-casenum">@o.OtherCaseNumber</code></a>
+                                            <a class="ms-1" href="cases/@o.OtherCaseId" title="@AlsoInTitle(o)"><span class="im-casenum small">@o.OtherCaseNumber</span></a>
                                         }
                                         @* PROD-10: pivot to every case carrying it (by id, so the value stays out of the URL). *@
                                         <a class="ms-2" href="intel/indicators?entity=@e.Id" title="Every case this indicator appears on">

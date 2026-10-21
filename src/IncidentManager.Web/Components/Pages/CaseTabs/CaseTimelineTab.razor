@@ -684,7 +684,7 @@ else
             {
                 lastDay = day;
                 @* INV-03: a day header, counted from the day the case was detected. *@
-                <li class="tl-day" @key="@($"day-{day}")"><span>@DayLabel(day)</span></li>
+                <li class="tl-day" @key="@($"day-{day}")"><span>@DayLabel(day) · @TimeDisp.Label</span></li>   @* UX-57: the zone once, for the day's entries *@
             }
             if (row.Milestone is { } m)
             {
@@ -715,7 +715,7 @@ else
                             @if (m.RecordedAtUtc is { } rec)
                             {
                                 @* INV-05: dated to when it happened; say openly that it was entered later. *@
-                                <span class="tl-late" title="Entered @TimeDisp.Long(rec)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(rec)</span>
+                                <span class="tl-late" title="Entered @TimeDisp.Long(rec)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Stamp(rec)</span>
                             }
                             @if (m.Transition is { } tr)
                             {
@@ -936,12 +936,12 @@ else
                             @if (e.IsImported)
                             {
                                 @* INV-23: dated as the imported summary gave it; the import time is on hover. *@
-                                <span class="tl-late" title="Imported @TimeDisp.Long(firstRecorded) from a structured summary"><span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> imported @TimeDisp.Short(firstRecorded)</span>
+                                <span class="tl-late" title="Imported @TimeDisp.Long(firstRecorded) from a structured summary"><span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> imported @TimeDisp.Stamp(firstRecorded)</span>
                             }
                             else if (firstRecorded - e.OccurredAtUtc > CaseService.BackdateReasonThreshold)
                             {
                                 @* INV-03: entered well after it happened — said openly, as on milestones and in the report. *@
-                                <span class="tl-late" title="Entered @TimeDisp.Long(firstRecorded)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(firstRecorded)</span>
+                                <span class="tl-late" title="Entered @TimeDisp.Long(firstRecorded)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Stamp(firstRecorded)</span>
                             }
                             @AfterClosureMark(firstRecorded, e.CreatedAtUtc)
                             @if (history.Count > 0)
@@ -1861,7 +1861,7 @@ else
                 <span class="bi bi-link-45deg" aria-hidden="true"></span>
                 @if (_fuLink is { } picked)
                 {
-                    <span class="small">Link <code>@picked.CaseNumber</code> as</span>
+                    <span class="small">Link <span class="im-casenum">@picked.CaseNumber</span> as</span>
                     <select class="form-select form-select-sm" aria-label="Link type" @bind="_fuLinkType">
                         <option value="@CaseLinkType.RelatedTo">Related to</option>
                         <option value="@CaseLinkType.PartOfCampaign">Part of campaign</option>
@@ -1881,7 +1881,7 @@ else
                     @foreach (var r in _fuLinkResults)
                     {
                         <button type="button" class="btn btn-sm btn-link p-0 d-block text-start" @onclick="() => PickFuLink(r)">
-                            <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
+                            <span class="im-casenum">@r.CaseNumber</span> <span class="text-muted">@r.Title</span>
                         </button>
                     }
                 </div>
@@ -3292,11 +3292,11 @@ else
     private RenderFragment TimeLabel(DateTimeOffset at) => @<text>
         @if (_tPlus && Case.DetectedAtUtc is { } detected)
         {
-            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@SinceDetection(at - detected)</span><span class="tl-time-rel">@TimeDisp.Short(at)</span></time>
+            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@SinceDetection(at - detected)</span><span class="tl-time-rel">@TimeDisp.Stamp(at)</span></time>
         }
         else
         {
-            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@TimeDisp.Short(at)</span><span class="tl-time-rel">@Ui.RelativeTime(at, Clock.UtcNow)</span></time>
+            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@TimeDisp.Stamp(at)</span><span class="tl-time-rel">@Ui.RelativeTime(at, Clock.UtcNow)</span></time>
         }
     </text>;
 
@@ -3395,7 +3395,7 @@ else
                     <button type="button" class="tl-mini-mark is-@p.Kind" style="left:@Pct(Pos(p.At))" title="@p.Title" aria-label="@p.Title" @onclick="() => JumpTo(p.Key)"></button>
                 }
             </div>
-            <div class="tl-mini-scale"><span>@TimeDisp.Short(start)</span><span class="tl-mini-legend"><i class="is-adv"></i> adversary <i class="is-resp"></i> response <i class="is-dec"></i> decision</span><span>@TimeDisp.Short(end)</span></div>
+            <div class="tl-mini-scale"><span>@TimeDisp.Stamp(start)</span><span class="tl-mini-legend"><i class="is-adv"></i> adversary <i class="is-resp"></i> response <i class="is-dec"></i> decision</span><span>@TimeDisp.Stamp(end)</span></div>
         </div>
     };
 
