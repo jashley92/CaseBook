@@ -140,7 +140,7 @@ else
             @foreach (var s in _seals)
             {
                 <tr>
-                    <td class="small im-data">@TimeDisplay.UtcLabelled(s.SealedAtUtc)</td>
+                    <td class="small im-time">@TimeDisplay.UtcLabelled(s.SealedAtUtc)</td>
                     <td>@s.UpToSequence</td>
                     <td class="small">@s.Algorithm</td>
                     <td><code class="small">@s.KeyId</code></td>
@@ -181,19 +181,14 @@ else
 {
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
         <span class="small text-muted" aria-live="polite">@PageSummary()</span>
+        @* UX-61: fifty entries a page (it was a hundred, 7,600px), under the shared table's sticky header; Newer and Older
+           page through the trail by where a page starts (keyset, CAP-03), above the table and again below it. *@
         <span class="d-flex align-items-center gap-2">
             @if (Filtered)
             {
                 <button type="button" class="btn btn-sm btn-link p-0" @onclick="ClearFilter">Clear filters</button>
             }
-            <span class="btn-group btn-group-sm" role="group" aria-label="Pages of the audit trail">
-                <button type="button" class="btn btn-outline-secondary" disabled="@(!_page.HasNewer || _page.Entries.Count == 0)" @onclick="Newer">
-                    <span class="bi bi-chevron-left" aria-hidden="true"></span> Newer
-                </button>
-                <button type="button" class="btn btn-outline-secondary" disabled="@(!_page.HasOlder || _page.Entries.Count == 0)" @onclick="Older">
-                    Older <span class="bi bi-chevron-right" aria-hidden="true"></span>
-                </button>
-            </span>
+            @TrailPager(_page)
         </span>
     </div>
     @if (_page.Entries.Count == 0)
@@ -202,15 +197,11 @@ else
     }
     else
     {
-        <div class="table-responsive">
-            <table class="table table-sm">
-                <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Case</th><th>What changed</th><th>Entry hash</th></tr></thead>
-                <tbody>
-                    @foreach (var a in _page.Entries)
-                    {
-                        <tr @key="a.Sequence">
+        <DataTable TItem="IncidentManager.Domain.Entities.AuditLogEntry" Items="_page.Entries" PageSize="PageSize" Label="Audit entries" Key="a => a.Sequence">
+            <Header><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Case</th><th>What changed</th><th>Entry hash</th></Header>
+            <Row Context="a">
                             <td>@a.Sequence</td>
-                            <td class="small im-data text-nowrap">@TimeDisplay.Utc(a.AtUtc)</td>
+                            <td class="small im-time text-nowrap">@TimeDisplay.Utc(a.AtUtc)</td>
                             <td>@Users.DisplayFor(a.Actor)</td>
                             <td>@AuditLabels.Label(a.Action)</td>
                             <td>
@@ -224,11 +215,9 @@ else
                             <td class="small">@ChangeLine(a)</td>
                             @* BUG-573: a tampered row's hash can be shorter; the page that shows the break mustn't throw on it. *@
                             <td><code class="small">@IncidentManager.Application.Common.ShortHash.Of(a.EntryHash)</code></td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+            </Row>
+        </DataTable>
+        <div class="d-flex justify-content-end mt-2">@TrailPager(_page)</div>
     }
 }
 
@@ -238,7 +227,17 @@ else
     // CAP-03: the cross-case trail's filter (seeded from the address, so Administration's "History" link and a shared link
     // open it filtered), the page shown and the filter it was loaded with (BUG-388: the count and the CSV link describe
     // the table, not controls a load hasn't caught up with).
-    private const int PageSize = 100;
+    private const int PageSize = 50;
+
+    private RenderFragment TrailPager(AuditPage page) =>
+        @<span class="btn-group btn-group-sm" role="group" aria-label="Pages of the audit trail">
+            <button type="button" class="btn btn-outline-secondary" disabled="@(!page.HasNewer || page.Entries.Count == 0)" @onclick="Newer">
+                <span class="bi bi-chevron-left" aria-hidden="true"></span> Newer
+            </button>
+            <button type="button" class="btn btn-outline-secondary" disabled="@(!page.HasOlder || page.Entries.Count == 0)" @onclick="Older">
+                Older <span class="bi bi-chevron-right" aria-hidden="true"></span>
+            </button>
+        </span>;
     private readonly AuditFilterState _filter = new();
     private AuditPage? _page;
     // CAP-03 review: the page by where it starts in the trail (keyset), not by its number: an offset moved as entries were

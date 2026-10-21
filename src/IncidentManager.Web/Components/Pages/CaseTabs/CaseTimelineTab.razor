@@ -743,7 +743,7 @@ else
                                 {
                                     <div class="tl-history-item small">
                                         <div class="text-muted">@Users.DisplayFor(k.CreatedBy) · @TimeDisp.Long(k.CreatedAtUtc)</div>
-                                        <div>Moved from <span class="im-data">@TimeDisp.Long(k.FromEffectiveUtc)</span> to <span class="im-data">@TimeDisp.Long(k.ToEffectiveUtc)</span>. @k.Reason</div>
+                                        <div>Moved from <span class="im-time">@TimeDisp.Long(k.FromEffectiveUtc)</span> to <span class="im-time">@TimeDisp.Long(k.ToEffectiveUtc)</span>. @k.Reason</div>
                                     </div>
                                 }
                             </div>
@@ -1057,8 +1057,8 @@ else
                 <div class="modal-body">
                     <p class="small mb-2"><strong>@cm.Title</strong></p>
                     <dl class="row g-1 mb-2 small">
-                        <dt class="col-4 fw-normal text-muted">Recorded</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.RecordedAtUtc ?? cm.AtUtc)</dd>
-                        <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.AtUtc)</dd>
+                        <dt class="col-4 fw-normal text-muted">Recorded</dt><dd class="col-8 mb-0 im-time">@TimeDisp.Long(cm.RecordedAtUtc ?? cm.AtUtc)</dd>
+                        <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-time">@TimeDisp.Long(cm.AtUtc)</dd>
                     </dl>
                     <label class="form-label small mb-0" for="tl-corr-when">When it happened (@TimeDisp.Label)</label>
                     <DateTimeInput Past="true" id="tl-corr-when" class="form-control form-control-sm" @bind-Value="_corrWhen" />

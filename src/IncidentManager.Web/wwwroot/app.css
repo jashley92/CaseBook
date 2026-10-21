@@ -3517,3 +3517,5 @@ a.im-find-quote:hover { text-decoration: underline; }
 [data-bs-theme] .im-tabbar .im-tabbar-item:hover, [data-bs-theme] .im-tabbar .im-tabbar-item.active { color: var(--im-text); }
 /* UX-60: a setting's input at a readable width (the mockup's), not the rest of the row; a list (textarea) keeps the row. */
 .admin-pane .card-body .row input.form-control:not([type=checkbox]), .admin-pane .card-body .row .form-select { max-width: 26rem; }
+/* UX-57: a time in a table or line reads in the text face with even-width digits (the data face was for values: hashes, IPs). */
+.im-time { font-variant-numeric: tabular-nums; white-space: nowrap; }

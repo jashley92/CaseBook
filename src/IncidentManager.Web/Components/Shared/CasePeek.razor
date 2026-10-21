@@ -53,7 +53,7 @@
                         <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span>
                         @(sla.Clock is { } clk ? Ui.SlaClockLabel(clk) : "SLA"): @Ui.SlaShort(sla)
                     </span>
-                    @if (sla.IsActive && sla.DueAtUtc is { } due) { <span class="small text-muted im-data">due @TimeDisp.Short(due)</span> }
+                    @if (sla.IsActive && sla.DueAtUtc is { } due) { <span class="small text-muted im-time">due @TimeDisp.Short(due)</span> }
                 </div>
             </section>
         }
