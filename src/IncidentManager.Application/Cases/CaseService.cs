@@ -1289,7 +1289,7 @@ public sealed class CaseService
     public sealed record CaseClosing(string OutcomeKey, string Summary, string Conclusion);
 
     /// <param name="containment">BUG-165: when moving past Containment without it, when it was contained or why it
-    /// wasn't needed.</param>
+    /// wasn't needed. FR-51: moving on from Containment before it was marked contained, when it was contained.</param>
     /// <param name="resolvedAtUtc">BUG-208: when moving past Recovery without it, when it was resolved.</param>
     public async Task ChangePhaseAsync(Guid id, CasePhase to, string? reason,
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
@@ -1345,8 +1345,23 @@ public sealed class CaseService
             EmitLifecycle(c, (s, a, u) => Security.SecurityEvents.CasePhaseChanged(s, fromPhase, to, a, u));
     }
 
-    /// <summary>BUG-165: for a case going past Containment without it: when it was contained, or why it wasn't needed.</summary>
+    /// <summary>BUG-165: for a case going past Containment without it: when it was contained, or why it wasn't needed.
+    /// FR-51: for one moving on from Containment before it was marked contained, when it was (no reason).</summary>
     public sealed record ContainmentDecision(DateTimeOffset? ContainedAtUtc, string? NotNeededReason);
+
+    /// <summary>
+    /// FR-51: records that a case in Containment was contained, at <paramref name="containedAtUtc"/> (now when not given):
+    /// time-to-contain and the containment SLA clock stop there, and the timeline shows it. Refused once it's contained, or
+    /// out of Containment (a colleague got there first).
+    /// </summary>
+    public async Task MarkContainedAsync(Guid id, DateTimeOffset? containedAtUtc = null, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.MarkContained(_user.UserId, _clock.UtcNow, containedAtUtc);
+        await db.SaveChangesAsync(ct);
+    }
 
     private static async Task<(string Key, string Summary, string Conclusion)> ValidateClosingAsync(IAppDbContext db,
         CaseClosing? closing, CancellationToken ct)

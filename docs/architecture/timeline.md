@@ -36,6 +36,7 @@ flowchart LR
     P4[Assign / unassign] --> AC[(AssignmentChange)]
     P5[Record materiality] --> MC[(MaterialityChange)]
     P6[Mark reported] --> RA[(Case.ReportedAtUtc)]
+    P12[Mark contained] --> CN[(Case.ContainedAtUtc)]
     P7[Mark a task done] --> AI[(ActionItem.CompletedAtUtc)]
     P8[Upload evidence] --> EV[(Evidence)]
     P9[Approve a report] --> RP[(Report.IsFinal)]
@@ -43,7 +44,7 @@ flowchart LR
     P11[Cite evidence] --> CI[(EvidenceCitation)]
   end
   TE[(TimelineEntries<br/>event + investigation<br/>versioned, hashed)]
-  CC & SC & ST & GP & AC & MC & RA & AI & EV & RP --> PROJ{{CaseMilestones.Project<br/>at read time}}
+  CC & SC & ST & GP & AC & MC & RA & CN & AI & EV & RP --> PROJ{{CaseMilestones.Project<br/>at read time}}
   TE --> MERGE[[Timeline tab: merge + sort]]
   PROJ --> MERGE
   CI --> MERGE
@@ -74,6 +75,7 @@ From `Application/Cases/CaseMilestones.cs`:
 | Classification *X → Y* (including promotion from Complex Event) | `ClassificationChange`, except the opening one | **effective** time | who changed it |
 | Severity *X → Y* | `SeverityChange` | effective time | |
 | Phase *X → Y* (including reopen) | `StatusChange` | effective time | |
+| Contained (*N* after detection) (FR-51) | the case's contained time, when it isn't a "not needed" decision and no move into Containment has that time (before v1.15.0 entering Containment set it, and that phase change tells it) | that time | none (the audit trail has who) |
 | *Name* is incident commander / joined as … / is no longer on the case | `AssignmentChange` (an IC handover is one line) | when recorded | |
 | Materiality *X → Y* (decided by, on, rationale) | `MaterialityChange` | when recorded | |
 | *Gate* gate **overridden** (with justification; flagged). A passed gate isn't a row: it shows as a note ("Incident escalation gate passed") on the transition it guarded | `GatePassage` | the guarded transition's effective time (recorded time shown when different) | |

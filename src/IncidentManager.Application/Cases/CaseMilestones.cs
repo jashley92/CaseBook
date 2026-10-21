@@ -26,7 +26,9 @@ public enum MilestoneKind
     /// <summary>HR-07: when the activity began (the case's initial-activity time), the start of the story.</summary>
     ActivityBegan,
     /// <summary>CAP-21: an evidence file was withdrawn: its "Evidence added" milestone, in its place, with why.</summary>
-    EvidenceWithdrawn
+    EvidenceWithdrawn,
+    /// <summary>FR-51: the case was contained (marked contained, or said when moving on), the end of time-to-contain.</summary>
+    Contained
 }
 
 /// <summary>
@@ -131,6 +133,13 @@ public static class CaseMilestones
                     + (x.OutcomeKey is { } outcome ? $" · {labels.OutcomeLabel(outcome)}" : ""),   // HR-01
                 Blank(x.Reason), x.ChangedBy, "phase change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
                 Transition: (TransitionKind.Phase, x.Id)));
+
+        // FR-51: when it was contained, from the case's contained time. Before FR-51 entering Containment set it, and that
+        // phase change already tells it; a skip that recorded "not needed" holds the decision's time, not a containment.
+        if (c.ContainedAtUtc is { } contained && c.ContainmentNotNeededReason is null
+            && !c.StatusChanges.Any(x => x.To == CasePhase.Containment && x.From is not null && x.EffectiveAt == contained))
+            list.Add(new CaseMilestone($"contained:{c.Id}", contained, MilestoneKind.Contained, "Contained",
+                c.DetectedAtUtc is { } det && contained > det ? $"{Span(contained - det)} after detection" : null, null, "case record"));
 
         // HR-05: findings: an entity re-assessed (e.g. Unknown → Compromised), with the reason given.
         foreach (var x in c.VerdictChanges)

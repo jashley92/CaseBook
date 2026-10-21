@@ -32,6 +32,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.ReclassifyAsync)] = Permission.ChangeClassification,
             [nameof(CaseService.ChangePhaseAsync)] = Permission.EditCases,
             [nameof(CaseService.ReopenAsync)] = Permission.EditCases,
+            [nameof(CaseService.MarkContainedAsync)] = Permission.EditCases,   // FR-51: as the phase change it completes
             [nameof(CaseService.ChangeSeverityAsync)] = Permission.EditCases,
             [nameof(CaseService.ChangeOriginAsync)] = Permission.ChangeClassification,   // a case opened or imported as the wrong origin
             [nameof(CaseService.ConfirmBriefAsync)] = Permission.EditCases,

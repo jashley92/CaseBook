@@ -88,6 +88,11 @@
                         <button class="dropdown-item" @onclick='() => Open("assign")'>Add someone to the team…</button>
                         <button class="dropdown-item" @onclick='() => Open("severity")'>Change severity…</button>
                         <button class="dropdown-item" @onclick='() => Open("status")'>Change phase…</button>
+                        @if (Case.Phase == CasePhase.Containment && Case.ContainedAtUtc is null)
+                        {
+                            @* FR-51: entering Containment starts containment; this records that it's done. *@
+                            <button class="dropdown-item" @onclick='() => Open("contained")'>Mark contained…</button>
+                        }
                         <button class="dropdown-item" @onclick='() => Open("legal")'>Refer to Legal / Privacy…</button>
                         @* FR-07: the materiality determination gates closing an Incident/Breach, and the
                            analyst who owns the case's timeline/data is the one who records it — so it needs

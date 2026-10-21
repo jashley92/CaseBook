@@ -116,7 +116,8 @@ else
         <CaseNowNext @key="_case.Id" Show="@(_phoneTab == "Now" ? "now" : "next")" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
                      OnChanged="Reload" OnGoToTab="t => LeavePhonePane(() => SetTab(t))" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
                      OnFocusTask='id => LeavePhonePane(() => FocusItem(("Tasks", id)))' OnAddTask="() => LeavePhonePane(AddTaskFromPane)"
-                     OnShowReadiness="ShowReadiness" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
+                     OnShowReadiness="ShowReadiness" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel"
+                     OnMarkContained='() => OpenModal("contained")' />
         </CascadingValue>
     }
     else
@@ -243,7 +244,7 @@ else
         <CaseNowNext @key="_case.Id" @ref="_nowNext" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
                      OnChanged="Reload" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
                      OnFocusTask='id => FocusItem(("Tasks", id))' OnAddTask="AddTaskFromPane" OnShowReadiness="ShowReadiness"
-                     OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
+                     OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" OnMarkContained='() => OpenModal("contained")' />
         </CascadingValue>
     }
     </div>@* /.ws-body *@

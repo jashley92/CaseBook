@@ -221,7 +221,18 @@ public class Case : AuditableEntity, IHashableEntity
             .OrderBy(k => k, StringComparer.Ordinal));
         return withElements.Length <= MaxReportedJurisdictionsLength ? withElements : null;
     }
+    /// <summary>
+    /// When the case was contained: the end of time-to-contain. FR-51: entering Containment starts containment; this is set
+    /// by <see cref="MarkContained"/>, or when the case moves on from Containment (or past it) saying when. Cases from before
+    /// FR-51 keep the time they entered Containment.
+    /// </summary>
     public DateTimeOffset? ContainedAtUtc { get; set; }
+
+    /// <summary>FR-51: while the case is in Containment, when it entered it (the latest move in, at its effective time):
+    /// the earliest it can have been contained. Null in any other phase.</summary>
+    public DateTimeOffset? ContainmentStartedAtUtc => Phase != CasePhase.Containment ? null
+        : StatusChanges.Where(x => x.To == CasePhase.Containment).Select(x => (DateTimeOffset?)x.EffectiveAt).Max();
+
     /// <summary>
     /// BUG-165: why containment wasn't needed, when the case went past Containment without it (a deliberate, recorded
     /// decision). The containment clock stops at that decision (<see cref="ContainedAtUtc"/> holds its time), and the
@@ -440,7 +451,7 @@ public class Case : AuditableEntity, IHashableEntity
     /// <paramref name="effectiveAtUtc"/> (INV-05) is when the move actually happened, for a change recorded after
     /// the fact; the milestone timestamps take that time, not the moment it was recorded.</summary>
     /// <param name="containedAtUtc">BUG-165: when moving past Containment without going through it, when the case was
-    /// contained.</param>
+    /// contained. FR-51: also when moving on from Containment before it was marked contained.</param>
     /// <param name="containmentNotNeededReason">BUG-165: or why containment wasn't needed.</param>
     public void ChangePhase(CasePhase to, string? reason, string actor, DateTimeOffset nowUtc,
         DateTimeOffset? effectiveAtUtc = null, string? outcomeKey = null,
@@ -456,8 +467,15 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException("This case hasn't been through Recovery. Say when it was resolved.");
         var notNeeded = string.IsNullOrWhiteSpace(containmentNotNeededReason) ? null : containmentNotNeededReason.Trim();
         var skips = SkipsContainment(to);
-        if (!skips && (containedAtUtc is not null || notNeeded is not null))
-            throw new ArgumentException("When it was contained, or why it wasn't needed, is recorded only when a case goes past Containment without it.");
+        // FR-51: entering Containment starts containment, so moving on from it says when it was contained (it went
+        // through Containment, so "not needed" isn't an answer). Closing straight away may say so, and needn't.
+        var leaves = LeavesContainmentUncontained(to);
+        if (leaves && notNeeded is not null)
+            throw new ArgumentException("This case went through Containment. Say when it was contained.");
+        if (leaves && to != CasePhase.Closed && containedAtUtc is null)
+            throw new ArgumentException("This case hasn't been marked contained. Say when it was contained.");
+        if (!skips && !leaves && (containedAtUtc is not null || notNeeded is not null))
+            throw new ArgumentException("When it was contained, or why it wasn't needed, is recorded only when a case goes past Containment without it, or moves on from it before it was marked contained.");
         if (skips && containedAtUtc is null && notNeeded is null)
             throw new ArgumentException("This case hasn't been through Containment. Say when it was contained, or that containment wasn't needed and why.");
         if (notNeeded is { Length: > MaxContainmentReason })
@@ -473,18 +491,13 @@ public class Case : AuditableEntity, IHashableEntity
         var at = effective ?? nowUtc;
 
         // BUG-165 follow-up: checked before anything changes, so a refused move leaves the case as it was.
-        if (skips && containedAtUtc is { } containedAt)
-        {
-            if (containedAt > nowUtc) throw new ArgumentException("When it was contained can't be in the future.");
-            if (DetectedAtUtc is { } det && ToMinute(containedAt) < ToMinute(det)) throw new ArgumentException("It can't have been contained before it was detected.");
-            if (containedAt > at) throw new ArgumentException("It can't have been contained after this move.");
-        }
+        if ((skips || leaves) && containedAtUtc is { } containedAt) CheckContainedAt(containedAt, nowUtc, at);
         // BUG-208: likewise, against the contained time this move leaves (unless it wasn't needed).
         if (skipsRecovery && resolvedAtUtc is { } resolvedAt)
         {
             if (resolvedAt > nowUtc) throw new ArgumentException("When it was resolved can't be in the future.");
             if (DetectedAtUtc is { } det && ToMinute(resolvedAt) < ToMinute(det)) throw new ArgumentException("It can't have been resolved before it was detected.");
-            var containedBy = skips ? containedAtUtc : ContainmentNotNeededReason is null ? ContainedAtUtc : null;
+            var containedBy = skips || leaves ? containedAtUtc : ContainmentNotNeededReason is null ? ContainedAtUtc : null;
             if (containedBy is { } cb && resolvedAt < cb) throw new ArgumentException("It can't have been resolved before it was contained.");
             if (resolvedAt > at) throw new ArgumentException("It can't have been resolved after this move.");
         }
@@ -501,7 +514,7 @@ public class Case : AuditableEntity, IHashableEntity
 
         // BUG-165: going past Containment without it, the containment milestone is what was said: when it was contained,
         // or that it wasn't needed (the clock stops at this move).
-        if (skips && containedAtUtc is { } contained) ContainedAtUtc = contained;   // checked above
+        if ((skips || leaves) && containedAtUtc is { } contained) ContainedAtUtc = contained;   // checked above
         else if (skips)
         {
             ContainmentNotNeededReason = notNeeded;
@@ -511,19 +524,20 @@ public class Case : AuditableEntity, IHashableEntity
         if (skipsRecovery && resolvedAtUtc is { } resolved) ResolvedAtUtc = resolved;   // BUG-208, checked above
 
         // BUG-229: coming into Containment after recording that it wasn't needed takes that back: it needed containing
-        // after all, so it's contained at this move and measured against the target again (the decision stays in the trail).
+        // after all, so it's measured against the target again (the decision stays in the trail). FR-51: containment starts
+        // at this move, so the case is uncontained until it's marked contained (or moves on saying when).
         if (to == CasePhase.Containment && ContainmentNotNeededReason is not null)
         {
             ContainmentNotNeededReason = null;
-            ContainedAtUtc = at;
+            ContainedAtUtc = null;
             // REV-11: and so it wasn't resolved before that. A resolution recorded on the way past (the skip to Recovery)
             // would now read as before the containment; it's resolved again when the case next reaches Recovery.
             if (ResolvedAtUtc < at) ResolvedAtUtc = null;
         }
 
+        // FR-51: entering Containment sets no contained time: it starts containment (MarkContained ends it).
         switch (to)
         {
-            case CasePhase.Containment: ContainedAtUtc ??= at; break;
             case CasePhase.Recovery: ResolvedAtUtc ??= at; break;
             case CasePhase.Closed: ClosedAtUtc ??= at; break;
         }
@@ -559,6 +573,42 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public bool SkipsRecovery(CasePhase to) =>
         Phase is < CasePhase.Recovery or CasePhase.Closed && to == CasePhase.PostIncident && ResolvedAtUtc is null;
+
+    /// <summary>
+    /// FR-51: whether moving to <paramref name="to"/> leaves Containment before the case was marked contained: from
+    /// Containment to a later phase, with no contained time. Moving on to Eradication, Recovery or Post-incident asks when
+    /// it was contained; closing straight away may say, and needn't (closing stops the clocks).
+    /// </summary>
+    public bool LeavesContainmentUncontained(CasePhase to) =>
+        Phase == CasePhase.Containment && to > CasePhase.Containment && ContainedAtUtc is null;
+
+    /// <summary>
+    /// FR-51: records that the case was contained, at <paramref name="containedAtUtc"/> (now when not given): the end of
+    /// time-to-contain and of the containment SLA clock. Only while the case is in Containment and not yet contained; the
+    /// time is not in the future, nor before detection or the move into Containment.
+    /// </summary>
+    public void MarkContained(string actor, DateTimeOffset nowUtc, DateTimeOffset? containedAtUtc = null)
+    {
+        if (Phase != CasePhase.Containment)
+            throw new InvalidOperationException("A case is marked contained while it's in Containment.");
+        if (ContainedAtUtc is { } already)
+            throw new InvalidOperationException($"This case was already marked contained ({already.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+        var at = containedAtUtc ?? nowUtc;
+        CheckContainedAt(at, nowUtc, null);
+        ContainedAtUtc = at;
+        Touch(actor, nowUtc);
+    }
+
+    // FR-51: a contained time stated for a move (a skip, BUG-165, or leaving Containment) or marked on its own. Compared to
+    // the minute against detection and the move into Containment (BUG-231), as times people pick are.
+    private void CheckContainedAt(DateTimeOffset containedAt, DateTimeOffset nowUtc, DateTimeOffset? moveAt)
+    {
+        if (containedAt > nowUtc) throw new ArgumentException("When it was contained can't be in the future.");
+        if (DetectedAtUtc is { } det && ToMinute(containedAt) < ToMinute(det)) throw new ArgumentException("It can't have been contained before it was detected.");
+        if (ContainmentStartedAtUtc is { } started && ToMinute(containedAt) < ToMinute(started))
+            throw new ArgumentException($"It can't have been contained before it entered Containment ({started.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+        if (moveAt is { } m && containedAt > m) throw new ArgumentException("It can't have been contained after this move.");
+    }
 
     /// <summary>
     /// Reopens a closed case (E-27): moves it back to the phase it held before closure (or Recovery if that
@@ -1999,6 +2049,11 @@ public class Case : AuditableEntity, IHashableEntity
             && contained is { } cAt && old >= cAt && at < cAt)
             throw new ArgumentException($"This move came after the case was contained ({cAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC), " +
                 "so it can't be dated before that.");
+        // FR-51: nor can the move into Containment be re-dated past the containment it started (a contained time set at
+        // the move itself, before FR-51, moves with it above).
+        if (target.To == CasePhase.Containment && contained is { } sAt && contained != newEffectiveUtc && old <= sAt && at > sAt)
+            throw new ArgumentException($"The case was contained after this move ({sAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC), " +
+                "so it can't be dated after that.");
         if (target.To is CasePhase.PostIncident or CasePhase.Closed && resolved is { } rAt && old >= rAt && at < rAt)
             throw new ArgumentException($"This move came after the case was resolved ({rAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC), " +
                 "so it can't be dated before that.");

@@ -149,7 +149,7 @@ public static class CaseImportSchema
                         ["phase"] = EnumOf<CasePhase>("The phase the case moved to."),
                         ["at"] = DateTime("When it moved (the transition's effective time)."),
                         ["reason"] = Str("Why. Defaults to \"imported record: <origin>\"."),
-                        ["containedAt"] = DateTime("On a step that goes past Containment without it: when it was contained."),
+                        ["containedAt"] = DateTime("On a step that goes past Containment without it, or moves on from Containment: when it was contained (moving on, it defaults to the Containment step's time)."),
                         ["containmentNotNeeded"] = Str("On a step that goes past Containment without it: why containment wasn't needed (instead of containedAt)."),
                         ["resolvedAt"] = DateTime("On a step to PostIncident that skips Recovery: when it was resolved."),
                     },

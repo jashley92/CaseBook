@@ -838,7 +838,10 @@ public static class DevDataSeeder
                 var closed = resolved.AddHours(3 + rnd.Next(0, 45));
 
                 c.ChangePhase(CasePhase.Triage, "Triaged", actor, created.AddHours(0.5));
-                c.ChangePhase(CasePhase.Containment, "Contained", actor, contained);
+                // FR-51: containment starts on entering Containment and ends when it's marked contained.
+                var containing = created.AddHours(0.5 + (containH - 0.5) * 0.6);
+                c.ChangePhase(CasePhase.Containment, "Containing", actor, containing);
+                c.MarkContained(actor, contained, contained);
                 c.ChangePhase(CasePhase.Eradication, "Eradicated", actor, resolved.AddHours(-4));
                 c.ChangePhase(CasePhase.Recovery, "Recovered", actor, resolved);
                 // HR-01: history closes with an outcome (mostly confirmed; some benign, false positive or inconclusive).
@@ -878,7 +881,11 @@ public static class DevDataSeeder
             c.Assign(who.Id, who.Name, who.Role, actor, created);
             c.ChangePhase(CasePhase.Triage, "Triaged", actor, created.AddHours(0.5));
             if (o.ContainAfterH is { } ch)
-                c.ChangePhase(CasePhase.Containment, "Contained", actor, created.AddHours(ch));
+            {
+                // FR-51: entered Containment, then marked contained.
+                c.ChangePhase(CasePhase.Containment, "Containing", actor, created.AddHours(ch * 0.6));
+                c.MarkContained(actor, created.AddHours(ch), created.AddHours(ch));
+            }
             if (o.Phase is CasePhase.Eradication or CasePhase.Recovery)
                 c.ChangePhase(o.Phase, o.Phase.ToString(), actor, now.AddHours(-6),
                     containmentNotNeededReason: c.SkipsContainment(o.Phase) ? "Nothing was left to contain: the access was already cut off." : null);

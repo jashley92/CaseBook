@@ -1611,7 +1611,8 @@ public sealed class CaseImportService
     /// the preview refuses exactly what the apply would (C2): a time in the future or before detection, a contained or
     /// resolved time after the move or before detection, resolved before contained, and the REV-11 case (a Containment after
     /// "not needed" clears the resolution, so a later step to PostIncident must say when it was resolved again). Only the
-    /// wording is the import's: a skip names the document's field.
+    /// wording is the import's: a skip names the document's field. FR-51: it also fills in the contained time of a step that
+    /// moves on from Containment without one (the Containment step's time), so the apply passes what was checked.
     /// </summary>
     internal static string? ReplayHistory(IReadOnlyList<ImportHistoryRow> history, DateTimeOffset detectedAtUtc, DateTimeOffset nowUtc)
     {
@@ -1626,8 +1627,16 @@ public sealed class CaseImportService
             var skipsContainment = scratch.SkipsContainment(h.Phase);
             if (skipsContainment && h.ContainedAtUtc is null && h.ContainmentNotNeeded is null)
                 return $"{where}: moving to {h.Phase} skips Containment: give \"containedAt\" or \"containmentNotNeeded\".";
-            if (!skipsContainment && (h.ContainedAtUtc is not null || h.ContainmentNotNeeded is not null))
-                return $"{where}: \"containedAt\" and \"containmentNotNeeded\" belong only on a step that skips Containment.";
+            // FR-51: entering Containment no longer sets the contained time, so a step that moves on from Containment says it
+            // ("containedAt"). Left out, it's the Containment step's time, as it was before FR-51, so a document written for
+            // that (or a preview made then and applied now) imports with the times it always had.
+            var leaves = scratch.LeavesContainmentUncontained(h.Phase);
+            if (leaves && h.ContainmentNotNeeded is not null)
+                return $"{where}: the case went through Containment, so \"containmentNotNeeded\" doesn't apply: give \"containedAt\" instead.";
+            if (!skipsContainment && !leaves && (h.ContainedAtUtc is not null || h.ContainmentNotNeeded is not null))
+                return $"{where}: \"containedAt\" and \"containmentNotNeeded\" belong only on a step that skips Containment" +
+                       " (\"containedAt\" also on the step that moves on from it).";
+            if (leaves && h.ContainedAtUtc is null) h.ContainedAtUtc = scratch.ContainmentStartedAtUtc;
             var skipsRecovery = scratch.SkipsRecovery(h.Phase);
             if (skipsRecovery != (h.ResolvedAtUtc is not null))
                 return skipsRecovery

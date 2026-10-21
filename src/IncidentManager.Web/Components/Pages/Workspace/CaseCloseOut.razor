@@ -74,6 +74,15 @@
             <section class="im-co-card">
                 <h3 class="im-cap">When it closed</h3>
                 <WhenItHappened Draft="Draft.Transition" OnChanged="Changed" />
+                @if (Case.LeavesContainmentUncontained(CasePhase.Closed))
+                {
+                    @* FR-51: as moving on to Eradication asks: closing from Containment before it was marked contained. *@
+                    <label class="form-label small mt-2" for="co-contained-at">When it was contained (@TimeDisp.Label) <span class="text-muted">(required)</span></label>
+                    <DateTimeInput Past="true" id="co-contained-at" class="form-control form-control-sm" @bind-Value="Draft.ContainedAt" />
+                    <TimeNudges Value="Draft.ContainedAt" ValueChanged="v => Draft.ContainedAt = v" Now="@WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone)" />
+                    <div class="form-text">This case hasn't been marked contained. Time to contain runs to this time: not before it
+                        entered Containment@(Case.ContainmentStartedAtUtc is { } started ? $" ({TimeDisp.Short(started)})" : ""), and not after closing.</div>
+                }
                 <TransitionWarnings Case="Case" To="CasePhase.Closed" Notify="Notify" />
             </section>
             <section class="im-co-card">
@@ -85,7 +94,7 @@
             {
                 <div class="alert alert-danger small py-2 mb-0" role="alert">@coErr</div>
             }
-            <button type="button" class="btn btn-primary" disabled="@(Draft.CloseDisabled || _inFlight)" @onclick="Close">Close the case</button>
+            <button type="button" class="btn btn-primary" disabled="@(Draft.CloseDisabledFor(Case) || _inFlight)" @onclick="Close">Close the case</button>
             <button type="button" class="btn btn-link btn-sm text-danger p-0" @onclick="() => OnLeave.InvokeAsync(true)">Discard the draft</button>
         </aside>
     </div>
@@ -127,8 +136,11 @@
         var (id, number) = (Case.Id, Case.CaseNumber);   // BUG-337: a case switch may come while this saves
         try
         {
+            var contained = Case.LeavesContainmentUncontained(CasePhase.Closed) && Draft.ContainedAt is { } ca   // FR-51
+                ? new CaseService.ContainmentDecision(WallClock.ToUtc(ca, TimeDisp.Zone), null) : null;
             await Cases.ChangePhaseAsync(id, CasePhase.Closed, null,
-                t.Attested.Count > 0 ? t.Attested : null, t.Override, t.EffectiveUtc(TimeDisp.Zone), closing: closing);
+                t.Attested.Count > 0 ? t.Attested : null, t.Override, t.EffectiveUtc(TimeDisp.Zone), closing: closing,
+                containment: contained);
             var label = Draft.Outcomes.FirstOrDefault(o => o.Key == closing.OutcomeKey)?.Label ?? closing.OutcomeKey;
             await OnClosed.InvokeAsync(new(id, number, $"Case closed: {label}", null));
         }

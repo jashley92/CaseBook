@@ -121,7 +121,13 @@ public sealed class PastPeriodFreezeTests : IDisposable
         (_a, _b, _stepA1, _tagA) = (a.Id, b.Id, step.Id, tag.Id);
 
         async Task At(DateTimeOffset t, Action act) { _clock.UtcNow = t; act(); await db.SaveChangesAsync(); }
-        await At(Apr(2, 3), () => { a.ChangePhase(CasePhase.Containment, null, "ic", Apr(2, 3)); b.ChangePhase(CasePhase.Containment, null, "ic", Apr(2, 3)); });
+        // FR-51: A is contained as it enters Containment; B is still being contained (MarkContained, below, finishes it later).
+        await At(Apr(2, 3), () =>
+        {
+            a.ChangePhase(CasePhase.Containment, null, "ic", Apr(2, 3));
+            a.MarkContained("ic", Apr(2, 3));
+            b.ChangePhase(CasePhase.Containment, null, "ic", Apr(2, 3));
+        });
         await At(Apr(3), () => a.Reclassify(Classification.Breach, "PII in scope", "ic", Apr(3)));
         await At(Apr(4), () => { a.ChangePhase(CasePhase.Eradication, null, "ic", Apr(4)); b.ChangeSeverity(Severity.High, "Scope", "ic", Apr(4)); });
         await At(Apr(5), () => a.ChangePhase(CasePhase.Recovery, null, "ic", Apr(5)));
@@ -150,6 +156,7 @@ public sealed class PastPeriodFreezeTests : IDisposable
     private static readonly Dictionary<string, Func<PastPeriodFreezeTests, AppDbContext, Task>> Catalogue = new()
     {
         ["ChangePhase"] = (t, db) => t.OnCase(db, t._a, c => c.ChangePhase(CasePhase.Containment, "More found", "ic", Later)),
+        ["MarkContained"] = (t, db) => t.OnCase(db, t._b, c => c.MarkContained("ic", Later, Jul(2))),   // FR-51
         ["Reopen"] = (t, db) => t.OnCase(db, t._a, c => c.Reopen("New evidence", "ic", Later)),
         ["Reclassify"] = (t, db) => t.OnCase(db, t._a, c => c.Reclassify(Classification.Incident, "Not a breach after all", "ic", Later)),
         ["ChangeSeverity"] = (t, db) => t.OnCase(db, t._b, c => c.ChangeSeverity(Severity.Low, "Smaller", "ic", Later)),
@@ -241,7 +248,8 @@ public sealed class PastPeriodFreezeTests : IDisposable
         (f.Quarter.Opened, f.Quarter.Closed, f.Quarter.BreachesOpened, f.Quarter.ReportedToRegulators).Should().Be((2, 1, 1, 1));
         (f.Quarter.NoticesMet, f.Quarter.ReviewsRecorded, f.Quarter.ClosedWithReview, f.Quarter.ActionsCompleted).Should().Be((1, 1, 1, 1));
         f.Quarter.TimeToDetect.Count.Should().Be(1);
-        f.Quarter.Sla.Should().Equal(new SlaAttainment(SlaClock.Detection, 1, 0), new SlaAttainment(SlaClock.Containment, 2, 0),
+        // FR-51: B is still being contained at the quarter's end, so only A counts toward the containment target.
+        f.Quarter.Sla.Should().Equal(new SlaAttainment(SlaClock.Detection, 1, 0), new SlaAttainment(SlaClock.Containment, 1, 0),
             new SlaAttainment(SlaClock.Resolution, 1, 0));
         f.Quarter.OpenedBySeverity.Should().Equal(new CountBy<Severity>(Severity.High, 2));
         f.Top.Select(x => x.TechniqueId).Should().BeEquivalentTo("T1566", "T1082", "T1078", "T1110");
@@ -298,7 +306,7 @@ public sealed class PastPeriodFreezeTests : IDisposable
     };
 
     private static readonly HashSet<string> Queries = ["FindEntity", "ReopenPhase", "RaisesClassification", "SkipsContainment",
-        "SkipsRecovery", "TasksFollowingUp", "BuildCanonicalContent"];
+        "LeavesContainmentUncontained", "SkipsRecovery", "TasksFollowingUp", "BuildCanonicalContent"];
 
     [Fact]
     public void Every_public_mutating_case_method_is_catalogued_or_reasoned()

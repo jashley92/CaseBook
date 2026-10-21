@@ -113,6 +113,7 @@ public class PlaybookOfferTests
 
         var closed = NewCase(Classification.Incident);
         closed.ChangePhase(CasePhase.Containment, null, "ic1", T0.AddHours(1));
+        closed.MarkContained("ic1", T0.AddHours(1));
         closed.ChangePhase(CasePhase.Recovery, null, "ic1", T0.AddHours(2));
         closed.ChangePhase(CasePhase.Closed, "Done", "ic1", T0.AddHours(3));
         PlaybookOffer.For(closed, [incident]).Should().BeEmpty();

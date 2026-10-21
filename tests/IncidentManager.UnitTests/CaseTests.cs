@@ -211,11 +211,13 @@ public class CaseTests
     {
         var c = NewCase();
 
-        c.ChangePhase(CasePhase.Containment, "Isolated host", "analyst1", Now.AddHours(1));
+        c.ChangePhase(CasePhase.Containment, "Isolating host", "analyst1", Now.AddHours(1));
+        c.ContainedAtUtc.Should().BeNull("FR-51: entering Containment starts containment");
+        c.MarkContained("analyst1", Now.AddHours(2), Now.AddHours(1.5));
         c.ChangePhase(CasePhase.Recovery, "Restored service", "analyst1", Now.AddHours(3));
         c.ChangePhase(CasePhase.Closed, "Post-incident complete", "ic1", Now.AddHours(5));
 
-        c.ContainedAtUtc.Should().Be(Now.AddHours(1));
+        c.ContainedAtUtc.Should().Be(Now.AddHours(1.5));
         c.ResolvedAtUtc.Should().Be(Now.AddHours(3));
         c.ClosedAtUtc.Should().Be(Now.AddHours(5));
         c.StatusChanges.Should().HaveCount(4); // initial New + 3 transitions
@@ -341,6 +343,7 @@ public class CaseTests
 
         var contained = NewCase();
         contained.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        contained.MarkContained("ic1", Now.AddHours(1));
         contained.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(2));
         contained.Invoking(x => x.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(3), containmentNotNeededReason: "x"))
             .Should().Throw<ArgumentException>().WithMessage("*only when a case goes past Containment*");
@@ -374,6 +377,7 @@ public class CaseTests
         // And a resolution can't be re-dated before a containment that was needed.
         var d = NewCase();
         d.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(3));
+        d.MarkContained("ic1", Now.AddHours(3));
         d.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(5));
         var recovery = d.StatusChanges.Single(s => s.To == CasePhase.Recovery);
         d.Invoking(x => x.CorrectTransitionTime(TransitionKind.Phase, recovery.Id, Now.AddHours(2), "x", "ic1", Now.AddHours(6)))
@@ -386,7 +390,7 @@ public class CaseTests
     {
         var c = NewCase();
         c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
-        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2));
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2), containedAtUtc: Now.AddHours(1));
         c.SkipsRecovery(CasePhase.PostIncident).Should().BeTrue();
         c.Invoking(x => x.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(4)))
             .Should().Throw<ArgumentException>().WithMessage("*hasn't been through Recovery*");
@@ -445,7 +449,8 @@ public class CaseTests
         var contain = c.StatusChanges.Single(x => x.To == CasePhase.Containment);
         contain.EffectiveAt.Should().Be(triageAt.AddTicks(1), "held just after the previous change, so the two never tie");
 
-        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddMinutes(20), effectiveAtUtc: Now.AddMinutes(4)))
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddMinutes(20), effectiveAtUtc: Now.AddMinutes(4),
+                containedAtUtc: Now.AddMinutes(5)))
             .Should().Throw<ArgumentException>().WithMessage("*before the previous phase change*", "a minute earlier still is");
 
         // A correction into the neighbour's minute is held to it too.
@@ -492,7 +497,7 @@ public class CaseTests
     {
         var c = NewCase();
         c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
-        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2));
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2), containedAtUtc: Now.AddMinutes(90));
         c.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(4), resolvedAtUtc: Now.AddHours(3));
         var move = c.StatusChanges.Single(s => s.To == CasePhase.PostIncident).Id;
 
@@ -510,7 +515,86 @@ public class CaseTests
 
         c.ChangePhase(CasePhase.Containment, "it was clicked after all", "ic1", Now.AddHours(3));
         c.ContainmentNotNeededReason.Should().BeNull();
+        c.ContainedAtUtc.Should().BeNull("FR-51: containment starts at this move, until it's marked contained");
+    }
+
+    [Fact]
+    public void Entering_containment_starts_it_and_marking_it_contained_ends_it(/* FR-51 */)
+    {
+        var c = NewCase();
+        c.Invoking(x => x.MarkContained("ic1", Now.AddMinutes(30))).Should().Throw<InvalidOperationException>().WithMessage("*in Containment*");
+
+        c.ChangePhase(CasePhase.Containment, "Isolating hosts", "ic1", Now.AddHours(2), effectiveAtUtc: Now.AddHours(1));
+        c.ContainedAtUtc.Should().BeNull("the clock to contain runs on");
+        c.ContainmentStartedAtUtc.Should().Be(Now.AddHours(1));
+        c.Invoking(x => x.MarkContained("ic1", Now.AddHours(2), Now.AddMinutes(30)))
+            .Should().Throw<ArgumentException>().WithMessage("*before it entered Containment*");
+        c.Invoking(x => x.MarkContained("ic1", Now.AddHours(2), Now.AddHours(3)))
+            .Should().Throw<ArgumentException>().WithMessage("*future*");
+
+        c.MarkContained("ic1", Now.AddHours(2), Now.AddMinutes(90));
+        c.ContainedAtUtc.Should().Be(Now.AddMinutes(90));
+        c.Phase.Should().Be(CasePhase.Containment, "it stays in Containment until it's moved on");
+        c.Invoking(x => x.MarkContained("ic1", Now.AddHours(3))).Should().Throw<InvalidOperationException>().WithMessage("*already marked contained*");
+        c.LeavesContainmentUncontained(CasePhase.Eradication).Should().BeFalse();
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(3));   // nothing more to say
+        c.ContainedAtUtc.Should().Be(Now.AddMinutes(90));
+
+        var m = IncidentManager.Application.Cases.CaseMilestones.Project(c, new IncidentManager.Application.Cases.MilestoneLabels(
+                x => x?.ToString() ?? "CE", s => s.ToString(), p => p.ToString(), s => s.ToString()))
+            .Single(x => x.Kind == IncidentManager.Application.Cases.MilestoneKind.Contained);
+        m.AtUtc.Should().Be(Now.AddMinutes(90));
+        m.Title.Should().Be("Contained");
+    }
+
+    [Fact]
+    public void Moving_on_from_containment_before_it_was_marked_contained_says_when_it_was(/* FR-51 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        c.LeavesContainmentUncontained(CasePhase.Eradication).Should().BeTrue("the dialog asks");
+        c.SkipsContainment(CasePhase.Eradication).Should().BeFalse("it went through Containment");
+
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(4)))
+            .Should().Throw<ArgumentException>().WithMessage("*hasn't been marked contained*");
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(4), containmentNotNeededReason: "x"))
+            .Should().Throw<ArgumentException>().WithMessage("*went through Containment*");
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(4), containedAtUtc: Now.AddMinutes(30)))
+            .Should().Throw<ArgumentException>().WithMessage("*before it entered Containment*");
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(4), effectiveAtUtc: Now.AddHours(2),
+                containedAtUtc: Now.AddHours(3)))
+            .Should().Throw<ArgumentException>().WithMessage("*after this move*");
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(4), containedAtUtc: Now.AddHours(5)))
+            .Should().Throw<ArgumentException>().WithMessage("*future*");
+        c.Phase.Should().Be(CasePhase.Containment, "a refused move leaves the case as it was");
+
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(4), containedAtUtc: Now.AddHours(3));
         c.ContainedAtUtc.Should().Be(Now.AddHours(3));
+
+        // Moving back from Containment asks nothing; closing straight away needn't say, and may.
+        var back = NewCase();
+        back.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        back.LeavesContainmentUncontained(CasePhase.Triage).Should().BeFalse();
+        back.ChangePhase(CasePhase.Closed, "False positive", "ic1", Now.AddHours(2), outcomeKey: "FalsePositive");
+        back.ContainedAtUtc.Should().BeNull();
+        var closedSaying = NewCase();
+        closedSaying.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        closedSaying.ChangePhase(CasePhase.Closed, "Done", "ic1", Now.AddHours(2), outcomeKey: "Confirmed", containedAtUtc: Now.AddMinutes(90));
+        closedSaying.ContainedAtUtc.Should().Be(Now.AddMinutes(90));
+    }
+
+    [Fact]
+    public void The_move_into_containment_cant_be_re_dated_past_the_containment_it_started(/* FR-51 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        c.MarkContained("ic1", Now.AddHours(3), Now.AddHours(2));
+        var into = c.StatusChanges.Single(x => x.To == CasePhase.Containment).Id;
+
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Phase, into, Now.AddMinutes(150), "typo", "ic1", Now.AddHours(4)))
+            .Should().Throw<ArgumentException>().WithMessage("*contained after this move*");
+        c.CorrectTransitionTime(TransitionKind.Phase, into, Now.AddMinutes(30), "logged late", "ic1", Now.AddHours(4));
+        c.ContainedAtUtc.Should().Be(Now.AddHours(2), "a marked containment doesn't move with the move into Containment");
     }
 
     [Fact]
@@ -522,12 +606,12 @@ public class CaseTests
         c.ResolvedAtUtc.Should().Be(Now.AddHours(1));
 
         c.ChangePhase(CasePhase.Containment, "it was clicked after all", "ic1", Now.AddHours(3));
-        c.ContainedAtUtc.Should().Be(Now.AddHours(3));
+        c.ContainedAtUtc.Should().BeNull("FR-51: containment starts at this move");
         c.ResolvedAtUtc.Should().BeNull("it can't have been resolved before it was contained");
 
         var severity = c.SeverityChanges.Single(x => x.From is not null).Id;
         c.CorrectTransitionTime(TransitionKind.Severity, severity, Now.AddMinutes(20), "logged late", "ic1", Now.AddHours(4));
-        c.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(5));
+        c.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(5), containedAtUtc: Now.AddHours(4));
         c.ResolvedAtUtc.Should().Be(Now.AddHours(5));
     }
 

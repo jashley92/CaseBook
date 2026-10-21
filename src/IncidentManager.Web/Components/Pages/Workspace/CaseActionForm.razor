@@ -112,6 +112,13 @@
         <TransitionWarnings Case="Case" To="D.NewPhase" Notify="Notify" />
         <GateSection Draft="T" OnFix="OnFix" OnChanged="Changed" />
     }
+    else if (D.Name == "contained")
+    {
+        @* FR-51: entering Containment started containment; this ends it. *@
+        <p class="small text-muted mb-2">Containment started when the case entered Containment@(Case.ContainmentStartedAtUtc is { } started ? $" ({TimeDisp.Short(started)})" : "").
+            Marking it contained stops time to contain and the containment target's clock. The case stays in Containment until you move it on.</p>
+        <WhenItHappened Draft="T" OnChanged="Changed" Label="When it was contained" AsksReason="false" />
+    }
     else if (D.Name == "supersede")
     {
         <p class="small text-muted mb-2">Marks this case as a duplicate of the one work continues on, links the two and adds a
@@ -405,6 +412,7 @@
         "severity" => "Change severity",
         "handoff" => "Hand off the case",
         "status" => "Change phase",
+        "contained" => "Mark contained",
         "legal" => "Refer to Legal / Privacy",
         "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request legal hold release" : "Release legal hold",
         "supersede" => "Supersede as a duplicate",
@@ -420,6 +428,7 @@
     private string PrimaryLabel() => D.Name switch
     {
         "archive" => "Archive",
+        "contained" => "Mark contained",
         "assign" => CurrentRole(D.AssignUserId) is null ? "Assign" : "Change role",
         "reopen" => "Reopen",
         "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request release" : "Release hold",
@@ -462,7 +471,9 @@
                 || t.When is null || (backdated && string.IsNullOrWhiteSpace(D.PhaseReason))
                 || (Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed && string.IsNullOrWhiteSpace(D.PhaseReason))   // BUG-62
                 || (Case.SkipsContainment(D.NewPhase) && !ContainmentSaid)   // BUG-165
+                || (AsksContainedAt(D.NewPhase) && D.ContainedAt is null)   // FR-51
                 || (Case.SkipsRecovery(D.NewPhase) && D.ResolvedAt is null),   // BUG-208
+            "contained" => t.When is null,
             "severity" => D.NewSeverity == Case.Severity || t.When is null || ((backdated || D.NewSeverity > Case.Severity) && string.IsNullOrWhiteSpace(D.SeverityReason)),   // HR-11
             "handoff" => string.IsNullOrWhiteSpace(D.HandoffTo) || string.IsNullOrWhiteSpace(D.HandoffState),
             _ => false
@@ -501,6 +512,15 @@
                     case out of time-to-contain.</div>
             </fieldset>
         }
+        @if (AsksContainedAt(to))
+        {
+            @* FR-51: entering Containment started containment; moving on from it says when it was contained. *@
+            <label class="form-label small mt-2" for="@($"{p}-contained-at")">When it was contained (@TimeDisp.Label) <span class="text-muted">(required)</span></label>
+            <DateTimeInput Past="true" id="@($"{p}-contained-at")" class="form-control form-control-sm" @bind-Value="D.ContainedAt" />
+            <TimeNudges Value="D.ContainedAt" ValueChanged="v => D.ContainedAt = v" Now="@WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone)" />
+            <div class="form-text">This case hasn't been marked contained. Time to contain runs to this time: not before it entered
+                Containment@(Case.ContainmentStartedAtUtc is { } started ? $" ({TimeDisp.Short(started)})" : ""), and not after this move.</div>
+        }
         @if (Case.SkipsRecovery(to))
         {
             @* BUG-208: going past Recovery without it says when it was resolved. *@
@@ -510,6 +530,9 @@
                 right time.</div>
         }
     };
+
+    // FR-51: moving on from Containment before it was marked contained asks when it was (closing asks in Close-out).
+    private bool AsksContainedAt(CasePhase to) => Case.LeavesContainmentUncontained(to) && to != CasePhase.Closed;
 
     /// <summary>BUG-107: a closed case is reopened before its classification goes up.</summary>
     private bool ClosedAndRaising => Case.Phase == CasePhase.Closed && Case.RaisesClassification(D.NewClass);
@@ -578,11 +601,17 @@
                             ? new CaseService.ContainmentDecision(
                                 D.WasContained == true && D.ContainedAt is { } ca ? WallClock.ToUtc(ca, TimeDisp.Zone) : null,
                                 D.WasContained == false ? D.ContainmentNotNeededReason : null)
-                            : null,
+                            : AsksContainedAt(D.NewPhase) && D.ContainedAt is { } lca   // FR-51
+                                ? new CaseService.ContainmentDecision(WallClock.ToUtc(lca, TimeDisp.Zone), null)
+                                : null,
                         resolvedAtUtc: Case.SkipsRecovery(D.NewPhase) && D.ResolvedAt is { } ra ? WallClock.ToUtc(ra, TimeDisp.Zone) : null);
                     if (!Reopened) D.PhaseReason = null;
                     if (!Reopened) (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason, D.ResolvedAt) = (null, null, null, null);
                     done = $"Phase changed to {Ui.Label(D.NewPhase)}";
+                    break;
+                case "contained":
+                    await Cases.MarkContainedAsync(id, t.EffectiveUtc(TimeDisp.Zone));   // FR-51
+                    done = "Marked contained";
                     break;
                 case "supersede":
                 {

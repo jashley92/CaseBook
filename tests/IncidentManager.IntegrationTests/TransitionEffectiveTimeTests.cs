@@ -63,7 +63,7 @@ public sealed class TransitionEffectiveTimeTests : IDisposable
             effectiveAtUtc: happened);
 
         var c = (await svc.GetDetailAsync(created.Id))!;
-        c.ContainedAtUtc.Should().Be(happened);
+        c.ContainedAtUtc.Should().BeNull("FR-51: entering Containment starts containment");
         var change = c.StatusChanges.Single(x => x.To == CasePhase.Containment);
         change.EffectiveAtUtc.Should().Be(happened);
         change.ChangedAtUtc.Should().Be(detected.AddHours(6));   // the recorded time never moves
@@ -120,6 +120,41 @@ public sealed class TransitionEffectiveTimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Containment_is_marked_contained_through_the_service_or_said_when_moving_on(/* FR-51 */)
+    {
+        var svc = NewService();
+        var created = await svc.CreateAsync(Req());
+        var other = await svc.CreateAsync(Req());
+        var detected = _clock.UtcNow;
+        _clock.UtcNow = detected.AddHours(6);
+        await svc.ChangePhaseAsync(created.Id, CasePhase.Containment, "Isolating the hosts", effectiveAtUtc: detected.AddHours(1));
+
+        // Marking contained is an edit, as the phase change it completes is.
+        _user.RoleSet = [AppRole.Manager];
+        await svc.Invoking(s => s.MarkContainedAsync(created.Id)).Should().ThrowAsync<ForbiddenException>();
+        _user.RoleSet = [AppRole.Analyst];
+        await svc.Invoking(s => s.MarkContainedAsync(created.Id, detected)).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*before it entered Containment*");
+        await svc.MarkContainedAsync(created.Id, detected.AddHours(3));
+
+        var c = (await svc.GetDetailAsync(created.Id))!;
+        (c.Phase, c.ContainedAtUtc).Should().Be((CasePhase.Containment, detected.AddHours(3)));
+        await svc.Invoking(s => s.MarkContainedAsync(created.Id)).Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already marked contained*", "a colleague got there first");
+        await using (var db = new AppDbContext(Options()))
+            (await db.AuditLog.AnyAsync(a => a.EntityType == "Case" && a.AfterJson != null && a.AfterJson.Contains("ContainedAtUtc")))
+                .Should().BeTrue("the contained time is on the audit trail");
+
+        // A second case moves on from Containment saying when it was contained.
+        await svc.ChangePhaseAsync(other.Id, CasePhase.Containment, "Isolating", effectiveAtUtc: detected.AddHours(1));
+        await svc.Invoking(s => s.ChangePhaseAsync(other.Id, CasePhase.Eradication, null)).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*hasn't been marked contained*");
+        await svc.ChangePhaseAsync(other.Id, CasePhase.Eradication, null,
+            containment: new CaseService.ContainmentDecision(detected.AddHours(4), null));
+        (await svc.GetDetailAsync(other.Id))!.ContainedAtUtc.Should().Be(detected.AddHours(4));
+    }
+
+    [Fact]
     public async Task A_correction_is_saved_with_its_reason_and_moves_contained()
     {
         var svc = NewService();
@@ -127,6 +162,7 @@ public sealed class TransitionEffectiveTimeTests : IDisposable
         var detected = _clock.UtcNow;
         _clock.UtcNow = detected.AddHours(6);
         await svc.ChangePhaseAsync(created.Id, CasePhase.Containment, "Isolated");
+        await svc.MarkContainedAsync(created.Id);   // FR-51: contained as it entered, so the time moves with the move
         var changeId = (await svc.GetDetailAsync(created.Id))!.StatusChanges.Single(x => x.To == CasePhase.Containment).Id;
         _clock.UtcNow = detected.AddHours(8);
 

@@ -356,6 +356,31 @@ public sealed class CaseImportHistoryTests : IDisposable
         if (shape == "rev11") preview.HistoryProblem.Should().Contain("give \"resolvedAt\"").And.Contain("took back the resolution");
     }
 
+    // FR-51: entering Containment no longer sets the contained time. A step that moves on from Containment may say when it
+    // was contained; left out, it's the Containment step's time (as before FR-51); "not needed" isn't an answer there.
+    [Theory, MemberData(nameof(Providers))]
+    public async Task A_step_moving_on_from_containment_says_when_it_was_contained_or_takes_the_containment_steps_time(string provider)
+    {
+        Open(provider);
+        var said = WithSteps(new() { Phase = "Containment", At = Ago(8) }, new() { Phase = "Eradication", At = Ago(6), ContainedAt = Ago(7) });
+        var preview = await Import(_reviewer).BuildPreviewAsync(Parsed(said));
+        preview.HistoryProblem.Should().BeNull();
+        var c = await LoadAsync((await Import(_reviewer).ApplyAsync(preview)).CaseId);
+        (c.Phase, c.ContainedAtUtc).Should().Be((CasePhase.Eradication, Ago(7)));
+        CaseMilestones.Project(c, new MilestoneLabels(x => "", s => "", p => "", m => ""))
+            .Should().Contain(m => m.Kind == MilestoneKind.Contained && m.AtUtc == Ago(7));
+
+        var left = WithSteps(new() { Phase = "Containment", At = Ago(8) }, new() { Phase = "Eradication", At = Ago(6) });
+        var c2 = await LoadAsync((await Import(_reviewer).ApplyAsync(await Import(_reviewer).BuildPreviewAsync(Parsed(left)))).CaseId);
+        c2.ContainedAtUtc.Should().Be(Ago(8), "a document written before FR-51 imports with the times it always had");
+
+        var notNeeded = WithSteps(new() { Phase = "Containment", At = Ago(8) },
+            new() { Phase = "Eradication", At = Ago(6), ContainmentNotNeeded = "Nothing to contain" });
+        (await Import(_reviewer).BuildPreviewAsync(Parsed(notNeeded))).HistoryProblem.Should().Contain("went through Containment");
+        var early = WithSteps(new() { Phase = "Containment", At = Ago(8) }, new() { Phase = "Eradication", At = Ago(6), ContainedAt = Ago(9) });
+        (await Import(_reviewer).BuildPreviewAsync(Parsed(early))).HistoryProblem.Should().Contain("before it entered Containment");
+    }
+
     [Theory, MemberData(nameof(Providers))]
     public async Task The_REV11_history_applies_when_it_says_when_it_was_resolved_again(string provider)
     {

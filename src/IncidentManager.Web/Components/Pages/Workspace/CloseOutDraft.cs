@@ -22,6 +22,8 @@ public sealed class CloseOutDraft
     /// <summary>HR-18: the reply pasted back from the analyst's own AI tool.</summary>
     public string? AiReply { get; set; }
     public string? Error { get; set; }
+    /// <summary>FR-51: closing straight from Containment before it was marked contained says when it was (wall clock).</summary>
+    public DateTime? ContainedAt { get; set; }
 
     public List<CaseOutcomeView> Outcomes { get; set; } = [];
     public TransitionDraft Transition { get; } = new();
@@ -37,6 +39,7 @@ public sealed class CloseOutDraft
     {
         if (Open) return;
         Transition.Reset(nowWall);
+        ContainedAt = nowWall;
         Open = true;
     }
 
@@ -84,7 +87,10 @@ public sealed class CloseOutDraft
         return TagText.FromEditable(text, refs, c.Entities.Select(e => (e.Id, e.Label, e.Value)));
     }
 
-    /// <summary>Close is refused until the outcome, the text and the gate are in order.</summary>
+    /// <summary>Close is refused until the outcome, the text and the gate are in order (and, from Containment not yet
+    /// marked contained, when it was).</summary>
+    public bool CloseDisabledFor(Case c) => CloseDisabled || (c.LeavesContainmentUncontained(IncidentManager.Domain.Enums.CasePhase.Closed) && ContainedAt is null);
+
     public bool CloseDisabled =>
         (Transition.NeedsOverride && string.IsNullOrWhiteSpace(Transition.Override))
         || Transition.RationaleError(Conclusion) is not null

@@ -29,11 +29,13 @@ public class TransitionEffectiveTimeTests
     public void Containment_resolution_and_closure_take_the_effective_time()
     {
         var c = NewCase();
-        c.ChangePhase(CasePhase.Containment, "Isolated", "an1", T0.AddHours(8), effectiveAtUtc: T0.AddHours(2));
+        c.ChangePhase(CasePhase.Containment, "Isolating", "an1", T0.AddHours(8), effectiveAtUtc: T0.AddHours(2));
+        c.ContainedAtUtc.Should().BeNull("FR-51: entering Containment starts containment");
+        c.MarkContained("an1", T0.AddHours(8), T0.AddHours(3));
         c.ChangePhase(CasePhase.Recovery, "Restored", "an1", T0.AddHours(9), effectiveAtUtc: T0.AddHours(5));
         c.ChangePhase(CasePhase.Closed, "Done", "an1", T0.AddHours(10), effectiveAtUtc: T0.AddHours(9));
 
-        c.ContainedAtUtc.Should().Be(T0.AddHours(2));
+        c.ContainedAtUtc.Should().Be(T0.AddHours(3));
         c.ResolvedAtUtc.Should().Be(T0.AddHours(5));
         c.ClosedAtUtc.Should().Be(T0.AddHours(9));
     }
@@ -93,6 +95,7 @@ public class TransitionEffectiveTimeTests
     {
         var c = NewCase();
         c.ChangePhase(CasePhase.Containment, "Isolated", "an1", T0.AddHours(6));
+        c.ContainedAtUtc = T0.AddHours(6);   // a case from before FR-51: contained when it entered Containment
         var change = c.StatusChanges.Last();
 
         var k = c.CorrectTransitionTime(TransitionKind.Phase, change.Id, T0.AddHours(2), "Isolated on the call", "ic1", T0.AddHours(8));
@@ -111,7 +114,7 @@ public class TransitionEffectiveTimeTests
         var c = NewCase();
         c.ChangePhase(CasePhase.Triage, null, "an1", T0.AddHours(1));
         c.ChangePhase(CasePhase.Containment, null, "an1", T0.AddHours(3));
-        c.ChangePhase(CasePhase.Eradication, null, "an1", T0.AddHours(5));
+        c.ChangePhase(CasePhase.Eradication, null, "an1", T0.AddHours(5), containedAtUtc: T0.AddHours(4));
         var containment = c.StatusChanges.Single(x => x.To == CasePhase.Containment);
 
         var tooEarly = () => c.CorrectTransitionTime(TransitionKind.Phase, containment.Id, T0.AddMinutes(30), "x", "ic1", T0.AddHours(6));

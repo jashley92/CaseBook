@@ -98,11 +98,24 @@
         {
             <div class="im-nn-ob small text-muted" title="@notNeeded">Containment not needed</div>
         }
+        @* FR-51: entering Containment starts containment; Mark contained stops its clock, beside it (or alone, with no target). *@
+        @{ var markable = CanEdit && Case.Phase == CasePhase.Containment && Case.ContainedAtUtc is null; }
+        @if (markable && contain.State == SlaState.NoTarget)
+        {
+            <div class="im-nn-ob">
+                <span class="small">Containing@(Case.ContainmentStartedAtUtc is { } started ? $" since {TimeDisp.Brief(started, now)}" : "")</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => OnMarkContained.InvokeAsync()">Mark contained…</button>
+            </div>
+        }
         @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget))
         {
             <div class="im-nn-ob">
                 <ClockMark State="st.State" Label="@(st.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA")" Detail="@Ui.SlaShort(st)"
                            Title="@((st.TargetHours is { } h ? $"Target {h} h" : "") + (st.DueAtUtc is { } d ? $" · due {TimeDisp.Short(d)}" : ""))" />
+                @if (markable && st.Clock == SlaClock.Containment)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => OnMarkContained.InvokeAsync()">Mark contained…</button>
+                }
             </div>
         }
 
@@ -286,6 +299,8 @@
     [Parameter] public EventCallback<Guid> OnFocusTask { get; set; }
     [Parameter] public EventCallback OnAddTask { get; set; }
     [Parameter] public EventCallback OnShowReadiness { get; set; }
+    /// <summary>FR-51: open the Mark contained dialog (the workspace owns the dialogs).</summary>
+    [Parameter] public EventCallback OnMarkContained { get; set; }
     [Parameter] public EventCallback OnAssign { get; set; }
     [Parameter] public EventCallback<CaseAssignment> OnUnassign { get; set; }
     /// <summary>RD-25: on a phone the case's Now and Next are separate tabs: "now", "next", or both (the pane).</summary>

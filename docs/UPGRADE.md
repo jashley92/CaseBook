@@ -306,6 +306,18 @@ From an analyst walkthrough (one case filed, worked and readied for close in a r
 - **"Canceled" is spelled one way**, including the reason note a canceled task keeps (older "Cancelled:" notes are
   still read as reasons).
 
+**Time to contain now runs to when containment was done, not when it began.** Moving a case into Containment starts
+containment and no longer records it as contained. While a case is in Containment, *Mark contained…* (beside the
+containment clock in Next, and in Actions) records when it was contained, defaulting to now with the usual time nudges;
+the containment SLA clock and time to contain stop there, and the timeline shows a "Contained" milestone. Moving on from
+Containment (to Eradication, Recovery or Post-incident, or closing it) before it has been marked contained asks when it
+was: required, not before the case entered Containment, not after the move, and not in the future. Skipping Containment
+works as before. Cases from earlier releases keep the contained time they were given on entering Containment, and an
+imported history that doesn't give `containedAt` on the step leaving Containment is contained at the Containment step's
+time, as before. **What changes for you:** open cases already in Containment show their containment clock running
+again until someone marks them contained, and containment figures for periods after the upgrade measure something
+different from earlier ones, so compare them with care.
+
 The rest of this release:
 
 **The AI prompt generator** on the Import page (*Generate a prompt for your AI*)

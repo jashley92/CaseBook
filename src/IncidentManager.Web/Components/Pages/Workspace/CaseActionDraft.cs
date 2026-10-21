@@ -12,7 +12,7 @@ namespace IncidentManager.Web.Components.Pages.Workspace;
 public sealed class CaseActionDraft
 {
     /// <summary>reclass, severity, status, handoff, legal, materiality, supersede, restrict, unrestrict, holdrelease,
-    /// archive, reopen or assign.</summary>
+    /// archive, reopen, assign or contained (FR-51).</summary>
     public string? Name { get; set; }
     public string? Error { get; set; }
 
