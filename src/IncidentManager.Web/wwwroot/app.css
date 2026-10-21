@@ -3501,3 +3501,19 @@ a.im-find-quote:hover { text-decoration: underline; }
 /* UX-54: a task is a link in the text colour (as in the tables); gold is for actions. */
 .im-desk-tasks .im-desk-task-body > a { color: var(--im-text); text-decoration: none; }
 .im-desk-tasks .im-desk-task-body > a:hover, .im-desk-tasks .im-desk-task-body > a:focus-visible { text-decoration: underline; }
+
+/* UX-60: inside Administration, a page's header is a section heading under the tabs. */
+.im-page-title.is-section { font-size: var(--im-text-lg); font-weight: 600; margin: 0; }
+.admin-pane .im-page-head { margin-bottom: var(--im-space-3); }
+.admin-pane .im-page-actions { align-items: center; gap: var(--im-space-3); }
+/* UX-60: the same input size as the rest of the app (Administration's were a size larger). */
+.admin-pane .form-control:not(.form-control-sm):not(.form-control-lg),
+.admin-pane .form-select:not(.form-select-sm):not(.form-select-lg) {
+    padding: .25rem .5rem; font-size: var(--im-text-table); border-radius: var(--im-radius); }
+.admin-pane .form-select:not(.form-select-sm):not(.form-select-lg) { padding-right: 2rem; }
+.admin-pane .input-group:not(.input-group-sm) > .input-group-text { padding: .25rem .5rem; font-size: var(--im-text-table); }
+/* UX-52: a tab is a link but not a gold one: the theme's link colour ([data-bs-theme] a:not(.btn)) outranked the tab's. */
+[data-bs-theme] .im-tabbar .im-tabbar-item { color: var(--im-text-muted); text-decoration: none; }
+[data-bs-theme] .im-tabbar .im-tabbar-item:hover, [data-bs-theme] .im-tabbar .im-tabbar-item.active { color: var(--im-text); }
+/* UX-60: a setting's input at a readable width (the mockup's), not the rest of the row; a list (textarea) keeps the row. */
+.admin-pane .card-body .row input.form-control:not([type=checkbox]), .admin-pane .card-body .row .form-select { max-width: 26rem; }

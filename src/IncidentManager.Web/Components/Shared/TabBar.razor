@@ -5,7 +5,18 @@
     @foreach (var item in Items)
     {
         var i = item;
-        if (i.Href is not null)
+        if (i.Href is not null && Active is not null && i.Key is not null)
+        {
+            @* A link that stands for several pages (Administration's groups): current by key, not by its address. *@
+            var on = string.Equals(i.Key, Active, StringComparison.Ordinal);
+            <a class="im-tabbar-item @(on ? "active" : "")" href="@i.Href" aria-current="@(on ? "page" : null)" title="@i.Title">
+                @if (i.Icon is not null) { <span class="bi @i.Icon" aria-hidden="true"></span> }
+                <span>@i.Label</span>
+                @if (i.Count is { } n) { <span class="im-tabbar-count">@n</span> }
+                @if (i.Attention is { } a) { <span class="im-tabbar-attn">@a</span> }
+            </a>
+        }
+        else if (i.Href is not null)
         {
             <NavLink class="im-tabbar-item" href="@i.Href" Match="NavLinkMatch.All" title="@i.Title">
                 @if (i.Icon is not null) { <span class="bi @i.Icon" aria-hidden="true"></span> }
@@ -35,7 +46,7 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<TabBarItem> Items { get; set; } = [];
     [Parameter] public TabLevel Level { get; set; } = TabLevel.Page;
-    /// <summary>For button items: the key of the current one.</summary>
+    /// <summary>For button items, and link items with a Key: the key of the current one.</summary>
     [Parameter] public string? Active { get; set; }
     [Parameter] public EventCallback<string?> OnSelect { get; set; }
     /// <summary>The bar's accessible name ("Case views", "Program").</summary>

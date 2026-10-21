@@ -50,10 +50,20 @@
    markdown-editor.js, BUG-369). *@
 <NavigationLock OnBeforeInternalNavigation="OnBeforeLeave" ConfirmExternalNavigation="@HasUnsavedChanges" />
 
+@* UX-60: the configuration keys (Reporting:OrganizationName) behind a switch, for whoever sets them on the host; one
+   change history for the page in place of a History link on every setting. *@
 <PageHeader Title="@ActiveTitle"
            Subtitle="@ActiveSubtitle">
     <Actions>
-        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+        @if (ActiveGroups is not null)
+        {
+            <div class="form-check form-switch mb-0 small">
+                <input class="form-check-input" type="checkbox" role="switch" id="adm-show-keys" checked="@_showKeys"
+                       @onchange="e => _showKeys = e.Value is true" />
+                <label class="form-check-label text-muted" for="adm-show-keys">Show configuration keys</label>
+            </div>
+            <a class="small" href="integrity?entity=AppSetting#audit-trail" title="Who changed a setting, and when, on the audit trail">Change history</a>
+        }
     </Actions>
 </PageHeader>
 
@@ -262,14 +272,14 @@
                                         {
                                             <div class="invalid-feedback d-block" role="alert">@problem</div>
                                         }
-                                        <div class="form-text"><code class="small">@def.Key</code>
-                                            @if (SettingsCatalog.EffectText(SettingsCatalog.EffectOf(def.Key)) is { } effect)
-                                            {
-                                                <span class="im-badge im-b-neutral ms-2" title="When a saved change applies">@effect</span>
-                                            }
-                                            @* CAP-03: who changed it and when, on the Integrity page's trail (the key isn't personal data). *@
-                                            <a class="ms-2" href="@($"integrity?entity=AppSetting&key={Uri.EscapeDataString(def.Key)}#audit-trail")"
-                                               aria-label="@($"History of {DisplayLabel(def)}")">History</a></div>
+                                        @{ var effect = SettingsCatalog.EffectText(SettingsCatalog.EffectOf(def.Key)); }
+                                        @if (_showKeys || effect is not null)
+                                        {
+                                            <div class="form-text d-flex flex-wrap align-items-center gap-2">
+                                                @if (_showKeys) { <code class="small">@def.Key</code> }
+                                                @if (effect is not null) { <span class="im-badge im-b-neutral" title="When a saved change applies">@effect</span> }
+                                            </div>
+                                        }
                                     </div>
                                 </div>
                             }
@@ -1066,6 +1076,9 @@
 <ConfirmDialog @ref="_confirm" />
 
 @code {
+    // UX-60: the configuration keys are for whoever sets a value on the host; off by default, kept across sections.
+    private bool _showKeys;
+
     private ConfirmDialog _confirm = null!;
 
     // --- Unsaved changes ---

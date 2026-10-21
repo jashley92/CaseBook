@@ -16,7 +16,7 @@ public sealed partial class DesignTokenGuardTests
 {
     // The counts as of the design-system branch's start (v1.15.0). Lower them as screens move onto the tokens.
     private const int CssRawFontSizes = 9;
-    private const int CssRawColours = 148;
+    private const int CssRawColours = 142;
     private const int CssRawRadii = 33;
     private const int InlineRawFontSizes = 3;
     private const int InlineRawColours = 9;

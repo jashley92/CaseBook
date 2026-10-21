@@ -2,37 +2,28 @@
 @layout MainLayout
 @inject NavigationManager Nav
 @inject IWebHostEnvironment Env
+@inject IncidentManager.Web.Updates.UpdateCheckService Updates
+@implements IDisposable
 
-@* Administration hub shell (Option B): one left rail is the single navigation for every admin destination,
-   so the main sidebar carries just a single "Administration" entry instead of repeating all of these.
-   Configuration and System items route into the Settings page (admin/settings/{section}); the rest are the
-   standalone admin pages, which opt in with @layout AdminLayout so the rail persists across them. *@
+@* The Administration frame: the main sidebar carries one "Administration" entry, and this is the navigation for every
+   admin destination. Settings sections are admin/settings/{section}; the standalone admin pages opt in with
+   @layout AdminLayout. UX-60: one column. Administration is the page's heading, with its search (settings and pages) beside it; under it the
+   groups as page tabs and, in a group of more than one, its pages as sub-tabs. It replaces a second sidebar inside the
+   page. Each admin page's own header is a section heading (an h2) under the tabs. *@
 <div class="admin-shell">
-    <nav class="admin-rail" aria-label="Administration">
-        <div class="admin-rail-head">
-            <span class="bi bi-shield-lock" aria-hidden="true"></span><span>Administration</span>
-        </div>
-        @* The overview has its own, larger search box. *@
-        @if (!OnOverview) { <AdminSearchBox Compact="true" /> }
-        @foreach (var group in Groups)
-        {
-            <div class="admin-rail-label">@group.Label</div>
-            @foreach (var item in group.Items)
-            {
-                <div class="admin-rail-item">
-                    <NavLink class="admin-rail-link" href="@item.Href" Match="NavLinkMatch.All">
-                        <span class="bi @item.Icon" aria-hidden="true"></span><span>@item.Title</span>
-                        @if (item.Href == UpdatesHref) { <UpdateDot /> }
-                    </NavLink>
-                </div>
-            }
-        }
-    </nav>
+    <div class="admin-head">
+        <h1 class="im-page-title mb-0">Administration</h1>
+        <AdminSearchBox Compact="true" />
+    </div>
+    <TabBar Level="TabLevel.Page" Label="Administration" Class="admin-tabs" Active="@ActiveGroup?.Label"
+            Items="@([.. Groups.Select(g => new TabBarItem(g.Label, Href: g.Items[0].Href, Key: g.Label, Attention: UpdateNote(g.Items)))])" />
+    @if (ActiveGroup is { Items.Length: > 1 } group)
+    {
+        <TabBar Level="TabLevel.Sub" Label="@group.Label" Class="admin-subtabs"
+                Items="@([.. group.Items.Select(i => new TabBarItem(i.Title, Href: i.Href, Attention: UpdateNote([i])))])" />
+    }
     <div class="admin-pane">
-        @* UX-08: Administration › [section] trail. The rail navigates; the breadcrumb states "you are
-           here" and gives a one-click way back to the admin landing from any deep section. *@
-        <Breadcrumbs Items="Crumbs" />
-        @Body
+        <CascadingValue Name="PageHeaderSection" Value="true">@Body</CascadingValue>
     </div>
 </div>
 
@@ -42,24 +33,23 @@
     public sealed record RailItem(string Title, string Icon, string Href);
     public sealed record RailGroup(string Label, RailItem[] Items);
 
-    // UX-08: derive the breadcrumb from the active rail item so every admin page gets a consistent
-    // "Administration › [section]" trail with no per-page wiring. The landing (admin) and any route not
-    // in the rail render no trail — the rail alone navigates there.
-    private IReadOnlyList<Crumb> Crumbs
+    // PROD-49: "new" beside Updates (and its group) when a newer release is out; the check is off unless turned on.
+    private string? UpdateNote(IEnumerable<RailItem> items) =>
+        Updates.UpdateAvailable && items.Any(i => i.Href == UpdatesHref) ? "new" : null;
+
+    protected override void OnInitialized() => Updates.Changed += OnUpdates;
+
+    private void OnUpdates() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Updates.Changed -= OnUpdates;
+
+    // UX-60: the group the current page is in (none for a page reached from another, such as Offboarding).
+    private RailGroup? ActiveGroup
     {
         get
         {
-            var path = Nav.ToBaseRelativePath(Nav.Uri);
-            var q = path.IndexOf('?', StringComparison.Ordinal);
-            if (q >= 0) path = path[..q];
-            path = path.TrimEnd('/');
-
-            var active = Groups.SelectMany(g => g.Items)
-                .FirstOrDefault(i => string.Equals(i.Href.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase));
-
-            return active is null || string.Equals(active.Href, "admin", StringComparison.OrdinalIgnoreCase)
-                ? []
-                : [new Crumb("Administration", "admin"), new Crumb(active.Title)];
+            var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+            return Groups.FirstOrDefault(g => g.Items.Any(i => string.Equals(i.Href.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase)));
         }
     }
 
@@ -127,8 +117,6 @@
     ];
 
     private const string StyleGuideHref = "admin/style";
-
-    private bool OnOverview => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/') == "admin";
 
     private RailGroup[] Groups => Env.IsDevelopment() ? AllGroups
         : [.. AllGroups.Select(g => g with { Items = [.. g.Items.Where(i => i.Href != StyleGuideHref)] })];
