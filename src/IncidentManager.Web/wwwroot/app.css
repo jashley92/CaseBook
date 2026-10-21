@@ -2342,11 +2342,16 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
    badges, so the case you want is tappable without scrolling sideways.
    ============================================================================ */
 .im-case-list > tbody > tr { position: relative; }
-.im-case-list .case-cell-title { min-width: 12rem; }
-.im-case-list .case-num { width: 14rem; max-width: 14rem; }
-/* The number is cut to its column (whole in its title): wider, a long one ran into the Title column, and the table
-   pushed Opened off the page. */
-.im-case-list .case-num code { max-width: 11rem; vertical-align: bottom; }
+.im-case-list .case-cell-title { min-width: 14rem; }
+/* UX-53: the number under the title, quiet and cut short (whole in its title). */
+.im-case-list .case-num-sub { display: flex; align-items: center; gap: .35rem; min-width: 0; margin-top: .1rem;
+    font-size: var(--im-text-xs); color: var(--im-text-muted); }
+.im-case-list .case-num-sub .bi { color: var(--im-warn); }
+@media (min-width: 768px) { .im-case-list .case-num-sub { padding-left: 2.25rem; } }   /* under the title, past the preview button */
+/* UX-54: in lists a medium or low severity is a word (its bars keep the level); colour stays for critical and high. */
+.im-case-list .im-sevmark-2, .im-case-list .im-sevmark-1, .im-case-list .im-sevmark-0 { color: var(--im-text-muted); }
+.im-case-list .im-sevmark-2 > span:last-child, .im-case-list .im-sevmark-1 > span:last-child, .im-case-list .im-sevmark-0 > span:last-child { color: var(--im-text); }
+.im-case-list .case-cell-sev, .im-case-list .case-cell-phase, .im-case-list .case-sla { white-space: nowrap; }
 .im-case-list .case-title-line { display: flex; align-items: center; gap: .35rem; min-width: 0; }
 .im-case-list .case-title-line .im-badge { flex: none; }
 .im-case-list .case-cell-origin { white-space: nowrap; }
@@ -2384,7 +2389,6 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     .im-case-list > tbody > tr.im-edge-critical { box-shadow: inset 3px 0 0 var(--im-sev-crit-fg); }
     .im-case-list > tbody > tr.im-edge-high { box-shadow: inset 3px 0 0 var(--im-sev-high-fg); }
     .im-case-list .case-title-line .case-title { white-space: normal; }
-    .im-case-list .case-num { order: -2; flex: 1 0 100%; max-width: none; font-size: var(--im-text-xs); }
     .im-case-list .case-cell-title { order: -1; flex: 1 0 100%; margin-bottom: .15rem; }
     .im-case-list .case-cell-title .case-title { font-size: var(--im-text-md); }
     .im-table.im-case-list > tbody > tr > td.case-cell-select, .im-table.im-case-list > tbody > tr > td.case-cell-origin { display: none; }
