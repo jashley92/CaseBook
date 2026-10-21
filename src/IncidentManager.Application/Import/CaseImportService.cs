@@ -1877,13 +1877,8 @@ public sealed class CaseImportService
         return TimelineEntryType.Communication;
     }
 
-    /// <summary>The case-number slug source for a title (the first six words, at most 42 characters), as the New case
-    /// form derives it. BUG-637: also used by the import preview when the title is edited.</summary>
-    public static string SlugSource(string? title)
-    {
-        var t = (title ?? "").Trim();
-        if (t.Length == 0) return "Imported case";
-        var s = string.Join(' ', t.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6));
-        return TextFit.Cap(s, 42, "").TrimEnd();
-    }
+    /// <summary>The case-number slug source for a title (<see cref="Case.SlugSource"/>: four meaningful words, never
+    /// ending on a stop-word), as the New case form derives it. BUG-637: also used by the import preview when the title
+    /// is edited.</summary>
+    public static string SlugSource(string? title) => Case.SlugSource(title) is { Length: > 0 } s ? s : "Imported case";
 }

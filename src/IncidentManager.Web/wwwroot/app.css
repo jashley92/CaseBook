@@ -479,8 +479,17 @@ h1:focus {
 .im-entity-tag:hover { background: color-mix(in srgb, var(--bs-info) 24%, transparent); text-decoration: none; }
 .im-entity-tag .bi { font-size: .82em; opacity: .8; }
 /* CAP-02: a long value in the entity list (a file hash, a URL) wraps, so the verdict column beside the new tick boxes
-   stays in view instead of running off the card. */
+   stays in view instead of running off the card. FR-60: the column keeps room enough that a value wraps at its <wbr>s
+   (after . @ /) rather than mid-token; only a single token longer than that (a hash) still breaks anywhere. */
+.im-entity-valuecell { min-width: 13rem; }
 .im-entity-value { overflow-wrap: anywhere; }
+/* FR-60: the row's acts, a compact group; on a narrow list, icons only (the words kept for screen readers). */
+.im-entity-list { container: entlist / inline-size; }
+.im-ent-acts .bi + .im-ent-act-word { margin-left: .3rem; }
+@container entlist (max-width: 62rem) {
+    .im-ent-acts .im-ent-act-word { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+        clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+}
 /* BUG-411: a long value (a command line, a URL) wraps inside its chip instead of running past the row: the chip
    flows like text, each line keeping its own edges. A short one stays on one line as before. */
 .im-entity-tag {
@@ -629,6 +638,10 @@ h1:focus {
 .case-num { max-width: 16rem; }
 .case-num code { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
                  white-space: nowrap; vertical-align: bottom; }
+/* FR-57/58: a case number where room is short (a side column, a slim bar, a phone): one line, cut with an ellipsis,
+   the whole number in its title. Breaking it mid-slug read as two numbers. */
+.im-casenum { display: inline-block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; vertical-align: bottom; }
 
 /* Response-time SLA flags (E-16) — reuse the severity/phase tint tokens so they stay theme-aware. */
 .im-sla-ontrack       { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); border-color: var(--im-phase-closed-bd); }
@@ -2372,7 +2385,11 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 .ws-sticky { position: sticky; top: var(--im-topbar-h); z-index: 20; background: var(--im-bg); }
 .ws-slim { display: none; align-items: center; gap: .4rem; min-height: 2.5rem; padding: .3rem 0; border-bottom: 1px solid var(--im-border); }
 .ws-sticky[data-stuck] .ws-slim { display: flex; }
-.ws-slim .im-casehead-num { font-size: var(--im-text-sm); font-weight: 600; }
+.ws-slim .im-casehead-num { font-size: var(--im-text-sm); font-weight: 600; flex: 0 1 auto; max-width: 18rem; }
+/* FR-58: one line however long the number: the number gives way (ellipsis) and the title before it; the state and
+   the primary act keep their words whole. */
+.ws-slim .im-casehead-num { flex-shrink: 4; min-width: 6rem; }
+.ws-slim .btn { white-space: nowrap; flex-shrink: 0; }
 .ws-slim-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--im-text-sm); }
 .im-workspace-tabs .im-tab-sep { flex: none; width: 1px; align-self: stretch; margin: .45rem .35rem; background: var(--im-border-strong); list-style: none; }
 @media (max-width: 640px) {
@@ -2549,7 +2566,11 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .im-casehead-state { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 1rem; margin: 0.35rem 0 0.6rem; font-size: 0.95rem; }
 @media (max-width: 640px) {
-    h1 .im-casehead-num { font-size: 1.3rem; }
+    /* FR-58: on a phone the number is one line with an ellipsis (its title has it whole), not broken letter by letter;
+       the pencil beside it keeps its place. */
+    h1 .im-casehead-num { font-size: 1.3rem; display: inline-block; max-width: calc(100% - 1.75rem); overflow: hidden;
+                          text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+    .im-casehead-line h1 { min-width: 0; max-width: 100%; }
 }
 @media (max-width: 575.98px) {
     .im-phone-collapsed { display: none !important; }
@@ -2659,12 +2680,24 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 html[data-tl-away] .tl-add-fab { display: inline-flex; align-items: center; gap: 0.35rem; }
 /* The Tasks tab's add form, the same way: a floating Add once the form has scrolled away, opening the form popped out. */
 html[data-task-away]:not([data-task-docked]) .task-add-fab { display: inline-flex; align-items: center; gap: 0.35rem; }
+/* FR-61: while a floating Add shows, the side panel and the page scroll a little further, so its last link (a
+   "Done…" or "Mark reported…") can come out from under the button. */
+html[data-tl-away] :is(.im-nownext, .ws-body),
+html[data-task-away]:not([data-task-docked]) :is(.im-nownext, .ws-body) { padding-bottom: 4rem; }
 #task-add-form { container: taskadd / inline-size; }
-@container taskadd (max-width: 40rem) {
+#task-add-form .task-add-actions .btn { white-space: nowrap; }
+/* FR-59: also in place beside the side panel, where six across left "Unassigne", "mm/dd/yyy" and Add on two lines. */
+@container taskadd (max-width: 56rem) {
     /* The task's title a row of its own, the rest two to a row. */
     #task-add-form > .card-body > [class*="col-md-"] { flex: 0 0 auto; width: 50%; }
     #task-add-form > .card-body > .col-md-3 { width: 100%; }
+    /* Add alone on the last row: at its own width, at the right. */
+    #task-add-form > .card-body > .task-add-actions { width: auto; margin-left: auto; }
 }
+/* FR-59: a due's date on one line and its time under it, at a width a result beside it can't squeeze. */
+.im-task-due { min-width: 8rem; }
+.im-task-due-day, .im-task-due-time { display: block; white-space: nowrap; }
+.im-task-due-time { font-size: var(--im-text-sm); color: var(--im-text-muted); }
 .task-docked-head { display: none; }
 html[data-task-docked] #task-add-form { display: block !important; position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
     width: min(28rem, 100%); overflow-y: auto; border-radius: 0; border: 0; border-left: 1px solid var(--im-border-strong);
@@ -2762,9 +2795,8 @@ button.im-phase-seg { cursor: pointer; }
 .ws-slim .im-phasebar strong { font-weight: 600; font-size: var(--im-text-sm); }
 .ws-slim .im-state-words { font-size: var(--im-text-sm); align-items: center; }   /* the marks lead with bars, so baselines misalign */
 
-/* INV-38: tabs keep their places; later-phase and record tabs are quiet until they matter. */
-.nav-tabs.im-workspace-tabs .nav-link.im-tab-quiet { font-size: var(--im-text-sm); color: var(--im-text-muted); padding-inline: .6rem; }
-.nav-tabs.im-workspace-tabs .nav-link.im-tab-quiet:hover { color: var(--im-text); }
+/* INV-38: tabs keep their places. FR-61: Paper is no longer greyed until it matters (it read as disabled); the
+   separator before it and its "why" chip mark it out. */
 /* Without the side panel the tabs share the width with nothing else, but laptops still need a little less padding. */
 @media (max-width: 1399.98px) { .nav-tabs.im-workspace-tabs .nav-link { padding-inline: .68rem; } }
 .im-tab-why { font-size: .7rem; font-weight: 600; color: var(--im-accent-text); background: var(--im-accent-bg); border-radius: 4px; padding: 0 .3rem; margin-left: .35rem; }
@@ -3326,3 +3358,11 @@ a.im-find-quote:hover { text-decoration: underline; }
 @media (max-width: 767.98px) { .btn-group { flex-wrap: wrap; } }
 /* RD-26: a case number in the Desk's case table stays on one line (the table scrolls on a phone). */
 .im-desk table td code { white-space: nowrap; }
+/* FR-57: the case column holds the title (two lines at most) over its number, capped so the other columns keep room. */
+.im-desk-casecell { min-width: 10rem; max-width: 14rem; }
+.im-desk-casecell > .im-desk-sub { display: flex; align-items: center; gap: .3rem; min-width: 0; }
+.im-desk-cases th { white-space: nowrap; }
+/* The clocks column: the number gives way to the due time beside it. */
+.im-desk-clock-sub { display: flex; gap: .25rem; min-width: 0; white-space: nowrap; }
+/* The side column's lists: a row as wide as the card, so a number in it is cut rather than widening it. */
+.im-desk-quiet li { grid-template-columns: minmax(0, 1fr); }

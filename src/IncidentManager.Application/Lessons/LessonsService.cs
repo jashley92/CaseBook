@@ -220,7 +220,7 @@ public sealed class LessonsService
         var task = await db.ActionItems.FirstOrDefaultAsync(a => a.Id == taskId && a.CaseId == caseId, ct)
                    ?? throw new InvalidOperationException("Task not found.");
         if (task.Status is ActionItemStatus.Done or ActionItemStatus.Cancelled)
-            throw new InvalidOperationException($"\"{task.Title}\" is {(task.Status == ActionItemStatus.Done ? "done" : "cancelled")} already; only an open task can be moved.");
+            throw new InvalidOperationException($"\"{task.Title}\" is {(task.Status == ActionItemStatus.Done ? "done" : "canceled")} already; only an open task can be moved.");
         var v = Validate(new ImprovementActionInput(task.Title, null, task.Description, task.Owner, task.DueAtUtc));
         var now = _clock.UtcNow;
         var action = new ImprovementAction

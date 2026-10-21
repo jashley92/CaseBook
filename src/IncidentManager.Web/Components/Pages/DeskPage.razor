@@ -81,7 +81,7 @@
                                         }
                                         else
                                         {
-                                            <div class="im-desk-sub"><code>@n.CaseNumber</code>@NeedDetail(n, now)</div>
+                                            <div class="im-desk-sub"><code class="im-casenum" title="@n.CaseNumber">@n.CaseNumber</code>@NeedDetail(n, now)</div>
                                         }
                                     </div>
                                     <a class="btn btn-sm btn-outline-secondary" href="@href">@act</a>
@@ -104,19 +104,25 @@
                     else
                     {
                         <div class="table-responsive">
-                            <table class="table table-sm align-middle im-table mb-0">
+                            @* FR-57: the case leads with its title; the number (a long generated slug, unbreakable) sits small under
+                               it, cut with an ellipsis, so the table fits beside the side column without scrolling. *@
+                            <table class="table table-sm align-middle im-table im-desk-cases mb-0">
                                 <thead><tr><th>Case</th><th>State</th><th>Phase</th><th>You</th><th>Next for you</th><th>Since you looked</th><th></th></tr></thead>
                                 <tbody>
                                     @foreach (var c in _desk.Cases)
                                     {
                                         <tr>
                                             <td>
-                                                <a href="cases/@c.Id" class="fw-semibold text-decoration-none"><code>@c.CaseNumber</code></a>
-                                                @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
-                                                <div class="im-desk-sub im-clamp-2" title="@c.Title">@c.Title</div>
+                                                <div class="im-desk-casecell">
+                                                    <a href="cases/@c.Id" class="fw-semibold text-decoration-none im-clamp-2" title="@c.Title">@c.Title</a>
+                                                    <div class="im-desk-sub">
+                                                        @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
+                                                        <code class="im-casenum" title="@c.CaseNumber">@c.CaseNumber</code>
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td class="text-nowrap"><RungMark Value="c.Classification" /> <SeverityMark Value="c.Severity" /></td>
-                                            <td class="text-nowrap">@Ui.Label(c.Phase) <span class="im-desk-sub">· @Ui.Age(c.PhaseSinceUtc, now)</span></td>
+                                            <td><span class="text-nowrap">@Ui.Label(c.Phase)</span> <span class="im-desk-sub text-nowrap">· @Ui.Age(c.PhaseSinceUtc, now)</span></td>
                                             <td class="small">@(c.Role is { } r ? Ui.Label(r) : "—")</td>
                                             <td class="small">
                                                 @if (c.NextForYou is { } nx)
@@ -183,7 +189,7 @@
                                             <a href="cases/@t.CaseId?tab=Tasks" class="text-decoration-none">@t.Title</a>
                                             <div class="im-desk-sub">
                                                 @if (why is { } w) { <WhyChip Icon="@w.Icon" Text="@w.Text" /> }
-                                                <span><code>@t.CaseNumber</code></span>
+                                                <span class="im-casenum" title="@t.CaseNumber"><code>@t.CaseNumber</code></span>
                                                 @if (t.DueAtUtc is { } due) { <span class="@(due < now ? "im-desk-late" : "")" title="@TimeDisp.Long(due)">@TimeDisp.Brief(due, now)</span> }
                                             </div>
                                         </div>
@@ -210,12 +216,12 @@
                             @if (k.Notify is { } n)
                             {
                                 <ClockMark State="n.State" Label="@($"Notify {n.JurisdictionCode} {n.WindowHours} h")" />
-                                <div class="im-desk-sub"><code>@k.CaseNumber</code>@if (n.DueAtUtc is { } d) { <text> · due @TimeDisp.Brief(d, now)</text> }</div>
+                                <div class="im-desk-sub im-desk-clock-sub"><code class="im-casenum" title="@k.CaseNumber">@k.CaseNumber</code>@if (n.DueAtUtc is { } d) { <text> · due @TimeDisp.Brief(d, now)</text> }</div>
                             }
                             else if (k.Sla is { } s)
                             {
                                 <ClockMark State="s.State" Label="@(s.Clock is { } sc ? Ui.SlaClockLabel(sc) : "SLA")" Detail="@Ui.SlaShort(s)" />
-                                <div class="im-desk-sub"><code>@k.CaseNumber</code></div>
+                                <div class="im-desk-sub im-desk-clock-sub"><code class="im-casenum" title="@k.CaseNumber">@k.CaseNumber</code></div>
                             }
                         </div>
                     }
@@ -229,7 +235,7 @@
                         {
                             <li>
                                 <span>@q.ActorDisplay @Lower(q.Summary)</span>
-                                <span class="im-desk-sub"><a href="cases/@q.CaseId"><code>@q.CaseNumber</code></a> · @TimeDisp.Brief(q.AtUtc, now)</span>
+                                <span class="im-desk-sub"><a href="cases/@q.CaseId" class="im-casenum" title="@q.CaseNumber"><code>@q.CaseNumber</code></a> · @TimeDisp.Brief(q.AtUtc, now)</span>
                             </li>
                         }
                     </ul>
@@ -243,7 +249,7 @@
                             @foreach (var c in _pinned)
                             {
                                 <li>
-                                    <a href="cases/@c.Id"><code>@c.CaseNumber</code></a>
+                                    <a href="cases/@c.Id" class="im-casenum" title="@c.CaseNumber"><code>@c.CaseNumber</code></a>
                                     <span class="im-desk-sub im-clamp-2">@c.Title</span>
                                     <button class="btn btn-link btn-sm p-0 text-muted" title="Unpin" aria-label="@($"Unpin {c.CaseNumber}")" @onclick="() => Unpin(c.Id)" disabled="@_unpinning">Unpin</button>
                                 </li>
@@ -260,7 +266,7 @@
                             @foreach (var e in _desk.RecentEscalations)
                             {
                                 <li>
-                                    <a href="cases/@e.CaseId"><code>@e.CaseNumber</code></a>
+                                    <a href="cases/@e.CaseId" class="im-casenum" title="@e.CaseNumber"><code>@e.CaseNumber</code></a>
                                     <span class="im-desk-sub">@Ui.Label(e.From) → @Ui.Label(e.To) · @TimeDisp.Brief(e.ChangedAtUtc, now)</span>
                                 </li>
                             }

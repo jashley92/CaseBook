@@ -73,7 +73,7 @@ else
        scrolled away a one-line bar keeps the case's identity, state and next step in view. *@
     <div id="ws-sticky" class="ws-sticky mb-3">
         <div class="ws-slim" aria-hidden="true">
-            <code class="im-casehead-num">@_case.CaseNumber</code>
+            <code class="im-casehead-num im-casenum" title="@_case.CaseNumber">@_case.CaseNumber</code>
             <CaseStateLine Case="_case" Slim="true" CanEdit="_canEdit" Notify="_notifyDeadlines" AfterClosure="_afterClosure"
                            OutcomeLabels="_outcomeLabels" OnAdvanceTo="AdvanceTo" OnGoToTab="SetTab" />
             <span class="ws-slim-title text-muted">@_case.Title</span>

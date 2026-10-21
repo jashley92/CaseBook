@@ -269,7 +269,7 @@ public sealed class EvidenceService
             using var db = _factory.CreateDbContext();
             if (s.EvidenceId is { } done)
                 return await db.Evidence.AsNoTracking().FirstAsync(e => e.Id == done, ct);
-            if (s.Ended) throw new InvalidOperationException("That upload was cancelled. Start it again.");
+            if (s.Ended) throw new InvalidOperationException("That upload was canceled. Start it again.");
             if (s.Committed != s.Size)
                 throw new InvalidOperationException($"The upload is missing parts: {s.Committed:N0} of {s.Size:N0} bytes arrived.");
             var collection = await CheckCanUploadAsync(db, s.CaseId, s.FileName, s.Description, s.Collected, ct);

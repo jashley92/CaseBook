@@ -26,7 +26,8 @@
                 <div class="row g-2 align-items-end">
                     <div class="col-md-5">
                         <label class="form-label small mb-0">File</label>
-                        <InputFile id="evidence-file-input" class="form-control form-control-sm" OnChange="OnFileSelected" disabled="@_busy" />
+                        @* FR-61: re-keyed after an upload, so the picker empties instead of still naming the file it sent. *@
+                        <InputFile @key="_pickerKey" id="evidence-file-input" class="form-control form-control-sm" OnChange="OnFileSelected" disabled="@_busy" />
                     </div>
                     <div class="col-md-5">
                         <label class="form-label small mb-0" for="ev-desc">Description</label>
@@ -541,6 +542,7 @@
     private void ToggleTask(Guid id) { if (!_taskFor.Add(id)) _taskFor.Remove(id); }
 
     private IBrowserFile? _file;
+    private int _pickerKey;
     private string? _evDesc;
     private string? _uploadError;
     // The administrator's setting behind _uploadError, when a limit refused the file (set and cleared with it).
@@ -584,6 +586,7 @@
             var (sentAt, sentFrom, sentBy) = (_collAt, _collFrom, _collBy);
             if (await SendAsync(_file, "evidence-file-input", 0, sentDesc, Collection()) is not { } recorded) return;
             _file = null;
+            _pickerKey++;
             _evDesc = DraftText.ClearIfUnchanged(_evDesc, sentDesc, null);   // BUG-601 (the box is disabled while it uploads)
             if (_collAt == sentAt) _collAt = null;   // CAP-08: likewise the collection
             _collFrom = DraftText.ClearIfUnchanged(_collFrom, sentFrom, null);
@@ -706,7 +709,7 @@
             else await JS.InvokeVoidAsync("imChunkedUpload.resume", _self, upload.Key, inputId, index, resumeId, token);
             var failed = await upload.Ended.Task;
             if (failed is null) return upload.RecordedId ?? throw new InvalidOperationException("The upload finished without a record.");
-            if (failed.Length == 0) { Toasts.Info($"Upload of {upload.Name} cancelled. Nothing was recorded."); return null; }
+            if (failed.Length == 0) { Toasts.Info($"Upload of {upload.Name} canceled. Nothing was recorded."); return null; }
             // PROD-59: one that stopped part-way is kept on the server: say so, and how to carry on.
             await RefreshUnfinishedAsync();
             if (!_disposed && _unfinished.Any(x => x.FileName == upload.Name && x.Size == upload.Size))

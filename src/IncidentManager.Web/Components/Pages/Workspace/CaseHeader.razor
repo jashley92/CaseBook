@@ -15,7 +15,7 @@
            shares the next, so the tabs start about half as far down the page. *@
         <div class="im-casehead-line">
         <h1 class="mb-0">
-            <code class="im-casehead-num">@Case.CaseNumber</code>
+            <code class="im-casehead-num" title="@Case.CaseNumber">@Case.CaseNumber</code>
             @if (Access.CanEdit && !_renumbering)
             {
                 <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" aria-label="Change case number" @onclick="StartRenumber">

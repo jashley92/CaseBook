@@ -125,6 +125,5 @@ public sealed record CaseViewFacts(Case Case, CaseNotificationDeadlines? Notify,
         _ => null
     };
     public bool ViewHasNew(string view) => view != ActiveView && CaseViews.All.First(v => v.View == view).Parts.Any(TabHasNew);
-    public bool ViewQuiet(string view) => view == "Paper" && ActiveView != view && !ReportMatters && !LessonsMatter;
     public string? ViewWhy(string view) => view == "Paper" ? TabWhy("Report") ?? TabWhy("Review") : null;
 }

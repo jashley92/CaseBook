@@ -4410,7 +4410,7 @@ public sealed class CaseService
         // BUG-49: completing records who and when; doing it again would overwrite that and add a second result.
         if (item.Status == ActionItemStatus.Done) throw new InvalidOperationException("This task is already done.");
         if (item.Status == ActionItemStatus.Cancelled)
-            throw new InvalidOperationException("This task was cancelled. Reopen it to mark it done.");
+            throw new InvalidOperationException("This task was canceled. Reopen it to mark it done.");
         // HR-02: a task that follows up a question in the brief is done when the question has an answer.
         if (item.FollowsUpQuestion && text is null)
             await EnsureQuestionAnsweredAsync(db, item, ct);
@@ -4484,7 +4484,7 @@ public sealed class CaseService
         if (item.Status == status) return;
         // REV-23: as CompleteActionItemAsync refuses it. A cancellation (with its reason) isn't undone by marking done.
         if (status == ActionItemStatus.Done && item.Status == ActionItemStatus.Cancelled)
-            throw new InvalidOperationException($"\"{item.Title}\" was cancelled. Reopen it to mark it done.");
+            throw new InvalidOperationException($"\"{item.Title}\" was canceled. Reopen it to mark it done.");
         if (status == ActionItemStatus.Done)
             await EnsureQuestionAnsweredAsync(db, item, ct);
         item.Status = status;
@@ -4525,7 +4525,7 @@ public sealed class CaseService
     /// name, or null/blank for Unassigned; a status away from Done clears the completion timestamp. Captured
     /// by the audit trail (before → after) like any structured-record edit.
     /// </summary>
-    /// <param name="cancelReason">HR-17: when this edit cancels the task, why (optional); kept as a "Cancelled: …" comment
+    /// <param name="cancelReason">HR-17: when this edit cancels the task, why (optional); kept as a "Canceled: …" comment
     /// on the task, so a later reader knows it was dropped on purpose.</param>
     /// <summary>
     /// Edits a task. BUG-196: <paramref name="expectedStamp"/> is the task's row hash as the editor (or the row) showed it
@@ -4562,7 +4562,7 @@ public sealed class CaseService
         // BUG-304 (owner's decision): Edit follows the same rule as Complete and the status buttons (REV-23): a cancelled
         // task is reopened before it's marked done, so its result and who completed it are recorded as for any other.
         if (status == ActionItemStatus.Done && wasStatus == ActionItemStatus.Cancelled)
-            throw new InvalidOperationException($"\"{item.Title}\" was cancelled. Reopen it to mark it done.");
+            throw new InvalidOperationException($"\"{item.Title}\" was canceled. Reopen it to mark it done.");
         item.Title = cleanTitle;
         item.Owner = cleanOwner;
         item.DueAtUtc = dueAtUtc;
@@ -4591,7 +4591,7 @@ public sealed class CaseService
     }
 
     /// <summary>
-    /// Cancels an open task, with an optional reason kept as a "Cancelled: …" comment (HR-17), in one save. A done or
+    /// Cancels an open task, with an optional reason kept as a "Canceled: …" comment (HR-17), in one save. A done or
     /// cancelled task is refused: reopen it in Edit first.
     /// </summary>
     public async Task CancelActionItemAsync(Guid caseId, Guid actionItemId, string? reason, CancellationToken ct = default)
@@ -4604,7 +4604,7 @@ public sealed class CaseService
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
         if (item.Status is ActionItemStatus.Done or ActionItemStatus.Cancelled)
-            throw new InvalidOperationException($"\"{item.Title}\" is {(item.Status == ActionItemStatus.Done ? "done" : "cancelled")} already.");
+            throw new InvalidOperationException($"\"{item.Title}\" is {(item.Status == ActionItemStatus.Done ? "done" : "canceled")} already.");
         item.Status = ActionItemStatus.Cancelled;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;
@@ -4637,8 +4637,19 @@ public sealed class CaseService
                 + " is outside the range a task can take (the years 2 to 9998). Pick another date.");
     }
 
-    /// <summary>HR-17: how a cancelled task's reason is kept (a task comment).</summary>
-    public const string CancelledPrefix = "Cancelled: ";
+    /// <summary>HR-17: how a canceled task's reason is kept (a task comment). FR-63: US spelling, as the status reads.</summary>
+    public const string CancelledPrefix = "Canceled: ";
+
+    /// <summary>FR-63: the opening reasons were kept with before; comments already written keep it, so both are read.</summary>
+    public const string LegacyCancelledPrefix = "Cancelled: ";
+
+    /// <summary>Whether a task comment is a cancel reason (either spelling).</summary>
+    public static bool IsCancelReason(string? body) => body is not null
+        && (body.StartsWith(CancelledPrefix, StringComparison.Ordinal) || body.StartsWith(LegacyCancelledPrefix, StringComparison.Ordinal));
+
+    /// <summary>A cancel reason as it reads now: the old spelling's opening shown as the current one.</summary>
+    public static string CancelReasonDisplay(string body) =>
+        body.StartsWith(LegacyCancelledPrefix, StringComparison.Ordinal) ? CancelledPrefix + body[LegacyCancelledPrefix.Length..] : body;
 
     /// <summary>Reassigns a task's owner. A directory user id or free-text external name, or null/blank
     /// to leave it Unassigned. Change is audited/hash-chained like any other edit.</summary>

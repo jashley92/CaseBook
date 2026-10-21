@@ -22,6 +22,18 @@ public class TaskResultsTests
         t.BuildCanonicalContent().Should().Be(before + "|by|dev:analyst");
     }
 
+    [Theory]   // FR-63: new reasons are kept as "Canceled: "; ones kept before as "Cancelled: " still read as reasons
+    [InlineData("Canceled: duplicate", true, "Canceled: duplicate")]
+    [InlineData("Cancelled: duplicate", true, "Canceled: duplicate")]
+    [InlineData("Result: contained", false, "Result: contained")]
+    [InlineData("cancelled by the vendor", false, "cancelled by the vendor")]
+    public void A_cancel_reason_is_read_in_either_spelling_and_shown_in_the_current_one(string body, bool isReason, string shown)
+    {
+        CaseService.CancelledPrefix.Should().Be("Canceled: ");
+        CaseService.IsCancelReason(body).Should().Be(isReason);
+        CaseService.CancelReasonDisplay(body).Should().Be(shown);
+    }
+
     [Fact]
     public void The_latest_result_per_task_wins_and_other_comments_are_ignored()
     {

@@ -12,7 +12,7 @@
             <li class="im-tab-sep" aria-hidden="true"></li>
         }
         <li class="nav-item">
-            <button class="nav-link @(Facts.ActiveView == view ? "active" : "") @(Facts.ViewQuiet(view) ? "im-tab-quiet" : "")" @onclick="() => OnSetView.InvokeAsync(view)"
+            <button class="nav-link @(Facts.ActiveView == view ? "active" : "")" @onclick="() => OnSetView.InvokeAsync(view)"
                     aria-current="@(Facts.ActiveView == view ? "page" : null)" title="@($"Shortcut: {digit}")">
                 @view@{ var tc = Facts.ViewCount(view); }@if (tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{view}:{cnt}")">@cnt</span> }@if (Facts.ViewHasNew(view)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }@if (Facts.ViewWhy(view) is { } why) { <span class="im-tab-why">@why</span> }
             </button>

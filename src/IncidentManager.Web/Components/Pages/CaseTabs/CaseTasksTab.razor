@@ -253,10 +253,10 @@ else
                         {
                             <div class="small text-muted" style="white-space:pre-wrap">@t.Description</div>
                         }
-                        @if (t.Status == ActionItemStatus.Cancelled && comments.LastOrDefault(x => x.Body.StartsWith(CaseService.CancelledPrefix, StringComparison.Ordinal)) is { } why)
+                        @if (t.Status == ActionItemStatus.Cancelled && comments.LastOrDefault(x => CaseService.IsCancelReason(x.Body)) is { } why)
                         {
-                            @* HR-17: why it was dropped. *@
-                            <div class="small text-muted">@why.Body <span class="im-meta">@why.AuthorName · @TimeDisp.Short(why.CreatedAtUtc)</span></div>
+                            @* HR-17: why it was dropped. FR-63: a reason kept as "Cancelled: " reads as the status does. *@
+                            <div class="small text-muted">@CaseService.CancelReasonDisplay(why.Body) <span class="im-meta">@why.AuthorName · @TimeDisp.Short(why.CreatedAtUtc)</span></div>
                         }
                         @* HR-02: what a done task found or did, and who did it, without opening its comments. *@
                         @if (t.Status == ActionItemStatus.Done)
@@ -284,8 +284,16 @@ else
                         }
                         else { @Users.DisplayFor(t.Owner) }
                     </td>
-                    <td>
-                        @(t.DueAtUtc is { } due ? TimeDisp.Due(due, OrgZone.Current) : "—")
+                    <td class="im-task-due">
+                        @* FR-59: the date on one line and the time (with its zone) under it, never broken up, however much
+                           room a result or a long title takes from the column. *@
+                        @if (t.DueAtUtc is { } due)
+                        {
+                            var (dueDay, dueTime) = SplitDue(TimeDisp.Due(due, OrgZone.Current));
+                            <span class="im-task-due-day">@dueDay</span>
+                            @if (dueTime is not null) { <span class="im-task-due-time">@dueTime</span> }
+                        }
+                        else { <text>—</text> }
                         @* RD-19: a notification task due after the running notification deadline (or undated) says so. *@
                         @if (LateForNotice(t) is { } notice)
                         {
@@ -793,6 +801,11 @@ else
         _ => s.ToString()
     };
 
+    // FR-59: a due as its date and, when it has one, the time with its zone ("2026-10-21", "1:04 AM UTC-04:00"), for the
+    // Due column's two lines. TimeDisplay.Due leads with the date (yyyy-MM-dd), then a space.
+    private static (string Day, string? Time) SplitDue(string due) =>
+        due.IndexOf(' ') is var i and > 0 ? (due[..i], due[(i + 1)..]) : (due, null);
+
     // --- Edit a task (all fields, behind the Edit button) — consistent with how IOCs/entities are edited;
     // each save is one audited change (before → after) rather than a separate version chain. ---
     // BUG-578: Edit on a second task while one is open is refused, not re-seeded over what was typed; BUG-601: a save
@@ -1135,7 +1148,7 @@ else
         {
             await Cases.CancelActionItemAsync(CaseId, t.Id, _cancelWhy);
             _cancelFor = null;
-            Toasts.Success($"\"{t.Title}\" cancelled.");
+            Toasts.Success($"\"{t.Title}\" canceled.");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
@@ -1150,7 +1163,7 @@ else
         {
             await Lessons.MoveTaskToActionAsync(CaseId, t.Id);
             _edit.Close();
-            Toasts.Success($"\"{t.Title}\" is an improvement action in lessons learned now; the task is cancelled with a note saying so.");
+            Toasts.Success($"\"{t.Title}\" is an improvement action in lessons learned now; the task is canceled with a note saying so.");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }

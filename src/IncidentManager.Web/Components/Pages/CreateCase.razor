@@ -717,13 +717,8 @@
         if (!string.IsNullOrWhiteSpace(_request.Title)) _fieldErrors.Remove("cc-title");
     }
 
-    private static string SlugSource(string? title)
-    {
-        var t = (title ?? "").Trim();
-        if (t.Length == 0) return "";
-        var s = string.Join(' ', t.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6));
-        return IncidentManager.Application.Common.TextFit.Cap(s, 42, "").TrimEnd();   // C12: never half a surrogate pair
-    }
+    // FR-58: four meaningful words, never ending on a stop-word (shared with the import).
+    private static string SlugSource(string? title) => Case.SlugSource(title);
 
     // Reflects the scheme the auto-number would use. The per-year sequence is only known at save time, so
     // show a neutral NN placeholder rather than implying a specific number (U-43). Complex Event numbers are

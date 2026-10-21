@@ -143,8 +143,9 @@ A single page, not a wizard.
    Connections, and Impact from Incident up or once impact is recorded), **Tasks**, **Briefing** and **Paper**
    (Report, Lessons learned, Audit trail). A view with several parts lists them under the bar, and reopens on the
    part last used. Number keys `1`–`5` switch views. The part is in the URL (`?tab=Entities`; a view's name opens
-   its last part). An open case opens on its Record, a closed one on its Briefing. Paper stays dimmed until the
-   report or lessons matter (a breach, a running notification clock, Recovery and later, or Post-Incident). A dot
+   its last part). An open case opens on its Record, a closed one on its Briefing. Paper sits after a separator and
+   looks like the other views; a chip on it says when the report or the review is due (a running notification
+   clock, the next gate). A dot
    marks a view where someone else just added something.
 5. **Now and Next**, beside every tab from 1200 px wide (the button at the end of the tab bar hides it). **Now**
    is the brief, "where it stands": the versioned summary (in a serif, as written into the record), working
