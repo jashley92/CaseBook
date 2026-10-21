@@ -3229,9 +3229,6 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-desk-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
 @media (min-width: 1200px) { .im-desk-grid { grid-template-columns: minmax(0, 1fr) 20rem; gap: 2rem; } }
 .im-desk-main { min-width: 0; display: grid; gap: 1.6rem; align-content: start; }
-.im-desk-head { display: flex; align-items: baseline; gap: .75rem; margin-bottom: .5rem; padding-bottom: .35rem; border-bottom: 1px solid var(--im-border); }
-.im-desk-head h2 { font-size: var(--im-text-md); font-weight: 600; margin: 0; }
-.im-desk-note { font-size: var(--im-text-sm); color: var(--im-text-muted); }
 .im-desk-sub { font-size: var(--im-text-sm); color: var(--im-text-muted); }
 .im-desk-late { color: var(--im-danger); }
 .im-desk-empty { color: var(--im-text-muted); font-size: var(--im-text-sm); margin: .25rem 0 0; }
@@ -3254,8 +3251,6 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-desk-task-body { flex: 1 1 auto; min-width: 0; }
 .im-desk-task-body .im-desk-sub { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .6rem; }
 .im-desk-side { display: grid; gap: 1rem; align-content: start; }
-.im-desk-card { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); padding: .8rem .9rem; }
-.im-desk-card h2.im-cap { margin: 0 0 .5rem; }
 .im-desk-clock { padding-block: .3rem; border-bottom: 1px solid var(--im-border); }
 .im-desk-clock:last-child { border-bottom: 0; }
 .im-desk-quiet { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; font-size: var(--im-text-sm); }
@@ -3495,3 +3490,14 @@ a.im-find-quote:hover { text-decoration: underline; }
 .im-agenda-case { max-width: 18rem; }
 .im-agenda-case > span { display: block; }
 .im-agenda-num { font-size: var(--im-text-xs); color: var(--im-text-muted); max-width: 100%; }
+
+/* UX-52: the Desk on the shared Card; its own section heads and side cards are gone. */
+.im-desk .im-desk-cases td { font-size: var(--im-text-sm); }
+.im-desk .im-desk-cases td .im-desk-casecell a { font-size: var(--im-text-table); }
+/* A handful of rows beside the side rail: scroll inside the card when the rail leaves too little width (no sticky header needed). */
+.im-desk .im-c-table-wrap.im-desk-cases { overflow-x: auto; }
+.im-desk .im-desk-cases .im-desk-casecell { max-width: 12rem; }
+.im-desk .im-desk-cases.im-c-table-wrap > .im-c-table > thead > tr > th { position: static; }
+/* UX-54: a task is a link in the text colour (as in the tables); gold is for actions. */
+.im-desk-tasks .im-desk-task-body > a { color: var(--im-text); text-decoration: none; }
+.im-desk-tasks .im-desk-task-body > a:hover, .im-desk-tasks .im-desk-task-body > a:focus-visible { text-decoration: underline; }
