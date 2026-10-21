@@ -2,16 +2,26 @@
    only when the entities change. Each entry's insert is what TagText.FromEditable resolves back to that entity: its
    [[label]], or [[value]] when the label names another entity too or can't be written inside [[ ]], or (BUG-423) the
    link itself when both name another entity. BUG-450: each also carries its link, which text-box.js inserts instead
-   when the [[tag]]'s text is a label in the box's own refs (data-tag-refs), which would point it elsewhere. *@
+   when the [[tag]]'s text is a label in the box's own refs (data-tag-refs), which would point it elsewhere.
+   FR-49: for someone who can edit the case it is also where a tag that names nothing on the case is added: the "[["
+   lists (here and in the Markdown editors) offer 'Add "j.ortiz" as Account', which comes back here (AddTagged). *@
+@implements IDisposable
 @inject IJSRuntime JS
+@inject CaseService Cases
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyCollection<CaseEntity> Entities { get; set; } = [];
+    [Parameter] public Guid CaseId { get; set; }
+    [Parameter] public bool CanAdd { get; set; }
+    [Parameter] public EventCallback OnAdded { get; set; }
 
     private string? _sent;
+    private DotNetObjectReference<TagBoxSource>? _adder;
+    private bool? _adderSent;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await SendAdderAsync();
         var list = Candidates(Entities);
         var sig = string.Join('\n', list.Select(c => c.Insert + '\t' + c.Link + '\t' + c.Label + '\t' + c.Hint));
         if (sig == _sent) return;
@@ -20,8 +30,22 @@
         catch (JSException) { /* tagging help is an enhancement */ }
     }
 
+    // Offered only to someone who can add to the case (the service checks again).
+    private async Task SendAdderAsync()
+    {
+        var can = CanAdd && CaseId != Guid.Empty;
+        if (_adderSent == can) return;
+        if (can) _adder ??= DotNetObjectReference.Create(this);
+        try { await JS.InvokeVoidAsync("imTagBox.setAdder", can ? _adder : null); _adderSent = can; }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { /* tagging help is an enhancement */ }
+    }
+
     /// <summary>Serialised camel-case for text-box.js: { insert, link, label, hint }.</summary>
     internal sealed record Candidate(string Insert, string Link, string Label, string Hint);
+
+    /// <summary>FR-49: an entity added from a "[[" list, as both lists take it: { id, value, insert, label, hint }.</summary>
+    public sealed record AddedTag(Guid Id, string Value, string Insert, string Label, string Hint);
 
     internal static IReadOnlyList<Candidate> Candidates(IReadOnlyCollection<CaseEntity> entities)
     {
@@ -30,4 +54,36 @@
             .Select(t => new Candidate(t.Insert, t.Link, t.Display,Ui.Label(types[t.Id])))
             .ToList();
     }
+
+    /// <summary>
+    /// FR-49: adds the value a "[[" tag names to the case as an entity of the type picked (verdict Unknown, source "Tagged in
+    /// the record"), or matches the one already there, and returns it for the list to insert. Null when it can't: no
+    /// permission, an unknown type, or a value a tag can't hold.
+    /// </summary>
+    [JSInvokable]
+    public async Task<AddedTag?> AddTagged(string type, string value)
+    {
+        if (_adding) return null;
+        _adding = true;
+        try
+        {
+            var v = value?.Trim() ?? "";
+            if (!CanAdd || !IncidentManager.Domain.Common.EnumNames.TryParse<EntityType>(type, out var t) || v.Length is 0 or > 400
+                || v.IndexOfAny(['[', ']', '\r', '\n']) >= 0) return null;
+            var added = await Cases.AddOrMatchEntitiesAsync(CaseId,
+                [new CaseService.EntityToAdd(t, v, null, EntityDisposition.Unknown, null, "Tagged in the record")]);
+            await OnAdded.InvokeAsync();
+            return new AddedTag(added[0].Id, v, $"[[{v}]]", v, Ui.Label(t));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                       or IncidentManager.Application.Security.ForbiddenException)
+        {
+            return null;
+        }
+        finally { _adding = false; }
+    }
+
+    private bool _adding;
+
+    public void Dispose() => _adder?.Dispose();
 }

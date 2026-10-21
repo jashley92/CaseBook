@@ -54,6 +54,42 @@
     }, false);
 })();
 
+// FR-49: a "[[" tag that names nothing on the case is offered as a new entity ('Add "j.ortiz" as Account'), here and in
+// the Markdown editors (markdown-editor.js). The pick goes to the server (TagBoxSource.AddTagged), which adds it to the
+// case, or matches the one already there, and the tag goes in as for any other entity. The types offered are guessed
+// from the value; the first is the likeliest.
+window.imTagAdd = (function () {
+    let adder = null;   // DotNetObjectReference, set only for someone who can edit the case
+    const LABELS = { Account: 'Account', Host: 'Host', IpAddress: 'IP address', Domain: 'Domain', Url: 'URL',
+        FileHash: 'File hash', EmailAddress: 'Email address' };
+
+    function types(v) {
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v) || (/^[0-9a-f:]+$/i.test(v) && v.includes('::'))) return ['IpAddress'];
+        if (/^(hxxps?|https?):\/\//i.test(v)) return ['Url'];
+        if (/^([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$/i.test(v)) return ['FileHash'];
+        if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return ['Account', 'EmailAddress'];
+        // first.last and host.domain look alike: a familiar top-level domain puts Domain first, else Account.
+        if (/^[a-z0-9-]+(\[?\.\]?[a-z0-9-]+)+$/i.test(v))
+            return /\.\]?(com|net|org|io|gov|edu|mil|co|uk|us|de|fr|ru|cn|info|biz|xyz|top|online|site|example|local|internal|corp)$/i.test(v)
+                ? ['Domain', 'Host', 'Account'] : ['Account', 'Host', 'Domain'];
+        return ['Account', 'Host'];
+    }
+
+    return {
+        set: function (ref) { adder = ref || null; },
+        // The "Add as" entries for a query that matched nothing exactly: [{ add, type, value, text }].
+        offers: function (query, exact) {
+            const v = String(query || '').trim();
+            if (!adder || exact || v.length < 2 || /[\[\]\r\n]/.test(v)) return [];
+            return types(v).map(t => ({ add: true, type: t, value: v, text: 'Add \u201c' + v + '\u201d as ' + LABELS[t] }));
+        },
+        // Resolves to { id, value, insert, label, hint }, or null when it couldn't be added.
+        add: function (type, value) {
+            return adder ? adder.invokeMethodAsync('AddTagged', type, value).catch(() => null) : Promise.resolve(null);
+        }
+    };
+})();
+
 window.imTagBox = (function () {
     let entities = [];   // { insert, label, hint }
     let menu = null, items = [], active = -1, field = null, from = -1, at = -1;
@@ -84,6 +120,17 @@ window.imTagBox = (function () {
 
     function choose(i) {
         if (!field || !items[i]) return close();
+        if (items[i].add) {   // FR-49: added on the server first, then inserted as any other entity's tag
+            const offer = items[i], el = field, f = from;
+            window.imTagAdd.add(offer.type, offer.value).then(r => {
+                if (!r || !menu) return close();
+                field = el; from = f;
+                items[i] = { insert: r.insert, label: r.label, hint: r.hint };
+                entities.push(items[i]);
+                choose(i);
+            });
+            return;
+        }
         // BUG-430: the caret may have moved since the list was drawn (arrow keys, a click, Home/End); insert only at the
         // "[[" it is in now, so text elsewhere isn't overwritten.
         const el = field, t = trigger(el);
@@ -104,9 +151,11 @@ window.imTagBox = (function () {
 
     function update(el) {
         const t = trigger(el);
-        if (!t || entities.length === 0) return close();
+        if (!t) return close();
         const q = t.query.toLowerCase();
-        const matches = entities.filter(c => q === '' || c.label.toLowerCase().includes(q) || (c.hint || '').toLowerCase().includes(q)).slice(0, 8);
+        const exact = entities.some(c => c.label.toLowerCase() === q.trim());
+        const matches = entities.filter(c => q === '' || c.label.toLowerCase().includes(q) || (c.hint || '').toLowerCase().includes(q)).slice(0, 8)
+            .concat(window.imTagAdd.offers(t.query, exact));
         if (matches.length === 0) return close();
         field = el; from = t.from; at = t.caret; items = matches; active = 0;
         if (!menu) { menu = document.createElement('div'); menu.className = 'cm-mention-menu'; menu.setAttribute('role', 'listbox'); document.body.appendChild(menu); }
@@ -115,7 +164,8 @@ window.imTagBox = (function () {
             const it = document.createElement('div');
             it.className = 'cm-mention-item' + (i === 0 ? ' active' : '');
             it.setAttribute('role', 'option');
-            it.textContent = c.hint ? (c.label + '  ·  ' + c.hint) : c.label;
+            it.textContent = c.add ? c.text : c.hint ? (c.label + '  ·  ' + c.hint) : c.label;
+            if (c.add) it.classList.add('cm-mention-add');
             it.title = it.textContent;   // a long value is cut short in the list
             it.addEventListener('mousedown', ev => { ev.preventDefault(); choose(i); });
             menu.appendChild(it);
@@ -148,7 +198,8 @@ window.imTagBox = (function () {
     }, true);
 
     return {
-        setEntities: function (list) { entities = Array.isArray(list) ? list : []; close(); }
+        setEntities: function (list) { entities = Array.isArray(list) ? list : []; close(); },
+        setAdder: function (ref) { window.imTagAdd.set(ref); }
     };
 })();
 

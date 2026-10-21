@@ -1203,7 +1203,21 @@ else
     private async Task OpenComposer()
     {
         await SetDockedAsync(await ToolbarAwayAsync());   // before the render, so it never shows inline first
+        if (!_composerOpen && !ComposerHoldsText()) _tlWhen = NowWall();   // FR-50: a fresh entry starts at now
         _composerOpen = true;
+    }
+
+    // FR-50: after a save the next entry starts at now, not at the time just used (a finding logged after an 08:15 step
+    // took 08:15 and read as recorded late). That time stays one click away, "Same as last", for a burst of entries
+    // recorded after the fact.
+    private DateTime? _lastWhen;
+
+    private DateTime NowWall() => WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone);
+
+    private void TimeUsed(DateTime used)
+    {
+        _lastWhen = used;
+        if (_tlWhen == used) _tlWhen = NowWall();   // BUG-601: a time changed while the save ran is the next entry's
     }
 
     // Closing the docked form: an edit is let go as Cancel does (back to the draft), a new entry's text stays as its draft.
@@ -2111,6 +2125,7 @@ else
         var shot = _tlShotBytes;   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
         // BUG-601: what was sent, so only that is cleared after the save; text typed while it ran stays.
         var (sent, sentSource, sentDecision) = (_tlDesc, _tlSource, (_decWhy, _decOptions, _decBy));
+        var sentWhen = _tlWhen;
         try
         {
             await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, sent, sentSource,
@@ -2133,6 +2148,7 @@ else
         _tlDesc = DraftText.ClearIfUnchanged(_tlDesc, sent);
         _tlSource = DraftText.ClearIfUnchanged(_tlSource, sentSource, null);
         ClearTimelineShot(shot); ClearDecisionIfUnchanged(sentDecision); ResetFollowUps();
+        TimeUsed(sentWhen);
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
         Toasts.Success(saved ?? WithShot("Timeline entry added", withShot, shotIsFile, shotName));
@@ -2172,6 +2188,7 @@ else
         // BUG-601: what was sent, so only that is cleared after the save; what was typed or picked while it ran stays.
         var (sent, sentSource, sentTechnique, sentActor, sentTarget, sentTactic) =
             (_tlDesc, _tlSource, _evtTechnique, _evtActorId, _evtTargetId, _evtTactic);
+        var (sentWhen, sentExact) = (_tlWhen, _tlPrecision == TimePrecision.Exact);
         try
         {
             if (disclosure)
@@ -2206,6 +2223,7 @@ else
         if (_evtTargetId.Length == 0) _targetPrev = "";
         _evtOtherTactics = [];
         ClearTimelineShot(shot);
+        if (sentExact) TimeUsed(sentWhen);
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
         ResetFollowUps();
@@ -2720,11 +2738,17 @@ else
         _decBy = DraftText.ClearIfUnchanged(_decBy, sent.By, null);
     }
 
-    // Catch-up aids: after containment, entries are often recorded in a burst. The composer keeps the last time
-    // used; these step it back or forward so a busy hour can be rebuilt quickly.
+    // Catch-up aids: after containment, entries are often recorded in a burst. FR-50: each new entry starts at now;
+    // "Same as last" puts back the time of the entry just added, and these step it back or forward, so a busy hour
+    // can be rebuilt quickly.
     private RenderFragment TimeNudges() => @<text>
         <div class="tl-nudges" role="group" aria-label="Adjust the time">
-            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = WallClock.ToWall(DateTimeOffset.UtcNow, TimeDisp.Zone)">Now</button>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = NowWall()">Now</button>
+            @if (_lastWhen is { } last && last != _tlWhen)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = last"
+                        title="The time of the entry you just added">Same as last (@(last.Date == NowWall().Date ? last.ToString("HH:mm") : last.ToString("yyyy-MM-dd HH:mm")))</button>
+            }
             @* BUG-480: Shifted stops at year 1 and 9999; AddHours threw there and the tab showed its error fallback. *@
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromMinutes(-15))" aria-label="15 minutes earlier">&minus;15 min</button>

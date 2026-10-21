@@ -50,10 +50,12 @@
                 insert: c => '@' + c.name + ' '
             });
         }
-        if (opts && Array.isArray(opts.entities) && opts.entities.length) {
+        // FR-49: offered with no entities yet too, where a tag can add one (window.imTagAdd).
+        if (opts && Array.isArray(opts.entities)) {
             triggers.push({
                 // Spaces are allowed after "[[" (entity labels have them); the opener is deliberate, so it opens at once.
-                re: /(?:^|[\s(])\[\[([\p{L}\p{N}._\\/: -]{0,40})$/u,
+                // FR-49: and "@", so an account or an email address can be typed to be added.
+                re: /(?:^|[\s(])\[\[([\p{L}\p{N}._\\/:@ -]{0,40})$/u,
                 lead: 2,
                 closer: ']]',
                 list: opts.entities,                                  // {id, value, hint}
@@ -94,6 +96,16 @@
         function highlight() { if (menu) [...menu.children].forEach((el, i) => el.classList.toggle('active', i === active)); }
 
         function choose(i) {
+            if (range && current && items[i] && items[i].add) {   // FR-49: added on the server first, then tagged
+                const offer = items[i], list = current.list;
+                window.imTagAdd.add(offer.type, offer.value).then(r => {
+                    if (!r || !menu) return close();
+                    items[i] = { id: r.id, value: r.value, hint: r.hint };
+                    list.push(items[i]);
+                    choose(i);
+                });
+                return;
+            }
             if (range && current && items[i]) {
                 // A closer typed (or auto-inserted) after the caret, e.g. "]]", is consumed with the tag.
                 let to = range.to;
@@ -109,7 +121,10 @@
             const tok = tokenBeforeCursor();
             if (!tok) return close();
             const q = tok.partial.toLowerCase();
-            const matches = tok.t.list.filter(c => tok.t.match(c, q)).slice(0, 8);
+            let matches = tok.t.list.filter(c => tok.t.match(c, q)).slice(0, 8);
+            if (tok.t.closer && window.imTagAdd)   // FR-49: a tag that names nothing on the case can add it
+                matches = matches.concat(window.imTagAdd.offers(tok.partial,
+                    tok.t.list.some(c => c.value.toLowerCase() === q.trim())));
             if (matches.length === 0) return close();
 
             range = { from: tok.from, to: tok.to }; items = matches; active = 0; current = tok.t;
@@ -117,8 +132,8 @@
             menu.innerHTML = '';
             matches.forEach((c, i) => {
                 const el = document.createElement('div');
-                el.className = 'cm-mention-item' + (i === 0 ? ' active' : '');
-                el.textContent = tok.t.label(c);
+                el.className = 'cm-mention-item' + (i === 0 ? ' active' : '') + (c.add ? ' cm-mention-add' : '');
+                el.textContent = c.add ? c.text : tok.t.label(c);
                 el.addEventListener('mousedown', ev => { ev.preventDefault(); choose(i); });
                 menu.appendChild(el);
             });

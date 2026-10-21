@@ -271,6 +271,18 @@
                 Checked against open cases for duplicates and against closed ones for history, then added as entities when the case is created. Defanged values are fine.
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="CheckOverlaps" disabled="@_checking">Check now</button>
             </div>
+            @* FR-48: filed Unknown, they were left out of the report's indicators of compromise (Malicious / Suspicious only)
+               until each was re-marked on Things. *@
+            <div class="d-flex align-items-center gap-2 mt-2">
+                <label class="form-label small mb-0" for="nc-indicator-verdict">File them as</label>
+                <select id="nc-indicator-verdict" class="form-select form-select-sm w-auto" @bind="_indicatorVerdict">
+                    @foreach (var v in IndicatorVerdicts)
+                    {
+                        <option value="@v">@Ui.Label(v)</option>
+                    }
+                </select>
+                <span class="small text-muted">Malicious and Suspicious ones are listed in the report's indicators of compromise.</span>
+            </div>
 
             @if (_checking)
             {
@@ -466,6 +478,9 @@
 
     // E-23: creation-time IOC entry + duplicate/related-case detection.
     private string? _indicators;
+    private EntityDisposition _indicatorVerdict = EntityDisposition.Suspicious;   // FR-48
+    private static readonly EntityDisposition[] IndicatorVerdicts =
+        [EntityDisposition.Malicious, EntityDisposition.Suspicious, EntityDisposition.Unknown];
     private List<CaseIocMatch> _matches = new();
     private IReadOnlyList<CaseHistoryMatch> _history = [];   // HR-03
     private RelatedIndicators _related = RelatedIndicators.None;   // CAP-28: possibly related, a suggestion only
@@ -818,7 +833,7 @@
             // them share one directory-lookup allowance rather than each getting its own (and a retry matches, not repeats).
             var seed = IndicatorLines(_indicators).Skip(_entitiesSeeded)
                 .Select(raw => new CaseService.EntityToAdd(DetectedOr(raw), raw, null,
-                    EntityDisposition.Unknown, null, "Filed at case creation"))
+                    _indicatorVerdict, null, "Filed at case creation"))
                 .ToList();
             if (seed.Count > 0) await Cases.AddOrMatchEntitiesAsync(_created.Id, seed);
             _entitiesSeeded += seed.Count;

@@ -465,6 +465,9 @@ h1:focus {
 .cm-mention-item { padding: .3rem .55rem; border-radius: .25rem; cursor: pointer; font-size: .85rem; white-space: nowrap;
                    overflow: hidden; text-overflow: ellipsis; }
 .cm-mention-item.active, .cm-mention-item:hover { background: var(--bs-secondary-bg); }
+/* FR-49: the "Add ... as Account" entries for a tag that names nothing on the case, set apart from the matches. */
+.cm-mention-add { color: var(--im-accent-text); }
+.cm-mention-item:not(.cm-mention-add) + .cm-mention-add { border-top: 1px solid var(--im-border); margin-top: .15rem; padding-top: .4rem; }
 
 /* Inline entity/IOC tag chip rendered in markdown bodies (notes, investigation timeline, discussion) from
    an `entity:` reference link (see MarkdownService.EntityTagLinkRenderer). */

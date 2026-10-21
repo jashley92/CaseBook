@@ -209,8 +209,22 @@ public static class CaseMilestones
         // BUG-492: a climb (Complex Event to Incident) passes a gate per rung in one save; each folds in, in climb order.
         var folded = new Dictionary<int, List<StageGateTrigger>>();
         var filing = FilingPassages(c);
+        var opened = list.FindIndex(m => m.Kind == MilestoneKind.Opened);
+        var summaries = c.Briefs.Select(b => b.Summary?.Trim()).Append(c.Summary?.Trim())
+            .Where(x => !string.IsNullOrEmpty(x)).ToHashSet(StringComparer.Ordinal);
         foreach (var g in c.GatePassages.OrderBy(g => g.PassedAtUtc).ThenBy(g => g.Trigger))
         {
+            // FR-52: the gates passed in filing fold into "Case opened as …" as one note. Their commentary is the summary
+            // the case was filed with, which the case already tells; repeated on a row per gate it said the same thing
+            // twice in the timeline and the report. A commentary of its own, or an override, keeps its row.
+            if (filing.Contains(g) && !g.WasOverridden && opened >= 0
+                && (Blank(g.Commentary) is not { } said || summaries.Contains(said.Trim())))
+            {
+                if (!folded.TryGetValue(opened, out var filed)) folded[opened] = filed = [];
+                if (!filed.Contains(g.Trigger)) filed.Add(g.Trigger);
+                list[opened] = list[opened] with { Note = PassedNote(filed) };
+                continue;
+            }
             var guarded = filing.Contains(g) ? null : GuardedTransitionKey(c, g);   // BUG-504
             var at = guarded is { } gk && list.FirstOrDefault(m => m.Key == gk) is { } tm ? tm.AtUtc : g.PassedAtUtc;
             if (!g.WasOverridden && guarded is { } key && list.FindIndex(m => m.Key == key) is var i and >= 0)

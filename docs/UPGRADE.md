@@ -258,6 +258,22 @@ under Administration › Evidence storage.
   can be changed at any time now, and the form says that only a written result goes on the timeline. The same on Now and
   Next.
 
+From an analyst walkthrough (one case filed, worked and readied for close in a real browser):
+
+- **Indicators typed on New case get a verdict.** *File them as* (Malicious, Suspicious or Unknown; Suspicious by
+  default) sits under the box. They were filed Unknown, and the report's *Indicators of compromise* lists only Malicious
+  and Suspicious ones, so it said "(none)" until each was re-marked on Things.
+- **A tag can add what it names.** Typing `[[` and a name that isn't on the case offers *Add "j.ortiz" as Account*
+  (or Host, Domain, IP address and so on, guessed from the value), in the Markdown editors and the one-line boxes alike.
+  The entity is added to the case as you pick it (verdict Unknown, source "Tagged in the record") and the tag goes in as
+  for any other. Before, the list just closed, and the entry kept the literal `[[j.ortiz]]`, in the report too.
+- **Each new timeline entry starts at now.** The composer kept the time of the last entry, so a finding logged after
+  an 08:15 step was dated 08:15 and flagged as recorded late. *Same as last (08:15)* beside *Now* puts that time back,
+  for a burst of entries recorded after the fact.
+- **Filing a case writes one milestone.** "Case opened as Incident · High", noting the gates passed, instead of a
+  row per gate each repeating the summary (in the timeline and the report). A gate with commentary of its own, or one
+  overridden, keeps its row.
+
 The rest of this release:
 
 **The AI prompt generator** on the Import page (*Generate a prompt for your AI*)

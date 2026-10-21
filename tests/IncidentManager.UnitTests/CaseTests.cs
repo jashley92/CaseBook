@@ -1044,6 +1044,34 @@ public class CaseTests
     }
 
     [Fact]
+    public void Gates_passed_with_the_filed_summary_fold_into_the_opening_milestone(/* FR-52 */)
+    {
+        // Filed as an Incident with the summary as the gates' commentary: one "Case opened" row, not a row per gate each
+        // repeating the summary. An override keeps its row.
+        var c = Case.Open(2026, 7, "Takeover", "Mailbox takeover", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "a1", Now);
+        c.Summary = "Three staff phished; one entered credentials.";
+        c.RecordGatePassage(StageGateTrigger.PromoteToAdverseEvent, false, null, c.Summary, "[MET] x", "a1", Now);
+        c.RecordGatePassage(StageGateTrigger.EscalateToIncident, false, null, c.Summary, "[MET] y", "a1", Now.AddMilliseconds(40));
+        var labels = new IncidentManager.Application.Cases.MilestoneLabels(x => x?.ToString() ?? "Complex Event", s => s.ToString(), p => p.ToString(), m => "");
+
+        var ms = IncidentManager.Application.Cases.CaseMilestones.Project(c, labels);
+
+        ms.Should().NotContain(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Gate);
+        ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Opened).Note
+            .Should().Be("Promotion and Incident escalation gates passed");
+
+        var o = Case.Open(2026, 8, "Takeover", "Mailbox takeover", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "a1", Now);
+        o.Summary = "Phished.";
+        o.RecordGatePassage(StageGateTrigger.PromoteToAdverseEvent, false, null, o.Summary, "[MET] x", "a1", Now);
+        o.RecordGatePassage(StageGateTrigger.EscalateToIncident, true, "Filing before the IC is named", o.Summary, "[UNMET] y", "a1", Now);
+        ms = IncidentManager.Application.Cases.CaseMilestones.Project(o, labels);
+        ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Opened).Note.Should().Be("Promotion gate passed");
+        ms.Should().ContainSingle(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Gate && m.Flagged);
+    }
+
+    [Fact]
     public void AddEntity_again_does_not_downgrade_benign_either()
     {
         var c = NewCase();
