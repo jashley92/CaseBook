@@ -10,13 +10,8 @@
 
 <PageTitle>Legal register</PageTitle>
 
-<PageHeader Title="Program" Subtitle="Cases carrying a legal or regulatory obligation: a referral, a hold, a breach, or a materiality call.">
-    <Actions>
-        <a class="btn btn-sm btn-outline-secondary" href="export/legal-register.csv" download>
-            <span class="bi bi-download" aria-hidden="true"></span> Download (CSV)
-        </a>
-    </Actions>
-</PageHeader>
+@* UX-59: the register's CSV is on Exports (the page has no filter to export "these" from). *@
+<PageHeader Title="Program" Subtitle="Cases carrying a legal or regulatory obligation: a referral, a hold, a breach, or a materiality call." />
 <ProgramNav />
 
 @if (_rows is null)

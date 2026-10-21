@@ -69,7 +69,7 @@
         @(_rows?.Count ?? 0) session@(_rows?.Count == 1 ? "" : "s")@(_rows is { Count: >= PageSize } ? $" (showing the most recent {PageSize})" : "")
     </span>
     <a class="btn btn-sm btn-outline-secondary" href="@ExportHref()">
-        <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
+        <span class="bi bi-download me-1" aria-hidden="true"></span>Export these
     </a>
 </div>
 

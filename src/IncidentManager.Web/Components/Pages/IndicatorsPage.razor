@@ -82,12 +82,9 @@
             <a class="btn btn-sm btn-outline-secondary text-nowrap" href="@_exportHref" download
                title="Every indicator these filters match, not only this page, as CSV with each one's verdicts and cases"
                aria-label="Export the indicators these filters match as CSV">
-                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Export CSV
+                <span class="bi bi-download me-1" aria-hidden="true"></span>Export these
             </a>
-            <a class="btn btn-sm btn-outline-primary text-nowrap" href="export/iocs.csv" download
-               title="Confirmed-malicious IOCs from your cases, as a blocklist for SIEM, firewall or EDR">
-                <span class="bi bi-shield-exclamation me-1" aria-hidden="true"></span>Export IOC feed (CSV)
-            </a>
+            @* UX-59: Exports is the home for the standing exports; a screen offers only "Export these", what its filters hold. *@
         </div>
     </div>
 

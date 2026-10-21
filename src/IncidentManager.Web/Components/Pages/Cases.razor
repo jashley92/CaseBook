@@ -39,15 +39,11 @@
             @(ActiveViewName is { } av ? av : "Views")
             <span class="bi @(_viewsOpen || _savingView ? "bi-chevron-up" : "bi-chevron-down") small" aria-hidden="true"></span>
         </button>
-        @* CAP-17: every case the list's filters match (not just this page), with its lifecycle times. *@
+        @* CAP-17: every case the list's filters match (not just this page), with its lifecycle times. UX-59: Exports is the home for the standing exports; a screen offers only "Export these", what its filters hold. *@
         <a class="btn btn-sm btn-outline-secondary" href="@_exportHref" download
            title="Every case these filters match, not only this page, as CSV with detected, contained, resolved, closed and reported times"
            aria-label="Export the cases these filters match as CSV">
-            <span class="bi bi-filetype-csv" aria-hidden="true"></span> Export CSV
-        </a>
-        <a class="btn btn-sm btn-outline-secondary d-none d-sm-inline-block" href="export/iocs.csv" download
-           title="Confirmed-malicious IOCs from your visible cases, as a blocklist for SIEM, firewall or EDR">
-            <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
+            <span class="bi bi-download" aria-hidden="true"></span> Export @(_page is { } shown ? $"these {shown.Total}" : "these")
         </a>
         <AuthorizeView Policy="@Policies.EditCases">
             <a class="btn btn-sm btn-outline-secondary" href="cases/import"
