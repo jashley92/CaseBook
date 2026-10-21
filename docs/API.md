@@ -287,7 +287,8 @@ Notes:
 
   The history needs `detectedAt`; no step may be in the future, before it, or before the step before it, and only the
   last step may close the case; a step past Containment or Recovery without it says `containedAt` /
-  `containmentNotNeeded` or `resolvedAt`. Such a document is refused with `400`. Each step is applied at its time when
+  `containmentNotNeeded` or `resolvedAt`. A step that moves on from Containment may say `containedAt` (from v1.15.0
+  entering Containment no longer sets the contained time); left out, it's the Containment step's time, as before. Such a document is refused with `400`. Each step is applied at its time when
   a reviewer confirms it (a missing reason reads "imported record: &lt;origin&gt;", and a close whose gate checks can't be
   met is overridden with that reason). People the reviewer's directory doesn't know are a warning and aren't added. A
   history only applies to a new case: one that lands in an existing case leaves it out, with a warning.

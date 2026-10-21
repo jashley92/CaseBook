@@ -7,10 +7,10 @@
     var now = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
     // REV-25: left alone it means now, so it shows now (to the minute), not the time the sheet was opened.
     if (!Draft.Edited) Draft.When = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMinute));
-    var backdated = Draft.Backdated(TimeDisp.Zone, Clock.UtcNow);
+    var backdated = Draft.Backdated(TimeDisp.Zone, Clock.UtcNow) && AsksReason;
 }
 <div class="mt-2">
-    <label class="form-label small mb-0" for="ws-when">When it happened (@TimeDisp.Label)</label>
+    <label class="form-label small mb-0" for="ws-when">@Label (@TimeDisp.Label)</label>
     <DateTimeInput Past="true" id="ws-when" class="form-control form-control-sm" @bind-Value="Draft.When" @bind-Value:after="Typed" />
     <TimeNudges Value="Draft.When" ValueChanged="Nudged" Now="@now" />
     @if (Draft.When is { } w && Math.Abs((w - now).TotalMinutes) >= 1)
@@ -20,7 +20,8 @@
     <div class="form-text @(backdated ? "text-warning-emphasis" : "")">
         @(backdated
             ? "More than an hour ago, so give a reason. The record keeps both times: when it happened and when you entered it."
-            : "Leave as now, or set the time it actually happened if you're recording it later.")
+            : AsksReason ? "Leave as now, or set the time it actually happened if you're recording it later."
+            : "Leave as now, or set the time it actually happened if you're recording it later. The record keeps when you entered it.")
     </div>
 </div>
 
@@ -28,6 +29,9 @@
     [Parameter, EditorRequired] public TransitionDraft Draft { get; set; } = null!;
     /// <summary>The time changed (the parent's reason requirement and apply button depend on it).</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public string Label { get; set; } = "When it happened";
+    /// <summary>FR-51: whether more than an hour back asks for a reason (a transition does; marking contained has none).</summary>
+    [Parameter] public bool AsksReason { get; set; } = true;
 
     private Task Nudged(DateTime? value)
     {

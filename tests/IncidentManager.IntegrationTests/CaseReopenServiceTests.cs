@@ -54,6 +54,7 @@ public sealed class CaseReopenServiceTests : IDisposable
         var c = Case.Open(2026, 1, "Beaconing", "C2 beaconing", Classification.Incident,
             Severity.High, CaseOrigin.InternalDetection, "ic1", _clock.UtcNow);
         c.ChangePhase(CasePhase.Containment, null, "ic1", _clock.UtcNow.AddHours(1));
+        c.MarkContained("ic1", _clock.UtcNow.AddHours(1));
         c.ChangePhase(CasePhase.Recovery, null, "ic1", _clock.UtcNow.AddHours(2));
         c.ChangePhase(CasePhase.Closed, "resolved", "ic1", _clock.UtcNow.AddHours(3));
         db.Cases.Add(c);

@@ -116,7 +116,8 @@ public sealed class CaseImportPhaseChange
     /// <summary>When it happened (the transition's effective time). Required.</summary>
     public DateTimeOffset? At { get; set; }
     public string? Reason { get; set; }
-    /// <summary>BUG-165: going past Containment without it, when it was contained (or <see cref="ContainmentNotNeeded"/>).</summary>
+    /// <summary>BUG-165: going past Containment without it, when it was contained (or <see cref="ContainmentNotNeeded"/>).
+    /// FR-51: also moving on from Containment; left out there, the Containment step's time.</summary>
     public DateTimeOffset? ContainedAt { get; set; }
     public string? ContainmentNotNeeded { get; set; }
     /// <summary>BUG-208: going to Post-incident without Recovery, when it was resolved.</summary>

@@ -55,6 +55,9 @@ public partial class CaseWorkspace
         a.NewSeverity = _case.Severity;
         a.NewPhase = _case.Phase;
         a.Transition.Reset(WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone));
+        // FR-51: moving on from Containment before it was marked contained asks when it was; that starts at now.
+        if (name == "status" && _case.Phase == CasePhase.Containment && _case.ContainedAtUtc is null)
+            a.ContainedAt = WallClock.ToMinute(WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone));
 
         if (name == "holdrelease") a.HoldReleaseReason = null;   // don't carry a cancelled attempt's text over
         if (name == "handoff")

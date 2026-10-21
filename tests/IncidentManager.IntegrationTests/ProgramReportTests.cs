@@ -462,6 +462,7 @@ public sealed class ProgramReportTests : IDisposable
         {
             var e = await db.Cases.Include(c => c.StatusChanges).SingleAsync(c => c.Id == id);
             e.ChangePhase(CasePhase.Containment, "More found", "ic", _clock.UtcNow);
+            e.MarkContained("ic", _clock.UtcNow);   // FR-51
             await db.SaveChangesAsync();
             e.ResolvedAtUtc.Should().BeNull();
         }

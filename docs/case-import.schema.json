@@ -260,7 +260,7 @@
         "containedAt": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,7})?)?)?(Z|[\u002B-]\\d{2}:\\d{2})?$",
-          "description": "On a step that goes past Containment without it: when it was contained. An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
+          "description": "On a step that goes past Containment without it, or moves on from Containment: when it was contained (moving on, it defaults to the Containment step's time). An ISO 8601 date-time: with an offset or Z it\u0027s kept as written; without one it\u0027s read in timeZone (UTC when there\u0027s none)."
         },
         "containmentNotNeeded": {
           "type": "string",

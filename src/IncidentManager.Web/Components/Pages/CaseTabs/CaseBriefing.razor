@@ -275,6 +275,11 @@
                 {
                     <div class="im-bf-sub" title="@notNeeded">Containment not needed: @notNeeded</div>
                 }
+                @if (Case.Phase == CasePhase.Containment && Case.ContainedAtUtc is null && Case.ContainmentStartedAtUtc is { } containing)
+                {
+                    @* FR-51: in Containment, time to contain runs until the case is marked contained. *@
+                    <div class="im-bf-sub">Containing since @TimeDisp.Brief(containing, now): not yet marked contained.</div>
+                }
                 @foreach (var st in slas)
                 {
                     <div class="im-bf-ob">

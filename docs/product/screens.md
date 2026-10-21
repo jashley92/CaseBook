@@ -152,7 +152,8 @@ A single page, not a wizard.
    moved on since it was written, and *Still accurate* or *Update* answers that. After a handoff with a *Watch for*,
    a card above the brief keeps it in view ("Handed to you by … on …: watch for …") until the person it was handed to
    revises the brief or marks it still accurate. **Next** lists running
-   obligations first (a notification deadline with *Mark reported…*, then the SLA clocks), the open tasks each
+   obligations first (a notification deadline with *Mark reported…*, then the SLA clocks, with *Mark contained…* beside
+   the containment clock while the case is in Containment), the open tasks each
    with why it exists (answers a question, carries out a decision, about an entity or file, feeds a notification,
    phase work), and the next gate's readiness as a meter that opens its checklist. The team and key entities
    follow. The pane steps aside on the Briefing, which carries the same things in its own form. Below 1200 px

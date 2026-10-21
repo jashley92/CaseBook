@@ -76,7 +76,9 @@ comes in as it stood rather than open in New. `target.newCase` may carry:
 
 - `history`: the phase transitions, oldest first, each `{ "phase", "at", "reason"? }` (plus `containedAt` or
   `containmentNotNeeded` on a step past Containment without it, and `resolvedAt` on a step to PostIncident that skips
-  Recovery, as the phase change itself asks);
+  Recovery, as the phase change itself asks). A step that moves on from Containment may give `containedAt` (FR-51:
+  when it was contained, not before the Containment step nor after its own); without it the case is contained at the
+  Containment step's time, as every import before v1.15.0 was, so older documents import unchanged;
 - `outcome` (an active outcome key) and `conclusion`, when the history ends in Closed;
 - `incidentCommander` and `assignments` (`{ "user", "role"? }`, Analyst or Observer), each a user id or UPN.
 
@@ -185,10 +187,22 @@ notification. Severity drives the SLA targets and stale-case thresholds. Timelin
 | **Trigger** | *Advance to <next phase>* in the header, the phase bar, or Actions → *Change phase…* |
 | **The user sees** | Target phase (all seven listed), "What was achieved" (optional when moving forward; required when the gate demands commentary or when backdated; choosing **Closed** opens the close-out view below instead), *when it happened*, a warning listing **open tasks** for the phases being left ("You can continue anyway. They stay open."), and when closing with a running notification clock, a warning that closing doesn't stop it. It opens as a sheet under the header. ![](../screenshots/doc-phase-dialog.png) |
 | **Behind the scenes** | `CaseService.ChangePhaseAsync` → if the target is Closed, validate the closing record and evaluate the `CloseCase` gate, then write the closing brief → `Case.ChangePhase` → one save. |
-| **Rules** | **Any phase can follow any other**, forwards or backwards, whatever the classification: a complex event can be contained and closed without ever being promoted, and its header shows *Advance* beside *Promote onto the ladder…*. Entering Containment, Recovery and Closed for the first time sets `ContainedAtUtc`, `ResolvedAtUtc` and `ClosedAtUtc` at the effective time; later visits don't move them. Leaving Closed clears `ClosedAtUtc`. Eradication and Post-Incident set no timestamp. Going past Containment without it (from New or Triage, or from Closed, to Eradication, Recovery or Post-Incident) needs a decision: when it was contained, or that it wasn't needed and why. "Not needed" (`ContainmentNotNeededReason`) stops the containment clock at that move and leaves the case out of time-to-contain and the containment target's met/missed counts. Moving back into Containment later takes the decision back: the contained time becomes that move, and the case counts toward time-to-contain and the target again (BUG-229). A resolved time recorded on the way past is taken back with it, since it can't come before the containment; the case is resolved again when it next reaches Recovery (REV-11). Going past Recovery without it (to Post-Incident) needs when it was resolved, which sets `ResolvedAtUtc` (BUG-208). Leaving Closed counts as going past them: a case closed from Triage and moved to Post-Incident is asked both (BUG-228). Closing straight away needs neither. |
+| **Rules** | **Any phase can follow any other**, forwards or backwards, whatever the classification: a complex event can be contained and closed without ever being promoted, and its header shows *Advance* beside *Promote onto the ladder…*. Entering Recovery and Closed for the first time sets `ResolvedAtUtc` and `ClosedAtUtc` at the effective time; later visits don't move them. Leaving Closed clears `ClosedAtUtc`. Eradication and Post-Incident set no timestamp. **Entering Containment starts containment and sets no contained time** (FR-51, v1.15.0): the containment clock runs until the case is marked contained (below), or until it moves on from Containment to Eradication, Recovery or Post-Incident, which then asks *When it was contained* (required; defaults to now, with the Now / −1 h / −15 min / +15 min nudges; not before the case entered Containment, not in the future, not after the move). Moving back from Containment, or closing straight from it, asks nothing. Cases contained before v1.15.0 keep the time they entered Containment. Going past Containment without it (from New or Triage, or from Closed, to Eradication, Recovery or Post-Incident) needs a decision: when it was contained, or that it wasn't needed and why. "Not needed" (`ContainmentNotNeededReason`) stops the containment clock at that move and leaves the case out of time-to-contain and the containment target's met/missed counts. Moving back into Containment later takes the decision back: containment starts at that move (the case is uncontained until it's marked contained), and the case counts toward time-to-contain and the target again (BUG-229, FR-51). A resolved time recorded on the way past is taken back with it, since it can't come before the containment; the case is resolved again when it next reaches Recovery (REV-11). Going past Recovery without it (to Post-Incident) needs when it was resolved, which sets `ResolvedAtUtc` (BUG-208). Leaving Closed counts as going past them: a case closed from Triage and moved to Post-Incident is asked both (BUG-228). Closing straight away needs neither. |
 | **Permission** | `EditCases` |
 | **Errors** | The gate messages above; "Give a reason when recording a change more than an hour after it happened."; effective-time limits |
-| **Afterwards** | Milestone "Phase X → Y"; SLA clocks stop at contained and resolved; dashboards update; the Report tab becomes prominent from Recovery and Lessons learned from Post-Incident. |
+| **Afterwards** | Milestone "Phase X → Y" (and "Contained" when the move said when it was contained); SLA clocks stop at contained and resolved; dashboards update; the Report tab becomes prominent from Recovery and Lessons learned from Post-Incident. |
+
+### Marking a case contained
+
+| | |
+|---|---|
+| **Trigger** | While the case is in Containment and not yet contained: *Mark contained…* beside the containment clock in Next (or on its own there, "Containing since …", when no containment target applies), or Actions → *Mark contained…* (FR-51). |
+| **The user sees** | Since when the case has been in Containment, and *When it was contained*: now, or the time it was, with the Now / −1 h / −15 min / +15 min nudges. |
+| **Behind the scenes** | `CaseService.MarkContainedAsync` → `Case.MarkContained` → one save; the change to `ContainedAtUtc` is on the audit trail. |
+| **Rules** | Only in Containment and only once; the time is not in the future, not before detection, and not before the case entered Containment. The case stays in Containment until it's moved on. Time-to-contain (detected to contained) and the containment target stop at this time. The move into Containment can't afterwards be re-dated past it. |
+| **Permission** | `EditCases` |
+| **Errors** | "A case is marked contained while it's in Containment." · "This case was already marked contained (…)." · "It can't have been contained before it entered Containment (…)." · "When it was contained can't be in the future." |
+| **Afterwards** | Milestone "Contained" on the timeline (and in the handoff draft and Overview's recent list); the containment clock stops in the header, Next, the brief, lists and dashboards. |
 
 ### Closing: outcome and closing brief
 
@@ -235,7 +249,8 @@ Administration → Stage gates. The full list of machine checks is in [governanc
 From a classification, severity or phase milestone on the timeline, **Correct time** asks for the new time and a
 reason (up to 2000 characters). `CaseService.CorrectTransitionTimeAsync` → `Case.CorrectTransitionTime`. The
 change's effective time moves; a `TransitionTimeCorrection` row records old time, new time and reason; if the
-change set the contained, resolved or closed time, that moves too. The recorded time never changes.
+change set the contained, resolved or closed time, that moves too (a contained time marked separately, FR-51, doesn't, and the
+move into Containment can't be re-dated past it). The recorded time never changes.
 
 Limits: not in the future, not before detection, between the neighbouring changes of the same kind, and not the
 opening state ("That change isn't on this case, or it's the opening state, which can't be re-dated.").
@@ -284,7 +299,7 @@ case can still be edited.
 
 | Action | Permission |
 |---|---|
-| Open, edit, phase, severity, assign, hand off, timeline, entities, evidence, notes, tasks, brief, links, supersede, restrict, materiality, mark reported | `EditCases` |
+| Open, edit, phase, mark contained, severity, assign, hand off, timeline, entities, evidence, notes, tasks, brief, links, supersede, restrict, materiality, mark reported | `EditCases` |
 | Promote, escalate, de-escalate; re-date a classification change; file a case straight onto the ladder; change a case's origin | `ChangeClassification` |
 | Refer to Legal; place or release a legal hold | `ManageLegal` |
 | Archive, restore | `Administer` |

@@ -16,7 +16,8 @@ public static class HandoffDraft
     private static readonly HashSet<MilestoneKind> WorkMilestones =
     [
         MilestoneKind.Classification, MilestoneKind.Severity, MilestoneKind.Phase, MilestoneKind.Materiality,
-        MilestoneKind.Gate, MilestoneKind.Reported, MilestoneKind.TaskDone, MilestoneKind.Verdict, MilestoneKind.Assessment
+        MilestoneKind.Gate, MilestoneKind.Reported, MilestoneKind.TaskDone, MilestoneKind.Verdict, MilestoneKind.Assessment,
+        MilestoneKind.Contained   // FR-51
     ];
 
     /// <summary>When the last handoff was recorded, or when the case was opened if there hasn't been one.</summary>

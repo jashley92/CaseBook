@@ -29,6 +29,7 @@ public sealed class CaseEditRaceTests
         await using var db = database.NewContext();
         var c = Case.Open(2026, 1, "Race", "Two closes", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic1", _clock.UtcNow);
         c.ChangePhase(CasePhase.Containment, "contained", "ic1", _clock.UtcNow.AddMinutes(30));
+        c.MarkContained("ic1", _clock.UtcNow.AddMinutes(30));
         c.ChangePhase(CasePhase.Recovery, "recovered", "ic1", _clock.UtcNow.AddHours(1));
         // BUG-581: a step and a file to cite on it.
         c.Evidence.Add(new Evidence { CaseId = c.Id, OriginalFileName = "shot.png", Sha256 = new string('a', 64), StoragePath = "x", CreatedBy = "ic1", CreatedAtUtc = _clock.UtcNow });
