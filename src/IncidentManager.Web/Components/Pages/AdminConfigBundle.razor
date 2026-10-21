@@ -94,7 +94,7 @@
                             _ => "signed by another instance",
                         })
                         (key <code>@(_verification.CarriedKeyId ?? _verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
-                        from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
+                        from <strong>@_verification.SourceHost</strong> on @TimeDisplay.UtcLabelled(_verification.ExportedAtUtc).
                         @if (_verification.Trust == ConfigBundleTrust.Unknown)
                         {
                             @* BUG-19: say what the signature does and doesn't prove, before anyone relies on it. CAP-16: the admin

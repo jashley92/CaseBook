@@ -60,7 +60,7 @@ else
                             }
                             @a.Sequence
                         </td>
-                        <td class="small im-data">@a.AtUtc.ToString("u")</td>
+                        <td class="small im-data">@TimeDisplay.Utc(a.AtUtc)</td>
                         <td>@Users.DisplayFor(a.Actor)</td>
                         <td>@AuditLabels.Label(a.Action)</td>
                         <td>

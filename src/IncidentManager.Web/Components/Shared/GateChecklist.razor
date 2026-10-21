@@ -44,7 +44,7 @@
     // HR-12: what the record holds behind this requirement, so an attestation isn't ticked blind.
     private RenderFragment Fact(GateRequirementResult r) => @<text>
         @* WF-15: on the organization's calendar, as the gate passage records what was shown. *@
-        @if (Eval.FactFor(r, d => TimeZoneInfo.ConvertTime(d, OrgZone.Current).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)) is { } fact)
+        @if (Eval.FactFor(r, d => TimeZoneInfo.ConvertTime(d, OrgZone.Current).ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)) is { } fact)
         {
             <span class="gate-fact d-block small text-muted">@fact</span>
         }

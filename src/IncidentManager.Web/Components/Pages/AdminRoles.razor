@@ -297,7 +297,7 @@ else
                             else { @foreach (var r in u.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> } }
                         </td>
                         <td class="small">
-                            @TimeDisp.Short(u.LastSeenUtc)
+                            @TimeDisp.Stamp(u.LastSeenUtc)
                             @if (u.IsDormant) { <span class="im-badge im-b-warn ms-1">Dormant</span> }
                         </td>
                     </tr>
@@ -326,7 +326,7 @@ else
                                 <div class="small text-muted">@(t.Kind == ApiTokenKind.System ? "System token" : $"Personal token of {t.Owner}")</div>
                             </td>
                             <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> }</td>
-                            <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "Never")</td>
+                            <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Stamp(used) : "Never")</td>
                             <td class="small">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
                         </tr>
                     }

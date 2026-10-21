@@ -20,7 +20,7 @@ public class TimeDisplayTests
 
         t.Mode.Should().Be(TimeDisplayMode.Utc);
         t.Label.Should().Be("UTC");
-        t.Long(Instant).Should().Be("2026-08-17 00:33:00 UTC");
+        t.Long(Instant).Should().Be("17 Aug 2026, 00:33:00 UTC");
     }
 
     [Fact]
@@ -29,10 +29,10 @@ public class TimeDisplayTests
         var t = new TimeDisplay();
         t.Configure("Etc/GMT+5", TimeDisplayMode.Local); // UTC-05:00
 
-        t.Long(Instant).Should().Be("2026-08-16 19:33:00 UTC-05:00");
-        t.Short(Instant).Should().Be("2026-08-16 19:33 UTC-05:00");
+        t.Long(Instant).Should().Be("16 Aug 2026, 19:33:00 UTC-05:00");
+        t.Short(Instant).Should().Be("16 Aug 2026, 19:33 UTC-05:00");
         t.TimeOnly(Instant).Should().Be("19:33 UTC-05:00");
-        t.DateOnly(Instant).Should().Be("2026-08-16");
+        t.DateOnly(Instant).Should().Be("16 Aug 2026");
     }
 
     [Fact]
@@ -41,10 +41,10 @@ public class TimeDisplayTests
         var t = new TimeDisplay();
         t.Configure("Etc/GMT+5", TimeDisplayMode.Local, twelveHourClock: true);
 
-        t.Long(Instant).Should().Be("2026-08-16 7:33:00 PM UTC-05:00");
-        t.Short(Instant).Should().Be("2026-08-16 7:33 PM UTC-05:00");
+        t.Long(Instant).Should().Be("16 Aug 2026, 7:33:00 PM UTC-05:00");
+        t.Short(Instant).Should().Be("16 Aug 2026, 7:33 PM UTC-05:00");
         t.TimeOnly(Instant).Should().Be("7:33 PM UTC-05:00");
-        t.DateOnly(Instant).Should().Be("2026-08-16");
+        t.DateOnly(Instant).Should().Be("16 Aug 2026");
 
         var changed = 0;
         t.Changed += () => changed++;
@@ -75,7 +75,7 @@ public class TimeDisplayTests
         var t = new TimeDisplay();
         t.Configure("Etc/GMT-5", TimeDisplayMode.Local); // UTC+05:00
 
-        t.Long(Instant).Should().Be("2026-08-17 05:33:00 UTC+05:00");
+        t.Long(Instant).Should().Be("17 Aug 2026, 05:33:00 UTC+05:00");
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class TimeDisplayTests
         t.Configure("Etc/UTC", TimeDisplayMode.Local);
 
         t.Label.Should().Be("UTC");
-        t.Long(Instant).Should().Be("2026-08-17 00:33:00 UTC");
+        t.Long(Instant).Should().Be("17 Aug 2026, 00:33:00 UTC");
     }
 
     [Theory]
@@ -97,7 +97,7 @@ public class TimeDisplayTests
         var t = new TimeDisplay();
         t.Configure(zoneId, TimeDisplayMode.Local);
 
-        t.Long(Instant).Should().Be("2026-08-17 00:33:00 UTC");
+        t.Long(Instant).Should().Be("17 Aug 2026, 00:33:00 UTC");
     }
 
     [Fact]
@@ -109,10 +109,10 @@ public class TimeDisplayTests
         t.Long(Instant).Should().EndWith("UTC"); // still UTC while mode is Utc
 
         t.SetMode(TimeDisplayMode.Local);
-        t.Long(Instant).Should().Be("2026-08-16 19:33:00 UTC-05:00");
+        t.Long(Instant).Should().Be("16 Aug 2026, 19:33:00 UTC-05:00");
 
         t.SetMode(TimeDisplayMode.Utc);
-        t.Long(Instant).Should().Be("2026-08-17 00:33:00 UTC");
+        t.Long(Instant).Should().Be("17 Aug 2026, 00:33:00 UTC");
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public class TimeDisplayTests
 
         t.Long((DateTimeOffset?)null).Should().Be("—");
         t.DateOnly((DateTimeOffset?)null).Should().Be("—");
-        t.Long((DateTimeOffset?)Instant).Should().Be("2026-08-17 00:33:00 UTC");
+        t.Long((DateTimeOffset?)Instant).Should().Be("17 Aug 2026, 00:33:00 UTC");
     }
 
     [Fact]
@@ -148,11 +148,23 @@ public class TimeDisplayTests
             var t = new TimeDisplay();
             var endOfDay = new DateTimeOffset(2026, 8, 16, 23, 59, 0, TimeSpan.Zero);   // a bare day on a UTC calendar
 
-            t.DateOnly(Instant).Should().Be("2026-08-17");
-            t.Due(endOfDay, TimeZoneInfo.Utc).Should().Be("2026-08-16");
-            t.Day(endOfDay, TimeZoneInfo.Utc).Should().Be("2026-08-16");
-            t.Short(Instant).Should().Be("2026-08-17 00:33 UTC", "the helpers agree on one screen");
+            t.DateOnly(Instant).Should().Be("17 Aug 2026");
+            t.Due(endOfDay, TimeZoneInfo.Utc).Should().Be("16 Aug 2026");
+            t.Day(endOfDay, TimeZoneInfo.Utc).Should().Be("16 Aug 2026");
+            t.Short(Instant).Should().Be("17 Aug 2026, 00:33 UTC", "the helpers agree on one screen");
         }
         finally { System.Globalization.CultureInfo.CurrentCulture = was; }
+    }
+
+    [Fact]
+    public void Audit_times_are_utc_whatever_the_display(/* UX-57 */)
+    {
+        var t = new TimeDisplay();
+        t.Configure("Etc/GMT+5", TimeDisplayMode.Local, twelveHourClock: true);
+
+        TimeDisplay.Utc(Instant).Should().Be("17 Aug 2026, 00:33:00");
+        TimeDisplay.UtcLabelled(Instant).Should().Be("17 Aug 2026, 00:33:00 UTC");
+        TimeDisplay.UtcDay(Instant).Should().Be("17 Aug 2026");
+        t.Stamp(Instant).Should().Be("16 Aug 2026, 7:33 PM", "a column header names the zone once");
     }
 }

@@ -12,7 +12,7 @@
         <div class="integrity-alert-text">
             <strong>Evidence integrity check failed.</strong>
             @status.DriftCount of @status.CheckedCount stored evidence file(s) no longer match their recorded
-            SHA-256 (checked @status.CheckedAtUtc.ToString("u")). They may be corrupted, altered, replaced or
+            SHA-256 (checked @TimeDisplay.UtcLabelled(status.CheckedAtUtc)). They may be corrupted, altered, replaced or
             deleted. Investigate now.
         </div>
         <a class="btn btn-sm btn-light integrity-alert-cta" href="admin#diagnostics">Open Diagnostics</a>

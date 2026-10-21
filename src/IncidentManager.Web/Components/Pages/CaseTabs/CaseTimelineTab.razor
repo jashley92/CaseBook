@@ -2777,7 +2777,7 @@ else
             @if (_lastWhen is { } last && last != _tlWhen)
             {
                 <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = last"
-                        title="The time of the entry you just added">Same as last (@(last.Date == NowWall().Date ? last.ToString("HH:mm") : last.ToString("yyyy-MM-dd HH:mm")))</button>
+                        title="The time of the entry you just added">Same as last (@(last.Date == NowWall().Date ? last.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) : last.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.InvariantCulture)))</button>
             }
             @* BUG-480: Shifted stops at year 1 and 9999; AddHours threw there and the tab showed its error fallback. *@
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = IncidentManager.Web.Components.Shared.TimeNudges.Shifted(_tlWhen, TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>

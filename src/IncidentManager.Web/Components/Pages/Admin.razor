@@ -542,7 +542,7 @@
                                             {
                                                 @($"{ev.CheckedCount:N0} checked")
                                             }
-                                            · @ev.CheckedAtUtc.ToString("u")
+                                            · @TimeDisplay.UtcLabelled(ev.CheckedAtUtc)
                                         </span>
                                     </td>
                                 </tr>
@@ -934,7 +934,7 @@
                             <tr>
                                 <td>Last success</td>
                                 <td>
-                                    <span class="small text-muted">@ls.ToString("u")</span>
+                                    <span class="small text-muted">@TimeDisplay.UtcLabelled(ls)</span>
                                     <code class="small ms-2">@sh.LastSuccessReference</code>
                                 </td>
                             </tr>
@@ -944,7 +944,7 @@
                             <tr>
                                 <td>Last error</td>
                                 <td>
-                                    <span class="small text-muted">@lf.ToString("u")</span>
+                                    <span class="small text-muted">@TimeDisplay.UtcLabelled(lf)</span>
                                     <code class="small ms-2">@sh.LastFailureReference</code>
                                     <span class="small text-danger ms-2">@sh.LastFailureReason</span>
                                 </td>
@@ -979,7 +979,7 @@
                                 @StatusBadge(cycle.Total < IncidentManager.Application.Integrity.IntegrityCheckState.SlowCycle, "Quick", "Slow")
                                 <span class="small text-muted ms-2">
                                     @(cycle.Full ? "Full" : "Incremental") · @cycle.Total.TotalSeconds.ToString("N1") s ·
-                                    @(cycle.Intact ? "intact" : "found a problem") · @cycle.FinishedAtUtc.ToString("u")
+                                    @(cycle.Intact ? "intact" : "found a problem") · @TimeDisplay.UtcLabelled(cycle.FinishedAtUtc)
                                 </span>
                             </td>
                         </tr>
@@ -1049,7 +1049,7 @@
                             }
                             @if (discovery.AtUtc is { } lookedAt)
                             {
-                                <span class="small text-muted ms-1">Looked @lookedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture).</span>
+                                <span class="small text-muted ms-1">Looked @TimeDisplay.UtcLabelled(lookedAt).</span>
                             }
                             <span class="small text-muted ms-1">@(RelatedExclusionsInForce.DiscoveredInForce is not null
                                 ? "In use: your organization's domains aren't set."

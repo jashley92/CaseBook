@@ -57,9 +57,9 @@
 <div class="pr-report">
     <h2 class="h5 mb-1">Program report · @r.Period.Label</h2>
     <p class="small text-muted mb-3">
-        @r.FirstDay.ToString("yyyy-MM-dd") to @r.LastDay.ToString("yyyy-MM-dd") (@r.ZoneLabel), compared with @r.Period.Previous.Label.
+        @r.FirstDay.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture) to @r.LastDay.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture) (@r.ZoneLabel), compared with @r.Period.Previous.Label.
         Cases you can see@(r.IncludesExercises ? ", including exercise cases" : ", excluding exercise cases").
-        Generated @r.GeneratedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
+        Generated @TimeDisplay.UtcLabelled(r.GeneratedAtUtc).
         @if (_period == Current) { <strong>This quarter is still in progress.</strong> }
     </p>
 

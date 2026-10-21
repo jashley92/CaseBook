@@ -46,14 +46,14 @@
                     }
                     @foreach (var r in h.Recovery)
                     {
-                        <div>Recovery certificate <code>@r.Thumbprint</code> <span class="text-muted">@r.Subject · expires @r.NotAfter.ToString("yyyy-MM-dd")</span></div>
+                        <div>Recovery certificate <code>@r.Thumbprint</code> <span class="text-muted">@r.Subject · expires @TimeDisplay.UtcDay(r.NotAfter)</span></div>
                     }
                     @if (h.Shares is { } s)
                     {
-                        <div>Shares: any @s.Threshold of @s.Count, issued @s.IssuedUtc.ToString("yyyy-MM-dd")</div>
+                        <div>Shares: any @s.Threshold of @s.Count, issued @TimeDisplay.UtcDay(s.IssuedUtc)</div>
                     }
                     <div class="text-muted">
-                        Last recovery drill: @(h.LastDrillUtc is { } d ? d.ToString("yyyy-MM-dd") : "never") (casebook-keytool verify)
+                        Last recovery drill: @(h.LastDrillUtc is { } d ? TimeDisplay.UtcDay(d) : "never") (casebook-keytool verify)
                     </div>
                 </td>
             </tr>
@@ -66,7 +66,7 @@
             }
             <tr>
                 <td>Checked</td>
-                <td class="small text-muted">@h.CheckedUtc.ToString("u")</td>
+                <td class="small text-muted">@TimeDisplay.UtcLabelled(h.CheckedUtc)</td>
             </tr>
         }
         @if (Keyring.State == EvidenceKeyState.Ready)
@@ -83,7 +83,7 @@
                         <span>@Conversion.Converted encrypted so far · @Conversion.Remaining left</span>
                         @if (Conversion.Busy > 0) { <span class="text-muted"> · @Conversion.Busy in use (next run)</span> }
                         @if (Conversion.Mismatched > 0) { <span class="text-danger"> · @Conversion.Mismatched don't match their record (left as they are; see the evidence re-check)</span> }
-                        <span class="text-muted"> · last run @Conversion.LastRunUtc.Value.ToString("u")</span>
+                        <span class="text-muted"> · last run @TimeDisplay.UtcLabelled(Conversion.LastRunUtc.Value)</span>
                     }
                     @if (Conversion.LastProblem is { } p) { <div class="text-danger">@p</div> }
                     <div class="mt-1">

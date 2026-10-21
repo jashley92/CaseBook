@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Policies.Administer)]
 @layout AdminLayout
 @using IncidentManager.Application.ApiTokens
+@inject TimeDisplay TimeDisp
 @inject ApiTokenService Tokens
 @inject RoleService Roles
 @inject ToastService Toasts
@@ -124,8 +125,8 @@ else
                     <td>@t.Kind</td>
                     <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-info me-1 mb-1">@r</span> }</td>
                     <td class="small">@t.OwnerDisplayName</td>
-                    <td class="small text-muted">@(t.LastUsedAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
-                    <td class="small text-muted">@t.ExpiresAtUtc.UtcDateTime.ToString("yyyy-MM-dd")</td>
+                    <td class="small text-muted">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "—")</td>
+                    <td class="small text-muted">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
                     <td>
                         @if (t.RevokedAtUtc is not null) { <span class="im-badge im-b-danger">Revoked</span> }
                         else if (!t.IsActive) { <span class="im-badge im-b-warn">Expired</span> }

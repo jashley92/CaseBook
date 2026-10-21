@@ -70,7 +70,7 @@
                         {
                             <div class="small mt-1">
                                 <span class="im-badge im-b-ok">Set</span>
-                                <span class="text-muted ms-1">on @_status.PasswordSetAtUtc?.ToString("yyyy-MM-dd") by @(_status.PasswordSetBy ?? "an administrator")</span>
+                                <span class="text-muted ms-1">on @(_status.PasswordSetAtUtc is { } setAt ? TimeDisplay.UtcDay(setAt) : "") by @(_status.PasswordSetBy ?? "an administrator")</span>
                             </div>
                             <div class="mt-1">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _replacing = true">Replace</button>
@@ -91,7 +91,7 @@
                 <button type="button" class="btn btn-primary" @onclick="Save" disabled="@_saving.Busy">Save sign-in</button>
                 @if (_status.UpdatedAtUtc is { } at)
                 {
-                    <span class="small text-muted">Last changed @at.ToString("yyyy-MM-dd HH:mm") UTC by @_status.UpdatedBy</span>
+                    <span class="small text-muted">Last changed @TimeDisplay.UtcLabelled(at) by @_status.UpdatedBy</span>
                 }
             </div>
             <div class="form-text">

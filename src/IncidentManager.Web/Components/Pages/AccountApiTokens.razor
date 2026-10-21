@@ -1,6 +1,7 @@
 @page "/account/api-tokens"
 @attribute [Authorize]
 @using IncidentManager.Application.ApiTokens
+@inject TimeDisplay TimeDisp
 @inject ApiTokenService Tokens
 @inject ICurrentUser CurrentUser
 @inject ToastService Toasts
@@ -91,8 +92,8 @@ else
                 <tr class="@(t.IsActive ? "" : "opacity-75")">
                     <td><span class="fw-semibold">@t.Name</span><div class="small text-muted font-monospace">@t.Prefix…</div></td>
                     <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-info me-1 mb-1">@r</span> }</td>
-                    <td class="small text-muted">@(t.LastUsedAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
-                    <td class="small text-muted">@t.ExpiresAtUtc.UtcDateTime.ToString("yyyy-MM-dd")</td>
+                    <td class="small text-muted">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "—")</td>
+                    <td class="small text-muted">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
                     <td>
                         @if (t.RevokedAtUtc is not null) { <span class="im-badge im-b-danger">Revoked</span> }
                         else if (!t.IsActive) { <span class="im-badge im-b-warn">Expired</span> }
