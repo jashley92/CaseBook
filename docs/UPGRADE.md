@@ -306,6 +306,9 @@ From an analyst walkthrough (one case filed, worked and readied for close in a r
   side panel's last link; the Evidence file picker clears after an upload; the *Paper* tab no longer looks disabled.
 - **"Canceled" is spelled one way**, including the reason note a canceled task keeps (older "Cancelled:" notes are
   still read as reasons).
+- **The top bar keeps four recent cases** (it kept eight, which ran past the bar). Pinned cases still stay; of the
+  rest, the four you looked at most recently show, and opening another lets go of the oldest. The case tables no longer
+  let a long case number run into the next column (it's cut, whole on hover), and Cases fits the page at 1440 pixels.
 
 **Time to contain now runs to when containment was done, not when it began.** Moving a case into Containment starts
 containment and no longer records it as contained. While a case is in Containment, *Mark contained…* (beside the

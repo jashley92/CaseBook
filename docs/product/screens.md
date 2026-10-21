@@ -31,7 +31,7 @@ browser's local zone because the profile menu was set to *Local*; stored times a
    default `g` then `m`/`c`/`f`/`d`/`n`/`i` goes to your Desk, Cases, Find, Program, a new case or Integrity;
    every shortcut can be changed in *Keyboard shortcuts*.
 5. **Open-case tabs**: the cases you're on, beside the command bar, kept on your account so they're back
-   when you sign in. Opening a case adds its tab; pinned cases come first and stay; up to 8 others are kept,
+   when you sign in. Opening a case adds its tab; pinned cases come first and stay; up to 4 others are kept,
    and opening another lets go of the one you looked at least recently. A tab shows the case's number, severity
    and a dot when a clock is at risk or breached, and goes back to the view you left. **Open beside** (the split
    icon on a tab) shows that case's Briefing next to the page you're on, docked as a column on wide screens and

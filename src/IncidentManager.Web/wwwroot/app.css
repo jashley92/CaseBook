@@ -3282,9 +3282,10 @@ a.im-find-quote:hover { text-decoration: underline; }
 /* RD-21: open-case tabs in the top bar, and a case beside the page. */
 .im-casetabs { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: .25rem; overflow-x: auto; scrollbar-width: thin; padding-block: .2rem; }
 .im-casetabs-none { flex: 1 1 0; }
-.im-casetab { display: inline-flex; align-items: center; flex: 0 0 auto; max-width: 15rem; border: 1px solid var(--im-border); border-radius: var(--im-radius);
+/* The tabs share the strip (four at most, plus pinned): each shrinks to its number cut short rather than scrolling. */
+.im-casetab { display: inline-flex; align-items: center; flex: 1 1 0; min-width: 6.5rem; max-width: 15rem; border: 1px solid var(--im-border); border-radius: var(--im-radius);
     background: var(--im-surface); font-size: var(--im-text-sm); }
-.im-casetab > a { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; padding: .22rem .45rem; color: var(--im-text-muted); text-decoration: none !important; margin: 0 !important; }
+.im-casetab > a { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; flex: 1 1 auto; padding: .22rem .45rem; color: var(--im-text-muted); text-decoration: none !important; margin: 0 !important; }
 .im-casetab > a:hover { color: var(--im-text); }
 .im-casetab.is-active { border-color: var(--im-accent); background: var(--im-surface-2); }
 .im-casetab.is-active > a { color: var(--im-text); font-weight: 600; }

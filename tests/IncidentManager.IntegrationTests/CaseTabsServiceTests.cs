@@ -156,5 +156,28 @@ public sealed class CaseTabsServiceTests : IDisposable
         open.Should().HaveCount(CaseTabsService.MaxOpen).And.Contain(ids[^1]).And.NotContain(ids[0]);
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task More_tabs_than_the_cap_from_before_it_was_lowered_show_only_the_most_recently_seen(string provider)
+    {
+        _db = TestDatabase.Open(provider);
+        var ids = Seed(CaseTabsService.MaxOpen + 2, out _);
+        await using (var db = NewContext())
+        {
+            // Opened in order, the first two looked at most recently.
+            for (var i = 0; i < ids.Count; i++)
+                db.OpenCaseTabs.Add(new OpenCaseTab
+                {
+                    UserId = _me.UserId, CaseId = ids[i], OpenedAtUtc = _clock.UtcNow.AddMinutes(i),
+                    LastSeenAtUtc = _clock.UtcNow.AddMinutes(i < 2 ? 100 + i : i)
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var shown = (await NewTabs().ListAsync()).Select(t => t.CaseId).ToList();
+
+        shown.Should().Equal(new[] { ids[0], ids[1] }.Concat(ids.Skip(ids.Count - (CaseTabsService.MaxOpen - 2))),
+            "the most recently seen, in the order they were opened");
+    }
+
     public void Dispose() => _db?.Dispose();
 }

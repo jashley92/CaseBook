@@ -22,8 +22,8 @@ public sealed record CaseTab(Guid CaseId, string CaseNumber, string Title, Class
 /// </summary>
 public sealed class CaseTabsService
 {
-    /// <summary>The most unpinned tabs kept.</summary>
-    public const int MaxOpen = 8;
+    /// <summary>The most unpinned tabs kept. Four: at eight the strip ran past the top bar and had to be scrolled.</summary>
+    public const int MaxOpen = 4;
 
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
@@ -45,8 +45,13 @@ public sealed class CaseTabsService
         using var db = _factory.CreateDbContext();
         var pinned = await db.PinnedCases.AsNoTracking().Where(p => p.UserId == me)
             .OrderBy(p => p.PinnedAtUtc).Select(p => p.CaseId).ToListAsync(ct);
-        var open = await db.OpenCaseTabs.AsNoTracking().Where(t => t.UserId == me)
-            .OrderBy(t => t.OpenedAtUtc).Select(t => t.CaseId).ToListAsync(ct);
+        // The most recently looked at, in the order they were opened: a user holding more from before the cap was lowered
+        // sees the cap at once (the rest are let go of the next time a case is opened).
+        var open = (await db.OpenCaseTabs.AsNoTracking().Where(t => t.UserId == me)
+                .Select(t => new { t.CaseId, t.OpenedAtUtc, t.LastSeenAtUtc }).ToListAsync(ct))
+            .Where(t => !pinned.Contains(t.CaseId))
+            .OrderByDescending(t => t.LastSeenAtUtc).Take(MaxOpen)
+            .OrderBy(t => t.OpenedAtUtc).Select(t => t.CaseId).ToList();
         var order = pinned.Concat(open.Where(id => !pinned.Contains(id))).ToList();
         if (order.Count == 0) return [];
 
