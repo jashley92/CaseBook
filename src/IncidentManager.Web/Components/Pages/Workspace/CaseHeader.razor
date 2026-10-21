@@ -11,18 +11,22 @@
    overflowing the row and forcing whole-page horizontal scroll. *@
 <div id="ws-head" class="im-ch d-flex justify-content-between align-items-start flex-wrap gap-2">
     <div class="im-casehead-main">
-        @* INV-02: the case number and its title share one line, and the state (badges, phase, next step)
-           shares the next, so the tabs start about half as far down the page. *@
+        @* UX-55: the title first, as the page's heading; under it the way back to the list (it keeps the list's filters, FR-28)
+           and the case number, in place of a breadcrumb line above. INV-02: the state shares the next line. A pasted-in, very
+           long title would push the tabs off screen: one line, click for the rest. *@
         <div class="im-casehead-line">
-        <h1 class="mb-0">
-            <code class="im-casehead-num" title="@Case.CaseNumber">@Case.CaseNumber</code>
+        <h1 class="im-casehead-title @(_titleExpanded ? "" : "im-clamp-1")" title="@(_titleExpanded ? null : Case.Title)"
+            @onclick="() => _titleExpanded = !_titleExpanded">@Case.Title</h1>
+        <div class="im-casehead-sub">
+            @if (BackHref is not null) { <a href="@BackHref" class="im-casehead-back">Cases</a><span aria-hidden="true">›</span> }
+            <span class="im-casehead-num" title="@Case.CaseNumber">@Case.CaseNumber</span>
             @if (Access.CanEdit && !_renumbering)
             {
-                <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" aria-label="Change case number" @onclick="StartRenumber">
+                <button class="btn btn-sm btn-link p-0 align-baseline" title="Change case number" aria-label="Change case number" @onclick="StartRenumber">
                     <span class="bi bi-pencil" aria-hidden="true"></span>
                 </button>
             }
-        </h1>
+        </div>
         @if (_renumbering)
         {
             @* BUG-370: im-own-keys: Ctrl+Enter here isn't for the tab's composer (keymap.js leaves it alone). *@
@@ -46,9 +50,6 @@
         {
             <div class="text-danger small mb-2">@_renumberError</div>
         }
-        @* A pasted-in, very long title would push the tabs off screen: show one line, click for the rest. *@
-        <div class="im-casehead-title @(_titleExpanded ? "" : "im-clamp-1")" title="@(_titleExpanded ? null : Case.Title)"
-             @onclick="() => _titleExpanded = !_titleExpanded">@Case.Title</div>
         </div>
     </div>
     @* ms-auto: when a long case number pushes these onto their own line they stay at the right edge, so the
@@ -170,6 +171,9 @@
 </div>
 
 @code {
+    /// <summary>UX-55: the way back to the case list as it was left (CaseListMemory), shown before the case number.</summary>
+    [Parameter] public string? BackHref { get; set; }
+
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
     [Parameter] public bool IsPinned { get; set; }

@@ -50,7 +50,6 @@ else if (_case is null)
 else
 {
     @* UX-08: consistent back affordance — the "Cases" crumb replaces the old "← All cases" button. *@
-    <Breadcrumbs Items="@(new Crumb[] { new("Cases", ListMemory.BackHref), new(_case.CaseNumber) })" />
     @* FR-05: warn before leaving the case (in-app SPA nav) with unsubmitted composer text. The browser-level
        beforeunload guard in markdown-editor.js covers refresh / tab-close / external nav; this covers a
        sidebar or case-link click the SPA router handles without a page unload. *@
@@ -58,7 +57,7 @@ else
     @* REL-07 / REL-08 / S-21: what the viewer can do here, when it isn't everything. *@
     <CaseAccessNotice Access="Access" AccessLost="_accessLost" PermissionLost="_permissionLost" />
     @* RD-03 / RD-27: the two-line header (identity, acts, the state line) is CaseHeader. *@
-    <CaseHeader Case="_case" Access="Access" IsPinned="_isPinned" Notify="_notifyDeadlines" AfterClosure="_afterClosure"
+    <CaseHeader Case="_case" BackHref="@ListMemory.BackHref" Access="Access" IsPinned="_isPinned" Notify="_notifyDeadlines" AfterClosure="_afterClosure"
                 OutcomeLabels="_outcomeLabels" OnTogglePin="TogglePin" OnOpenModal="OpenModal" OnAdvanceTo="AdvanceTo"
                 OnAssignToMe="AssignToMe" OnSetLegalHold="SetLegalHold" OnSetArchived="SetArchived" OnGoToTab="SetTab"
                 OnChanged="Reload" OnForbidden="Forbidden" />

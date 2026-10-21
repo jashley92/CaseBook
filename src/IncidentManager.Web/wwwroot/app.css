@@ -2915,6 +2915,15 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-ch .im-casehead-line h1 { font-size: var(--im-text-base); margin: 0; }
 .im-ch .im-casehead-num { font-size: var(--im-text-sm); font-weight: 500; color: var(--im-text-muted); border: 1px solid var(--im-border-strong); border-radius: var(--im-radius); padding: .05rem .4rem; background: transparent; }
 .im-ch .im-casehead-line .im-casehead-title { font-size: var(--im-text-lg); font-weight: 600; color: var(--im-text); letter-spacing: -.005em; }
+/* UX-55: the title is the heading; the case number sits under it with the way back to the list. */
+.im-ch .im-casehead-line { display: block; margin-bottom: .2rem; }
+.im-ch .im-casehead-line h1.im-casehead-title { font-size: var(--im-text-xl); font-weight: 600; line-height: 1.25; margin: 0; cursor: pointer; }
+.im-casehead-sub { display: flex; align-items: center; gap: .4rem; min-width: 0; margin-top: .15rem; font-size: var(--im-text-sm); color: var(--im-text-muted); }
+.im-ch .im-casehead-sub .im-casehead-back { color: var(--im-text-muted); text-decoration: none; }
+.im-ch .im-casehead-sub .im-casehead-back:hover, .im-ch .im-casehead-sub .im-casehead-back:focus-visible { color: var(--im-text); text-decoration: underline; }
+.im-ch .im-casehead-sub .im-casehead-num { font: inherit; color: inherit; border: 0; padding: 0; background: none;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.im-ch-more { margin-left: .35rem; font-size: var(--im-text-xs); font-weight: 600; color: var(--im-danger); }
 .im-casehead-state { gap: .35rem 1.1rem; }
 .im-casehead-state .im-state-words { gap: .9rem; align-items: center; }
 .im-casehead-state .im-flags { gap: .2rem 1rem; align-items: center; }
@@ -3457,3 +3466,18 @@ a.im-find-quote:hover { text-decoration: underline; }
 .im-c-pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--im-space-2); padding: var(--im-space-2) 0;
     font-size: var(--im-text-sm); color: var(--im-text-muted); }
 .im-c-pager-at { margin-right: auto; }
+
+/* UX-55: the Record's toolbar on one row beside the rail: tighter lenses, and Filter / Clock or T+ / order behind View. */
+#tl-toolbar { gap: .35rem; }
+#tl-toolbar > .im-seg > .btn { padding: .25rem .5rem; white-space: nowrap; }
+#tl-toolbar > .btn, .tl-viewmenu > .btn { white-space: nowrap; }
+.tl-viewmenu { position: relative; }
+.tl-viewmenu-scrim { position: fixed; inset: 0; z-index: 1040; }
+.tl-viewmenu-pop { position: absolute; top: calc(100% + .35rem); left: 0; z-index: 1041; min-width: 18rem; display: grid; gap: var(--im-space-2);
+    padding: var(--im-space-3); background: var(--im-surface); border: 1px solid var(--im-border-strong); border-radius: var(--im-radius-lg);
+    box-shadow: var(--im-shadow); }
+.tl-viewmenu-row { display: flex; align-items: center; justify-content: space-between; gap: var(--im-space-3); }
+.tl-viewmenu-pop .im-seg { flex-wrap: nowrap; }
+.tl-viewmenu-pop .im-seg > .btn { white-space: nowrap; }
+.tl-viewmenu-label { font-size: var(--im-label-size); font-weight: var(--im-label-weight); letter-spacing: var(--im-label-tracking);
+    text-transform: uppercase; color: var(--im-text-muted); }

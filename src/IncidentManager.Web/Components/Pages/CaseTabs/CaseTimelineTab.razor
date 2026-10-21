@@ -76,25 +76,46 @@
     </div>
     @if (totalAll > 0 && !_notesOnly)
     {
-        <button type="button" class="btn btn-sm @(FiltersActive ? "btn-secondary" : "btn-outline-secondary")" aria-expanded="@Ui.Aria(FiltersShown)"
-                aria-controls="tl-filter-row" @onclick="() => _showFilters = !_showFilters">
-            <span class="bi bi-funnel" aria-hidden="true"></span> Filter@(FilterCount > 0 ? $" ({FilterCount})" : "")
-        </button>
-        @if (Case.DetectedAtUtc is not null)
-        {
-            @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
-            <div class="im-seg" role="group" aria-label="How times are shown">
-                <button type="button" class="btn btn-sm @(_tPlus ? "" : "active")" aria-pressed="@Ui.Aria(!_tPlus)" @onclick="() => _tPlus = false">Clock</button>
-                <button type="button" class="btn btn-sm @(_tPlus ? "active" : "")" aria-pressed="@Ui.Aria(_tPlus)" @onclick="() => _tPlus = true"
-                        title="Time since the case was detected (T+ detection)">T+</button>
-            </div>
-        }
-        <button type="button" class="btn btn-sm btn-outline-secondary"
-                @onclick="() => _tlOldestFirst = !_tlOldestFirst"
-                title="@(_tlOldestFirst ? "Oldest first. Click for newest first." : "Newest first. Click for oldest first.")">
-            <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
-            @(_tlOldestFirst ? "Oldest" : "Newest")
-        </button>
+        @* UX-55: Filter, how times are shown and the order behind one View button, so the lenses, View and Add fit one row
+           beside the rail (they took two). Pressed while the view isn't the default, so a filter or T+ is never hidden. *@
+        <div class="tl-viewmenu" @onkeydown="ViewMenuKey">
+            <button type="button" class="btn btn-sm @(ViewCustomised ? "btn-secondary" : "btn-outline-secondary")"
+                    aria-expanded="@Ui.Aria(_viewMenu)" aria-controls="tl-viewmenu" @onclick="() => _viewMenu = !_viewMenu"
+                    title="Filter, clock or T+, and order">
+                <span class="bi bi-sliders" aria-hidden="true"></span> View@(FilterCount > 0 ? $" ({FilterCount})" : "")
+                <span class="bi bi-chevron-down" aria-hidden="true"></span>
+            </button>
+            @if (_viewMenu)
+            {
+                <div class="tl-viewmenu-scrim" @onclick="() => _viewMenu = false"></div>
+                <div id="tl-viewmenu" class="tl-viewmenu-pop" role="group" aria-label="View options">
+                    <button type="button" class="btn btn-sm @(FiltersActive ? "btn-secondary" : "btn-outline-secondary") w-100 text-start"
+                            aria-expanded="@Ui.Aria(FiltersShown)" aria-controls="tl-filter-row"
+                            @onclick="() => { _showFilters = !_showFilters; _viewMenu = false; }">
+                        <span class="bi bi-funnel" aria-hidden="true"></span> @(FiltersShown ? "Hide filters" : "Filter…")@(FilterCount > 0 ? $" ({FilterCount} on)" : "")
+                    </button>
+                    @if (Case.DetectedAtUtc is not null)
+                    {
+                        @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
+                        <div class="tl-viewmenu-row">
+                            <span class="tl-viewmenu-label" id="tl-vm-times">Times</span>
+                            <div class="im-seg" role="group" aria-labelledby="tl-vm-times">
+                                <button type="button" class="btn btn-sm @(_tPlus ? "" : "active")" aria-pressed="@Ui.Aria(!_tPlus)" @onclick="() => _tPlus = false">Clock</button>
+                                <button type="button" class="btn btn-sm @(_tPlus ? "active" : "")" aria-pressed="@Ui.Aria(_tPlus)" @onclick="() => _tPlus = true"
+                                        title="Time since the case was detected (T+ detection)">T+</button>
+                            </div>
+                        </div>
+                    }
+                    <div class="tl-viewmenu-row">
+                        <span class="tl-viewmenu-label" id="tl-vm-order">Order</span>
+                        <div class="im-seg" role="group" aria-labelledby="tl-vm-order">
+                            <button type="button" class="btn btn-sm @(_tlOldestFirst ? "" : "active")" aria-pressed="@Ui.Aria(!_tlOldestFirst)" @onclick="() => _tlOldestFirst = false">Newest first</button>
+                            <button type="button" class="btn btn-sm @(_tlOldestFirst ? "active" : "")" aria-pressed="@Ui.Aria(_tlOldestFirst)" @onclick="() => _tlOldestFirst = true">Oldest first</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
         @if (ChangedSinceUtc is { } sinceChip)
         {
             @* INV-04: only what was added or changed since the viewer last had the case open. *@
@@ -1169,6 +1190,15 @@ else
     private string? _tlSource;
 
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
+    // UX-55: the View menu (filter, clock or T+, order), and whether the view differs from the default.
+    private bool _viewMenu;
+    private bool ViewCustomised => FiltersActive || _tPlus || _tlOldestFirst;
+
+    private void ViewMenuKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") _viewMenu = false;
+    }
+
     private bool _composerOpen;
 
     // Whether the composer is popped out (the page's data-tl-docked): set here when it's opened with the top of the timeline
