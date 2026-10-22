@@ -59,13 +59,23 @@
            whole circuit and drop the user into the "session lost" overlay, losing in-flight work. This boundary
            keeps the shell alive and shows a recover-in-place fallback. It resets on navigation (LocationChanged
            → Recover), and the fallback's "Reload the page" is the hard escape hatch. *@
+        @* A page loaded in full showed three times: prerendered, again when the circuit started (each part loading
+           afresh), and again when the display zone arrived (the rebuild above). So the page is shown once, when the
+           circuit is live and knows its zone; until then a placeholder. The prerendered page is still built (a page
+           that can't render fails on a first visit, as before) but not shown. *@
         <article id="main-content" tabindex="-1" class="content px-4" @key="_timeVersion">
-            <ErrorBoundary @ref="_errorBoundary">
-                <ChildContent>@Body</ChildContent>
-                <ErrorContent>
-                    <ErrorFallback Scope="ErrorFallback.ErrorScope.Page" />
-                </ErrorContent>
-            </ErrorBoundary>
+            @if (PageReady)
+            {
+                @Page
+            }
+            else
+            {
+                <LoadingBlock Rows="6" Label="Loading the page…" />
+                @if (!RendererInfo.IsInteractive)
+                {
+                    <div hidden inert>@Page</div>
+                }
+            }
         </article>
         @* RD-21: a second case's Briefing beside the page. BUG-465: ViewCases. *@
         <AuthorizeView Policy="@Policies.ViewCases">
@@ -106,6 +116,15 @@
     // same Changed event.
     private int _timeVersion;
 
+    private bool PageReady => RendererInfo.IsInteractive && TimeDisp.Initialized;
+
+    private RenderFragment Page => @<ErrorBoundary @ref="_errorBoundary">
+        <ChildContent>@Body</ChildContent>
+        <ErrorContent>
+            <ErrorFallback Scope="ErrorFallback.ErrorScope.Page" />
+        </ErrorContent>
+    </ErrorBoundary>;
+
     // REL-01: the boundary persists across page navigations (it isn't keyed by route), so once it has caught
     // an error it would keep showing the fallback even after the user navigates away. Recover on every
     // location change to clear a caught error and render the newly-navigated page. Recover() is a no-op when
@@ -134,13 +153,16 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        // The zone first: the page waits on it (PageReady); syncing the display preferences doesn't need to.
+        if (!TimeDisp.Initialized) await ReadDisplayZone();
         await StartDisplayPrefSync();
-        if (TimeDisp.Initialized) return;
+    }
+
+    private async Task ReadDisplayZone()
+    {
         try
         {
-            var zone = await JS.InvokeAsync<string>("imTime.zone");
-            var mode = await JS.InvokeAsync<string>("imTime.mode");
-            var clock = await JS.InvokeAsync<string>("imTime.clock");
+            var (zone, mode, clock) = await JS.InvokeAsync<string[]>("imTime.display") is [var z, var m, var c] ? (z, m, c) : ("UTC", "utc", "24");
             _firstZone = true;
             TimeDisp.Configure(zone, string.Equals(mode, "local", StringComparison.OrdinalIgnoreCase)
                 ? TimeDisplayMode.Local : TimeDisplayMode.Utc, clock == "12");
@@ -152,6 +174,8 @@
             TimeDisp.Configure(null, TimeDisplayMode.Utc);
         }
         finally { _firstZone = false; }
+        // The same zone as the default raises no Changed, and the page is still waiting on it.
+        StateHasChanged();
     }
 
     // BUG-509: the rebuild for the circuit's first display zone is still the page's first load, so the router's address

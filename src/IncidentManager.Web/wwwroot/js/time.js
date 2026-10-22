@@ -31,5 +31,7 @@ window.imTime = (function () {
     function zone() {
         try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; }
     }
-    return { mode: mode, setMode: setMode, zone: zone, clock: clock, setClock: setClock };
+    // The three at once: a page loaded in full waits on them, so one round trip, not three.
+    function display() { return [zone(), mode(), clock()]; }
+    return { mode: mode, setMode: setMode, zone: zone, clock: clock, setClock: setClock, display: display };
 })();
