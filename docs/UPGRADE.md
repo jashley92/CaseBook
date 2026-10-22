@@ -212,6 +212,35 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.17.0
+
+**One migration** adds five nullable columns to `Cases` (`RemovedAtUtc`, `RemovedBy`, `RemovedReason`, `RemovedNumber`,
+`PurgedAtUtc`); nothing is backfilled. **Row hashes move to format 8** (a case's removal and purge); every other record
+builds what it built, so existing rows keep verifying and nothing is upgraded. One new setting,
+`Retention:RemovedCaseDays` (30), under Administration › Records & evidence › Retention. Three new SIEM events: 5520
+*Case removed* (High), 5521 *Case removal undone* (Warning) and 5522 *Case purged* (High). One new background job,
+*Removed case purge*, daily.
+
+- **An archived case opened by mistake, or a bad import, can be removed** by an administrator: on the case, *Actions ›
+  Remove case…*, with a reason and the case number typed to confirm (never under a legal hold). It's left out of
+  everything at once: lists, Find, lookup by number, IOC matching, related cases, the Desk, the dashboards and exports.
+  It can be restored, archived as it was, for `Retention:RemovedCaseDays` from Administration › Records & evidence ›
+  *Removed cases*. After that (or at once with *Purge now…*, the number typed again) what was filed under it is
+  deleted, its evidence files' contents purged and its reports' files deleted; a stub stays, and its number is free
+  for another case. The audit trail is unchanged, and what it holds under the number stays the removed case's: the
+  number's next holder doesn't show it. See *Removing a case opened by mistake* in the administration guide.
+- **A case is opened when it was filed.** The New case form's *Detected* defaulted to when the page was opened, so a
+  form left open for a few hours filed a case detected hours before it was opened. Left as it is, it now takes the
+  time *Create case* is clicked.
+- **Detection is its own milestone on the timeline.** A case filed more than an hour after detection had its opening
+  moved back to the detection time, as "Detected; case opened as …", which read as the case opened then. Now
+  *Detected* (with the SIEM ID) is at the detected time, marked recorded later, and *Case opened as …* at creation,
+  saying how long after detection. Existing cases show it this way too; nothing stored changes.
+- **Long indicators no longer stretch the entity pickers**: a long value is shortened in the middle, in full on hover.
+  **A task's actions stay on one row** on the Tasks tab instead of wrapping.
+- **SQLite runs in WAL mode** (development and evaluation installs), so a read no longer waits on a write ("database is
+  locked" under load). SQL Server is unchanged.
+
 ### v1.16.0
 
 **No migrations and no new settings**: a release of how CaseBook looks and reads. Nothing about a case, its record or
