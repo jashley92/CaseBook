@@ -212,6 +212,15 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.17.1
+
+A fix to v1.17.0, with no migration and no setting changes.
+
+- **A page loaded or refreshed in full no longer blinks.** It showed three times: as first sent, again when the
+  browser's connection started (the timeline went blank and faded back in), and again once the browser's time zone was
+  known. The page area now shows a placeholder until the connection is up and knows the zone, then the page once.
+  Moving between pages in the app was never affected.
+
 ### v1.17.0
 
 **One migration** adds five nullable columns to `Cases` (`RemovedAtUtc`, `RemovedBy`, `RemovedReason`, `RemovedNumber`,
