@@ -75,8 +75,8 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release -p:Version="${GITHUB_REF_NAME#v}"
 
-      - name: Test
-        run: dotnet test --no-build -c Release --verbosity minimal
+      # No test run here: the gates job above ran the whole suite on this commit, and this job only starts once it passed
+      # (a third run, after main's CI and the gates, added about 5 minutes to every release and caught nothing new).
 
       - name: No un-migrated model changes (SQL Server + SQLite)
         run: |
