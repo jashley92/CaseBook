@@ -212,6 +212,44 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.18.0
+
+**Three migrations** add nullable columns, with nothing backfilled:
+- `TimelineEntries.MoreEvidenceIds` and `TimelineEntries.FormerEvidenceIds`
+- `Evidence.StoredEncrypted` and `Reports.StoredEncrypted`
+
+**Row hashes move to format 9.** A field is part of a row's hash only when it is set, so existing rows build exactly what they built and keep verifying.
+
+There is **one new SIEM event**, 5406, *Undelivered alert marked handled*. There are no setting changes.
+
+- **A timeline entry takes up to ten screenshots.** Paste or drop several into *Add to the timeline*; each one becomes its own evidence item, hashed and stored as before.
+  - The entry shows them as a row of thumbnails. The full-size view steps through them with Previous and Next or the arrow keys.
+  - Editing an entry can add screenshots or take one off. Taking one off is kept in the entry's history, and the evidence item itself is never deleted.
+- **Removing or restoring a case no longer raises a false integrity alarm.** The case was hashed without its data elements, so the record check reported tampering and sealing stopped.
+- **A database blip no longer ends every open session.** The bell, the command palette, the tab strip and the case-beside panel now keep their last value when a read fails.
+- **The kept `-deploy` folder is readable only by Administrators, SYSTEM and the site's app pool**, not by every signed-in user. It holds the answers file. An existing install is tightened on this upgrade.
+- **API tokens:**
+  - A new token picked to expire on a day now works through the end of that day (UTC). Existing tokens keep their stored expiry.
+  - The token list shows the UTC day the token was picked for.
+- **Evidence:**
+  - Each new evidence file and report records whether it was stored encrypted, so a plain file that happens to begin like an encrypted one is read as it is.
+  - A large upload that can't be matched to the file it began with now starts again instead of carrying on.
+  - Of two overlapping saves of how a file was collected, the second is refused instead of overwriting the first.
+- **Access and audit:**
+  - The access review counts the restricted cases an administrator without the Restricted right can't see, instead of naming them.
+  - Marking an undelivered alert handled is audited and sent to the SIEM.
+  - A sign-in whose AD groups weren't all resolved in time no longer saves a short role list.
+- **Smaller fixes:**
+  - Pasting into the popped-out timeline form works.
+  - The Markdown editor's Preview no longer renders raw HTML.
+  - Switching windows no longer restarts the idle clock.
+  - Stay on the unsaved-changes prompt now dismisses it, and a held jump no longer fires on a later visit.
+  - Unexpected errors are worded instead of shown raw.
+  - A config bundle that's missing a section is refused in words.
+  - A user id typed in different casing joins a case as the same assignment.
+  - The activity feed looks up a case's former numbers only 90 days back.
+  - The docs no longer promise SIEM event 5101 under IIS.
+
 ### v1.17.2
 
 A fix to v1.17.1, with no migration and no setting changes.
