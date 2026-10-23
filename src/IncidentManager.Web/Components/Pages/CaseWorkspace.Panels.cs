@@ -108,7 +108,7 @@ public partial class CaseWorkspace
         _offerTemplate = templateId;
         if (PhoneNowNext) await LeavePhonePane(() => SetTab("Tasks"));
         else await SetTab("Tasks");
-        if (!Showing("Tasks")) _offerTemplate = null;   // BUG-719: held for unsaved text
+        if (!Showing("Tasks") && _offerTemplate == templateId) _offerTemplate = null;   // BUG-719: held for unsaved text
     }
 
     // The gate meter in Next opens the Briefing's readiness section, where each check has its Fix.
@@ -196,7 +196,7 @@ public partial class CaseWorkspace
         await CloseEntityPanel();
         _timelineEntity = id;
         await SetTab("Timeline");
-        if (!Showing("Timeline")) _timelineEntity = null;   // BUG-719: held for unsaved text
+        if (!Showing("Timeline") && _timelineEntity == id) _timelineEntity = null;   // BUG-719: held for unsaved text
     }
 
     private async Task EntityPanelGoTo(string tab)

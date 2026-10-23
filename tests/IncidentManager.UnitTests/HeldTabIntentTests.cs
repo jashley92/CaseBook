@@ -27,7 +27,8 @@ public sealed partial class HeldTabIntentTests
                 found++;
                 var (field, tab, after) = (m.Groups["f"].Value, m.Groups["t"].Value, m.Groups["after"].Value);
                 var shown = tab == "Notes" ? "Timeline" : tab;
-                (after.Contains($"if (_activeTab != \"{shown}\") {field} = ") || after.Contains($"if (!Showing(\"{tab}\")) {field} = "))
+                (after.Contains($"if (_activeTab != \"{shown}\") {field} = ")
+                 || Regex.IsMatch(after, $@"if \(!Showing\(""{tab}""\)[^)]*\)\s*{field} = "))
                     .Should().BeTrue($"{file}: {field} must be dropped when the switch to {tab} is held");
             }
         found.Should().BeGreaterThan(5, "the gate Fix, the shortcuts and the panels set intents before switching");
