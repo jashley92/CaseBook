@@ -362,8 +362,15 @@ public sealed class EvidenceService
             if (s.Ended) throw new InvalidOperationException("That upload has already finished.");
             await StillAllowedAsync(s.CaseId, ct);
             var given = Sample(sample);
+            // BUG-716: name and size alone can't tell the file from another of the same name and size (a memory image
+            // taken again), and carrying on with it would splice two files into one record whose hash verifies forever.
+            // Without the first megabyte's fingerprint (the browser computes it only over HTTPS or on localhost) the upload
+            // isn't carried on: it's started again.
+            if (s.Sample is null || given is null)
+                throw new ArgumentException($"This upload of {s.FileName} can't be carried on: the browser couldn't fingerprint " +
+                    "the file, so it can't be told from another file with the same name and size. Discard it and upload the file again.");
             if (!string.Equals(fileName, s.FileName, StringComparison.Ordinal) || size != s.Size
-                || (s.Sample is not null && !string.Equals(given, s.Sample, StringComparison.Ordinal)))
+                || !string.Equals(given, s.Sample, StringComparison.Ordinal))
                 throw new ArgumentException($"That isn't the same file. Pick {s.FileName} ({s.Size:N0} bytes) to carry on, or discard the upload.");
             s.LastActivity = _clock.UtcNow;
             return new UploadResumed(s.Id, EvidenceUploadSessions.PartBytes, s.Parts, s.NextPart, s.Committed);

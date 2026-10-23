@@ -156,7 +156,8 @@ file is read back and its SHA-256 checked before it's recorded (`Evidence:ReadBa
 part-way is kept** (PROD-59): a network failure, the page closed, or the app restarting. Its state is saved beside its
 parts in `<store>\.incoming`, and the Evidence tab lists it under **Unfinished uploads** for the person who started
 it; they pick the same file again to carry on (it's checked by name, size and the SHA-256 of its first megabyte), or
-discard it. One resumed after a restart is read back in full when it completes, every part checked against the hash
+discard it. The browser computes that SHA-256 only over HTTPS (or on localhost), so over plain HTTP an upload can't be
+carried on and is started again (BUG-716). One resumed after a restart is read back in full when it completes, every part checked against the hash
 it arrived with, whatever `ReadBackCheck` says. Only **Cancel** deletes an upload at once; one with nothing sent for a
 day is deleted from `<store>\.incoming`.
 

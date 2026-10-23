@@ -454,6 +454,9 @@ public sealed class EvidenceStorageTests : IDisposable
         (await wrongBytes.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("isn't the same file");
         var wrongSize = () => svc.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length + 1, SampleOf(bytes));
         await wrongSize.Should().ThrowAsync<ArgumentException>();
+        // BUG-716: with no fingerprint (the browser computes it only over HTTPS), name and size can't tell it's the same file.
+        var unsampled = () => svc.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length, null);
+        (await unsampled.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("upload the file again");
 
         var resumed = await svc.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length, SampleOf(bytes));
         resumed.NextPart.Should().Be(2);
@@ -462,6 +465,21 @@ public sealed class EvidenceStorageTests : IDisposable
         await svc.AppendPartAsync(started.Id, 3, bytes.AsMemory(3 * Part, 500));
         (await svc.CompleteUploadAsync(started.Id)).Sha256.Should().Be(Sha(bytes));
         (await svc.UnfinishedUploadsAsync(caseId)).Should().BeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_upload_begun_without_a_fingerprint_isnt_carried_on(string provider /* BUG-716 */)
+    {
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        var svc = Service(database, Files());
+        var bytes = Random(2 * Part + 10);
+        var started = await svc.BeginUploadAsync(caseId, "memory.dmp", "", bytes.Length, null, null);   // over plain HTTP
+        await svc.AppendPartAsync(started.Id, 0, bytes.AsMemory(0, Part));
+
+        var resume = () => svc.ResumeUploadAsync(started.Id, "memory.dmp", bytes.Length, SampleOf(bytes));
+        (await resume.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("can't be carried on");
     }
 
     [Theory]

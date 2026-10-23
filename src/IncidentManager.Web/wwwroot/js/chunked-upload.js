@@ -43,7 +43,7 @@ window.imChunkedUpload = (function () {
     }
 
     // PROD-59: the SHA-256 of the file's first megabyte (hex), so a resume can tell it's the same file; null where the
-    // browser won't compute it (crypto.subtle needs HTTPS or localhost).
+    // browser won't compute it (crypto.subtle needs HTTPS or localhost), and then the server won't resume it (BUG-716).
     async function sample(file) {
         try {
             if (!(window.crypto && window.crypto.subtle)) return null;
