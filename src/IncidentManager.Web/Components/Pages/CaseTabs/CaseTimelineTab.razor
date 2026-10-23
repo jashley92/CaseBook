@@ -213,7 +213,9 @@
        Opened while the top of the timeline is scrolled out of view, it's docked at the bottom of the window instead:
        the same form, so the reader keeps their place and can read the entries while writing. *@
     @* Holds the composer's place while it's popped out from being scrolled away (imMotion.watchTimelineToolbar). *@
-    <div id="tl-composer-slot" aria-hidden="true"></div>
+    <div id="tl-composer-slot" aria-hidden="true">
+        <span class="tl-composer-slot-note"><span class="bi bi-layout-sidebar-reverse me-1"></span>Writing in the panel on the right</span>
+    </div>
     <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none")"
          role="region" aria-label="@(_tlEditId is null ? "Add to the timeline" : "Edit the entry")">
         <div class="card-body">

@@ -2765,6 +2765,11 @@ html[data-tl-docked] #timeline-dropzone:not(.d-none) { position: fixed; top: 0; 
     border-left: 1px solid var(--im-border-strong); background: var(--im-surface); box-shadow: var(--im-shadow-lg); }
 html[data-tl-docked] #timeline-dropzone > .card-body { display: flex; flex-direction: column; min-height: 100%; padding-bottom: 0; }
 .tl-docked-head { display: none; }
+/* The composer's place while it's popped out from being scrolled away (motion.js): a place being held, not a gap. */
+#tl-composer-slot:not(.is-holding) { display: none; }
+#tl-composer-slot.is-holding { display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+    border: 1px dashed var(--im-border-strong); border-radius: var(--im-radius-lg); color: var(--im-text-muted);
+    font-size: var(--im-text-sm); }
 html[data-tl-docked] .tl-docked-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
     margin: calc(-1 * var(--bs-card-spacer-y, 1rem)) calc(-1 * var(--bs-card-spacer-x, 1rem)) 0.75rem;
     padding: var(--im-space-4); border-bottom: 1px solid var(--im-border); position: sticky; top: calc(-1 * var(--bs-card-spacer-y, 1rem));
