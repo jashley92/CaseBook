@@ -33,7 +33,10 @@ flowchart TB
   domain, so a same-named group made in a trusted domain matches only a mapping written as `OTHER\Group`.
 - A user in no mapped group signs in successfully but has no permissions. Every page refuses them, and they land
   on `/access-denied`, which shows who they're signed in as and names the permission the page needed.
-- A failed Negotiate handshake is SIEM event 5101.
+- A failed Negotiate handshake is SIEM event 5101 only where the app does the handshake itself (Kestrel on its own).
+  Under IIS, as installed, IIS does it and refuses a failure with 401 before the app runs, so CaseBook never sees it:
+  failed Windows sign-ins are in the server's Windows Security log (4625) and the IIS log (401.1/401.2). Under IIS,
+  5101 carries rejected API tokens only.
 
 ### Development
 

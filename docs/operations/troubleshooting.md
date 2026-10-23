@@ -462,7 +462,8 @@ which usually names the folder's permissions.
 5. The queue (`Siem:QueueCapacity`) drops events under a flood; delivery is best effort and events in the queue
    are lost on restart. The audit chain remains the record. Diagnostics → **Delivery health** shows each transport's
    last good send, queue depth and drops since start.
-6. 5101 only appears with Windows authentication.
+6. Under IIS, 5101 carries rejected API tokens only: IIS refuses a failed Windows sign-in before CaseBook runs, so
+   look for those in the server's Security log (4625) and the IIS log (401.1/401.2).
 
 ### Syslog over TLS fails (CAP-33)
 

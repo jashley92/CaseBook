@@ -152,9 +152,11 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5901 | Diagnostics | Test event from **Administration → Diagnostics → Send test event**. Safe to ignore; use it to confirm the collector receives the stream |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never
-renumbered. **5101** fires on a failed **Windows (Negotiate) authentication handshake** (a production-only
-signal; the development auth handler never fails) and, with action `ApiTokenRejected`, on an unknown, expired or
-revoked **API token** (the detail carries the token's display prefix and source address, never the token).
+renumbered. **5101** fires, with action `ApiTokenRejected`, on an unknown, expired or revoked **API token** (the
+detail carries the token's display prefix and source address, never the token). It fires on a failed **Windows
+(Negotiate) handshake** only when the app does the handshake itself (Kestrel on its own); under IIS, as installed,
+IIS does it and refuses a failure before CaseBook runs, so watch the server's Windows Security log (event 4625) and
+the IIS log (401.1/401.2) for failed Windows sign-ins instead.
 **5202** fires when an in-app action is refused at the service layer for lack of a permission: the UI normally
 hides what a user can't do, so this marks a stale session (access removed while signed in) or a UI defect.
 Today it's emitted by case actions and by the role, settings and configuration-bundle services; refusals in other

@@ -362,7 +362,10 @@ if (useWindows)
 {
     builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate(options =>
     {
-        // F-18: a failed Windows (Kerberos/NTLM) handshake is a security signal for the SIEM stream (5101).
+        // F-18: a failed Windows (Kerberos/NTLM) handshake is a security signal for the SIEM stream (5101). BUG-709: only
+        // where this handler does the handshake itself (Kestrel on its own). Under IIS, as installed, IIS does it and
+        // answers a failure with 401 before the app runs (the handler defers to the server), so this never fires there:
+        // failed Windows sign-ins are in the server's Security log (4625) and the IIS log (401.1/401.2), not this stream.
         options.Events = new Microsoft.AspNetCore.Authentication.Negotiate.NegotiateEvents
         {
             OnAuthenticationFailed = ctx =>
