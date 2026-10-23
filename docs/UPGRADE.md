@@ -212,6 +212,15 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.17.2
+
+A fix to v1.17.1, with no migration and no setting changes.
+
+- **The timeline's popped-out form stays out.** Scrolled out of view, an open *Add to the timeline* form pops out at
+  the right. On a timeline only a little longer than the form, it popped out and went straight back, the page jumping
+  toward the top. Its place now keeps its height while it's out, so the page doesn't move; it goes back as its place
+  comes into view again, and while it's out its place says *Writing in the panel on the right*.
+
 ### v1.17.1
 
 A fix to v1.17.0, with no migration and no setting changes.
