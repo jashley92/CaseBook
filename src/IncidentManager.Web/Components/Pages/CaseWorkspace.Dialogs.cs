@@ -498,11 +498,15 @@ public partial class CaseWorkspace
                 // RD-11: the impact editor is in Things › Impact.
                 _pendingOverviewFix = checkKey;
                 await SetTab("Impact");
+                // BUG-703: held for unsaved text, the Briefing still showing would be handed the fix, pass it back here
+                // and raise the prompt again, for good (Stay could never dismiss it).
+                if (_activeTab != "Impact") _pendingOverviewFix = null;
                 break;
             default:
                 // The summary and the case record's details are on the Briefing, which opens the editor.
                 _pendingOverviewFix = checkKey;
                 await SetTab("Briefing");
+                if (_activeTab != "Briefing") _pendingOverviewFix = null;   // BUG-703: as above
                 break;
         }
     }
