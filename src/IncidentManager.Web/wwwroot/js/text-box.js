@@ -69,7 +69,8 @@ window.imTagAdd = (function () {
         if (/^([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$/i.test(v)) return ['FileHash'];
         if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return ['Account', 'EmailAddress'];
         // first.last and host.domain look alike: a familiar top-level domain puts Domain first, else Account.
-        if (/^[a-z0-9-]+(\[?\.\]?[a-z0-9-]+)+$/i.test(v))
+        const labels = v.replace(/\[?\.\]?/g, '.').split('.');   // dots, defanged or not, split the labels
+        if (labels.length > 1 && labels.every(l => /^[a-z0-9-]+$/i.test(l)))
             return /\.\]?(com|net|org|io|gov|edu|mil|co|uk|us|de|fr|ru|cn|info|biz|xyz|top|online|site|example|local|internal|corp)$/i.test(v)
                 ? ['Domain', 'Host', 'Account'] : ['Account', 'Host', 'Domain'];
         return ['Account', 'Host'];

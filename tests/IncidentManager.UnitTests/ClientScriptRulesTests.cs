@@ -9,7 +9,7 @@ namespace IncidentManager.UnitTests;
 /// Rules kept by the client scripts, checked on their source (there's no JS test runner): each names the defect it holds
 /// shut.
 /// </summary>
-public sealed class ClientScriptRulesTests
+public sealed partial class ClientScriptRulesTests
 {
     private static string Script(string name) =>
         File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Web", "wwwroot", "js", name));
@@ -36,7 +36,7 @@ public sealed class ClientScriptRulesTests
         var reset = onActivity.IndexOf("last = Date.now();", StringComparison.Ordinal);
         skip.Should().BeGreaterThan(-1, "a visibility change is only a prompt to act on a boundary already passed");
         reset.Should().BeGreaterThan(skip, "it returns before the clock is reset");
-        Regex.IsMatch(onActivity, @"tick\(\);\s*return;").Should().BeTrue("an overdue boundary is still acted on (BUG-550)");
+        TickThenReturn().IsMatch(onActivity).Should().BeTrue("an overdue boundary is still acted on (BUG-550)");
     }
 
     [Fact]
@@ -49,10 +49,22 @@ public sealed class ClientScriptRulesTests
 
         // The same scheme allow-list as MarkdownService.IsSafeUrl.
         var server = File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Application", "Content", "MarkdownService.cs"));
-        static IEnumerable<string> Quoted(string list) => Regex.Matches(list, "[\"']([^\"']+)[\"']").Select(m => m.Groups[1].Value);
-        var serverSchemes = Quoted(Regex.Match(server, @"AllowedSchemes = \{([^}]*)\}").Groups[1].Value).ToList();
-        var clientSchemes = Quoted(Regex.Match(js, @"allowedSchemes = \[([^\]]*)\]").Groups[1].Value).ToList();
+        static IEnumerable<string> Quoted(string list) => QuotedItem().Matches(list).Select(m => m.Groups[1].Value);
+        var serverSchemes = Quoted(ServerSchemes().Match(server).Groups[1].Value).ToList();
+        var clientSchemes = Quoted(ClientSchemes().Match(js).Groups[1].Value).ToList();
         serverSchemes.Should().NotBeEmpty();
         clientSchemes.Should().BeEquivalentTo(serverSchemes);
     }
+
+    [GeneratedRegex(@"tick\(\);\s*return;")]
+    private static partial Regex TickThenReturn();
+
+    [GeneratedRegex("[\"']([^\"']+)[\"']")]
+    private static partial Regex QuotedItem();
+
+    [GeneratedRegex(@"AllowedSchemes = \{([^}]*)\}")]
+    private static partial Regex ServerSchemes();
+
+    [GeneratedRegex(@"allowedSchemes = \[([^\]]*)\]")]
+    private static partial Regex ClientSchemes();
 }
