@@ -165,9 +165,8 @@ else
         _minting = true;
         try
         {
-            var expiry = new DateTimeOffset(DateTime.SpecifyKind(_expiresDate, DateTimeKind.Utc), TimeSpan.Zero);
             var name = _name;
-            _created = await Tokens.CreatePersonalAsync(name, _selectedRoles, expiry);
+            _created = await Tokens.CreatePersonalAsync(name, _selectedRoles, DateOnly.FromDateTime(_expiresDate));
             _copied = false;
             _name = DraftText.ClearIfUnchanged(_name, name);   // BUG-601: a name typed for the next one stays
             await LoadAsync();

@@ -104,12 +104,12 @@ public sealed class ApiTokenService
 
     /// <summary>Admin-only: create a named system token granted a set of roles.</summary>
     public async Task<ApiTokenCreated> CreateSystemAsync(string name, IEnumerable<string> roleNames,
-        DateTimeOffset expiresAtUtc, CancellationToken ct = default)
+        DateOnly expiresOn, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ApiTokenService>(_user, _siem);
         var n = Clean(name);
         var roles = CleanRoles(roleNames);
-        ValidateExpiry(expiresAtUtc, MaxSystemLifetime);
+        var expiresAtUtc = ValidateExpiry(expiresOn, MaxSystemLifetime);
         if (roles.Count == 0) throw new ArgumentException("Grant the token at least one role.");
         // BUG-567: the role check with the save, under the gate a role delete (which refuses while a token holds the role)
         // and an import hold, so a token can't be left holding a deleted role that a later role of that name would fill.
@@ -122,13 +122,13 @@ public sealed class ApiTokenService
     /// <summary>Any user: create a personal token. Roles must be a subset of the caller's own roles, so the
     /// token can never grant more than the user has; API actions attribute to the user.</summary>
     public async Task<ApiTokenCreated> CreatePersonalAsync(string name, IEnumerable<string> roleNames,
-        DateTimeOffset expiresAtUtc, CancellationToken ct = default)
+        DateOnly expiresOn, CancellationToken ct = default)
     {
         if (!_user.IsAuthenticated)
             throw new ForbiddenException(Permission.ViewCases, nameof(CreatePersonalAsync));
         var n = Clean(name);
         var roles = CleanRoles(roleNames);
-        ValidateExpiry(expiresAtUtc, MaxPersonalLifetime);
+        var expiresAtUtc = ValidateExpiry(expiresOn, MaxPersonalLifetime);
         if (roles.Count == 0) throw new ArgumentException("Select at least one of your roles for the token.");
 
         var mine = _user.RoleNames.ToHashSet(StringComparer.OrdinalIgnoreCase);   // S-14: custom roles count too
@@ -222,14 +222,20 @@ public sealed class ApiTokenService
     public static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
-    private void ValidateExpiry(DateTimeOffset expiresAtUtc, TimeSpan maxLifetime)
+    /// <summary>BUG-717: a token picked to expire on day D works through the end of D (23:59:59.9999999 UTC), not until
+    /// its start; the lifetime cap counts whole days from today (UTC). Returns the instant it stops working.</summary>
+    private DateTimeOffset ValidateExpiry(DateOnly expiresOn, TimeSpan maxLifetime)
     {
+        var expiresAtUtc = EndOfUtcDay(expiresOn);
         if (expiresAtUtc <= _clock.UtcNow)
             throw new ArgumentException("The expiry date must be in the future.");
-        // S-11: a day's grace so picking the last allowed date in the form (midnight UTC) is never refused.
-        if (expiresAtUtc > _clock.UtcNow + maxLifetime + TimeSpan.FromDays(1))
+        if (expiresOn > DateOnly.FromDateTime(_clock.UtcNow.UtcDateTime).AddDays((int)maxLifetime.TotalDays))
             throw new ArgumentException($"A token can last at most {maxLifetime.TotalDays:0} days. Re-issue it before it lapses.");
+        return expiresAtUtc;
     }
+
+    /// <summary>The last instant of a UTC calendar day.</summary>
+    public static DateTimeOffset EndOfUtcDay(DateOnly day) => new(day.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero);
 
     private static string Clean(string name)
     {

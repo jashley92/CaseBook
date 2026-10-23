@@ -171,7 +171,7 @@ public sealed class ImportWriterGateTests : IDisposable
         // An empty database has no SysAdmin role to map to.
         "RoleService.AddMappingAsync(String, String, CancellationToken)",
         // Writes ApiTokens, which the import doesn't; its gate covers the role check (the hold test shows it waits).
-        "ApiTokenService.CreateSystemAsync(String, IEnumerable`1, DateTimeOffset, CancellationToken)",
+        "ApiTokenService.CreateSystemAsync(String, IEnumerable`1, DateOnly, CancellationToken)",
     };
 
     /// <summary>What the config import writes, by entity, and the gate a writer of it holds while it saves.</summary>
@@ -327,7 +327,7 @@ public sealed class ImportWriterGateTests : IDisposable
         var outcomes = (IReadOnlyList<CaseOutcomeRow>)[new CaseOutcomeRow(null, "Probe outcome", null)];
         var elements = (IReadOnlyList<DataElementRow>)[new DataElementRow(null, "Probe element", null)];
         var sysAdmin = new[] { "SysAdmin" };
-        var expires = _clock.UtcNow.AddDays(30);
+        var expires = DateOnly.FromDateTime(_clock.UtcNow.UtcDateTime).AddDays(30);
         var probes = new Dictionary<MethodInfo, Func<Probe>>();
         void Add<TService>(Func<IAppDbContextFactory, TService> make, Expression<Func<TService, Task>> call) =>
             probes.Add(((MethodCallExpression)call.Body).Method, Svc(make, call.Compile()));

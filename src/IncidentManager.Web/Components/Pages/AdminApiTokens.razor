@@ -201,8 +201,7 @@ else
         _minting = true;
         try
         {
-            var expiry = new DateTimeOffset(DateTime.SpecifyKind(_expiresDate, DateTimeKind.Utc), TimeSpan.Zero);
-            _created = await Tokens.CreateSystemAsync(_name, _selectedRoles, expiry);
+            _created = await Tokens.CreateSystemAsync(_name, _selectedRoles, DateOnly.FromDateTime(_expiresDate));
             _copied = false;
             _creating = false;
             await LoadAsync();

@@ -30,6 +30,9 @@ public sealed class ApiTokenTests : IDisposable
     private readonly HashChainService _hasher = new();
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero));
 
+    /// <summary>The UTC day <paramref name="days"/> after today on the test clock: what the token forms pick.</summary>
+    private DateOnly Day(int days) => DateOnly.FromDateTime(_clock.UtcNow.UtcDateTime).AddDays(days);
+
     public ApiTokenTests()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
@@ -75,7 +78,7 @@ public sealed class ApiTokenTests : IDisposable
     {
         await using var db = NewContext();
         var svc = NewService(db, Admin());
-        var created = await svc.CreateSystemAsync("XSIAM", ["Analyst"], _clock.UtcNow.AddDays(30));
+        var created = await svc.CreateSystemAsync("XSIAM", ["Analyst"], Day(30));
         var row = await db.ApiTokens.AsNoTracking().SingleAsync();
 
         var entry = await db.AuditLog.AsNoTracking().SingleAsync(a => a.EntityType == nameof(ApiToken) && a.EntityId == row.Id.ToString());
@@ -93,7 +96,7 @@ public sealed class ApiTokenTests : IDisposable
     {
         await using var db = NewContext();
         var admin = Admin();
-        var made = await NewService(db, admin).CreateSystemAsync("XSIAM", ["Analyst"], _clock.UtcNow.AddDays(30));
+        var made = await NewService(db, admin).CreateSystemAsync("XSIAM", ["Analyst"], Day(30));
 
         var demoted = new TestCurrentUser { UserId = admin.UserId, DisplayName = admin.DisplayName, RoleSet = [AppRole.Analyst] };
         var svc = NewService(db, demoted);
@@ -120,7 +123,7 @@ public sealed class ApiTokenTests : IDisposable
         var svc = NewService(db, Admin());
 
         var created = await svc.CreateSystemAsync("XSIAM-Prod", ["IncidentCommander"],
-            _clock.UtcNow.AddDays(30));
+            Day(30));
 
         var auth = await svc.AuthenticateAsync(created.Plaintext);
         auth.Should().NotBeNull();
@@ -141,15 +144,16 @@ public sealed class ApiTokenTests : IDisposable
         (await svc.AuthenticateAsync("cbk_not-a-real-token")).Should().BeNull();
 
         // Revoked
-        var revoked = await svc.CreateSystemAsync("ToRevoke", ["Analyst"], _clock.UtcNow.AddDays(30));
+        var revoked = await svc.CreateSystemAsync("ToRevoke", ["Analyst"], Day(30));
         var revokedId = (await svc.ListAllAsync()).Single(t => t.Name == "ToRevoke").Id;
         await svc.RevokeAsync(revokedId);
         (await svc.AuthenticateAsync(revoked.Plaintext)).Should().BeNull();
 
-        // Expired: valid now, but not after the clock passes its expiry.
-        var shortLived = await svc.CreateSystemAsync("ShortLived", ["Analyst"], _clock.UtcNow.AddHours(1));
+        // Expired: valid through the end of the day it was picked for (BUG-717), but not after.
+        var shortLived = await svc.CreateSystemAsync("ShortLived", ["Analyst"], Day(1));
+        _clock.UtcNow = new DateTimeOffset(Day(1).ToDateTime(new TimeOnly(23, 59, 59)), TimeSpan.Zero);
         (await svc.AuthenticateAsync(shortLived.Plaintext)).Should().NotBeNull();
-        _clock.UtcNow = _clock.UtcNow.AddHours(2);
+        _clock.UtcNow = new DateTimeOffset(Day(1).AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         (await svc.AuthenticateAsync(shortLived.Plaintext)).Should().BeNull();
     }
 
@@ -160,10 +164,10 @@ public sealed class ApiTokenTests : IDisposable
         var analyst = Analyst();
         var svc = NewService(db, analyst);
 
-        var tooMuch = async () => await svc.CreatePersonalAsync("mine", ["SysAdmin"], _clock.UtcNow.AddDays(30));
+        var tooMuch = async () => await svc.CreatePersonalAsync("mine", ["SysAdmin"], Day(30));
         await tooMuch.Should().ThrowAsync<ArgumentException>();
 
-        var created = await svc.CreatePersonalAsync("mine", ["Analyst"], _clock.UtcNow.AddDays(30));
+        var created = await svc.CreatePersonalAsync("mine", ["Analyst"], Day(30));
         var auth = await svc.AuthenticateAsync(created.Plaintext);
         auth!.OwnerUserId.Should().Be("analyst1"); // attributes to the user
         auth.Permissions.Should().Contain(Permission.EditCases);
@@ -179,7 +183,7 @@ public sealed class ApiTokenTests : IDisposable
         analyst.CustomRoleNames = ["Insider Response"];
         var svc = NewService(db, analyst);
 
-        var created = await svc.CreatePersonalAsync("mine", ["Insider Response"], _clock.UtcNow.AddDays(30));
+        var created = await svc.CreatePersonalAsync("mine", ["Insider Response"], Day(30));
 
         created.Token.Roles.Should().Equal("Insider Response");
     }
@@ -220,11 +224,11 @@ public sealed class ApiTokenTests : IDisposable
     {
         // S-11: personal ≤ 90 days, system ≤ 1 year.
         await using var db = NewContext();
-        await NewService(db, Analyst()).Invoking(s => s.CreatePersonalAsync("long", ["Analyst"], _clock.UtcNow.AddDays(120)))
+        await NewService(db, Analyst()).Invoking(s => s.CreatePersonalAsync("long", ["Analyst"], Day(120)))
             .Should().ThrowAsync<ArgumentException>().WithMessage("*90 days*");
-        await NewService(db, Admin()).Invoking(s => s.CreateSystemAsync("Forever", ["Analyst"], _clock.UtcNow.AddYears(3)))
+        await NewService(db, Admin()).Invoking(s => s.CreateSystemAsync("Forever", ["Analyst"], Day(3 * 365)))
             .Should().ThrowAsync<ArgumentException>().WithMessage("*365 days*");
-        (await NewService(db, Admin()).CreateSystemAsync("Annual", ["Analyst"], _clock.UtcNow.AddDays(365))).Plaintext
+        (await NewService(db, Admin()).CreateSystemAsync("Annual", ["Analyst"], Day(365))).Plaintext
             .Should().StartWith("cbk_");
     }
 
@@ -250,7 +254,7 @@ public sealed class ApiTokenTests : IDisposable
         var owner = Analyst();
         owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
         var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(), users: mirror);
-        var created = await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30));
+        var created = await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], Day(30));
 
         (await svc.AuthenticateAsync(created.Plaintext))!.Permissions.Should().Contain(Permission.ApproveReports);
 
@@ -270,12 +274,12 @@ public sealed class ApiTokenTests : IDisposable
     {
         await using var db = NewContext();
         var svc = NewService(db, Admin());
-        await svc.CreateSystemAsync("Splunk SOAR", ["Analyst"], _clock.UtcNow.AddDays(30));
+        await svc.CreateSystemAsync("Splunk SOAR", ["Analyst"], Day(30));
 
         foreach (var alike in new[] { "Splunk-SOAR", "splunk soar", "Splunk SOAR" })
-            await svc.Invoking(s => s.CreateSystemAsync(alike, ["Analyst"], _clock.UtcNow.AddDays(30)))
+            await svc.Invoking(s => s.CreateSystemAsync(alike, ["Analyst"], Day(30)))
                 .Should().ThrowAsync<ArgumentException>();
-        (await svc.CreateSystemAsync("Splunk SOAR 2", ["Analyst"], _clock.UtcNow.AddDays(30))).Token.Name.Should().Be("Splunk SOAR 2");
+        (await svc.CreateSystemAsync("Splunk SOAR 2", ["Analyst"], Day(30))).Token.Name.Should().Be("Splunk SOAR 2");
     }
 
     [Fact]
@@ -283,7 +287,7 @@ public sealed class ApiTokenTests : IDisposable
     {
         await using var db = NewContext();
         var svc = NewService(db, Analyst());
-        var act = async () => await svc.CreateSystemAsync("Nope", ["Analyst"], _clock.UtcNow.AddDays(30));
+        var act = async () => await svc.CreateSystemAsync("Nope", ["Analyst"], Day(30));
         await act.Should().ThrowAsync<ForbiddenException>();
     }
 
@@ -292,7 +296,7 @@ public sealed class ApiTokenTests : IDisposable
     {
         // Administration → API tokens requires Administer; the service asserts it too, for any other caller.
         await using var db = NewContext();
-        await NewService(db, Admin()).CreateSystemAsync("Integration", ["Analyst"], _clock.UtcNow.AddDays(30));
+        await NewService(db, Admin()).CreateSystemAsync("Integration", ["Analyst"], Day(30));
 
         var manager = new TestCurrentUser { UserId = "mgr1", RoleSet = [AppRole.Manager] };
         await NewService(db, manager).Invoking(s => s.ListAllAsync()).Should().ThrowAsync<ForbiddenException>();
@@ -300,11 +304,23 @@ public sealed class ApiTokenTests : IDisposable
     }
 
     [Fact]
+    public async Task A_token_picked_to_expire_on_a_day_works_through_the_end_of_that_day(/* BUG-717 */)
+    {
+        await using var db = NewContext();
+        var made = await NewService(db, Analyst()).CreatePersonalAsync("mine", ["Analyst"], Day(90));
+        (await NewService(db, Admin()).ListAllAsync()).Single(t => t.Name == "mine").ExpiresAtUtc
+            .Should().Be(new DateTimeOffset(Day(90).ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero));
+        await NewService(db, Analyst()).Invoking(s => s.CreatePersonalAsync("long", ["Analyst"], Day(91)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*90 days*");
+        made.Plaintext.Should().StartWith("cbk_");
+    }
+
+    [Fact]
     public async Task Expiry_must_be_in_the_future()
     {
         await using var db = NewContext();
         var svc = NewService(db, Admin());
-        var act = async () => await svc.CreateSystemAsync("Past", ["Analyst"], _clock.UtcNow.AddDays(-1));
+        var act = async () => await svc.CreateSystemAsync("Past", ["Analyst"], Day(-1));
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
@@ -343,7 +359,7 @@ public sealed class ApiTokenTests : IDisposable
         var owner = Analyst();
         owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
         var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(), users: new MirrorDirectory(), owners: ad);
-        var token = (await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30))).Plaintext;
+        var token = (await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], Day(30))).Plaintext;
 
         (await svc.AuthenticateAsync(token))!.Permissions.Should().Contain(Permission.ApproveReports);
 
@@ -383,7 +399,7 @@ public sealed class ApiTokenTests : IDisposable
         var owner = Analyst();
         owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
         var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(), users: new MirrorDirectory(), owners: ad);
-        var token = (await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30))).Plaintext;
+        var token = (await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], Day(30))).Plaintext;
         (await svc.AuthenticateAsync(token))!.Permissions.Should().Contain(Permission.ApproveReports);
 
         groups.CommandersMapped = false;
