@@ -77,7 +77,7 @@ public sealed class ActivityFeedTests : IDisposable
         await svc.CreateAsync(Req("Beta"));
         await svc.AddNoteAsync(alpha.Id, "First analyst observation");
 
-        var feed = new ActivityFeedService(NewFactory(), _user, new StubUserDirectory());
+        var feed = new ActivityFeedService(NewFactory(), _user, new StubUserDirectory(), _clock);
         var items = await feed.RecentAsync(20);
 
         items.Should().NotBeEmpty();
@@ -99,10 +99,27 @@ public sealed class ActivityFeedTests : IDisposable
         await svc.AddNoteAsync(alpha.Id, "Before the rename");
         await svc.RenumberAsync(alpha.Id, "IR-2026-ALPHA");
 
-        var items = await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory()).RecentAsync(20);
+        var items = await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory(), _clock).RecentAsync(20);
 
         items.Should().Contain(i => i.Summary.Contains("note") && i.CaseId == alpha.Id && i.CaseNumber == "IR-2026-ALPHA");
         items.Select(i => i.Sequence).Should().BeInDescendingOrder();
+    }
+
+    [Fact]
+    public async Task Rows_under_a_former_number_are_looked_for_only_ninety_days_back(/* BUG-710 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = await svc.CreateAsync(Req("Alpha"));
+        await svc.AddNoteAsync(alpha.Id, "Before the rename");
+        await svc.RenumberAsync(alpha.Id, "IR-2026-ALPHA");
+        var feed = new ActivityFeedService(NewFactory(), _user, new StubUserDirectory(), _clock);
+
+        _clock.UtcNow += ActivityFeedService.FormerNumbersLookback - TimeSpan.FromDays(1);
+        (await feed.RecentAsync(20)).Should().Contain(i => i.Summary.Contains("note") && i.CaseId == alpha.Id);
+
+        _clock.UtcNow += TimeSpan.FromDays(2);
+        (await feed.RecentAsync(20)).Should().NotContain(i => i.Summary.Contains("note"));
     }
 
     [Fact]
@@ -114,13 +131,13 @@ public sealed class ActivityFeedTests : IDisposable
         _clock.UtcNow = _clock.UtcNow.AddMinutes(1);
         await svc.ChangeSeverityAsync(alpha.Id, Severity.High, "Scope grew");
 
-        var feed = new ActivityFeedService(NewFactory(), _user, new StubUserDirectory());
+        var feed = new ActivityFeedService(NewFactory(), _user, new StubUserDirectory(), _clock);
         (await feed.RecentAsync(20)).Select(i => i.Summary).Should().Equal("Changed the severity", "Added the case");
 
         (await feed.RecentAsync(20, othersOnly: true)).Should().BeEmpty();
         var colleague = new TestCurrentUser { UserId = "colleague" };
         colleague.RoleSet = [AppRole.SysAdmin];
-        (await new ActivityFeedService(NewFactory(), colleague, new StubUserDirectory()).RecentAsync(20, othersOnly: true))
+        (await new ActivityFeedService(NewFactory(), colleague, new StubUserDirectory(), _clock).RecentAsync(20, othersOnly: true))
             .Should().HaveCount(2);
     }
 
@@ -143,12 +160,12 @@ public sealed class ActivityFeedTests : IDisposable
         _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
         await theirs.AddNoteAsync(alpha.Id, "Colleague's note");
 
-        var (count, people) = await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory())
+        var (count, people) = await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory(), _clock)
             .ChangesSinceAsync(alpha.Id, lastViewed);
 
         count.Should().BeGreaterThan(0);
         people.Should().Equal("colleague");
-        (await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory())
+        (await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory(), _clock)
             .ChangesSinceAsync(alpha.Id, _clock.UtcNow)).Count.Should().Be(0);
     }
 
@@ -174,7 +191,7 @@ public sealed class ActivityFeedTests : IDisposable
         var factory2 = new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection).Options);
 
-        var feed = new ActivityFeedService(factory2, analyst, new StubUserDirectory());
+        var feed = new ActivityFeedService(factory2, analyst, new StubUserDirectory(), _clock);
         var items = await feed.RecentAsync(20);
 
         items.Should().NotContain(i => i.CaseId == restrictedId);

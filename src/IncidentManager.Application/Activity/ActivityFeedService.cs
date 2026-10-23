@@ -26,12 +26,18 @@ public sealed class ActivityFeedService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IUserDirectory _users;
+    private readonly IClock _clock;
 
-    public ActivityFeedService(IAppDbContextFactory factory, ICurrentUser user, IUserDirectory users)
+    /// <summary>BUG-710: how far back the feed looks for rows under a number a case no longer holds, when the visible
+    /// activity doesn't fill the window: a renumbering older than this isn't recent activity.</summary>
+    public static readonly TimeSpan FormerNumbersLookback = TimeSpan.FromDays(90);
+
+    public ActivityFeedService(IAppDbContextFactory factory, ICurrentUser user, IUserDirectory users, IClock clock)
     {
         _factory = factory;
         _user = user;
         _users = users;
+        _clock = clock;
     }
 
     /// <summary>
@@ -90,10 +96,14 @@ public sealed class ActivityFeedService
         // before it was renumbered) is that case's too (WF-99). Those rows are matched to the case through its own
         // audit rows, which carry each number it held, and shown under its current number.
         // Only rows newer than the oldest the window above holds can come into it, so with a full window the scan stops
-        // there (without one, the query above has already read as far back).
+        // there. Without one, BUG-710: it reaches back only FormerNumbersLookback (AtUtc is indexed), not the whole log.
         long? floor = rows.Count >= take * 2 ? rows.Min(r => r.Sequence) : null;
-        var former = await db.AuditLog.AsNoTracking().HeldNow(db)
-            .Where(a => (floor == null || a.Sequence > floor) && a.CaseNumber != null
+        var reach = _clock.UtcNow - FormerNumbersLookback;
+        var since = floor is { } f
+            ? db.AuditLog.AsNoTracking().HeldNow(db).Where(a => a.Sequence > f)
+            : db.AuditLog.AsNoTracking().HeldNow(db).Where(a => a.AtUtc > reach);
+        var former = await since
+            .Where(a => a.CaseNumber != null
                         && !db.Cases.Any(c => c.CaseNumber == a.CaseNumber) && (!othersOnly || a.Actor != me)
                         && a.Reason != Integrity.IntegrityUpkeep.Reason)
             .OrderByDescending(a => a.Sequence)
