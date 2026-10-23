@@ -116,10 +116,31 @@ function Sync-CaseBookAnonymousCarveOuts {
     return $results
 }
 
+function Get-CaseBookAppPoolSid([string] $SiteName) {
+    # The SID the site's app pool runs as, or $null when the site, pool or account can't be resolved.
+    try {
+        if (-not $SiteName -or -not (Test-Path "IIS:\Sites\$SiteName")) { return $null }
+        $pool = (Get-ItemProperty "IIS:\Sites\$SiteName" -Name applicationPool)
+        if ($pool -isnot [string]) { $pool = $pool.Value }
+        if (-not $pool) { return $null }
+        $type = [string](Get-ItemProperty "IIS:\AppPools\$pool" -Name processModel.identityType)
+        switch ($type) {
+            'LocalSystem'    { return New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18') }
+            'LocalService'   { return New-Object System.Security.Principal.SecurityIdentifier('S-1-5-19') }
+            'NetworkService' { return New-Object System.Security.Principal.SecurityIdentifier('S-1-5-20') }
+            'SpecificUser'   { $account = [string](Get-ItemProperty "IIS:\AppPools\$pool" -Name processModel.userName) }
+            default          { $account = "IIS AppPool\$pool" }   # ApplicationPoolIdentity
+        }
+        if (-not $account) { return $null }
+        return (New-Object System.Security.Principal.NTAccount($account)).Translate([System.Security.Principal.SecurityIdentifier])
+    } catch { return $null }
+}
+
 function Publish-CaseBookDeployScripts([string] $SourceDeployDir, [string] $SitePath, [string] $SiteName) {
     # PROD-50: keep a copy of the deploy scripts beside the site (<site parent>\<site folder>-deploy), so the next upgrade is
     # one command (Upgrade-CaseBook.ps1 -Version vX.Y.Z) and Administration > Updates can show it. Administrators and
-    # SYSTEM may change the folder; everyone else, the app-pool identity included, may only read it. Never the data
+    # SYSTEM may change the folder; the site's app-pool identity may only read it, and no one else may open it (BUG-704:
+    # it holds the answers file, which names the AD role groups, SQL host and service accounts). Never the data
     # root: the app pool can write there, and these scripts are run elevated. Returns the folder, or $null.
     # WF-71: one folder per site (C:\inetpub\CaseBook -> CaseBook-deploy), so two sites under one parent don't share it, and
     # site.txt names the IIS site, so the command Administration > Updates shows upgrades this site and no other.
@@ -140,9 +161,15 @@ function Publish-CaseBookDeployScripts([string] $SourceDeployDir, [string] $Site
     $none    = [System.Security.AccessControl.PropagationFlags]::None
     $acl = New-Object System.Security.AccessControl.DirectorySecurity
     $acl.SetAccessRuleProtection($true, $false)   # no inherited rights
-    foreach ($r in @(@('S-1-5-32-544', 'FullControl'), @('S-1-5-18', 'FullControl'), @('S-1-5-11', 'ReadAndExecute'))) {
-        $sid = New-Object System.Security.Principal.SecurityIdentifier($r[0])   # Administrators, SYSTEM, Authenticated Users
+    foreach ($r in @(@('S-1-5-32-544', 'FullControl'), @('S-1-5-18', 'FullControl'))) {
+        $sid = New-Object System.Security.Principal.SecurityIdentifier($r[0])   # Administrators, SYSTEM
         $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $r[1], $inherit, $none, 'Allow')))
+    }
+    $poolSid = Get-CaseBookAppPoolSid -SiteName $SiteName
+    if ($poolSid) {
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($poolSid, 'ReadAndExecute', $inherit, $none, 'Allow')))
+    } else {
+        Write-Warning "Couldn't resolve the app-pool identity for site '$SiteName'; $target is readable by Administrators and SYSTEM only."
     }
     Set-Acl -Path $target -AclObject $acl
     return $target

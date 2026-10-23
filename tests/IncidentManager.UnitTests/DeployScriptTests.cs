@@ -8,6 +8,19 @@ namespace IncidentManager.UnitTests;
 public partial class DeployScriptTests
 {
     [Fact]
+    public void The_kept_deploy_folder_is_not_readable_by_every_signed_in_user(/* BUG-704 */)
+    {
+        // The kept copy holds the answers file, so only Administrators, SYSTEM and the site's app pool may read it.
+        var lib = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "lib", "CaseBookIis.ps1"));
+        var start = lib.IndexOf("function Publish-CaseBookDeployScripts", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1);
+        var end = lib.IndexOf("\nfunction ", start + 1, StringComparison.Ordinal);
+        var body = lib[start..(end < 0 ? lib.Length : end)];
+        body.Should().NotContain("S-1-5-11", "Authenticated Users must not be granted read on the kept deploy folder");
+        body.Should().Contain("Get-CaseBookAppPoolSid", "the app pool is granted read by its own identity");
+    }
+
+    [Fact]
     public void The_deploy_scripts_are_plain_ascii(/* REV-79 */)
     {
         // Windows PowerShell 5.1 reads a BOM-less script in the ANSI code page, so a non-ASCII character (an em dash) turns
