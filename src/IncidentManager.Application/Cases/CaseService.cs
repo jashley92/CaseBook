@@ -3979,8 +3979,10 @@ public sealed class CaseService
     {
         Require();
         using var db = _factory.CreateDbContext();
-        var times = await Scoped(db.Cases.AsNoTracking()).Where(c => c.Id == caseId)
-                        .Select(c => new { c.OccurredAtUtc, c.DetectedAtUtc }).FirstOrDefaultAsync(ct)
+        // BUG-718: the case is loaded tracked, as the other evidence writes load it, so the save checks and renews its edit
+        // version: of two saves made from the same collection only the first lands (the stamp check below is a read, so
+        // two overlapping saves both passed it, and the second overwrote the first unannounced).
+        var times = await Scoped(db.Cases).FirstOrDefaultAsync(c => c.Id == caseId, ct)
                     ?? throw new InvalidOperationException("Case not found or not accessible.");
         var ev = await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId && e.CaseId == caseId, ct)
                  ?? throw new InvalidOperationException("That evidence isn't on this case.");

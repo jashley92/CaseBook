@@ -367,4 +367,43 @@ public sealed class EvidenceCollectionTests : IDisposable
         var elsewhere = () => Cases(database).RecordEvidenceCollectionAsync(other, id, new EvidenceCollection(null, "WKS-1", null));
         (await elsewhere.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("isn't on this case");
     }
+    /// <summary>Runs <paramref name="meanwhile"/> the first time the service asks the time: in the collection save, after its
+    /// stale-edit check and before its save, which is where an overlapping save lands.</summary>
+    private sealed class MeanwhileClock(DateTimeOffset now, Func<Task> meanwhile) : IncidentManager.Application.Abstractions.IClock
+    {
+        private int _asked;
+        public DateTimeOffset UtcNow
+        {
+            get
+            {
+                if (Interlocked.Exchange(ref _asked, 1) == 0) meanwhile().GetAwaiter().GetResult();
+                return now;
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Of_two_overlapping_collection_saves_only_the_first_lands(string provider /* BUG-718 */)
+    {
+        var (database, caseId) = await OpenAsync(provider);
+        using var _ = database;
+        Guid id;
+        await using (var s = Bytes("disk"))
+            id = (await Evidence(database).UploadAsync(caseId, "disk.e01", "", s, "Image")).Id;
+        _clock.UtcNow = _clock.UtcNow.AddHours(2);
+
+        // A saves while B's save, opened from the same (empty) collection, is between its check and its write.
+        var a = Cases(database);
+        var b = new CaseService(database.Factory(), _user, new MeanwhileClock(_clock.UtcNow,
+                () => a.RecordEvidenceCollectionAsync(caseId, id, new EvidenceCollection(null, "LT-07", "J. Doe"), EvidenceCollection.None)),
+            new CaseNumberGenerator(database.NewContext()), new CreateCaseValidator(), new NoOpCaseNotifications(),
+            new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+
+        var late = () => b.RecordEvidenceCollectionAsync(caseId, id, new EvidenceCollection(null, "WKS-9", "B. Roe"), EvidenceCollection.None);
+        await late.Should().ThrowAsync<ConcurrentEditException>("it would have overwritten A's save unannounced");
+
+        var row = await RowAsync(database, id);
+        (row.CollectedFrom, row.CollectedBy).Should().Be(("LT-07", "J. Doe"));
+    }
 }
