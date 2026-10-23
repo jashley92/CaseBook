@@ -9,6 +9,7 @@
 @inject IUserDirectory Users
 @inject ICurrentUser CurrentUser
 @inject ToastService Toasts
+@inject ILogger<AdminEmailTemplates> Logger
 
 <PageTitle>Email templates</PageTitle>
 
@@ -177,7 +178,7 @@ else
         }
         catch (Exception ex)
         {
-            if (id == _selectedId) _error = ex.Message;
+            if (id == _selectedId) _error = UserFacingError.Describe(ex, Logger, "previewing an email template", "Couldn't preview the template. Try again.");   // BUG-720
         }
     }
 
@@ -201,7 +202,7 @@ else
             if (notInEffect is not null) _error = notInEffect;
             else Toasts.Success("Template saved");
         }
-        catch (Exception ex) { _error = ex.Message; }
+        catch (Exception ex) { _error = UserFacingError.Describe(ex, Logger, "saving an email template", "Couldn't save the template. Try again."); }   // BUG-720
         finally { _busy = false; }
     }
 
@@ -235,7 +236,7 @@ else
             if (notInEffect is not null) _error = notInEffect;
             else Toasts.Success("Reverted to the default");
         }
-        catch (Exception ex) { _error = ex.Message; }
+        catch (Exception ex) { _error = UserFacingError.Describe(ex, Logger, "reverting an email template", "Couldn't revert the template. Try again."); }   // BUG-720
         finally { _busy = false; }
     }
 

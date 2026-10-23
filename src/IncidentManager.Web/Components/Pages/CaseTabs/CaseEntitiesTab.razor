@@ -15,6 +15,7 @@
 @inject TimeDisplay TimeDisp
 @inject IClock Clock
 @inject UnsavedEdits Edits
+@inject ILogger<CaseEntitiesTab> Logger
 
 <p class="text-muted small">
     Accounts, hosts, IPs, domains, URLs, file hashes and other indicators tied to this case, and how they relate.
@@ -877,7 +878,7 @@ else
             await LoadRelated();             // the now-linked case drops off the suggestions
             Toasts.Success(linkId is null ? "Those cases were already linked." : "Cases linked.");
         }
-        catch (Exception ex) { Toasts.Error(ex.Message); }
+        catch (Exception ex) { Toasts.Error(UserFacingError.Describe(ex, Logger, "linking a related case", "Couldn't link the cases. Try again.")); }   // BUG-720
     }
 
     private Task Confirm(string message, Func<Task> action, string verb = "Remove") => RequestConfirm.InvokeAsync((message, verb, action));
@@ -1024,7 +1025,7 @@ else
                 Toasts.Warning($"{addedVal} is already on this case as {Ui.Label(r.Disposition)}. Its verdict wasn't changed; use Edit to change it.");
             else Toasts.Info($"{addedVal} is already on this case.");
         }
-        catch (Exception ex) { _entityError = ex.Message; }
+        catch (Exception ex) { _entityError = UserFacingError.Describe(ex, Logger, "adding an entity", "Couldn't add the entity. Try again."); }   // BUG-720
     }
 
     // --- CAP-02: one verdict on several entities ---
@@ -1188,7 +1189,8 @@ else
         }
         catch (Exception ex)
         {
-            _bulkError = added > 0 ? $"Added {added}, then stopped: {ex.Message}" : ex.Message;
+            var problem = UserFacingError.Describe(ex, Logger, "adding indicators", "Couldn't add them. Try again.");   // BUG-720
+            _bulkError = added > 0 ? $"Added {added}, then stopped: {problem}" : problem;
         }
         finally { _bulkBusy = false; }
     }
@@ -1254,8 +1256,9 @@ else
         }
         catch (Exception ex)
         {
-            if (_enEdit.IsCurrent(editing)) _entityError = ex.Message;
-            else Toasts.Error(ex.Message);
+            var problem = UserFacingError.Describe(ex, Logger, "saving an entity", "Couldn't save the entity. Try again.");   // BUG-720
+            if (_enEdit.IsCurrent(editing)) _entityError = problem;
+            else Toasts.Error(problem);
         }
     }
 
@@ -1295,7 +1298,7 @@ else
             await OnChanged.InvokeAsync();
             Toasts.Success("Relationship added");
         }
-        catch (Exception ex) { _relError = ex.Message; }
+        catch (Exception ex) { _relError = UserFacingError.Describe(ex, Logger, "adding a relationship", "Couldn't add the relationship. Try again."); }   // BUG-720
     }
 
     // INV-49: in-place relationship edit. BUG-578/601: one at a time (another row's Edit is refused, not replaced), and a

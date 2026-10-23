@@ -20,6 +20,7 @@
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Application.Preferences.UserDisplayPreferenceService DisplayPrefs
 @inject UnsavedEdits Edits
+@inject ILogger<CaseTimelineTab> Logger
 
 @* INV-26: one toolbar row — the lens, the reading controls and "Add" — so the history starts near the top of the
    tab. Filters open in a second row only when asked for (or while one is set); each lens explains itself on hover. *@
@@ -1365,8 +1366,9 @@ else
             else Toasts.Success($"Added {value}");
             _newIocFor = null;
         }
-        catch (Exception ex) when (!Open()) { Toasts.Error($"Couldn't add {value}. {ex.Message}"); }
-        catch (Exception ex) { _newIocError = ex.Message; }
+        // BUG-720: worded by UserFacingError, so a database's message never reaches the page.
+        catch (Exception ex) when (!Open()) { Toasts.Error($"Couldn't add {value}. {UserFacingError.Describe(ex, Logger, "adding an indicator", "Try again.")}"); }
+        catch (Exception ex) { _newIocError = UserFacingError.Describe(ex, Logger, "adding an indicator", $"Couldn't add {value}. Try again."); }
         finally { if (Open()) _newIocSaving = false; }
     }
     private string _evtTechnique = "";

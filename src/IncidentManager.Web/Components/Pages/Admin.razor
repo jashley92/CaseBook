@@ -11,6 +11,7 @@
 @inject AdminSettingsService Settings
 @inject IReportBrandingStore Branding
 @inject ToastService Toasts
+@inject ILogger<Admin> Logger
 @inject IConfiguration Config
 @inject IWebHostEnvironment Env
 @inject Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext> DbFactory
@@ -1642,7 +1643,11 @@
         _attention = await Health.AttentionAsync(_health);
         _backup = Backup.Read();
         try { _evidenceUse = await EvidenceStorage.StorageUseAsync(); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { _evidenceUseError = ex.Message; }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // BUG-720: worded (an IOException's text names the share and the account); the detail is in the server's log.
+            _evidenceUseError = UserFacingError.Describe(ex, Logger, "reading the evidence store's use", "the store didn't answer. The server's log has the detail.");
+        }
     }
 
     private IncidentManager.Web.Notifications.SmtpSignInStatus? _smtpSignIn;
