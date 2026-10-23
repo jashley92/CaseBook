@@ -118,6 +118,15 @@ public sealed class AccessReviewTests : IDisposable
                 ("Old Manager", true), ("Bob Analyst", false));
             review.KnownUsers[0].Roles.Should().Equal("Manager", "IncidentCommander");
             review.KnownUsers[1].UserPrincipalName.Should().Be("bob@corp");
+            review.HiddenRestrictedCases.Should().Be(0, "SysAdmin holds ViewRestricted");
+
+            // BUG-707: an administrator without ViewRestricted sees only the restricted cases they're on; the rest are counted.
+            var appAdmin = new TestCurrentUser { UserId = "an-uid", PermissionSet = [Permission.Administer, Permission.ViewCases] };
+            var scoped = await new AccessReviewService(NewFactory(), _clock, appAdmin).BuildAsync();
+            scoped.RestrictedCases.Select(c => c.Title).Should().Equal("Sensitive");
+            scoped.HiddenRestrictedCases.Should().Be(1);
+            AccessReviewService.ToCsv(scoped, null, _clock.UtcNow).Should().Contain("Restricted case,1 restricted case not shown,,,,,,Outside your need-to-know")
+                .And.NotContain("Old and sensitive");
         }
     }
 

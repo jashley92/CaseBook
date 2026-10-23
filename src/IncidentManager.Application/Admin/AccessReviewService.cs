@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -29,8 +30,10 @@ public sealed record KnownUserRow(string DisplayName, string? UserPrincipalName,
 public sealed record ApiTokenReviewRow(string Name, ApiTokenKind Kind, string Owner, string Prefix, IReadOnlyList<string> Roles,
     DateTimeOffset CreatedAtUtc, DateTimeOffset ExpiresAtUtc, DateTimeOffset? LastUsedAtUtc);
 
+/// <remarks>BUG-707: <see cref="HiddenRestrictedCases"/> counts the restricted cases left out of
+/// <see cref="RestrictedCases"/> because the reviewing administrator's own need-to-know doesn't reach them.</remarks>
 public sealed record AccessReview(IReadOnlyList<BroadAccessRow> Broad, IReadOnlyList<RestrictedCaseRow> RestrictedCases,
-    IReadOnlyList<KnownUserRow> KnownUsers, IReadOnlyList<ApiTokenReviewRow> ApiTokens);
+    IReadOnlyList<KnownUserRow> KnownUsers, IReadOnlyList<ApiTokenReviewRow> ApiTokens, int HiddenRestrictedCases = 0);
 
 /// <summary>CAP-15: a recorded access review: who recorded it, when, and their note. Read back from the audit trail.</summary>
 public sealed record AccessReviewRecord(DateTimeOffset AtUtc, string ReviewerId, string Reviewer, string Note);
@@ -120,13 +123,16 @@ public sealed class AccessReviewService
             .ThenBy(b => b.RoleName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var cases = await db.Cases.AsNoTracking()
-            // REV-58: archived ones too. Archiving doesn't take anyone's access away (its commander and team can still open
-            // it), so a need-to-know review that left them out under-stated who can see restricted matters.
-            .Where(c => c.IsRestricted)
+        // REV-58: archived ones too. Archiving doesn't take anyone's access away (its commander and team can still open
+        // it), so a need-to-know review that left them out under-stated who can see restricted matters.
+        var allRestricted = db.Cases.AsNoTracking().Where(c => c.IsRestricted);
+        // BUG-707: listed through the administrator's own need-to-know (as offboarding does), the rest only counted.
+        // Administer alone doesn't clear anyone for restricted matters; ViewRestricted (or ViewAllCases) still lists all.
+        var cases = await allRestricted.ForUser(_user)
             .Select(c => new { c.Id, c.CaseNumber, c.Title, c.IncidentCommander, c.IsArchived })
             .OrderBy(c => c.IsArchived).ThenBy(c => c.CaseNumber)
             .ToListAsync(ct);
+        var hiddenRestricted = await allRestricted.CountAsync(ct) - cases.Count;
 
         var caseIds = cases.Select(c => c.Id).ToList();
         var assignments = await db.Assignments.AsNoTracking()
@@ -170,7 +176,7 @@ public sealed class AccessReviewService
             .OrderBy(t => t.Kind).ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return new AccessReview(broad, restricted, known, tokens);
+        return new AccessReview(broad, restricted, known, tokens, hiddenRestricted);
     }
 
     /// <summary>
@@ -223,6 +229,10 @@ public sealed class AccessReviewService
     /// with its section. Fields go through <c>Csv.Escape</c> (names, titles and AD groups can start with a formula
     /// character). Times are UTC.
     /// </summary>
+    /// <summary>BUG-707: the line that stands in for the restricted cases the reviewer can't see.</summary>
+    public static string HiddenRestrictedText(int n) =>
+        n == 1 ? "1 restricted case not shown" : $"{n.ToString(CultureInfo.InvariantCulture)} restricted cases not shown";
+
     public static string ToCsv(AccessReview review, AccessReviewRecord? last, DateTimeOffset generatedAtUtc)
     {
         var inv = CultureInfo.InvariantCulture;
@@ -245,6 +255,8 @@ public sealed class AccessReviewService
             Row("Restricted case", c.CaseNumber, c.Title,
                 "Incident commander: " + (string.IsNullOrWhiteSpace(c.IncidentCommander) ? "none" : c.IncidentCommander),
                 string.Join("; ", c.Assignees), "", "", c.IsArchived ? "Archived" : "");
+        if (review.HiddenRestrictedCases > 0)
+            Row("Restricted case", HiddenRestrictedText(review.HiddenRestrictedCases), "", "", "", "", "", "Outside your need-to-know");
         foreach (var u in review.KnownUsers)
             Row("Known user", u.DisplayName, u.UserPrincipalName, string.Join("; ", u.Roles), "", T(u.LastSeenUtc), "",
                 u.IsDormant ? "Dormant" : "");

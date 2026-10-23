@@ -99,7 +99,8 @@ with `{0}` where the value goes.
 ## Access review (CAP-15)
 
 Below the roles and mappings, **Access review** shows who can see across cases (roles granting all cases or restricted
-cases, and the AD groups that confer them), each restricted case's incident commander and assignees, everyone who has
+cases, and the AD groups that confer them), each restricted case's incident commander and assignees (an administrator
+whose role doesn't grant Restricted sees only the ones they're on, and a count of the rest), everyone who has
 signed in with their roles at that sign-in (idle more than 90 days is flagged dormant), and the **API tokens** that work
 now (not revoked, not expired) with the roles each was granted, when it was last used and when it expires. A personal
 token acts only within its owner's current roles.

@@ -244,7 +244,7 @@ else
     <h6 class="text-uppercase small text-muted mt-3">Restricted cases</h6>
     @if (_review.RestrictedCases.Count == 0)
     {
-        <p class="text-muted">No restricted cases.</p>
+        <p class="text-muted">@(_review.HiddenRestrictedCases > 0 ? "None you can see." : "No restricted cases.")</p>
     }
     else
     {
@@ -265,6 +265,11 @@ else
             </tbody>
         </table>
         <p class="small text-muted">Plus anyone whose role grants <strong>All cases</strong> or <strong>Restricted</strong> above.</p>
+    }
+    @if (_review.HiddenRestrictedCases > 0)
+    {
+        @* BUG-707: Administer alone doesn't clear an administrator for restricted matters, so those outside their need-to-know are counted, not named. *@
+        <p class="small text-muted">@AccessReviewService.HiddenRestrictedText(_review.HiddenRestrictedCases): your role doesn't grant <strong>Restricted</strong> and you aren't on them.</p>
     }
 
     @* PROD-14: the AppUser mirror, read back for a periodic user-access review (NYDFS 500.7). *@
