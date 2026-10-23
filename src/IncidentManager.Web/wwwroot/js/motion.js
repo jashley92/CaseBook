@@ -63,8 +63,10 @@ window.imMotion = {
     // A scroll listener rather than an IntersectionObserver: it reads the toolbar's place on every scroll (cheap: one
     // rect), and keeps working in a page the browser has stopped painting, where an observer goes quiet.
     // It also moves an open composer between its place under the toolbar and the pop-out: out once the reader has
-    // scrolled it fully out of view (the page is moved back by its height as it leaves, so nothing on screen moves),
-    // and back once the toolbar is in view again. The gap between the two keeps it from flickering.
+    // scrolled it fully out of view, and back once the toolbar is in view again. Its slot keeps its height while it's
+    // out, so nothing on the page moves. (The page used to give the height up and scroll back by it: on a page only a
+    // little longer than that, the scroll couldn't hold, the toolbar came back into view and the composer went straight
+    // back.) The gap between the two keeps it from flickering.
     watchTimelineToolbar: function (id) {
         try {
             window.imMotion.unwatchTimelineToolbar();
@@ -74,17 +76,16 @@ window.imMotion = {
                 var dz = document.getElementById('timeline-dropzone');
                 var open = !!dz && !dz.classList.contains('d-none');
                 var under = self._stickyBottom();
-                if (!open) root.removeAttribute('data-tl-docked');
+                if (!open) self.setTimelineDocked(false);
                 else if (!root.hasAttribute('data-tl-docked')) {
                     var r = dz.getBoundingClientRect();
                     if (r.bottom < under) {
-                        var h = r.height + (Number.parseFloat(getComputedStyle(dz).marginBottom) || 0);
+                        self._tlSlot(r.height + (Number.parseFloat(getComputedStyle(dz).marginBottom) || 0));
                         root.setAttribute('data-tl-docked', '');
-                        window.scrollBy({ top: -h, behavior: 'instant' });
                     }
                 } else {
                     var bar = document.getElementById(id);
-                    if (bar && bar.getBoundingClientRect().bottom > under + 8) root.removeAttribute('data-tl-docked');
+                    if (bar && bar.getBoundingClientRect().bottom > under + 8) self.setTimelineDocked(false);
                 }
                 root.toggleAttribute('data-tl-away', self.timelineToolbarAway(id));
             };
@@ -98,8 +99,16 @@ window.imMotion = {
         var bar = document.getElementById('ws-sticky');
         return bar ? bar.getBoundingClientRect().bottom : 0;
     },
+    // Docked from the page (opened while scrolled down) the composer was never in the page, so its slot stays empty.
     setTimelineDocked: function (on) {
-        try { document.documentElement.toggleAttribute('data-tl-docked', !!on); } catch (e) { /* no-op */ }
+        try {
+            if (!on) window.imMotion._tlSlot(0);
+            document.documentElement.toggleAttribute('data-tl-docked', !!on);
+        } catch (e) { /* no-op */ }
+    },
+    _tlSlot: function (h) {
+        var slot = document.getElementById('tl-composer-slot');
+        if (slot) slot.style.height = h > 0 ? h + 'px' : '';
     },
     isTimelineDocked: function () {
         try { return document.documentElement.hasAttribute('data-tl-docked'); } catch (e) { return false; }
@@ -112,7 +121,7 @@ window.imMotion = {
                 window._imTlWatch = null;
             }
             document.documentElement.removeAttribute('data-tl-away');
-            document.documentElement.removeAttribute('data-tl-docked');
+            window.imMotion.setTimelineDocked(false);
         } catch (e) { /* no-op */ }
     },
     // The Tasks tab's add form (CaseTasksTab): data-task-away on <html> while it has scrolled up under the sticky tab
