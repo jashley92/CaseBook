@@ -69,7 +69,7 @@ public static class DevDataSeeder
     {
         var now = clock.UtcNow;
         var c = await db.Cases
-            .Include(x => x.Entities).Include(x => x.TimelineEntries).Include(x => x.Briefs)
+            .Include(x => x.Entities).Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics).Include(x => x.Briefs).Include(x => x.DataElements)
             .Include(x => x.Evidence).Include(x => x.Citations).Include(x => x.ActionItems)
             .AsSplitQuery()
             .FirstOrDefaultAsync(x => x.CaseNumber == "2026-01_Phishing_Wave", ct);

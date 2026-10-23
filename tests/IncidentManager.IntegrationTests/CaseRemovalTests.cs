@@ -78,6 +78,35 @@ public sealed class CaseRemovalTests
         return new Seeded(bad.Id, bad.CaseNumber, other.Id);
     }
 
+    /// <summary>BUG-700: removing and restoring a case with data elements hashes it with them, so the record check still
+    /// verifies (it loads them, and was reporting a tamper).</summary>
+    [Theory, MemberData(nameof(Providers))]
+    public async Task Removing_and_restoring_a_case_with_data_elements_keeps_the_record_check_clean(string provider)
+    {
+        using var database = Open(provider);
+        var s = await SeedAsync(database, archive: false);
+        await using (var db = database.NewContext())
+        {
+            var c = await db.Cases.Include(x => x.DataElements).SingleAsync(x => x.Id == s.Bad);
+            c.SetImpactAssessment(2, ["SSN", "DL"], null, "ic1", _clock.UtcNow);
+            c.Archive("ic1", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        var removal = Removal(database);
+
+        await removal.RemoveAsync(s.Bad, s.BadNumber, "Imported twice");
+        await Verify();
+        await removal.RestoreAsync(s.Bad);
+        await Verify();
+
+        async Task Verify()
+        {
+            await using var db = database.NewContext();
+            var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+            (await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain)).Should().BeNull();
+        }
+    }
+
     [Theory, MemberData(nameof(Providers))]
     public async Task Only_an_archived_case_confirmed_by_its_number_with_a_reason_and_no_hold_is_removed(string provider)
     {

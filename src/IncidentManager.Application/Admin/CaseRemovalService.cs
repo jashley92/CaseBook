@@ -63,7 +63,7 @@ public sealed class CaseRemovalService(
     {
         AdminActionPermissions.Require<CaseRemovalService>(user, siem);
         using var db = factory.CreateDbContext();
-        var c = await db.Cases.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == caseId, ct)
+        var c = await db.Cases.IgnoreQueryFilters().Include(x => x.DataElements).FirstOrDefaultAsync(x => x.Id == caseId, ct)
                 ?? throw new InvalidOperationException("That case wasn't found.");
         c.Remove(reason, typedNumber, user.UserId, clock.UtcNow);
         db.PendingChangeReason = c.RemovedReason;
@@ -77,7 +77,7 @@ public sealed class CaseRemovalService(
     {
         AdminActionPermissions.Require<CaseRemovalService>(user, siem);
         using var db = factory.CreateDbContext();
-        var c = await db.Cases.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == caseId, ct)
+        var c = await db.Cases.IgnoreQueryFilters().Include(x => x.DataElements).FirstOrDefaultAsync(x => x.Id == caseId, ct)
                 ?? throw new InvalidOperationException("That case wasn't found.");
         // Its number may have been given to another case meanwhile only if it was purged, which RestoreRemoved refuses.
         c.RestoreRemoved(user.UserId, clock.UtcNow);
@@ -126,7 +126,7 @@ public sealed class CaseRemovalService(
         CaseSubject subject;
         using (var db = factory.CreateDbContext())
         {
-            var c = await db.Cases.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == caseId, ct)
+            var c = await db.Cases.IgnoreQueryFilters().Include(x => x.DataElements).FirstOrDefaultAsync(x => x.Id == caseId, ct)
                     ?? throw new InvalidOperationException("That case wasn't found.");
             if (!c.IsRemoved) throw new InvalidOperationException("Only a removed case can be purged.");
             if (c.LegalHold) throw new InvalidOperationException("This case is under legal hold, so nothing on it can be purged.");
