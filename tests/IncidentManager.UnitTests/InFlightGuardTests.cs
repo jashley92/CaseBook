@@ -36,7 +36,7 @@ public partial class InFlightGuardTests
     {
         // A guard on the guard: the workspace's acts are writes, each guarded, and a removed guard is seen.
         var ws = Components().Single(c => c.File == "Pages/CaseWorkspace.razor");
-        Writers(ws.Parts).Select(w => w.Name).Should().Contain(["AssignToMeCore", "SetLegalHoldCore", "SetArchivedCore", "OpenShot", "TogglePin"]);
+        Writers(ws.Parts).Select(w => w.Name).Should().Contain(["AssignToMeCore", "SetLegalHoldCore", "SetArchivedCore", "ShowShot", "TogglePin"]);
         Unguarded().Where(u => u.File == "Pages/CaseWorkspace.razor").Should().BeEmpty();
         var unguardedCopy = ws.Parts.Select(p => p with { Code = p.Code.Replace("_assigning.Run(AssignToMeCore)", "AssignToMeCore()", StringComparison.Ordinal) }).ToList();
         UnguardedIn("Pages/CaseWorkspace.razor", unguardedCopy).Should().Contain(u => u.What.StartsWith("AssignToMeCore", StringComparison.Ordinal));

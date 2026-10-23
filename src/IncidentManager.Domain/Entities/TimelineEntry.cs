@@ -72,6 +72,17 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// </summary>
     public string? MoreEvidenceIds { get; set; }
 
+    /// <summary>
+    /// BUG-722 follow-up: the screenshots an edit took off this entry, as <see cref="MoreEvidenceIds"/> holds ids, in the
+    /// order they went; null when none has. An attack step's edit is in place, so this is where it remembers a screenshot it
+    /// once showed (an Investigation entry's earlier version keeps its own as well), and the case doesn't list that file as
+    /// newly added evidence (<c>CaseMilestones</c>). Folded into the canonical only when set.
+    /// </summary>
+    public string? FormerEvidenceIds { get; set; }
+
+    /// <summary>BUG-722 follow-up: <see cref="FormerEvidenceIds"/> as ids.</summary>
+    public IReadOnlyList<Guid> FormerScreenshotIds => ParseIds(FormerEvidenceIds);
+
     /// <summary>BUG-722: the most screenshots one entry shows.</summary>
     public const int MaxScreenshots = 10;
 
@@ -82,11 +93,18 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
         {
             var ids = new List<Guid>();
             if (EvidenceId is { } first) ids.Add(first);
-            if (MoreEvidenceIds is { } more)
-                foreach (var part in more.Split(',', StringSplitOptions.RemoveEmptyEntries))
-                    if (Guid.TryParse(part, out var id)) ids.Add(id);
+            ids.AddRange(ParseIds(MoreEvidenceIds));
             return ids;
         }
+    }
+
+    private static List<Guid> ParseIds(string? joined)
+    {
+        var ids = new List<Guid>();
+        if (joined is not null)
+            foreach (var part in joined.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                if (Guid.TryParse(part, out var id)) ids.Add(id);
+        return ids;
     }
 
     /// <summary>BUG-722: links the entry to exactly these screenshots, in this order (at most <see cref="MaxScreenshots"/>,
@@ -98,6 +116,10 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
             throw new ArgumentException($"An entry takes up to {MaxScreenshots} screenshots.");
         if (list.Distinct().Count() != list.Count)
             throw new ArgumentException("That screenshot is on the entry already.");
+        // BUG-722 follow-up: a screenshot taken off is remembered (see FormerEvidenceIds), once.
+        var former = FormerScreenshotIds.ToList();
+        former.AddRange(ScreenshotIds.Where(id => !list.Contains(id) && !former.Contains(id)));
+        FormerEvidenceIds = former.Count > 0 ? string.Join(',', former.Select(MoreKey)) : null;
         EvidenceId = list.Count > 0 ? list[0] : null;
         MoreEvidenceIds = list.Count > 1 ? string.Join(',', list.Skip(1).Select(MoreKey)) : null;
     }
@@ -243,6 +265,8 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
         content += Canonical.Since(5, HandedToUserId is not null, () => "|to|" + Canonical.Text(HandedToUserId));
         // BUG-722: the screenshots after the first, in order, from format 9, only when there are any (no re-baseline).
         content += Canonical.Since(9, MoreEvidenceIds is not null, () => "|evs|" + MoreEvidenceIds);
+        // BUG-722 follow-up: the screenshots an edit took off a step, likewise only when there are any.
+        content += Canonical.Since(9, FormerEvidenceIds is not null, () => "|was|" + FormerEvidenceIds);
         return content;
     }
 }

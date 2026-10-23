@@ -236,7 +236,7 @@
                 <span><span class="bi bi-clipboard me-1" aria-hidden="true"></span>@(_tlEditId is null
                         ? "Paste screenshots, or paste or drop files, to attach them."
                         : "Paste or drop more screenshots or files to add them to the entry.")
-                    <span class="tl-paste-detail">Each is saved as hashed evidence with chain of custody, up to @TimelineEntry.MaxScreenshots screenshots an entry; a file that isn't an image is cited by the entry.</span></span>
+                    <span class="tl-paste-detail">Each is saved as hashed evidence with chain of custody, up to @TimelineEntry.MaxScreenshots screenshots an entry; one file that isn't an image is cited by the entry.</span></span>
                 @foreach (var shot in _tlShots)
                 {
                     <span class="d-inline-flex align-items-center gap-1 tl-staged-shot">
@@ -1177,6 +1177,8 @@ else
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Open the parent-owned screenshot lightbox (shared with Evidence) for an evidence id.</summary>
     [Parameter] public EventCallback<Guid> OnPreview { get; set; }
+    /// <summary>BUG-722 follow-up: open an entry's screenshot full size, with the entry's others to step through in order.</summary>
+    [Parameter] public EventCallback<(IReadOnlyList<Guid> Ids, int At)> OnPreviewSet { get; set; }
     /// <summary>Live-collab flash hooks (parent owns the flash state); render an entry's flash class / hue.</summary>
     [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
     [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
@@ -2091,45 +2093,54 @@ else
     private static bool ClaimsRaster(string contentType) =>
         contentType.ToLowerInvariant() is "image/png" or "image/jpeg" or "image/jpg" or "image/gif" or "image/webp";
 
-    // BUG-722: how many more files the composer takes: an entry shows up to ten screenshots, counting those an edit keeps.
-    private int ShotRoom => TimelineEntry.MaxScreenshots - _tlShots.Count - (_tlEditId is null ? 0 : _tlEditShots.Count - _tlUnlinked.Count);
+    // BUG-722: how many more images the composer takes: an entry shows up to ten screenshots, counting those an edit keeps.
+    // Only images count, as on the server; a file that isn't one is cited, one an entry (StageFile).
+    private int ShotRoom => TimelineEntry.MaxScreenshots - _tlShots.Count(x => x.IsRaster) - (_tlEditId is null ? 0 : _tlEditShots.Count - _tlUnlinked.Count);
+
+    // BUG-722 follow-up: why a pasted or dropped file wasn't staged, told once for the whole paste.
+    private enum StageRefusal { None, NoRoom, OneFile }
 
     private async Task OnTimelinePasted(InputFileChangeEventArgs e)
     {
         _composerOpen = true; // a pasted screenshot is staged in the form, so show it
-        // BUG-722: each file pasted or dropped is staged, up to the room the entry has. B2 review: however many (BUG-341:
-        // GetMultipleFiles threw past 50, outside any catch, and the tab went with it).
+        // BUG-722: each file pasted or dropped is staged: images up to the room the entry has, and one file that isn't an
+        // image. B2 review: however many (BUG-341: GetMultipleFiles threw past 50, outside any catch, and the tab went with it).
         var files = DroppedFiles.UpTo(e, Math.Max(1, e.FileCount)) ?? [];
-        if (files.Count == 0) return;
-        var room = Math.Max(0, ShotRoom);
-        if (files.Count > room)
-            Toasts.Info(room == 0
-                ? $"An entry takes up to {TimelineEntry.MaxScreenshots} files, so nothing more was attached. Upload the others on the Evidence tab."
-                : $"An entry takes up to {TimelineEntry.MaxScreenshots} files, so the first {room} were attached. Upload the others on the Evidence tab.");
-        foreach (var f in files.Take(room)) await StageFile(f);
+        var (noRoom, oneFile) = (0, 0);
+        foreach (var f in files)
+            switch (await StageFile(f))
+            {
+                case StageRefusal.NoRoom: noRoom++; break;
+                case StageRefusal.OneFile: oneFile++; break;
+            }
+        if (noRoom > 0)
+            Toasts.Info($"An entry takes up to {TimelineEntry.MaxScreenshots} screenshots, so {(noRoom == 1 ? "one image wasn't" : $"{noRoom} images weren't")} attached. Upload the others on the Evidence tab.");
+        if (oneFile > 0)
+            Toasts.Info($"An entry cites one file that isn't an image, so {(oneFile == 1 ? "another wasn't" : $"{oneFile} others weren't")} attached. Upload the others on the Evidence tab, then cite them.");
     }
 
-    private async Task StageFile(IBrowserFile f)
+    private async Task<StageRefusal> StageFile(IBrowserFile f)
     {
         var image = ClaimsRaster(f.ContentType);
+        if (image && ShotRoom <= 0) return StageRefusal.NoRoom;   // not read at all
         // WF-31: what the save would refuse is refused before any byte is sent.
         var max = image ? MaxShotBytes : MaxFileBytes;
         if (f.Size > max)
         {
             Toasts.Error(image ? $"“{f.Name}” is larger than 15 MB. Upload it on the Evidence tab."
                 : $"“{f.Name}” is larger than {EvidenceRoom.Size(max)}, the most the timeline attaches. Upload it on the Evidence tab, then cite it.");
-            return;
+            return StageRefusal.None;
         }
         // BUG-722: the composer holds what's staged in memory until the save, so all of it together is held to one file's most.
         if (_tlShots.Sum(x => x.Bytes.LongLength) + f.Size > MaxComposerFileBytes)
         {
             Toasts.Error($"“{f.Name}” would take the files on this entry past {EvidenceRoom.Size(MaxComposerFileBytes)}. Save the entry first, or upload it on the Evidence tab.");
-            return;
+            return StageRefusal.None;
         }
         if (f.Name.Length > EvidenceService.MaxFileNameLength)
         {
             Toasts.Error($"That file name is longer than {EvidenceService.MaxFileNameLength} characters. Rename the file and attach it again.");
-            return;
+            return StageRefusal.None;
         }
         try
         {
@@ -2139,6 +2150,9 @@ else
             var bytes = ms.ToArray();
             var raster = bytes.Length <= MaxShotBytes ? ImageSniffer.RasterContentType(bytes.AsSpan(0, Math.Min(12, bytes.Length))) : null;
             var type = raster ?? (string.IsNullOrWhiteSpace(f.ContentType) ? "application/octet-stream" : f.ContentType);
+            // The bytes decide: an image needs room, and a file that isn't one is cited, one an entry (CAP-26).
+            if (raster is not null && ShotRoom <= 0) return StageRefusal.NoRoom;
+            if (raster is null && _tlShots.Any(x => !x.IsRaster)) return StageRefusal.OneFile;
             _tlShots.Add(new StagedShot(f.Name, type, bytes, raster is not null));
         }
         catch (Exception)
@@ -2146,6 +2160,7 @@ else
             Toasts.Error(image ? $"Couldn't read “{f.Name}”. Try again, or upload it on the Evidence tab (15 MB max)."
                 : $"Couldn't read “{f.Name}”. Try again, or upload it on the Evidence tab.");
         }
+        return StageRefusal.None;
     }
 
     // BUG-722: a staged file's Remove, before the save.
@@ -2199,7 +2214,8 @@ else
     // The screenshots an edit keeps, in order; null when none was unlinked (the entry keeps them all).
     private List<Guid>? KeptShots() => _tlUnlinked.Count == 0 ? null : _tlEditShots.Where(id => !_tlUnlinked.Contains(id)).ToList();
 
-    // U-40 / BUG-722: an entry's screenshots as a row of thumbnails; each opens full size in the lightbox.
+    // U-40 / BUG-722: an entry's screenshots as a row of thumbnails; each opens full size in the lightbox, which steps
+    // through the entry's others.
     private RenderFragment EntryScreenshots(TimelineEntry e) => __builder =>
     {
         var shots = e.ScreenshotIds;
@@ -2208,9 +2224,9 @@ else
         <div class="tl-shots d-flex flex-wrap gap-2 mt-1">
             @for (var i = 0; i < shots.Count; i++)
             {
-                var shotId = shots[i];
+                var (shotId, at) = (shots[i], i);
                 var label = shots.Count == 1 ? "the attached screenshot" : $"screenshot {i + 1} of {shots.Count}";
-                <button type="button" class="tl-shot d-inline-block btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview @label">
+                <button type="button" class="tl-shot d-inline-block btn p-0 border-0 bg-transparent" @onclick="() => OnPreviewSet.InvokeAsync((shots, at))" title="Preview @label">
                     <img src="evidence/@shotId/inline" alt="Attached screenshot@(shots.Count == 1 ? "" : $" {i + 1} of {shots.Count}")" loading="lazy"
                          style="max-height:@(height)px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
                 </button>

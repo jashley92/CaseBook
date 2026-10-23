@@ -102,7 +102,7 @@ else
     <WorkspaceDialogs Confirm="@(_confirm is { } cf ? (cf.Message, cf.Verb) : null)" OnCancelConfirm="CancelConfirm" OnRunConfirm="RunConfirm"
                       LeaveOpen="DiscardOpen" LeaveWhat="@_discard?.What" LeaveDoing="@_discard?.Doing" LeaveVerb="@_discard?.Verb"
                       OnStay="CancelLeave" OnLeave="ConfirmLeave"
-                      ShotId="_previewShotId" OnCloseShot="CloseShot" OnEscape="OnModalEscape" />
+                      ShotId="_previewShotId" ShotSet="_previewShots" OnStepShot="StepShot" OnCloseShot="CloseShot" OnEscape="OnModalEscape" />
 
     @* Keyed by the active tab so the subtree is rebuilt on a tab switch, replaying the .tabbody
        fade-in (U-22 motion). The key doesn't change on case/id navigation, so switching cases
@@ -159,7 +159,7 @@ else
            the flash, the screenshot lightbox (OnPreview→OpenShot), the Ctrl+Enter hotkey (via @ref), the
            paste-shim registration (element ids kept in the child), and the live-collab "new entries" pill. *@
         <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" OutcomeLabels="_outcomeLabels" Notify="_notifyDeadlines" CanEdit="_canEdit" CanChangeClassification="_canReclassify"
-                         DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
+                         DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot" OnPreviewSet="OpenShots"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
                          PresetEntityFilter="_timelineEntity" OnPresetHandled="() => _timelineEntity = null" OnOpenEntity="OpenEntity"
@@ -342,6 +342,8 @@ else
     // U-40: the attached screenshot currently open in the lightbox preview (null = closed). Parent-owned,
     // shared by the Timeline and Evidence tabs.
     private Guid? _previewShotId;
+    // BUG-722 follow-up: the screenshots it steps through (an entry's, in order), or just the one open.
+    private IReadOnlyList<Guid> _previewShots = [];
 
     // Entities: the tab is extracted to CaseEntitiesTab (UX-13), which owns the graph interop and
     // entity/relationship CRUD. The parent keeps a ref for hotkey dispatch (Ctrl+Enter submit).
@@ -507,6 +509,7 @@ else
                 _timelineEntity = null;   // REV-38: a "show on timeline" filter belongs to the last case
                 _confirm = null;
                 _previewShotId = null;   // BUG-357: the screenshot and the retention message were the last case's
+                _previewShots = [];
                 _retentionMsg = null;
                 _accessLost = false;
                 _permissionLost = false;

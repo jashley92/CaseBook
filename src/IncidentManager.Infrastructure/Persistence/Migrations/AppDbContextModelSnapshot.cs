@@ -3028,6 +3028,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("EvidenceId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("FormerEvidenceIds")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("HandedToUserId")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");

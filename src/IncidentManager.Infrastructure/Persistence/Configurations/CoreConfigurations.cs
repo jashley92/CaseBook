@@ -64,6 +64,8 @@ public sealed class TimelineEntryConfiguration : IEntityTypeConfiguration<Timeli
         b.Property(x => x.DecidedBy).HasMaxLength(300);
         b.Property(x => x.PromotedFrom).HasMaxLength(64);   // INV-07
         b.Property(x => x.MoreEvidenceIds).HasMaxLength(400);   // BUG-722: up to nine ids after the first
+        b.Property(x => x.FormerEvidenceIds);   // BUG-722 follow-up: every screenshot an edit took off, however many
+        b.Ignore(x => x.FormerScreenshotIds);
         b.Ignore(x => x.ScreenshotIds);
         b.Property(x => x.HandedToUserId).HasMaxLength(200);   // CAP-20 review
         b.Property(x => x.RetractedBy).HasMaxLength(200);   // BUG-413

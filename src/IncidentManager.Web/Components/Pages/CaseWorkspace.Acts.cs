@@ -50,7 +50,36 @@ public partial class CaseWorkspace
     }
 
 
-    private async Task OpenShot(Guid evidenceId)
+    private Task OpenShot(Guid evidenceId)
+    {
+        _previewShots = [evidenceId];
+        return ShowShot(evidenceId);
+    }
+
+    // BUG-722 follow-up: a timeline entry's screenshot opens with the entry's others, in order, to step through.
+    private Task OpenShots((IReadOnlyList<Guid> Ids, int At) set)
+    {
+        if (set.Ids.Count == 0) return Task.CompletedTask;
+        _previewShots = set.Ids;
+        return ShowShot(set.Ids[Math.Clamp(set.At, 0, set.Ids.Count - 1)]);
+    }
+
+    // BUG-722 follow-up: the previous (-1) or next (+1) screenshot, round from the last to the first, so the button
+    // pressed (and the focus on it) stays put.
+    private Task StepShot(int by)
+    {
+        if (_previewShotId is not { } at || _previewShots.Count < 2) return Task.CompletedTask;
+        var i = Math.Max(0, IndexOf(_previewShots, at));
+        return ShowShot(_previewShots[((i + by) % _previewShots.Count + _previewShots.Count) % _previewShots.Count]);
+    }
+
+    private static int IndexOf(IReadOnlyList<Guid> ids, Guid id)
+    {
+        for (var i = 0; i < ids.Count; i++) if (ids[i] == id) return i;
+        return -1;
+    }
+
+    private async Task ShowShot(Guid evidenceId)
     {
         _previewShotId = evidenceId;
         if (!_recordingView.Add(evidenceId)) return;   // BUG-603: a double-click on the thumbnail is one "Viewed"
@@ -62,7 +91,7 @@ public partial class CaseWorkspace
         finally { _recordingView.Remove(evidenceId); }
     }
     private readonly HashSet<Guid> _recordingView = [];
-    private void CloseShot() => _previewShotId = null;
+    private void CloseShot() { _previewShotId = null; _previewShots = []; }
 
 
     private Task SetLegalHold(bool held) => _holding.Run(() => SetLegalHoldCore(held));

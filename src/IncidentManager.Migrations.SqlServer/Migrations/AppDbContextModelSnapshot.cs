@@ -3036,6 +3036,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<Guid?>("EvidenceId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("FormerEvidenceIds")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("HandedToUserId")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");

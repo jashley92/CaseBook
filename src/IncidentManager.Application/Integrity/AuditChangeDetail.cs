@@ -66,6 +66,7 @@ public static class AuditChangeDetail
         ["SourceEntityId"] = "Source entity",
         ["EvidenceId"] = "Attached evidence",
         ["MoreEvidenceIds"] = "More screenshots",   // BUG-722
+        ["FormerEvidenceIds"] = "Screenshots taken off",   // BUG-722 follow-up
         ["TechniqueId"] = "ATT&CK technique",
         // CAP-08: an evidence file's collection, recorded on upload or corrected later.
         ["CollectedAtUtc"] = "Collected",

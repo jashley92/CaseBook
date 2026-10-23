@@ -123,6 +123,41 @@ public class CaseMilestonesTests
     }
 
     [Fact]
+    public void A_screenshot_taken_off_its_entry_is_not_news_but_a_retracted_entrys_still_are(/* BUG-722 follow-up */)
+    {
+        var c = Case.Open(2026, 9, "Ph", "Phish", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
+        Evidence Shot(string name)
+        {
+            var ev = new Evidence { CaseId = c.Id, OriginalFileName = name, ContentType = "image/png", CreatedAtUtc = T0.AddHours(1), CreatedBy = "an1" };
+            c.Evidence.Add(ev);
+            return ev;
+        }
+        var (s1, s2, n1, n2, r1, r2) = (Shot("s1.png"), Shot("s2.png"), Shot("n1.png"), Shot("n2.png"), Shot("r1.png"), Shot("r2.png"));
+
+        // An attack step's edit is in place: it takes s2 off.
+        var step = c.AddEventStep(T0, [], null, null, null, "Step", null, "an1", T0.AddHours(1), evidenceId: s1.Id);
+        step.SetScreenshotIds([s1.Id, s2.Id]);
+        c.EditEventStep(step.Id, T0, [], null, null, null, "Step", null, "an1", T0.AddHours(2), screenshots: [s1.Id]);
+        // An investigation entry's edit is a new version: it takes n2 off (the earlier version keeps it).
+        var note = new TimelineEntry { CaseId = c.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Note, OccurredAtUtc = T0,
+            Description = "Note", CreatedBy = "an1", CreatedAtUtc = T0.AddHours(1) };
+        note.SetScreenshotIds([n1.Id, n2.Id]);
+        c.TimelineEntries.Add(note);
+        c.EditInvestigationEntry(note.Id, TimelineEntryType.Note, T0, "Note, edited", null, "an1", T0.AddHours(2), screenshots: [n1.Id]);
+        // An entry edited, then retracted: all its files are back (BUG-443), its earlier version's too.
+        var gone = new TimelineEntry { CaseId = c.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Note, OccurredAtUtc = T0,
+            Description = "Wrong", CreatedBy = "an1", CreatedAtUtc = T0.AddHours(1) };
+        gone.SetScreenshotIds([r1.Id, r2.Id]);
+        c.TimelineEntries.Add(gone);
+        var goneNext = c.EditInvestigationEntry(gone.Id, TimelineEntryType.Note, T0, "Wrong, edited", null, "an1", T0.AddHours(2), screenshots: [r1.Id]);
+        c.RetractTimelineEntry(goneNext.Id, "Wrong host", "an1", T0.AddHours(3));
+
+        CaseMilestones.Project(c, Labels).Where(m => m.Kind == MilestoneKind.EvidenceAdded).Select(m => m.Title)
+            .Should().BeEquivalentTo("Evidence added: r1.png", "Evidence added: r2.png");
+        step.FormerScreenshotIds.Should().Equal(s2.Id);
+    }
+
+    [Fact]
     public void Notices_converted_from_a_whole_case_report_are_not_the_editors_new_work(/* BUG-406 */)
     {
         var c = Case.Open(2026, 9, "Br", "Breach", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);

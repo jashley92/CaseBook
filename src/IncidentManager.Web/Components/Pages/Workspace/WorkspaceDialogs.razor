@@ -49,20 +49,39 @@
 
 @if (ShotId is { } previewId)
 {
+    @* BUG-722 follow-up: an entry with several screenshots steps through them here: Previous and Next (round from the last
+       to the first), the left and right arrow keys, and "2 of 4". Nothing in the dialog takes text, and the trap keeps the
+       focus in it (modal-a11y.js), so an arrow never comes from a text box. *@
+    var at = IndexOf(previewId);
+    var many = ShotSet.Count > 1 && at >= 0;
     <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
          aria-labelledby="im-shot-title" style="background:var(--im-scrim)"
-         @onclick="() => OnCloseShot.InvokeAsync()" @onkeydown="Escape">
+         @onclick="() => OnCloseShot.InvokeAsync()" @onkeydown="ShotKey">
         <div class="modal-dialog modal-xl modal-dialog-centered" @onclick:stopPropagation="true">
             <div class="modal-content">
                 <div class="modal-header py-2">
-                    <h5 class="modal-title" id="im-shot-title"><span class="bi bi-image me-2" aria-hidden="true"></span>Screenshot</h5>
+                    <h5 class="modal-title" id="im-shot-title"><span class="bi bi-image me-2" aria-hidden="true"></span>Screenshot@(many ? $" {at + 1} of {ShotSet.Count}" : "")</h5>
                     <button type="button" class="btn-close" aria-label="Close" @onclick="() => OnCloseShot.InvokeAsync()"></button>
                 </div>
                 <div class="modal-body text-center bg-body-tertiary" style="max-height:75vh;overflow:auto">
-                    <img src="evidence/@previewId/inline" alt="Attached screenshot"
+                    <img src="evidence/@previewId/inline" alt="@(many ? $"Attached screenshot {at + 1} of {ShotSet.Count}" : "Attached screenshot")"
                          style="max-width:100%;height:auto;border-radius:.375rem" />
                 </div>
                 <div class="modal-footer py-2">
+                    @if (many)
+                    {
+                        <div class="me-auto d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-outline-secondary im-shot-prev" @onclick="() => OnStepShot.InvokeAsync(-1)"
+                                    aria-label="Previous screenshot" title="Previous screenshot (Left arrow)">
+                                <span class="bi bi-chevron-left" aria-hidden="true"></span>
+                            </button>
+                            <span class="small text-muted im-shot-count" aria-live="polite">@(at + 1) of @ShotSet.Count</span>
+                            <button type="button" class="btn btn-outline-secondary im-shot-next" @onclick="() => OnStepShot.InvokeAsync(1)"
+                                    aria-label="Next screenshot" title="Next screenshot (Right arrow)">
+                                <span class="bi bi-chevron-right" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                    }
                     <a class="btn btn-outline-primary" href="evidence/@previewId" target="_blank" rel="noopener noreferrer">
                         <span class="bi bi-download me-1" aria-hidden="true"></span>Download
                     </a>
@@ -90,9 +109,27 @@
 
     [Parameter] public Guid? ShotId { get; set; }
     [Parameter] public EventCallback OnCloseShot { get; set; }
+    /// <summary>BUG-722 follow-up: the screenshots the open one steps through, in order (one or none: no stepping).</summary>
+    [Parameter] public IReadOnlyList<Guid> ShotSet { get; set; } = [];
+    /// <summary>BUG-722 follow-up: step to the previous (-1) or next (+1) screenshot.</summary>
+    [Parameter] public EventCallback<int> OnStepShot { get; set; }
 
     /// <summary>UX-01: Esc closes whichever dialog is open (focus is trapped inside it).</summary>
     [Parameter] public EventCallback<KeyboardEventArgs> OnEscape { get; set; }
 
     private Task Escape(KeyboardEventArgs e) => OnEscape.InvokeAsync(e);
+
+    // BUG-722 follow-up: the arrows step through the screenshots (with Alt, Ctrl or Meta they're the browser's); Esc closes.
+    private Task ShotKey(KeyboardEventArgs e)
+    {
+        if (ShotSet.Count > 1 && !e.AltKey && !e.CtrlKey && !e.MetaKey && e.Key is "ArrowLeft" or "ArrowRight")
+            return OnStepShot.InvokeAsync(e.Key == "ArrowLeft" ? -1 : 1);
+        return Escape(e);
+    }
+
+    private int IndexOf(Guid id)
+    {
+        for (var i = 0; i < ShotSet.Count; i++) if (ShotSet[i] == id) return i;
+        return -1;
+    }
 }

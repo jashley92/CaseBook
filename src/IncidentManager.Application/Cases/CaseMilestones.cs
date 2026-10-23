@@ -304,7 +304,12 @@ public static class CaseMilestones
         // BUG-443: only a current entry shows it; a retracted (or superseded) one is off the timeline.
         var current = c.TimelineEntries.Where(e => e.IsCurrent).ToList();
         var currentIds = current.Select(e => e.Id).ToHashSet();
-        var onEntries = current.SelectMany(e => e.ScreenshotIds)   // BUG-722: every screenshot an entry shows
+        // BUG-722 follow-up: a screenshot is told by its entry, so one an edit took off isn't news either: any screenshot of
+        // any version of an entry, current or earlier, or taken off a step in place. Only a retraction (BUG-443) gives the
+        // entry's files back to the evidence milestones, its earlier versions' too.
+        var retracted = RetractedLineages(c.TimelineEntries);
+        var onEntries = c.TimelineEntries.Where(e => !retracted.Contains(e.Id))
+            .SelectMany(e => e.ScreenshotIds.Concat(e.FormerScreenshotIds))
             .Concat(c.Citations.Where(x => currentIds.Contains(x.TimelineEntryId)).Select(x => x.EvidenceId)).ToHashSet();
         // CAP-08: dated when it was collected, when that's recorded, and "recorded later" (at the upload) when the upload
         // was in a later minute; where from and by whom follow the description.
@@ -332,6 +337,17 @@ public static class CaseMilestones
                 null, r.ApprovedBy, "report"));
 
         return list.OrderBy(m => m.AtUtc).ThenBy(m => (int)m.Kind).ToList();
+    }
+
+    // BUG-722 follow-up: every version of a retracted entry: the retracted one and those it superseded, back to the first.
+    private static HashSet<Guid> RetractedLineages(IReadOnlyCollection<TimelineEntry> entries)
+    {
+        var byId = entries.ToDictionary(e => e.Id);
+        var off = new HashSet<Guid>();
+        foreach (var e in entries.Where(e => e.IsRetracted))
+            for (var x = e; x is not null && off.Add(x.Id); )
+                x = x.SupersedesEntryId is { } prior && byId.TryGetValue(prior, out var p) ? p : null;
+        return off;
     }
 
     // The opening classification is stamped at creation with no "from"; a later null-"from" change is a

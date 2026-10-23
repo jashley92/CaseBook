@@ -4870,3 +4870,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261023170641_TimelineEntryFormerScreenshots'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [FormerEvidenceIds] nvarchar(max) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261023170641_TimelineEntryFormerScreenshots'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261023170641_TimelineEntryFormerScreenshots'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

@@ -60,6 +60,24 @@ public sealed class TimelineScreenshotRulesTests
     }
 
     [Fact]
+    public void A_screenshot_taken_off_is_remembered_once_and_folded_in(/* BUG-722 follow-up */)
+    {
+        var (a, b, d) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var entry = new TimelineEntry();
+        entry.SetScreenshotIds([a, b, d]);
+        entry.FormerEvidenceIds.Should().BeNull("nothing was taken off");
+        string Canon() => Canonical.InFormat(Canonical.CurrentFormat, entry.BuildCanonicalContent);
+        var before = Canon();
+
+        entry.SetScreenshotIds([a]);
+        entry.SetScreenshotIds([a, b]);   // linked again, then off again: once
+        entry.SetScreenshotIds([]);
+        entry.FormerScreenshotIds.Should().Equal(b, d, a);
+        Canon().Should().EndWith("|was|" + string.Join(',', new[] { b, d, a }.Select(TimelineEntry.MoreKey)));
+        before.Should().NotContain("|was|");
+    }
+
+    [Fact]
     public void An_edit_links_only_an_image_on_this_case_that_stands_and_unlinks_without_touching_the_evidence()
     {
         var c = NewCase();
