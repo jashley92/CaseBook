@@ -38,6 +38,7 @@ public sealed partial class ConfigBundleService
 
         if (env is null || env.Format != ConfigBundleJson.FormatTag || env.Bundle is null)
             throw new InvalidOperationException("This file is not a CaseBook configuration bundle.");
+        RequireWhole(env.Bundle);
         if (env.SchemaVersion > ConfigBundleJson.CurrentSchemaVersion)
             throw new InvalidOperationException(
                 $"This bundle is schema v{env.SchemaVersion}, newer than this app supports (v{ConfigBundleJson.CurrentSchemaVersion}). Upgrade CaseBook first.");
@@ -562,10 +563,24 @@ public sealed partial class ConfigBundleService
 
     private static string Canon<T>(T item) => System.Text.Json.JsonSerializer.Serialize(item, ConfigBundleJson.Canonical);
 
+    // BUG-705: a positional record leaves a collection the JSON omits as null, and a list may carry a null item. Every
+    // export writes the seven required lists and no null items, so such a file is hand-edited or cut short: it is refused
+    // in words here rather than failing the preview or the import with a NullReferenceException.
+    private static ConfigBundle RequireWhole(ConfigBundle bundle)
+    {
+        static bool Bad<T>(IReadOnlyList<T>? list, bool required) => list is null ? required : list.Any(x => x is null);
+        if (Bad(bundle.Settings, true) || Bad(bundle.Roles, true) || Bad(bundle.RoleMappings, true) || Bad(bundle.CaseTemplates, true)
+            || Bad(bundle.StageGates, true) || Bad(bundle.ReportProfiles, true) || Bad(bundle.DataElements, true)
+            || Bad(bundle.NotificationRules, false) || Bad(bundle.ReportTemplates, false) || Bad(bundle.CaseOutcomes, false)
+            || Bad(bundle.Teams, false))
+            throw new InvalidOperationException("This file is not a CaseBook configuration bundle: a section is missing or holds an empty item.");
+        return bundle;
+    }
+
     // BUG-404: ";" separates a case's kept jurisdictions from its elements, so it's never stored inside a code; a bundle
     // using it (an export from before that rule, which stored it as given) is read with commas, as the admin page saves it.
     private static ConfigBundle WithCommaJurisdictions(ConfigBundle bundle) =>
-        bundle.DataElements.Any(d => d.NotificationJurisdictions?.Contains(';') == true)
+        RequireWhole(bundle).DataElements.Any(d => d.NotificationJurisdictions?.Contains(';') == true)
             ? bundle with
             {
                 DataElements = bundle.DataElements.Select(d => d.NotificationJurisdictions?.Contains(';') == true

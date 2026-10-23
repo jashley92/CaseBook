@@ -415,6 +415,21 @@ public sealed class ConfigBundleServiceTests : IDisposable
     private static byte[] Bytes(ConfigBundleEnvelope envelope) =>
         System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(envelope, ConfigBundleJson.File));
 
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"settings\":[],\"roles\":[null],\"roleMappings\":[],\"caseTemplates\":[],\"stageGates\":[],\"reportProfiles\":[],\"dataElements\":[]}")]
+    public async Task A_bundle_missing_a_section_or_holding_a_null_item_is_refused_in_words(string bundleJson /* BUG-705 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var json = $"{{\"format\":\"{ConfigBundleJson.FormatTag}\",\"schemaVersion\":5,\"bundle\":{bundleJson},\"keyId\":\"x\",\"publicKeyPem\":\"\",\"signature\":\"\",\"algorithm\":\"\"}}";
+        svc.Invoking(s => s.ParseAndVerify(System.Text.Encoding.UTF8.GetBytes(json)))
+            .Should().Throw<InvalidOperationException>().WithMessage("*not a CaseBook configuration bundle*");
+
+        var empty = new ConfigBundle(null!, null!, null!, null!, null!, null!, null!, null!);
+        await svc.Invoking(s => s.PreviewAsync(empty)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
     [Fact]
     public async Task A_bundle_that_borrows_this_servers_key_id_is_refused(/* BUG-221 */)
     {
