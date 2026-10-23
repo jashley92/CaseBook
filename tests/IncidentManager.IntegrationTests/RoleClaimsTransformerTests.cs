@@ -87,4 +87,44 @@ public sealed class RoleClaimsTransformerTests
         principal.Claims.Should().HaveCount(claims);
         principal.Identities.Where(i => i.IsAuthenticated).Should().ContainSingle("the grants stay off the signed-in identity (WF-42)");
     }
+    private sealed class MirrorSpy : IUserDirectory
+    {
+        public List<string> Touched { get; } = [];
+        public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default)
+        {
+            Touched.Add(rolesCsv);
+            return Task.CompletedTask;
+        }
+        public IReadOnlyList<UserSummary> All() => [];
+        public UserSummary? Resolve(string userId) => null;
+        public string DisplayFor(string? userId) => userId ?? "";
+        public string? EmailFor(string userId) => null;
+        public void Invalidate() { }
+    }
+
+    [Fact]
+    public async Task A_request_whose_groups_werent_all_named_in_time_isnt_mirrored_as_the_persons_roles(/* BUG-708 */)
+    {
+        const string unnamed = "S-1-5-21-1-2-3-1001";
+        using var hold = new ManualResetEventSlim();
+        var slow = new SidNames(_ => { hold.Wait(TimeSpan.FromSeconds(10)); return new Dictionary<string, string>(); }, TimeSpan.FromMilliseconds(50));
+        var transformer = new RoleClaimsTransformer(new Directory(), sids: slow);
+        ClaimsPrincipal Person(params string[] groups) => new(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "jdoe"), .. groups.Select(g => new Claim(ClaimTypes.GroupSid, g))], "Negotiate"));
+
+        var partial = await transformer.TransformAsync(Person("SOC-Managers", unnamed));
+        hold.Set();
+        RoleClaimsTransformer.GroupsIncomplete(partial).Should().BeTrue();
+        partial.Identities.Where(i => i.IsAuthenticated).Should().ContainSingle("the marker isn't a sign-in identity");
+
+        var whole = await transformer.TransformAsync(Person("SOC-Managers"));
+        RoleClaimsTransformer.GroupsIncomplete(whole).Should().BeFalse();
+
+        var mirror = new MirrorSpy();
+        var middleware = new UserMirrorMiddleware(_ => Task.CompletedTask);
+        await middleware.InvokeAsync(new Microsoft.AspNetCore.Http.DefaultHttpContext { User = partial }, mirror, new Directory());
+        mirror.Touched.Should().BeEmpty("a short role list from a slow directory isn't stored as the person's roles");
+        await middleware.InvokeAsync(new Microsoft.AspNetCore.Http.DefaultHttpContext { User = whole }, mirror, new Directory());
+        mirror.Touched.Should().Equal(["Manager"]);
+    }
 }

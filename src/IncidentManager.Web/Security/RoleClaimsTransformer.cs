@@ -17,10 +17,13 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
     private static ILogger? _log;   // the first instance's; the lookups below are static (shared with the S-10 re-check)
     private readonly IRoleDirectory _directory;
+    private readonly SidNames? _sids;
 
-    public RoleClaimsTransformer(IRoleDirectory directory, ILogger<RoleClaimsTransformer>? log = null)
+    /// <param name="sids">Tests only: stands in for the shared SID lookup.</param>
+    public RoleClaimsTransformer(IRoleDirectory directory, ILogger<RoleClaimsTransformer>? log = null, SidNames? sids = null)
     {
         _directory = directory;
+        _sids = sids;
         _log ??= log;
     }
 
@@ -32,7 +35,11 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
             return principal;
 
         // A group not named in time gives this request only its by-SID mappings (BUG-565, failing closed).
-        var roleNames = _directory.RolesForGroups((await GroupCandidatesAsync(principal)).Names);
+        var groups = await GroupCandidatesAsync(principal, _sids);
+        // BUG-708: and the request says so, so the user mirror doesn't store its short role list as the person's roles.
+        if (!groups.Complete && !GroupsIncomplete(principal))
+            principal.AddIdentity(new ClaimsIdentity { Label = IncompleteLabel });
+        var roleNames = _directory.RolesForGroups(groups.Names);
         if (roleNames.Count == 0)
             return principal;
 
@@ -59,6 +66,13 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
     /// <summary>BUG-574: marks the identity carrying CaseBook's grants.</summary>
     internal const string GrantsLabel = "CaseBook grants";
+
+    // BUG-708: an empty, unauthenticated identity marking a request whose groups weren't all named in time.
+    private const string IncompleteLabel = "CaseBook groups incomplete";
+
+    /// <summary>BUG-708: true when this request's roles were decided from a partial answer (some of its groups weren't
+    /// named in time), so they may be short of the person's real roles and mustn't be recorded as them.</summary>
+    public static bool GroupsIncomplete(ClaimsPrincipal principal) => principal.Identities.Any(i => i.Label == IncompleteLabel);
 
     /// <summary>
     /// The AD group identifiers on a Windows principal to match against the group→role mappings. Windows groups arrive

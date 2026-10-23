@@ -25,7 +25,10 @@ public sealed class UserMirrorMiddleware
                          ?? principal.FindFirstValue(ClaimTypes.Upn)
                          ?? principal.Identity.Name;
 
-            if (!string.IsNullOrWhiteSpace(userId))
+            // BUG-708: not from a request whose groups weren't all named in time. Its roles are short (fail closed for the
+            // request), and stored they'd stand for the person's roles until the next touch, 30 minutes on: the calendar feed
+            // and the recipient fallback read them. Skipped, the next whole answer writes the row.
+            if (!string.IsNullOrWhiteSpace(userId) && !RoleClaimsTransformer.GroupsIncomplete(principal))
             {
                 // Store the real display name (AD lookup for DOMAIN\sam), not the domain-qualified logon.
                 // BUG-565: bounded, and awaited so a slow domain controller doesn't hold the request's thread.
