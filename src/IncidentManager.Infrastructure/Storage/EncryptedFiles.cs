@@ -23,10 +23,13 @@ public static class EncryptedFiles
     /// <summary>
     /// The readable content of an open file: decrypted when it's a CBE1 file (throwing
     /// <see cref="EvidenceKeyUnavailableException"/> when its key isn't held), else the file itself from the start.
-    /// Takes ownership of <paramref name="file"/>.
+    /// BUG-712: <paramref name="encrypted"/> is how the file was recorded as stored: false serves it as it is, even when
+    /// its own first bytes look like a CBE1 header; true requires one; null (a record from before it was kept) decides
+    /// from the bytes. Takes ownership of <paramref name="file"/>.
     /// </summary>
-    public static Stream OpenContent(FileStream file, IEvidenceKeyring keys)
+    public static Stream OpenContent(FileStream file, IEvidenceKeyring keys, bool? encrypted = null)
     {
+        if (encrypted == false) return file;
         try
         {
             var head = new byte[Cbe1.HeaderSize];
@@ -37,6 +40,7 @@ public static class EncryptedFiles
                 var keyId = Cbe1.KeyIdOf(head) ?? throw new CryptographicException("The encrypted file's header is damaged.");
                 return new Cbe1ReadStream(file, keys.Key(keyId) ?? throw new EvidenceKeyUnavailableException(keyId));
             }
+            if (encrypted == true) throw new CryptographicException("The encrypted file's header is damaged.");
             file.Position = 0;
             return file;
         }

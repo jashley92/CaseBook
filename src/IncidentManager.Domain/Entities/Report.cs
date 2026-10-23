@@ -21,6 +21,11 @@ public class Report : AuditableEntity, IHashableEntity
     /// <summary>SHA-256 of the generated file, embedded in the PDF and verifiable later.</summary>
     public string ContentSha256 { get; set; } = string.Empty;
 
+    /// <summary>BUG-712: whether the stored file was written encrypted (CBE1), so reading it never guesses from its own
+    /// first bytes; null for a file stored before this was kept (decided from its bytes). Set to true, as CaseBook's
+    /// upkeep, when PROD-57's conversion encrypts a plain file. Hashed from format 9, only when set.</summary>
+    public bool? StoredEncrypted { get; set; }
+
     /// <summary>PROD-45: the TLP marking printed on this report (null for reports generated before markings).</summary>
     public TlpLevel? Tlp { get; set; }
 
@@ -41,7 +46,9 @@ public class Report : AuditableEntity, IHashableEntity
     public string BuildCanonicalContent() => string.Join('|',
         CaseId, Version.ToString(System.Globalization.CultureInfo.InvariantCulture), Canonical.Num(Kind), Canonical.Num(Format),
         Canonical.Text(FileName), ContentSha256, Canonical.Num(Tlp), Canonical.Text(TemplateName), TemplateSha256, IsFinal,
-        Canonical.Text(ApprovedBy), Canonical.Time(ApprovedAtUtc), Canonical.Text(CreatedBy), Canonical.Time(CreatedAtUtc));
+        Canonical.Text(ApprovedBy), Canonical.Time(ApprovedAtUtc), Canonical.Text(CreatedBy), Canonical.Time(CreatedAtUtc))
+        // BUG-712: from format 9, how the file is stored, only when it's recorded, so a report from before builds what it did.
+        + Canonical.Since(9, StoredEncrypted is not null, () => "|encrypted|" + (StoredEncrypted == true ? "1" : "0"));
 
     /// <summary>
     /// Approves and finalizes this report (E-15): the locked final an examiner receives. The stored file and its

@@ -35,8 +35,11 @@ public sealed class EvidenceConversionStatus
 /// <item>only then is it swapped in with a move that replaces (File.Replace isn't supported on many SMB shares).</item>
 /// </list>
 /// A file in use (a download, a re-check) is left for the next run, and the re-check never runs at the same time
-/// (<see cref="EvidenceFileGate"/>). A file needs free space for one copy of itself. The records aren't touched: the
-/// hash is the original file's either way. One audit entry per run says how many were converted.
+/// (<see cref="EvidenceFileGate"/>). A file needs free space for one copy of itself. The records' content and hashes
+/// aren't touched: the hash is the original file's either way. BUG-712: a row recorded as plain is judged by that, not by
+/// its first bytes, and how its file is stored (<c>StoredEncrypted</c>) is recorded as true, as CaseBook's upkeep, before
+/// its copy is swapped in (a row that can't be vouched for keeps its plain file). One audit entry per run says how many
+/// were converted.
 /// </summary>
 public sealed class EvidenceConversion(IServiceScopeFactory scopes, IEvidenceKeyring keys, IOptions<EvidenceStoreOptions> evidence,
     IOptions<ReportOutputOptions> reports, EvidenceFileGate gate, EvidenceConversionStatus status, ILogger<EvidenceConversion>? logger = null)
@@ -44,7 +47,7 @@ public sealed class EvidenceConversion(IServiceScopeFactory scopes, IEvidenceKey
     private readonly string _evidenceRoot = Path.GetFullPath(evidence.Value.RootPath);
     private readonly string _reportRoot = Path.GetFullPath(reports.Value.RootPath);
 
-    private sealed record Item(string Root, string StoragePath, string Sha256);
+    private sealed record Item(string Root, string StoragePath, string Sha256, Guid Id, bool IsReport, bool? Encrypted);
 
     /// <summary>Converts up to <paramref name="batch"/> plain files; returns how many it converted (0 when none are left
     /// or the key isn't ready).</summary>
@@ -56,9 +59,9 @@ public sealed class EvidenceConversion(IServiceScopeFactory scopes, IEvidenceKey
         await using (var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct))
         {
             var ev = await db.Evidence.AsNoTracking().IgnoreQueryFilters().Where(e => e.PurgedAtUtc == null)   // no bytes to convert
-                .Select(e => new Item(_evidenceRoot, e.StoragePath, e.Sha256)).ToListAsync(ct);
+                .Select(e => new Item(_evidenceRoot, e.StoragePath, e.Sha256, e.Id, false, e.StoredEncrypted)).ToListAsync(ct);
             var rp = await db.Reports.AsNoTracking().IgnoreQueryFilters()
-                .Select(r => new Item(_reportRoot, r.StoragePath, r.ContentSha256)).ToListAsync(ct);
+                .Select(r => new Item(_reportRoot, r.StoragePath, r.ContentSha256, r.Id, true, r.StoredEncrypted)).ToListAsync(ct);
             items = [.. ev, .. rp];
         }
 
@@ -76,11 +79,15 @@ public sealed class EvidenceConversion(IServiceScopeFactory scopes, IEvidenceKey
                 var path = Path.GetFullPath(Path.Combine(item.Root, item.StoragePath));
                 if (!path.StartsWith(item.Root + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(path)) continue;
                 bool plain;
-                try { plain = !EncryptedFiles.IsEncrypted(path); }
+                // BUG-712: a row recorded as plain is plain, whatever its first bytes.
+                try { plain = item.Encrypted == false || !EncryptedFiles.IsEncrypted(path); }
                 catch (IOException) { busy++; remaining++; continue; }   // in use: the next run
                 if (!plain) continue;
                 if (converted >= batch) { remaining++; continue; }
-                switch (await ConvertAsync(path, item.Sha256, key, ct))
+                // Recorded before the swap, so a row never says plain over an encrypted file (one that says encrypted over
+                // a plain file, a run stopped between the two, is converted by the next).
+                Func<Task<bool>>? record = item.Encrypted == true ? null : () => RecordEncryptedAsync(item, ct);
+                switch (await ConvertAsync(path, item.Sha256, key, record, ct))
                 {
                     case Outcome.Converted: converted++; break;
                     case Outcome.Busy: busy++; remaining++; break;
@@ -119,7 +126,39 @@ public sealed class EvidenceConversion(IServiceScopeFactory scopes, IEvidenceKey
 
     private enum Outcome { Converted, Busy, Mismatch, NoRoom }
 
-    private async Task<Outcome> ConvertAsync(string path, string recorded, (string KeyId, byte[] Key) key, CancellationToken ct)
+    /// <summary>BUG-712: the row says its file is stored encrypted. It's in the row hash, so it's written as CaseBook's
+    /// upkeep (IntegrityUpkeep), through the audit; false when the row isn't there or can't be vouched for (BUG-639: put
+    /// back as read, and the record check reports it).</summary>
+    private async Task<bool> RecordEncryptedAsync(Item item, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        await using var db = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct);
+        Func<bool?>? stored = null;
+        if (item.IsReport)
+        {
+            if (await db.Reports.IgnoreQueryFilters().FirstOrDefaultAsync(r => r.Id == item.Id, ct) is { } report)
+            {
+                report.StoredEncrypted = true;
+                stored = () => report.StoredEncrypted;
+            }
+        }
+        else if (await db.Evidence.IgnoreQueryFilters().FirstOrDefaultAsync(e => e.Id == item.Id, ct) is { } evidence)
+        {
+            evidence.StoredEncrypted = true;
+            stored = () => evidence.StoredEncrypted;
+        }
+        if (stored is null) return false;
+        db.PendingUpkeep = true;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return stored() == true;
+        }
+        finally { db.PendingUpkeep = false; }
+    }
+
+    private async Task<Outcome> ConvertAsync(string path, string recorded, (string KeyId, byte[] Key) key, Func<Task<bool>>? record,
+        CancellationToken ct)
     {
         var temp = path + ".cbe1";
         try
@@ -140,11 +179,12 @@ public sealed class EvidenceConversion(IServiceScopeFactory scopes, IEvidenceKey
                 var (sha, _) = await EncryptedFiles.WriteAsync(target, source, key, ct);
                 if (!string.Equals(sha, recorded, StringComparison.OrdinalIgnoreCase)) { TryDelete(temp); return Outcome.Busy; }   // changed while read
             }
-            await using (var check = EncryptedFiles.OpenContent(new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read), keys))
+            await using (var check = EncryptedFiles.OpenContent(new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read), keys, true))
             {
                 var after = Convert.ToHexString(await SHA256.HashDataAsync(check, ct)).ToLowerInvariant();
                 if (!string.Equals(after, recorded, StringComparison.OrdinalIgnoreCase)) { TryDelete(temp); return Outcome.Busy; }
             }
+            if (record is not null && !await record()) { TryDelete(temp); return Outcome.Mismatch; }
             File.Move(temp, path, overwrite: true);
             return Outcome.Converted;
         }

@@ -634,7 +634,7 @@ public sealed class EvidenceKeyringTests : IDisposable
         var tampered = await plainStore.SaveAsync(caseId, new MemoryStream("original"u8.ToArray()));
         var busy = await plainStore.SaveAsync(caseId, new MemoryStream("in use"u8.ToArray()));
         var report = await plainReports.SaveAsync(caseId, "report.docx", "report"u8.ToArray());
-        await using (var raw = new AppDbContext(_database.OptionsWithoutInterceptors))
+        await using (var raw = _database.NewContext())
         {
             foreach (var (s, name) in new[] { (good, "good.exe"), (tampered, "tampered.bin"), (busy, "busy.bin") })
                 raw.Evidence.Add(new IncidentManager.Domain.Entities.Evidence
@@ -676,6 +676,96 @@ public sealed class EvidenceKeyringTests : IDisposable
         (await conversion.RunAsync(100)).Should().Be(1, "the file no longer in use");
         status.Remaining.Should().Be(0);
         Directory.GetFiles(_dir, "*.cbe1", SearchOption.AllDirectories).Should().BeEmpty("no temporary copies are left");
+    }
+
+    // "CBE1", version 1, then text where a key id would be: a plain file that happens to begin with the magic.
+    private static readonly byte[] Lookalike = [.. "CBE1"u8, 1, .. System.Text.Encoding.ASCII.GetBytes(new string('Z', 400))];
+
+    private static async Task<byte[]> ReadAll(Stream s)
+    {
+        await using (s)
+        {
+            using var copy = new MemoryStream();
+            await s.CopyToAsync(copy);
+            return copy.ToArray();
+        }
+    }
+
+    [Fact]
+    public async Task A_file_stored_plain_reads_as_it_is_even_when_it_begins_like_an_encrypted_one(/* BUG-712 */)
+    {
+        // The key is made first: a new key isn't made over files that look encrypted (review finding 3).
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("CaseBook recovery");
+        var ring = Ring(On(server, RecoveryCer(recovery)));
+        (await ring.LoadAsync()).Should().Be(EvidenceKeyState.Ready);
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+
+        var plainStore = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }));
+        var saved = await plainStore.SaveAsync(Guid.NewGuid(), new MemoryStream(Lookalike));
+        saved.Encrypted.Should().BeFalse();
+        (await ReadAll(await plainStore.OpenReadAsync(saved.StoragePath, saved.Encrypted))).Should().Equal(Lookalike);
+
+        // An upload in parts: its format is kept from its start, so its first part isn't judged by its bytes.
+        var incoming = await plainStore.BeginIncomingAsync();
+        await plainStore.AppendIncomingAsync(incoming, 0, Lookalike);
+        await plainStore.AppendIncomingAsync(incoming, Lookalike.Length, "more"u8.ToArray());
+        await plainStore.FinishIncomingAsync(incoming, Lookalike.Length + 4);
+        byte[] whole = [.. Lookalike, .. "more"u8];
+        (await ReadAll(await plainStore.OpenIncomingAsync(incoming))).Should().Equal(whole);
+        var committed = await plainStore.CommitIncomingAsync(incoming, Guid.NewGuid(), "sha", whole.Length);
+        committed.Encrypted.Should().BeFalse();
+        (await ReadAll(await plainStore.OpenReadAsync(committed.StoragePath, committed.Encrypted))).Should().Equal(whole);
+        Directory.GetFiles(Path.Combine(Evidence, ".incoming")).Should().BeEmpty("nothing of the upload is left behind");
+
+        var plainReports = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = Reports }));
+        var report = await plainReports.SaveAsync(Guid.NewGuid(), "r.docx", Lookalike);
+        report.Encrypted.Should().BeFalse();
+        (await ReadAll(await plainReports.OpenReadAsync(report.StoragePath, report.Encrypted))).Should().Equal(Lookalike);
+
+        var sealedFile = await store.SaveAsync(Guid.NewGuid(), new MemoryStream(Lookalike));
+        sealedFile.Encrypted.Should().BeTrue();
+        (await ReadAll(await store.OpenReadAsync(sealedFile.StoragePath, true))).Should().Equal(Lookalike);
+        (await ReadAll(await store.OpenReadAsync(saved.StoragePath, false))).Should().Equal(Lookalike, "the key being ready changes nothing");
+        await store.Invoking(s => s.OpenReadAsync(saved.StoragePath, true)).Should().ThrowAsync<CryptographicException>(
+            "a file recorded as encrypted is never served raw");
+    }
+
+    [Fact]
+    public async Task A_file_recorded_as_plain_is_converted_whatever_its_first_bytes_and_then_recorded_as_encrypted(/* BUG-712 */)
+    {
+        await using (var ctx = _database.NewContext()) await DevDataSeeder.SeedAsync(ctx, _clock);
+        Guid caseId;
+        await using (var ctx = _database.NewContext()) caseId = (await ctx.Cases.FirstAsync()).Id;
+        var plainStore = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }));
+        var stored = await plainStore.SaveAsync(caseId, new MemoryStream(Lookalike));
+        var row = new IncidentManager.Domain.Entities.Evidence
+        {
+            CaseId = caseId, OriginalFileName = "lookalike.bin", ContentType = "", SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256,
+            StoragePath = stored.StoragePath, StoredEncrypted = stored.Encrypted, CreatedBy = "seed", CreatedAtUtc = _clock.UtcNow,
+        };
+        await using (var raw = _database.NewContext())
+        {
+            raw.Evidence.Add(row);
+            await raw.SaveChangesAsync();
+        }
+
+        var server = Installed("CaseBook evidence server");
+        using var recovery = NewCertificate("r");
+        var ring = Ring(On(server, RecoveryCer(recovery)));
+        await ring.LoadAsync();
+        var conversion = new EvidenceConversion(Scopes(), ring, Options.Create(new EvidenceStoreOptions { RootPath = Evidence }),
+            Options.Create(new ReportOutputOptions { RootPath = Reports }), new IncidentManager.Application.Integrity.EvidenceFileGate(),
+            new EvidenceConversionStatus());
+
+        (await conversion.RunAsync(100)).Should().Be(1);
+        bool? flag;
+        await using (var ctx = _database.NewContext())
+            flag = (await ctx.Evidence.IgnoreQueryFilters().SingleAsync(e => e.Id == row.Id)).StoredEncrypted;
+        flag.Should().BeTrue();
+        var store = new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = Evidence }), ring);
+        (await ReadAll(await store.OpenReadAsync(stored.StoragePath, flag))).Should().Equal(Lookalike);
+        (await conversion.RunAsync(100)).Should().Be(0, "it's recorded as encrypted now");
     }
 
     [Fact]

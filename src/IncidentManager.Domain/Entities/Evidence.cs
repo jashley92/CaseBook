@@ -38,6 +38,11 @@ public class Evidence : AuditableEntity, IHashableEntity
 
     /// <summary>Relative path within the evidence store (randomized name, not the original).</summary>
     public string StoragePath { get; set; } = string.Empty;
+
+    /// <summary>BUG-712: whether the stored file was written encrypted (CBE1), so reading it never guesses from its own
+    /// first bytes; null for a file stored before this was kept (decided from its bytes). Set to true, as CaseBook's
+    /// upkeep, when PROD-57's conversion encrypts a plain file. Hashed from format 9, only when set.</summary>
+    public bool? StoredEncrypted { get; set; }
     public string? Description { get; set; }
 
     /// <summary>CAP-08: when the file was collected (acquired from its source), when known. Null: taken to be the upload
@@ -210,7 +215,9 @@ public class Evidence : AuditableEntity, IHashableEntity
             // From format 6, a purge, each only when set, so a file that wasn't purged builds what it did.
             + Canonical.Since(6, PurgedAtUtc is not null, () => "|purgedat|" + Canonical.Time(PurgedAtUtc))
             + Canonical.Since(6, PurgedBy is not null, () => "|purgedby|" + Canonical.Text(PurgedBy))
-            + Canonical.Since(6, PurgedReason is not null, () => "|purgedwhy|" + Canonical.Text(PurgedReason));
+            + Canonical.Since(6, PurgedReason is not null, () => "|purgedwhy|" + Canonical.Text(PurgedReason))
+            // BUG-712: from format 9, how the file is stored, only when it's recorded, so a row from before builds what it did.
+            + Canonical.Since(9, StoredEncrypted is not null, () => "|encrypted|" + (StoredEncrypted == true ? "1" : "0"));
     }
 }
 

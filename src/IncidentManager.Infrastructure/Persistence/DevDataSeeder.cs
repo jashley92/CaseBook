@@ -111,7 +111,7 @@ public static class DevDataSeeder
             var ev = new Evidence
             {
                 CaseId = c.Id, OriginalFileName = "signin-export-jdoe.csv", ContentType = "text/csv",
-                SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath,
+                SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath, StoredEncrypted = stored.Encrypted,
                 Description = "Entra ID sign-in export for the affected users (demo data).",
                 CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-5).AddHours(1)
             };

@@ -437,6 +437,7 @@ public sealed class ReportService
                 Format = format,
                 FileName = fileName,
                 StoragePath = stored.StoragePath,
+                StoredEncrypted = stored.Encrypted,   // BUG-712
                 ContentSha256 = stored.Sha256,
                 IsFinal = false,          // always a draft; finalization is the separate ApproveAsync step (E-15)
                 ApprovedBy = null,
@@ -552,7 +553,7 @@ public sealed class ReportService
         MemoryStream? content = null;
         try
         {
-            await using var stream = await _store.OpenReadAsync(report.StoragePath, ct);
+            await using var stream = await _store.OpenReadAsync(report.StoragePath, report.StoredEncrypted, ct);
             Stream hashed = stream;
             if (keep)
             {

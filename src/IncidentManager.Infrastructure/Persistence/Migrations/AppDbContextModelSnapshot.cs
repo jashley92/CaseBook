@@ -1767,6 +1767,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool?>("StoredEncrypted")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("WithdrawnAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -2438,6 +2441,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
+
+                    b.Property<bool?>("StoredEncrypted")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("TemplateName")
                         .HasMaxLength(200)

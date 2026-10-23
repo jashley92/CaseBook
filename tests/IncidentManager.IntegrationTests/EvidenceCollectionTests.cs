@@ -236,11 +236,12 @@ public sealed class EvidenceCollectionTests : IDisposable
         await using (var s = Bytes("export"))
             id = (await Evidence(database).UploadAsync(caseId, "a|b.csv", "text/csv", s, "export")).Id;
         var row = await RowAsync(database, id);
+        _hasher.RowHashMatches(row, row.RowHash!).Should().BeTrue();
+        row.StoredEncrypted = null;   // as a file stored before BUG-712 recorded how it's kept
 
         Canonical.InFormat(5, row.BuildCanonicalContent).Should().Be(Canonical.InFormat(4, row.BuildCanonicalContent),
             "format 5 adds nothing for a file without a collection (R7), so its hash is the one it always had");
         Canonical.Covers(4, row.BuildCanonicalContent).Should().BeTrue();
-        _hasher.RowHashMatches(row, row.RowHash!).Should().BeTrue();
 
         row.CollectedFrom = "WKS-0142";
         Canonical.Covers(4, row.BuildCanonicalContent).Should().BeFalse("a format-4 hash can't show a collection");

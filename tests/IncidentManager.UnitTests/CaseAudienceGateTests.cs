@@ -115,6 +115,7 @@ public partial class CaseAudienceGateTests
         ["HeldEmailSummary.cs:ReadAsync"] = (2, "CAP-04: Diagnostics' bounded count of the held mail and the oldest's time; no recipient, subject or case"),
         ["EvidenceKeyring.cs:EncryptedFileKeyIdAsync"] = (1, "PROD-57 review finding 3: before a new evidence key is made, every stored file's path and recorded size, to tell plain files from encrypted ones without opening them; its result is a key id or nothing"),
         ["EvidenceConversion.cs:RunAsync"] = (2, "PROD-57: the background encryption of files stored before, over every evidence file and report; it reads storage paths and hashes only, and its result is counts"),
+        ["EvidenceConversion.cs:RecordEncryptedAsync"] = (2, "BUG-712: the conversion recording, as CaseBook's upkeep, that one file it just encrypted is stored encrypted; nothing is shown to anyone"),
         ["EvidenceIntegrityVerifier.cs:VerifyShareAsync"] = (2, "the evidence integrity sweep over every file (or a share of them, PROD-53); its result is counts and alerts, not case content"),
         ["RetentionReviewScanner.cs:CountAsync"] = (1, "CAP-10: the nightly retention count over every case; its result is two numbers (due, under hold), no case named"),
         ["AccessLogRetention.cs:PruneAsync"] = (2, "PROD-52: the nightly access-log prune deletes old rows and reads a case only for its legal hold; nothing is shown to anyone"),

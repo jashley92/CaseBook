@@ -129,6 +129,7 @@ public sealed class EvidenceService
             SizeBytes = stored.SizeBytes,
             Sha256 = stored.Sha256,
             StoragePath = stored.StoragePath,
+            StoredEncrypted = stored.Encrypted,   // BUG-712
             Description = description,
             CollectedAtUtc = collected.AtUtc, CollectedFrom = collected.From, CollectedBy = collected.By,   // CAP-08
             CreatedBy = _user.UserId,
@@ -472,7 +473,7 @@ public sealed class EvidenceService
 
         // BUG-197: the file is opened first, so a download that can't be served (the file missing or unreadable) records
         // no custody event for bytes that never left the server.
-        var stream = await _store.OpenReadAsync(evidence.StoragePath, ct);
+        var stream = await _store.OpenReadAsync(evidence.StoragePath, evidence.StoredEncrypted, ct);
         if (recordDownload)
         {
             try
@@ -609,7 +610,7 @@ public sealed class EvidenceService
 
     /// <summary>The bytes of one packaged file, decrypted from the store (ADR 0017), for the package's zip.</summary>
     public Task<Stream> OpenPackagedFileAsync(EvidencePackageFile file, CancellationToken ct = default) =>
-        _store.OpenReadAsync(file.Evidence.StoragePath, ct);
+        _store.OpenReadAsync(file.Evidence.StoragePath, file.Evidence.StoredEncrypted, ct);
 
     /// <summary>CAP-12 review: the custody actions a package writes (each file's "Transfer begun", then how it ended).</summary>
     public const string PackageBegunAction = "Transfer begun", PackageSentAction = "Transferred",

@@ -1773,6 +1773,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<bool?>("StoredEncrypted")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset?>("WithdrawnAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -2446,6 +2449,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool?>("StoredEncrypted")
+                        .HasColumnType("bit");
 
                     b.Property<string>("TemplateName")
                         .HasMaxLength(200)

@@ -273,7 +273,8 @@ public sealed class CaseService
                 {
                     CaseId = caseId, OriginalFileName = shot.FileName,
                     ContentType = string.IsNullOrWhiteSpace(shot.ContentType) ? "application/octet-stream" : shot.ContentType,
-                    SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath, Description = shot.Description,
+                    SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath, StoredEncrypted = stored.Encrypted,
+                    Description = shot.Description,
                     CreatedBy = _user.UserId, CreatedAtUtc = now
                 };
                 evidence.CustodyEvents.Add(new ChainOfCustodyEvent
@@ -4148,7 +4149,7 @@ public sealed class CaseService
             throw new InvalidOperationException($"{to.CaseNumber} holds this file already. Withdraw it here instead.");
 
         Abstractions.StoredEvidence copy;
-        await using (var source = await _evidenceStore.OpenReadAsync(ev.StoragePath, ct))
+        await using (var source = await _evidenceStore.OpenReadAsync(ev.StoragePath, ev.StoredEncrypted, ct))
             copy = await _evidenceStore.SaveAsync(to.Id, source, ct);
         if (!string.Equals(copy.Sha256, ev.Sha256, StringComparison.OrdinalIgnoreCase))
         {
@@ -4161,7 +4162,7 @@ public sealed class CaseService
             var moved = new Domain.Entities.Evidence
             {
                 CaseId = to.Id, OriginalFileName = ev.OriginalFileName, ContentType = ev.ContentType, SizeBytes = copy.SizeBytes,
-                Sha256 = copy.Sha256, StoragePath = copy.StoragePath, Description = ev.Description,
+                Sha256 = copy.Sha256, StoragePath = copy.StoragePath, StoredEncrypted = copy.Encrypted, Description = ev.Description,
                 CollectedAtUtc = ev.CollectedAtUtc, CollectedFrom = ev.CollectedFrom, CollectedBy = ev.CollectedBy,
                 CreatedBy = _user.UserId, CreatedAtUtc = now,
             };

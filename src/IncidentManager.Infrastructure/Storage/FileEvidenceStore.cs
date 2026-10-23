@@ -63,6 +63,22 @@ public sealed class FileEvidenceStore : IEvidenceStore
 
     private string StatePath(string incoming) => Path.ChangeExtension(IncomingPath(incoming), ".state.json");
 
+    // BUG-712: how an upload in parts is being stored ("cbe1" or "plain"), written when it begins, so its parts are never
+    // judged by their own first bytes. One begun before this was kept has none (null: decided from the bytes).
+    private string FormatPath(string incoming) => Path.ChangeExtension(IncomingPath(incoming), ".format");
+
+    private bool? IncomingEncrypted(string incoming)
+    {
+        var path = FormatPath(incoming);
+        return File.Exists(path) ? File.ReadAllText(path) == "cbe1" : null;
+    }
+
+    private void DeleteFormat(string incoming)
+    {
+        var path = FormatPath(incoming);
+        if (File.Exists(path)) File.Delete(path);
+    }
+
     public async Task SaveIncomingStateAsync(string incoming, string state, CancellationToken ct = default)
     {
         var path = StatePath(incoming);
@@ -95,16 +111,19 @@ public sealed class FileEvidenceStore : IEvidenceStore
         EnsureRoot();
         Directory.CreateDirectory(Incoming);
         var name = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        var key = EncryptedFiles.ForNewFile(_keys);
+        await File.WriteAllTextAsync(FormatPath(name), key is null ? "plain" : "cbe1", ct);
         await using var fs = new FileStream(IncomingPath(name), FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        // PROD-57: encrypted from the start when the key is ready; the header decides how the parts are written.
-        if (EncryptedFiles.ForNewFile(_keys) is { } key) await fs.WriteAsync(Cbe1.NewHeader(key.KeyId, key.Key).Header, ct);
+        // PROD-57: encrypted from the start when the key is ready; the header (and BUG-712, the format beside it) decides
+        // how the parts are written.
+        if (key is { } k) await fs.WriteAsync(Cbe1.NewHeader(k.KeyId, k.Key).Header, ct);
         return name;
     }
 
     public async Task AppendIncomingAsync(string incoming, long offset, ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
     {
         await using var fs = new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        if (await IncomingCipherAsync(fs, ct) is not { } cipher)
+        if (await IncomingCipherAsync(incoming, fs, ct) is not { } cipher)
         {
             // A part retried after a write that failed half-way starts again where the last whole part ended.
             fs.SetLength(offset);
@@ -130,8 +149,9 @@ public sealed class FileEvidenceStore : IEvidenceStore
     }
 
     // The part file's chunk cipher when it's encrypted (its key named by its header), else null.
-    private async Task<(AesGcm Gcm, byte[] FileId)?> IncomingCipherAsync(FileStream fs, CancellationToken ct)
+    private async Task<(AesGcm Gcm, byte[] FileId)?> IncomingCipherAsync(string incoming, FileStream fs, CancellationToken ct)
     {
+        if (IncomingEncrypted(incoming) == false) return null;   // BUG-712: plain, whatever its first bytes
         var head = new byte[Cbe1.HeaderSize];
         fs.Position = 0;
         if (await fs.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, ct) < head.Length || Cbe1.KeyIdOf(head) is not { } keyId)
@@ -146,7 +166,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
     public async Task FinishIncomingAsync(string incoming, long size, CancellationToken ct = default)
     {
         await using var fs = new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        if (await IncomingCipherAsync(fs, ct) is not { } cipher) return;
+        if (await IncomingCipherAsync(incoming, fs, ct) is not { } cipher) return;
         using var gcm = cipher.Gcm;
         var chunks = (size + Cbe1.ChunkSize - 1) / Cbe1.ChunkSize;
         var dataEnd = Cbe1.HeaderSize + size + chunks * Cbe1.TagSize;
@@ -161,7 +181,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
 
     public Task<Stream> OpenIncomingAsync(string incoming, CancellationToken ct = default) =>
         Task.FromResult(EncryptedFiles.OpenContent(new FileStream(IncomingPath(incoming), FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 1 << 16, useAsync: false), _keys));
+            bufferSize: 1 << 16, useAsync: false), _keys, IncomingEncrypted(incoming)));
 
     public Task<StoredEvidence> CommitIncomingAsync(string incoming, Guid caseId, string sha256, long size, CancellationToken ct = default)
     {
@@ -169,16 +189,19 @@ public sealed class FileEvidenceStore : IEvidenceStore
         EnsureRoot();
         Directory.CreateDirectory(Path.Combine(_root, relDir));
         var fileName = Guid.NewGuid().ToString("N") + ".bin";
+        var encrypted = IncomingEncrypted(incoming);
         File.Move(IncomingPath(incoming), Path.Combine(_root, relDir, fileName), overwrite: false);
         DeleteState(incoming);
+        DeleteFormat(incoming);
         _holdsEvidence = true;
-        return Task.FromResult(new StoredEvidence($"{relDir}/{fileName}", sha256, size));
+        return Task.FromResult(new StoredEvidence($"{relDir}/{fileName}", sha256, size, encrypted));
     }
 
     public Task DiscardIncomingAsync(string incoming)
     {
         File.Delete(IncomingPath(incoming));
         DeleteState(incoming);
+        DeleteFormat(incoming);
         return Task.CompletedTask;
     }
 
@@ -197,6 +220,8 @@ public sealed class FileEvidenceStore : IEvidenceStore
                 cleared++;
                 var state = Path.Combine(Incoming, name + ".state.json");
                 if (File.Exists(state)) File.Delete(state);
+                var format = Path.Combine(Incoming, name + ".format");
+                if (File.Exists(format)) File.Delete(format);
             }
             catch (IOException) { /* in use; the next sweep */ }
         }
@@ -207,6 +232,9 @@ public sealed class FileEvidenceStore : IEvidenceStore
             if (!File.Exists(Path.Combine(Incoming, name + ".part")))
                 try { File.Delete(st); } catch (IOException) { /* the next sweep */ }
         }
+        foreach (var fm in Directory.EnumerateFiles(Incoming, "*.format"))
+            if (!File.Exists(Path.ChangeExtension(fm, ".part")) && DateTime.UtcNow - File.GetLastWriteTimeUtc(fm) >= olderThan)
+                try { File.Delete(fm); } catch (IOException) { /* the next sweep */ }
         return Task.FromResult(cleared);
     }
 
@@ -221,13 +249,14 @@ public sealed class FileEvidenceStore : IEvidenceStore
         var absPath = Path.Combine(absDir, fileName);
 
         var created = false;
+        var key = EncryptedFiles.ForNewFile(_keys);
         string hash;
         long size;
         try
         {
             await using var fs = new FileStream(absPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             created = true;
-            (hash, size) = await EncryptedFiles.WriteAsync(fs, content, EncryptedFiles.ForNewFile(_keys), ct);
+            (hash, size) = await EncryptedFiles.WriteAsync(fs, content, key, ct);
         }
         catch
         {
@@ -236,7 +265,7 @@ public sealed class FileEvidenceStore : IEvidenceStore
             throw;
         }
         _holdsEvidence = true;
-        return new StoredEvidence($"{relDir}/{fileName}", hash, size);
+        return new StoredEvidence($"{relDir}/{fileName}", hash, size, Encrypted: key is not null);
     }
 
     public Task DiscardUnrecordedAsync(string storagePath)
@@ -274,7 +303,9 @@ public sealed class FileEvidenceStore : IEvidenceStore
         return abs;
     }
 
-    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
+    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) => OpenReadAsync(storagePath, null, ct);
+
+    public Task<Stream> OpenReadAsync(string storagePath, bool? encrypted, CancellationToken ct = default)
     {
         FileStream file;
         try { file = new FileStream(PathOf(storagePath), FileMode.Open, FileAccess.Read, FileShare.Read); }
@@ -283,6 +314,6 @@ public sealed class FileEvidenceStore : IEvidenceStore
             // PROD-56: not this file missing but the whole store (the server answered, so this check is quick).
             throw new EvidenceStoreUnreachableException(_root);
         }
-        return Task.FromResult(EncryptedFiles.OpenContent(file, _keys));
+        return Task.FromResult(EncryptedFiles.OpenContent(file, _keys, encrypted));
     }
 }

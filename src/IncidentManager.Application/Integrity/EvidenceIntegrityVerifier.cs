@@ -36,7 +36,7 @@ public sealed class EvidenceIntegrityVerifier
     }
 
     private sealed record Row(Guid Id, Guid CaseId, string? CaseNumber, string OriginalFileName,
-        string Sha256, string StoragePath);
+        string Sha256, string StoragePath, bool? StoredEncrypted);
 
     /// <summary>
     /// Re-hashes every stored evidence file and reports the ones whose bytes drifted from their recorded
@@ -95,7 +95,7 @@ public sealed class EvidenceIntegrityVerifier
                 join c in db.Cases.AsNoTracking() on e.CaseId equals c.Id into cj
                 from c in cj.DefaultIfEmpty()
                 select new Row(e.Id, e.CaseId, c != null ? c.CaseNumber : null, e.OriginalFileName,
-                    e.Sha256, e.StoragePath)).ToListAsync(ct);
+                    e.Sha256, e.StoragePath, e.StoredEncrypted)).ToListAsync(ct);
         }
 
         // PROD-56: a store that can't be reached (a share that's down) is one finding, not every file missing. Nothing was
@@ -155,7 +155,7 @@ public sealed class EvidenceIntegrityVerifier
     {
         try
         {
-            await using var stream = await _store.OpenReadAsync(r.StoragePath, ct);
+            await using var stream = await _store.OpenReadAsync(r.StoragePath, r.StoredEncrypted, ct);
             var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant();
             if (string.Equals(actual, r.Sha256, StringComparison.OrdinalIgnoreCase))
                 return (null, actual, null);

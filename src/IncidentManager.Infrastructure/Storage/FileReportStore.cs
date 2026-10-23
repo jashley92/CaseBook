@@ -34,6 +34,7 @@ public sealed class FileReportStore : IReportStore
         var safeName = DiskName(fileName);
         var stem = Path.GetFileNameWithoutExtension(safeName);
         var ext = Path.GetExtension(safeName);
+        var key = EncryptedFiles.ForNewFile(_keys);
         for (var n = 2; ; n++)
         {
             var path = Path.Combine(absDir, safeName);
@@ -48,7 +49,7 @@ public sealed class FileReportStore : IReportStore
             }
             try
             {
-                await using (fs) await EncryptedFiles.WriteAsync(fs, new MemoryStream(content, writable: false), EncryptedFiles.ForNewFile(_keys), ct);
+                await using (fs) await EncryptedFiles.WriteAsync(fs, new MemoryStream(content, writable: false), key, ct);
             }
             catch
             {
@@ -59,7 +60,7 @@ public sealed class FileReportStore : IReportStore
         }
 
         var hash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
-        return new StoredReport($"{relDir}/{safeName}", hash, content.LongLength);
+        return new StoredReport($"{relDir}/{safeName}", hash, content.LongLength, Encrypted: key is not null);
     }
 
     // BUG-362: the name on disk only. A report is named from its case number, which may hold characters Windows doesn't
@@ -84,8 +85,11 @@ public sealed class FileReportStore : IReportStore
         return stem + ext;
     }
 
-    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) =>
-        Task.FromResult(EncryptedFiles.OpenContent(new FileStream(PathOf(storagePath), FileMode.Open, FileAccess.Read, FileShare.Read), _keys));
+    public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) => OpenReadAsync(storagePath, null, ct);
+
+    public Task<Stream> OpenReadAsync(string storagePath, bool? encrypted, CancellationToken ct = default) =>
+        Task.FromResult(EncryptedFiles.OpenContent(new FileStream(PathOf(storagePath), FileMode.Open, FileAccess.Read, FileShare.Read), _keys,
+            encrypted));
 
     /// <summary>A removed case's purge: deletes the report's file (one already gone is fine).</summary>
     public Task DeleteAsync(string storagePath, CancellationToken ct = default)

@@ -4841,3 +4841,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261023164825_StoredFileEncryptedFlag'
+)
+BEGIN
+    ALTER TABLE [Reports] ADD [StoredEncrypted] bit NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261023164825_StoredFileEncryptedFlag'
+)
+BEGIN
+    ALTER TABLE [Evidence] ADD [StoredEncrypted] bit NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261023164825_StoredFileEncryptedFlag'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261023164825_StoredFileEncryptedFlag'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

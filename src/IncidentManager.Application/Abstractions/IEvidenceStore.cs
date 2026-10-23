@@ -1,7 +1,9 @@
 namespace IncidentManager.Application.Abstractions;
 
 /// <summary>Result of persisting an uploaded evidence file.</summary>
-public sealed record StoredEvidence(string StoragePath, string Sha256, long SizeBytes);
+/// <param name="Encrypted">BUG-712: whether the file was stored encrypted (CBE1), recorded on its row; null when the
+/// store doesn't say.</param>
+public sealed record StoredEvidence(string StoragePath, string Sha256, long SizeBytes, bool? Encrypted = null);
 
 /// <summary>
 /// Stores evidence bytes outside the web root under a randomized name, computing a SHA-256
@@ -13,6 +15,10 @@ public interface IEvidenceStore
 
     /// <summary>Opens a read stream for previously stored evidence.</summary>
     Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default);
+
+    /// <summary>BUG-712: opens a file as its row records it was stored (<see cref="StoredEvidence.Encrypted"/>; null
+    /// decides from its bytes). A store that doesn't encrypt reads it as it is.</summary>
+    Task<Stream> OpenReadAsync(string storagePath, bool? encrypted, CancellationToken ct = default) => OpenReadAsync(storagePath, ct);
 
     /// <summary>BUG-206: removes a file just stored whose record couldn't be saved, so no bytes sit in the store
     /// without a record, custody trail or integrity check. Never for recorded evidence.</summary>

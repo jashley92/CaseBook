@@ -299,7 +299,7 @@ internal static class KeyToolCommands
                     join c in db.Cases.AsNoTracking().IgnoreQueryFilters() on ev.CaseId equals c.Id
                     where (caseNumber == null || c.CaseNumber == caseNumber) && ev.PurgedAtUtc == null   // no bytes left to export
                     orderby c.CaseNumber, ev.CreatedAtUtc
-                    select new { c.CaseNumber, ev.OriginalFileName, ev.StoragePath, ev.Sha256 }).ToList();
+                    select new { c.CaseNumber, ev.OriginalFileName, ev.StoragePath, ev.Sha256, ev.StoredEncrypted }).ToList();
         if (caseNumber is not null && rows.Count == 0) throw new InvalidOperationException($"No evidence found for case {caseNumber}.");
 
         Directory.CreateDirectory(outFolder);
@@ -321,7 +321,7 @@ internal static class KeyToolCommands
             if (!inside) actual = "(refused: its stored path leads outside the evidence store)";
             else try
             {
-                using var content = OpenContent(source, e.KeyId, opened.EvidenceKey);
+                using var content = OpenContent(source, e.KeyId, opened.EvidenceKey, r.StoredEncrypted);
                 using var file = File.Create(target);
                 using var sha = SHA256.Create();
                 using (var hashing = new CryptoStream(file, sha, CryptoStreamMode.Write, leaveOpen: true)) content.CopyTo(hashing);
@@ -350,16 +350,19 @@ internal static class KeyToolCommands
         return (exported, mismatched);
     }
 
-    // A stored file's content: decrypted when it's CBE1 under this key, else as it is.
-    internal static Stream OpenContent(string path, string keyId, byte[] key)
+    // A stored file's content: decrypted when it's CBE1 under this key, else as it is. BUG-712: as its row records it was
+    // stored when it says (false: as it is, whatever its first bytes; true: it must be CBE1), else from its bytes.
+    internal static Stream OpenContent(string path, string keyId, byte[] key, bool? encrypted = null)
     {
         var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (encrypted == false) return file;
         var head = new byte[Cbe1.HeaderSize];
         if (file.Read(head) == head.Length && Cbe1.KeyIdOf(head) is { } id)
         {
             if (id != keyId) { file.Dispose(); throw new CryptographicException($"encrypted with key {id}, not {keyId}"); }
             return new Cbe1ReadStream(file, key);
         }
+        if (encrypted == true) { file.Dispose(); throw new CryptographicException("its encryption header is damaged"); }
         file.Position = 0;
         return file;
     }

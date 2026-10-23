@@ -218,6 +218,9 @@ public sealed class HostStartupSmokeTests : IDisposable
                     .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
                     .CreateDbContextAsync();
                 evidence = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(db.Evidence);
+                // A row from before it was recorded how its file is stored (BUG-712), so its first bytes decide.
+                await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ExecuteUpdateAsync(
+                    System.Linq.Queryable.Where(db.Evidence, e => e.Id == evidence.Id), u => u.SetProperty(e => e.StoredEncrypted, (bool?)null));
                 var store = (IncidentManager.Infrastructure.Storage.FileEvidenceStore)scope.ServiceProvider
                     .GetRequiredService<IncidentManager.Application.Abstractions.IEvidenceStore>();
                 // "CBE1", version 1, then text where a key id would be: a plain file that happens to begin with the magic.

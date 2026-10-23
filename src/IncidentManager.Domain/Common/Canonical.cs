@@ -64,9 +64,10 @@ public static class Canonical
     public const string V8Prefix = "v8:";
 
     /// <summary>
-    /// Starts a row hash over a format-9 canonical: format 8 plus a timeline entry's screenshots after the first (BUG-722),
-    /// folded in only when set, so every record builds what format 8 built until an entry has more than one. No row written
-    /// before format 9 can hold them, so there's nothing to upgrade.
+    /// Starts a row hash over a format-9 canonical: format 8 plus a timeline entry's screenshots after the first (BUG-722)
+    /// and whether an evidence file's or report's file is stored encrypted (BUG-712), each folded in only when set, so
+    /// every record builds what format 8 built until one is. No row written before format 9 can hold them, so there's
+    /// nothing to upgrade.
     /// </summary>
     public const string V9Prefix = "v9:";
 

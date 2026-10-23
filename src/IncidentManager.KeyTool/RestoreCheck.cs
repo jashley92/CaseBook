@@ -217,7 +217,7 @@ internal static class RestoreCheck
     {
         // A purged file's bytes were deleted on purpose, so it isn't looked for.
         var rows = db.Evidence.AsNoTracking().IgnoreQueryFilters().Where(e => e.PurgedAtUtc == null)
-            .Select(e => new { e.Id, e.StoragePath, e.SizeBytes, e.Sha256, e.OriginalFileName }).ToList();
+            .Select(e => new { e.Id, e.StoragePath, e.SizeBytes, e.Sha256, e.OriginalFileName, e.StoredEncrypted }).ToList();
         if (rows.Count == 0)
         {
             add("Evidence files", true, "none recorded");
@@ -231,7 +231,7 @@ internal static class RestoreCheck
             if (!path.StartsWith(root, StringComparison.Ordinal)) { problems.Add($"{r.OriginalFileName}: its stored path leads outside the store"); continue; }
             if (!File.Exists(path)) { problems.Add($"{r.OriginalFileName}: missing ({r.StoragePath})"); continue; }
             var length = new FileInfo(path).Length;
-            var plain = IsEncrypted(path) ? Cbe1.PlainLength(length) : length;
+            var plain = (r.StoredEncrypted ?? IsEncrypted(path)) ? Cbe1.PlainLength(length) : length;   // BUG-712
             if (plain != r.SizeBytes) problems.Add($"{r.OriginalFileName}: {plain:N0} bytes, recorded {r.SizeBytes:N0}");
         }
         add("Evidence files", problems.Count == 0, problems.Count == 0
@@ -246,7 +246,7 @@ internal static class RestoreCheck
             if (!path.StartsWith(root, StringComparison.Ordinal) || !File.Exists(path)) continue;   // said above
             try
             {
-                using var content = Open(path, keyId, key);
+                using var content = Open(path, keyId, key, r.StoredEncrypted);
                 var actual = Convert.ToHexString(SHA256.HashData(content));
                 if (!string.Equals(actual, r.Sha256, StringComparison.OrdinalIgnoreCase)) mismatched.Add($"{r.OriginalFileName}: SHA-256 differs");
             }
@@ -268,10 +268,10 @@ internal static class RestoreCheck
     }
 
     // A stored file's content, as export reads it: decrypted when it's CBE1 under the key that opened, else as it is.
-    private static Stream Open(string path, string? keyId, byte[]? key) =>
-        key is null && IsEncrypted(path)
+    private static Stream Open(string path, string? keyId, byte[]? key, bool? encrypted) =>
+        key is null && (encrypted ?? IsEncrypted(path))
             ? throw new CryptographicException("it's encrypted, and the evidence key didn't open here")
-            : KeyToolCommands.OpenContent(path, keyId ?? "", key ?? []);
+            : KeyToolCommands.OpenContent(path, keyId ?? "", key ?? [], encrypted);
 
     /// <summary>The report as JSON, for the drill's record and the status file.</summary>
     public static string ToJson(RestoreReport report) => JsonSerializer.Serialize(new
