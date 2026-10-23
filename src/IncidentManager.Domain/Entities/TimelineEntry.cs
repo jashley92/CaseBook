@@ -63,6 +63,48 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// </summary>
     public Guid? EvidenceId { get; set; }
 
+    /// <summary>
+    /// BUG-722: the screenshots after the first (<see cref="EvidenceId"/>), in order, as lowercase evidence ids joined by
+    /// commas; null with one or none. Kept beside <see cref="EvidenceId"/> rather than in a link table, so an entry with one
+    /// screenshot is stored, shown and hashed exactly as before, and an edit that unlinks one is a new version (an
+    /// Investigation entry) or an audited in-place change (an Event step), like any other edit of the entry. Folded into
+    /// the canonical only when set.
+    /// </summary>
+    public string? MoreEvidenceIds { get; set; }
+
+    /// <summary>BUG-722: the most screenshots one entry shows.</summary>
+    public const int MaxScreenshots = 10;
+
+    /// <summary>BUG-722: every screenshot on the entry, in order: <see cref="EvidenceId"/>, then <see cref="MoreEvidenceIds"/>.</summary>
+    public IReadOnlyList<Guid> ScreenshotIds
+    {
+        get
+        {
+            var ids = new List<Guid>();
+            if (EvidenceId is { } first) ids.Add(first);
+            if (MoreEvidenceIds is { } more)
+                foreach (var part in more.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    if (Guid.TryParse(part, out var id)) ids.Add(id);
+            return ids;
+        }
+    }
+
+    /// <summary>BUG-722: links the entry to exactly these screenshots, in this order (at most <see cref="MaxScreenshots"/>,
+    /// each once). Which evidence may be linked is the caller's check (<see cref="Case"/>'s edits, the service's add).</summary>
+    public void SetScreenshotIds(IEnumerable<Guid> ids)
+    {
+        var list = ids.ToList();
+        if (list.Count > MaxScreenshots)
+            throw new ArgumentException($"An entry takes up to {MaxScreenshots} screenshots.");
+        if (list.Distinct().Count() != list.Count)
+            throw new ArgumentException("That screenshot is on the entry already.");
+        EvidenceId = list.Count > 0 ? list[0] : null;
+        MoreEvidenceIds = list.Count > 1 ? string.Join(',', list.Skip(1).Select(MoreKey)) : null;
+    }
+
+    /// <summary>BUG-722: an id as <see cref="MoreEvidenceIds"/> holds it (and as a query looks for it there).</summary>
+    public static string MoreKey(Guid id) => id.ToString("D");
+
     // ---- Investigation-entry versioning (Kind == Investigation) ----
     // Investigation entries are corrected via the supersede pattern (like AnalystNote): an edit keeps
     // the prior version (IsCurrent = false) and inserts an incremented one, so long meeting notes can be
@@ -199,6 +241,8 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
                       + string.Join(',', Tactics.Select(t => (int)t.Tactic).OrderBy(x => x)));
         // CAP-20 review: a handoff's recipient, from format 5, only when set.
         content += Canonical.Since(5, HandedToUserId is not null, () => "|to|" + Canonical.Text(HandedToUserId));
+        // BUG-722: the screenshots after the first, in order, from format 9, only when there are any (no re-baseline).
+        content += Canonical.Since(9, MoreEvidenceIds is not null, () => "|evs|" + MoreEvidenceIds);
         return content;
     }
 }

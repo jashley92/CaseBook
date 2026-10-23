@@ -304,7 +304,7 @@ public static class CaseMilestones
         // BUG-443: only a current entry shows it; a retracted (or superseded) one is off the timeline.
         var current = c.TimelineEntries.Where(e => e.IsCurrent).ToList();
         var currentIds = current.Select(e => e.Id).ToHashSet();
-        var onEntries = current.Where(e => e.EvidenceId is not null).Select(e => e.EvidenceId!.Value)
+        var onEntries = current.SelectMany(e => e.ScreenshotIds)   // BUG-722: every screenshot an entry shows
             .Concat(c.Citations.Where(x => currentIds.Contains(x.TimelineEntryId)).Select(x => x.EvidenceId)).ToHashSet();
         // CAP-08: dated when it was collected, when that's recorded, and "recorded later" (at the upload) when the upload
         // was in a later minute; where from and by whom follow the description.

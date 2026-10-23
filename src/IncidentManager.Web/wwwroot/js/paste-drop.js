@@ -50,7 +50,9 @@ window.imPasteDrop = (function () {
                 const f = it.getAsFile();
                 if (f) {
                     const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg');
-                    imgs.push(new File([f], `pasted-screenshot-${stamp()}.${ext}`, { type: f.type }));
+                    // BUG-722: several pasted at once are told apart by their place in the paste.
+                    const n = imgs.length ? `-${imgs.length + 1}` : '';
+                    imgs.push(new File([f], `pasted-screenshot-${stamp()}${n}.${ext}`, { type: f.type }));
                 }
             }
         }

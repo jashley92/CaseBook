@@ -76,12 +76,12 @@ public sealed class EventTimelinePersistenceTests : IDisposable
             Severity = Severity.High, Origin = CaseOrigin.InternalDetection });
         var shot = new CaseService.Screenshot("pasted.png", "image/png", [1, 2, 3]);
 
-        var refused = () => svc.AddEventStepAsync(c.Id, _clock.UtcNow, [MitreTactic.Execution], "T15", null, null, "Ran a script", null, screenshot: shot);
+        var refused = () => svc.AddEventStepAsync(c.Id, _clock.UtcNow, [MitreTactic.Execution], "T15", null, null, "Ran a script", null, screenshots: [shot]);
         await refused.Should().ThrowAsync<ArgumentException>();
         store.Saved.Should().Be(0, "nothing is stored for a step that's refused");
         (await db.Evidence.AsNoTracking().CountAsync(e => e.CaseId == c.Id)).Should().Be(0);
 
-        var id = await svc.AddEventStepAsync(c.Id, _clock.UtcNow, [MitreTactic.Execution], "T1059", null, null, "Ran a script", null, screenshot: shot);
+        var id = await svc.AddEventStepAsync(c.Id, _clock.UtcNow, [MitreTactic.Execution], "T1059", null, null, "Ran a script", null, screenshots: [shot]);
         var ev = await db.Evidence.AsNoTracking().Include(e => e.CustodyEvents).SingleAsync(e => e.CaseId == c.Id);
         (await db.TimelineEntries.AsNoTracking().SingleAsync(e => e.Id == id)).EvidenceId.Should().Be(ev.Id);
         ev.CustodyEvents.Should().ContainSingle(x => x.Action == "Uploaded");

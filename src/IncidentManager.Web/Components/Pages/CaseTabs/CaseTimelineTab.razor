@@ -229,31 +229,55 @@
                 </div>
             }
             @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. CAP-26: any file,
-               pasted or dropped on the composer; one that isn't an image is cited by the entry. *@
-            <InputFile id="timeline-file-paste" class="d-none" OnChange="OnTimelinePasted" aria-label="Attach a file to the entry" />
-            @if (_tlEditId is null)
-            {
-                <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap tl-composer-paste" aria-live="polite">
-                    <span><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Paste a screenshot, or paste or drop a file, to attach it.
-                        <span class="tl-paste-detail">It's saved as hashed evidence with chain of custody; a file that isn't an image is cited by the entry.</span></span>
-                    @if (_tlShotBytes is not null)
-                    {
+               pasted or dropped on the composer; one that isn't an image is cited by the entry. BUG-722: several, each its own
+               evidence item, listed with a Remove each until the save; an entry being edited takes more too. *@
+            <InputFile id="timeline-file-paste" class="d-none" OnChange="OnTimelinePasted" multiple aria-label="Attach files to the entry" />
+            <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap tl-composer-paste" aria-live="polite">
+                <span><span class="bi bi-clipboard me-1" aria-hidden="true"></span>@(_tlEditId is null
+                        ? "Paste screenshots, or paste or drop files, to attach them."
+                        : "Paste or drop more screenshots or files to add them to the entry.")
+                    <span class="tl-paste-detail">Each is saved as hashed evidence with chain of custody, up to @TimelineEntry.MaxScreenshots screenshots an entry; a file that isn't an image is cited by the entry.</span></span>
+                @foreach (var shot in _tlShots)
+                {
+                    <span class="d-inline-flex align-items-center gap-1 tl-staged-shot">
                         <span class="im-badge im-b-info">
-                            <span class="bi bi-paperclip me-1" aria-hidden="true"></span>@_tlShotName@(TlShotIsFile ? $" · {EvidenceRoom.Size(_tlShotBytes.LongLength)}" : "")
+                            <span class="bi bi-paperclip me-1" aria-hidden="true"></span>@shot.Name@(shot.IsRaster ? "" : $" · {EvidenceRoom.Size(shot.Bytes.LongLength)}")
                         </span>
-                        @if (!TlShotIsFile)
+                        @if (shot.IsRaster)
                         {
-                            <img src="@TlShotDataUri()" alt="Pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
+                            <img src="@shot.DataUri()" alt="Pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
                         }
-                        else if (EvidenceRisk.Sentence(_tlShotName, _tlShotType, _tlShotBytes.AsSpan(0, Math.Min(16, _tlShotBytes.Length))) is { } risk)
+                        else if (EvidenceRisk.Sentence(shot.Name, shot.Type, shot.Bytes.AsSpan(0, Math.Min(16, shot.Bytes.Length))) is { } risk)
                         {
                             @* CAP-26 (PROD-58): a file that can run is stored like any other, and downloads inside a zip. *@
                             <span class="im-badge im-b-warn" title="@risk It's kept as evidence and downloads inside a password-protected zip.">
                                 <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Can run: downloads zipped
                             </span>
                         }
-                        <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="ClearTimelineShot"
-                                aria-label="Remove @_tlShotName">Remove</button>
+                        <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="() => RemoveStagedShot(shot)"
+                                aria-label="Remove @shot.Name">Remove</button>
+                    </span>
+                }
+            </div>
+            @if (_tlEditId is not null && _tlEditShots.Count > 0)
+            {
+                @* BUG-722: the edited entry's screenshots; one unlinked leaves the entry on save (a new version, or an audited
+                   change to a step) and stays on the case as evidence. *@
+                <div class="small mb-2 d-flex align-items-center gap-2 flex-wrap tl-edit-shots">
+                    <span class="text-muted">On the entry:</span>
+                    @foreach (var shotId in _tlEditShots)
+                    {
+                        var gone = _tlUnlinked.Contains(shotId);
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <img src="evidence/@shotId/inline" alt="@(gone ? "Screenshot to unlink" : "Screenshot on the entry")" loading="lazy"
+                                 style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color);@(gone ? "opacity:.35" : "")" />
+                            <button type="button" class="btn btn-sm btn-link p-0 @(gone ? "" : "text-danger")" @onclick="() => ToggleUnlink(shotId)"
+                                    aria-pressed="@(gone ? "true" : "false")">@(gone ? "Keep" : "Unlink")</button>
+                        </span>
+                    }
+                    @if (_tlUnlinked.Count > 0)
+                    {
+                        <span class="text-muted">Unlinked on save; it stays on the case as evidence, and the entry's history keeps it.</span>
                     }
                 </div>
             }
@@ -815,14 +839,7 @@ else
                             @StepTimeLabel(e)
                         </div>
                         <div class="tl-desc md-body">@((MarkupString)Inline(e.Description))</div>
-                        @if (e.EvidenceId is { } shotId)
-                        {
-                            @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
-                            <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview the attached screenshot">
-                                <img src="evidence/@shotId/inline" alt="Attached screenshot" loading="lazy"
-                                     style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
-                            </button>
-                        }
+                        @EntryScreenshots(e)
                         @CitedEvidence(e)
                         <div class="tl-meta">
                             @if (EntityById(e.ActorEntityId) is { } actor || EntityById(e.TargetEntityId) is not null)
@@ -921,14 +938,7 @@ else
                                 @if (e.DecidedBy is { } by) { <dt>Decided by</dt><dd>@by</dd> }
                             </dl>
                         }
-                        @if (e.EvidenceId is { } shotId)
-                        {
-                            @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
-                            <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview the attached screenshot">
-                                <img src="evidence/@shotId/inline" alt="Attached screenshot" loading="lazy"
-                                     style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
-                            </button>
-                        }
+                        @EntryScreenshots(e)
                         @CitedEvidence(e)
                         <div class="tl-meta">
                             @if (!string.IsNullOrWhiteSpace(e.Source))
@@ -981,6 +991,7 @@ else
                                             @Users.DisplayFor(prior.CreatedBy) · @TimeDisp.Long(prior.CreatedAtUtc)
                                         </div>
                                         <div class="md-body">@((MarkupString)Html(prior.Description))</div>
+                                        @EntryScreenshots(prior)
                                     </div>
                                 }
                             </div>
@@ -1273,11 +1284,8 @@ else
     private bool _editFocusPending;
     // Open when asked, while editing, or on a case with nothing on its timeline yet (the first entry is the job).
     private bool ComposerVisible => _composerOpen || _tlEditId is not null || !Case.TimelineEntries.Any(x => x.IsCurrent);
-    private byte[]? _tlShotBytes;
-    // The staged screenshot's evidence id once uploaded, so a retry after a failed save links the same file
-    // instead of uploading a second copy.
-    private string? _tlShotName;
-    private string _tlShotType = "image/png";
+    // U-40 / CAP-26 / BUG-722: the files pasted or dropped on the composer, in order, until the save takes them.
+    private List<StagedShot> _tlShots = [];
 
     private TimelineEntryType? _tlFilterType;
     private MitreTactic? _tlFilterTactic;
@@ -1501,7 +1509,8 @@ else
     // BUG-611: an entry edit's fields as they stand (an Investigation entry's text is the editor's, asked in the browser).
     private object TimelineEditValues() => (_tlType, _tlWhen, _tlDay, _tlUntilDay, _tlPrecision, _tlAfter, _tlSource, _tlReason,
         _tlAddKind == TimelineKind.Event ? _tlDesc : null, (_evtActorId, _evtTargetId, _evtTechnique, _evtTactic,
-        string.Join(",", _evtOtherTactics), _evtStage, _evtOurs, _evtAttackMode), (_decWhy, _decOptions, _decBy));
+        string.Join(",", _evtOtherTactics), _evtStage, _evtOurs, _evtAttackMode), (_decWhy, _decOptions, _decBy),
+        (string.Join(",", _tlUnlinked.Order()), _tlShots.Count));   // BUG-722: an unlink or a file added is an unsaved change
     private object? _tlEditSeed;
 
     private bool ComposerHoldsText() => _tlEditId is null
@@ -2055,37 +2064,66 @@ else
     private const long MaxComposerFileBytes = 50 * 1024 * 1024;
     private long MaxFileBytes => Math.Min(MaxComposerFileBytes, Evidence.Limits.MaxUploadBytes);
 
-    // CAP-26: staged as it came: an image keeps the screenshot path; anything else is cited by the entry. CAP-26 review: an
-    // image by its bytes, the raster set the inline endpoint renders (ImageSniffer: PNG, JPEG, GIF, WebP). An SVG, HEIC or
-    // TIFF showed as a broken thumbnail and skipped the duplicate check; it's a cited file now.
-    private bool _tlShotIsRaster;
-    private bool TlShotIsFile => !_tlShotIsRaster;
+    /// <summary>
+    /// CAP-26: a file staged as it came: an image keeps the screenshot path; anything else is cited by the entry. CAP-26 review:
+    /// an image by its bytes, the raster set the inline endpoint renders (ImageSniffer: PNG, JPEG, GIF, WebP). An SVG, HEIC or
+    /// TIFF showed as a broken thumbnail and skipped the duplicate check; it's a cited file now.
+    /// </summary>
+    private sealed class StagedShot(string name, string type, byte[] bytes, bool isRaster)
+    {
+        public string Name { get; } = name;
+        public string Type { get; } = type;
+        public byte[] Bytes { get; } = bytes;
+        public bool IsRaster { get; } = isRaster;
+
+        // BUG-721: encoded once per staged file, not on every render. The composer re-renders on each keystroke, and a
+        // 15 MB paste made a new 20 MB string each time for the diff to compare. Dropped with the file.
+        private string? _uri;
+        public string DataUri() => _uri ??= $"data:{Type};base64,{Convert.ToBase64String(Bytes)}";
+
+        // WF-31: stored as hashed, chain-of-custody evidence in the entry's save, so a refused entry leaves no evidence.
+        public CaseService.Screenshot ToScreenshot() => IsRaster
+            ? new CaseService.Screenshot(Name, Type, Bytes)
+            : new CaseService.Screenshot(Name, Type, Bytes, CaseService.AttachedFromTimeline);
+    }
 
     // A type the browser says the screenshot path takes (its 15 MB limit applies); the bytes decide in the end.
     private static bool ClaimsRaster(string contentType) =>
         contentType.ToLowerInvariant() is "image/png" or "image/jpeg" or "image/jpg" or "image/gif" or "image/webp";
 
+    // BUG-722: how many more files the composer takes: an entry shows up to ten screenshots, counting those an edit keeps.
+    private int ShotRoom => TimelineEntry.MaxScreenshots - _tlShots.Count - (_tlEditId is null ? 0 : _tlEditShots.Count - _tlUnlinked.Count);
+
     private async Task OnTimelinePasted(InputFileChangeEventArgs e)
     {
-        // CAP-26 review: an entry being edited takes no file (its save doesn't attach one), so a drop or paste is refused
-        // with a word rather than staged out of sight for the next entry.
-        if (_tlEditId is not null)
-        {
-            Toasts.Info("An entry being edited can't take a file. Save or cancel the edit and attach it to a new entry, or upload it on the Evidence tab.");
-            return;
-        }
         _composerOpen = true; // a pasted screenshot is staged in the form, so show it
-        // CAP-26: one file per entry (a drop can carry several; the first is taken). B2 review: however many (BUG-341:
+        // BUG-722: each file pasted or dropped is staged, up to the room the entry has. B2 review: however many (BUG-341:
         // GetMultipleFiles threw past 50, outside any catch, and the tab went with it).
-        var (f, count) = DroppedFiles.First(e);
-        if (f is null) return;
+        var files = DroppedFiles.UpTo(e, Math.Max(1, e.FileCount)) ?? [];
+        if (files.Count == 0) return;
+        var room = Math.Max(0, ShotRoom);
+        if (files.Count > room)
+            Toasts.Info(room == 0
+                ? $"An entry takes up to {TimelineEntry.MaxScreenshots} files, so nothing more was attached. Upload the others on the Evidence tab."
+                : $"An entry takes up to {TimelineEntry.MaxScreenshots} files, so the first {room} were attached. Upload the others on the Evidence tab.");
+        foreach (var f in files.Take(room)) await StageFile(f);
+    }
+
+    private async Task StageFile(IBrowserFile f)
+    {
         var image = ClaimsRaster(f.ContentType);
         // WF-31: what the save would refuse is refused before any byte is sent.
         var max = image ? MaxShotBytes : MaxFileBytes;
         if (f.Size > max)
         {
-            Toasts.Error(image ? "That image is larger than 15 MB. Upload it on the Evidence tab."
+            Toasts.Error(image ? $"“{f.Name}” is larger than 15 MB. Upload it on the Evidence tab."
                 : $"“{f.Name}” is larger than {EvidenceRoom.Size(max)}, the most the timeline attaches. Upload it on the Evidence tab, then cite it.");
+            return;
+        }
+        // BUG-722: the composer holds what's staged in memory until the save, so all of it together is held to one file's most.
+        if (_tlShots.Sum(x => x.Bytes.LongLength) + f.Size > MaxComposerFileBytes)
+        {
+            Toasts.Error($"“{f.Name}” would take the files on this entry past {EvidenceRoom.Size(MaxComposerFileBytes)}. Save the entry first, or upload it on the Evidence tab.");
             return;
         }
         if (f.Name.Length > EvidenceService.MaxFileNameLength)
@@ -2100,49 +2138,85 @@ else
             await s.CopyToAsync(ms);
             var bytes = ms.ToArray();
             var raster = bytes.Length <= MaxShotBytes ? ImageSniffer.RasterContentType(bytes.AsSpan(0, Math.Min(12, bytes.Length))) : null;
-            _tlShotBytes = bytes;
-            _tlShotName = f.Name;
-            _tlShotIsRaster = raster is not null;
-            _tlShotType = raster ?? (string.IsNullOrWhiteSpace(f.ContentType) ? "application/octet-stream" : f.ContentType);
-            if (count > 1)
-                Toasts.Info($"An entry takes one file, so “{f.Name}” is attached. Upload the others on the Evidence tab.");
+            var type = raster ?? (string.IsNullOrWhiteSpace(f.ContentType) ? "application/octet-stream" : f.ContentType);
+            _tlShots.Add(new StagedShot(f.Name, type, bytes, raster is not null));
         }
         catch (Exception)
         {
-            Toasts.Error(image ? "Couldn't read the pasted image. Try again, or upload it on the Evidence tab (15 MB max)."
-                : "Couldn't read that file. Try again, or upload it on the Evidence tab.");
-            ClearTimelineShot();
+            Toasts.Error(image ? $"Couldn't read “{f.Name}”. Try again, or upload it on the Evidence tab (15 MB max)."
+                : $"Couldn't read “{f.Name}”. Try again, or upload it on the Evidence tab.");
         }
     }
 
-    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; _tlShotUri = null; }
+    // BUG-722: a staged file's Remove, before the save.
+    private void RemoveStagedShot(StagedShot shot) => _tlShots.Remove(shot);
 
-    // BUG-483 sibling: after a save, clears the screenshot it took, not one pasted while it was saving (that one was
-    // cleared too, and lost without a word).
-    private void ClearTimelineShot(byte[]? saved) { if (ReferenceEquals(_tlShotBytes, saved)) ClearTimelineShot(); }
+    // BUG-483 sibling: after a save, clears the files it took, not ones pasted while it was saving (those were cleared too,
+    // and lost without a word).
+    private void ClearSavedShots(IReadOnlyList<StagedShot> saved) => _tlShots.RemoveAll(saved.Contains);
 
-    // BUG-721: encoded once per staged file, not on every render. The composer re-renders on each keystroke, and a 15 MB
-    // paste made a new 20 MB string each time for the diff to compare.
-    private (byte[] Bytes, string Uri)? _tlShotUri;
-
-    private string TlShotDataUri()
-    {
-        if (_tlShotBytes is null) return "";
-        if (_tlShotUri is not { } kept || !ReferenceEquals(kept.Bytes, _tlShotBytes))
-            _tlShotUri = kept = (_tlShotBytes, $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}");
-        return kept.Uri;
-    }
-
-    // WF-31: the staged screenshot goes with the entry, stored as hashed, chain-of-custody evidence in the same save, so a
-    // refused entry leaves no evidence behind.
-    // CAP-26: a file that isn't an image goes the same way, and the entry cites it.
-    private CaseService.Screenshot? TimelineShot() => _tlShotBytes is null ? null
-        : TlShotIsFile ? new CaseService.Screenshot(_tlShotName ?? "attached-file", _tlShotType, _tlShotBytes, CaseService.AttachedFromTimeline)
-        : new CaseService.Screenshot(_tlShotName ?? "pasted-screenshot.png", _tlShotType, _tlShotBytes);
+    // WF-31: the staged files go with the entry. CAP-26: a file that isn't an image goes the same way, and the entry cites it.
+    private static List<CaseService.Screenshot>? Screenshots(IReadOnlyList<StagedShot> shots) =>
+        shots.Count == 0 ? null : shots.Select(x => x.ToScreenshot()).ToList();
 
     // CAP-26: what the save's toast says it took with it.
-    private string WithShot(string what, bool withShot, bool asFile, string? name) =>
-        !withShot ? what : asFile ? $"{what}, citing {name}" : $"{what} with screenshot";
+    private static string WithShots(string what, IReadOnlyList<StagedShot> shots)
+    {
+        var images = shots.Count(x => x.IsRaster);
+        var files = shots.Where(x => !x.IsRaster).Select(x => x.Name).ToList();
+        if (images > 0) what += images == 1 ? " with screenshot" : $" with {images} screenshots";
+        if (files.Count > 0) what += $", citing {string.Join(", ", files)}";
+        return what;
+    }
+
+    // --- BUG-722: the screenshots of the entry being edited, and those unlinked in the edit ---
+    private List<Guid> _tlEditShots = [];
+    private readonly HashSet<Guid> _tlUnlinked = [];
+    // The new entry's staged files, put aside while an edit is open (the edit's own go with its save) and back after it.
+    private List<StagedShot>? _tlShotsAside;
+
+    private void ToggleUnlink(Guid id)
+    {
+        if (!_tlUnlinked.Remove(id)) _tlUnlinked.Add(id);
+    }
+
+    private void OpenEditShots(TimelineEntry e)
+    {
+        _tlShotsAside ??= _tlShots;
+        _tlShots = [];
+        _tlEditShots = e.ScreenshotIds.ToList();
+        _tlUnlinked.Clear();
+    }
+
+    private void CloseEditShots()
+    {
+        if (_tlShotsAside is { } aside) _tlShots = aside;
+        _tlShotsAside = null;
+        _tlEditShots = [];
+        _tlUnlinked.Clear();
+    }
+
+    // The screenshots an edit keeps, in order; null when none was unlinked (the entry keeps them all).
+    private List<Guid>? KeptShots() => _tlUnlinked.Count == 0 ? null : _tlEditShots.Where(id => !_tlUnlinked.Contains(id)).ToList();
+
+    // U-40 / BUG-722: an entry's screenshots as a row of thumbnails; each opens full size in the lightbox.
+    private RenderFragment EntryScreenshots(TimelineEntry e) => __builder =>
+    {
+        var shots = e.ScreenshotIds;
+        if (shots.Count == 0) return;
+        var height = shots.Count == 1 ? 120 : 80;
+        <div class="tl-shots d-flex flex-wrap gap-2 mt-1">
+            @for (var i = 0; i < shots.Count; i++)
+            {
+                var shotId = shots[i];
+                var label = shots.Count == 1 ? "the attached screenshot" : $"screenshot {i + 1} of {shots.Count}";
+                <button type="button" class="tl-shot d-inline-block btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview @label">
+                    <img src="evidence/@shotId/inline" alt="Attached screenshot@(shots.Count == 1 ? "" : $" {i + 1} of {shots.Count}")" loading="lazy"
+                         style="max-height:@(height)px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
+                </button>
+            }
+        </div>
+    };
 
     // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
     private bool _inFlight;
@@ -2165,16 +2239,14 @@ else
         if (_fuAnswerOpen && CurrentMode == ComposerMode.Finding && _fuAnswer is null)
         { Toasts.Error("Choose the open question this finding answers, or remove it."); return; }   // CAP-23
         var whenUtc = KeptWhenUtc();   // C3: nothing recorded for a new entry, so as typed
-        var withShot = _tlShotBytes is not null;
-        var (shotIsFile, shotName) = (TlShotIsFile, _tlShotName);   // CAP-26: for the toast
-        var shot = _tlShotBytes;   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
+        var shots = _tlShots.ToList();   // BUG-483 sibling: one pasted while this saves stays staged for the next entry
         // BUG-601: what was sent, so only that is cleared after the save; text typed while it ran stays.
         var (sent, sentSource, sentDecision) = (_tlDesc, _tlSource, (_decWhy, _decOptions, _decBy));
         var sentWhen = _tlWhen;
         try
         {
             await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, sent, sentSource,
-                decision: Decision(), followUps: FollowUps(), screenshot: TimelineShot());
+                decision: Decision(), followUps: FollowUps(), screenshots: Screenshots(shots));
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
@@ -2192,11 +2264,11 @@ else
         var saved = SaveSummary();
         _tlDesc = DraftText.ClearIfUnchanged(_tlDesc, sent);
         _tlSource = DraftText.ClearIfUnchanged(_tlSource, sentSource, null);
-        ClearTimelineShot(shot); ClearDecisionIfUnchanged(sentDecision); ResetFollowUps();
+        ClearSavedShots(shots); ClearDecisionIfUnchanged(sentDecision); ResetFollowUps();
         TimeUsed(sentWhen);
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
-        Toasts.Success(saved ?? WithShot("Timeline entry added", withShot, shotIsFile, shotName));
+        Toasts.Success(saved ?? WithShots("Timeline entry added", shots));
         await UndockAfterSave();
         await ClearEditorIfUnchanged(sent);
     }
@@ -2227,9 +2299,7 @@ else
     {
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var disclosure = IsThirdParty && !_evtAttackMode;
-        var withShot = _tlShotBytes is not null;
-        var (shotIsFile, shotName) = (TlShotIsFile, _tlShotName);   // CAP-26: for the toast
-        var shot = _tlShotBytes;   // BUG-483 sibling
+        var shots = _tlShots.ToList();   // BUG-483 sibling
         // BUG-601: what was sent, so only that is cleared after the save; what was typed or picked while it ran stays.
         var (sent, sentSource, sentTechnique, sentActor, sentTarget, sentTactic) =
             (_tlDesc, _tlSource, _evtTechnique, _evtActorId, _evtTargetId, _evtTactic);
@@ -2240,7 +2310,7 @@ else
             {
                 // REV-24: as stated in the composer (a date, a window), like an attack step.
                 await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(sent)!, sentSource, type: _evtStage, followUps: FollowUps(), timing: Timing(), screenshot: TimelineShot());
+                    Tagged(sent)!, sentSource, type: _evtStage, followUps: FollowUps(), timing: Timing(), screenshots: Screenshots(shots));
             }
             else
             {
@@ -2248,7 +2318,7 @@ else
                 Guid? target = Guid.TryParse(sentTarget, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(sentTechnique) ? null : sentTechnique;
                 var added = await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(sent)!, sentSource,
-                    followUps: FollowUps(), environment: StepWhere, timing: Timing(), screenshot: TimelineShot());
+                    followUps: FollowUps(), environment: StepWhere, timing: Timing(), screenshots: Screenshots(shots));
                 // A run of steps without times is entered in order: the next one comes after this one.
                 if (_tlPrecision == TimePrecision.NotStated) _tlAfter = added.ToString();
             }
@@ -2267,13 +2337,13 @@ else
         if (_evtActorId.Length == 0) _actorPrev = "";
         if (_evtTargetId.Length == 0) _targetPrev = "";
         _evtOtherTactics = [];
-        ClearTimelineShot(shot);
+        ClearSavedShots(shots);
         if (sentExact) TimeUsed(sentWhen);
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
         ResetFollowUps();
         var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Attack step";
-        Toasts.Success(savedStep ?? WithShot($"{what} added", withShot, shotIsFile, shotName));
+        Toasts.Success(savedStep ?? WithShots($"{what} added", shots));
         await UndockAfterSave();
     }
 
@@ -2335,6 +2405,7 @@ else
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
         _evtOurs = e.Environment == StepEnvironment.Ours;
         _tlEditStamp = e.RowHash ?? "";   // BUG-196
+        OpenEditShots(e);   // BUG-722
         _tlReason = null;
         _tlWhen = WallClock.ToWall(e.OccurredAtUtc, TimeDisp.Zone);
         (_tlWhenShown, _tlWhenRecorded) = (_tlWhen, e.OccurredAtUtc);   // BUG-477
@@ -2374,6 +2445,7 @@ else
         var id = edit.Key;
         // Captured before CancelTimelineEdit resets the composer mode, so the toast names what was edited.
         var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure milestone updated" : "Attack step updated";
+        var (kept, shots) = (KeptShots(), _tlShots.ToList());   // BUG-722
         try
         {
             if (IsThirdParty && !_evtAttackMode)
@@ -2382,7 +2454,8 @@ else
                 // REV-24: a milestone with no stated time stays where it is (Timing() would put it first in the chain).
                 var timing = _tlPrecision == TimePrecision.NotStated ? new StepTiming(TimePrecision.NotStated) : Timing();
                 await Cases.EditEventStepAsync(CaseId, id, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage, timing: timing, expectedStamp: _tlEditStamp);
+                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage, timing: timing, expectedStamp: _tlEditStamp,
+                    keepScreenshots: kept, screenshots: Screenshots(shots));
             }
             else
             {
@@ -2390,7 +2463,7 @@ else
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
                 await Cases.EditEventStepAsync(CaseId, id, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason,
-                    environment: StepWhere, timing: Timing(), expectedStamp: _tlEditStamp);
+                    environment: StepWhere, timing: Timing(), expectedStamp: _tlEditStamp, keepScreenshots: kept, screenshots: Screenshots(shots));
             }
         }
         catch (StaleEditException ex)
@@ -2407,7 +2480,7 @@ else
         }
         if (_tlEdit.IsCurrent(edit)) await CancelEditToRow();   // BUG-410: the step keeps its id, so go back to it
         await OnChanged.InvokeAsync();
-        Toasts.Success(savedLabel);
+        Toasts.Success(WithShots(savedLabel, shots));
     }
 
     // Load an Investigation entry into the Markdown composer to edit; saving creates a new version.
@@ -2420,6 +2493,7 @@ else
         _tlAddKind = TimelineKind.Investigation;
         await SetDockedAsync(await ToolbarAwayAsync());
         _editFocusPending = true;   // BUG-410
+        OpenEditShots(e);   // BUG-722
         _tlReason = null;
         _tlType = e.Type;
         _tlWhen = WallClock.ToWall(e.OccurredAtUtc, TimeDisp.Zone);
@@ -2452,11 +2526,16 @@ else
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = KeptWhenUtc();
         if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
-        try { await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason, Decision()); }
+        var (kept, shots) = (KeptShots(), _tlShots.ToList());   // BUG-722
+        try
+        {
+            await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason, Decision(),
+                keepScreenshots: kept, screenshots: Screenshots(shots));
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't save the entry. {ex.Message}"); return; }
         if (_tlEdit.IsCurrent(edit)) await CancelTimelineEdit();   // BUG-601: not an edit opened while this ran
         await OnChanged.InvokeAsync();
-        Toasts.Success("Investigation entry saved as a new version");
+        Toasts.Success(WithShots("Investigation entry saved as a new version", shots));
     }
 
     // BUG-410: Cancel (and a saved step) takes the user back to the entry they were editing.
@@ -2474,6 +2553,7 @@ else
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
         await UndockAfterSave();
         _tlEdit.Close(); _tlReason = null; ClearDecision();
+        CloseEditShots();   // BUG-722
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtOtherTactics = []; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         _tlPrecision = TimePrecision.Exact; _tlAfter = ""; _tlEditPrecision = null;

@@ -71,7 +71,7 @@ public sealed class TimelineAttachmentTests : IDisposable
 
     private Task<Guid> AddAsync(CaseService svc, Guid caseId, CaseService.Screenshot? file, string text = "Exported the payroll changes") =>
         svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow.AddHours(-1),
-            text, null, screenshot: file);
+            text, null, screenshots: file is null ? null : [file]);
 
     [Theory]
     [MemberData(nameof(Providers))]
@@ -108,7 +108,7 @@ public sealed class TimelineAttachmentTests : IDisposable
 
         var shotEntry = await AddAsync(svc, id, new CaseService.Screenshot("pasted.png", "image/png", [0x89, 0x50, 0x4E, 0x47, 1, 2, 3]));
         var step = await svc.AddEventStepAsync(id, _clock.UtcNow.AddHours(-2), [MitreTactic.Exfiltration], null, null, null,
-            "Copied the export off the share", null, screenshot: File("share-audit.log", "text/plain", "4663 read payroll.xlsx"));
+            "Copied the export off the share", null, screenshots: [File("share-audit.log", "text/plain", "4663 read payroll.xlsx")]);
 
         var c = await LoadAsync(db, id);
         var shot = c.Evidence.Single(e => e.OriginalFileName == "pasted.png");

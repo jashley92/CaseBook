@@ -226,63 +226,90 @@ public sealed class CaseService
     public const string AttachedFromTimeline = "Attached from the timeline";
 
     /// <summary>
-    /// WF-31: stores <paramref name="shot"/> and records it as evidence on the case, linked to <paramref name="entry"/>, in
+    /// WF-31: stores <paramref name="shots"/> and records each as evidence on the case, linked to <paramref name="entry"/>, in
     /// the same save as the entry. Called once the entry has passed every check, so a refused entry leaves no evidence
-    /// (which can't be removed once recorded). Returns the stored path, to discard if the save itself fails. CAP-26: a file
+    /// (which can't be removed once recorded). Returns the stored paths, to discard if the save itself fails. CAP-26: a file
     /// that isn't an image is cited by the entry (as <see cref="CiteEvidenceAsync"/> records it), and is first held to what
     /// an Evidence tab upload is: the same file already on the case (not withdrawn) is refused before a byte is stored
-    /// (PROD-59). It carries no collection details (CAP-08); they're recorded later from its evidence panel.
+    /// (PROD-59). It carries no collection details (CAP-08); they're recorded later from its evidence panel. BUG-722: each
+    /// image is its own evidence item, linked after the entry's screenshots in the order given (up to
+    /// <see cref="TimelineEntry.MaxScreenshots"/>); every file is checked before the first is stored.
     /// </summary>
-    private async Task<string?> AttachScreenshotAsync(IAppDbContext db, Guid caseId, TimelineEntry entry, Screenshot? shot,
-        CancellationToken ct)
+    private async Task<List<string>> AttachScreenshotsAsync(IAppDbContext db, Guid caseId, TimelineEntry entry,
+        IReadOnlyList<Screenshot>? shots, CancellationToken ct)
     {
-        if (shot is null) return null;
+        var storedPaths = new List<string>();
+        if (shots is null || shots.Count == 0) return storedPaths;
         if (_evidenceStore is null) throw new InvalidOperationException("Screenshots can't be stored on this server.");
-        if (shot.FileName.Length > Evidence.EvidenceService.MaxFileNameLength)
-            throw new ArgumentException($"That file name is longer than {Evidence.EvidenceService.MaxFileNameLength} characters.");
-        if (shot.IsCitedFile)
+        if (entry.ScreenshotIds.Count + shots.Count(x => !x.IsCitedFile) > TimelineEntry.MaxScreenshots)
+            throw new ArgumentException($"An entry takes up to {TimelineEntry.MaxScreenshots} screenshots. Remove some, or upload the others on the Evidence tab.");
+        foreach (var shot in shots)
         {
-            var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(shot.Bytes)).ToLowerInvariant();
-            var already = await db.Evidence.AsNoTracking()   // stored as lowercase hex, as the store writes it
-                .Where(e => e.CaseId == caseId && e.Sha256 == sha && e.WithdrawnAtUtc == null)
-                .OrderBy(e => e.CreatedAtUtc).Select(e => new { e.OriginalFileName, e.CreatedAtUtc }).FirstOrDefaultAsync(ct);
-            if (already is not null)
-                throw new ArgumentException(Evidence.EvidenceService.AlreadyEvidence(already.OriginalFileName, already.CreatedAtUtc) +
-                    " It wasn't stored again. Remove it here, save the entry, then cite that copy with Cite evidence.");
+            if (shot.FileName.Length > Evidence.EvidenceService.MaxFileNameLength)
+                throw new ArgumentException($"That file name is longer than {Evidence.EvidenceService.MaxFileNameLength} characters.");
+            if (shot.IsCitedFile)
+            {
+                var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(shot.Bytes)).ToLowerInvariant();
+                var already = await db.Evidence.AsNoTracking()   // stored as lowercase hex, as the store writes it
+                    .Where(e => e.CaseId == caseId && e.Sha256 == sha && e.WithdrawnAtUtc == null)
+                    .OrderBy(e => e.CreatedAtUtc).Select(e => new { e.OriginalFileName, e.CreatedAtUtc }).FirstOrDefaultAsync(ct);
+                if (already is not null)
+                    throw new ArgumentException(Evidence.EvidenceService.AlreadyEvidence(already.OriginalFileName, already.CreatedAtUtc) +
+                        " It wasn't stored again. Remove it here, save the entry, then cite that copy with Cite evidence.");
+            }
+            // PROD-55: a pasted screenshot is evidence, so it counts against the same limits as an upload.
+            await Evidence.EvidenceRoom.CheckAsync(db, _evidenceStore, _evidenceLimits?.CurrentValue ?? new(), shot.Bytes.LongLength, ct: ct);
         }
-        // PROD-55: a pasted screenshot is evidence, so it counts against the same limits as an upload.
-        await Evidence.EvidenceRoom.CheckAsync(db, _evidenceStore, _evidenceLimits?.CurrentValue ?? new(), shot.Bytes.LongLength, ct: ct);
-        await using var content = new MemoryStream(shot.Bytes, writable: false);
-        var stored = await _evidenceStore.SaveAsync(caseId, content, ct);
-        var now = _clock.UtcNow;
-        var evidence = new Domain.Entities.Evidence
+        var linked = entry.ScreenshotIds.ToList();
+        try
         {
-            CaseId = caseId, OriginalFileName = shot.FileName,
-            ContentType = string.IsNullOrWhiteSpace(shot.ContentType) ? "application/octet-stream" : shot.ContentType,
-            SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath, Description = shot.Description,
-            CreatedBy = _user.UserId, CreatedAtUtc = now
-        };
-        evidence.CustodyEvents.Add(new ChainOfCustodyEvent
+            foreach (var shot in shots)
+            {
+                await using var content = new MemoryStream(shot.Bytes, writable: false);
+                var stored = await _evidenceStore.SaveAsync(caseId, content, ct);
+                storedPaths.Add(stored.StoragePath);
+                var now = _clock.UtcNow;
+                var evidence = new Domain.Entities.Evidence
+                {
+                    CaseId = caseId, OriginalFileName = shot.FileName,
+                    ContentType = string.IsNullOrWhiteSpace(shot.ContentType) ? "application/octet-stream" : shot.ContentType,
+                    SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath, Description = shot.Description,
+                    CreatedBy = _user.UserId, CreatedAtUtc = now
+                };
+                evidence.CustodyEvents.Add(new ChainOfCustodyEvent
+                {
+                    EvidenceId = evidence.Id, AtUtc = now, Actor = _user.UserId,
+                    Action = "Uploaded", Details = $"{stored.SizeBytes} bytes; sha256={stored.Sha256}"
+                });
+                db.Evidence.Add(evidence);
+                if (shot.IsCitedFile)   // CAP-26: "Evidence: file.csv" on the entry, as a citation made later reads
+                    db.EvidenceCitations.Add(new EvidenceCitation { CaseId = caseId, TimelineEntryId = entry.Id, EvidenceId = evidence.Id });
+                else linked.Add(evidence.Id);
+            }
+        }
+        catch
         {
-            EvidenceId = evidence.Id, AtUtc = now, Actor = _user.UserId,
-            Action = "Uploaded", Details = $"{stored.SizeBytes} bytes; sha256={stored.Sha256}"
-        });
-        db.Evidence.Add(evidence);
-        if (shot.IsCitedFile)   // CAP-26: "Evidence: file.csv" on the entry, as a citation made later reads
-            db.EvidenceCitations.Add(new EvidenceCitation { CaseId = caseId, TimelineEntryId = entry.Id, EvidenceId = evidence.Id });
-        else entry.EvidenceId = evidence.Id;
-        return stored.StoragePath;
+            await DiscardStoredAsync(storedPaths);   // BUG-206: no file without a record
+            throw;
+        }
+        entry.SetScreenshotIds(linked);
+        return storedPaths;
     }
 
-    // WF-31: the save that records a screenshot with its entry; a failed save leaves no file without a record (BUG-206).
-    private async Task SaveWithScreenshotAsync(IAppDbContext db, string? storedPath, CancellationToken ct)
+    // WF-31: the save that records screenshots with their entry; a failed save leaves no file without a record (BUG-206).
+    private async Task SaveWithScreenshotAsync(IAppDbContext db, IReadOnlyList<string> storedPaths, CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); }
         catch
         {
-            if (storedPath is not null) await _evidenceStore!.DiscardUnrecordedAsync(storedPath);
+            await DiscardStoredAsync(storedPaths);
             throw;
         }
+    }
+
+    private async Task DiscardStoredAsync(IReadOnlyList<string> storedPaths)
+    {
+        foreach (var path in storedPaths) await _evidenceStore!.DiscardUnrecordedAsync(path);
     }
 
     /// <summary>Applies need-to-know scoping to a case query for the current user.</summary>
@@ -2002,6 +2029,14 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    // BUG-722: whether a current entry shows the file as one of its screenshots (the first, or one after it).
+    private static Task<bool> IsScreenshotOnCurrentEntryAsync(IAppDbContext db, Guid caseId, Guid evidenceId, CancellationToken ct)
+    {
+        var key = TimelineEntry.MoreKey(evidenceId);
+        return db.TimelineEntries.AnyAsync(t => t.CaseId == caseId && t.IsCurrent
+            && (t.EvidenceId == evidenceId || (t.MoreEvidenceIds != null && t.MoreEvidenceIds.Contains(key))), ct);
+    }
+
     // BUG-05: an entry's attached file must be this case's evidence (a screenshot staged on another case mustn't link).
     // CAP-21: and one that stands: a withdrawn file isn't attached to an entry or named as a notice's file (CAP-07).
     private static async Task EnsureEvidenceOnCaseAsync(IAppDbContext db, Guid caseId, Guid? evidenceId, CancellationToken ct)
@@ -2016,7 +2051,7 @@ public sealed class CaseService
     public async Task<Guid> AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
         DecisionDetails? decision = null, bool imported = false, EntryFollowUps? followUps = null, StepTiming? timing = null,
-        Screenshot? screenshot = null, CancellationToken ct = default)
+        IReadOnlyList<Screenshot>? screenshots = null, CancellationToken ct = default)
     {
         Require();
         // BUG-119: the same rules as the composer: something to say, and an event step is one line.
@@ -2043,8 +2078,8 @@ public sealed class CaseService
         if (kind == TimelineKind.Event) c.PlaceNewEventStep(entry, occurredAtUtc, timing);
         c.TimelineEntries.Add(entry);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, entry, followUps, ct);
-        var shot = await AttachScreenshotAsync(db, c.Id, entry, screenshot, ct);   // WF-31: only once the entry has passed
-        await SaveWithScreenshotAsync(db, shot, ct);
+        var shots = await AttachScreenshotsAsync(db, c.Id, entry, screenshots, ct);   // WF-31: only once the entry has passed
+        await SaveWithScreenshotAsync(db, shots, ct);
         return entry.Id;
     }
 
@@ -2236,7 +2271,8 @@ public sealed class CaseService
     public async Task<Guid> AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
         Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, EntryFollowUps? followUps = null,
-        StepEnvironment? environment = null, StepTiming? timing = null, Screenshot? screenshot = null, CancellationToken ct = default)
+        StepEnvironment? environment = null, StepTiming? timing = null, IReadOnlyList<Screenshot>? screenshots = null,
+        CancellationToken ct = default)
     {
         Require();
         followUps?.Validate();
@@ -2249,8 +2285,8 @@ public sealed class CaseService
         var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description), source,
             _user.UserId, _clock.UtcNow, evidenceId, type, environment, timing);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, step, followUps, ct);
-        var shot = await AttachScreenshotAsync(db, c.Id, step, screenshot, ct);   // WF-31
-        await SaveWithScreenshotAsync(db, shot, ct);
+        var shots = await AttachScreenshotsAsync(db, c.Id, step, screenshots, ct);   // WF-31
+        await SaveWithScreenshotAsync(db, shots, ct);
         return step.Id;
     }
 
@@ -2260,11 +2296,14 @@ public sealed class CaseService
     /// </summary>
     /// BUG-196: <paramref name="expectedStamp"/> is the step's row hash when the editor opened (empty for one without);
     /// a step someone changed since is refused with <see cref="StaleEditException"/>. Null skips the check.
+    /// BUG-722: <paramref name="keepScreenshots"/> are the screenshots the step keeps, in order (null: unchanged), and
+    /// <paramref name="screenshots"/> new files to add after them, as on a new step.
     public async Task EditEventStepAsync(Guid id, Guid entryId, DateTimeOffset occurredAtUtc,
         IEnumerable<MitreTactic> tactics, string? techniqueId, Guid? actorEntityId, Guid? targetEntityId,
         string description, string? source, string? reason = null,
         TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null, StepTiming? timing = null,
-        string? expectedStamp = null, CancellationToken ct = default)
+        string? expectedStamp = null, IReadOnlyList<Guid>? keepScreenshots = null, IReadOnlyList<Screenshot>? screenshots = null,
+        CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -2273,10 +2312,11 @@ public sealed class CaseService
             && !string.Equals(step.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
             throw new StaleEditException(step.RowHash ?? "", "Someone changed this step since you opened it, so your edit " +
                 "wasn't saved. It has been reloaded with their change; make yours again.");
-        c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description),
-            source, _user.UserId, _clock.UtcNow, type, environment, timing);
+        var edited = c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId,
+            Content.MarkdownService.OneLine(description), source, _user.UserId, _clock.UtcNow, type, environment, timing, keepScreenshots);
         db.PendingChangeReason = reason;
-        await db.SaveChangesAsync(ct);
+        var shots = await AttachScreenshotsAsync(db, c.Id, edited, screenshots, ct);   // BUG-722
+        await SaveWithScreenshotAsync(db, shots, ct);
     }
 
     /// <summary>ST-01: moves an event step one place earlier or later among the steps (see <see cref="Case.MoveEventStep"/>).</summary>
@@ -2311,19 +2351,23 @@ public sealed class CaseService
 
     /// <summary>
     /// Edits an Investigation-timeline entry, superseding it with a new version (prior kept). The optional
-    /// <paramref name="reason"/> is recorded on the audit entry.
+    /// <paramref name="reason"/> is recorded on the audit entry. BUG-722: <paramref name="keepScreenshots"/> are the
+    /// screenshots the new version keeps, in order (null: all of them), and <paramref name="screenshots"/> new files to add
+    /// after them; one unlinked stays on the earlier version, and on the case.
     /// </summary>
     public async Task EditInvestigationEntryAsync(Guid id, Guid entryId, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, string? reason = null,
-        DecisionDetails? decision = null, CancellationToken ct = default)
+        DecisionDetails? decision = null, IReadOnlyList<Guid>? keepScreenshots = null,
+        IReadOnlyList<Screenshot>? screenshots = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.EditInvestigationEntry(entryId, type, occurredAtUtc, description, source, _user.UserId, _clock.UtcNow,
-            decision?.Rationale, decision?.OptionsConsidered, decision?.DecidedBy);
+        var next = c.EditInvestigationEntry(entryId, type, occurredAtUtc, description, source, _user.UserId, _clock.UtcNow,
+            decision?.Rationale, decision?.OptionsConsidered, decision?.DecidedBy, keepScreenshots);
         db.PendingChangeReason = reason;
-        await db.SaveChangesAsync(ct);
+        var shots = await AttachScreenshotsAsync(db, c.Id, next, screenshots, ct);   // BUG-722
+        await SaveWithScreenshotAsync(db, shots, ct);
     }
 
     /// <summary>
@@ -4033,8 +4077,8 @@ public sealed class CaseService
                 "withdrawn. Look at it again before withdrawing it.");
         if (await db.JurisdictionNotices.AnyAsync(n => n.CaseId == caseId && n.EvidenceId == evidenceId, ct))
             throw new InvalidOperationException("A regulator's notice names this file as the one holding the notice. Change that notice's file first.");
-        if (await db.TimelineEntries.AnyAsync(t => t.CaseId == caseId && t.EvidenceId == evidenceId && t.IsCurrent, ct))
-            throw new InvalidOperationException("This file is the screenshot on a timeline entry. Retract that entry first if it belongs to another case too.");
+        if (await IsScreenshotOnCurrentEntryAsync(db, caseId, evidenceId, ct))
+            throw new InvalidOperationException("This file is a screenshot on a timeline entry. Unlink it in the entry's edit, or retract the entry, first.");
         ev.Withdraw(reason, _user.UserId, _clock.UtcNow);
         db.PendingChangeReason = reason?.Trim();
         await db.SaveChangesAsync(ct);
@@ -4098,8 +4142,8 @@ public sealed class CaseService
         if (ev.IsWithdrawn) throw new InvalidOperationException("That file has been withdrawn already.");
         if (await db.JurisdictionNotices.AnyAsync(n => n.CaseId == caseId && n.EvidenceId == evidenceId, ct))
             throw new InvalidOperationException("A regulator's notice names this file as the one holding the notice. Change that notice's file first.");
-        if (await db.TimelineEntries.AnyAsync(t => t.CaseId == caseId && t.EvidenceId == evidenceId && t.IsCurrent, ct))
-            throw new InvalidOperationException("This file is the screenshot on a timeline entry. Retract that entry first.");
+        if (await IsScreenshotOnCurrentEntryAsync(db, caseId, evidenceId, ct))
+            throw new InvalidOperationException("This file is a screenshot on a timeline entry. Unlink it in the entry's edit, or retract the entry, first.");
         if (await db.Evidence.AnyAsync(e => e.CaseId == to.Id && e.Sha256 == ev.Sha256 && e.WithdrawnAtUtc == null, ct))
             throw new InvalidOperationException($"{to.CaseNumber} holds this file already. Withdraw it here instead.");
 

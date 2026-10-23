@@ -1211,7 +1211,7 @@ public class Case : AuditableEntity, IHashableEntity
     public TimelineEntry EditEventStep(Guid entryId, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
         string actor, DateTimeOffset nowUtc, TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null,
-        StepTiming? timing = null)
+        StepTiming? timing = null, IReadOnlyList<Guid>? screenshots = null)
     {
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("A description is required.");
@@ -1221,6 +1221,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (entry.IsRetracted)   // BUG-413
             throw new InvalidOperationException("That step was retracted, so it can't be edited. Add a new step instead.");
         if (timing?.AfterStepId == entryId) throw new ArgumentException("A step can't come after itself.");
+        if (screenshots is not null) CheckScreenshots(entry.ScreenshotIds, screenshots);   // BUG-722: before anything changes
 
         var normalisedTechnique = string.IsNullOrWhiteSpace(techniqueId) ? null : CaseTechnique.NormaliseId(techniqueId);
 
@@ -1245,9 +1246,33 @@ public class Case : AuditableEntity, IHashableEntity
         entry.Tactics.RemoveAll(t => !desired.Contains(t.Tactic));
         foreach (var tactic in desired.Where(d => entry.Tactics.All(x => x.Tactic != d)))
             entry.Tactics.Add(new EventStepTactic { TimelineEntryId = entry.Id, Tactic = tactic });
+        // BUG-722: a screenshot unlinked in the edit leaves the step (the audit chain keeps the prior list); its evidence stays.
+        if (screenshots is not null) entry.SetScreenshotIds(screenshots);
 
         Touch(actor, nowUtc);
         return entry;
+    }
+
+    /// <summary>
+    /// BUG-722: the screenshots an edit leaves on an entry, in order: at most <see cref="TimelineEntry.MaxScreenshots"/>, each
+    /// once, and each an image on this case (BUG-05); a withdrawn file stays only where it was linked already (CAP-21).
+    /// Unlinking takes nothing off the case: the evidence is never deleted (R3).
+    /// </summary>
+    private void CheckScreenshots(IReadOnlyList<Guid> linked, IReadOnlyList<Guid> screenshots)
+    {
+        if (screenshots.Count > TimelineEntry.MaxScreenshots)
+            throw new ArgumentException($"An entry takes up to {TimelineEntry.MaxScreenshots} screenshots.");
+        if (screenshots.Distinct().Count() != screenshots.Count)
+            throw new ArgumentException("That screenshot is on the entry already.");
+        foreach (var id in screenshots.Where(id => !linked.Contains(id)))
+        {
+            var ev = Evidence.FirstOrDefault(e => e.Id == id)
+                ?? throw new InvalidOperationException("Only evidence on this case can be attached to its record.");
+            if (ev.IsWithdrawn)
+                throw new InvalidOperationException("That file has been withdrawn from the case, so it can't be attached to its record.");
+            if (!ev.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Only an image is shown as a screenshot; cite other files instead.");
+        }
     }
 
     /// <summary>
@@ -1257,7 +1282,8 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public TimelineEntry EditInvestigationEntry(Guid entryId, TimelineEntryType type, DateTimeOffset occurredAtUtc,
         string newDescription, string? source, string actor, DateTimeOffset nowUtc,
-        string? rationale = null, string? optionsConsidered = null, string? decidedBy = null)
+        string? rationale = null, string? optionsConsidered = null, string? decidedBy = null,
+        IReadOnlyList<Guid>? screenshots = null)
     {
         if (string.IsNullOrWhiteSpace(newDescription))
             throw new ArgumentException("A description is required.");
@@ -1266,6 +1292,7 @@ public class Case : AuditableEntity, IHashableEntity
         var current = TimelineEntries.FirstOrDefault(t =>
                 t.Id == entryId && t.Kind == TimelineKind.Investigation && t.IsCurrent)
             ?? throw new InvalidOperationException("Investigation entry not found or already superseded.");
+        if (screenshots is not null) CheckScreenshots(current.ScreenshotIds, screenshots);   // BUG-722
 
         current.IsCurrent = false;
         var next = new TimelineEntry
@@ -1280,6 +1307,7 @@ public class Case : AuditableEntity, IHashableEntity
             SupersedesEntryId = current.Id,
             IsCurrent = true,
             EvidenceId = current.EvidenceId, // an attached screenshot (U-40) carries to the new version
+            MoreEvidenceIds = current.MoreEvidenceIds,   // BUG-722: and the ones after it
             ActionItemId = current.ActionItemId, // INV-08: still the result of the same task
             PromotedFrom = current.PromotedFrom,  // INV-07: still promoted from the same source
             // INV-06: only a Decision keeps its decision details.
@@ -1289,6 +1317,8 @@ public class Case : AuditableEntity, IHashableEntity
             CreatedBy = actor,
             CreatedAtUtc = nowUtc
         };
+        // BUG-722: the screenshots the edit keeps; one unlinked stays on the earlier version (and on the case).
+        if (screenshots is not null) next.SetScreenshotIds(screenshots);
         TimelineEntries.Add(next);
         // INV-10: the evidence the entry cited still supports the new version.
         foreach (var cite in Citations.Where(x => x.TimelineEntryId == current.Id))

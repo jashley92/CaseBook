@@ -3038,6 +3038,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("MoreEvidenceIds")
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("OccurredAtUtc")
                         .HasColumnType("INTEGER");
 

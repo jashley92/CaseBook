@@ -600,7 +600,7 @@
     {
         var list = new List<(string, string, Guid?)>();
         var cited = Case.Citations.Where(c => c.EvidenceId == ev.Id).Select(c => c.TimelineEntryId).ToHashSet();
-        foreach (var e in Case.TimelineEntries.Where(t => t.IsCurrent && (cited.Contains(t.Id) || t.EvidenceId == ev.Id)).OrderBy(t => t.OccurredAtUtc))
+        foreach (var e in Case.TimelineEntries.Where(t => t.IsCurrent && (cited.Contains(t.Id) || t.ScreenshotIds.Contains(ev.Id))).OrderBy(t => t.OccurredAtUtc))
         {
             var kind = e.Kind == TimelineKind.Event ? "Attack step" : e.Type == TimelineEntryType.Decision ? "Decision" : Ui.Label(e.Type);
             list.Add(($"{kind}, {TimeDisp.Brief(e.OccurredAtUtc, Clock.UtcNow)}", Snippet(e.Description), e.Id));

@@ -46,7 +46,8 @@ public partial class CaseAudienceGateTests
         ["CaseService.cs:ResolveAboutAsync"] = (3, "private: its caller loaded the case with LoadTrackedAsync; the target must be on that case"),
         ["CaseService.cs:MergeAppendedAsync"] = (1, "private: its caller loaded the case with LoadTrackedAsync"),
         ["CaseService.cs:EnsureQuestionAnsweredAsync"] = (1, "private: its callers loaded the task's case with LoadTrackedAsync"),
-        ["CaseService.cs:AttachScreenshotAsync"] = (1, "CAP-26, private: its callers loaded the case with LoadTrackedAsync; the duplicate check reads only that case's evidence"),
+        ["CaseService.cs:AttachScreenshotsAsync"] = (1, "CAP-26, private: its callers loaded the case with LoadTrackedAsync; the duplicate check reads only that case's evidence"),
+        ["CaseService.cs:IsScreenshotOnCurrentEntryAsync"] = (1, "BUG-722, private: a bool for a case its callers read through Scoped just before"),
         // Activity, administration, campaigns
         ["CaseRemovalService.cs:PurgeDueAsync"] = (1, "the nightly purge, a system run: the ids of removed cases past their undo window"),
         ["CaseRemovalService.cs:PurgeCoreAsync"] = (3, "private: called by PurgeNowAsync (Administer) and the nightly PurgeDueAsync; the removed case, its evidence and its reports"),
