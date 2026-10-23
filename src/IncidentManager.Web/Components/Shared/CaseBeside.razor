@@ -42,6 +42,10 @@
         {
             <LoadingBlock Rows="6" Columns="1" Label="Loading the case…" />
         }
+        else if (_failed)
+        {
+            <p class="text-muted small">This case couldn't be loaded just now. Close it and open it beside again.</p>
+        }
         else if (_case is null)
         {
             <p class="text-muted small">This case isn't available. It may have been archived or restricted.</p>
@@ -61,7 +65,7 @@
     private IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> _taskResults =
         new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     private IncidentManager.Application.Compliance.CaseNotificationDeadlines? _notify;
-    private bool _loading = true;
+    private bool _loading = true, _failed;
     private Guid _loadedFor;
 
     protected override async Task OnParametersSetAsync()
@@ -72,7 +76,21 @@
         // BUG-572: the last case goes while the next one loads, so the header never names it while Open and Swap act on
         // this one.
         (_case, _taskResults, _notify) = (null, new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>(), null);
+        _failed = false;
+        // BUG-702: the panel is outside the page's ErrorBoundary, so a database blip shows a line here rather than
+        // ending the session.
         var id = CaseId;
+        try { await LoadAsync(id); }
+        catch (Exception ex) when (ex is System.Data.Common.DbException or TimeoutException)
+        {
+            if (id != CaseId) return;
+            _failed = true;
+            _loading = false;
+        }
+    }
+
+    private async Task LoadAsync(Guid id)
+    {
         var c = await Cases.GetDetailAsync(id);
         if (id != CaseId) return;
         // REV-44: every await is a chance for the panel to have moved to another case; what arrives late for this one is

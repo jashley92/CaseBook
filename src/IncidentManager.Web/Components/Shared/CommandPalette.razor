@@ -199,7 +199,7 @@
     private async Task LoadKeymap()
     {
         try { _keymap = await DisplayPrefs.GetKeymapAsync(); }
-        catch (InvalidOperationException) { /* keep the defaults */ }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Data.Common.DbException or TimeoutException) { /* keep the defaults (BUG-702) */ }
         await IncidentManager.Web.Services.KeymapClient.ApplyAsync(JS, _keymap);
     }
     private void CloseHelp() => _help = false;

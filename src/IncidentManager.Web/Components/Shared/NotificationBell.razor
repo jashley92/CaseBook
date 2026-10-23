@@ -111,7 +111,13 @@
         StateHasChanged();
     }
 
-    private async Task Load() => _items = await Feed.RecentAsync(20, othersOnly: true);
+    // BUG-702: the bell is outside the ErrorBoundary and its settle timer runs in every circuit, so a database blip
+    // keeps the last feed rather than ending every open session.
+    private async Task Load()
+    {
+        try { _items = await Feed.RecentAsync(20, othersOnly: true); }
+        catch (Exception ex) when (ex is System.Data.Common.DbException or InvalidOperationException or TimeoutException) { /* keep the last feed */ }
+    }
 
     private Task OnAnyChange(Guid _, string __)
     {

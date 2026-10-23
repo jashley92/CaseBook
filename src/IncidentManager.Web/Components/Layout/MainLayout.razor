@@ -209,8 +209,10 @@
         }
         catch (JSException) { /* interop unavailable: the browser keeps its own copy */ }
         catch (JSDisconnectedException) { }
-        // BUG-368: a convenience; a database failure here mustn't take the circuit down with it.
-        catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        // BUG-368: a convenience; a database failure here mustn't take the circuit down with it. BUG-702: a failed read
+        // is a DbException (or a timeout), not a DbUpdateException; this is outside the ErrorBoundary.
+        catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException
+                                       or System.Data.Common.DbException or TimeoutException)
         {
             Logger.LogWarning(ex, "Couldn't sync display preferences; the browser keeps its own copy");
         }
@@ -231,7 +233,8 @@
         }
         catch (JSException) { }
         catch (JSDisconnectedException) { }
-        catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)   // BUG-368
+        catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException
+                                       or System.Data.Common.DbException or TimeoutException)   // BUG-368, BUG-702
         {
             Logger.LogWarning(ex, "Couldn't save display preferences; the browser keeps its own copy");
         }

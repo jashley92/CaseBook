@@ -50,7 +50,8 @@ public sealed class CaseTabsState : IDisposable
     public async Task RefreshAsync()
     {
         try { Tabs = await _svc.ListAsync(); }
-        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException) { /* keep the last list */ }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException
+                                       or System.Data.Common.DbException or TimeoutException) { /* keep the last list (BUG-702) */ }
         Changed?.Invoke();
     }
 
