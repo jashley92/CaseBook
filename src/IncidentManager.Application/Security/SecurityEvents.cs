@@ -167,6 +167,18 @@ public static class SecurityEvents
         Actor = actor, ActorUpn = actorUpn, TargetType = "ApiToken", Detail = detail
     };
 
+    /// <summary>BUG-713: an administrator marked an alert email that was given up after its retries as handled (sent some
+    /// other way), clearing its notices. Target is the alert's kind; the case number, when it has one, is the detail.</summary>
+    public static SecurityEvent UndeliveredAlertHandled(string kind, string? caseNumber, string actor, string? actorUpn) => new()
+    {
+        EventId = SecurityEventIds.UndeliveredAlertHandled,
+        Category = "Admin",
+        Action = "UndeliveredAlertHandled",
+        Outcome = SecurityOutcome.Success,
+        Severity = SecuritySeverity.Warning,
+        Actor = actor, ActorUpn = actorUpn, TargetType = "AlertDelivery", TargetId = kind, Detail = caseNumber
+    };
+
     public static SecurityEvent SettingChanged(string key, string actor, string? actorUpn) => new()
     {
         EventId = SecurityEventIds.SettingChanged,

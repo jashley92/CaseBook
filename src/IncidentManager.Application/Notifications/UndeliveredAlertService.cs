@@ -16,7 +16,8 @@ public sealed record UndeliveredAlert(Guid Id, string Kind, Guid? CaseId, string
 /// and can mark one handled once they've sent it some other way; a breach escalation also shows on its case, to anyone
 /// who can see the case, so the team knows Legal may not have heard.
 /// </summary>
-public sealed class UndeliveredAlertService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+public sealed class UndeliveredAlertService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, IAuditWriter audit,
+    ISecurityEventSink? siem = null)
 {
     /// <summary>Every undelivered alert not yet marked handled. Administrators only; empty for anyone else.</summary>
     public async Task<IReadOnlyList<UndeliveredAlert>> ListAsync(CancellationToken ct = default)
@@ -38,16 +39,36 @@ public sealed class UndeliveredAlertService(IAppDbContextFactory factory, ICurre
     }
 
     /// <summary>Marks an undelivered alert handled (sent by hand, say), which clears its notices.</summary>
+    /// <remarks>BUG-713: the AlertDeliveries table is outside the audit chain, so the decision is recorded in the audit trail
+    /// (on the case's, for a breach escalation) and streamed to the SIEM; a refusal is streamed as every admin action's is.</remarks>
     public async Task DismissAsync(Guid id, CancellationToken ct = default)
     {
-        if (!user.Has(Permission.Administer)) throw new ForbiddenException(Permission.Administer);
+        if (!user.Has(Permission.Administer))
+        {
+            siem?.Emit(SecurityEvents.ActionRefused(user.UserId, user.UserPrincipalName, Permission.Administer,
+                $"{nameof(UndeliveredAlertService)}.{nameof(DismissAsync)}"));
+            throw new ForbiddenException(Permission.Administer);
+        }
         using var db = factory.CreateDbContext();
         var a = await db.AlertDeliveries.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (a is null || a.DismissedAtUtc is not null) return;
         a.DismissedAtUtc = clock.UtcNow;
         a.DismissedBy = user.UserId;
         await db.SaveChangesAsync(ct);
+
+        var n = a.RecipientList.Count;
+        var summary = $"Undelivered {Words(a.Kind)} email to {n} recipient{(n == 1 ? "" : "s")} marked handled.";
+        await audit.RecordAsync(AuditAction.Update, "AlertDelivery", a.Id.ToString(), a.CaseNumber, summary, ct);
+        siem?.Emit(SecurityEvents.UndeliveredAlertHandled(a.Kind, a.CaseNumber, user.UserId, user.UserPrincipalName));
     }
+
+    private static string Words(string kind) => kind switch
+    {
+        AlertDelivery.BreachEscalation => "breach-escalation",
+        AlertDelivery.IntegrityAlarm => "integrity-alarm",
+        AlertDelivery.EvidenceDriftAlarm => "evidence-check alarm",
+        _ => kind,
+    };
 
     private static UndeliveredAlert View(AlertDelivery a) =>
         new(a.Id, a.Kind, a.CaseId, a.CaseNumber, a.Subject, a.RecipientList, a.FirstFailedAtUtc, a.GaveUpAtUtc!.Value, a.Retries);

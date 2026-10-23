@@ -99,7 +99,9 @@ public sealed class CriticalAlertOutboxTests : IDisposable
         _sender.Failing = true;
         var caseId = await SeedCaseAsync();
         await outbox.SendAsync(AlertDelivery.BreachEscalation, caseId, "2026-04_Vendor", Message());
-        var service = new UndeliveredAlertService(Factory(), _user, _clock);
+        var audit = new ScheduledJobsTests.CapturingAudit();
+        var siem = new CapturingSecurityEventSink();
+        var service = new UndeliveredAlertService(Factory(), _user, _clock, audit, siem);
 
         foreach (var wait in AlertDelivery.RetryAfter)
         {
@@ -113,13 +115,24 @@ public sealed class CriticalAlertOutboxTests : IDisposable
         shown.Recipients.Should().Equal("legal@insurer.example");
         (await service.ListAsync()).Should().ContainSingle();
 
-        var analyst = new UndeliveredAlertService(Factory(), new TestCurrentUser { UserId = "a1", RoleSet = [AppRole.Analyst] }, _clock);
+        var analyst = new UndeliveredAlertService(Factory(), new TestCurrentUser { UserId = "a1", RoleSet = [AppRole.Analyst] }, _clock, audit, siem);
         (await analyst.ListAsync()).Should().BeEmpty("the banner is for administrators");
         await analyst.Invoking(s => s.DismissAsync(shown.Id)).Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+
+        siem.Events.Should().ContainSingle(e => e.EventId == IncidentManager.Application.Security.SecurityEventIds.ActionRefused,
+            "BUG-713: a refusal is streamed, as every admin action's is");
 
         await service.DismissAsync(shown.Id);
         (await service.ForCaseAsync(caseId)).Should().BeEmpty();
         (await service.ListAsync()).Should().BeEmpty();
+
+        // BUG-713: the table is outside the chain, so the decision is in the audit trail and the SIEM stream.
+        audit.Entries.Should().ContainSingle().Which.Should().Be(
+            (AuditAction.Update, "AlertDelivery", shown.Id.ToString(), "Undelivered breach-escalation email to 1 recipient marked handled."));
+        siem.Events.Should().ContainSingle(e => e.EventId == IncidentManager.Application.Security.SecurityEventIds.UndeliveredAlertHandled)
+            .Which.Detail.Should().Be("2026-04_Vendor");
+        await service.DismissAsync(shown.Id);
+        audit.Entries.Should().ContainSingle("marking it handled again records nothing");
     }
 
     [Fact]

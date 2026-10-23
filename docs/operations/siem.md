@@ -127,6 +127,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5403 | Admin | Operational setting changed |
 | 5404 | Admin | API token created or revoked |
 | 5405 | Admin | **Reference data changed** (CAP-06). Action `ReferenceDataCreated`, `ReferenceDataChanged` or `ReferenceDataDeleted`; target type is the kind (`StageGate`, `DataElement`, `DeadlineRule`, `CaseTemplate`, `CaseOutcome`, `TaxonomyLabel`, `TaxonomyOrder`, `ReportProfile`, `ReportTemplate`, `EmailTemplate`, `ConfigurationBundle`, and from CAP-36 `Team`: a team added, changed, retired or restored, or "(members)" when only who is in it changed), target id the row's id, detail its name (an archive or restore says so in brackets). Warning for a stage gate, a deadline rule or any delete; else Info |
+| 5406 | Admin | **Undelivered alert marked handled** (BUG-713): an administrator cleared a breach-escalation, integrity-alarm or evidence-check alarm email that was given up after its retries. Warning. Target id is the kind; detail the case number, when it has one. Also in the audit trail |
 | 5501 | Governance | Legal hold placed |
 | 5502 | Governance | Legal hold released |
 | 5503 | Governance | Case escalated to Breach |
