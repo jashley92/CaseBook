@@ -67,7 +67,8 @@ window.imTagAdd = (function () {
         if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v) || (/^[0-9a-f:]+$/i.test(v) && v.includes('::'))) return ['IpAddress'];
         if (/^(hxxps?|https?):\/\//i.test(v)) return ['Url'];
         if (/^([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$/i.test(v)) return ['FileHash'];
-        if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return ['Account', 'EmailAddress'];
+        const at = v.split('@');   // name@domain.tld, with a dot inside the domain
+        if (at.length === 2 && at[0] && !/\s/.test(v) && at[1].slice(1, -1).includes('.')) return ['Account', 'EmailAddress'];
         // first.last and host.domain look alike: a familiar top-level domain puts Domain first, else Account.
         const labels = v.replace(/\[?\.\]?/g, '.').split('.');   // dots, defanged or not, split the labels
         if (labels.length > 1 && labels.every(l => /^[a-z0-9-]+$/i.test(l)))
