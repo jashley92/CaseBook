@@ -204,6 +204,36 @@ public sealed class HostStartupSmokeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_stored_file_that_begins_like_an_encrypted_one_but_doesnt_read_is_refused_in_words(/* BUG-712 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+            (await client.GetAsync("/health/live")).EnsureSuccessStatusCode();   // starts the host (and its demo seed)
+            IncidentManager.Domain.Entities.Evidence evidence;
+            using (var scope = factory.Services.CreateScope())
+            {
+                await using var db = await scope.ServiceProvider
+                    .GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext>>()
+                    .CreateDbContextAsync();
+                evidence = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstAsync(db.Evidence);
+                var store = (IncidentManager.Infrastructure.Storage.FileEvidenceStore)scope.ServiceProvider
+                    .GetRequiredService<IncidentManager.Application.Abstractions.IEvidenceStore>();
+                // "CBE1", version 1, then text where a key id would be: a plain file that happens to begin with the magic.
+                await File.WriteAllBytesAsync(store.PathOf(evidence.StoragePath),
+                    [.. "CBE1"u8, 1, .. System.Text.Encoding.ASCII.GetBytes(new string('Z', 400))]);
+            }
+
+            var download = await client.GetAsync($"/evidence/{evidence.Id}");
+            download.StatusCode.Should().Be(HttpStatusCode.Conflict, "not the error page");
+            (await download.Content.ReadAsStringAsync()).Should().Contain("header can't be read");
+            (await client.GetAsync($"/evidence/{evidence.Id}/safe")).StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await client.GetAsync($"/evidence/{evidence.Id}/inline")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        });
+    }
+
+    [Fact]
     public async Task The_safe_download_is_a_zip_that_opens_with_infected_and_holds_the_file_as_recorded(/* PROD-58 */)
     {
         await RunWithin(Limit, async () =>

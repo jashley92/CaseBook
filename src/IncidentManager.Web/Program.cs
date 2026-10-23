@@ -756,7 +756,8 @@ app.MapGet("/evidence/{id:guid}/inline", async (Guid id, EvidenceService evidenc
     // unhandled error logged on every render and redirected to the HTML error page.
     try { (_, stream) = await evidence.OpenAsync(id, recordDownload: false, ct: ct); }
     catch (Exception ex) when (ex is IncidentManager.Application.Common.NotFoundException or FileNotFoundException or DirectoryNotFoundException
-                                   or IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException)
+                                   or IncidentManager.Application.Abstractions.EvidenceKeyUnavailableException
+                                   or System.Security.Cryptography.CryptographicException)   // BUG-712: a header that doesn't read
     {
         return Results.NotFound();
     }

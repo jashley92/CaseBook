@@ -80,6 +80,14 @@ public static class EvidenceDownloadEndpoints
             // PROD-57: the file is fine; its key isn't available on this server (administrators have been alerted).
             return (null, null, Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable));
         }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // BUG-712: the file starts like an encrypted one but its header doesn't read (damaged, or a file stored as it
+            // arrived that happens to begin that way). Worded, as the evidence check words it, not the error page.
+            return (null, null, Results.Problem("This evidence file doesn't open: it begins like an encrypted file, but its " +
+                "header can't be read. Nothing was downloaded; ask an administrator to run the evidence check (Administration › " +
+                "Diagnostics).", statusCode: StatusCodes.Status409Conflict));
+        }
         catch (IOException)
         {
             // PROD-56: the store itself couldn't be read (a share that's down, permissions): nothing was downloaded or recorded.
