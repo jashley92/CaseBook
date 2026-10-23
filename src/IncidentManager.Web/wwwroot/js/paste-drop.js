@@ -9,11 +9,12 @@ window.imPasteDrop = (function () {
     const zones = []; // { zoneId, pasteInputId, dropInputId|null, anyFile }
 
     // A zone participates only while its wrapper element is in the DOM and visible — this scopes paste to
-    // the active tab and lets the listeners stay registered harmlessly across tab switches.
+    // the active tab and lets the listeners stay registered harmlessly across tab switches. Visible is "has a box":
+    // offsetParent is null for a position:fixed element too, which is the timeline's popped-out composer (BUG-701).
     function visibleZone() {
         for (const z of zones) {
             const el = document.getElementById(z.zoneId);
-            if (el && el.offsetParent !== null) return { z, el };
+            if (el && el.getClientRects().length > 0) return { z, el };
         }
         return null;
     }
