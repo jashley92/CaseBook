@@ -2115,14 +2115,23 @@ else
         }
     }
 
-    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
+    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; _tlShotUri = null; }
 
     // BUG-483 sibling: after a save, clears the screenshot it took, not one pasted while it was saving (that one was
     // cleared too, and lost without a word).
     private void ClearTimelineShot(byte[]? saved) { if (ReferenceEquals(_tlShotBytes, saved)) ClearTimelineShot(); }
 
-    private string TlShotDataUri() =>
-        _tlShotBytes is null ? "" : $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}";
+    // BUG-721: encoded once per staged file, not on every render. The composer re-renders on each keystroke, and a 15 MB
+    // paste made a new 20 MB string each time for the diff to compare.
+    private (byte[] Bytes, string Uri)? _tlShotUri;
+
+    private string TlShotDataUri()
+    {
+        if (_tlShotBytes is null) return "";
+        if (_tlShotUri is not { } kept || !ReferenceEquals(kept.Bytes, _tlShotBytes))
+            _tlShotUri = kept = (_tlShotBytes, $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}");
+        return kept.Uri;
+    }
 
     // WF-31: the staged screenshot goes with the entry, stored as hashed, chain-of-custody evidence in the same save, so a
     // refused entry leaves no evidence behind.
