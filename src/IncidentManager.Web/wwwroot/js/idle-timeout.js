@@ -22,11 +22,15 @@ window.imIdle = (function () {
     // Coalesced, passive listeners — cheap even on mousemove.
     var events = ['pointerdown', 'keydown', 'mousemove', 'wheel', 'scroll', 'touchstart', 'visibilitychange'];
 
-    function onActivity() {
+    function onActivity(e) {
         if (warned) return;            // during the warning, ignore activity — require an explicit choice
         // BUG-550: after a sleep the first event (the wake's visibilitychange, a key) can come before the overdue tick.
         // A boundary that has already passed is acted on, not reset: the warning, or the lock past the deadline.
         if (Date.now() - last >= idleMs - warnMs) { tick(); return; }
+        // BUG-714: the tab being hidden or shown isn't the person doing anything. Hiding it just before the warning reset
+        // the clock, so a session left in a background tab stayed open for nearly twice the timeout. It's here only so a
+        // wake is noticed promptly (above).
+        if (e && e.type === 'visibilitychange') return;
         last = Date.now();
     }
 
