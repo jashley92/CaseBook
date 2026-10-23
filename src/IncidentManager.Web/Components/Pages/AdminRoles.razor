@@ -317,7 +317,7 @@ else
     {
         <div class="table-responsive">
             <table class="table table-sm align-middle">
-                <thead><tr><th>Token</th><th>Roles granted</th><th>Last used (@TimeDisp.Label)</th><th>Expires</th></tr></thead>
+                <thead><tr><th>Token</th><th>Roles granted</th><th>Last used (@TimeDisp.Label)</th><th>Expires (UTC)</th></tr></thead>
                 <tbody>
                     @foreach (var t in _review.ApiTokens)
                     {
@@ -328,7 +328,7 @@ else
                             </td>
                             <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> }</td>
                             <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Stamp(used) : "Never")</td>
-                            <td class="small">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
+                            <td class="small">@TimeDisplay.UtcDay(t.ExpiresAtUtc)</td>
                         </tr>
                     }
                 </tbody>

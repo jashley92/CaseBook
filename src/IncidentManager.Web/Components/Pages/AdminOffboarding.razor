@@ -123,7 +123,7 @@ else
     {
         <div class="table-responsive">
             <table class="table table-sm align-middle" aria-label="Their API tokens">
-                <thead><tr><th scope="col">Name</th><th scope="col">Prefix</th><th scope="col">Last used</th><th scope="col">Expires</th></tr></thead>
+                <thead><tr><th scope="col">Name</th><th scope="col">Prefix</th><th scope="col">Last used</th><th scope="col">Expires (UTC)</th></tr></thead>
                 <tbody>
                     @foreach (var t in v.Tokens)
                     {
@@ -131,7 +131,7 @@ else
                             <td style="overflow-wrap:anywhere">@t.Name</td>
                             <td><code class="small">@t.Prefix</code></td>
                             <td class="small">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "never")</td>
-                            <td class="small">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
+                            <td class="small">@TimeDisplay.UtcDay(t.ExpiresAtUtc)</td>
                         </tr>
                     }
                 </tbody>

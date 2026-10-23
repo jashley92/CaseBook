@@ -85,7 +85,7 @@ else if (_tokens.Count == 0)
 else
 {
     <table class="table table-sm align-middle">
-        <thead><tr><th>Name</th><th>Roles</th><th>Last used (UTC)</th><th>Expires (UTC)</th><th>Status</th><th style="width:6rem"></th></tr></thead>
+        <thead><tr><th>Name</th><th>Roles</th><th>Last used</th><th>Expires (UTC)</th><th>Status</th><th style="width:6rem"></th></tr></thead>
         <tbody>
             @foreach (var t in _tokens)
             {
@@ -93,7 +93,7 @@ else
                     <td><span class="fw-semibold">@t.Name</span><div class="small text-muted font-monospace">@t.Prefix…</div></td>
                     <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-info me-1 mb-1">@r</span> }</td>
                     <td class="small text-muted">@(t.LastUsedAtUtc is { } used ? TimeDisp.Short(used) : "—")</td>
-                    <td class="small text-muted">@TimeDisp.DateOnly(t.ExpiresAtUtc)</td>
+                    <td class="small text-muted">@TimeDisplay.UtcDay(t.ExpiresAtUtc)</td>
                     <td>
                         @if (t.RevokedAtUtc is not null) { <span class="im-badge im-b-danger">Revoked</span> }
                         else if (!t.IsActive) { <span class="im-badge im-b-warn">Expired</span> }
