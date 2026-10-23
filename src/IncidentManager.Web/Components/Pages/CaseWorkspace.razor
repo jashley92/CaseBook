@@ -710,7 +710,14 @@ else
         }
         else _scrollToId = (target.Tab switch { "Notes" => "note-", "Tasks" => "task-", _ => "ev-" }) + target.Id;   // HR-17: notes; RD-04: tasks
         await SetTab(target.Tab);   // clears the flash a moment after it's seen
+        if (!Showing(target.Tab)) (_focusEntry, _scrollToId) = (null, null);   // BUG-719: held for unsaved text
     }
+
+    // BUG-719: whether the part a switch was asked for is showing now. A one-shot intent set for it (the composer to focus,
+    // the entry to jump to, the filter to apply) is dropped when the switch was held for unsaved text: kept, it fired on a
+    // later, unrelated visit to that part. As BUG-703's for the gate fixes.
+    private bool Showing(string tab) =>
+        string.Equals(_activeTab, string.Equals(tab, "Notes", StringComparison.OrdinalIgnoreCase) ? "Timeline" : tab, StringComparison.Ordinal);
 
     // BUG-510: the entry the timeline is to jump to (?entry=, a task's chip, an evidence file's "Cited by"). Cleared once the
     // timeline has had it, so the same entry can be jumped to again, and a later visit to the tab doesn't jump.

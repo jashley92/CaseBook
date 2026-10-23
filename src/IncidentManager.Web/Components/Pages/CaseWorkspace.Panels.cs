@@ -98,6 +98,7 @@ public partial class CaseWorkspace
     {
         _tasksAutofocus = true;
         await SetTab("Tasks");
+        if (!Showing("Tasks")) _tasksAutofocus = false;   // BUG-719: held for unsaved text
     }
 
     // CAP-11: the playbook notice's "Add them…" opens the Tasks tab's apply card on that playbook (nothing is added until
@@ -107,13 +108,14 @@ public partial class CaseWorkspace
         _offerTemplate = templateId;
         if (PhoneNowNext) await LeavePhonePane(() => SetTab("Tasks"));
         else await SetTab("Tasks");
+        if (!Showing("Tasks")) _offerTemplate = null;   // BUG-719: held for unsaved text
     }
 
     // The gate meter in Next opens the Briefing's readiness section, where each check has its Fix.
     private async Task ShowReadiness()
     {
         await SetTab("Briefing");
-        _scrollToId = "ov-gate";
+        if (Showing("Briefing")) _scrollToId = "ov-gate";   // BUG-719: not when the switch was held
     }
 
     // INV-29: the team lives in the context panel, so removing someone is confirmed from there. S-08: on a
@@ -194,6 +196,7 @@ public partial class CaseWorkspace
         await CloseEntityPanel();
         _timelineEntity = id;
         await SetTab("Timeline");
+        if (!Showing("Timeline")) _timelineEntity = null;   // BUG-719: held for unsaved text
     }
 
     private async Task EntityPanelGoTo(string tab)
@@ -216,6 +219,7 @@ public partial class CaseWorkspace
     {
         _timelineSince = _lastViewed;
         await SetTab("Timeline");
+        if (!Showing("Timeline")) _timelineSince = null;   // BUG-719
     }
 
     // INV-33: the current brief's parts as one text, so the Evidence tab can say when the brief cites a file.
@@ -227,6 +231,7 @@ public partial class CaseWorkspace
     {
         _timelineSince = since;
         await SetTab("Timeline");
+        if (!Showing("Timeline")) _timelineSince = null;   // BUG-719
     }
 
     private Guid? _watchedHeadFor;

@@ -75,6 +75,7 @@ public partial class CaseWorkspace
             // RD-08: 'n' opens the composer in Working note mode on the Timeline's notes lens.
             _timelineAutofocus = true;
             await SetTab("Notes");
+            if (!Showing("Notes")) _timelineAutofocus = false;   // BUG-719: held for unsaved text
             StateHasChanged();
         }
 
@@ -83,12 +84,14 @@ public partial class CaseWorkspace
         {
             _timelineAutofocus = true;
             await SetTab("Timeline");
+            if (!Showing("Timeline")) _timelineAutofocus = false;   // BUG-719
             StateHasChanged();
         }
         if (cmd == "task" && _canEdit)
         {
             _tasksAutofocus = true;
             await SetTab("Tasks");
+            if (!Showing("Tasks")) _tasksAutofocus = false;   // BUG-719
             StateHasChanged();
         }
     }
