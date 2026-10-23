@@ -1938,11 +1938,11 @@ public sealed class CaseService
         Require(action);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        if (onlyIfAbsent && c.Assignments.Any(a => a.UserId == userId)) return false;
+        if (onlyIfAbsent && c.Assignments.Any(a => Case.SameUser(a.UserId, userId))) return false;   // BUG-711
         // BUG-128: on a restricted case the incident commander can lift the restriction, so naming one is held to those
         // who could lift it already: the current incident commander or someone cleared for restricted cases.
         if (c.IsRestricted && role == CaseAssignmentRole.IncidentCommander
-            && !string.Equals(c.IncidentCommander, userId, StringComparison.Ordinal)
+            && !Case.SameUser(c.IncidentCommander, userId)
             && !CaseRestrictionPolicy.CanLift(_user, c.IncidentCommander))
             throw new InvalidOperationException(
                 "On a restricted case, only the incident commander or someone cleared for restricted cases can name a new incident commander.");
@@ -1970,21 +1970,21 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         var now = _clock.UtcNow;
-        var leaving = fromUserId is null ? null : c.Assignments.FirstOrDefault(a => a.UserId == fromUserId);
+        var leaving = fromUserId is null ? null : c.Assignments.FirstOrDefault(a => Case.SameUser(a.UserId, fromUserId));   // BUG-711
         var seat = leaving?.Role == CaseAssignmentRole.IncidentCommander ? CaseAssignmentRole.IncidentCommander : role;
-        var namesCommander = seat == CaseAssignmentRole.IncidentCommander && c.IncidentCommander != toUserId;
+        var namesCommander = seat == CaseAssignmentRole.IncidentCommander && !Case.SameUser(c.IncidentCommander, toUserId);
         // BUG-128, as for any assignment: naming an IC on a restricted case is held to those who could lift it.
         if (c.IsRestricted && namesCommander && !CaseRestrictionPolicy.CanLift(_user, c.IncidentCommander))
             throw new InvalidOperationException(
                 "On a restricted case, only the incident commander or someone cleared for restricted cases can name a new incident commander.");
-        var joined = c.Assignments.All(a => a.UserId != toUserId);
+        var joined = c.Assignments.All(a => !Case.SameUser(a.UserId, toUserId));
         // BUG-405: an observer doesn't work the case, so one taking over joins the working seat (and is told), or the
         // case is left with nobody on it once the other leaves.
         var promoted = !joined && seat != CaseAssignmentRole.Observer
-                       && c.Assignments.First(a => a.UserId == toUserId).Role == CaseAssignmentRole.Observer;
+                       && c.Assignments.First(a => Case.SameUser(a.UserId, toUserId)).Role == CaseAssignmentRole.Observer;
         if (joined || namesCommander || promoted)   // someone already working it changes role only to take the seat being left
             c.Assign(toUserId, toDisplayName, seat, _user.UserId, now);
-        if (leaving is not null && fromUserId != toUserId) c.Unassign(leaving.UserId, _user.UserId, now);
+        if (leaving is not null && !Case.SameUser(fromUserId, toUserId)) c.Unassign(leaving.UserId, _user.UserId, now);
         if (!joined && !namesCommander && !promoted && leaving is null) return false;   // nothing changed
         await db.SaveChangesAsync(ct);
         if ((joined || promoted) && !string.Equals(toUserId, _user.UserId, StringComparison.OrdinalIgnoreCase)

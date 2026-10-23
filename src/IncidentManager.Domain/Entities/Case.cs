@@ -912,7 +912,8 @@ public class Case : AuditableEntity, IHashableEntity
         if (string.IsNullOrWhiteSpace(userId))
             throw new ArgumentException("A user is required to assign.");
 
-        var existing = Assignments.FirstOrDefault(a => a.UserId == userId);
+        var existing = Assignments.FirstOrDefault(a => SameUser(a.UserId, userId));
+        userId = existing?.UserId ?? userId;   // BUG-711: the person as the case already holds them
         CaseAssignmentRole? before = existing?.Role;
         if (existing is null)
         {
@@ -933,7 +934,7 @@ public class Case : AuditableEntity, IHashableEntity
 
         if (role == CaseAssignmentRole.IncidentCommander)
         {
-            foreach (var other in Assignments.Where(a => a.UserId != userId && a.Role == CaseAssignmentRole.IncidentCommander))
+            foreach (var other in Assignments.Where(a => !SameUser(a.UserId, userId) && a.Role == CaseAssignmentRole.IncidentCommander))
             {
                 other.Role = CaseAssignmentRole.Analyst;
                 RecordAssignmentChange(other.UserId, other.UserDisplayName, CaseAssignmentRole.IncidentCommander,
@@ -941,7 +942,7 @@ public class Case : AuditableEntity, IHashableEntity
             }
             IncidentCommander = userId;
         }
-        else if (IncidentCommander == userId)
+        else if (SameUser(IncidentCommander, userId))
             IncidentCommander = null;
 
         Touch(assignedBy, nowUtc);
@@ -950,14 +951,21 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>Removes a user's assignment. Clears the IC if that user was the commander.</summary>
     public void Unassign(string userId, string actor, DateTimeOffset nowUtc)
     {
-        var existing = Assignments.FirstOrDefault(a => a.UserId == userId);
+        var existing = Assignments.FirstOrDefault(a => SameUser(a.UserId, userId));
         if (existing is null) return;
 
         Assignments.Remove(existing);
         RecordAssignmentChange(existing.UserId, existing.UserDisplayName, existing.Role, null, actor, nowUtc);
-        if (IncidentCommander == userId) IncidentCommander = null;
+        if (SameUser(IncidentCommander, userId)) IncidentCommander = null;
         Touch(actor, nowUtc);
     }
+
+    /// <summary>
+    /// BUG-711: whether two user ids name the same person. Windows account names and SIDs are case-insensitive, and so is
+    /// SQL Server's unique index on a case's assignments, so an id arriving in other casing is the same assignment, not a
+    /// second row the database would refuse (SQLite, case-sensitive, would have kept both).
+    /// </summary>
+    public static bool SameUser(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     private void RecordAssignmentChange(string userId, string displayName, CaseAssignmentRole? from,
         CaseAssignmentRole? to, string actor, DateTimeOffset nowUtc) =>

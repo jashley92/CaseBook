@@ -928,6 +928,23 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_user_id_in_other_casing_is_the_same_assignment(/* BUG-711 */)
+    {
+        var c = NewCase();
+
+        c.Assign(@"CORP\jdoe", "Jo", CaseAssignmentRole.Analyst, "ic1", Now);
+        c.Assign(@"CORP\JDoe", "Jo", CaseAssignmentRole.IncidentCommander, "ic1", Now.AddHours(1));
+
+        c.Assignments.Should().ContainSingle("SQL Server's unique index on the assignments ignores case")
+            .Which.Role.Should().Be(CaseAssignmentRole.IncidentCommander);
+        c.IncidentCommander.Should().Be(@"CORP\jdoe", "the person as the case holds them");
+
+        c.Unassign(@"corp\JDOE", "ic1", Now.AddHours(2));
+        c.Assignments.Should().BeEmpty();
+        c.IncidentCommander.Should().BeNull();
+    }
+
+    [Fact]
     public void A_case_has_one_incident_commander()
     {
         var c = NewCase();
