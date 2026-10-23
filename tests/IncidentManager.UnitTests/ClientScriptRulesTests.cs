@@ -38,4 +38,21 @@ public sealed class ClientScriptRulesTests
         reset.Should().BeGreaterThan(skip, "it returns before the clock is reset");
         Regex.IsMatch(onActivity, @"tick\(\);\s*return;").Should().BeTrue("an overdue boundary is still acted on (BUG-550)");
     }
+
+    [Fact]
+    public void The_editor_preview_renders_raw_html_and_link_schemes_as_the_server_does(/* BUG-715 */)
+    {
+        var js = Script("markdown-editor.js");
+        js.Should().Contain("markedOptions: { sanitize: true, silent: true }", "raw HTML is shown as typed, as DisableHtml does");
+        js.Should().Contain("sanitizerFunction: sanitizePreview");
+        js.Should().Contain("renderingConfig: renderingConfig,", "the one editor is made with it");
+
+        // The same scheme allow-list as MarkdownService.IsSafeUrl.
+        var server = File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Application", "Content", "MarkdownService.cs"));
+        static IEnumerable<string> Quoted(string list) => Regex.Matches(list, "[\"']([^\"']+)[\"']").Select(m => m.Groups[1].Value);
+        var serverSchemes = Quoted(Regex.Match(server, @"AllowedSchemes = \{([^}]*)\}").Groups[1].Value).ToList();
+        var clientSchemes = Quoted(Regex.Match(js, @"allowedSchemes = \[([^\]]*)\]").Groups[1].Value).ToList();
+        serverSchemes.Should().NotBeEmpty();
+        clientSchemes.Should().BeEquivalentTo(serverSchemes);
+    }
 }

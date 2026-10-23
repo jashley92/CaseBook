@@ -171,6 +171,25 @@
         try { return (m.value() || '').trim() !== (m._seed || '').trim(); } catch (e) { return false; }
     }
 
+    // BUG-715: the Preview renders as the server does (MarkdownService). Raw HTML is shown as typed, never live markup
+    // (Markdig's DisableHtml; marked's `sanitize` escapes it the same way, `silent` drops its deprecation warning), and a
+    // link or image whose address isn't http(s), mailto or ftp, relative, or a fragment points nowhere (IsSafeUrl).
+    const allowedSchemes = ['http://', 'https://', 'mailto:', 'ftp://'];
+    function isSafeUrl(url) {
+        const u = (url || '').trimStart();
+        if (u === '' || u.startsWith('/') || u.startsWith('#') || u.startsWith('.') || !u.includes(':')) return true;
+        const lower = u.toLowerCase();
+        return allowedSchemes.some(s => lower.startsWith(s));
+    }
+    function sanitizePreview(html) {
+        // Parsed into an inert document: nothing in it loads or runs while it's checked.
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        doc.querySelectorAll('[href]').forEach(el => { if (!isSafeUrl(el.getAttribute('href'))) el.setAttribute('href', '#'); });
+        doc.querySelectorAll('[src]').forEach(el => { if (!isSafeUrl(el.getAttribute('src'))) el.removeAttribute('src'); });
+        return doc.body.innerHTML;
+    }
+    const renderingConfig = { markedOptions: { sanitize: true, silent: true }, sanitizerFunction: sanitizePreview };
+
     // The seed for a value put in the editor: `saved` when it's given (a string), else the value itself.
     function seedOf(val, saved) {
         return typeof saved === 'string' ? saved : (val || '');
@@ -194,6 +213,7 @@
                 minHeight: '150px',
                 autoRefresh: { delay: 100 },    // render correctly even if created while hidden
                 toolbar: toolbar(opts),
+                renderingConfig: renderingConfig,   // BUG-715
                 shortcuts: { toggleSideBySide: null, toggleFullScreen: null }
             });
             mde._seed = seedOf(initial, saved);
