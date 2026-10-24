@@ -20,6 +20,8 @@ public enum SettingKind
 /// <param name="EmailAddress">BUG-468: a single sender address, never blank; a display-name form is allowed.</param>
 /// <param name="DomainList">CAP-28 exclusions: a list of domain names, one per line (a pasted "a, b" list is split).</param>
 /// <param name="AddressRangeList">CAP-28 exclusions: a list of IPv4 or IPv6 ranges in CIDR form, one per line.</param>
+/// <param name="NoneAllowed">A whole number that can also be saved as "none" (<see cref="Sla.SlaTargetSettings.NoneValue"/>):
+/// a third-party SLA target that turns its clock off, where blank falls back to the general target.</param>
 public sealed record SettingDefinition(
     string Key,
     string Label,
@@ -37,7 +39,8 @@ public sealed record SettingDefinition(
     bool AbsoluteUrl = false,
     bool EmailAddress = false,
     bool DomainList = false,
-    bool AddressRangeList = false);
+    bool AddressRangeList = false,
+    bool NoneAllowed = false);
 
 /// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
 public sealed record SettingOption(string Value, string Label);
@@ -338,6 +341,32 @@ public static class SettingsCatalog
             "Overrides the resolution target for Medium breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Resolution:Low", "Breach resolution: Low (hours)", "Breach SLA overrides", SettingKind.Int,
             "Overrides the resolution target for Low breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
+        // Optional targets for third-party events (CaseOrigin.ThirdParty), each clock: hours, blank for the general target,
+        // or none to turn that clock off for them. A Breach override comes first.
+        new SettingDefinition("Sla:ThirdParty:Containment:Critical", "Third-party containment: Critical (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the containment target for Critical third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Containment:High", "Third-party containment: High (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the containment target for High third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Containment:Medium", "Third-party containment: Medium (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the containment target for Medium third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Containment:Low", "Third-party containment: Low (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the containment target for Low third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Resolution:Critical", "Third-party resolution: Critical (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the resolution target for Critical third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Resolution:High", "Third-party resolution: High (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the resolution target for High third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Resolution:Medium", "Third-party resolution: Medium (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the resolution target for Medium third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Resolution:Low", "Third-party resolution: Low (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "Overrides the resolution target for Low third-party events. Blank uses the general target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Detection:Critical", "Vendor notification: Critical (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "For Critical third-party events: hours from when the vendor's incident began (Occurred) to when they told us (Detected). Blank uses the general detection target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Detection:High", "Vendor notification: High (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "For High third-party events: hours from when the vendor's incident began (Occurred) to when they told us (Detected). Blank uses the general detection target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Detection:Medium", "Vendor notification: Medium (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "For Medium third-party events: hours from when the vendor's incident began (Occurred) to when they told us (Detected). Blank uses the general detection target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
+        new SettingDefinition("Sla:ThirdParty:Detection:Low", "Vendor notification: Low (hours)", "Third-party SLA overrides", SettingKind.Int,
+            "For Low third-party events: hours from when the vendor's incident began (Occurred) to when they told us (Detected). Blank uses the general detection target; No clock turns it off for them.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true, NoneAllowed: true),
 
         // PROD-07 / UX-15: regulatory notification-deadline clock. Off by default; per-jurisdiction timers are
         // managed as reference data in the "Per-jurisdiction rules" editor on the same Regulatory deadlines page.
@@ -530,6 +559,8 @@ public static class SettingsCatalog
 
             case SettingKind.Int:
                 if (string.IsNullOrWhiteSpace(v)) return null;
+                if (def.NoneAllowed && string.Equals(v, Sla.SlaTargetSettings.NoneValue, StringComparison.OrdinalIgnoreCase))
+                    return Sla.SlaTargetSettings.NoneValue;
                 if (int.TryParse(v, out var n) && n >= def.Min && (def.Max is null || n <= def.Max))
                     return n.ToString(CultureInfo.InvariantCulture);
                 throw new ArgumentException(def.Max is { } max

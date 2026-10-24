@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace IncidentManager.Application.Sla;
 
-/// <summary>The SLA targets as settings name them (<c>Sla:{Clock}:{Severity}</c>, <c>Sla:Breach:…</c>, the at-risk percent).</summary>
+/// <summary>The SLA targets as settings name them (<c>Sla:{Clock}:{Severity}</c>, <c>Sla:Breach:…</c>, <c>Sla:ThirdParty:…</c>, the
+/// at-risk percent).</summary>
 public static class SlaTargetSettings
 {
     // Informational carries no SLA; only the four actionable severities have targets.
@@ -17,6 +18,9 @@ public static class SlaTargetSettings
 
     /// <summary>The prefix every SLA setting key has.</summary>
     public const string Prefix = "Sla:";
+
+    /// <summary>A third-party target saved as this: that clock doesn't run for third-party events.</summary>
+    public const string NoneValue = "none";
 
     /// <summary>The targets <paramref name="value"/> gives each key (hours; blank, 0 or over a year = no target).</summary>
     public static SlaTargets From(Func<string, string?> value)
@@ -36,7 +40,17 @@ public static class SlaTargetSettings
             if (int.TryParse(value($"Sla:Breach:{clock}:{severity}"), out var h) && h is > 0 and <= SlaPolicy.MaxTargetHours)
                 breach[(clock, severity)] = h;
 
-        return new SlaTargets(hours, pct, breach);
+        // Third-party events: hours, or "none" for no clock (kept as 0); blank uses the general target.
+        var thirdParty = new Dictionary<(SlaClock, Severity), int>();
+        foreach (var clock in Clocks)
+        foreach (var severity in Severities)
+        {
+            var v = value($"Sla:ThirdParty:{clock}:{severity}")?.Trim();
+            if (string.Equals(v, NoneValue, StringComparison.OrdinalIgnoreCase)) thirdParty[(clock, severity)] = 0;
+            else if (int.TryParse(v, out var h) && h is > 0 and <= SlaPolicy.MaxTargetHours) thirdParty[(clock, severity)] = h;
+        }
+
+        return new SlaTargets(hours, pct, breach, thirdParty);
     }
 }
 

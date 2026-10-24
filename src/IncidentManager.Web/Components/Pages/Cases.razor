@@ -440,7 +440,7 @@ else
                     <td class="case-cell-sev"><SeverityMark Value="c.Severity" /></td>
                     <td>
                         @{
-                            var sla = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, _targets, Clock.UtcNow, c.Classification, c.ContainmentNotNeeded);
+                            var sla = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, _targets, Clock.UtcNow, c.Classification, c.ContainmentNotNeeded, c.Origin);
                         }
                         @if (sla.State == SlaState.NoTarget)
                         {

@@ -258,6 +258,20 @@
                                                     @DiscoveredDomains(s, OrgDomains.Current)
                                                 }
                                                 break;
+                                            case SettingKind.Int when def.NoneAllowed:
+                                                @* A third-party SLA target: hours, blank for the general target, or no clock at all. *@
+                                                var none = string.Equals(_form[def.Key], SlaTargetSettings.NoneValue, StringComparison.OrdinalIgnoreCase);
+                                                <div class="d-flex flex-wrap align-items-center gap-3">
+                                                    <input class="form-control @InvalidClass(def)" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
+                                                           value="@(none ? "" : _form[def.Key])" disabled="@none" placeholder="@(none ? "No clock" : "General target")"
+                                                           @oninput="e => _form[def.Key] = e.Value?.ToString()" />
+                                                    <div class="form-check form-switch mb-0">
+                                                        <input class="form-check-input" type="checkbox" id="@($"{def.Key}-none")" checked="@none"
+                                                               @onchange="e => _form[def.Key] = (bool)(e.Value ?? false) ? SlaTargetSettings.NoneValue : null" />
+                                                        <label class="form-check-label" for="@($"{def.Key}-none")">No clock</label>
+                                                    </div>
+                                                </div>
+                                                break;
                                             case SettingKind.Int:
                                                 <input class="form-control @InvalidClass(def)" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
                                                        value="@_form[def.Key]"
@@ -1195,7 +1209,8 @@
             ["Email delivery", "Email notifications", "Team chat"]),
         new("integrations", "Integrations", "Links to your detection system and lookups, and which indicators count as related.",
             ["External links", "Related indicators"]),   // CAP-28 exclusions beside the lookup links
-        new("sla", "Response & SLA", "Target hours for detection, containment and resolution, by severity.", ["Response SLA", "Breach SLA overrides"]),
+        new("sla", "Response & SLA", "Target hours for detection, containment and resolution, by severity.",
+            ["Response SLA", "Breach SLA overrides", "Third-party SLA overrides"]),
         new("taxonomy", "Taxonomy & severity labels", "Rename, hide and reorder the built-in pick-lists, and name the severity levels.", ["Severity labels"]),
         new("regulatory-deadlines", "Regulatory deadlines", "The regulatory notification-deadline clock and its per-jurisdiction rules.", ["Deadline clock"]),
         new("reporting", "Reports", "Report defaults, the section layout, and reusable report profiles.", ["Report defaults"]),

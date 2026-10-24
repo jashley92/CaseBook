@@ -242,6 +242,7 @@ whole number from 1 to 8760; anything else means "no SLA" for that severity. Inf
 | `Sla:Resolution:{…}` | 24 / 72 / 168 / 336 | Detected → resolved |
 | `Sla:Detection:{…}` | none | Occurred → detected; only when the occurred time is recorded |
 | `Sla:Breach:Containment:{…}`, `Sla:Breach:Resolution:{…}` | none | Override for Breach-classified cases; blank uses the general target |
+| `Sla:ThirdParty:Containment:{…}`, `Sla:ThirdParty:Resolution:{…}`, `Sla:ThirdParty:Detection:{…}` | none | Override for third-party events; blank uses the general target, `none` means no clock for them. Detection is the vendor's notice: from when their incident began (Occurred) to when they told us (Detected). A Breach override comes first |
 | `Sla:AtRiskThresholdPercent` | 80 | When a running clock shows "at risk" (1–100) |
 
 All are editable in-app (App). Remember that a blank field restores the json value; enter `0` to switch a

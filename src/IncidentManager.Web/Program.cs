@@ -954,7 +954,7 @@ app.MapGet("/export/cases.csv", async (HttpContext http,
     var csv = IncidentManager.Application.Cases.CaseListCsv.Build(items, now, truncated,
         IncidentManager.Web.Components.Shared.Ui.Label, IncidentManager.Web.Components.Shared.Ui.Label, sevLabels.For,
         c => IncidentManager.Application.Sla.SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
-                targets, now, c.Classification, c.ContainmentNotNeeded) is { State: not IncidentManager.Application.Sla.SlaState.NoTarget } st
+                targets, now, c.Classification, c.ContainmentNotNeeded, c.Origin) is { State: not IncidentManager.Application.Sla.SlaState.NoTarget } st
             ? IncidentManager.Web.Components.Shared.Ui.SlaLabel(st.State) : "",
         id => id is { } t ? teamNames.GetValueOrDefault(t, "") : "");
     var fileName = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"cases-{now.UtcDateTime:yyyyMMdd-HHmm}.csv");

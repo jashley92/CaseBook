@@ -43,7 +43,7 @@
         </div>
 
         var sla = SlaPolicy.Evaluate(p.Severity, p.Phase, p.DetectedAtUtc, p.ContainedAtUtc, p.ResolvedAtUtc,
-            SlaProvider.Current, Clock.UtcNow, p.Classification, p.ContainmentNotNeeded);
+            SlaProvider.Current, Clock.UtcNow, p.Classification, p.ContainmentNotNeeded, p.Origin);
         @if (sla.State != SlaState.NoTarget)
         {
             <section class="im-peek-sec">

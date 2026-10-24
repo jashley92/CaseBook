@@ -263,7 +263,7 @@ public sealed class DashboardService
             (Sla.SlaStatus C, Sla.SlaStatus R, Sla.SlaStatus D) JudgedIn(DateTimeOffset reachedAt)
             {
                 var end = PeriodHistory.QuarterEnd(reachedAt, zone);
-                return PeriodSla.Judge(history.SevAt(r.Id, end, r.Severity), history.ClassAt(r.Id, end, r.Classification), r.Phase,
+                return PeriodSla.Judge(history.SevAt(r.Id, end, r.Severity), history.ClassAt(r.Id, end, r.Classification), r.Origin, r.Phase,
                     stamps, targetsAt, end, approximate.Contains(r.Id));
             }
             if (stamps.ContainedIfNeeded is { } contained) Count(JudgedIn(contained).C.State, ref cMet, ref cMissed);
@@ -295,7 +295,7 @@ public sealed class DashboardService
         var now = _clock.UtcNow;
         var targets = _sla.Current;
 
-        var open = await cases.Select(c => new { c.Id, c.Phase, c.Severity, c.Classification, c.CreatedAtUtc,
+        var open = await cases.Select(c => new { c.Id, c.Phase, c.Severity, c.Classification, c.Origin, c.CreatedAtUtc,
             c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc }).ToListAsync(ct);
         var ids = cases.Select(c => c.Id);
         var entered = (await db.StatusChanges.AsNoTracking().Where(s => ids.Contains(s.CaseId))
@@ -308,7 +308,7 @@ public sealed class DashboardService
             var inPhase = open.Where(c => c.Phase == p).ToList();
             var since = inPhase.Select(c => entered.TryGetValue((c.Id, p), out var t) ? t : c.CreatedAtUtc).ToList();
             var over = inPhase.Count(c => Sla.SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc,
-                c.ResolvedAtUtc, targets, now, c.Classification).State == Sla.SlaState.Breached);
+                c.ResolvedAtUtc, targets, now, c.Classification, origin: c.Origin).State == Sla.SlaState.Breached);
             return new PhaseAging(p, inPhase.Count,
                 Enum.GetValues<Severity>().OrderByDescending(s => s).Select(s => new CountBy<Severity>(s, inPhase.Count(c => c.Severity == s))).ToList(),
                 since.Count == 0 ? null : now - since.Min(), over);

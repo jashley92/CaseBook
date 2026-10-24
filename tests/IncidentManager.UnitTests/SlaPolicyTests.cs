@@ -216,4 +216,69 @@ public class SlaPolicyTests
         t.HoursFor(SlaClock.Resolution, Severity.Critical, Classification.Breach).Should().Be(24);
         SettingsCatalog.ByKey["Sla:Breach:Containment:Critical"].Default.Should().BeNull();
     }
+
+    // Third-party targets as settings give them: containment 8h, resolution none, the vendor's notice 72h; High unset.
+    private static SlaTargets WithThirdParty() => SlaTargetSettings.From(key => key switch
+    {
+        "Sla:Containment:Critical" => "4",
+        "Sla:Resolution:Critical" => "24",
+        "Sla:Detection:Critical" => "24",
+        "Sla:Containment:High" => "12",
+        "Sla:Breach:Containment:Critical" => "2",
+        "Sla:ThirdParty:Containment:Critical" => "8",
+        "Sla:ThirdParty:Resolution:Critical" => "None",
+        "Sla:ThirdParty:Detection:Critical" => "72",
+        "Sla:ThirdParty:Containment:High" => "",
+        _ => null
+    });
+
+    [Fact]
+    public void Third_party_events_use_their_own_targets_and_none_turns_a_clock_off()
+    {
+        var t = WithThirdParty();
+        var now = Detected.AddHours(6);
+
+        // 6h in: past the general 4h containment target, inside the third-party 8h one.
+        SlaPolicy.Evaluate(Severity.Critical, CasePhase.Containment, Detected, null, null, t, now, Classification.Incident)
+            .State.Should().Be(SlaState.Breached);
+        var vendor = SlaPolicy.Breakdown(Severity.Critical, CasePhase.Containment, Detected, null, null, t, now,
+            Classification.Incident, origin: CaseOrigin.ThirdParty);
+        (vendor.Containment.State, vendor.Containment.TargetHours).Should().Be((SlaState.OnTrack, 8));
+        // Resolution is none for third-party events: no clock at all, not the general 24h.
+        vendor.Resolution.State.Should().Be(SlaState.NoTarget);
+
+        // Blank uses the general target.
+        t.HoursFor(SlaClock.Containment, Severity.High, origin: CaseOrigin.ThirdParty).Should().Be(12);
+    }
+
+    [Fact]
+    public void A_breach_override_comes_before_the_third_party_one()
+    {
+        var t = WithThirdParty();
+        t.HoursFor(SlaClock.Containment, Severity.Critical, Classification.Breach, CaseOrigin.ThirdParty).Should().Be(2);
+        // No breach override for resolution: the third-party none applies.
+        t.HoursFor(SlaClock.Resolution, Severity.Critical, Classification.Breach, CaseOrigin.ThirdParty).Should().BeNull();
+    }
+
+    [Fact]
+    public void A_third_party_events_detection_clock_is_the_vendors_notice()
+    {
+        var t = WithThirdParty();
+        // Told 48h after the vendor's incident began: missed against our own 24h, met against the 72h notice term.
+        SlaPolicy.EvaluateDetection(Severity.Critical, Detected.AddHours(-48), Detected, t).State.Should().Be(SlaState.Missed);
+        var notice = SlaPolicy.EvaluateDetection(Severity.Critical, Detected.AddHours(-48), Detected, t, CaseOrigin.ThirdParty);
+        (notice.State, notice.TargetHours).Should().Be((SlaState.Met, 72));
+    }
+
+    [Fact]
+    public void Only_a_third_party_target_can_be_saved_as_none()
+    {
+        SettingsCatalog.Normalize(SettingsCatalog.ByKey["Sla:ThirdParty:Resolution:Low"], " NONE ").Should().Be("none");
+        SettingsCatalog.Normalize(SettingsCatalog.ByKey["Sla:ThirdParty:Resolution:Low"], "36").Should().Be("36");
+        SettingsCatalog.Normalize(SettingsCatalog.ByKey["Sla:ThirdParty:Resolution:Low"], "").Should().BeNull();
+        var general = () => SettingsCatalog.Normalize(SettingsCatalog.ByKey["Sla:Resolution:Low"], "none");
+        general.Should().Throw<ArgumentException>();
+        var breach = () => SettingsCatalog.Normalize(SettingsCatalog.ByKey["Sla:Breach:Resolution:Low"], "none");
+        breach.Should().Throw<ArgumentException>();
+    }
 }

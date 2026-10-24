@@ -379,7 +379,7 @@ public sealed class ProgramReportService
             // later raise doesn't turn a past quarter's Met into Missed. BUG-322: against the target in force when it was
             // reached. BUG-583: detection not from an approximate start.
             var sev = SevAtEnd(r);
-            var (cont, res, det) = PeriodSla.Judge(sev, ClassAtEnd(r), r.Phase, s, data.TargetsAt, end, approximate.Contains(r.Id));
+            var (cont, res, det) = PeriodSla.Judge(sev, ClassAtEnd(r), r.Origin, r.Phase, s, data.TargetsAt, end, approximate.Contains(r.Id));
             if (In(s.ContainedIfNeeded) && cont.State is SlaState.Met or SlaState.Missed)
             {
                 var met = cont.State == SlaState.Met;

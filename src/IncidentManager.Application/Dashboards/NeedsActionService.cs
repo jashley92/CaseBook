@@ -97,11 +97,12 @@ public sealed class NeedsActionService
         // Response targets on open cases: the earliest running clock, as the case list's SLA filter judges it.
         var targets = _sla.Current;
         var open = await cases.Where(c => c.Phase != CasePhase.Closed)
-            .Select(c => new { c.Id, c.CaseNumber, c.Severity, c.Phase, c.Classification, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
+            .Select(c => new { c.Id, c.CaseNumber, c.Severity, c.Phase, c.Classification, c.Origin, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
             .ToListAsync(ct);
         foreach (var c in open)
         {
-            var s = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, targets, now, c.Classification);
+            var s = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, targets, now, c.Classification,
+                origin: c.Origin);
             if (s.State is not (SlaState.Breached or SlaState.AtRisk) || s.DueAtUtc is not { } due) continue;
             var verb = s.Clock == SlaClock.Resolution ? "resolved" : "contained";
             items.Add(new(NeedsActionKind.Sla, c.Id, c.CaseNumber, s.State == SlaState.Breached

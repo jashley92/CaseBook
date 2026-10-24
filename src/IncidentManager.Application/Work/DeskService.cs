@@ -188,7 +188,7 @@ public sealed class DeskService
                 clocks.Add(new DeskClock(c.Id, c.CaseNumber, h, null));
             }
             var (contain, resolve) = SlaPolicy.Breakdown(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
-                targets, now, c.Classification);
+                targets, now, c.Classification, origin: c.Origin);
             foreach (var s in new[] { contain, resolve }.Where(s => s.IsActive))
                 clocks.Add(new DeskClock(c.Id, c.CaseNumber, null, s));
         }

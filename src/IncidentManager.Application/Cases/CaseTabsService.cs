@@ -56,7 +56,7 @@ public sealed class CaseTabsService
         if (order.Count == 0) return [];
 
         var rows = await db.Cases.AsNoTracking().ForUser(_user).Where(c => order.Contains(c.Id))
-            .Select(c => new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
+            .Select(c => new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase, c.Origin, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
             .ToListAsync(ct);
         var now = _clock.UtcNow;
         var targets = _sla.Current;
@@ -64,7 +64,8 @@ public sealed class CaseTabsService
             .Select(id => rows.FirstOrDefault(r => r.Id == id))
             .Where(r => r is not null)
             .Select(r => new CaseTab(r!.Id, r.CaseNumber, r.Title, r.Classification, r.Severity, r.Phase, pinned.Contains(r.Id),
-                SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification).State))
+                SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification,
+                    origin: r.Origin).State))
             .ToList();
     }
 

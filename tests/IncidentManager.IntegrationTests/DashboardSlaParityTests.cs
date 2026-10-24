@@ -45,6 +45,17 @@ public abstract class DashboardSlaParityTests : IDisposable
             [(SlaClock.Containment, Severity.Low)] = 48,   // breach-only target where the base has none
             [(SlaClock.Resolution, Severity.Critical)] = 48,
             [(SlaClock.Detection, Severity.Critical)] = 1, // ignored: detection has no breach override
+        },
+        ThirdPartyHours: new Dictionary<(SlaClock, Severity), int>
+        {
+            [(SlaClock.Containment, Severity.Critical)] = 0,   // none: no containment clock for a Critical vendor event
+            [(SlaClock.Containment, Severity.High)] = 48,      // a Breach one still has the breach override (12)
+            [(SlaClock.Containment, Severity.Low)] = 96,       // a target where the base has none
+            [(SlaClock.Resolution, Severity.Medium)] = 0,      // none
+            [(SlaClock.Resolution, Severity.High)] = 500,
+            [(SlaClock.Detection, Severity.Critical)] = 72,    // the vendor's notice
+            [(SlaClock.Detection, Severity.High)] = 0,         // none
+            [(SlaClock.Detection, Severity.Medium)] = 120,
         });
 
     // No audit interceptor: the seed controls timestamps directly.
@@ -99,7 +110,8 @@ public abstract class DashboardSlaParityTests : IDisposable
             var listed = await db.Cases.Where(c => c.Phase != CasePhase.Closed)
                 .Where(SlaQueries.NeedsAttention(Targets, _clock.UtcNow)).Select(c => c.Id).ToListAsync();
             listed.Should().BeEquivalentTo(seeded.Where(c => c.Phase != CasePhase.Closed && SlaPolicy.Evaluate(c.Severity, c.Phase,
-                c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, Targets, _clock.UtcNow, c.Classification).NeedsAttention).Select(c => c.Id));
+                c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, Targets, _clock.UtcNow, c.Classification, origin: c.Origin).NeedsAttention)
+                .Select(c => c.Id));
         }
 
         // The random set actually exercises every outcome, so equality above means something.
@@ -200,7 +212,9 @@ public abstract class DashboardSlaParityTests : IDisposable
             var severity = severities[rng.Next(severities.Length)];
             var classification = classes[rng.Next(classes.Length)];
             var created = now.AddTicks(-(long)(rng.NextDouble() * 500 * TimeSpan.TicksPerDay));
-            var c = Case.Open(2026, i, $"C{i}", $"Case {i}", classification, severity, CaseOrigin.InternalDetection,
+            // A third of them third-party events, which have targets of their own (some of them none).
+            var origin = rng.Next(3) == 0 ? CaseOrigin.ThirdParty : CaseOrigin.InternalDetection;
+            var c = Case.Open(2026, i, $"C{i}", $"Case {i}", classification, severity, origin,
                 "seed", created, isExercise: rng.Next(10) == 0);
 
             // Recent detections so open clocks land in every state (on track, at risk, breached).
@@ -209,7 +223,7 @@ public abstract class DashboardSlaParityTests : IDisposable
             {
                 if (rng.Next(3) > 0) c.OccurredAtUtc = detected.AddTicks(-(long)((rng.NextDouble() * 400 - 20) * TimeSpan.TicksPerHour));
                 var cls = classification;
-                int? Target(SlaClock clock) => Targets.HoursFor(clock, severity, clock == SlaClock.Detection ? null : cls);
+                int? Target(SlaClock clock) => Targets.HoursFor(clock, severity, clock == SlaClock.Detection ? null : cls, origin);
                 // A share of milestones land exactly on the target, where met/missed flips.
                 DateTimeOffset Reach(SlaClock clock, DateTimeOffset from, double max) =>
                     rng.Next(6) == 0 && Target(clock) is { } h ? detected.AddHours(h) : Hours(from, max);
@@ -310,15 +324,15 @@ public abstract class DashboardSlaParityTests : IDisposable
         foreach (var r in cases)
         {
             var (cont, res) = SlaPolicy.Breakdown(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification,
-                r.ContainmentNotNeededReason is not null);
-            var det = SlaPolicy.EvaluateDetection(r.Severity, r.OccurredAtUtc, r.DetectedAtUtc, targets);
+                r.ContainmentNotNeededReason is not null, r.Origin);
+            var det = SlaPolicy.EvaluateDetection(r.Severity, r.OccurredAtUtc, r.DetectedAtUtc, targets, r.Origin);
             if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMissed++;
             if (cont.State == SlaState.Met) cMet++; else if (cont.State == SlaState.Missed) cMissed++;
             if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMissed++;
             if (r.Phase != CasePhase.Closed && !r.IsArchived)
             {
                 var head = SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification,
-                    r.ContainmentNotNeededReason is not null).State;
+                    r.ContainmentNotNeededReason is not null, r.Origin).State;
                 if (head == SlaState.Breached) breached++; else if (head == SlaState.AtRisk) atRisk++;
             }
         }

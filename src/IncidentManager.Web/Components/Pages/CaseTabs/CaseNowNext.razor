@@ -17,7 +17,7 @@
 @{
     var now = Clock.UtcNow;
     var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
-        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification, Case.ContainmentNotNeededReason is not null);
+        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification, Case.ContainmentNotNeededReason is not null, Case.Origin);
     var open = CaseNext.Open(Case, now);
 }
 

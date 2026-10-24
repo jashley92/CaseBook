@@ -7,8 +7,8 @@ namespace IncidentManager.Application.Sla;
 
 /// <summary>
 /// F-08: the rules in <see cref="SlaPolicy"/> restated as database filters, so the dashboard can count met, missed,
-/// at-risk and breached cases without loading every case. Targets vary by severity (and by the breach override),
-/// so each filter is an OR across the severity groups that have a target, each with its own target as a constant.
+/// at-risk and breached cases without loading every case. Targets vary by severity (and by the breach and third-party
+/// overrides), so each filter is an OR across the groups that have a target, each with its own target as a constant.
 /// <see cref="SlaPolicy"/> stays the source of truth; DashboardSlaParityTests holds these filters to it.
 /// </summary>
 public static class SlaQueries
@@ -23,21 +23,9 @@ public static class SlaQueries
     public static Expression<Func<Case, bool>> Reached(SlaClock clock, bool met, SlaTargets targets)
     {
         var groups = new List<(Expression<Func<Case, bool>> InGroup, long Ticks)>();
-        foreach (var severity in Graded)
-        {
-            if (clock == SlaClock.Detection)
-            {
-                // The detection target has no breach override (SlaPolicy.EvaluateDetection).
-                if (targets.HoursFor(clock, severity) is { } hours)
-                    groups.Add((IsSeverity(severity), hours * TimeSpan.TicksPerHour));
-                continue;
-            }
-            foreach (var breach in new[] { false, true })
-            {
-                if (targets.HoursFor(clock, severity, breach ? Classification.Breach : null) is { } hours)
-                    groups.Add((InGroup(severity, breach), hours * TimeSpan.TicksPerHour));
-            }
-        }
+        foreach (var (severity, breach, thirdParty) in Groups(clock))
+            if (HoursFor(targets, clock, severity, breach, thirdParty) is { } hours)
+                groups.Add((InGroup(clock, severity, breach, thirdParty), hours * TimeSpan.TicksPerHour));
         if (groups.Count == 0) return False;
 
         // The case's target in ticks: CASE WHEN <group> THEN <ticks> … ELSE NULL END. No target, no match.
@@ -66,17 +54,9 @@ public static class SlaQueries
     public static Expression<Func<Case, bool>> Judged(SlaClock clock, SlaTargets targets)
     {
         var any = False;
-        foreach (var severity in Graded)
-        {
-            if (clock == SlaClock.Detection)
-            {
-                if (targets.HoursFor(clock, severity) is not null) any = Or(any, IsSeverity(severity));
-                continue;
-            }
-            foreach (var breach in new[] { false, true })
-                if (targets.HoursFor(clock, severity, breach ? Classification.Breach : null) is not null)
-                    any = Or(any, InGroup(severity, breach));
-        }
+        foreach (var (severity, breach, thirdParty) in Groups(clock))
+            if (HoursFor(targets, clock, severity, breach, thirdParty) is not null)
+                any = Or(any, InGroup(clock, severity, breach, thirdParty));
         Expression<Func<Case, bool>> reached = clock switch
         {
             // BUG-165: one that didn't need containment is neither met nor missed.
@@ -105,12 +85,10 @@ public static class SlaQueries
     public static Expression<Func<Case, bool>> Headline(bool breached, SlaTargets targets, DateTimeOffset now)
     {
         var any = False;
-        foreach (var severity in Graded)
-        foreach (var breach in new[] { false, true })
+        foreach (var (severity, breach, thirdParty) in Groups(SlaClock.Containment))
         {
-            var classification = breach ? Classification.Breach : (Classification?)null;
-            var contHours = targets.HoursFor(SlaClock.Containment, severity, classification);
-            var resHours = targets.HoursFor(SlaClock.Resolution, severity, classification);
+            var contHours = HoursFor(targets, SlaClock.Containment, severity, breach, thirdParty);
+            var resHours = HoursFor(targets, SlaClock.Resolution, severity, breach, thirdParty);
             if (contHours is null && resHours is null) continue;
 
             // A clock counts as running once detected and until its milestone is reached.
@@ -125,7 +103,7 @@ public static class SlaQueries
                 var resolution = And(resolutionRunning, InState(rh, breached, targets.AtRiskThresholdPercent, now));
                 state = Or(state, contHours is null ? resolution : And(Not(containmentRunning), resolution));
             }
-            any = Or(any, And(InGroup(severity, breach), state));
+            any = Or(any, And(InGroup(SlaClock.Containment, severity, breach, thirdParty), state));
         }
         return any;
     }
@@ -144,13 +122,32 @@ public static class SlaQueries
         return c => c.DetectedAtUtc <= riskCutoff && c.DetectedAtUtc > dueCutoff;
     }
 
-    private static Expression<Func<Case, bool>> IsSeverity(Severity severity) => c => c.Severity == severity;
+    // Each severity, split by whether the case is classified Breach (not for detection, which has no breach override:
+    // SlaPolicy.EvaluateDetection) and whether it's a third-party event.
+    private static IEnumerable<(Severity Severity, bool Breach, bool ThirdParty)> Groups(SlaClock clock) =>
+        from severity in Graded
+        from breach in clock == SlaClock.Detection ? new[] { false } : new[] { false, true }
+        from thirdParty in new[] { false, true }
+        select (severity, breach, thirdParty);
+
+    private static int? HoursFor(SlaTargets targets, SlaClock clock, Severity severity, bool breach, bool thirdParty)
+        => targets.HoursFor(clock, severity, breach ? Classification.Breach : null,
+            thirdParty ? CaseOrigin.ThirdParty : CaseOrigin.InternalDetection);
 
     // The breach override applies only to cases classified Breach; everything else (including unclassified
-    // Complex Events) uses the base target.
-    private static Expression<Func<Case, bool>> InGroup(Severity severity, bool breach) => breach
-        ? c => c.Severity == severity && c.Classification == Classification.Breach
-        : c => c.Severity == severity && c.Classification != Classification.Breach;
+    // Complex Events) uses the base target; for detection the classification doesn't matter. The third-party override
+    // applies only to third-party events.
+    private static Expression<Func<Case, bool>> InGroup(SlaClock clock, Severity severity, bool breach, bool thirdParty)
+    {
+        Expression<Func<Case, bool>> origin = thirdParty
+            ? c => c.Severity == severity && c.Origin == CaseOrigin.ThirdParty
+            : c => c.Severity == severity && c.Origin != CaseOrigin.ThirdParty;
+        if (clock == SlaClock.Detection) return origin;
+        Expression<Func<Case, bool>> classification = breach
+            ? c => c.Classification == Classification.Breach
+            : c => c.Classification != Classification.Breach;
+        return And(origin, classification);
+    }
 
     // --- Composition: one parameter throughout, so EF sees a single plain predicate. ---
 

@@ -491,21 +491,22 @@ public sealed class AttackHistory
 /// BUG-322, WF-76, BUG-583, BUG-588: how a period judges one case's SLA milestones. Each milestone reached in the period is
 /// judged on the severity and classification the case had at the period's end (as it's bucketed), against the targets in
 /// force when it was reached. The detection clock isn't judged when the start is approximate (ST-04). The program report
-/// and the dashboard's all-time figure share it, so both agree.
+/// and the dashboard's all-time figure share it, so both agree. A third-party event is judged against the third-party
+/// targets by the origin it has now: changing it corrects how the case was opened, so it was always that.
 /// </summary>
 public static class PeriodSla
 {
     public static (SlaStatus Containment, SlaStatus Resolution, SlaStatus Detection) Judge(Severity severity, Classification? classification,
-        CasePhase phase, CaseStamps s, Func<DateTimeOffset, SlaTargets> targetsAt, DateTimeOffset end, bool approximateStart)
+        CaseOrigin origin, CasePhase phase, CaseStamps s, Func<DateTimeOffset, SlaTargets> targetsAt, DateTimeOffset end, bool approximateStart)
     {
         var contained = s.ContainedIfNeeded;
         var cont = SlaPolicy.Breakdown(severity, phase, s.DetectedAtUtc, contained, s.ResolvedAtUtc,
-            targetsAt(contained ?? end), end, classification).Containment;
+            targetsAt(contained ?? end), end, classification, origin: origin).Containment;
         var res = SlaPolicy.Breakdown(severity, phase, s.DetectedAtUtc, contained, s.ResolvedAtUtc,
-            targetsAt(s.ResolvedAtUtc ?? end), end, classification).Resolution;
+            targetsAt(s.ResolvedAtUtc ?? end), end, classification, origin: origin).Resolution;
         var det = approximateStart
             ? SlaStatus.None with { Clock = SlaClock.Detection }
-            : SlaPolicy.EvaluateDetection(severity, s.OccurredAtUtc, s.DetectedAtUtc, targetsAt(s.DetectedAtUtc ?? end));
+            : SlaPolicy.EvaluateDetection(severity, s.OccurredAtUtc, s.DetectedAtUtc, targetsAt(s.DetectedAtUtc ?? end), origin);
         return (cont, res, det);
     }
 }

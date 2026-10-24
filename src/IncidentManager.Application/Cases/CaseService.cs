@@ -734,13 +734,14 @@ public sealed class CaseService
         var now = _clock.UtcNow;
         var targets = _sla.Current;
         var rows = await q
-            .Select(c => new { c.Id, c.Severity, c.Phase, c.Classification, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.CreatedAtUtc })
+            .Select(c => new { c.Id, c.Severity, c.Phase, c.Classification, c.Origin, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.CreatedAtUtc })
             .ToListAsync(ct);
         var ranked = rows.Select(r => new
         {
             r.Id,
             r.CreatedAtUtc,
-            Status = Sla.SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification)
+            Status = Sla.SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification,
+                origin: r.Origin)
         }).ToList();
         var running = ranked.Where(r => r.Status.IsActive && r.Status.Remaining is not null);
         // BUG-275: ties broken by the id, as the database orders are, so a page boundary doesn't move between requests.
@@ -778,7 +779,7 @@ public sealed class CaseService
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.IsRestricted,
                 Referred = c.LegalReferral.IsReferred, c.LegalHold, c.IsExercise, Materiality = c.Materiality.Status,
                 c.CreatedAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.Summary,
-                NotNeeded = c.ContainmentNotNeededReason != null
+                NotNeeded = c.ContainmentNotNeededReason != null, c.Origin
             })
             .FirstOrDefaultAsync(ct);
         if (head is null) return null;
@@ -833,7 +834,7 @@ public sealed class CaseService
         return new CasePreview(head.Id, head.CaseNumber, head.Title, head.Classification, head.Phase, head.Severity,
             head.IsRestricted, head.Referred, head.LegalHold, head.IsExercise, head.Materiality,
             head.CreatedAtUtc, head.DetectedAtUtc, head.ContainedAtUtc, head.ResolvedAtUtc, head.Summary,
-            open.Count, next, latest, indicators, entities.Count, team, head.NotNeeded);
+            open.Count, next, latest, indicators, entities.Count, team, head.NotNeeded, head.Origin);
     }
 
     /// <summary>

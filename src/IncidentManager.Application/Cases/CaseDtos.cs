@@ -170,7 +170,7 @@ public sealed record CasePreview(
     DateTimeOffset CreatedAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc, DateTimeOffset? ResolvedAtUtc,
     string? Summary, int OpenTasks, CasePreviewTask? NextTask, CasePreviewEntry? Latest,
     IReadOnlyList<CasePreviewIndicator> Indicators, int IndicatorCount, IReadOnlyList<CasePreviewPerson> Team,
-    bool ContainmentNotNeeded = false);
+    bool ContainmentNotNeeded = false, CaseOrigin Origin = CaseOrigin.InternalDetection);
 
 public sealed record CasePreviewTask(string Title, string? Owner, DateTimeOffset? DueAtUtc);
 public sealed record CasePreviewEntry(string Description, DateTimeOffset OccurredAtUtc, TimelineKind Kind);
