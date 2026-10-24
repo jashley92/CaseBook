@@ -52,8 +52,12 @@ public sealed record SlaAttainment(SlaClock Clock, int Met, int Missed)
 /// <summary>Mean and median hours for one interval (null when nothing reached it in the period).</summary>
 public sealed record Interval(double? MeanHours, double? MedianHours, int Count);
 
-/// <summary>Met/missed against one severity's target (null when that severity has none).</summary>
-public sealed record SeverityAttainment(Severity Severity, int? TargetHours, int Met, int Missed);
+/// <summary>
+/// Met/missed against one severity's target (null when that severity has none). <see cref="TargetHours"/> is the general
+/// target; <see cref="OwnTargets"/> says Breach or third-party cases of that severity have targets of their own (third-party
+/// ones can be none).
+/// </summary>
+public sealed record SeverityAttainment(Severity Severity, int? TargetHours, int Met, int Missed, bool OwnTargets = false);
 
 /// <summary>A stretch of time to measure: from <see cref="StartUtc"/> up to (not including) <see cref="EndUtc"/>.</summary>
 public sealed record ProgramWindow(DateTimeOffset StartUtc, DateTimeOffset EndUtc, string Label);
@@ -434,8 +438,12 @@ public sealed class ProgramReportService
             ActionsPastTargetAtEnd: openAtEnd.Count(a => a.TargetDateUtc is { } t && t < (end < data.NowUtc ? end : data.NowUtc)),
             ActionAreas: Areas(actions.Where(a => In(a.CreatedAtUtc))),
             ContainmentBySeverity: Enum.GetValues<Severity>().OrderByDescending(v => v)
-                .Select(v => new SeverityAttainment(v, data.TargetsAt(end < data.NowUtc ? end : data.NowUtc).HoursFor(SlaClock.Containment, v),   // as it stood at the end
-                    bySeverity.GetValueOrDefault(v).Met, bySeverity.GetValueOrDefault(v).Missed)).ToList(),
+                .Select(v => (Severity: v, Targets: data.TargetsAt(end < data.NowUtc ? end : data.NowUtc)))   // as it stood at the end
+                .Select(x => new SeverityAttainment(x.Severity,
+                    x.Targets.HoursFor(SlaClock.Containment, x.Severity, origin: CaseOrigin.InternalDetection),   // the general target
+                    bySeverity.GetValueOrDefault(x.Severity).Met, bySeverity.GetValueOrDefault(x.Severity).Missed,
+                    x.Targets.BreachHours?.ContainsKey((SlaClock.Containment, x.Severity)) == true
+                    || x.Targets.ThirdPartyHours?.ContainsKey((SlaClock.Containment, x.Severity)) == true)).ToList(),
             NoticesMet: nMet, NoticesMissed: nMiss,
             ClosedWithReview: rows.Count(r => ClosedInQuarter(r) && reviewed.Contains(r.Id)),
             OpenActionAreas: Areas(openAtEnd));
@@ -489,7 +497,8 @@ public sealed class ProgramReportService
         foreach (var s in c.ContainmentBySeverity ?? [])
         {
             var ps = p.ContainmentBySeverity?.FirstOrDefault(x => x.Severity == s.Severity);
-            Row("Containment by severity", $"{sevLabel(s.Severity)} met / missed" + (s.TargetHours is { } h ? $" (target {h} h)" : ""),
+            Row("Containment by severity", $"{sevLabel(s.Severity)} met / missed" + (s.TargetHours is { } h ? $" (target {h} h)" : "")
+                + (s.OwnTargets ? " (Breach or third-party cases have targets of their own)" : ""),
                 $"{s.Met} / {s.Missed}", ps is null ? "" : $"{ps.Met} / {ps.Missed}");
         }
         Row("Post-incident", "Closed cases with a review", c.ClosedWithReview.ToString(inv), p.ClosedWithReview.ToString(inv));

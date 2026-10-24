@@ -412,7 +412,10 @@ else
                             <caption>Containment by severity</caption>
                             <thead><tr><th scope="col"></th>@foreach (var x in sev) { <th scope="col">@SevLabels.For(x.Severity)</th> }</tr></thead>
                             <tbody>
-                                <tr><th scope="row">Target</th>@foreach (var x in sev) { <td>@(x.TargetHours is { } h ? $"{h} h" : "—")</td> }</tr>
+                                <tr><th scope="row">Target</th>@foreach (var x in sev)
+                                {
+                                    <td title="@(x.OwnTargets ? "Breach or third-party cases of this severity have targets of their own" : null)">@(x.TargetHours is { } h ? $"{h} h" : "—")@(x.OwnTargets ? "*" : "")</td>
+                                }</tr>
                                 <tr><th scope="row">Met</th>@foreach (var x in sev)
                                 {
                                     var judged = x.Met + x.Missed;
@@ -420,6 +423,10 @@ else
                                 }</tr>
                             </tbody>
                         </table>
+                        @if (sev.Any(x => x.OwnTargets))
+                        {
+                            <div class="small text-muted mt-1">* The general target. Breach or third-party cases of that severity have targets of their own.</div>
+                        }
                     </div>
                 }
             }

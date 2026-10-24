@@ -48,11 +48,12 @@ public sealed class TeamWorkloadService
                     .Where(a => a.Role != CaseAssignmentRole.Observer)
                     .Select(a => new WorkloadWorker(a.UserId, a.UserDisplayName, a.Role == CaseAssignmentRole.IncidentCommander))
                     .ToList(),
-                c.Classification
+                c.Classification,
+                c.Origin
             })
             .ToListAsync(ct))
             .Select(c => new WorkloadCaseRow(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
-                c.LastAudit is { } a && a > c.CreatedAtUtc ? a : c.CreatedAtUtc, c.Workers, c.Classification))
+                c.LastAudit is { } a && a > c.CreatedAtUtc ? a : c.CreatedAtUtc, c.Workers, c.Classification, c.Origin))
             .ToList();
 
         return TeamWorkloadBuilder.Build(rows, _sla.Current, _clock.UtcNow);
