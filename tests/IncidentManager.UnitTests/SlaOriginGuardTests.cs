@@ -35,7 +35,7 @@ public sealed partial class SlaOriginGuardTests
                 var args = Arguments(text, m.Index + m.Length);
                 if (args.Contains("rigin", StringComparison.Ordinal)) continue;
                 var line = text[..m.Index].Count(c => c == '\n') + 1;
-                offenders.Add($"{Path.GetFileName(file)}:{line}: {Regex.Replace(m.Value + args, @"\s+", " ")}");
+                offenders.Add($"{Path.GetFileName(file)}:{line}: {Whitespace().Replace(m.Value + args, " ")}");
             }
         }
 
@@ -56,6 +56,9 @@ public sealed partial class SlaOriginGuardTests
 
     [GeneratedRegex(@"(SlaPolicy\s*\.\s*(Evaluate|Breakdown|EvaluateDetection)|PeriodSla\s*\.\s*Judge|\.\s*HoursFor)\s*\(")]
     private static partial Regex Judgement();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
 
     private static string SrcRoot()
     {
