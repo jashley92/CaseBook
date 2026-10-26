@@ -212,6 +212,15 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.19.1
+
+A fix to v1.19.0, with no migration and no setting changes.
+
+- **The phase bar on a case no longer jumps under the pointer.** A hovered segment grew into a pill with its name,
+  pushing its neighbours along, so moving across the bar brought up a phase further on (Triage towards Containment
+  showed Eradication), and the current phase's name was cut off. The segments keep their size now; the name shows in a
+  label floating under the one hovered or focused.
+
 ### v1.19.0
 
 **No migrations.** Twelve new settings, all blank, so nothing changes until an administrator sets them:
