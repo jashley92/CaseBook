@@ -206,9 +206,9 @@ jobs:
         run: |
           dotnet tool restore
           bash tools/schema/sqlserver-script.sh "$RUNNER_TEMP/schema.sql"
-          if ! diff -q --strip-trailing-cr "$RUNNER_TEMP/schema.sql" deploy/sql/casebook-schema-sqlserver.sql; then
-            # What differs, so a change from the SDK rather than a migration can be told apart without a rerun.
-            diff -u --strip-trailing-cr deploy/sql/casebook-schema-sqlserver.sql "$RUNNER_TEMP/schema.sql" | head -120 || true
+          # Apart from the EF Core version stamped on each history row (a new EF patch changes it, not the schema); the
+          # script prints what else differs.
+          if ! python3 tools/schema/same_schema.py "$RUNNER_TEMP/schema.sql" deploy/sql/casebook-schema-sqlserver.sql; then
             echo "::error::deploy/sql/casebook-schema-sqlserver.sql is out of date. Run: bash tools/schema/sqlserver-script.sh"
             exit 1
           fi
