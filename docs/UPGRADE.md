@@ -212,6 +212,23 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.19.0
+
+**No migrations.** Twelve new settings, all blank, so nothing changes until an administrator sets them:
+`Sla:ThirdParty:{Containment,Resolution,Detection}:{Critical,High,Medium,Low}`, under Administration › Cases &
+workflow › Response & SLA › *Third-party SLA overrides*.
+
+- **Third-party events can have SLA targets of their own.** For each severity: containment, resolution, and the
+  vendor's notice (the detection clock: from when the vendor's incident began to when they told us, measured when the
+  case's initial-activity time is recorded). Each is a number of hours, blank for the general target, or *No clock*
+  to turn that clock off for third-party events (when the vendor contains, not you). A Breach override comes first,
+  then the third-party one, then the general target. Every clock follows it: the case header, Now and Next, the
+  briefing, the case list and its CSV, the preview, the tabs, the Desk, Needs action, Team workload, phase aging, and
+  the dashboard's and program report's met and missed. Past quarters judge a case by the origin it has now (changing
+  it corrects how the case was opened).
+- **The program overview's *Containment by severity*** marks a severity whose Breach or third-party cases have
+  targets of their own ("4 h*", with a note), since its Target row is the general target; the board-pack CSV says so.
+
 ### v1.18.0
 
 **Three migrations** add nullable columns, with nothing backfilled:
