@@ -2814,18 +2814,25 @@ html[data-tl-docked] .tl-composer-actions { position: sticky; bottom: 0; z-index
 .im-state-dot { color: var(--im-border-strong); }
 .im-phasebar { display: inline-flex; align-items: center; gap: 0.55rem; }
 .im-phasebar-segs { display: inline-flex; align-items: center; gap: 3px; }
-.im-phase-seg { display: inline-block; width: 1.35rem; height: 6px; padding: 0; border: 0; border-radius: 3px; background: var(--im-border-strong);
-          font-size: 0; line-height: 1; color: transparent; overflow: hidden; white-space: nowrap; cursor: default; outline: none;
-          transition: width .16s ease, height .16s ease, padding .16s ease; }
+/* A segment names its phase on hover or focus in a label floating under it. The segment keeps its size: it used to grow
+   into the pill itself, which pushed its neighbours along, so moving across the bar landed on a phase further on. */
+.im-phase-seg { position: relative; display: inline-block; width: 1.35rem; height: 6px; padding: 0; border: 0; border-radius: 3px;
+          background: var(--im-border-strong); font-size: 0; line-height: 1; color: transparent; white-space: nowrap;
+          cursor: default; outline: none; }
 button.im-phase-seg { cursor: pointer; }
 .im-phase-seg.done { background: var(--im-phase-closed-fg); opacity: .7; }
 .im-phase-seg.cur { background: var(--im-phase-open-fg); }
-.im-phase-seg:hover, .im-phase-seg:focus-visible { width: auto; height: auto; padding: .14rem .5rem; font-size: var(--im-text-xs); font-weight: 600; border-radius: 999px;
-          opacity: 1; background: var(--im-phase-active-bg); color: var(--im-phase-active-fg); }
-.im-phase-seg.done:hover, .im-phase-seg.done:focus-visible { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); }
-.im-phase-seg.cur:hover, .im-phase-seg.cur:focus-visible { background: var(--im-phase-open-bg); color: var(--im-phase-open-fg); }
+/* Above the sticky tab bar under it (.ws-sticky, z-index 20), which otherwise covers the label's lower half. */
+.im-phase-seg::after { content: attr(data-name); position: absolute; top: calc(100% + 6px); left: 50%; z-index: 25;
+          transform: translateX(-50%); padding: .14rem .5rem; border-radius: 999px; font-size: var(--im-text-xs); font-weight: 600;
+          line-height: 1.2; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s ease;
+          background: var(--im-phase-active-bg); color: var(--im-phase-active-fg); box-shadow: 0 0 0 1px var(--im-phase-active-bd); }
+.im-phase-seg.done::after { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); box-shadow: 0 0 0 1px var(--im-phase-closed-bd); }
+.im-phase-seg.cur::after { background: var(--im-phase-open-bg); color: var(--im-phase-open-fg); box-shadow: 0 0 0 1px var(--im-phase-open-bd); }
+.im-phase-seg:hover, .im-phase-seg:focus-visible { opacity: 1; }
+.im-phase-seg:hover::after, .im-phase-seg:focus-visible::after { opacity: 1; }
 .im-phase-seg:focus-visible { box-shadow: 0 0 0 .2rem var(--im-focus); }
-@media (prefers-reduced-motion: reduce) { .im-phase-seg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .im-phase-seg::after { transition: none; } }
 .im-phasebar-name { border: 0; background: none; padding: 0; color: var(--im-text); font-weight: 700; }
 .im-phasebar-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 .im-phasebar-step { font-size: var(--im-text-xs); color: var(--im-text-muted); }
@@ -2969,10 +2976,10 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-phase-seg { width: 1.1rem; height: 5px; border-radius: 1.5px; }
 .im-phase-seg.done { background: var(--im-text-muted); opacity: 1; }
 .im-phase-seg.cur { background: var(--im-accent); height: 7px; }
-/* The current one's 7px above is as specific as the hover rule and later, so it held the named pill at 7px: the
-   label was cut off and sat low. Hovered, it grows to its label like the others. */
-.im-phase-seg.cur:hover, .im-phase-seg.cur:focus-visible { height: auto; background: var(--im-accent-bg); color: var(--im-accent-text); }
-.im-phase-seg.done:hover, .im-phase-seg.done:focus-visible { background: var(--im-surface-2); color: var(--im-text); }
+/* Floating over the page, so the translucent accent tint sits on the solid surface. */
+.im-phase-seg.cur::after { background: linear-gradient(var(--im-accent-bg), var(--im-accent-bg)) var(--im-surface); color: var(--im-accent-text);
+          box-shadow: 0 0 0 1px var(--im-border); }
+.im-phase-seg.done::after { background: var(--im-surface-2); color: var(--im-text); box-shadow: 0 0 0 1px var(--im-border); }
 @media (max-width: 640px) { .im-ch-acts .im-ch-label { display: none; } }
 
 /* ============================================================================

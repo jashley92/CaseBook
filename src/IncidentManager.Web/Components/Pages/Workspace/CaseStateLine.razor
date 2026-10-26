@@ -35,11 +35,11 @@
                 var tip = PhaseTip(ph, i, cur);
                 @if (CanEdit && i != cur)
                 {
-                    <button type="button" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip" @onclick="() => OnAdvanceTo.InvokeAsync(ph)">@Ui.Label(ph)</button>
+                    <button type="button" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip" data-name="@Ui.Label(ph)" @onclick="() => OnAdvanceTo.InvokeAsync(ph)">@Ui.Label(ph)</button>
                 }
                 else
                 {
-                    <span tabindex="0" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip">@Ui.Label(ph)</span>
+                    <span tabindex="0" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip" data-name="@Ui.Label(ph)">@Ui.Label(ph)</span>
                 }
             }
         </span>
