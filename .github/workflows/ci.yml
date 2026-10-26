@@ -208,7 +208,7 @@ jobs:
           bash tools/schema/sqlserver-script.sh "$RUNNER_TEMP/schema.sql"
           # Apart from the EF Core version stamped on each history row (a new EF patch changes it, not the schema); the
           # script prints what else differs.
-          if ! python3 tools/schema/same_schema.py "$RUNNER_TEMP/schema.sql" deploy/sql/casebook-schema-sqlserver.sql; then
+          if ! python3 tools/schema/same_schema.py < "$RUNNER_TEMP/schema.sql"; then
             echo "::error::deploy/sql/casebook-schema-sqlserver.sql is out of date. Run: bash tools/schema/sqlserver-script.sh"
             exit 1
           fi
