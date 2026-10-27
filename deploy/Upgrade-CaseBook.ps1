@@ -451,6 +451,8 @@ if (-not $hasNet10) {
            "Bundle (not just the SDK), run 'iisreset', then retry -- otherwise the app fails to start (500.30).")
 }
 Write-Info "ASP.NET Core Module + .NET 10 runtime present."
+# A runtime older than the minimum still runs CaseBook, so this warns rather than stops.
+if (Get-CaseBookRuntimeWarning) { Write-Warn2 (Get-CaseBookRuntimeWarning) }
 
 # 3c. SQL reachable.
 try { [void](Invoke-SqlScalar 'SELECT 1') } catch { throw "Cannot reach the database $DbName on $SqlInstance ($($_.Exception.Message))." }

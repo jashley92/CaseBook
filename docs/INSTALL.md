@@ -37,7 +37,7 @@ while the **app data volume is the main thing that grows** — size it to your e
 | | Application / web host | Database host |
 |---|---|---|
 | **OS** | Windows Server 2022 (Standard/Datacenter) | Windows Server 2022 |
-| **Server software** | IIS + **.NET 10 Hosting Bundle** | **SQL Server 2022 Standard** (Express is unsupported: 10 GB cap, no SQL Agent for backups) |
+| **Server software** | IIS + **.NET 10 Hosting Bundle**, 10.0.14 or later (fixes CVE-2026-111497; the install, upgrade and Verify-Install scripts warn on an older one) | **SQL Server 2022 Standard** (Express is unsupported: 10 GB cap, no SQL Agent for backups) |
 | **CPU** | 4 vCPU (2 minimum) | 4 vCPU |
 | **RAM** | 8 GB minimum, **16 GB recommended** (Blazor Server holds a live circuit per active user in memory; report generation adds headroom) | **16 GB** (cap SQL "max server memory" to leave the OS ~2–4 GB) |
 | **System disk** | 60 GB SSD (OS + .NET + published app) | 80 GB SSD (OS + SQL binaries) |

@@ -158,7 +158,9 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
 
     private static HttpClientHandler BuildHandler(CyberArkOptions options, ILogger logger)
     {
-        var handler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All };
+        // No automatic decompression: a CCP answer is a few hundred bytes of JSON, and decoding compressed responses is
+        // where .NET's Brotli overflow (CVE-2026-111497) was reachable. Less to parse from the network for no loss.
+        var handler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.None };
         var cert = LoadClientCertificate(options, logger);
         if (cert is not null) handler.ClientCertificates.Add(cert);
         return handler;

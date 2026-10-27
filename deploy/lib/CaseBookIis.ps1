@@ -1,4 +1,4 @@
-# IIS helpers shared by Install-CaseBook.ps1 and Upgrade-CaseBook.ps1.
+# IIS helpers shared by Install-CaseBook.ps1, Upgrade-CaseBook.ps1 and Verify-Install.ps1.
 #
 # REV-71/REV-72: Stop-WebAppPool only asks the pool to stop. Its worker (w3wp) finishes open requests, Blazor circuits
 # and background jobs first, and holds the app's DLLs until it exits, so copying files straight after (a fixed few
@@ -27,6 +27,32 @@ function Stop-CaseBookAppPool([string] $Name, [int] $TimeoutSeconds = 120) {
 # /health/alarms below it) answers a status word only, with no detail; /branding/logo is the branding image only; the
 # agenda feed is 404 without a valid signed token in its URL. /agenda/agenda.ics (the signed-in download) is NOT here.
 # The one list: Install-CaseBook.ps1 sets these and Upgrade-CaseBook.ps1 checks and repairs them.
+# The oldest .NET 10 runtime CaseBook should run on: 10.0.14 fixes CVE-2026-111497, a buffer overflow in Brotli
+# decompression. Raise it when a later runtime fixes something CaseBook can reach.
+function Get-CaseBookMinimumRuntime { return [version]'10.0.14' }
+
+# The newest .NET 10 ASP.NET Core runtime installed (the shared framework IIS runs the app on), or $null. The 64-bit
+# folder, even from a 32-bit shell. Preview folders (10.0.0-rc.1...) aren't versions and are left out.
+function Get-CaseBookAspNetRuntime {
+    $pf64 = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+    $root = Join-Path $pf64 'dotnet\shared\Microsoft.AspNetCore.App'
+    if (-not (Test-Path $root)) { return $null }
+    $found = foreach ($d in Get-ChildItem $root -Directory -ErrorAction SilentlyContinue) {
+        $v = $null
+        if ([version]::TryParse($d.Name, [ref]$v) -and $v.Major -eq 10) { $v }
+    }
+    return ($found | Sort-Object -Descending | Select-Object -First 1)
+}
+
+# A sentence saying the runtime is older than the minimum, or $null when it's current (or there's none to judge).
+function Get-CaseBookRuntimeWarning {
+    $have = Get-CaseBookAspNetRuntime
+    $min = Get-CaseBookMinimumRuntime
+    if ($null -eq $have -or $have -ge $min) { return $null }
+    return ("The .NET runtime on this host is $have; $min or later fixes CVE-2026-111497 (Brotli decompression). " +
+            "Install the latest .NET 10 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/10.0, then run 'iisreset'.")
+}
+
 function Get-CaseBookAnonymousPaths { return @('api', 'health', 'branding/logo', 'agenda/feed.ics') }
 
 # Each carve-out is two <location> settings, applied in this order: anonymous on, then Windows off.

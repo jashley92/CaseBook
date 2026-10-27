@@ -340,6 +340,8 @@ $appDll = Join-Path $SitePath 'IncidentManager.Web.dll'
 # REV-71: a re-run publishes over a live site. The in-process worker holds the DLLs, so the pool is stopped (and its
 # worker gone) first; step 5 starts it again.
 . (Join-Path $deployDir 'lib\CaseBookIis.ps1')
+# A runtime older than the minimum still runs CaseBook, so this warns rather than stops.
+if (Get-CaseBookRuntimeWarning) { Write-Warning (Get-CaseBookRuntimeWarning) }
 if (Test-Path $appDll) {
     Write-Step "Stopping app pool '$AppPoolName' (the site already has an install)"
     Stop-CaseBookAppPool -Name $AppPoolName

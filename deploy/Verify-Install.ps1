@@ -63,6 +63,9 @@ if ([Net.ServicePointManager]::SecurityProtocol -ne [Net.SecurityProtocolType]::
 $script:fail = 0
 $script:warn = 0
 $cfg = $null
+# The shared deploy helpers, for the runtime check (Get-CaseBookRuntimeWarning); this script still runs without them.
+$casebookLib = Join-Path $PSScriptRoot 'lib\CaseBookIis.ps1'
+if (Test-Path $casebookLib) { . $casebookLib }
 # The ASP.NET Core Module, wherever this PowerShell can see it. A 32-bit PowerShell (Windows PowerShell (x86))
 # has System32 redirected to SysWOW64 and $env:ProgramFiles pointed at "Program Files (x86)", so check the real
 # 64-bit locations (Sysnative, ProgramW6432) and the module's registry key in both views as well.
@@ -252,6 +255,10 @@ if ($ConfigFile) {
         # --- web-host capability (only meaningful on the web host) ---
         if (Test-AspNetCoreModule) { Ok "ASP.NET Core Module present (this host can host the app)" }
         else { Warn ".NET 10 Hosting Bundle / ASP.NET Core Module not found (install it on the WEB host before Install-CaseBook)" }
+        if (Get-Command Get-CaseBookRuntimeWarning -ErrorAction SilentlyContinue) {
+            if (Get-CaseBookRuntimeWarning) { Warn (Get-CaseBookRuntimeWarning) }
+            elseif (Get-CaseBookAspNetRuntime) { Ok ".NET runtime $(Get-CaseBookAspNetRuntime) is current (at least $(Get-CaseBookMinimumRuntime))" }
+        }
     }
 }
 
