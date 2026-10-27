@@ -359,6 +359,35 @@ Then, signed in as a mapped user:
       full backup first. See OPERATIONS.md §7.
 - [ ] Walk the **Deploy-time Checklist** (§4) and record sign-off.
 
+### 6.0 Another application under the CaseBook site
+
+Another web application can be installed as an IIS application under CaseBook's site, for example TIDE at
+`https://casebook.contoso.com/tide`, when a second host name isn't available. CaseBook has no addresses under such a
+path, and its scripts leave a child application alone:
+
+- **Install-CaseBook.ps1** (and a re-run) sets the site root's folder, app pool and authentication (Windows on,
+  Anonymous off, inherited by the child), and the anonymous carve-outs for `/api`, `/health`, `/branding/logo` and
+  `/agenda/feed.ics` only. It never reads or removes the child's own settings.
+- **Upgrade-CaseBook.ps1** stops and starts CaseBook's own app pool only (never the site, `iisreset` or `app_offline`),
+  so the child stays up during an upgrade.
+- **Keep the child's folder out of the three places CaseBook's scripts mirror** (robocopy `/MIR` deletes what isn't in
+  the source): the site folder (`SitePath`), the kept deploy scripts beside it (`<SitePath>-deploy`), and the upgrade's
+  rollback snapshot (`<BackupRoot>\site-rollback`).
+- CaseBook's `web.config` passes only its `aspNetCore` handler and start-up time limit down. The child removes the
+  handler and sets its own `processPath`, `arguments` and `hostingModel`. CaseBook's security headers, request limits
+  and health checks live in the app, so they don't reach the child.
+- CaseBook's backups don't cover the child: back it up on its own.
+
+Two things to check, as they follow from sharing one host name:
+
+- **Kerberos.** One host name has one `HTTP/<host>` SPN on one account. With IIS's defaults (kernel-mode
+  authentication, `useAppPoolCredentials` false) the machine account decrypts tickets and both app pools work. If the
+  site uses `useAppPoolCredentials="true"` with the SPN on CaseBook's gMSA, the child inherits it and its own identity
+  can't decrypt the ticket: sign-in falls back to NTLM, or fails with 401 where NTLM is off.
+- **One browser origin.** The child's pages can call CaseBook as the signed-in user and read the answers, and they
+  share the browser's local storage. A script-injection flaw in the child reaches CaseBook, so the child needs a
+  strict Content-Security-Policy.
+
 ### 6.1 Optional — externalize secrets to CyberArk (F-19)
 
 Secrets in `appsettings.Production.json` (the SIEM webhook token, the team-chat webhook URL, the SMTP password, or the

@@ -212,6 +212,20 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.19.2
+
+No migration and no setting changes. **Install the .NET 10.0.14 Hosting Bundle (or later) on the web server, then
+`iisreset`**: it fixes CVE-2026-111497, a buffer overflow in .NET's Brotli decompression. CaseBook runs on the server's
+.NET runtime, so the runtime update is the fix; this release is hardening around it.
+
+- **CaseBook decompresses nothing it receives.** It had no request decompression and doesn't use the Brotli APIs; the
+  one HTTP client that accepted compressed answers, the optional CyberArk secret provider, now accepts none (its
+  answers are a few hundred bytes of JSON).
+- **Install, Upgrade and Verify-Install warn on a runtime older than 10.0.14**, naming the version found and where to
+  get the Hosting Bundle. They accepted any .NET 10 before. A warning, not a stop: an older runtime still runs CaseBook.
+- **INSTALL.md §6.0: another application under the CaseBook site** (for example TIDE at `/tide`): what CaseBook's
+  scripts leave alone, which folders to keep it out of, and the Kerberos and same-origin points to check.
+
 ### v1.19.1
 
 A fix to v1.19.0, with no migration and no setting changes.
