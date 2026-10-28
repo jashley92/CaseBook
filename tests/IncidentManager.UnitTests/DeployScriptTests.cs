@@ -228,7 +228,9 @@ public partial class DeployScriptCultureTests
         var script = File.ReadAllText(Path.Combine(Deploy, "Upgrade-CaseBook.ps1"));
         var check = script.IndexOf("/releases/download/$tag/casebook-$tag.zip.sha256", StringComparison.Ordinal);
         check.Should().BeGreaterThan(-1);
-        check.Should().BeLessThan(script.IndexOf("Expand-Archive", StringComparison.Ordinal));
+        var expand = script.IndexOf("Expand-Archive -Path $BundleZip", StringComparison.Ordinal);
+        expand.Should().BeGreaterThan(-1);
+        check.Should().BeLessThan(expand);
         script.Should().Contain("ReleaseHashChecked", "the handover tells the bundle's script the check already ran");
     }
 }
