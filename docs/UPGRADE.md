@@ -47,6 +47,8 @@ On the web host, **elevated**:
 #    Get-FileHash .\casebook-<version>.zip -Algorithm SHA256   # compare to the .sha256
 # 2. Run the upgrade from the version-matched script inside the bundle:
 .\Upgrade-CaseBook.ps1 -BundleZip .\casebook-<version>.zip
+# When the host can reach github.com (or -Proxy), -BundleZip fetches the .sha256 of the release its VERSION.txt names
+# and refuses a bundle that doesn't match it, before expanding it. Offline, it warns and carries on, so step 1 matters.
 ```
 
 It auto-detects the site (default name `CaseBook`), database, and health URL (the site root at its first
