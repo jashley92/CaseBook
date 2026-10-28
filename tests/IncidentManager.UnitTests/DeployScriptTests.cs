@@ -220,4 +220,15 @@ public partial class DeployScriptCultureTests
         bytes.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]).Should().BeTrue();
         File.ReadAllText(Path.Combine(Deploy, "Upgrade-CaseBook.ps1")).Should().Contain(@"lib\CaseBookStamp.ps1");
     }
+
+    [Fact]
+    public void The_upgrade_checks_a_bundle_against_its_release_before_expanding_it()
+    {
+        // A -BundleZip is checked against the .sha256 of the release its VERSION.txt names, before anything in it is used.
+        var script = File.ReadAllText(Path.Combine(Deploy, "Upgrade-CaseBook.ps1"));
+        var check = script.IndexOf("/releases/download/$tag/casebook-$tag.zip.sha256", StringComparison.Ordinal);
+        check.Should().BeGreaterThan(-1);
+        check.Should().BeLessThan(script.IndexOf("Expand-Archive", StringComparison.Ordinal));
+        script.Should().Contain("ReleaseHashChecked", "the handover tells the bundle's script the check already ran");
+    }
 }
