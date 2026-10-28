@@ -422,20 +422,45 @@ elseif ($BundleZip -and -not $hashChecked) {
 
 if ($BundleZip) {
     if (-not (Test-Path $BundleZip)) { throw "Bundle not found: $BundleZip" }
-    Write-Step "Expanding release bundle"
-    Expand-Archive -Path $BundleZip -DestinationPath $staging -Force
-    $appSrc   = Get-ChildItem -Path $staging -Recurse -Directory -Filter 'app' | Select-Object -First 1 -ExpandProperty FullName
-    $manifest = Get-ChildItem -Path $staging -Recurse -Filter 'migrations-sqlserver.txt' | Select-Object -First 1 -ExpandProperty FullName
-    $verFile  = Get-ChildItem -Path $staging -Recurse -Filter 'VERSION.txt' | Select-Object -First 1 -ExpandProperty FullName
-    if ($verFile) { $targetVersion = ((Get-Content $verFile | Where-Object { $_ -match 'Version:' }) -replace 'Version:\s*','').Trim() }
-    if (-not $appSrc) { throw "The bundle does not contain an 'app' folder: $BundleZip" }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zipPath = (Resolve-Path $BundleZip).Path
 
     # WF-70: the upgrade is run by the release's own script, not by this one. -Version runs from the kept copy, which is
     # the previous release's: a fix to the upgrade itself (the warm-up, BUG-260/261) would otherwise reach only the
     # upgrade after the one that ships it. The bundle's script, run on the same zip, finds itself and carries on.
-    $bundleScript = Get-ChildItem -Path $staging -Recurse -Filter 'Upgrade-CaseBook.ps1' |
-        Where-Object { $_.Directory.Name -eq 'deploy' } | Select-Object -First 1 -ExpandProperty FullName
-    if ($bundleScript -and (Get-FileHash $bundleScript).Hash -ne (Get-FileHash $MyInvocation.MyCommand.Path).Hash) {
+    # Its hash is read from the zip itself, and only its deploy folder is extracted to run it: expanding the whole bundle
+    # here as well extracted the app twice, once by each script.
+    $handoverDir = $null
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+    try {
+        $scriptEntry = $zip.Entries | Where-Object { $_.FullName -match '^([^/\\]+[/\\])?deploy[/\\]Upgrade-CaseBook\.ps1$' } |
+            Select-Object -First 1
+        if ($scriptEntry) {
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            $entryStream = $scriptEntry.Open()
+            try { $bundleScriptHash = [BitConverter]::ToString($sha.ComputeHash($entryStream)).Replace('-', '') }
+            finally { $entryStream.Dispose(); $sha.Dispose() }
+            if ($bundleScriptHash -ne (Get-FileHash -Path $MyInvocation.MyCommand.Path -Algorithm SHA256).Hash) {
+                # A folder of its own: the bundle's script, started within the same second, stages in casebook-upgrade-<stamp>.
+                $handoverDir = [IO.Path]::GetFullPath((Join-Path $env:TEMP "casebook-handover-$stamp\deploy"))
+                $prefix = $scriptEntry.FullName.Replace('\', '/')
+                $prefix = $prefix.Substring(0, $prefix.Length - 'Upgrade-CaseBook.ps1'.Length)   # "<root>/deploy/"
+                foreach ($e in $zip.Entries) {
+                    $name = $e.FullName.Replace('\', '/')
+                    if (-not $e.Name -or -not $name.StartsWith($prefix, [StringComparison]::Ordinal)) { continue }   # folders, the rest
+                    $to = [IO.Path]::GetFullPath((Join-Path $handoverDir $name.Substring($prefix.Length)))
+                    if (-not $to.StartsWith($handoverDir + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                        throw "The bundle has an entry that points outside its deploy folder ($($e.FullName)). Nothing was changed."
+                    }
+                    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $to) | Out-Null
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $to, $true)
+                }
+            }
+        }
+    } finally { $zip.Dispose() }
+
+    if ($handoverDir) {
+        $bundleScript = Join-Path $handoverDir 'Upgrade-CaseBook.ps1'
         $accepted = (Get-Command $bundleScript).Parameters.Keys
         $pass = @{}
         foreach ($k in $PSBoundParameters.Keys) {
@@ -443,10 +468,21 @@ if ($BundleZip) {
         }
         $pass.BundleZip = $BundleZip
         if ($hashChecked -and $accepted -contains 'ReleaseHashChecked') { $pass.ReleaseHashChecked = $true }
-        Write-Step "Handing over to the upgrade script in the $(if ($targetVersion) { $targetVersion } else { 'new' }) bundle"
+        $handoverName = if ($Version) { $Version } elseif ($tag) { $tag } else { 'new' }
+        Write-Step "Handing over to the upgrade script in the $handoverName bundle"
         & $bundleScript @pass
         return
     }
+
+    # ZipFile rather than Expand-Archive, which in Windows PowerShell 5.1 takes many times as long over the app's files.
+    # The staging folder is new, so nothing is overwritten; .NET (4.6.2 on) refuses an entry that would land outside it.
+    Write-Step "Expanding release bundle"
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $staging)
+    $appSrc   = Get-ChildItem -Path $staging -Recurse -Directory -Filter 'app' | Select-Object -First 1 -ExpandProperty FullName
+    $manifest = Get-ChildItem -Path $staging -Recurse -Filter 'migrations-sqlserver.txt' | Select-Object -First 1 -ExpandProperty FullName
+    $verFile  = Get-ChildItem -Path $staging -Recurse -Filter 'VERSION.txt' | Select-Object -First 1 -ExpandProperty FullName
+    if ($verFile) { $targetVersion = ((Get-Content $verFile | Where-Object { $_ -match 'Version:' }) -replace 'Version:\s*','').Trim() }
+    if (-not $appSrc) { throw "The bundle does not contain an 'app' folder: $BundleZip" }
 }
 elseif ($AppSource) {
     if (-not (Test-Path (Join-Path $AppSource 'IncidentManager.Web.dll'))) {

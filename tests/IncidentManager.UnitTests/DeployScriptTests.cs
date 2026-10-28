@@ -228,9 +228,21 @@ public partial class DeployScriptCultureTests
         var script = File.ReadAllText(Path.Combine(Deploy, "Upgrade-CaseBook.ps1"));
         var check = script.IndexOf("/releases/download/$tag/casebook-$tag.zip.sha256", StringComparison.Ordinal);
         check.Should().BeGreaterThan(-1);
-        var expand = script.IndexOf("Expand-Archive -Path $BundleZip", StringComparison.Ordinal);
+        var expand = script.IndexOf("ZipFile]::ExtractToDirectory($zipPath, $staging)", StringComparison.Ordinal);
         expand.Should().BeGreaterThan(-1);
         check.Should().BeLessThan(expand);
         script.Should().Contain("ReleaseHashChecked", "the handover tells the bundle's script the check already ran");
+    }
+
+    [Fact]
+    public void The_upgrade_hands_over_before_expanding_the_whole_bundle()
+    {
+        // The bundle's script is compared and extracted straight from the zip, so a handover doesn't expand the app twice.
+        var script = File.ReadAllText(Path.Combine(Deploy, "Upgrade-CaseBook.ps1"));
+        var handover = script.IndexOf("& $bundleScript @pass", StringComparison.Ordinal);
+        var expand = script.IndexOf("ZipFile]::ExtractToDirectory($zipPath, $staging)", StringComparison.Ordinal);
+        handover.Should().BeGreaterThan(-1);
+        expand.Should().BeGreaterThan(handover);
+        script.Should().NotContain("Expand-Archive -Path $BundleZip", "Expand-Archive is many times slower in Windows PowerShell 5.1");
     }
 }
