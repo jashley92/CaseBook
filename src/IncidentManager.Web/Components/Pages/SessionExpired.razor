@@ -2,10 +2,13 @@
    the working circuit — so all in-memory case data is gone and this neutral page is all that remains on
    an unattended screen. AllowAnonymous + the chromeless layout mean it always renders and shows nothing
    sensitive. "Resume" is a full-page link back to the app, which re-authenticates (silently under
-   Windows auth) and starts a fresh session. *@
+   Windows auth) and starts a fresh session, on the page the tab locked on (LockReturnPage) or else the home page. *@
 @page "/session-expired"
 @layout Layout.BlankLayout
 @attribute [AllowAnonymous]
+@using IncidentManager.Application.Security
+@inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>Session locked · CaseBook</PageTitle>
 
@@ -27,7 +30,7 @@
         <p class="session-locked-text session-locked-muted">
             This protects unattended workstations. Lock your computer when you step away, too.
         </p>
-        <a href="/" class="btn btn-primary">Resume session</a>
+        <a href="@_resume" class="btn btn-primary">Resume session</a>
     </div>
 </div>
 
@@ -36,4 +39,18 @@
     // A string, not a bool: this page is anonymous, and a malformed value must not be able to break it.
     [SupplyParameterFromQuery(Name = "locked")] private string? LockedQuery { get; set; }
     private bool Locked => LockedQuery is "1" or "true";
+
+    private string _resume = "/";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        string? kept;
+        try { kept = await JS.InvokeAsync<string?>("imIdle.takeReturnPage"); }
+        catch (JSDisconnectedException) { return; }
+        catch (JSException) { return; }   // the script didn't load: Resume stays on the home page
+        if (LockReturnPage.Resolve(kept, Nav.BaseUri) is not { } page) return;
+        _resume = page;
+        StateHasChanged();
+    }
 }

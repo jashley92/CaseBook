@@ -98,7 +98,9 @@ counts nowhere else. A refused API GET keeps its 401 or 403; it isn't redirected
   reconnecting. AD group *membership* changes need a new Windows logon.
 - **Idle lock** (`Security:IdleTimeoutMinutes`, default 15): after inactivity, a 60-second warning, then the
   circuit is torn down and the user lands on `/session-expired`. With Windows auth, *Resume* signs them straight
-  back in; it's a screen lock, not a credential check. *Lock now* in the account menu does the same.
+  back in; it's a screen lock, not a credential check. It returns to the page the tab locked on, kept in that tab's
+  `sessionStorage` (never the lock page's URL, so the address bar doesn't name the case) and followed only when it's a
+  page of this app (`LockReturnPage`); the page checks access again as it loads. *Lock now* in the account menu does the same.
   If the connection to the server is down at the deadline (an app-pool restart, a dropped network), the browser
   leaves for `/session-expired` itself a few seconds later, so the case isn't left readable behind the reconnect
   overlay (REV-63).

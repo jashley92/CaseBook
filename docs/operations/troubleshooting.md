@@ -526,7 +526,7 @@ reload.
 ### "Your session was locked"
 
 The idle timeout (`Security:IdleTimeoutMinutes`, default 15) or *Lock now*. *Resume* signs back in with Windows
-authentication.
+authentication and returns to the page the tab locked on (the home page if the browser blocks site storage).
 
 ### A change someone else made doesn't appear
 

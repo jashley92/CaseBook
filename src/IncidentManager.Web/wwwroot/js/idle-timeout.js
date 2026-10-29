@@ -7,6 +7,7 @@
 //                                               then OnIdleTimeout() at idle.
 //   imIdle.reset()                            -> user chose "stay signed in"; resume watching from now.
 //   imIdle.stop()                             -> detach everything (component disposed / session ending).
+//   imIdle.rememberPage() / takeReturnPage()  -> keep the page a tab locked on, and hand it to the lock page's Resume.
 //
 // Once the warning is showing we intentionally stop treating activity as "still here": only an explicit
 // reset() (the Stay-signed-in button) clears it, so drifting the mouse toward the button can't silently
@@ -58,7 +59,25 @@ window.imIdle = (function () {
     // Leave for the session-expired page, past the unsaved-changes prompt (a deliberate security teardown, FR-05).
     function lockFromClient() {
         try { if (window.markdownEditor) window.markdownEditor.suppressUnloadGuard(); } catch (e) { /* best effort */ }
+        rememberPage();
         window.location.replace(new URL('session-expired', document.baseURI).href);
+    }
+
+    // Resume goes back to the page the tab locked on. It's kept in this tab's sessionStorage, not the lock page's URL, so
+    // the address bar of an unattended screen doesn't name the case; the lock page checks it's a page of this app
+    // (LockReturnPage) and takes it once.
+    var returnKey = 'im.lockReturn';
+
+    function rememberPage() {
+        try { sessionStorage.setItem(returnKey, window.location.href); } catch (e) { /* storage blocked: resume at home */ }
+    }
+
+    function takeReturnPage() {
+        try {
+            var page = sessionStorage.getItem(returnKey);
+            sessionStorage.removeItem(returnKey);
+            return page;
+        } catch (e) { return null; }
     }
 
     function addListeners() {
@@ -100,5 +119,5 @@ window.imIdle = (function () {
         warned = false;
     }
 
-    return { start: start, reset: reset, stop: stop };
+    return { start: start, reset: reset, stop: stop, rememberPage: rememberPage, takeReturnPage: takeReturnPage };
 })();

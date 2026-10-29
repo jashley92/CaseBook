@@ -40,6 +40,19 @@ public sealed partial class ClientScriptRulesTests
     }
 
     [Fact]
+    public void A_tab_that_locks_itself_keeps_its_page_for_resume_and_out_of_the_lock_url()
+    {
+        var js = Script("idle-timeout.js");
+        var lockFromClient = Function(js, "lockFromClient");
+        var remember = lockFromClient.IndexOf("rememberPage();", StringComparison.Ordinal);
+        remember.Should().BeGreaterThan(-1, "the browser's own lock keeps the page, as the server's does");
+        lockFromClient.IndexOf("location.replace(", StringComparison.Ordinal).Should().BeGreaterThan(remember, "before leaving it");
+        lockFromClient.Should().Contain("new URL('session-expired', document.baseURI)", "the lock page's URL carries no page");
+        Function(js, "rememberPage").Should().Contain("sessionStorage", "kept in the tab, not the address bar");
+        Function(js, "takeReturnPage").Should().Contain("sessionStorage.removeItem(", "taken once, so a later lock can't resume on it");
+    }
+
+    [Fact]
     public void The_editor_preview_renders_raw_html_and_link_schemes_as_the_server_does(/* BUG-715 */)
     {
         var js = Script("markdown-editor.js");
