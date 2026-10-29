@@ -42,7 +42,7 @@
                         <AuthorizeView Policy="@Policies.ViewCases" Context="viewCases">
                             <NotificationBell />
                         </AuthorizeView>
-                        <ProfileMenu />
+                        <ProfileMenu Welcome="_welcome" />
                     </Authorized>
                     <NotAuthorized>
                         <button id="theme-toggle" type="button" class="btn btn-sm btn-outline-secondary"
@@ -198,6 +198,7 @@
     // saved to the user's profile. Someone with nothing saved yet gets what their browser remembers copied up once,
     // so moving to account-level preferences doesn't reset anybody.
     private DotNetObjectReference<MainLayout>? _prefsRef;
+    private bool _welcome;
 
     private async Task StartDisplayPrefSync()
     {
@@ -205,7 +206,14 @@
         {
             _prefsRef = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("imPrefs.register", _prefsRef);
-            if (await DisplayPrefs.GetMineAsync() is null) await OnDisplayPrefsChanged();
+            if (await DisplayPrefs.GetMineAsync() is null)
+            {
+                // Nothing saved yet: this account's first visit. The account menu shows where the settings are, once
+                // (the save below records the visit).
+                _welcome = true;
+                StateHasChanged();
+                await OnDisplayPrefsChanged();
+            }
         }
         catch (JSException) { /* interop unavailable: the browser keeps its own copy */ }
         catch (JSDisconnectedException) { }

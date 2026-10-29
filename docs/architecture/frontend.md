@@ -90,7 +90,9 @@ the settings, pages and server-only settings for the search box and the command 
 - **Activity bell** (`Shared/NotificationBell.razor`): recent changes by others on cases you can see, updated
   live; unread state per browser.
 - **Account menu** (`Shared/ProfileMenu.razor`): identity and roles, links to account pages, *Lock now*, and
-  segmented controls for theme, density, UTC or local time, and 24- or 12-hour clock.
+  segmented controls for theme, density, UTC or local time (local unless UTC is stored, `wwwroot/js/time.js`), and
+  24- or 12-hour clock. Its tour (`Welcome`, set by `MainLayout` when the account has no saved display preferences,
+  i.e. its first visit) is a callout under the avatar and then beside the open menu; *Show me around* replays it.
 
 ## The case workspace
 

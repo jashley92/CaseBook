@@ -56,6 +56,15 @@ public sealed partial class ClientScriptRulesTests
         clientSchemes.Should().BeEquivalentTo(serverSchemes);
     }
 
+    [Fact]
+    public void Times_show_in_local_time_until_someone_chooses_UTC()
+    {
+        // Nothing saved (a new account on a new browser) reads as local; only a stored "utc" keeps UTC.
+        var mode = Function(Script("time.js"), "mode");
+        mode.Should().Contain("localStorage.getItem(TIME_PREF) === 'utc' ? 'utc' : 'local'");
+        mode.Should().Contain("root.getAttribute('data-pref-time') === 'utc' ? 'utc' : 'local'", "private mode reads the server's copy");
+    }
+
     [GeneratedRegex(@"tick\(\);\s*return;")]
     private static partial Regex TickThenReturn();
 

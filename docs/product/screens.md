@@ -38,7 +38,9 @@ browser's local zone because the profile menu was set to *Local*; stored times a
    over the page on narrower ones; *Open* or *Swap* puts it in front.
 6. **Recent activity**: changes others made to cases you can see. Unread is tracked per browser.
 7. **Account menu**: notification preferences, *Keyboard shortcuts* (`/account/keyboard`: change any key, or switch every single-key shortcut off), personal API tokens, *My access*, *Lock now*, theme, row
-   density, UTC or local times, and 24- or 12-hour clock. These preferences are saved to your account.
+   density, UTC or local times (local until you choose UTC), and 24- or 12-hour clock. These preferences are saved
+   to your account. On an account's first visit a short tour points out the menu and what's in it; *Show me around*
+   in the menu runs it again.
 
 The sidebar collapses to icons (the `«` button), and below 641 px it becomes a top bar with a menu button.
 
