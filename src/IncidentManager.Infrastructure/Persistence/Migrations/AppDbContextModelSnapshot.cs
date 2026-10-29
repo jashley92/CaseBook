@@ -3196,6 +3196,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<bool>("LocalTime")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("LocalTimeNoticePending")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("NavCollapsed")
                         .HasColumnType("INTEGER");
 

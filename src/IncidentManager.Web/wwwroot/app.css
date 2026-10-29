@@ -1026,6 +1026,31 @@ h1:focus {
 .profile-about-name { font-weight: 600; color: var(--bs-body-color); margin-bottom: 0.15rem; }
 .profile-about-line { line-height: 1.35; }
 
+/* First visit's tour of the account menu: a callout under the avatar, then beside the open menu (a sheet along the
+   bottom where there's no room beside it), ringing the part of the menu it describes. Above the menu's backdrop. */
+.profile-tour {
+    position: absolute;
+    z-index: 1092;
+    width: min(18rem, calc(100vw - 1.5rem));
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--im-accent);
+    border-radius: var(--im-radius-lg);
+    box-shadow: var(--im-shadow);
+    padding: 0.75rem 0.85rem;
+    font-size: var(--im-text-table);
+}
+.profile-tour-below { top: calc(100% + 0.5rem); right: 0; }
+.profile-tour-side { top: calc(100% + 0.5rem); right: calc(min(19rem, 100vw - 1.5rem) + 0.75rem); }
+@media (max-width: 47.98rem) {
+    .profile-tour-side { position: fixed; top: auto; left: 0.75rem; right: 0.75rem; bottom: 0.75rem; width: auto; }
+}
+.profile-tour-title { font-weight: 600; margin-bottom: 0.3rem; }
+.profile-tour p { margin: 0 0 0.6rem; line-height: 1.4; }
+.profile-tour-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; }
+.profile-tour-step { margin-right: auto; font-size: var(--im-text-xs); color: var(--bs-secondary-color); }
+.profile-tour-ring { border-radius: var(--im-radius); box-shadow: 0 0 0 2px var(--im-accent); }
+
 /* --- Skeleton loaders (U-20) — pure CSS shimmer, theme-aware --- */
 .skel {
     --skel-base: rgba(0, 0, 0, 0.07);

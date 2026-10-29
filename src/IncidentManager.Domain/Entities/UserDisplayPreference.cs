@@ -24,6 +24,10 @@ public class UserDisplayPreference : Entity
     /// <summary>On-screen times in the viewer's local zone rather than UTC. Records and exports stay UTC.</summary>
     public bool LocalTime { get; set; }
 
+    /// <summary>Moved from UTC to local time by the upgrade that made local time the default (LocalTimeByDefault), and
+    /// hasn't been told yet. Cleared once the notice is shown.</summary>
+    public bool LocalTimeNoticePending { get; set; }
+
     /// <summary>12-hour clock rather than 24-hour.</summary>
     public bool TwelveHourClock { get; set; }
 

@@ -6,9 +6,10 @@
 window.imTime = (function () {
     const TIME_PREF = 'im-time-mode';
     const root = document.documentElement;
+    // Local unless UTC was chosen: someone with nothing saved (a new account on a new browser) sees their own time.
     function mode() {
-        try { return localStorage.getItem(TIME_PREF) === 'local' ? 'local' : 'utc'; }
-        catch (e) { return root.getAttribute('data-pref-time') === 'local' ? 'local' : 'utc'; }
+        try { return localStorage.getItem(TIME_PREF) === 'utc' ? 'utc' : 'local'; }
+        catch (e) { return root.getAttribute('data-pref-time') === 'utc' ? 'utc' : 'local'; }
     }
     function setMode(m) {
         const v = m === 'local' ? 'local' : 'utc';

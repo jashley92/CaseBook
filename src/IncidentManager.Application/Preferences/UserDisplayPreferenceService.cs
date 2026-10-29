@@ -36,6 +36,18 @@ public sealed class UserDisplayPreferenceService
             .FirstOrDefaultAsync(ct);
     }
 
+    /// <summary>
+    /// True once for an account the upgrade moved from UTC to local time (local became the default), so the page
+    /// can say so; it's cleared as it's read. By statement, so two tabs opening at once don't both show the notice.
+    /// </summary>
+    public async Task<bool> TakeLocalTimeNoticeAsync(CancellationToken ct = default)
+    {
+        if (!_user.IsAuthenticated) return false;
+        using var db = _factory.CreateDbContext();
+        return await db.UserDisplayPreferences.Where(p => p.UserId == _user.UserId && p.LocalTimeNoticePending)
+            .ExecuteUpdateAsync(u => u.SetProperty(p => p.LocalTimeNoticePending, false), ct) > 0;
+    }
+
     /// <summary>INV-26: whether the user keeps the timeline's attack chain open (folded unless they've opened it).</summary>
     public async Task<bool> GetAttackChainOpenAsync(CancellationToken ct = default)
     {

@@ -3204,6 +3204,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<bool>("LocalTime")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("LocalTimeNoticePending")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("NavCollapsed")
                         .HasColumnType("bit");
 

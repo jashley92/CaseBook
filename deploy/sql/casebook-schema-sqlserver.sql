@@ -4891,3 +4891,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261029120009_LocalTimeByDefault'
+)
+BEGIN
+    ALTER TABLE [UserDisplayPreferences] ADD [LocalTimeNoticePending] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261029120009_LocalTimeByDefault'
+)
+BEGIN
+    EXEC(N'    UPDATE UserDisplayPreferences SET LocalTime = 1, LocalTimeNoticePending = 1 WHERE LocalTime = 0');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261029120009_LocalTimeByDefault'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261029120009_LocalTimeByDefault'', N''10.0.14'');');
+END;
+
+COMMIT;
+GO
+

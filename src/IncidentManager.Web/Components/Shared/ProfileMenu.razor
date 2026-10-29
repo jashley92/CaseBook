@@ -15,6 +15,64 @@
         <span class="profile-avatar" aria-hidden="true">@Initials</span>
     </button>
 
+    @* First visit on an account (MainLayout's Welcome): a short tour of where the settings are. A callout under the
+       avatar, then beside the open menu, ringing the part it describes. "Show me around" in the menu runs it again. *@
+    @if (_tour is int step)
+    {
+        <div class="profile-tour @(step == 0 ? "profile-tour-below" : "profile-tour-side")" role="dialog"
+             aria-labelledby="profile-tour-title" @onkeydown="TourKey">
+            @if (step == 0)
+            {
+                <div class="profile-tour-title" id="profile-tour-title">Welcome to CaseBook</div>
+                <p>Your settings are in this menu: how the page and its times look, which case activity emails you, and
+                    your keyboard shortcuts.</p>
+                <div class="profile-tour-actions">
+                    <button type="button" class="btn btn-sm btn-link" @onclick="EndTour">Not now</button>
+                    <button type="button" class="btn btn-sm btn-primary" @ref="_tourPrimary" @onclick="OpenForTour">Show me</button>
+                </div>
+            }
+            else if (step == 1)
+            {
+                <div class="profile-tour-title" id="profile-tour-title">How things look</div>
+                <p>Theme, row density, time zone and clock. Times are shown in @(TimeDisp.Mode == TimeDisplayMode.Local
+                    ? $"your local time ({TimeDisp.LocalLabel})" : "UTC"); switch with <em>Show times in</em>. Reports,
+                    exports and the audit trail always use UTC. Your choices follow your
+                    account to any workstation.</p>
+                <div class="profile-tour-actions">
+                    <span class="profile-tour-step">1 of 2</span>
+                    <button type="button" class="btn btn-sm btn-link" @onclick="EndTour">Skip</button>
+                    <button type="button" class="btn btn-sm btn-primary" @ref="_tourPrimary" @onclick="NextTourStep">Next</button>
+                </div>
+            }
+            else
+            {
+                <div class="profile-tour-title" id="profile-tour-title">Notifications and shortcuts</div>
+                <p><em>Notifications</em> chooses which case activity emails you. <em>Keyboard shortcuts</em> lists the
+                    keys, and lets you change them or turn single-key shortcuts off. <em>Show me around</em>, lower in
+                    this menu, runs this tour again.</p>
+                <div class="profile-tour-actions">
+                    <span class="profile-tour-step">2 of 2</span>
+                    <button type="button" class="btn btn-sm btn-primary" @ref="_tourPrimary" @onclick="EndTour">Done</button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_timeNotice)
+    {
+        @* The upgrade that made local time the default moved this account from UTC; said once, under the avatar. *@
+        <div class="profile-tour profile-tour-below" role="dialog" aria-labelledby="profile-time-notice-title"
+             @onkeydown="TimeNoticeKey">
+            <div class="profile-tour-title" id="profile-time-notice-title">Times now show in your local time</div>
+            <p>CaseBook now shows times in your local time (@TimeDisp.LocalLabel) rather than UTC. Reports, exports and the
+                audit trail still use UTC. You can switch back at any time in this menu, under <em>Show times in</em>.</p>
+            <div class="profile-tour-actions">
+                <button type="button" class="btn btn-sm btn-link" @onclick="SwitchBackToUtc">Switch back to UTC</button>
+                <button type="button" class="btn btn-sm btn-primary" @ref="_timeNoticeOk" @onclick="CloseTimeNotice">Keep local time</button>
+            </div>
+        </div>
+    }
+
     @if (_open)
     {
         <div class="profile-backdrop" @onclick="Close"></div>
@@ -46,14 +104,16 @@
 
             <div class="profile-sep"></div>
 
-            <a class="profile-item" role="menuitem" href="account/notifications" @onclick="Close">
-                <span class="bi bi-bell" aria-hidden="true"></span>
-                <span>Notifications</span>
-            </a>
-            <a class="profile-item" role="menuitem" href="account/keyboard" @onclick="Close">
-                <span class="bi bi-keyboard" aria-hidden="true"></span>
-                <span>Keyboard shortcuts</span>
-            </a>
+            <div class="@TourRing(2)">
+                <a class="profile-item" role="menuitem" href="account/notifications" @onclick="Close">
+                    <span class="bi bi-bell" aria-hidden="true"></span>
+                    <span>Notifications</span>
+                </a>
+                <a class="profile-item" role="menuitem" href="account/keyboard" @onclick="Close">
+                    <span class="bi bi-keyboard" aria-hidden="true"></span>
+                    <span>Keyboard shortcuts</span>
+                </a>
+            </div>
 
             <a class="profile-item" role="menuitem" href="account/api-tokens" @onclick="Close">
                 <span class="bi bi-key" aria-hidden="true"></span>
@@ -75,64 +135,66 @@
 
             @* Theme: a segmented toggle showing both modes with the current one highlighted, so it reads as a
                state, not an action verb — consistent with the time-zone toggle below it. *@
-            <div class="profile-seg-row" role="group" aria-label="Theme">
-                <span class="bi @(_dark ? "bi-moon-stars" : "bi-sun")" aria-hidden="true"></span>
-                <span class="profile-seg-label">Theme</span>
-                <span class="seg" role="radiogroup" aria-label="Theme">
-                    <button type="button" class="seg-opt @(!_dark ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(!_dark)"
-                            @onclick="() => SetTheme(false)">Light</button>
-                    <button type="button" class="seg-opt @(_dark ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(_dark)"
-                            @onclick="() => SetTheme(true)">Dark</button>
-                </span>
-            </div>
+            <div class="@TourRing(1)">
+                <div class="profile-seg-row" role="group" aria-label="Theme">
+                    <span class="bi @(_dark ? "bi-moon-stars" : "bi-sun")" aria-hidden="true"></span>
+                    <span class="profile-seg-label">Theme</span>
+                    <span class="seg" role="radiogroup" aria-label="Theme">
+                        <button type="button" class="seg-opt @(!_dark ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(!_dark)"
+                                @onclick="() => SetTheme(false)">Light</button>
+                        <button type="button" class="seg-opt @(_dark ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(_dark)"
+                                @onclick="() => SetTheme(true)">Dark</button>
+                    </span>
+                </div>
 
-            @* Design review P1: list row density. Comfortable suits most people; compact fits about a quarter more
-               rows for long triage sessions. *@
-            <div class="profile-seg-row" role="group" aria-label="List rows">
-                <span class="bi bi-list" aria-hidden="true"></span>
-                <span class="profile-seg-label">Rows</span>
-                <span class="seg" role="radiogroup" aria-label="List rows">
-                    <button type="button" class="seg-opt @(!_compact ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(!_compact)"
-                            @onclick="() => SetDensity(false)">Comfortable</button>
-                    <button type="button" class="seg-opt @(_compact ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(_compact)"
-                            @onclick="() => SetDensity(true)">Compact</button>
-                </span>
-            </div>
+                @* Design review P1: list row density. Comfortable suits most people; compact fits about a quarter more
+                   rows for long triage sessions. *@
+                <div class="profile-seg-row" role="group" aria-label="List rows">
+                    <span class="bi bi-list" aria-hidden="true"></span>
+                    <span class="profile-seg-label">Rows</span>
+                    <span class="seg" role="radiogroup" aria-label="List rows">
+                        <button type="button" class="seg-opt @(!_compact ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(!_compact)"
+                                @onclick="() => SetDensity(false)">Comfortable</button>
+                        <button type="button" class="seg-opt @(_compact ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(_compact)"
+                                @onclick="() => SetDensity(true)">Compact</button>
+                    </span>
+                </div>
 
-            @* U-29: on-screen time-zone display. A segmented toggle showing both modes so the current one is
-               explicit — not an action label. Storage/reports/audit stay UTC; this only reformats timestamps
-               in the working views, each labelled with its zone. *@
-            <div class="profile-seg-row" role="group" aria-label="On-screen time zone">
-                <span class="bi bi-clock-history" aria-hidden="true"></span>
-                <span class="profile-seg-label">Show times in</span>
-                <span class="seg" role="radiogroup" aria-label="Time zone">
-                    <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Utc ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(TimeDisp.Mode == TimeDisplayMode.Utc)"
-                            @onclick="() => SetTimeZone(TimeDisplayMode.Utc)">UTC</button>
-                    <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Local ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(TimeDisp.Mode == TimeDisplayMode.Local)"
-                            @onclick="() => SetTimeZone(TimeDisplayMode.Local)">Local</button>
-                </span>
+                @* U-29: on-screen time-zone display. A segmented toggle showing both modes so the current one is
+                   explicit — not an action label. Storage/reports/audit stay UTC; this only reformats timestamps
+                   in the working views, each labelled with its zone. *@
+                <div class="profile-seg-row" role="group" aria-label="On-screen time zone">
+                    <span class="bi bi-clock-history" aria-hidden="true"></span>
+                    <span class="profile-seg-label">Show times in</span>
+                    <span class="seg" role="radiogroup" aria-label="Time zone">
+                        <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Utc ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(TimeDisp.Mode == TimeDisplayMode.Utc)"
+                                @onclick="() => SetTimeZone(TimeDisplayMode.Utc)">UTC</button>
+                        <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Local ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(TimeDisp.Mode == TimeDisplayMode.Local)"
+                                @onclick="() => SetTimeZone(TimeDisplayMode.Local)">Local</button>
+                    </span>
+                </div>
+                @* U-48: 12h / 24h clock, same segmented pattern; display only. *@
+                <div class="profile-seg-row" role="group" aria-label="Clock format">
+                    <span class="bi bi-alarm" aria-hidden="true"></span>
+                    <span class="profile-seg-label">Clock</span>
+                    <span class="seg" role="radiogroup" aria-label="Clock format">
+                        <button type="button" class="seg-opt @(!TimeDisp.TwelveHourClock ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(!TimeDisp.TwelveHourClock)"
+                                @onclick="() => SetClock(false)">24h</button>
+                        <button type="button" class="seg-opt @(TimeDisp.TwelveHourClock ? "on" : "")"
+                                role="radio" aria-checked="@Ui.Aria(TimeDisp.TwelveHourClock)"
+                                @onclick="() => SetClock(true)">12h</button>
+                    </span>
+                </div>
+                <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC.
+                    Changing either redraws the page, so save what you're typing first.</div>
             </div>
-            @* U-48: 12h / 24h clock, same segmented pattern; display only. *@
-            <div class="profile-seg-row" role="group" aria-label="Clock format">
-                <span class="bi bi-alarm" aria-hidden="true"></span>
-                <span class="profile-seg-label">Clock</span>
-                <span class="seg" role="radiogroup" aria-label="Clock format">
-                    <button type="button" class="seg-opt @(!TimeDisp.TwelveHourClock ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(!TimeDisp.TwelveHourClock)"
-                            @onclick="() => SetClock(false)">24h</button>
-                    <button type="button" class="seg-opt @(TimeDisp.TwelveHourClock ? "on" : "")"
-                            role="radio" aria-checked="@Ui.Aria(TimeDisp.TwelveHourClock)"
-                            @onclick="() => SetClock(true)">12h</button>
-                </span>
-            </div>
-            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC.
-                Changing either redraws the page, so save what you're typing first.</div>
             @if (_pendingTimeChange is not null)
             {
                 @* REV-21: the redraw clears what's typed, so a composer holding unsaved text asks first. *@
@@ -145,6 +207,10 @@
                 </div>
             }
 
+            <button type="button" class="profile-item" role="menuitem" @onclick="StartTour">
+                <span class="bi bi-signpost-split" aria-hidden="true"></span>
+                <span>Show me around</span>
+            </button>
             <button type="button" class="profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@Ui.Aria(_about)">
                 <span class="bi bi-info-circle" aria-hidden="true"></span>
                 <span>About</span>
@@ -173,10 +239,105 @@
 
     private void OnDismiss()
     {
-        if (!_open) return;
+        if (!_open && _tour is null) return;
         _open = false;
         _about = false;
+        _tour = null;
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The account's first visit: show the tour once, from the avatar.</summary>
+    [Parameter] public bool Welcome { get; set; }
+
+    // The tour's step (0 the avatar, 1 the display settings, 2 the account pages), or null when it isn't showing.
+    private int? _tour;
+    private bool _welcomed;
+    private bool _focusTour;
+    private ElementReference _tourPrimary;
+
+    /// <summary>The upgrade that made local time the default moved this account from UTC; say so once.</summary>
+    [Parameter] public bool LocalTimeNotice { get; set; }
+
+    private bool _timeNotice;
+    private bool _timeNoticeShown;
+    private bool _focusTimeNotice;
+    private ElementReference _timeNoticeOk;
+
+    protected override void OnParametersSet()
+    {
+        if (LocalTimeNotice && !_timeNoticeShown)
+        {
+            _timeNoticeShown = true;
+            _timeNotice = true;
+            _focusTimeNotice = true;
+        }
+        if (!Welcome || _welcomed) return;
+        _welcomed = true;
+        GoToTourStep(_open ? 1 : 0);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusTimeNotice && _timeNotice) await FocusQuietly(_timeNoticeOk);
+        _focusTimeNotice = false;
+        if (!_focusTour || _tour is null) return;
+        _focusTour = false;
+        await FocusQuietly(_tourPrimary);
+    }
+
+    private static async Task FocusQuietly(ElementReference element)
+    {
+        try { await element.FocusAsync(); }
+        catch (JSException) { /* cosmetic */ }
+        catch (InvalidOperationException) { /* not rendered yet */ }
+    }
+
+    private void CloseTimeNotice() => _timeNotice = false;
+
+    private void TimeNoticeKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseTimeNotice();
+    }
+
+    // Through the menu's own switch, so unsaved text still asks first (its question is in the menu, opened for it).
+    private async Task SwitchBackToUtc()
+    {
+        _timeNotice = false;
+        await SetTimeZone(TimeDisplayMode.Utc);
+        if (_pendingTimeChange is not null && !_open) await Toggle();
+    }
+
+    private void GoToTourStep(int step)
+    {
+        _tour = step;
+        _focusTour = true;
+    }
+
+    private string? TourRing(int step) => _tour == step ? "profile-tour-ring" : null;
+
+    private async Task OpenForTour()
+    {
+        if (!_open) await Toggle();   // moves the tour on to the menu
+        else GoToTourStep(1);
+    }
+
+    private void StartTour()
+    {
+        _about = false;
+        GoToTourStep(1);
+    }
+
+    private void NextTourStep()
+    {
+        if (_tour is 1) GoToTourStep(2);
+        else EndTour();
+    }
+
+    private void EndTour() => _tour = null;
+
+    private void TourKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") EndTour();
     }
 
     public void Dispose() => Palette.DismissRequested -= OnDismiss;
@@ -224,6 +385,9 @@
     private async Task Toggle()
     {
         _open = !_open;
+        if (!_open) _tour = null;
+        else if (_tour == 0) GoToTourStep(1);
+        if (_open) _timeNotice = false;   // it sits where the menu opens
         if (_open)
         {
             _about = false;
@@ -235,7 +399,7 @@
         }
     }
 
-    private void Close() { _open = false; _about = false; }
+    private void Close() { _open = false; _about = false; _tour = null; }
 
     // Set the theme to a specific mode (persisted in the browser by imTheme.apply). No-op if already active.
     private async Task SetTheme(bool dark)
