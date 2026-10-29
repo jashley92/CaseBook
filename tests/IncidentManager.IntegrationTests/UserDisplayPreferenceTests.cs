@@ -62,6 +62,7 @@ public sealed class UserDisplayPreferenceTests : IDisposable
         var svc = NewService(anon);
         await svc.SaveMineAsync(new DisplayPrefs(true, true, true, true, true));
         (await svc.GetMineAsync()).Should().BeNull();
+        (await svc.TakeLocalTimeNoticeAsync()).Should().BeFalse();
         await using var db = NewContext();
         (await db.UserDisplayPreferences.CountAsync()).Should().Be(0);
     }
