@@ -58,6 +58,21 @@
         </div>
     }
 
+    @if (_timeNotice)
+    {
+        @* The upgrade that made local time the default moved this account from UTC; said once, under the avatar. *@
+        <div class="profile-tour profile-tour-below" role="dialog" aria-labelledby="profile-time-notice-title"
+             @onkeydown="TimeNoticeKey">
+            <div class="profile-tour-title" id="profile-time-notice-title">Times now show in your local time</div>
+            <p>CaseBook now shows times in your local time (@TimeDisp.LocalLabel) rather than UTC. Reports, exports and the
+                audit trail still use UTC. You can switch back at any time in this menu, under <em>Show times in</em>.</p>
+            <div class="profile-tour-actions">
+                <button type="button" class="btn btn-sm btn-link" @onclick="SwitchBackToUtc">Switch back to UTC</button>
+                <button type="button" class="btn btn-sm btn-primary" @ref="_timeNoticeOk" @onclick="CloseTimeNotice">Keep local time</button>
+            </div>
+        </div>
+    }
+
     @if (_open)
     {
         <div class="profile-backdrop" @onclick="Close"></div>
@@ -240,8 +255,22 @@
     private bool _focusTour;
     private ElementReference _tourPrimary;
 
+    /// <summary>The upgrade that made local time the default moved this account from UTC; say so once.</summary>
+    [Parameter] public bool LocalTimeNotice { get; set; }
+
+    private bool _timeNotice;
+    private bool _timeNoticeShown;
+    private bool _focusTimeNotice;
+    private ElementReference _timeNoticeOk;
+
     protected override void OnParametersSet()
     {
+        if (LocalTimeNotice && !_timeNoticeShown)
+        {
+            _timeNoticeShown = true;
+            _timeNotice = true;
+            _focusTimeNotice = true;
+        }
         if (!Welcome || _welcomed) return;
         _welcomed = true;
         GoToTourStep(_open ? 1 : 0);
@@ -249,11 +278,33 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusTimeNotice && _timeNotice) await FocusQuietly(_timeNoticeOk);
+        _focusTimeNotice = false;
         if (!_focusTour || _tour is null) return;
         _focusTour = false;
-        try { await _tourPrimary.FocusAsync(); }
+        await FocusQuietly(_tourPrimary);
+    }
+
+    private static async Task FocusQuietly(ElementReference element)
+    {
+        try { await element.FocusAsync(); }
         catch (JSException) { /* cosmetic */ }
         catch (InvalidOperationException) { /* not rendered yet */ }
+    }
+
+    private void CloseTimeNotice() => _timeNotice = false;
+
+    private void TimeNoticeKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseTimeNotice();
+    }
+
+    // Through the menu's own switch, so unsaved text still asks first (its question is in the menu, opened for it).
+    private async Task SwitchBackToUtc()
+    {
+        _timeNotice = false;
+        await SetTimeZone(TimeDisplayMode.Utc);
+        if (_pendingTimeChange is not null && !_open) await Toggle();
     }
 
     private void GoToTourStep(int step)
@@ -336,6 +387,7 @@
         _open = !_open;
         if (!_open) _tour = null;
         else if (_tour == 0) GoToTourStep(1);
+        if (_open) _timeNotice = false;   // it sits where the menu opens
         if (_open)
         {
             _about = false;

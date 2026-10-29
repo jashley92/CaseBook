@@ -40,7 +40,8 @@ browser's local zone because the profile menu was set to *Local*; stored times a
 7. **Account menu**: notification preferences, *Keyboard shortcuts* (`/account/keyboard`: change any key, or switch every single-key shortcut off), personal API tokens, *My access*, *Lock now*, theme, row
    density, UTC or local times (local until you choose UTC), and 24- or 12-hour clock. These preferences are saved
    to your account. On an account's first visit a short tour points out the menu and what's in it; *Show me around*
-   in the menu runs it again.
+   in the menu runs it again. Accounts that were on UTC when local time became the default were moved to local
+   time, and are told so once, under the avatar, with *Switch back to UTC*.
 
 The sidebar collapses to icons (the `«` button), and below 641 px it becomes a top bar with a menu button.
 
