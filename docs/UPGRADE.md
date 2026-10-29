@@ -214,6 +214,27 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### v1.20.0
+
+**One migration**, `LocalTimeByDefault`: it adds `UserDisplayPreferences.LocalTimeNoticePending` (not null, default
+false) and **moves every account set to UTC times onto local time**, marking it so the person is told once. Accounts
+already on local time are untouched. No setting changes. The DBA schema script carries the same change.
+
+- **Times show in local time by default.** An account with nothing saved sees local time, and one that was on UTC is
+  moved to it. At its next sign-in a note under the avatar says so, with *Keep local time* and *Switch back to UTC*.
+  Reports, exports and the audit trail still use UTC.
+- **A first visit gets a short tour of the account menu**: where it is, the display settings, Notifications and
+  Keyboard shortcuts. *Show me around* in the menu runs it again.
+- **Resume on the lock page returns to the page you were on**, after the idle lock or *Lock now*, not the home page.
+  The page is kept in that browser tab, not in the lock page's address, so the address bar of an unattended screen
+  doesn't name the case. Only a page of CaseBook is returned to.
+- **Upgrade, with `-BundleZip`:**
+  - The bundle is checked against its release's `.sha256` when the host can reach github.com (or `-Proxy`), and a
+    mismatch is refused before anything is expanded. Offline, it warns and carries on.
+  - The bundle is expanded once, and faster (`ZipFile`, not `Expand-Archive`). Handing over to the bundle's own script
+    without expanding it all first applies from the upgrade after this one, since the copy already on the host is the
+    one that hands over.
+
 ### v1.19.2
 
 No migration and no setting changes. **Install the .NET 10.0.14 Hosting Bundle (or later) on the web server, then
