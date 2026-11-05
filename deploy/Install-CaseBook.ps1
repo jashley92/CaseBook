@@ -14,6 +14,8 @@
          and website, enabling Windows Authentication and disabling Anonymous (except under /api,
          /health, /branding/logo and /agenda/feed.ics, which the app authenticates or keeps status-only).
       5. Grants the app-pool identity least-privilege NTFS rights.
+    Before publishing it checks the IIS WebSocket Protocol feature, and after configuring the site that WebSockets
+    aren't turned off for it, offering to fix either (-InstallWebSockets does so without asking).
 
     Integrated auth throughout - no secrets are written by this script. Provide the app-pool
     identity as a gMSA (recommended, passwordless) or a domain service account.
@@ -89,6 +91,13 @@
     If no NuGet source is registered (publish would fail NU1100), register nuget.org
     automatically rather than stopping with instructions. Off by default so an intentional
     internal-feed-only policy isn't overridden.
+
+.PARAMETER InstallWebSockets
+    Install the IIS WebSocket Protocol feature (Web-WebSockets on Windows Server, IIS-WebSockets on Windows 10/11) if
+    it's missing, and turn system.webServer/webSocket on for the site if it's off, without asking. Blazor Server runs
+    each browser tab's connection over a WebSocket; without one the browser falls back to long polling, a request for
+    every keystroke. Without this switch the script asks when run interactively, and in an unattended run (no console,
+    or -NonInteractive) warns and carries on, since CaseBook still works over long polling.
 
 .EXAMPLE
     # Simplest: one answers file for both installers (a gMSA needs no credential).
@@ -172,7 +181,12 @@ param(
 
     # REV-71: on a re-run, overwrite the existing appsettings.Production.json with the newly generated one. Off by
     # default: the existing file may hold changes made after install, and the new one is written beside it instead.
-    [switch] $ReplaceSettings
+    [switch] $ReplaceSettings,
+
+    # Install the IIS WebSocket Protocol feature if it's missing, and turn system.webServer/webSocket on for the site if
+    # it's off, without asking. Without it the script asks when run interactively, and otherwise warns and carries on
+    # (CaseBook still runs, over long polling).
+    [switch] $InstallWebSockets
 )
 
 $ErrorActionPreference = 'Stop'
@@ -342,6 +356,42 @@ $appDll = Join-Path $SitePath 'IncidentManager.Web.dll'
 . (Join-Path $deployDir 'lib\CaseBookIis.ps1')
 # A runtime older than the minimum still runs CaseBook, so this warns rather than stops.
 if (Get-CaseBookRuntimeWarning) { Write-Warning (Get-CaseBookRuntimeWarning) }
+
+# The IIS WebSocket Protocol feature. Blazor Server runs each browser tab's connection over a WebSocket; without the
+# feature the browser falls back to long polling (a request for every keystroke). CaseBook still runs that way, so a
+# missing feature is installed with -InstallWebSockets or a yes at the prompt, and otherwise warned about, not a stop.
+# Asked only with a console to answer it: an unattended run (no user session, or -NonInteractive) can't.
+$interactive = [Environment]::UserInteractive -and
+    -not ([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-NonI(nteractive)?$' })
+function Confirm-WebSocketChange([string] $question) {
+    if ($InstallWebSockets) { return $true }
+    if (-not $interactive) { return $false }
+    return ((Read-Host "$question (y/N)") -match '^(y|yes)$')
+}
+$wsFeature = Get-CaseBookWebSocketFeature
+if ($wsFeature.Installed -eq $true) {
+    Write-Host "    IIS WebSocket Protocol feature ($($wsFeature.Name)) is installed." -ForegroundColor Gray
+} else {
+    $what = if ($null -eq $wsFeature.Installed) { "Couldn't tell whether the IIS WebSocket Protocol feature ($($wsFeature.Name)) is installed ($($wsFeature.Detail))." }
+            else { "The IIS WebSocket Protocol feature ($($wsFeature.Name)) isn't installed." }
+    Write-Host "    $what CaseBook's pages keep a live connection to the server; without WebSockets the browser falls back to" -ForegroundColor Yellow
+    Write-Host "    long polling, a request for every keystroke and click, which is slower for everyone and loads the server." -ForegroundColor Yellow
+    if (Confirm-WebSocketChange "Install the IIS WebSocket Protocol feature ($($wsFeature.Name)) now?") {
+        Write-Step "Installing the IIS WebSocket Protocol feature ($($wsFeature.Name))"
+        $wsRestart = Install-CaseBookWebSocketFeature
+        if ($wsRestart -eq $true) {
+            Write-Warning "Windows needs a restart to finish installing the WebSocket Protocol feature. Restart the server after the install; until then browsers use long polling."
+        } elseif ($null -eq $wsRestart) {
+            Write-Host "    Installed. If Windows asks for a restart, restart the server; until then browsers may use long polling." -ForegroundColor Gray
+        } else {
+            Write-Host "    Installed; no restart needed (the app pool is started after it below)." -ForegroundColor Gray
+        }
+    } else {
+        Write-Warning ("Carrying on without the IIS WebSocket Protocol feature: browsers will use long polling. Re-run with " +
+                       "-InstallWebSockets, or: " + (Get-CaseBookWebSocketFix))
+    }
+}
+
 if (Test-Path $appDll) {
     Write-Step "Stopping app pool '$AppPoolName' (the site already has an install)"
     Stop-CaseBookAppPool -Name $AppPoolName
@@ -679,6 +729,29 @@ foreach ($s in $authSections) {
 # and the settings live in lib\CaseBookIis.ps1, which Upgrade-CaseBook.ps1 uses to check and repair existing sites.
 $carved = Sync-CaseBookAnonymousCarveOuts -SiteName $SiteName -Appcmd $appcmd -SetAlways
 Write-Host "    Anonymous (Windows Auth off) under: $(($carved | ForEach-Object { $_.Path }) -join ', ')" -ForegroundColor Gray
+
+# WebSockets can also be turned off in configuration, for the whole server or for the site (system.webServer/webSocket
+# enabled="false"), which falls back to long polling just as a missing feature does. Turned on for the site with
+# -InstallWebSockets or a yes; the setting is a <location> entry (/commit:apphost), as for the authentication sections.
+$wsConfig = Get-CaseBookWebSocketConfig -SiteName $SiteName
+if ($wsConfig.Server -eq 'false' -or $wsConfig.Site -eq 'false') {
+    $where = if ($wsConfig.Site -eq 'false' -and $wsConfig.Server -ne 'false') { "for the site '$SiteName'" } else { 'for the whole server' }
+    Write-Host "    system.webServer/webSocket is turned off $where, so browsers would use long polling." -ForegroundColor Yellow
+    if (Confirm-WebSocketChange "Turn WebSockets on for the site '$SiteName'?") {
+        $out = & $appcmd set config "$SiteName" /section:system.webServer/webSocket /enabled:true /commit:apphost 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning ("Couldn't turn WebSockets on for '$SiteName' (appcmd exit $LASTEXITCODE): $out. By hand: appcmd set config " +
+                           """$SiteName"" /section:system.webServer/webSocket /enabled:true /commit:apphost")
+        } else {
+            Write-Host "    WebSockets turned on for the site '$SiteName'." -ForegroundColor Gray
+        }
+    } else {
+        Write-Warning ("Leaving system.webServer/webSocket off $where. Re-run with -InstallWebSockets, or: appcmd set config " +
+                       """$SiteName"" /section:system.webServer/webSocket /enabled:true /commit:apphost")
+    }
+} elseif ($wsConfig.Site -eq 'true') {
+    Write-Host "    WebSockets on for the site (system.webServer/webSocket)." -ForegroundColor Gray
+}
 
 # REV-71: a re-run stopped the pool before publishing, and Restart-WebAppPool doesn't start a stopped one.
 if ((Get-WebAppPoolState -Name $AppPoolName).Value -eq 'Stopped') { Start-WebAppPool -Name $AppPoolName }

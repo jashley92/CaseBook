@@ -139,6 +139,90 @@ public partial class DeployScriptTests
         verify.Should().Contain("'/health/live'").And.Contain("'/branding/logo'").And.Contain("'/agenda/feed.ics'");
     }
 
+    [Fact]
+    public void The_websocket_helpers_check_the_feature_on_server_and_client_windows_and_the_site_configuration()
+    {
+        // Without the IIS WebSocket Protocol feature (or with system.webServer/webSocket off) Blazor's circuits fall back
+        // to long polling, a request for every keystroke. One set of helpers, which the three scripts share.
+        var lib = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "lib", "CaseBookIis.ps1"));
+        lib.Should().Contain("Get-WindowsFeature -Name 'Web-WebSockets'", "Windows Server names it Web-WebSockets");
+        lib.Should().Contain("Get-WindowsOptionalFeature -Online -FeatureName 'IIS-WebSockets'", "client Windows names it IIS-WebSockets");
+        lib.Should().Contain("Install-WindowsFeature -Name 'Web-WebSockets'");
+        lib.Should().Contain("Enable-WindowsOptionalFeature -Online -FeatureName 'IIS-WebSockets'");
+        lib.Should().Contain("RestartNeeded", "the installer says when a restart is needed");
+        lib.Should().Contain("-Filter 'system.webServer/webSocket' -Name 'enabled'");
+        lib.Should().Contain("'MACHINE/WEBROOT/APPHOST'").And.Contain("\"MACHINE/WEBROOT/APPHOST/$SiteName\"",
+            "it reads both the server's setting and the one the site gets");
+
+        var fix = Function(lib, "Get-CaseBookWebSocketFix");
+        fix.Should().Contain("Install-WindowsFeature Web-WebSockets")
+            .And.Contain("reverse proxy or load balancer passes the Upgrade and Connection headers");
+    }
+
+    [Fact]
+    public void The_installer_offers_websockets_and_installs_them_unasked_only_with_its_switch()
+    {
+        var install = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "Install-CaseBook.ps1"));
+        install.Should().Contain("[switch] $InstallWebSockets").And.Contain(".PARAMETER InstallWebSockets");
+        install.Should().Contain("Get-CaseBookWebSocketFeature").And.Contain("Install-CaseBookWebSocketFeature");
+        install.Should().Contain("Get-CaseBookWebSocketConfig -SiteName $SiteName", "it also checks the site isn't turned off");
+        install.Should().Contain("/section:system.webServer/webSocket /enabled:true /commit:apphost");
+
+        // Asked only with a console; an unattended run warns and carries on, as with the runtime check.
+        var confirm = Function(install, "Confirm-WebSocketChange");
+        confirm.Should().Contain("if ($InstallWebSockets) { return $true }");
+        confirm.Should().Contain("if (-not $interactive) { return $false }");
+        install.Should().Contain("[Environment]::UserInteractive").And.Contain("NonI(nteractive)");
+        install.Should().MatchRegex(@"Write-Warning \(""Carrying on without the IIS WebSocket Protocol feature");
+
+        // The feature check comes before the publish, so the pool started at the end has it.
+        install.IndexOf("$wsFeature = Get-CaseBookWebSocketFeature", StringComparison.Ordinal)
+            .Should().BeLessThan(install.IndexOf("& dotnet publish", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_upgrade_only_warns_about_websockets()
+    {
+        var upgrade = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "Upgrade-CaseBook.ps1"));
+        var start = upgrade.IndexOf("# 3h. WEBSOCKETS.", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1);
+        var check = upgrade[start..upgrade.IndexOf("# BUG-314", start, StringComparison.Ordinal)];
+
+        check.Should().Contain("Get-CaseBookWebSocketProblem -SiteName $SiteName").And.Contain("Write-Warn2");
+        check.Should().NotContain("throw", "a missing WebSocket feature never stops an upgrade");
+        check.Should().NotContain("Install-CaseBookWebSocketFeature", "the upgrade changes no IIS feature");
+        check.Should().Contain("catch", "a check that can't run is a warning too");
+        // Before the confirmation, so -WhatIf reports it.
+        start.Should().BeLessThan(upgrade.IndexOf("# --- 4. Confirm", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Verify_install_fails_on_missing_websockets_and_tries_a_real_handshake()
+    {
+        var verify = File.ReadAllText(Path.Combine(RepoRoot(), "deploy", "Verify-Install.ps1"));
+        var start = verify.IndexOf("# 5. WebSockets.", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1);
+        var check = verify[start..verify.IndexOf("# ===", start, StringComparison.Ordinal)];
+
+        check.Should().Contain("Bad \"IIS WebSocket Protocol feature", "a missing feature is a FAIL");
+        check.Should().Contain("Get-CaseBookWebSocketConfig -SiteName $wsSite");
+        check.Should().Contain("/_blazor").And.Contain("/negotiate?negotiateVersion=1");
+        check.Should().Contain("-UseDefaultCredentials", "the negotiate request signs in as the smoke test does");
+        check.Should().Contain("System.Net.WebSockets.ClientWebSocket").And.Contain("UseDefaultCredentials = $true");
+        check.Should().Contain("-replace '^http', 'ws'", "https becomes wss, http ws");
+        check.Should().Contain("Upgrade/").And.Contain("Fix: $wsFix");
+        verify.Should().Contain("[string] $SiteName").And.Contain(".PARAMETER SiteName");
+    }
+
+    // A function's body, from its declaration to the next one.
+    private static string Function(string script, string name)
+    {
+        var start = script.IndexOf("function " + name, StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1, name + " exists");
+        var end = script.IndexOf("\nfunction ", start + 1, StringComparison.Ordinal);
+        return script[start..(end < 0 ? script.Length : end)];
+    }
+
     [GeneratedRegex(@"app\.Map(Get|Post|HealthChecks)\(\s*""(?<path>/[^""]*)""", RegexOptions.None, 1000)]
     private static partial Regex MappedRoute();
 

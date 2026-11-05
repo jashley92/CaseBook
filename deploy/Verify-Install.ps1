@@ -15,7 +15,10 @@
 
       * POST-INSTALL smoke test (-Url) - confirms the app pool is running and the site
         answers 200 over Windows integrated auth (the original behaviour), and that /api,
-        /health, /branding/logo and /agenda/feed.ics reach the app without a sign-in.
+        /health, /branding/logo and /agenda/feed.ics reach the app without a sign-in. It also
+        checks the IIS WebSocket Protocol feature is installed and on for the site, and tries a
+        real WebSocket handshake to the app's /_blazor endpoint, signed in, through -Url (so
+        through any reverse proxy or load balancer in front).
 
     Pass -ConfigFile, -Url, or both. Host-specific items that can't be checked from where
     you're running (e.g. the web-host cert on the SQL box) are reported as WARN, not FAIL,
@@ -34,6 +37,10 @@
     IIS application-pool name for the smoke test. Defaults to the answers file's AppPoolName
     (when -ConfigFile is given), else 'CaseBook'.
 
+.PARAMETER SiteName
+    IIS site name for the smoke test's WebSocket configuration check. Defaults to the answers
+    file's SiteName (when -ConfigFile is given), else 'CaseBook'.
+
 .EXAMPLE
     # Before installing, on each host:
     .\Verify-Install.ps1 -ConfigFile .\casebook.config.psd1
@@ -50,7 +57,8 @@
 param(
     [string] $ConfigFile,
     [string] $Url,
-    [string] $AppPoolName
+    [string] $AppPoolName,
+    [string] $SiteName
 )
 
 $ErrorActionPreference = 'Stop'
@@ -259,6 +267,12 @@ if ($ConfigFile) {
             if (Get-CaseBookRuntimeWarning) { Warn (Get-CaseBookRuntimeWarning) }
             elseif (Get-CaseBookAspNetRuntime) { Ok ".NET runtime $(Get-CaseBookAspNetRuntime) is current (at least $(Get-CaseBookMinimumRuntime))" }
         }
+        if (Get-Command Get-CaseBookWebSocketFeature -ErrorAction SilentlyContinue) {
+            $wsFeature = Get-CaseBookWebSocketFeature
+            if ($wsFeature.Installed -eq $true) { Ok "IIS WebSocket Protocol feature ($($wsFeature.Name)) installed" }
+            elseif ($wsFeature.Installed -eq $false) { Warn "IIS WebSocket Protocol feature ($($wsFeature.Name)) not installed: Install-CaseBook offers to install it (-InstallWebSockets). Without it browsers use long polling" }
+            else { Warn "Couldn't tell whether the IIS WebSocket Protocol feature is installed ($($wsFeature.Detail))" }
+        }
     }
 }
 
@@ -376,6 +390,76 @@ if ($Url) {
                 elseif ($code -in $c.Want) { Ok "$($c.Path) reaches CaseBook anonymously ($($c.What))" }
                 else { Bad "$($c.Path) answered $code, not what CaseBook answers there." }
             } catch { Bad "$($c.Path) request failed: $($_.Exception.Message)" }
+        }
+    } finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCallback }
+
+    # 5. WebSockets. Blazor Server runs each browser tab's connection over a WebSocket; without one the browser falls back
+    #    to long polling (a request for every keystroke: many xhr "_blazor?id=" rows in its Network tab). Three causes, in
+    #    the order checked: the IIS WebSocket Protocol feature isn't installed, system.webServer/webSocket is off, or
+    #    something in front (a reverse proxy, load balancer or WAF) drops the Upgrade/Connection headers. The last shows
+    #    only in a real handshake, through -Url, signed in as the request above.
+    $wsSite = if ($SiteName) { $SiteName }
+              elseif ($cfg -and -not [string]::IsNullOrWhiteSpace([string]$cfg.SiteName)) { [string]$cfg.SiteName }
+              else { 'CaseBook' }
+    $wsFix = if (Get-Command Get-CaseBookWebSocketFix -ErrorAction SilentlyContinue) { Get-CaseBookWebSocketFix }
+             else { 'Install-WindowsFeature Web-WebSockets, and check any reverse proxy or load balancer passes the Upgrade and Connection headers.' }
+    if (Get-Command Get-CaseBookWebSocketFeature -ErrorAction SilentlyContinue) {
+        $wsFeature = Get-CaseBookWebSocketFeature
+        if ($wsFeature.Installed -eq $true) { Ok "IIS WebSocket Protocol feature ($($wsFeature.Name)) installed" }
+        elseif ($wsFeature.Installed -eq $false) { Bad "IIS WebSocket Protocol feature ($($wsFeature.Name)) isn't installed, so browsers fall back to long polling. Fix: $wsFix" }
+        else { Warn "Couldn't tell whether the IIS WebSocket Protocol feature is installed ($($wsFeature.Detail)). If it isn't: $wsFix" }
+        $wsConfig = Get-CaseBookWebSocketConfig -SiteName $wsSite
+        $wsEnabled = if ($null -ne $wsConfig.Site) { $wsConfig.Site } else { $wsConfig.Server }
+        if ($wsEnabled -eq 'true') { Ok "WebSockets on for the site '$wsSite' (system.webServer/webSocket)" }
+        elseif ($wsEnabled -eq 'false') {
+            Bad ("system.webServer/webSocket is turned off for the site '$wsSite', so browsers fall back to long polling. Fix: " +
+                 "appcmd set config ""$wsSite"" /section:system.webServer/webSocket /enabled:true /commit:apphost (or re-run Install-CaseBook.ps1 -InstallWebSockets)")
+        }
+        else { Warn "Couldn't read system.webServer/webSocket for the site '$wsSite' (pass -SiteName if the site has another name)" }
+    }
+
+    # The handshake: negotiate as the browser does (its answer says whether IIS gives the app WebSockets), then open a
+    # WebSocket to /_blazor with the connection token. 101 Switching Protocols is a pass; no circuit is started.
+    $blazor = $siteRoot + '/_blazor'
+    Info "POST $blazor/negotiate, then a WebSocket to $blazor (Windows integrated auth)"
+    $prevCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    try {
+        $negotiated = $null
+        try {
+            $neg = Invoke-WebRequest -Uri "$blazor/negotiate?negotiateVersion=1" -Method Post -Body '' -UseDefaultCredentials -UseBasicParsing -TimeoutSec 30
+            $negotiated = [string]$neg.Content | ConvertFrom-Json
+        } catch {
+            $code = $_.Exception.Response.StatusCode.value__ 2>$null
+            $why = if ($code) { "it answered $code" } else { $_.Exception.Message }
+            Warn "Couldn't try a WebSocket handshake: the negotiate request to /_blazor failed ($why). See the signed-in request above."
+        }
+        if ($negotiated) {
+            $offered = @($negotiated.availableTransports | ForEach-Object { [string]$_.transport })
+            $token = if ($negotiated.connectionToken) { [string]$negotiated.connectionToken } else { [string]$negotiated.connectionId }
+            if ($offered -notcontains 'WebSockets') {
+                Bad ("/_blazor offers $($offered -join ', ') but not WebSockets: IIS gives the app no WebSocket support, so every browser " +
+                     "uses long polling. Fix: $wsFix")
+            } else {
+                $wsUri = New-Object System.Uri((($blazor -replace '^http', 'ws') + '?id=' + [Uri]::EscapeDataString($token)))
+                $ws = New-Object System.Net.WebSockets.ClientWebSocket
+                $cts = New-Object System.Threading.CancellationTokenSource 30000
+                try {
+                    $ws.Options.UseDefaultCredentials = $true
+                    [void]$ws.ConnectAsync($wsUri, $cts.Token).GetAwaiter().GetResult()
+                    if ($ws.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
+                        Ok "WebSocket handshake to /_blazor answered 101 Switching Protocols: browsers can use WebSockets"
+                        try { [void]$ws.CloseOutputAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, 'Verify-Install', $cts.Token).GetAwaiter().GetResult() } catch { }
+                    } else {
+                        Bad "WebSocket handshake to /_blazor ended '$($ws.State)', not open. Fix: $wsFix"
+                    }
+                } catch {
+                    $ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }
+                    Bad ("The WebSocket handshake to /_blazor failed ($($ex.Message)) although the app offers WebSockets: something " +
+                         "between this host and the site (a reverse proxy, load balancer or WAF) is probably dropping the Upgrade/" +
+                         "Connection headers, so browsers fall back to long polling. Fix: $wsFix")
+                } finally { $ws.Dispose(); $cts.Dispose() }
+            }
         }
     } finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCallback }
 }

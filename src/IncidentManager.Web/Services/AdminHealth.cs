@@ -8,8 +8,10 @@ using IncidentManager.Infrastructure.Notifications;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Web.Notifications;
 using IncidentManager.Web.Ops;
+using IncidentManager.Web.Realtime;
 using IncidentManager.Web.Secrets;
 using IncidentManager.Web.Updates;
+using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -61,6 +63,7 @@ public sealed class AdminHealth(
     IChatNotifier chat,
     UpdateCheckService updates,
     CertificateExpiry certificates,
+    CircuitTransportTracker circuitTransport,
     IClock clock)
 {
     // Where each kind of problem is fixed.
@@ -71,6 +74,7 @@ public sealed class AdminHealth(
     public const string EvidenceKeyAnchor = Diagnostics + "#diag-evidence-key";
     public const string KeysAnchor = Diagnostics + "#diag-keys";
     public const string SecretsAnchor = Diagnostics + "#diag-secrets";
+    public const string ConnectionAnchor = Diagnostics + "#diag-connection";
 
     /// <summary>A setting's page, scrolled to it (the control's id is its key).</summary>
     public static string SettingHref(string key) => AdminSearchIndex.SettingHref(key);
@@ -105,6 +109,9 @@ public sealed class AdminHealth(
 
         // PROD-56: the store's own probe, in time (a share that's down answers rather than hangs the page) and never
         // recreating a store that held evidence and has vanished (this check used to, just by being looked at).
+        // The transport this administrator's own circuit uses: anything but WebSockets is a request per keystroke.
+        checks.Add(TransportCheck(circuitTransport.Transport));
+
         var storeProblem = await evidenceStore.ProbeAsync(ct);
         checks.Add(new HealthCheck("Evidence store writable", storeProblem is null, storeProblem ?? evidenceStore.Location, "admin/settings/evidence"));
         checks.Add(WritableCheck("Report output writable", config["ReportOutput:RootPath"]));
@@ -324,6 +331,19 @@ public sealed class AdminHealth(
             ? "none named in the configuration (recovery certificates are checked with the evidence key)"
             : $"{Plural.Of(certs.Count, "certificate")} watched · the first to expire is the {first.Purpose}'s, {Day(first.NotAfter)}")];
     }
+
+    /// <summary>
+    /// The browser connection check: OK over WebSockets; to see to over Server-Sent Events or long polling, with the fix;
+    /// OK while it isn't known (the page's first render, before its circuit connects).
+    /// </summary>
+    public static HealthCheck TransportCheck(HttpTransportType? transport) => transport switch
+    {
+        HttpTransportType.WebSockets => new HealthCheck("Browser connection", true, "WebSockets", ConnectionAnchor),
+        null => new HealthCheck("Browser connection", true, "not known yet for this page (reload it to check)", ConnectionAnchor),
+        _ => new HealthCheck("Browser connection", false,
+            $"{CircuitTransportDisplay.Label(transport)}, not WebSockets: this browser sends a request for every change. {CircuitTransportDisplay.Fix}",
+            ConnectionAnchor, AttentionLevel.Warning),
+    };
 
     // A reminder to rotate the seal-signing key, from its first seal; a key that has signed nothing yet is new.
     private static HealthCheck RotationCheck(DateTimeOffset? firstSealed, int days, DateTimeOffset now)

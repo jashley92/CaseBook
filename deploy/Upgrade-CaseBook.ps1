@@ -24,7 +24,8 @@
          and a MIGRATION-COMPATIBILITY check: compare the target DB's __EFMigrationsHistory with
          the release's migration manifest and STOP on a lineage mismatch (the state that makes the
          app fail on startup with "There is already an object named ..."). No blind migrate.
-         It also reads the site's anonymous carve-outs and reports any to configure (-WhatIf stops here).
+         It also reads the site's anonymous carve-outs and reports any to configure, and warns (never stops) when
+         the IIS WebSocket Protocol feature is missing or WebSockets are off for the site (-WhatIf stops here).
       3. Back up -- a server-side full DB backup, a copy of appsettings.Production.json, and a
          snapshot of the current site binaries (the rollback point).
       4. Deploy -- configure any missing carve-out, stop the app pool, mirror the new binaries into the site (preserving
@@ -779,6 +780,17 @@ if ($carveOutsToSet.Count -eq 0) {
     foreach ($c in $carveOutsToSet) {
         Write-Warn2 "Anonymous carve-out for $($c.Path) to configure after the backup: $($c.Changes -join '; ')"
     }
+}
+
+# 3h. WEBSOCKETS. Without the IIS WebSocket Protocol feature, or with system.webServer/webSocket off, browsers fall back
+# to long polling (a request for every keystroke). CaseBook still runs, and the upgrade changes no IIS feature, so this
+# only warns, with the fix; it never stops the upgrade.
+try {
+    $wsProblem = Get-CaseBookWebSocketProblem -SiteName $SiteName
+    if ($wsProblem) { Write-Warn2 "WebSockets: $wsProblem" }
+    else { Write-Info "WebSockets: the IIS WebSocket Protocol feature is installed and on for the site." }
+} catch {
+    Write-Warn2 "WebSockets: couldn't check ($($_.Exception.Message)). If browsers use long polling: $(Get-CaseBookWebSocketFix)"
 }
 
 # BUG-314: the warm-up decides whether the new build started, by asking the site at $ProbeUrl. Asked now, before anything
