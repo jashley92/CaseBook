@@ -848,6 +848,10 @@
                 </tbody>
             </table>
 
+            @* Which SignalR transport carries this browser's circuit, and every circuit's since start-up. *@
+            <h6 class="im-cap mt-3" id="diag-connection">Browser connection</h6>
+            <IncidentManager.Web.Components.Shared.CircuitTransportPanel />
+
             <h6 class="im-cap mt-3" id="diag-delivery">Delivery health</h6>
             <IncidentManager.Web.Components.Shared.DeliveryHealthPanel />
 

@@ -214,6 +214,25 @@ first with `casebook-keytool export`.
 
 ## Notes
 
+### Unreleased
+
+No migration and no setting changes. **Check that WebSockets reach CaseBook.** Each open tab's connection (its Blazor
+circuit) is meant to run over a WebSocket; without the IIS **WebSocket Protocol** feature, or behind a proxy that drops
+the `Upgrade` header, the browser falls back to long polling, a request for every keystroke. CaseBook works either way,
+so nothing here stops an upgrade.
+
+- **Administration → Diagnostics → Browser connection** shows the transport your own tab uses (WebSockets, Server-Sent
+  Events or Long polling) and how many circuits have used each since start-up. A *Browser connection* health check is
+  flagged under *Needs attention* when your tab isn't on WebSockets, with the fix.
+- **`Upgrade-CaseBook.ps1` warns** when the WebSocket Protocol feature isn't installed or `system.webServer/webSocket`
+  is off for the server or the site, with the fix. It installs and changes nothing.
+- **`Verify-Install.ps1 -Url`** fails on either, and tries a real WebSocket handshake to `/_blazor`, signed in, through
+  the URL given (so through a load balancer in front). New: `-SiteName`, for a site not named `CaseBook`.
+- **`Install-CaseBook.ps1`** checks both and offers to fix them; `-InstallWebSockets` does so without asking.
+
+To fix a site that falls back: `Install-WindowsFeature Web-WebSockets`, and check any reverse proxy or load balancer
+passes the `Upgrade` and `Connection` headers ([INSTALL.md §1.3](INSTALL.md#13-web-host-windows-server-2022)).
+
 ### v1.20.0
 
 **One migration**, `LocalTimeByDefault`: it adds `UserDisplayPreferences.LocalTimeNoticePending` (not null, default

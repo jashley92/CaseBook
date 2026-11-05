@@ -208,8 +208,9 @@ integrity seal. Details are in [backend.md](backend.md#background-jobs).
 - **Health endpoints**: `/health/live` (process up), `/health` and `/health/ready` (database reachable and
   evidence folder present). Under IIS with Windows authentication these need authentication unless you carve
   them out ([troubleshooting](../operations/troubleshooting.md#health-probe-returns-401)).
-- **In-app diagnostics**: Administration → Diagnostics shows backup freshness, evidence drift status,
-  CyberArk resolution health, configuration sources and a SIEM test event.
+- **In-app diagnostics**: Administration → Diagnostics shows the browser connection's transport (WebSockets or a
+  fallback), backup freshness, evidence drift status, CyberArk resolution health, configuration sources and a
+  SIEM test event.
 
 ## Third-party dependencies
 

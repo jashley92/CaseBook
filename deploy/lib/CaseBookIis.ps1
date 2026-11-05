@@ -53,6 +53,107 @@ function Get-CaseBookRuntimeWarning {
             "Install the latest .NET 10 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/10.0, then run 'iisreset'.")
 }
 
+# --- The IIS WebSocket Protocol feature ------------------------------------------------------------------------------
+# Blazor Server keeps one SignalR connection per browser tab (a circuit), and is built to run it over a WebSocket.
+# Without IIS's WebSocket Protocol feature, or with system.webServer/webSocket turned off, or behind a reverse proxy or
+# load balancer that drops the Upgrade header, the browser falls back to long polling: a request for every keystroke
+# and click (many xhr "_blazor?id=" rows in the browser's Network tab), slower pages and more load on the server.
+# Install-CaseBook.ps1 offers to install it; Upgrade-CaseBook.ps1 warns; Verify-Install.ps1 fails on it.
+
+function Get-CaseBookWebSocketFix {
+    return ("Install-WindowsFeature Web-WebSockets (on Windows 10/11: Enable-WindowsOptionalFeature -Online -FeatureName " +
+            "IIS-WebSockets), and check any reverse proxy or load balancer passes the Upgrade and Connection headers.")
+}
+
+function Get-CaseBookWebSocketFeature {
+    # Whether the IIS WebSocket Protocol feature is installed. Windows Server: Get-WindowsFeature Web-WebSockets (the
+    # ServerManager module); client Windows: Get-WindowsOptionalFeature IIS-WebSockets (DISM). Returns Installed ($true,
+    # $false, or $null when neither could be read), Name (the feature's name here), Edition ('Server' or 'Client') and
+    # Detail. When the cmdlet can't be read, the module's DLL (iiswsock.dll) stands in for it.
+    $productType = $null
+    try { $productType = [int](Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).ProductType } catch { }
+    $isServer = ($productType -ne 1) -and [bool](Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue)
+    $name = if ($isServer) { 'Web-WebSockets' } else { 'IIS-WebSockets' }
+    $result = [pscustomobject]@{ Installed = $null; Name = $name; Edition = $(if ($isServer) { 'Server' } else { 'Client' }); Detail = '' }
+    try {
+        if ($isServer) {
+            $f = Get-WindowsFeature -Name 'Web-WebSockets' -ErrorAction Stop
+            if ($f) { $result.Installed = [bool]$f.Installed; $result.Detail = [string]$f.InstallState }
+        } elseif (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue) {
+            $f = Get-WindowsOptionalFeature -Online -FeatureName 'IIS-WebSockets' -ErrorAction Stop
+            if ($f) { $result.Installed = ([string]$f.State -eq 'Enabled'); $result.Detail = [string]$f.State }
+        }
+    } catch { $result.Detail = $_.Exception.Message.Trim() }
+    if ($null -eq $result.Installed) {
+        foreach ($p in @((Join-Path $env:WINDIR 'System32\inetsrv\iiswsock.dll'), (Join-Path $env:WINDIR 'Sysnative\inetsrv\iiswsock.dll'))) {
+            if (Test-Path $p) { $result.Installed = $true; $result.Detail = "found $p" }
+        }
+    }
+    return $result
+}
+
+function Install-CaseBookWebSocketFeature {
+    # Installs the feature for this edition of Windows. Returns RestartNeeded ($true, $false, or $null when Windows
+    # didn't say). Throws, naming the command to run by hand, when it fails.
+    $feature = Get-CaseBookWebSocketFeature
+    try {
+        if ($feature.Edition -eq 'Server') {
+            $r = Install-WindowsFeature -Name 'Web-WebSockets' -ErrorAction Stop
+            if (-not $r.Success) { throw "Install-WindowsFeature reported no success (exit code $($r.ExitCode))." }
+            $restart = [string]$r.RestartNeeded
+            return $(if ($restart -eq 'Yes') { $true } elseif ($restart -eq 'No') { $false } else { $null })
+        }
+        $r = Enable-WindowsOptionalFeature -Online -FeatureName 'IIS-WebSockets' -All -NoRestart -ErrorAction Stop
+        return [bool]$r.RestartNeeded
+    } catch {
+        throw ("Couldn't install the IIS WebSocket Protocol feature ($($feature.Name)): $($_.Exception.Message) Run it by hand, " +
+               "elevated: " + (Get-CaseBookWebSocketFix))
+    }
+}
+
+function Get-CaseBookWebSocketConfig([string] $SiteName) {
+    # The 'enabled' value of system.webServer/webSocket at server level (applicationHost.config) and as the site gets it
+    # (its <location> entry or web.config, else the server's). Each 'true', 'false', or $null when it can't be read.
+    $read = {
+        param([string] $PSPath)
+        try {
+            Import-Module WebAdministration -ErrorAction Stop
+            $v = Get-WebConfigurationProperty -PSPath $PSPath -Filter 'system.webServer/webSocket' -Name 'enabled' -ErrorAction Stop
+        } catch { return $null }
+        if ($null -eq $v) { return $null }
+        if ($v.PSObject.Properties['Value']) { $v = $v.Value }
+        $s = ([string]$v).Trim().ToLowerInvariant()
+        if ($s -eq 'true' -or $s -eq 'false') { return $s }
+        return $null
+    }
+    $server = & $read 'MACHINE/WEBROOT/APPHOST'
+    $site = if ($SiteName) { & $read "MACHINE/WEBROOT/APPHOST/$SiteName" } else { $null }
+    return [pscustomobject]@{ Server = $server; Site = $site }
+}
+
+function Get-CaseBookWebSocketProblem([string] $SiteName) {
+    # A sentence saying why browsers would fall back to long polling on this server, or $null when the feature is
+    # installed and on for the site. A proxy in front can't be seen from here; Verify-Install.ps1 -Url tries a handshake.
+    $feature = Get-CaseBookWebSocketFeature
+    if ($feature.Installed -eq $false) {
+        return ("The IIS WebSocket Protocol feature ($($feature.Name)) isn't installed, so browsers fall back to long polling " +
+                "(a request for every keystroke). Fix: " + (Get-CaseBookWebSocketFix))
+    }
+    $cfg = Get-CaseBookWebSocketConfig -SiteName $SiteName
+    if ($cfg.Server -eq 'false') {
+        return ("system.webServer/webSocket is turned off for the whole server (applicationHost.config), so browsers fall back " +
+                "to long polling. Fix: appcmd set config /section:system.webServer/webSocket /enabled:true /commit:apphost")
+    }
+    if ($cfg.Site -eq 'false') {
+        return ("system.webServer/webSocket is turned off for the site '$SiteName', so browsers fall back to long polling. Fix: " +
+                "appcmd set config ""$SiteName"" /section:system.webServer/webSocket /enabled:true /commit:apphost")
+    }
+    if ($null -eq $feature.Installed) {
+        return "Couldn't tell whether the IIS WebSocket Protocol feature is installed ($($feature.Detail)). If it isn't: " + (Get-CaseBookWebSocketFix)
+    }
+    return $null
+}
+
 function Get-CaseBookAnonymousPaths { return @('api', 'health', 'branding/logo', 'agenda/feed.ics') }
 
 # Each carve-out is two <location> settings, applied in this order: anonymous on, then Windows off.
