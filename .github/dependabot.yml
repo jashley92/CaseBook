@@ -7,6 +7,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Wait a week before proposing a newly published version, so a malicious or broken release is
+    # likely to be caught and pulled first. Security updates are not delayed.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "ci"
     # One grouped PR per run instead of one per action, to keep the noise down.
@@ -21,6 +25,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Wait a week before proposing a newly published version, so a malicious or broken release is
+    # likely to be caught and pulled first. Security updates are not delayed.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "deps"
     open-pull-requests-limit: 10
