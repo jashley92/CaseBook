@@ -30,8 +30,8 @@
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.*" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.*" />
-    <PackageReference Include="SkiaSharp" Version="4.153.1" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />
+    <PackageReference Include="SkiaSharp" Version="4.154.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.154.0" />
   </ItemGroup>
 
   <PropertyGroup>
