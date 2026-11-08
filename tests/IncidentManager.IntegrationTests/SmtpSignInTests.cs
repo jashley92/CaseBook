@@ -1,5 +1,5 @@
 using System.Net.Mail;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Notifications;
 using Xunit;

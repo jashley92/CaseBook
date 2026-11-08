@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Reporting;
 using IncidentManager.Domain.Entities;

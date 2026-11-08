@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Evidence;
 using IncidentManager.Domain.Common;

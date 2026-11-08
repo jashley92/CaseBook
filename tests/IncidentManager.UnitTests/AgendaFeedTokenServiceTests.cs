@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Infrastructure.Agenda;
 using Microsoft.Extensions.Configuration;
 using Xunit;

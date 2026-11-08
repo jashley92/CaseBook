@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Infrastructure.Storage;
 using Xunit;
 

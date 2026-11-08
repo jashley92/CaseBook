@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Reporting;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;

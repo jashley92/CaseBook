@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using ICSharpCode.SharpZipLib.Zip;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;

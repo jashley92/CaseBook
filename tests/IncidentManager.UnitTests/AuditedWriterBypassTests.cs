@@ -1,6 +1,6 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
 using Microsoft.EntityFrameworkCore;

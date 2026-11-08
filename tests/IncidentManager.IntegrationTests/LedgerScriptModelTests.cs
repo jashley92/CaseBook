@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;

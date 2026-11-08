@@ -1,5 +1,5 @@
 using System.Reflection;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Access;
 using IncidentManager.Application.Admin;
 using IncidentManager.Application.ApiTokens;

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Enums;

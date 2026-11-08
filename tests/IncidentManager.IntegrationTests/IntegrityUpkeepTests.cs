@@ -1,5 +1,5 @@
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Common;

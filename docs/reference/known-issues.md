@@ -47,7 +47,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | **Test gaps** | No browser, component or HTTP-level tests; little SQL Server coverage; deploy scripts untested ([testing.md](../development/testing.md#what-is-not-covered)). |
 | **Release workflow doesn't test** | It relies on CI having passed for the tagged commit. |
 | **Floating package versions** | Microsoft packages use `10.*`, so builds at different times can differ. |
-| **FluentAssertions 8 license** | Commercial use needs a license (test-only dependency). |
 | **CI step label** | "Set up .NET 8" installs .NET 10 (cosmetic). |
 | **Stale build output** | Old `bin/obj/*/net8.0` folders can linger in working copies (ignored by git); harmless, but confusing when searching. |
 | **Per-user graph layouts** | Graph positions are shared, last write wins. |

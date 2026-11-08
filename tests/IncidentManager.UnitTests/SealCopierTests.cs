@@ -4,7 +4,7 @@ using System.Numerics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Notifications;

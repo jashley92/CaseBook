@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Secrets;
 using Microsoft.Extensions.Logging.Abstractions;

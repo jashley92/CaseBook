@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Import;
 using IncidentManager.Domain.Enums;

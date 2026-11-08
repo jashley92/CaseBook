@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Infrastructure.Security;
 using IncidentManager.KeyTool;
 using Microsoft.Extensions.Options;

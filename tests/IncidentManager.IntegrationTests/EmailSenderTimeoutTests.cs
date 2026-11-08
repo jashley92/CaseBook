@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Notifications;
 using Microsoft.Extensions.Logging.Abstractions;
