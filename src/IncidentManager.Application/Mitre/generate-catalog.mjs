@@ -3,9 +3,13 @@
 //
 //   node generate-catalog.mjs <path-to-enterprise-attack.json>
 //
+// The bundle must be under the current directory, so run this from the folder you downloaded it to (or above it).
+//
 // The STIX bundle is large (~50 MB) and is NOT committed; download it from
 // https://github.com/mitre-attack/attack-stix-data (enterprise-attack/…) or attack.mitre.org.
-// Output: attack-techniques.json next to this script (compact, ~60 KB), embedded via the .csproj.
+// Output: attack-techniques.json next to this script (compact, ~60 KB), embedded via the .csproj, and
+// attack-retired.json: the revoked and deprecated ids, with what replaced each (so "T1574.002", still cited in
+// reporting after ATT&CK merged it into T1574.001, gets a hint rather than "not found").
 //
 // Tactic names are emitted as MitreTactic enum member names, so if ATT&CK renames/adds tactics you
 // must also update Domain/Enums/MitreEnums.cs, Web/Components/Shared/Ui.cs (label/id/glyph/colour/
@@ -13,11 +17,16 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
-const input = process.argv[2];
-if (!input) {
+if (!process.argv[2]) {
   console.error('usage: node generate-catalog.mjs <path-to-enterprise-attack.json>');
+  process.exit(1);
+}
+const cwd = process.cwd();
+const input = resolve(cwd, process.argv[2]);
+if (!input.startsWith(cwd + sep) || !input.endsWith('.json')) {
+  console.error(`ERROR: the bundle must be a .json file under the current directory (${cwd}).`);
   process.exit(1);
 }
 
@@ -75,3 +84,26 @@ out.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 const outPath = join(dirname(fileURLToPath(import.meta.url)), 'attack-techniques.json');
 writeFileSync(outPath, JSON.stringify(out));
 console.log(`wrote ${out.length} techniques (${out.filter(x => x.sub).length} sub) -> ${outPath}`);
+
+// Retired ids: a revoked technique points (revoked-by, followed to a live one) at what replaced it; a deprecated one
+// has no replacement. An id that's live again (reused) isn't listed.
+const byStixId = new Map(bundle.objects.map(o => [o.id, o]));
+const attackId = o => (o.external_references || []).find(r => r.source_name === 'mitre-attack' && /^T\d/.test(r.external_id))?.external_id;
+const revokedBy = new Map(bundle.objects
+  .filter(o => o.type === 'relationship' && o.relationship_type === 'revoked-by')
+  .map(r => [r.source_ref, r.target_ref]));
+const live = new Set(out.map(x => x.id));
+const retired = [];
+for (const o of bundle.objects) {
+  if (o.type !== 'attack-pattern' || !(o.revoked || o.x_mitre_deprecated)) continue;
+  const id = attackId(o);
+  if (!id || live.has(id)) continue;
+  let target = o.revoked ? revokedBy.get(o.id) : undefined;
+  for (let hops = 0; target && byStixId.get(target)?.revoked && hops < 10; hops++) target = revokedBy.get(target);
+  const by = target ? attackId(byStixId.get(target)) : undefined;
+  retired.push({ id, name: o.name, by: by && live.has(by) ? by : null });
+}
+retired.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+const retiredPath = join(dirname(fileURLToPath(import.meta.url)), 'attack-retired.json');
+writeFileSync(retiredPath, JSON.stringify(retired));
+console.log(`wrote ${retired.length} retired ids (${retired.filter(x => x.by).length} with a replacement) -> ${retiredPath}`);

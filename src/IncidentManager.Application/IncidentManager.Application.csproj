@@ -7,6 +7,7 @@
   <ItemGroup>
     <!-- Generated from MITRE ATT&CK Enterprise v19.1 (see Mitre/AttackCatalog.cs). -->
     <EmbeddedResource Include="Mitre\attack-techniques.json" />
+    <EmbeddedResource Include="Mitre\attack-retired.json" />
   </ItemGroup>
 
   <!-- C1: the import-writer gate tests check a save runs with the gate taken (GuardGate.IsTaken, FileGateTaken). -->

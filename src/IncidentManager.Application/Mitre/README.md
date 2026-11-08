@@ -7,7 +7,12 @@ carries it with no network or DB dependency (the deployment is on-prem / air-gap
 
 Each entry: `{ id, name, tactics[], sub }` — `tactics` are `MitreTactic` enum member names in ATT&CK
 matrix order (so `tactics[0]` is the primary), `sub` marks a sub-technique. Revoked and deprecated
-techniques are dropped.
+techniques are dropped from it.
+
+`attack-retired.json` lists those revoked and deprecated ids, `{ id, name, by }`, where `by` is the live technique that
+replaced a revoked one (its revoked-by chain followed to the end) and null for a deprecated one. Reporting keeps citing
+old ids (T1574.002, merged into T1574.001), so `AttackCatalog.Retired` lets the picker say where one went instead of
+just keeping it as a custom id. The generator writes both files from the same bundle.
 
 ## Refreshing to a newer ATT&CK version
 

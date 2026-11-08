@@ -2,7 +2,8 @@
    they belong to, so choosing a technique in a column *is* choosing its tactic. Sub-techniques are
    collapsed under their parent. Multi-select with add + remove: the grid reflects what's already
    tagged, and Apply syncs the difference. Off-catalogue tags (not in ATT&CK v19.1) are preserved and
-   shown in a separate "custom" strip so they aren't silently dropped. Backs the Overview technique tag.
+   shown in their own strips so they aren't silently dropped: ids ATT&CK retired (with "Replace with" the technique that
+   replaced them, under a tactic it has) and custom ids. Backs the Overview technique tag.
    While filtering, only the tactics with a match show, side by side from the left, under a line saying how many
    (AttackMatrixView); the others fold away with a short transition. *@
 
@@ -30,6 +31,19 @@
         </div>
         <button type="button" class="btn-close" aria-label="Close" @onclick="Cancel"></button>
     </div>
+
+    @* A retired id typed in the filter says where it went. A tag is a technique under a tactic, so "Show" filters to the
+       replacement and the user picks it in the column they mean. *@
+    @if (AttackCatalog.Retired(_view.Filter) is { } filtered)
+    {
+        <div class="atkm-note small" role="status">
+            <span class="bi bi-info-circle" aria-hidden="true"></span> @AttackCatalog.RetiredText(filtered)
+            @if (filtered.ReplacedBy is { } by)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @onclick="() => ShowTechnique(by.Id)">@($"Show {by.Id}")</button>
+            }
+        </div>
+    }
 
     @if (_view.Summary is { } summary)
     {
@@ -110,6 +124,24 @@
             </div>
         }
     </div>
+
+    @if (!SingleSelect && RetiredTags() is { Count: > 0 } retired)
+    {
+        <div class="atkm-retired">
+            <span class="text-muted small me-1">No longer in ATT&amp;CK @AttackCatalog.Version:</span>
+            @foreach (var (tag, gone) in retired)
+            {
+                <span class="im-chip" title="@AttackCatalog.RetiredText(gone)"><code>@tag.Key</code> <span class="im-chip-role">@Ui.Label(tag.Value)</span>
+                    <button type="button" class="im-chip-x" aria-label="Remove @tag.Key" @onclick="() => RemoveCustom(tag.Key)">×</button>
+                </span>
+                @if (gone.ReplacedBy is { } by && !_selected.ContainsKey(by.Id))
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 me-2" @onclick="() => Replace(tag.Key, by)"
+                            title="@($"Tag {by.Id} {by.Name} under {Ui.Label(AttackCatalog.ReplacementTactic(by, tag.Value))} instead")">@($"Replace with {by.Id}")</button>
+                }
+            }
+        </div>
+    }
 
     @if (!SingleSelect && (_customTags.Count > 0 || _customOpen))
     {
@@ -308,10 +340,33 @@
         if (!_expanded.Add(parentId)) _expanded.Remove(parentId);
     }
 
-    // --- off-catalogue (custom) tags ---
+    // --- off-catalogue tags: retired ones (ATT&CK revoked or deprecated them) and custom ones (never in it) ---
     private IReadOnlyList<KeyValuePair<string, MitreTactic>> _customTags =>
-        _selected.Where(kv => AttackCatalog.Find(kv.Key) is null)
+        _selected.Where(kv => AttackCatalog.Find(kv.Key) is null && AttackCatalog.Retired(kv.Key) is null)
             .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToList();
+
+    private List<(KeyValuePair<string, MitreTactic> Tag, RetiredTechnique Gone)> RetiredTags() =>
+        _selected.Select(kv => (Tag: kv, Gone: AttackCatalog.Retired(kv.Key)))
+            .Where(x => x.Gone is not null && AttackCatalog.Find(x.Tag.Key) is null)
+            .OrderBy(x => x.Tag.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(x => (x.Tag, x.Gone!)).ToList();
+
+    // A retired tag gives way to its replacement, under the tactic it had if the replacement is there too, else under the
+    // replacement's primary tactic; the parent opens so the new tag is in view.
+    private void Replace(string retiredId, AttackTechnique by)
+    {
+        if (!_selected.Remove(retiredId, out var had)) return;
+        _selected[by.Id.ToUpperInvariant()] = AttackCatalog.ReplacementTactic(by, had);
+        if (by.IsSubtechnique) _expanded.Add(by.ParentId);
+    }
+
+    // The filter's note on a retired id: filter to its replacement, applied at once.
+    private void ShowTechnique(string id)
+    {
+        _pause.Now();
+        _text = id;
+        SetFilter(id);
+    }
 
     private void AddCustom()
     {

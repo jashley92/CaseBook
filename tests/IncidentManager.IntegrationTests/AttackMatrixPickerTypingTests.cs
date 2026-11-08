@@ -68,6 +68,47 @@ public class AttackMatrixPickerTypingTests
     }
 
     [Fact]
+    public async Task A_retired_id_in_the_filter_says_where_it_went_and_shows_the_replacement()
+    {
+        await using var r = RecordingRenderer.Create();
+        await r.Mount<AttackMatrixPicker>(NoTags());
+        await await r.Type("T1574.002");
+        Assert.True(r.Shows("is no longer in ATT&CK v19.1: it was replaced by T1574.001 DLL."));
+        await r.Click("Show T1574.001");
+        Assert.Equal(["T1574.001"], r.ValuesSent); // the box now holds the replacement
+        Assert.False(r.Shows("is no longer in ATT&CK"));
+        Assert.True(r.Shows("Showing "));
+    }
+
+    [Fact]
+    public async Task A_retired_tag_is_replaced_under_a_tactic_the_replacement_has()
+    {
+        IReadOnlyDictionary<string, MitreTactic>? applied = null;
+        await using var r = RecordingRenderer.Create();
+        await r.Mount<AttackMatrixPicker>(new()
+        {
+            ["Current"] = (IReadOnlyDictionary<string, MitreTactic>)new Dictionary<string, MitreTactic>
+            {
+                ["T1574.002"] = MitreTactic.Persistence, // T1574.001 isn't under Persistence: it takes its primary tactic
+                ["T1999.123"] = MitreTactic.Execution,   // custom: never in ATT&CK, stays in its own strip
+            },
+            ["OnApply"] = Microsoft.AspNetCore.Components.EventCallback.Factory.Create<IReadOnlyDictionary<string, MitreTactic>>(this, d => applied = d),
+        });
+        Assert.True(r.Shows("No longer in ATT"));
+        Assert.True(r.Shows("Custom:"));
+
+        await r.Click("Replace with T1574.001");
+        Assert.False(r.Shows("No longer in ATT"));
+        await r.Click("Apply");
+
+        Assert.NotNull(applied);
+        var primary = IncidentManager.Application.Mitre.AttackCatalog.Find("T1574.001")!.PrimaryTactic;
+        Assert.Equal(primary, applied["T1574.001"]);
+        Assert.False(applied.ContainsKey("T1574.002"));
+        Assert.Equal(MitreTactic.Execution, applied["T1999.123"]);
+    }
+
+    [Fact]
     public async Task Expand_buttons_and_column_heads_say_what_they_are()
     {
         await using var r = RecordingRenderer.Create();
