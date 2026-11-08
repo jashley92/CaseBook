@@ -16,6 +16,29 @@ public static class AttackCatalog
     public const string Version = "v19.1";
 
     private static readonly Lazy<ImmutableArray<AttackTechnique>> _all = new(Load);
+    private static readonly Lazy<Dictionary<string, RetiredTechnique>> _retired = new(LoadRetired);
+
+    /// <summary>
+    /// A technique ATT&amp;CK revoked or deprecated (null for a live or unknown id), with the live technique that replaced
+    /// it if any. Reporting keeps citing old ids (T1574.002, merged into T1574.001), so the picker says where one went
+    /// rather than only keeping it as a custom id. From <c>attack-retired.json</c>, generated with the catalog.
+    /// </summary>
+    public static RetiredTechnique? Retired(string? techniqueId) =>
+        string.IsNullOrWhiteSpace(techniqueId) ? null : _retired.Value.GetValueOrDefault(techniqueId.Trim());
+
+    /// <summary>"T1574.002 (DLL Side-Loading) is no longer in ATT&amp;CK v19.1: it was replaced by T1574.001 DLL.", or that
+    /// it has no replacement.</summary>
+    public static string RetiredText(RetiredTechnique r) => r.ReplacedBy is { } by
+        ? $"{r.Id} ({r.Name}) is no longer in ATT&CK {Version}: it was replaced by {by.Id} {by.Name}."
+        : $"{r.Id} ({r.Name}) is no longer in ATT&CK {Version}: it was deprecated with no replacement.";
+
+    /// <summary>
+    /// The tactic a retired id's tag moves to when it's replaced: the one it had, if the replacement is under that tactic
+    /// too, else the replacement's primary (first in matrix order) tactic. A tag is a technique under a tactic, and the
+    /// replacement may not sit under the old one.
+    /// </summary>
+    public static MitreTactic ReplacementTactic(AttackTechnique replacement, MitreTactic had) =>
+        replacement.Tactics.Contains(had) ? had : replacement.PrimaryTactic;
 
     /// <summary>Every live (non-revoked, non-deprecated) technique and sub-technique, ordered by id.</summary>
     public static ImmutableArray<AttackTechnique> All => _all.Value;
@@ -93,6 +116,24 @@ public static class AttackCatalog
                     .ToImmutableArray(),
                 d.Sub))
             .ToImmutableArray();
+    }
+
+    private static Dictionary<string, RetiredTechnique> LoadRetired()
+    {
+        var asm = typeof(AttackCatalog).Assembly;
+        var resourceName = Array.Find(asm.GetManifestResourceNames(),
+                n => n.EndsWith("attack-retired.json", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Embedded ATT&CK retired-technique resource not found.");
+        using var stream = asm.GetManifestResourceStream(resourceName)!;
+        var dtos = JsonSerializer.Deserialize<List<RetiredDto>>(stream, JsonOpts) ?? new List<RetiredDto>();
+        return dtos.ToDictionary(d => d.Id, d => new RetiredTechnique(d.Id, d.Name, Find(d.By)), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class RetiredDto
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? By { get; set; }
     }
 
     private static MitreTactic ParseTactic(string s) =>

@@ -623,7 +623,8 @@ h1:focus {
 .atkm-tick { flex: 0 0 auto; color: var(--bs-primary); font-weight: 700; }
 .atkm-elsew { flex: 0 0 auto; color: var(--bs-secondary-color); }
 
-.atkm-custom { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .5rem 1rem; border-top: 1px solid var(--bs-border-color); }
+.atkm-note { padding: .4rem 1rem; background: var(--bs-info-bg-subtle); border-bottom: 1px solid var(--bs-border-color); }
+.atkm-retired, .atkm-custom { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .5rem 1rem; border-top: 1px solid var(--bs-border-color); }
 .atkm-custom-in { width: auto; display: inline-block; }
 .atkm-foot { display: flex; align-items: center; gap: .5rem; padding: .6rem 1rem; border-top: 1px solid var(--bs-border-color); }
 

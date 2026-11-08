@@ -45,7 +45,7 @@
             {
                 <button type="button" class="atk-item" @onclick="() => PickCustom(cid)">
                     <span class="atk-item-id"><code>@cid</code></span>
-                    <span class="atk-item-name text-muted">Use as a custom technique (not in @AttackCatalog.Version)</span>
+                    <span class="atk-item-name text-muted">@(AttackCatalog.Retired(cid) is { } gone ? $"Use the old id anyway. {AttackCatalog.RetiredText(gone)}" : $"Use as a custom technique (not in {AttackCatalog.Version})")</span>
                     <span class="atk-item-tacs"></span>
                 </button>
             }
@@ -126,6 +126,9 @@
     {
         var q = _query.Trim();
         _techResults = q.Length == 0 ? Array.Empty<AttackTechnique>() : AttackCatalog.Search(q, 8);
+        // A retired id (ATT&CK revoked it) offers what replaced it first, ahead of keeping the old id as a custom one.
+        if (AttackCatalog.Retired(q)?.ReplacedBy is { } by && !_techResults.Contains(by))
+            _techResults = _techResults.Prepend(by).Take(8).ToList();
         _tacResults = q.Length == 0
             ? Array.Empty<MitreTactic>()
             : AllTactics.Where(t => Ui.Label(t).Contains(q, StringComparison.OrdinalIgnoreCase)

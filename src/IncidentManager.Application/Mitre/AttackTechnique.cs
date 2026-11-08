@@ -27,3 +27,6 @@ public sealed record AttackTechnique(
         }
     }
 }
+
+/// <summary>A technique ATT&amp;CK revoked or deprecated, and the live one that replaced it, if any.</summary>
+public sealed record RetiredTechnique(string Id, string Name, AttackTechnique? ReplacedBy);
