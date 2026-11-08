@@ -39,12 +39,9 @@ public sealed class LiveDeltaTests : IDisposable
 
     private static async Task<CaseChange> Next(BlockingCollection<CaseChange> seen)
     {
-        for (var i = 0; i < 100; i++)
-        {
-            if (seen.TryTake(out var c)) return c;
-            await Task.Delay(20);
-        }
-        throw new TimeoutException("No change event arrived.");
+        CaseChange? c = null;
+        await Waits.Until(() => seen.TryTake(out c), what: "a change event");
+        return c!;
     }
 
     [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]

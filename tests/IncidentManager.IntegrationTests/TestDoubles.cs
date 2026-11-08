@@ -67,3 +67,10 @@ public sealed class NoOpAuditWriter : IncidentManager.Application.Abstractions.I
     public Task RecordAsync(IncidentManager.Domain.Enums.AuditAction action, string entityType, string? entityId,
         string? caseNumber, string summary, CancellationToken ct = default) => Task.CompletedTask;
 }
+
+/// <summary>An <see cref="System.Net.Http.IHttpClientFactory"/> whose clients all send through one handler (a stub or a
+/// capturing handler), which the clients don't dispose.</summary>
+public sealed class HandlerClientFactory(System.Net.Http.HttpMessageHandler handler) : System.Net.Http.IHttpClientFactory
+{
+    public System.Net.Http.HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+}

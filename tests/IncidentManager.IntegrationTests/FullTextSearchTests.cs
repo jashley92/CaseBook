@@ -316,8 +316,7 @@ public sealed class FullTextSearchTests : IDisposable
             db.Notes.Add(new AnalystNote { CaseId = _alpha, Body = "Zerologon attempt blocked", CreatedBy = "robin", CreatedAtUtc = Now });
             await db.SaveChangesAsync();
         }
-        var until = DateTime.UtcNow.AddSeconds(30);
-        while ((await Find(search).FindAsync("in:notes zerolog")).Notes.Count == 0 && DateTime.UtcNow < until) await Task.Delay(500);
+        await Waits.Until(async () => (await Find(search).FindAsync("in:notes zerolog")).Notes.Count > 0, what: "the note to be indexed");
         (await Find(search).FindAsync("in:notes zerolog")).Notes.Should().ContainSingle();
     }
 

@@ -13,6 +13,7 @@ public static class GuardGate
     /// <summary>Waits for the gate; dispose the result to release it.</summary>
     public static async Task<IDisposable> EnterAsync(CancellationToken ct = default)
     {
+        GateArrivals.Arrive(GateArrivals.Guard);
         await Gate.WaitAsync(ct).ConfigureAwait(false);
         return new Releaser();
     }

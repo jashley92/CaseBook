@@ -42,11 +42,11 @@ internal sealed class CapturingImportNotifications : ICaseNotifications
 
     /// <summary>The next notice told, waiting up to ten seconds for it.</summary>
     public async Task<ImportSubmission> NextAsync() =>
-        await _told.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        await _told.Reader.ReadAsync().AsTask().WaitAsync(Waits.Hang);
 
     /// <summary>The next notice begun (before <see cref="Hold"/>), waiting up to ten seconds for it.</summary>
     public async Task<ImportSubmission> StartedAsync() =>
-        await _started.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        await _started.Reader.ReadAsync().AsTask().WaitAsync(Waits.Hang);
 
     public async Task OnImportSubmittedAsync(ImportSubmission submission, CancellationToken ct = default)
     {
@@ -195,7 +195,7 @@ public sealed class ImportReviewNoticeTests : IDisposable
         }, CaseImportJson.Options);
 
         // A is answered while its notice is stuck on the relay.
-        var first = await svc.SubmitOnceAsync(a, CaseImportService.Parse(a).Document!).WaitAsync(TimeSpan.FromSeconds(10));
+        var first = await svc.SubmitOnceAsync(a, CaseImportService.Parse(a).Document!).WaitAsync(Waits.Hang);
         (await told.StartedAsync()).PendingImportId.Should().Be(first.Id);
 
         // B, through the same submit gate, isn't held up by A's notice, nor is A's retry. B's caller then stops waiting,
@@ -203,9 +203,9 @@ public sealed class ImportReviewNoticeTests : IDisposable
         using var gaveUp = new CancellationTokenSource();
         var submitB = svc.SubmitOnceAsync(b, CaseImportService.Parse(b).Document!, gaveUp.Token);
         var retryA = svc.SubmitOnceAsync(a, CaseImportService.Parse(a).Document!);
-        var second = await submitB.WaitAsync(TimeSpan.FromSeconds(10));
+        var second = await submitB.WaitAsync(Waits.Hang);
         await gaveUp.CancelAsync();
-        (await retryA.WaitAsync(TimeSpan.FromSeconds(10))).AlreadyQueued.Should().BeTrue();
+        (await retryA.WaitAsync(Waits.Hang)).AlreadyQueued.Should().BeTrue();
         second.AlreadyQueued.Should().BeFalse();
         (await told.StartedAsync()).PendingImportId.Should().Be(second.Id);
         told.Submissions.Should().BeEmpty("both notices are still waiting on the relay");
@@ -243,7 +243,7 @@ public sealed class ImportReviewNoticeTests : IDisposable
             .UseSqlite(_connection).AddInterceptors(new StallsLikeSqlServer()).Options);
         var reviewer = new TestCurrentUser { UserId = "rev1", RoleSet = [AppRole.Analyst] };
 
-        (await new PendingImportQueue(stalled, reviewer).WaitingAsync().WaitAsync(TimeSpan.FromSeconds(15)))
+        (await new PendingImportQueue(stalled, reviewer).WaitingAsync().WaitAsync(Waits.Hang))
             .Should().BeNull("the badge and the Desk show nothing rather than fail");
 
         // The caller's own cancellation isn't taken for the time limit: it isn't swallowed.

@@ -126,13 +126,13 @@ public sealed class ScheduledJobsTests
 
         // A Run now holds it: a second Run now is refused, and a scheduled pass that comes due is skipped.
         var running = await runner.RunNowAsync("scan");
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await entered.Task.WaitAsync(Waits.Hang);
         jobs.Snapshot().Single().Should().Match<JobStatusRow>(r => r.Running && r.LastRunManual);
         await FluentActions.Awaiting(() => runner.RunNowAsync("scan")).Should().ThrowAsync<InvalidOperationException>();
         jobs.Begin(Scan).Should().BeNull("the scheduled pass skips while the Run now runs");
 
         release.SetResult();
-        await running.WaitAsync(TimeSpan.FromSeconds(10));
+        await running.WaitAsync(Waits.Hang);
         passes.Should().Be(1, "one pass ran, never two at once");
         var row = jobs.Snapshot().Single();
         (row.Running, row.Outcome, row.Items, row.Runs).Should().Be((false, JobOutcome.Succeeded, 7L, 2L));
@@ -146,7 +146,7 @@ public sealed class ScheduledJobsTests
     {
         var jobs = new JobStatus(_clock);
         jobs.Register(Scan, (_, _) => throw new TimeoutException("collector at 10.0.0.5 said no"));
-        await (await Runner(jobs).RunNowAsync("scan")).WaitAsync(TimeSpan.FromSeconds(10));
+        await (await Runner(jobs).RunNowAsync("scan")).WaitAsync(Waits.Hang);
 
         var row = jobs.Snapshot().Single();
         (row.Outcome, row.LastErrorType, row.Running).Should().Be((JobOutcome.Failed, "TimeoutException", false));

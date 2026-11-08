@@ -21,7 +21,7 @@ public sealed class UpdateCheckServiceTests
         Exception? throws = null, string repository = "jashley92/CaseBook")
     {
         var handler = new StubHandler(status, body, throws);
-        var service = new UpdateCheckService(new StubFactory(handler),
+        var service = new UpdateCheckService(new HandlerClientFactory(handler),
             new TestOptionsMonitor<UpdateCheckOptions>(new UpdateCheckOptions { CheckEnabled = enabled, Repository = repository }),
             NullLogger<UpdateCheckService>.Instance, running: running ?? new Version(1, 5, 9));
         return (service, handler);
@@ -65,7 +65,7 @@ public sealed class UpdateCheckServiceTests
         // A local build reads 1.0.0 (no version stamped): nothing meaningful to compare. Passed in, since the build running
         // the tests may itself be stamped (the release workflow's is).
         var handler = new StubHandler(HttpStatusCode.OK, TwoNewer, null);
-        var svc = new UpdateCheckService(new StubFactory(handler),
+        var svc = new UpdateCheckService(new HandlerClientFactory(handler),
             new TestOptionsMonitor<UpdateCheckOptions>(new UpdateCheckOptions { CheckEnabled = true }),
             NullLogger<UpdateCheckService>.Instance, running: new Version(1, 0, 0));
 
@@ -114,7 +114,7 @@ public sealed class UpdateCheckServiceTests
     public async Task A_failure_keeps_the_releases_an_earlier_check_found()
     {
         var handler = new StubHandler(HttpStatusCode.OK, TwoNewer, null);
-        var svc = new UpdateCheckService(new StubFactory(handler),
+        var svc = new UpdateCheckService(new HandlerClientFactory(handler),
             new TestOptionsMonitor<UpdateCheckOptions>(new UpdateCheckOptions { CheckEnabled = true }),
             NullLogger<UpdateCheckService>.Instance, running: new Version(1, 5, 9));
         await svc.CheckAsync();
@@ -135,11 +135,6 @@ public sealed class UpdateCheckServiceTests
         await svc.CheckAsync(manual: true);
 
         handler.Requests.Should().ContainSingle();
-    }
-
-    private sealed class StubFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body, Exception? throws) : HttpMessageHandler

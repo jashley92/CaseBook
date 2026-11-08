@@ -45,6 +45,6 @@ public class CaseChangeNotifierTests
 
     private static async Task WaitFor(Func<bool> condition)
     {
-        for (var i = 0; i < 50 && !condition(); i++) await Task.Delay(10);
+        await Waits.Until(condition);
     }
 }

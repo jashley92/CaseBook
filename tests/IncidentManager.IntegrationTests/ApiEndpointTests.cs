@@ -27,7 +27,7 @@ namespace IncidentManager.IntegrationTests;
 /// </summary>
 public sealed class ApiEndpointTests : IDisposable
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan Limit = Waits.Hang;
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "casebook-api-tests", Guid.NewGuid().ToString("N"));
     private readonly Sink _siem = new();
 

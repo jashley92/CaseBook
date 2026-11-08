@@ -104,7 +104,7 @@ public class SyslogTransportTests
             Actor = "analyst1", Host = "H", AtUtc = DateTimeOffset.UtcNow
         }, CancellationToken.None);
 
-        var result = await receive.WaitAsync(TimeSpan.FromSeconds(5));
+        var result = await receive.WaitAsync(Waits.Hang);
         var text = Encoding.UTF8.GetString(result.Buffer);
         text.Should().Contain("CEF:0|CaseBook|CaseBook|");
         text.Should().Contain("|5302|EvidenceDownload|");
@@ -208,7 +208,7 @@ public class SecurityEventDispatcherTests
         queue.Emit(new SecurityEvent { EventId = SecurityEventIds.CaseOpened, Category = "DataAccess", Action = "CaseOpen", Actor = "x" });
 
         await dispatcher.StartAsync(CancellationToken.None);
-        await Task.WhenAll(a.Seen, b.Seen).WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(a.Seen, b.Seen).WaitAsync(Waits.Hang);
         await dispatcher.StopAsync(CancellationToken.None);
 
         a.Sent.Should().ContainSingle().Which.EventId.Should().Be(SecurityEventIds.CaseOpened);
@@ -228,7 +228,7 @@ public class SecurityEventDispatcherTests
         queue.Emit(new SecurityEvent { EventId = SecurityEventIds.CaseOpened, Category = "DataAccess", Action = "CaseOpen", Actor = "x" });
 
         await dispatcher.StartAsync(CancellationToken.None);
-        await good.Seen.WaitAsync(TimeSpan.FromSeconds(5)); // the good transport still delivered
+        await good.Seen.WaitAsync(Waits.Hang); // the good transport still delivered
         var stop = async () => await dispatcher.StopAsync(CancellationToken.None);
         await stop.Should().NotThrowAsync();
 
@@ -251,8 +251,7 @@ public class SecurityEventDispatcherTests
         queue.Emit(new SecurityEvent { EventId = SecurityEventIds.CaseOpened, Category = "Integrity", Action = "AuditChainBroken",
             Actor = "system", Severity = SecuritySeverity.Critical });
 
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (log.Sent.Count < 51 && DateTime.UtcNow < deadline) await Task.Delay(20);
+        await Waits.Until(() => log.Sent.Count >= 51, what: "the Event Log to get every event");
         log.Sent.Should().HaveCount(51, "the Event Log isn't waiting on the webhook");
         log.Sent.Should().Contain(e => e.Severity == SecuritySeverity.Critical);
         stuck.Sent.Should().ContainSingle("the webhook is still on its first send");

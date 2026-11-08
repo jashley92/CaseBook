@@ -288,9 +288,10 @@ public sealed class CaseTemplateTests : IDisposable
         Task create, rename;
         using (await GuardGate.EnterAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             create = Task.Run(() => creating.CreateAsync(Phishing()));
             rename = Task.Run(() => renaming.UpdateAsync(other, Phishing() with { Name = "PHISHING wave" }));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.Guard) >= 2, what: "the calls to reach the gate");
             create.IsCompleted.Should().BeFalse("the name check and the save wait for GuardGate");
             rename.IsCompleted.Should().BeFalse();
         }
@@ -337,8 +338,9 @@ public sealed class CaseTemplateTests : IDisposable
         Task edit;
         using (await GuardGate.EnterAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             edit = Task.Run(() => svc.UpdateAsync(id, Phishing() with { Description = "mine" }, opened.Stamp));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.Guard) >= 1, what: "the calls to reach the gate");
             edit.IsCompleted.Should().BeFalse();
             await using var other = NewContext();
             (await other.CaseTemplates.SingleAsync(t => t.Id == id)).Description = "theirs";

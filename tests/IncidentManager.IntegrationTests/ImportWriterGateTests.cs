@@ -104,8 +104,9 @@ public sealed class ImportWriterGateTests : IDisposable
         using (await GuardGate.EnterAsync())
         using (await ReportTemplateService.EnterFileGateAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             foreach (var (key, run) in prepared) running[key] = Task.Run(run.Call);
-            await Task.Delay(500);
+            await Waits.Until(() => arrivals.At(GateArrivals.Guard) + arrivals.At(GateArrivals.TemplateFiles) >= prepared.Count, what: "the calls to reach the gate");
             running.Where(r => r.Value.IsCompleted).Select(r => r.Key).Should()
                 .BeEmpty("these ran while an import held the gates, between its checks and its save");
         }
@@ -220,7 +221,7 @@ public sealed class ImportWriterGateTests : IDisposable
         @"\b(db|fresh|recheck|ctx|context)\.(?<set>" + string.Join("|", ImportWrittenSets) + @")\b(?!\s*\.\s*AsNoTracking)",
         RegexOptions.None, TimeSpan.FromSeconds(5));
 
-    private static readonly Regex GateLine = new(@"GuardGate\.EnterAsync\(|EnterFileGateAsync\(|FileGate\.WaitAsync\(",
+    private static readonly Regex GateLine = new(@"GuardGate\.EnterAsync\(|EnterFileGateAsync\(|WaitForFileGateAsync\(|FileGate\.WaitAsync\(",
         RegexOptions.None, TimeSpan.FromSeconds(5));
 
     private static readonly Regex Member = new(@"^    (public|private|internal|protected)\b[^=;]*\(", RegexOptions.None, TimeSpan.FromSeconds(5));

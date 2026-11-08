@@ -220,10 +220,11 @@ public sealed class StageGateServiceTests : IDisposable
         Task a, b, rename;
         using (await GuardGate.EnterAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             a = Task.Run(() => svc.CreateAsync(BreachGate()));
             b = Task.Run(() => svc.CreateAsync(BreachGate() with { Name = "Breach readiness v2" }));
             rename = Task.Run(() => svc.UpdateAsync(other, BreachGate(active: false) with { Name = "breach READINESS" }));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.Guard) >= 3, what: "the calls to reach the gate");
             a.IsCompleted.Should().BeFalse("the checks and the save wait for GuardGate");
             b.IsCompleted.Should().BeFalse();
             rename.IsCompleted.Should().BeFalse();
@@ -272,8 +273,9 @@ public sealed class StageGateServiceTests : IDisposable
         Task edit;
         using (await GuardGate.EnterAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             edit = Task.Run(() => svc.UpdateAsync(id, BreachGate() with { Description = "mine" }, opened.Stamp));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.Guard) >= 1, what: "the calls to reach the gate");
             edit.IsCompleted.Should().BeFalse();
             await using var db = NewContext();
             (await db.StageGates.SingleAsync(g => g.Id == id)).Description = "theirs";

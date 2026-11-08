@@ -85,7 +85,7 @@ public sealed class AuditChainIntegrityTests : IDisposable
             Classification = Classification.Incident,
             Severity = Severity.Medium,
             Origin = CaseOrigin.InternalDetection
-        }).WaitAsync(TimeSpan.FromSeconds(5));
+        }).WaitAsync(Waits.Hang);
 
         created.Should().NotBeNull();
 
@@ -131,7 +131,7 @@ public sealed class AuditChainIntegrityTests : IDisposable
             Classification = Classification.Incident,
             Severity = Severity.Medium,
             Origin = CaseOrigin.InternalDetection
-        }).WaitAsync(TimeSpan.FromSeconds(5));
+        }).WaitAsync(Waits.Hang);
         created.Should().NotBeNull();
     }
 
@@ -198,13 +198,13 @@ public sealed class AuditChainIntegrityTests : IDisposable
 
         var c = await main.Cases.SingleAsync(x => x.Id == caseId);
         c.Title = "Renamed";
-        await main.SaveChangesAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await main.SaveChangesAsync().WaitAsync(Waits.Hang);
 
         notifier.Published.Should().Contain(caseId, "the audited save's change is still broadcast");
         // And the gate is free for the next save (an early release would have let this one race, not hang; a leak would hang).
         await using var next = NewContext();
         (await next.Cases.SingleAsync(x => x.Id == caseId)).Title = "Again";
-        await next.SaveChangesAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await next.SaveChangesAsync().WaitAsync(Waits.Hang);
     }
 
     public void Dispose() => _connection.Dispose();

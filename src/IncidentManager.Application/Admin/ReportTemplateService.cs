@@ -79,7 +79,7 @@ public sealed class ReportTemplateService
             CreatedBy = _user.UserId,
             CreatedAtUtc = _clock.UtcNow,
         };
-        await FileGate.WaitAsync(ct);
+        await WaitForFileGateAsync(ct);
         try
         {
             // BUG-524: the name check with the save, under the gate a rename and an import hold, so a double upload or two
@@ -105,7 +105,7 @@ public sealed class ReportTemplateService
         if (!check.Ok) return check;
 
         // BUG-239: one file write at a time, so two replaces can't save in one order and move their files in the other.
-        await FileGate.WaitAsync(ct);
+        await WaitForFileGateAsync(ct);
         try
         {
             using var db = _factory.CreateDbContext();
@@ -139,8 +139,15 @@ public sealed class ReportTemplateService
     /// </summary>
     public static async Task<IDisposable> EnterFileGateAsync(CancellationToken ct = default)
     {
-        await FileGate.WaitAsync(ct).ConfigureAwait(false);
+        await WaitForFileGateAsync(ct).ConfigureAwait(false);
         return new FileGateReleaser();
+    }
+
+    // Every wait for the file gate comes through here, so a test can tell its calls have reached it (GateArrivals).
+    private static Task WaitForFileGateAsync(CancellationToken ct)
+    {
+        GateArrivals.Arrive(GateArrivals.TemplateFiles);
+        return FileGate.WaitAsync(ct);
     }
 
     /// <summary>Test hook: whether someone holds the file gate now.</summary>

@@ -19,7 +19,7 @@ namespace IncidentManager.IntegrationTests;
 /// </summary>
 public sealed class HostStartupSmokeTests : IDisposable
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan Limit = Waits.Hang;
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "casebook-host-smoke", Guid.NewGuid().ToString("N"));
 
     private WebApplicationFactory<Program> Factory(params (string Key, string Value)[] settings) => new WebApplicationFactory<Program>().WithWebHostBuilder(b =>

@@ -107,10 +107,8 @@ public sealed class AdAccountDirectoryTests
         _asked.Should().NotContain("jdoe");
 
         release.Set();
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        DirectoryLookup again;
-        do { again = await directory.LookupAsync("jdoe"); await Task.Delay(20); }
-        while (again.Outcome != DirectoryLookupOutcome.NotFound && DateTime.UtcNow < deadline);
+        var again = await Waits.Until(() => directory.LookupAsync("jdoe"), l => l.Outcome == DirectoryLookupOutcome.NotFound,
+            what: "the lookups to finish");
         again.Outcome.Should().Be(DirectoryLookupOutcome.NotFound, "the blocked lookups finished and freed their places");
     }
 
@@ -196,10 +194,8 @@ public sealed class AdAccountDirectoryTests
 
         (await directory.LookupAsync("CORP\\a")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable, "the caller stopped waiting");
         release.Set();
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        DirectoryLookup again;
-        do { again = await directory.LookupAsync("CORP\\b"); await Task.Delay(20); }
-        while (again.Outcome != DirectoryLookupOutcome.NotFound && DateTime.UtcNow < deadline);
+        var again = await Waits.Until(() => directory.LookupAsync("CORP\\b"), l => l.Outcome == DirectoryLookupOutcome.NotFound,
+            what: "the lookups to finish");
         again.Outcome.Should().Be(DirectoryLookupOutcome.NotFound, "the late list was complete, so it's kept");
         listings.Should().Be(1);
     }
@@ -229,7 +225,7 @@ public sealed class AdAccountDirectoryTests
         (await directory.LookupAsync("CORP\\b")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable, "the newer listing failed");
 
         release.Set();
-        returned.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        returned.Wait(Waits.Hang).Should().BeTrue();
         await Task.Delay(200);   // the first listing records (or not) as it ends
         (await directory.LookupAsync("CORP\\c")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable,
             "the newer listing's back-off stands");
@@ -267,10 +263,8 @@ public sealed class AdAccountDirectoryTests
 
         // The blocked lookups return and free their places; CORP is asked again.
         release.Set();
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        DirectoryLookup again;
-        do { again = await directory.LookupAsync("CORP\\later"); await Task.Delay(20); }
-        while (again.Outcome != DirectoryLookupOutcome.NotFound && DateTime.UtcNow < deadline);
+        var again = await Waits.Until(() => directory.LookupAsync("CORP\\later"), l => l.Outcome == DirectoryLookupOutcome.NotFound,
+            what: "the lookups to finish");
         again.Outcome.Should().Be(DirectoryLookupOutcome.NotFound);
     }
 

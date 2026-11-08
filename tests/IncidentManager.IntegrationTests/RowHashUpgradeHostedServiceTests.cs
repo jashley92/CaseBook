@@ -37,6 +37,8 @@ public sealed partial class RowHashUpgradeHostedServiceTests
         return database;
     }
 
+    private readonly ManualClock _time = new();   // the delay's clock: a test moves it on rather than waiting the delay out
+
     private (RowHashUpgradeHostedService Service, CancellationTokenSource Started, ServiceProvider Services) Service(TestDatabase database, double delayMinutes)
     {
         var services = new ServiceCollection()
@@ -47,7 +49,7 @@ public sealed partial class RowHashUpgradeHostedServiceTests
         var started = new CancellationTokenSource();
         var service = new RowHashUpgradeHostedService(services.GetRequiredService<IServiceScopeFactory>(), new Lifetime(started.Token),
             Microsoft.Extensions.Options.Options.Create(new RowHashUpgradeOptions { DelayMinutes = delayMinutes }),
-            NullLogger<RowHashUpgradeHostedService>.Instance);
+            NullLogger<RowHashUpgradeHostedService>.Instance, time: _time);
         return (service, started, services);
     }
 
@@ -61,7 +63,7 @@ public sealed partial class RowHashUpgradeHostedServiceTests
     public async Task The_upgrade_starts_only_once_the_app_has_served_for_the_delay()
     {
         using var database = Seeded();
-        var (service, started, services) = Service(database, delayMinutes: 0.05);   // 3 s
+        var (service, started, services) = Service(database, delayMinutes: 15);
         using var _ = started;
         await using var __ = services;
         await service.StartAsync(CancellationToken.None);
@@ -69,11 +71,13 @@ public sealed partial class RowHashUpgradeHostedServiceTests
         (await UpgradedAsync(database)).Should().BeFalse("nothing runs before the app serves");
 
         await started.CancelAsync();   // the app is up and serving
-        await Task.Delay(1000);
+        await Waits.Until(() => _time.Pending == 1, what: "the upgrade to start its delay");
+        _time.Advance(TimeSpan.FromMinutes(14));
         (await UpgradedAsync(database)).Should().BeFalse("nothing runs until the delay has passed");
+        _time.Advance(TimeSpan.FromMinutes(1));
         // Wait for the job to finish rather than polling: a read here while the upgrade runs would share the test's one
         // SQLite connection with it, and one of them could fail setting up its context (a fault of the test, not the app).
-        await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(60));
+        await service.ExecuteTask!.WaitAsync(Waits.Hang);
         (await UpgradedAsync(database)).Should().BeTrue("after the delay the upgrade runs and marks the check strict");
         await service.StopAsync(CancellationToken.None);
     }
@@ -87,8 +91,8 @@ public sealed partial class RowHashUpgradeHostedServiceTests
         await using var __ = services;
         await service.StartAsync(CancellationToken.None);
         await started.CancelAsync();
-        await Task.Delay(500);   // waiting out the delay
-        await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+        await Waits.Until(() => _time.Pending == 1, what: "the upgrade to start its delay");
+        await service.StopAsync(CancellationToken.None).WaitAsync(Waits.Hang);
         service.ExecuteTask!.IsCompleted.Should().BeTrue();
         service.ExecuteTask.IsFaulted.Should().BeFalse(service.ExecuteTask.Exception?.ToString() ?? "a shutdown isn't a failure");
         (await UpgradedAsync(database)).Should().BeFalse();

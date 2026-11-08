@@ -80,13 +80,8 @@ public sealed class TeamRoutingTests
         }
     }
 
-    private sealed class StubFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
-    }
-
     private static ChatWebhookNotifier Notifier(CapturingHandler handler, ChatOptions options, StoredSecretStore store) =>
-        new(new StubFactory(handler), new TestOptionsMonitor<ChatOptions>(options),
+        new(new HandlerClientFactory(handler), new TestOptionsMonitor<ChatOptions>(options),
             new PassthroughSecretProvider(NullLogger<PassthroughSecretProvider>.Instance), NullLogger<ChatWebhookNotifier>.Instance, stored: store);
 
     // --- Chat routing ---

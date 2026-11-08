@@ -119,7 +119,7 @@ public sealed class SyslogTlsTests : IDisposable
 
         await transport.SendAsync(Event(), CancellationToken.None);
 
-        var (bytes, _) = await collector.Received.WaitAsync(TimeSpan.FromSeconds(15));
+        var (bytes, _) = await collector.Received.WaitAsync(Waits.Hang);
         var text = Encoding.UTF8.GetString(bytes);
         var space = text.IndexOf(' ', StringComparison.Ordinal);
         var length = int.Parse(text[..space], System.Globalization.CultureInfo.InvariantCulture);
@@ -154,7 +154,7 @@ public sealed class SyslogTlsTests : IDisposable
             var pinned = Tls(collector.Port);
             pinned.ServerCertificateThumbprint = string.Join(' ', _server.Thumbprint.Chunk(2).Select(c => new string(c)));
             (await Transport(pinned).SendTestAsync(Event(), CancellationToken.None)).Should().BeNull();
-            (await collector.Received.WaitAsync(TimeSpan.FromSeconds(15))).Bytes.Should().NotBeEmpty();
+            (await collector.Received.WaitAsync(Waits.Hang)).Bytes.Should().NotBeEmpty();
         }
 
         // SHA-256 of the right certificate: accepted.
@@ -188,7 +188,7 @@ public sealed class SyslogTlsTests : IDisposable
         (await transport.SendTestAsync(Event(), CancellationToken.None)).Should().BeNull();
 
         looked.Should().Be(_client.Thumbprint, "looked up by its normalized thumbprint");
-        (await collector.Received.WaitAsync(TimeSpan.FromSeconds(15))).ClientThumbprint.Should().Be(_client.Thumbprint);
+        (await collector.Received.WaitAsync(Waits.Hang)).ClientThumbprint.Should().Be(_client.Thumbprint);
     }
 
     // CAP-33 review: the certificate a re-read replaces was never disposed. It is now, but only once no send holds it.

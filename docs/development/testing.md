@@ -23,6 +23,10 @@ mocking library; fakes are hand-written. There are **no** browser end-to-end tes
 | `TestCurrentUser` | Default `analyst1` with the Analyst role; override permissions for custom roles |
 | `CapturingSecurityEventSink` | Assert SIEM events |
 | `NoOpAuditWriter`, `NoOpCaseNotifications`, `TestSlaTargets`, `TestOptionsMonitor` | Stub out side effects and live settings |
+| `Waits.Until`, `Waits.Hang` (`tests/Shared`, both projects) | Wait for a condition rather than a fixed time; the generous limit for anything that should finish (see below) |
+| `ManualClock` (`tests/Shared`) | A `TimeProvider` whose timers fire only when the test calls `Advance`, for code that waits with `Task.Delay(delay, time)` |
+| `HandlerClientFactory` | An `IHttpClientFactory` whose clients all send through one stub or capturing handler |
+| `GateArrivals` (Application, internal) | Counts a test's own calls that have reached `GuardGate` or the template file gate, so a "still waiting behind the gate" check knows they got there |
 | `[SqlServerFact]` | Runs only when `CASEBOOK_TEST_SQL` is set |
 | `[SqlServerFullTextFact]` | CAP-22: runs only when that server also has Full-Text Search (`SERVERPROPERTY('IsFullTextInstalled') = 1`); skipped, saying so, otherwise. The `mssql/server` image doesn't have it, so the full-text path runs only against a full SQL Server install; the substring fallback is tested everywhere |
 
@@ -58,6 +62,54 @@ Each test creates and drops its own database. There are two kinds:
   again on SQL Server when `CASEBOOK_TEST_SQL` is set, as a row named `provider: "SqlServer"`. Without a server the row
   doesn't exist rather than passing as a skip. To put a test on both engines, take `string provider`, start with
   `TestDatabase.Open(provider)` and build contexts from it.
+
+### Writing tests that don't flake
+
+A test that passes on an idle machine has to pass on a busy one too: CI, or several suites at once. The integration
+tests take about 1 m 45 s with roughly 15 running at a time, and were checked by running four copies of the
+integration project and two of the unit project at once, with `-- xUnit.MaxParallelThreads=-1`, three times. That
+found every flake fixed here; repeat it after a change to timing-sensitive tests:
+
+```bash
+for i in 1 2 3 4; do dotnet test tests/IncidentManager.IntegrationTests --no-build -- xUnit.MaxParallelThreads=-1 & done
+for i in 1 2; do dotnet test tests/IncidentManager.UnitTests --no-build -- xUnit.MaxParallelThreads=-1 & done; wait
+```
+
+- **Wait for a condition, never a fixed time.** `await Waits.Until(() => cond, what: "...")` checks every 10 ms and
+  throws a `TimeoutException` naming what it waited for after 30 s. There are overloads for an async check and for
+  "the next value that passes". Don't hand-roll a `while (... && DateTime.UtcNow < deadline) await Task.Delay(20)`
+  loop, and don't `Task.Delay(200)` and hope the other thread got there.
+- **A limit on something that should finish is a hang guard: make it `Waits.Hang` (3 minutes).** A save, a host
+  starting, a signal from another thread. A healthy run never waits it out, so a long limit costs nothing, and a
+  tight one (5 s was common) fails tests that are fine on a slow machine. `Task.WhenAny(work, Task.Delay(Waits.Hang))`
+  and `.WaitAsync(Waits.Hang)` are both fine.
+- **A timeout the code under test applies isn't a hang guard.** Where a test gives a lookup a short time before it
+  counts as hung (`SidNames`, `WindowsNames`), a fake that hangs should wait for the test to release it, and the
+  timeout should be long enough for a call that doesn't hang to answer on a busy machine: 1 s, not 150 ms.
+- **Code that waits takes an optional `TimeProvider`,** and its test passes a `ManualClock` and calls `Advance`
+  instead of sleeping through the delay (`RowHashUpgradeHostedService`, `CyberArkCcpSecretProvider`'s cache, the
+  ATT&CK picker's typing pause). `ManualClock.Pending` tells the test when the code has started its delay.
+- **"Still waiting behind the gate" waits for the calls to arrive first.** The gates are static, so other tests share
+  them. Start `using var arrivals = GateArrivals.Watch();` just after the test takes the gate, start the calls, then
+  `await Waits.Until(() => arrivals.At(GateArrivals.Guard) >= 2)` before asserting they haven't finished. Without it,
+  a check that ran before they got there passed without proving anything. A new way of taking a gate goes through
+  `GateArrivals.Arrive` (`ImportWriterGateTests` reads the gate calls from source).
+- **"Nothing happens" checks** (a backed-off relay isn't called again, a second upgrade waits for the first) can only
+  wait a while and look. Keep those short and one-sided: they can pass when they shouldn't on a slow machine, but
+  never fail when they shouldn't.
+- **Don't put an assertion under an `if` the test doesn't control.** If a precondition makes the check meaningful,
+  assert the precondition (`noOutcomes.CaseOutcomes.Should().NotBeEmpty(...)`). An `if` on a theory's own parameter
+  is fine.
+- **Don't order rows by sleeping.** Windows' clock moves in ~15 ms steps, so two stamps a `Task.Delay(5)` apart can
+  tie. Move a `FixedClock` or `ManualClock`, or backdate the older row.
+- **A tuple subject is typed explicitly.** AwesomeAssertions checks a tuple with a typed `Be(T)`, and `T` picks up the
+  compiler's null-state from earlier lines, so `(a, b).Should().Be((null, "x"))` can warn CS8620 once `a` is known to
+  be non-null. Write `(string? A, string? B) s = (a, b); s.Should().Be((null, "x"));`.
+
+**Why each test still builds its own schema:** `EnsureCreated` on a fresh in-memory SQLite database takes about
+45 ms, and copying a ready one (`SqliteConnection.BackupDatabase`) about 0.2 ms. Over ~2,000 tests that's ~90 s of
+CPU, but with ~15 running at once it's a few seconds of a 1 m 45 s run, not worth moving ~100 test classes onto a
+shared template. Measure again if the suite's time grows.
 
 ### Upgrade-path test
 

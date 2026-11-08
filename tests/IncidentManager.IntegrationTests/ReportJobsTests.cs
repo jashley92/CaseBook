@@ -28,12 +28,9 @@ public sealed class ReportJobsTests
 
     private static async Task<ReportJob> Until(ReportJobs jobs, Guid caseId, ReportKind kind, Func<ReportJob, bool> done)
     {
-        for (var i = 0; i < 200; i++)
-        {
-            if (jobs.For(caseId, "robin", kind) is [var j, ..] && done(j)) return j;
-            await Task.Delay(20);
-        }
-        throw new TimeoutException();
+        ReportJob? job = null;
+        await Waits.Until(() => jobs.For(caseId, "robin", kind) is [var j, ..] && done(job = j), what: "the report job");
+        return job!;
     }
 
     [Fact]

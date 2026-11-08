@@ -683,9 +683,7 @@ public sealed class EmailSenderHeldMailTests : IAsyncLifetime
 
     private static async Task WaitForAsync(Func<Task<bool>> condition)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!await condition() && DateTime.UtcNow < deadline) await Task.Delay(20);
-        (await condition()).Should().BeTrue();
+        await Waits.Until(condition);
     }
 
     // Just enough SMTP to take a message; counts the messages taken.
