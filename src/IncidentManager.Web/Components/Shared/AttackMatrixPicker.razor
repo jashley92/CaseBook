@@ -5,9 +5,11 @@
    shown in a separate "custom" strip so they aren't silently dropped. Backs the Overview technique tag. *@
 
 @using IncidentManager.Application.Mitre
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 <div class="atkm-backdrop" @onclick="Cancel"></div>
-<div class="atkm-panel" role="dialog" aria-modal="true" aria-label="Select ATT&CK techniques" @onclick:stopPropagation="true"
+<div class="atkm-panel" tabindex="-1" role="dialog" aria-modal="true" aria-label="Select ATT&CK techniques" @onclick:stopPropagation="true"
      @onkeydown="OnPanelKey">
     <div class="atkm-head">
         <div class="atkm-title">
@@ -17,7 +19,7 @@
         <div class="atkm-search">
             <span class="bi bi-search" aria-hidden="true"></span>
             <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by ID or name…"
-                   value="@_filter" @oninput="OnFilter" aria-label="Filter techniques" />
+                   @bind:get="_filter" @bind:set="OnFilter" @bind:event="oninput" aria-label="Filter techniques" />
             @if (_filter.Length > 0)
             {
                 <button type="button" class="btn btn-sm btn-link p-0 ms-1" @onclick="ClearFilter" title="Clear filter">Clear</button>
@@ -102,7 +104,7 @@
             }
             @if (_customOpen)
             {
-                <input class="form-control form-control-sm atkm-custom-in" placeholder="T1234[.001]" aria-label="Technique ID" value="@_customId" @oninput="e => _customId = e.Value?.ToString() ?? string.Empty" />
+                <input class="form-control form-control-sm atkm-custom-in" placeholder="T1234[.001]" aria-label="Technique ID" @bind:get="_customId" @bind:set="v => _customId = v ?? string.Empty" @bind:event="oninput" />
                 <select class="form-select form-select-sm atkm-custom-in" aria-label="Tactic" @bind="_customTactic">
                     @foreach (var t in Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
                     {
@@ -239,8 +241,12 @@
         return col.Rows.Where(r => Matches(r.Parent) || r.Subs.Any(Matches)).ToList();
     }
 
-    private void OnFilter(ChangeEventArgs e) => _filter = e.Value?.ToString() ?? "";
-    private void ClearFilter() => _filter = "";
+    private void OnFilter(string? value) => _filter = value ?? "";
+    private async Task ClearFilter()
+    {
+        _filter = "";
+        try { await _filterBox.FocusAsync(); } catch (Exception) { /* element gone */ }
+    }
 
     // --- selection ---
     private bool IsSel(string id, MitreTactic tac) => _selected.TryGetValue(id, out var t) && t == tac;
@@ -317,8 +323,11 @@
     private async Task Apply() => await OnApply.InvokeAsync(new Dictionary<string, MitreTactic>(_selected, StringComparer.OrdinalIgnoreCase));
     private async Task Cancel() => await OnCancel.InvokeAsync();
 
-    // Keyboard: Escape closes without applying, like the app's other dialogs. Focus starts in the filter box.
+    // Keyboard: Escape closes without applying, like the app's other dialogs. Focus starts in the filter box, Tab stays
+    // inside the panel, and closing gives focus back to what opened it (imModal). The panel takes focus itself on a
+    // click on its text (tabindex="-1"), so Escape still reaches it.
     private ElementReference _filterBox;
+    private bool _armed;
     private async Task OnPanelKey(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") await Cancel();
@@ -326,9 +335,22 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            try { await _filterBox.FocusAsync(); } catch (Exception) { /* element gone */ }
-        }
+        if (!firstRender) return;
+        try { await JS.InvokeVoidAsync("imModal.arm", ".atkm-panel"); _armed = true; }
+        catch (JSException) { /* the trap is a progressive enhancement */ }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { } // prerendering: no JS yet
+    }
+
+    // The picker leaves when it applies, cancels or picks. A teardown call to script that fails (the circuit gone, the
+    // call cancelled) mustn't throw out of disposal.
+    public async ValueTask DisposeAsync()
+    {
+        if (!_armed) return;
+        _armed = false;
+        try { await JS.InvokeVoidAsync("imModal.release"); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        catch (OperationCanceledException) { }
     }
 }

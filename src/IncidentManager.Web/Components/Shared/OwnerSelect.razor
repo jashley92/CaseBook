@@ -13,8 +13,8 @@
 </select>
 @if (Owner == ExternalSentinel)
 {
-    <input class="form-control form-control-sm mt-1" value="@External" placeholder="External owner name"
-           aria-label="External owner name" @oninput="e => ExternalChanged.InvokeAsync(e.Value?.ToString())" />
+    <input class="form-control form-control-sm mt-1" @bind:get="External" placeholder="External owner name"
+           aria-label="External owner name" @bind:set="v => ExternalChanged.InvokeAsync(v)" @bind:event="oninput" />
 }
 
 @code {

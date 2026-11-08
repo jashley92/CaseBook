@@ -591,8 +591,8 @@ else
                                 <div class="d-flex align-items-start gap-2 im-own-keys" @onkeydown="e => CommentKey(e, t.Id)">
                                     <textarea class="form-control form-control-sm" rows="2" placeholder="Add a comment…"
                                               aria-label="@($"Comment on task: {t.Title}")"
-                                              value="@CommentDraft(t.Id)"
-                                              @oninput="e => SetCommentDraft(t.Id, e.Value?.ToString())"></textarea>
+                                              @bind:get="CommentDraft(t.Id)"
+                                              @bind:set="v => SetCommentDraft(t.Id, v)" @bind:event="oninput"></textarea>
                                     <button class="btn btn-sm btn-primary text-nowrap"
                                             title="Ctrl / ⌘ + Enter" disabled="@string.IsNullOrWhiteSpace(CommentDraft(t.Id))"
                                             @onclick="() => AddComment(t.Id)">Comment</button>

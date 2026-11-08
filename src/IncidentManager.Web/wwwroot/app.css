@@ -571,6 +571,7 @@ h1:focus {
     border: 1px solid var(--bs-border-color); border-radius: var(--im-radius-lg);
     box-shadow: 0 1rem 3rem rgba(0,0,0,.35); overflow: hidden;
 }
+.atkm-panel:focus { outline: none; }   /* it takes focus only so Escape works after a click on its text */
 .atkm-head { display: flex; align-items: center; gap: 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--bs-border-color); }
 .atkm-title { font-weight: 600; flex: 0 0 auto; }
 .atkm-search { display: flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--bs-secondary-color); }
@@ -1656,8 +1657,7 @@ h1:focus {
 .EasyMDEContainer .cm-s-easymde .cm-header { color: var(--bs-body-color); }
 .EasyMDEContainer .CodeMirror-selected { background: var(--bs-secondary-bg) !important; }
 
-/* --- ATT&CK tactic picker + chips (U-08c) --- */
-.tactic-picker { position: relative; }
+/* --- ATT&CK tactic chips (U-08c) --- */
 .tactic-chip {
     display: inline-flex;
     align-items: center;
@@ -1670,81 +1670,6 @@ h1:focus {
     border: 1px solid color-mix(in srgb, var(--tac, #6c757d) 45%, transparent);
     background: color-mix(in srgb, var(--tac, #6c757d) 12%, transparent);
     white-space: nowrap;
-}
-.tactic-modal-backdrop { /* scrim via --im-scrim (UX-04) */
-    position: fixed;
-    inset: 0;
-    z-index: 1080;
-    background: var(--im-scrim);
-}
-.tactic-modal {
-    position: fixed;
-    z-index: 1081;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(38rem, calc(100vw - 2rem));
-    max-height: min(80vh, 40rem);
-    display: flex;
-    flex-direction: column;
-    background: var(--bs-body-bg);
-    color: var(--bs-body-color);
-    border: 1px solid var(--bs-border-color);
-    border-radius: var(--im-radius-lg);
-    box-shadow: var(--im-shadow-lg);
-    overflow: hidden;
-}
-.tactic-modal-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    font-weight: 600;
-    border-bottom: 1px solid var(--bs-border-color);
-}
-.tactic-modal-body {
-    padding: 0.5rem;
-    overflow-y: auto;
-    display: grid;
-    gap: 0.35rem;
-}
-.tactic-option {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    width: 100%;
-    text-align: left;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--bs-border-color);
-    border-radius: var(--im-radius);
-    background: var(--bs-body-bg);
-    color: var(--bs-body-color);
-    cursor: pointer;
-}
-.tactic-option:hover { background: var(--bs-secondary-bg); }
-.tactic-option.on {
-    border-color: var(--tac, #6c757d);
-    background: color-mix(in srgb, var(--tac, #6c757d) 12%, transparent);
-}
-.tactic-option-icon {
-    font-size: var(--im-text-base);
-    color: var(--tac, #6c757d);
-    width: 1.4rem;
-    text-align: center;
-    flex: none;
-}
-.tactic-option-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.tactic-option-name { font-weight: 600; font-size: var(--im-text-table); }
-.tactic-option-name .tactic-id { font-weight: 400; font-size: var(--im-text-xs); color: var(--bs-secondary-color); margin-left: 0.25rem; }
-.tactic-option-desc { font-size: var(--im-text-xs); color: var(--bs-secondary-color); }
-.tactic-option-check { font-size: var(--im-text-lg); color: var(--tac, #6c757d); flex: none; }
-.tactic-option:not(.on) .tactic-option-check { color: var(--bs-border-color); }
-.tactic-modal-foot {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.65rem 1rem;
-    border-top: 1px solid var(--bs-border-color);
 }
 
 /* Actor → target attribution chips on Event-timeline steps */

@@ -107,7 +107,7 @@
                     </select>
                 }
                 <textarea id="@($"brief-{part.Key}")" data-tag-box data-tag-refs="@TagRefLabels" data-list-box class="form-control form-control-sm" rows="@part.Rows" maxlength="@CaseBrief.MaxPartLength"
-                          value="@_draft[part.Key]" @oninput="e => _draft[part.Key] = e.Value?.ToString()"></textarea>
+                          @bind:get="_draft[part.Key]" @bind:set="v => _draft[part.Key] = v" @bind:event="oninput"></textarea>
             </div>
         }
         @if (!Pane)

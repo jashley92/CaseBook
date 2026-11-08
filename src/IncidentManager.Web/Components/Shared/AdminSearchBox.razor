@@ -14,7 +14,7 @@
                placeholder="@(Compact ? "Filter settings" : "Filter settings and pages, e.g. upload size, timeout, logo")"
                role="combobox" aria-expanded="@(_hits.Count > 0 ? "true" : "false")" aria-controls="@($"{_id}-list")"
                aria-activedescendant="@(_active >= 0 ? $"{_id}-{_active}" : null)"
-               value="@_query" @oninput="OnInput" @onkeydown="OnKey" />
+               @bind:get="_query" @bind:set="OnInput" @bind:event="oninput" @onkeydown="OnKey" />
     </div>
     @if (_hits.Count > 0)
     {
@@ -46,9 +46,9 @@
     private IReadOnlyList<AdminSearchHit> _hits = [];
     private int _active = -1;
 
-    private void OnInput(ChangeEventArgs e)
+    private void OnInput(string? value)
     {
-        _query = e.Value?.ToString() ?? "";
+        _query = value ?? "";
         _hits = AdminSearchIndex.Search(_query, SevLabels, Compact ? 6 : 8);
         _active = _hits.Count > 0 ? 0 : -1;
     }

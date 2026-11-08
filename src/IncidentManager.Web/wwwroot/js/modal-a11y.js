@@ -27,6 +27,9 @@ window.imModal = (function () {
         var f = focusables(trapped);
         if (f.length === 0) { e.preventDefault(); try { trapped.focus(); } catch (_) {} return; }
         var first = f[0], last = f[f.length - 1];
+        // A click on the dialog's own text leaves focus on the dialog itself (tabindex="-1"), which is outside the
+        // list: Tab goes to the first control and Shift+Tab to the last, rather than out to the page behind.
+        if (f.indexOf(document.activeElement) < 0) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
@@ -46,11 +49,13 @@ window.imModal = (function () {
             var target = (body && focusables(body)[0]) || focusables(el)[0];
             if (target) { try { target.focus({ preventScroll: true }); } catch (_) {} }
         },
-        // Move focus into the visible trap modal and start cycling Tab within it.
-        arm: function () {
+        // Move focus into the visible trap modal and start cycling Tab within it. A dialog that isn't a .modal (the
+        // ATT&CK matrix panel) names itself with sel.
+        arm: function (sel) {
             // BUG-88: the topmost trap: a dialog, else a side panel (the entity or evidence panel, which a dialog can
             // open on top of).
-            var el = document.querySelector('.modal.d-block.im-trap') || document.querySelector('aside.im-trap');
+            var el = sel ? document.querySelector(sel)
+                : document.querySelector('.modal.d-block.im-trap') || document.querySelector('aside.im-trap');
             if (!el || el === trapped) return;
             if (trapped) {
                 detach();                       // switching from one modal to another: keep lastFocused
