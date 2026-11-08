@@ -217,7 +217,7 @@ public sealed class AlarmsHealthCheckTests : IDisposable
 
     private static bool Eventually(Func<bool> condition)
     {
-        var until = DateTime.UtcNow.AddSeconds(10);
+        var until = DateTime.UtcNow + Waits.Hang;   // a hang guard: a late answer can wait for a thread on a busy machine
         while (DateTime.UtcNow < until)
         {
             if (condition()) return true;

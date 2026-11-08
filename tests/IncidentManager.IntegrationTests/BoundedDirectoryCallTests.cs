@@ -261,7 +261,7 @@ public sealed class BoundedDirectoryCallTests
 
     private static bool Eventually(Func<bool> condition)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow + Waits.Hang;   // a hang guard: a late answer can wait for a thread on a busy machine
         while (DateTime.UtcNow < deadline)
         {
             if (condition()) return true;
