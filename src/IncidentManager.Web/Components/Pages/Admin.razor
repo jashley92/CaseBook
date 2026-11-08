@@ -250,9 +250,9 @@
                                                 break;
                                             case SettingKind.MultiText:
                                                 <textarea class="form-control font-monospace @InvalidClass(def)" id="@def.Key" rows="4"
-                                                          value="@_form[def.Key]"
+                                                          @bind:get="_form[def.Key]"
                                                           aria-describedby="@(def.Key == RelatedExclusionSettings.DomainsKey ? "org-domains-found" : null)"
-                                                          @oninput="e => _form[def.Key] = e.Value?.ToString()"></textarea>
+                                                          @bind:set="v => _form[def.Key] = v" @bind:event="oninput"></textarea>
                                                 @if (def.Key == RelatedExclusionSettings.DomainsKey)
                                                 {
                                                     @DiscoveredDomains(s, OrgDomains.Current)
@@ -263,8 +263,8 @@
                                                 var none = string.Equals(_form[def.Key], SlaTargetSettings.NoneValue, StringComparison.OrdinalIgnoreCase);
                                                 <div class="d-flex flex-wrap align-items-center gap-3">
                                                     <input class="form-control @InvalidClass(def)" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
-                                                           value="@(none ? "" : _form[def.Key])" disabled="@none" placeholder="@(none ? "No clock" : "General target")"
-                                                           @oninput="e => _form[def.Key] = e.Value?.ToString()" />
+                                                           @bind:get="@(none ? "" : _form[def.Key])" disabled="@none" placeholder="@(none ? "No clock" : "General target")"
+                                                           @bind:set="v => _form[def.Key] = v" @bind:event="oninput" />
                                                     <div class="form-check form-switch mb-0">
                                                         <input class="form-check-input" type="checkbox" id="@($"{def.Key}-none")" checked="@none"
                                                                @onchange="e => _form[def.Key] = (bool)(e.Value ?? false) ? SlaTargetSettings.NoneValue : null" />
@@ -274,13 +274,13 @@
                                                 break;
                                             case SettingKind.Int:
                                                 <input class="form-control @InvalidClass(def)" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
-                                                       value="@_form[def.Key]"
-                                                       @oninput="e => _form[def.Key] = e.Value?.ToString()" />
+                                                       @bind:get="_form[def.Key]"
+                                                       @bind:set="v => _form[def.Key] = v" @bind:event="oninput" />
                                                 break;
                                             default:
                                                 <input class="form-control @InvalidClass(def)" id="@def.Key" type="text"
-                                                       value="@_form[def.Key]"
-                                                       @oninput="e => _form[def.Key] = e.Value?.ToString()" />
+                                                       @bind:get="_form[def.Key]"
+                                                       @bind:set="v => _form[def.Key] = v" @bind:event="oninput" />
                                                 break;
                                         }
                                         @if (FieldProblem(def) is { } problem)
@@ -377,10 +377,10 @@
                                         @if (IsOverridden("Branding:AccentColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
                                         else { <span class="im-badge im-b-neutral ms-1">Default</span> }
                                         <div class="d-flex align-items-center gap-2 mt-1">
-                                            <input id="adm-brand-accent" type="color" class="form-control form-control-color" value="@AccentOrDefault"
-                                                   @oninput="e => OnAccentInput(e.Value?.ToString())" />
+                                            <input id="adm-brand-accent" type="color" class="form-control form-control-color" @bind:get="AccentOrDefault"
+                                                   @bind:set="OnAccentInput" @bind:event="oninput" />
                                             <input type="text" class="form-control font-monospace" style="max-width:9rem" aria-label="Accent color hex value" placeholder="#ffcf31"
-                                                   value="@_accentColor" @oninput="e => OnAccentInput(e.Value?.ToString())" />
+                                                   @bind:get="_accentColor" @bind:set="OnAccentInput" @bind:event="oninput" />
                                         </div>
                                         <div class="form-text">Blank uses the built-in gold.</div>
                                     </div>
@@ -389,10 +389,10 @@
                                         @if (IsOverridden("Branding:InkColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
                                         else { <span class="im-badge im-b-neutral ms-1">Default</span> }
                                         <div class="d-flex align-items-center gap-2 mt-1">
-                                            <input id="adm-brand-ink" type="color" class="form-control form-control-color" value="@InkOrDefault"
-                                                   @oninput="e => OnInkInput(e.Value?.ToString())" />
+                                            <input id="adm-brand-ink" type="color" class="form-control form-control-color" @bind:get="InkOrDefault"
+                                                   @bind:set="OnInkInput" @bind:event="oninput" />
                                             <input type="text" class="form-control font-monospace" style="max-width:9rem" aria-label="Primary action color hex value" placeholder="#232a33"
-                                                   value="@_inkColor" @oninput="e => OnInkInput(e.Value?.ToString())" />
+                                                   @bind:get="_inkColor" @bind:set="OnInkInput" @bind:event="oninput" />
                                         </div>
                                         <div class="form-text">Blank uses the built-in charcoal.</div>
                                     </div>

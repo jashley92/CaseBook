@@ -39,7 +39,7 @@
         <div style="min-width:16rem">
             <label class="form-label small mb-0" for="ind-search">Search</label>
             <input id="ind-search" class="form-control form-control-sm" placeholder="IP, domain, URL, hash… (defanged is fine)"
-                   value="@_search" @oninput="OnSearch" />
+                   @bind:get="_search" @bind:set="OnSearch" @bind:event="oninput" />
         </div>
         <div>
             <label class="form-label small mb-0" for="ind-type">Type</label>
@@ -326,9 +326,9 @@
     private async Task OnExercisesChanged(ChangeEventArgs e) { _includeExercises = e.Value is true; await Reload(); }
 
     // Debounced so typing doesn't re-query on every keystroke.
-    private async Task OnSearch(ChangeEventArgs e)
+    private async Task OnSearch(string? value)
     {
-        _search = e.Value?.ToString() ?? "";
+        _search = value ?? "";
         if (_searchDebounce is not null) await _searchDebounce.CancelAsync();
         _searchDebounce?.Dispose();
         _searchDebounce = new CancellationTokenSource();

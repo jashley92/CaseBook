@@ -48,7 +48,7 @@
         <div style="min-width:16rem">
             <label class="form-label small mb-0" for="ia-search">Search</label>
             <input id="ia-search" class="form-control form-control-sm" placeholder="Action, area, owner, case…"
-                   value="@_search" @oninput="OnSearch" />
+                   @bind:get="_search" @bind:set="OnSearch" @bind:event="oninput" />
         </div>
         @* CAP-36 review: one team's cases (by the team each case belongs to now), after need-to-know, as on Program. *@
         @if (_teams.Count > 0)
@@ -202,9 +202,9 @@
     }
 
     // Debounced so typing doesn't re-query on every keystroke.
-    private async Task OnSearch(ChangeEventArgs e)
+    private async Task OnSearch(string? value)
     {
-        _search = e.Value?.ToString() ?? "";
+        _search = value ?? "";
         if (_searchDebounce is not null) await _searchDebounce.CancelAsync();
         _searchDebounce?.Dispose();
         _searchDebounce = new CancellationTokenSource();

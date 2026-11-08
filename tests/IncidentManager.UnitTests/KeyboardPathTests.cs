@@ -199,7 +199,7 @@ public partial class KeyboardPathTests
     [GeneratedRegex(@"type\s*=\s*""(?:checkbox|radio|file|hidden|range|color|button|submit|date|datetime-local|time|number)""", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex NotText();
 
-    [GeneratedRegex(@"class\s*=\s*""[^""]*\b(?:im-own-keys|im-trap|im-action-host|modal|cmdk|atkm-panel|tactic-modal)\b|aria-modal\s*=\s*""true""", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"class\s*=\s*""[^""]*\b(?:im-own-keys|im-trap|im-action-host|modal|cmdk|atkm-panel)\b|aria-modal\s*=\s*""true""", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex OwnKeysOrDialog();
 
     [GeneratedRegex(@"""Enter""", RegexOptions.None, matchTimeoutMilliseconds: 1000)]

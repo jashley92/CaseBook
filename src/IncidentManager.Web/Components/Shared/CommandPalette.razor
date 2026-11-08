@@ -22,7 +22,7 @@
             <span class="bi bi-search cmdk-search-ic" aria-hidden="true"></span>
             <input @ref="_input" class="cmdk-input" type="text" autocomplete="off" spellcheck="false"
                    placeholder="Find anything, jump to a page, run an action…"
-                   value="@_query" @oninput="OnInput" @onkeydown="OnKeyDown"
+                   @bind:get="_query" @bind:set="OnInput" @bind:event="oninput" @onkeydown="OnKeyDown"
                    aria-label="Command palette search" aria-controls="cmdk-list" />
             <kbd class="cmdk-esc">Esc</kbd>
         </div>
@@ -228,9 +228,9 @@
         _ => Task.CompletedTask
     };
 
-    private async Task OnInput(ChangeEventArgs e)
+    private async Task OnInput(string? value)
     {
-        _query = e.Value?.ToString() ?? "";
+        _query = value ?? "";
         _selected = 0;
         await Refresh();
     }

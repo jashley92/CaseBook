@@ -86,7 +86,7 @@ window.imKeymap = (function () {
     // case, so a Ctrl/Cmd+Enter there submits nothing rather than the front case's composer.
     function submitCommand(el) {
         if (!el || !el.closest) return 'submit';
-        if (el.closest('.cmdk, .cmdk-help, .atkm-panel, .tactic-modal, .im-own-keys, .im-beside')) return null;
+        if (el.closest('.cmdk, .cmdk-help, .atkm-panel, .im-own-keys, .im-beside')) return null;
         const box = el.closest('.im-action-host, .im-trap, .im-sheet, [aria-modal="true"]');
         if (!box) return 'submit';
         return box.classList.contains('im-action-host') ? 'submit:action' : 'submit:dialog';

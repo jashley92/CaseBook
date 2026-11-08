@@ -7,7 +7,7 @@
 
 <div class="atk-field position-relative">
     <div class="input-group input-group-sm">
-        <input class="form-control form-control-sm" value="@_query" @oninput="OnInput" @onfocus="Reopen"
+        <input class="form-control form-control-sm" @bind:get="_query" @bind:set="OnInput" @bind:event="oninput" @onfocus="Reopen"
                placeholder="Search techniques or tactics" autocomplete="off" aria-label="ATT&CK technique or tactic" />
         <button type="button" class="btn btn-outline-secondary" @onclick="() => _matrix = true" title="Browse the ATT&CK matrix">
             <span class="bi bi-diagram-3" aria-hidden="true"></span>
@@ -110,9 +110,9 @@
         return d;
     }
 
-    private void OnInput(ChangeEventArgs e)
+    private void OnInput(string? value)
     {
-        _query = e.Value?.ToString() ?? "";
+        _query = value ?? "";
         Refresh();
     }
 
