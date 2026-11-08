@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Web.Realtime;
 using IncidentManager.Web.Services;
 using Microsoft.AspNetCore.Http.Connections;
