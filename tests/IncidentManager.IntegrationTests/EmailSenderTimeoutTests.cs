@@ -20,6 +20,25 @@ public sealed class EmailSenderTimeoutTests
     }
 
     [Fact]
+    public async Task The_timeout_a_test_sets_applies_only_to_its_own_sends()
+    {
+        // A process-wide override gave every email test running alongside a 1 s limit, and their sends timed out under load.
+        var started = new TaskCompletionSource();
+        var set = new TaskCompletionSource();
+        var other = Task.Run(async () => { started.SetResult(); await set.Task; return EmailSender.SendTimeoutOverride; });
+        await started.Task;
+        var was = EmailSender.SendTimeoutOverride;
+        EmailSender.SendTimeoutOverride = TimeSpan.FromSeconds(1);
+        try
+        {
+            set.SetResult();
+            (await other.WaitAsync(Waits.Hang)).Should().BeNull("another test's sends keep their own limit");
+            (await Task.Run(() => EmailSender.SendTimeoutOverride)).Should().Be(TimeSpan.FromSeconds(1), "work this test starts keeps it");
+        }
+        finally { EmailSender.SendTimeoutOverride = was; }
+    }
+
+    [Fact]
     public async Task With_email_off_a_send_isnt_counted_as_delivered(/* WF-21 */)
     {
         var sender = new EmailSender(new Monitor(new EmailOptions { Enabled = false }), NullLogger<EmailSender>.Instance);

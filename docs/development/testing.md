@@ -97,6 +97,12 @@ for i in 1 2; do dotnet test tests/IncidentManager.UnitTests --no-build -- xUnit
 - **"Nothing happens" checks** (a backed-off relay isn't called again, a second upgrade waits for the first) can only
   wait a while and look. Keep those short and one-sided: they can pass when they shouldn't on a slow machine, but
   never fail when they shouldn't.
+- **A test hook that changes behavior applies to the test's own flow, not the process.** Test classes run in
+  parallel in one process, so a static a test sets reaches every other test running at the time. When
+  `EmailSender.SendTimeoutOverride` was a plain static, the timeout tests' 1 s limit timed out other email tests'
+  sends under load; it's an `AsyncLocal` now, like `DeliveryWatch` and `GateArrivals`. A setting the code reads on a
+  timer is better as a constructor argument. (`RoleDirectory.RetryEvery` is still a static; it only makes other
+  tests' retries faster.)
 - **Don't put an assertion under an `if` the test doesn't control.** If a precondition makes the check meaningful,
   assert the precondition (`noOutcomes.CaseOutcomes.Should().NotBeEmpty(...)`). An `if` on a theory's own parameter
   is fine.
