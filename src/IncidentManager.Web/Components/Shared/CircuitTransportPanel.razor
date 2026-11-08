@@ -1,0 +1,45 @@
+@* Diagnostics: which transport this browser's circuit uses, and every circuit since start-up by transport. Anything but
+   WebSockets is a request per change (CircuitTransport.cs says why it happens and how it's read). *@
+@using IncidentManager.Web.Realtime
+@using Microsoft.AspNetCore.Http.Connections
+@inject CircuitTransportTracker Tracker
+@inject CircuitTransportCounts Counts
+@inject IncidentManager.Web.Services.TimeDisplay TimeDisp
+
+@{
+    var tally = Counts.Snapshot();
+}
+<table class="table table-sm">
+    <tbody>
+        <tr>
+            <td style="width:32%">This browser</td>
+            <td>
+                @if (Tracker.Transport is null)
+                {
+                    <span class="im-badge im-b-neutral">Not known</span>
+                    <span class="small text-muted ms-2">reload the page to check</span>
+                }
+                else if (Tracker.Transport == HttpTransportType.WebSockets)
+                {
+                    <span class="im-badge im-b-ok">WebSockets</span>
+                }
+                else
+                {
+                    <span class="im-badge im-b-warn">@CircuitTransportDisplay.Label(Tracker.Transport)</span>
+                    <span class="small text-muted ms-2">not WebSockets, so every change is a request of its own. @CircuitTransportDisplay.Fix</span>
+                }
+            </td>
+        </tr>
+        <tr>
+            <td>Circuits since start-up</td>
+            <td>
+                <span class="small">@CircuitTransportDisplay.Summary(tally)</span>
+                <span class="small text-muted ms-2">counted from @TimeDisp.Short(tally.SinceUtc)</span>
+                @if (CircuitTransportDisplay.FallbackNote(tally) is { } note)
+                {
+                    <div class="small text-muted mt-1">@note</div>
+                }
+            </td>
+        </tr>
+    </tbody>
+</table>

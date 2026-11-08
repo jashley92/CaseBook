@@ -31,6 +31,14 @@ builder.Services.AddRazorComponents()
     // character limit, read back from the Markdown editor, can pass that (non-ASCII text, escaped line breaks). 128 KB
     // covers it; anything bigger (the import box) is streamed rather than sent in one message.
     .AddHubOptions(o => o.MaximumReceiveMessageSize = 128 * 1024);
+// Which transport each circuit uses (Diagnostics, Browser connection): the hub filter reads SignalR's transport feature
+// on the _blazor connection, and a circuit handler keeps it for the circuit and counts it since start-up.
+builder.Services.AddSignalR(o => Microsoft.AspNetCore.SignalR.HubOptionsExtensions.AddFilter<IncidentManager.Web.Realtime.CircuitTransportHubFilter>(o));
+builder.Services.AddSingleton<IncidentManager.Web.Realtime.CircuitTransportHubFilter>();
+builder.Services.AddSingleton<IncidentManager.Web.Realtime.CircuitTransportCounts>();
+builder.Services.AddScoped<IncidentManager.Web.Realtime.CircuitTransportTracker>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(
+    sp => sp.GetRequiredService<IncidentManager.Web.Realtime.CircuitTransportTracker>());
 
 // --- Data Protection ---
 // The keyring protects antiforgery tokens and Blazor Server circuit state. By default it is ephemeral

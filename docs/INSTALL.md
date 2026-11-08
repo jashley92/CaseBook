@@ -37,7 +37,7 @@ while the **app data volume is the main thing that grows** — size it to your e
 | | Application / web host | Database host |
 |---|---|---|
 | **OS** | Windows Server 2022 (Standard/Datacenter) | Windows Server 2022 |
-| **Server software** | IIS + **.NET 10 Hosting Bundle**, 10.0.14 or later (fixes CVE-2026-111497; the install, upgrade and Verify-Install scripts warn on an older one) | **SQL Server 2022 Standard** (Express is unsupported: 10 GB cap, no SQL Agent for backups) |
+| **Server software** | IIS with the **WebSocket Protocol** feature + **.NET 10 Hosting Bundle**, 10.0.14 or later (fixes CVE-2026-111497; the install, upgrade and Verify-Install scripts warn on an older one) | **SQL Server 2022 Standard** (Express is unsupported: 10 GB cap, no SQL Agent for backups) |
 | **CPU** | 4 vCPU (2 minimum) | 4 vCPU |
 | **RAM** | 8 GB minimum, **16 GB recommended** (Blazor Server holds a live circuit per active user in memory; report generation adds headroom) | **16 GB** (cap SQL "max server memory" to leave the OS ~2–4 GB) |
 | **System disk** | 60 GB SSD (OS + .NET + published app) | 80 GB SSD (OS + SQL binaries) |
@@ -59,14 +59,33 @@ Virtual hardware is fine. RCSI is enabled on the database (read-heavy dashboards
 
 ### 1.3 Web host (Windows Server 2022)
 
-- [ ] IIS with Windows Authentication, then the **.NET 10 Hosting Bundle** (installs the ASP.NET Core Module).
-      Install the Hosting Bundle **after** IIS, then `iisreset`. CaseBook runs in a "No Managed Code" app pool,
-      so the ASP.NET 4.x and ISAPI features aren't needed.
+- [ ] IIS with Windows Authentication and the **WebSocket Protocol** feature, then the **.NET 10 Hosting Bundle**
+      (installs the ASP.NET Core Module). Install the Hosting Bundle **after** IIS, then `iisreset`. CaseBook runs in
+      a "No Managed Code" app pool, so the ASP.NET 4.x and ISAPI features aren't needed.
 
 ```powershell
-Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-Mgmt-Console -IncludeManagementTools
+Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-WebSockets, Web-Mgmt-Console -IncludeManagementTools
 # Then install the .NET 10 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/10.0
 ```
+
+- [ ] **WebSockets end to end.** Each open CaseBook tab keeps one live connection to the server (a Blazor circuit),
+      meant to run over a WebSocket. Without IIS's WebSocket Protocol feature the browser falls back to **long
+      polling**: a request for every keystroke and click, slower for everyone and more load on the server. CaseBook
+      still works, so nothing stops, but it shouldn't run that way.
+  - The feature: `Install-WindowsFeature Web-WebSockets` (Windows 10/11, for a test box:
+    `Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebSockets`). It takes effect without a restart as a
+    rule; Windows says when it needs one. `Install-CaseBook.ps1` checks it and offers to install it (or does,
+    unasked, with `-InstallWebSockets`; see §3).
+  - **A reverse proxy, load balancer or WAF in front** must pass the `Upgrade` and `Connection` headers through to
+    IIS (on nginx, `proxy_set_header Upgrade $http_upgrade;` and `proxy_set_header Connection "upgrade";`; on an
+    appliance, its WebSocket support), and let a connection stay open (an idle timeout of a few minutes or more;
+    Blazor pings every 15 seconds).
+  - **Checking it:** `Verify-Install.ps1 -Url` (§5) fails on a missing feature or WebSockets turned off for the site,
+    and tries a real WebSocket handshake to the app's `/_blazor` endpoint through the URL you give it, so through
+    whatever is in front. **Administration → Diagnostics → Browser connection** shows the transport your own tab uses
+    and every circuit's since start-up. Or in the browser: open the developer tools' **Network** tab and reload.
+    **One `websocket` row for `_blazor?id=…` with status `101`** is right. **Many `xhr` or `fetch` rows for
+    `_blazor?id=…`** (one per keystroke) mean long polling.
 
 - [ ] **Where the app comes from** (pick one):
   - **Recommended: the release bundle.** Download `casebook-<version>.zip` (and its `.sha256`) from the
@@ -240,6 +259,12 @@ Or pass every value directly instead of a config file:
 - The template doesn't set `App:BaseUrl` (email links and logo; set it in Administration → Notifications),
   `Agenda:FeedKey` (calendar subscriptions), or any SIEM, chat or CyberArk endpoint. See
   [operations/configuration.md](operations/configuration.md).
+- **WebSockets**: before publishing, the installer checks the IIS WebSocket Protocol feature (`Get-WindowsFeature
+  Web-WebSockets` on Windows Server, `Get-WindowsOptionalFeature IIS-WebSockets` on Windows 10/11), and after
+  configuring the site that `system.webServer/webSocket` isn't turned off for the server or the site. When either is
+  wrong it says why it matters and asks to fix it; `-InstallWebSockets` fixes both without asking, and says if Windows
+  needs a restart. Run unattended (no console, or `powershell -NonInteractive`) without the switch, it warns and
+  carries on, since CaseBook still runs over long polling. A proxy in front is checked by `Verify-Install.ps1 -Url`.
 - **Anonymous endpoints (CAP-37):** the installer opens `/health` (and every probe below it), `/branding/logo` and
   `/agenda/feed.ics` to anonymous requests with `<location>` entries, the same way as `/api`, so a load balancer,
   mail clients and calendar apps reach them without a sign-in. The app still enforces each: the probes answer a
@@ -328,11 +353,18 @@ cd <repo>\deploy
 
 The smoke test checks the app pool, a signed-in request to the site, and that `/api`, `/health/live`, `/health/alarms`,
 `/branding/logo` and `/agenda/feed.ics` reach CaseBook without a sign-in (a 401 or 403 there is IIS refusing first).
+It then checks WebSockets: the IIS WebSocket Protocol feature is installed, `system.webServer/webSocket` is on for the
+site (`-SiteName` if yours isn't `CaseBook`), and a real WebSocket handshake to `/_blazor`, signed in, answers
+`101 Switching Protocols`. A FAIL names the fix: `Install-WindowsFeature Web-WebSockets`, and check any reverse proxy or
+load balancer passes the `Upgrade` and `Connection` headers. Run it with the URL users open (through the load
+balancer) to test what's in front too.
 
 Then, signed in as a mapped user:
 
 - [ ] The dashboard loads; you can open **Administration** as an App Admin.
 - [ ] **Integrity → "Verify now"** reports the chain **VALID**.
+- [ ] **Diagnostics → Browser connection** shows *WebSockets* for this browser (the health check of the same name
+      is flagged under *Needs attention* when it's Server-Sent Events or long polling).
 - [ ] **Diagnostics** shows *Search: full-text (SQL Server)* if you installed Full-Text Search (§1.4), or
       *Search: substring (full-text not installed)* if not. Either works.
 - [ ] Create a throwaway case; confirm it saves and appears in the audit trail. (Prod does **not**
@@ -442,6 +474,7 @@ The full guide is [operations/troubleshooting.md](operations/troubleshooting.md)
 | `500.19` (0x8007000d), Module *IIS Web Core*, and **no app log at all** | The **ASP.NET Core Module isn't registered**. Install the **.NET 10 Hosting Bundle** (not just the SDK), `iisreset`, retry. The installer preflights this. |
 | `500.30` / `500.31` on first hit | The app couldn't start: usually the connection string or SQL login, a store path the app pool can't write (the data folders, not the web root), or a migration failure. Check the Application event log and `logs\stdout`. |
 | The app pool stops immediately | A non-gMSA account installed without `-AppPoolCredential`: the password is blank. Set it in IIS Manager. |
+| Pages feel slow; the browser's Network tab shows many `xhr` `_blazor?id=` requests, one per keystroke | Long polling: no WebSocket reaches the app. Install the IIS WebSocket Protocol feature (`Install-WindowsFeature Web-WebSockets`) and check any reverse proxy or load balancer passes the `Upgrade` and `Connection` headers. `Verify-Install.ps1 -Url` says which ([troubleshooting](operations/troubleshooting.md#pages-are-slow-and-the-network-tab-shows-a-request-per-keystroke-long-polling)). |
 | `401 Unauthorized` for everyone | Windows Auth isn't negotiating: missing **SPN** for the hostname, or the site isn't in the browser's intranet zone. |
 | `401` on `/health`, the email logo or the calendar feed | The anonymous carve-out for that path is missing (a site installed before CAP-37, or changed since). `Upgrade-CaseBook.ps1` checks and sets it; so does re-running the installer. As a fallback, apply it with `appcmd` ([UPGRADE.md](UPGRADE.md), *v1.10.0*). |
 | `401` calling **`POST /api/import/cases`** | Send `Authorization: Bearer <token>`. If a valid token still gets 401, the `/api` anonymous carve-out is missing (`Upgrade-CaseBook.ps1` or the installer sets it; or apply it with `appcmd`). A token without `EditCases` gets **403**. |

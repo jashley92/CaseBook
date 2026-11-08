@@ -234,6 +234,13 @@ paperwork, or the whole case), and `CaseService.RefreshPartsAsync` re-reads only
 removes a closed tab. Both are in-process. Writes made outside EF tracking, or by another process, aren't
 broadcast.
 
+Which SignalR transport carries each circuit is read from SignalR itself: `CircuitTransportHubFilter`, a hub filter on
+every hub, makes the connection's `IHttpTransportFeature` current for each hub call (Blazor's `StartCircuit` and
+`ConnectCircuit` among them), and `CircuitTransportTracker`, a circuit handler, keeps it for the circuit and counts the
+circuit once in `CircuitTransportCounts` (in memory, since start-up). Diagnostics shows both
+(`Web/Realtime/CircuitTransport.cs`); anything but WebSockets means long polling or Server-Sent Events, a request per
+change ([troubleshooting](../operations/troubleshooting.md#pages-are-slow-and-the-network-tab-shows-a-request-per-keystroke-long-polling)).
+
 ## Error handling and logging
 
 | Where | Behavior |

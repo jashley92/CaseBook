@@ -118,6 +118,25 @@ No NuGet source is registered for the account running the installer. `dotnet nug
 If you used a normal domain account rather than a gMSA and didn't pass `-AppPoolCredential (Get-Credential)`,
 the installer set a blank password. Set the identity's password in IIS Manager (or rerun with the credential).
 
+### Pages are slow, and the Network tab shows a request per keystroke (long polling)
+
+- **Symptom:** typing and clicking lag, and the browser's developer tools (**Network** tab, reload the page) show many
+  `xhr` or `fetch` rows for `_blazor?id=…`, a new one for each keystroke, instead of one `websocket` row with status
+  `101`. **Administration → Diagnostics → Browser connection** says *Long polling* (or *Server-Sent Events*), and
+  *Needs attention* lists it.
+- **Cause:** the browser's circuit couldn't open a WebSocket, so SignalR fell back. One of: the IIS **WebSocket
+  Protocol** feature isn't installed; `system.webServer/webSocket` is turned off for the server or the site; or a
+  reverse proxy, load balancer or WAF in front drops the `Upgrade` and `Connection` headers (or closes idle
+  connections).
+- **Where to look:** `Verify-Install.ps1 -Url <the URL users open>` checks each in turn: the feature, the site's
+  setting, then a real WebSocket handshake to `/_blazor` through that URL. A failed handshake when the first two pass
+  points at what's in front. *Since start-up* under Browser connection counts circuits by transport: every browser
+  falling back points at the server, some at the network path those users take.
+- **Fix:** `Install-WindowsFeature Web-WebSockets` (or re-run `Install-CaseBook.ps1 -InstallWebSockets`, which also
+  turns WebSockets on for the site), and check any reverse proxy or load balancer passes the `Upgrade` and `Connection`
+  headers. Open tabs keep their transport until they reload. `Upgrade-CaseBook.ps1` warns about the first two, and
+  changes neither.
+
 ## Database
 
 ### Migration failures
