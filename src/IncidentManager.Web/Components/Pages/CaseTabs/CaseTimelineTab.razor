@@ -3634,13 +3634,12 @@ else
     {
         Disposed = true;
         Edits.Forget(this);
-        try { await JS.InvokeVoidAsync("imMotion.unwatchTimelineToolbar"); } catch { /* circuit may already be gone */ }
+        await JS.StopAsync("imMotion.unwatchTimelineToolbar");
         _mentionLoad.Invalidate();
         await StashDraft();
         foreach (var id in _mdEditors)
         {
-            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
-            catch { /* circuit may already be gone during teardown */ }
+            await JS.StopAsync("markdownEditor.destroy", id);
         }
         _mdEditors.Clear();
     }

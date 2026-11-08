@@ -2,25 +2,28 @@
    they belong to, so choosing a technique in a column *is* choosing its tactic. Sub-techniques are
    collapsed under their parent. Multi-select with add + remove: the grid reflects what's already
    tagged, and Apply syncs the difference. Off-catalogue tags (not in ATT&CK v19.1) are preserved and
-   shown in a separate "custom" strip so they aren't silently dropped. Backs the Overview technique tag. *@
+   shown in a separate "custom" strip so they aren't silently dropped. Backs the Overview technique tag.
+   While filtering, only the tactics with a match show, side by side from the left, under a line saying how many
+   (AttackMatrixView); the others fold away with a short transition. *@
 
 @using IncidentManager.Application.Mitre
+@using IncidentManager.Web.Services
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
 <div class="atkm-backdrop" @onclick="Cancel"></div>
-<div class="atkm-panel" tabindex="-1" role="dialog" aria-modal="true" aria-label="Select ATT&CK techniques" @onclick:stopPropagation="true"
+<div class="atkm-panel" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="@_titleId" @onclick:stopPropagation="true"
      @onkeydown="OnPanelKey">
     <div class="atkm-head">
-        <div class="atkm-title">
-            <span class="bi bi-diagram-3 me-2" aria-hidden="true"></span>
-            <span>@(SingleSelect ? "Choose a technique" : "Select ATT&CK techniques") <span class="text-muted small">@AttackCatalog.Version</span></span>
-        </div>
+        <h2 class="atkm-title" id="@_titleId">
+            <span class="bi bi-diagram-3 me-2" aria-hidden="true"></span>@(SingleSelect ? "Choose a technique" : "Select ATT&CK techniques") <span class="text-muted small fw-normal">@AttackCatalog.Version</span>
+        </h2>
         <div class="atkm-search">
             <span class="bi bi-search" aria-hidden="true"></span>
+            @* Bound (not value= with @oninput) so a render never sends older text over newer keystrokes; see OnFilter. *@
             <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by ID or name…"
-                   @bind:get="_filter" @bind:set="OnFilter" @bind:event="oninput" aria-label="Filter techniques" />
-            @if (_filter.Length > 0)
+                   @bind:get="_text" @bind:set="OnFilter" @bind:event="oninput" @onkeydown="OnFilterKey" aria-label="Filter techniques" />
+            @if (_text.Length > 0)
             {
                 <button type="button" class="btn btn-sm btn-link p-0 ms-1" @onclick="ClearFilter" title="Clear filter">Clear</button>
             }
@@ -28,34 +31,51 @@
         <button type="button" class="btn-close" aria-label="Close" @onclick="Cancel"></button>
     </div>
 
-    <div class="atkm-grid">
-        @foreach (var col in Matrix)
+    @if (_view.Summary is { } summary)
+    {
+        <div class="atkm-filterline small text-muted" role="status">@summary</div>
+    }
+
+    @* Every tactic stays in the grid: one with no match folds away (CSS) rather than leaving, so the rest slide into place.
+       A folded column is inert: out of the tab order and the accessibility tree. *@
+    <div class="atkm-grid" @ref="_grid">
+        @if (_view.NoMatchText is { } none)
         {
-            var rows = VisibleRows(col);
-            <div class="atkm-col">
-                <div class="atkm-colhead @(TacticPickable ? "atkm-colhead-btn" : "")" style="--tac:@Ui.TacticColor(col.Tactic)"
-                     title="@(TacticPickable ? $"Pick {Ui.Label(col.Tactic)} as a tactic-only step" : Ui.TacticId(col.Tactic))"
+            <div class="atkm-nomatch" role="status">@none</div>
+        }
+        @foreach (var col in _view.Columns)
+        {
+            var rows = col.Rows;
+            var selN = col.Hidden ? 0 : rows.Count(r => IsSel(r.Row.Parent.Id, col.Tactic) || r.Row.Subs.Any(s => IsSel(s.Id, col.Tactic)));
+            <div @key="col.Tactic" class="atkm-col @(col.Hidden ? "atkm-col-hidden" : "")" style="--tac:@Ui.TacticColor(col.Tactic)"
+                 aria-hidden="@(col.Hidden ? "true" : null)" inert="@col.Hidden">
+                <div class="atkm-colhead @(TacticPickable ? "atkm-colhead-btn" : "")"
+                     title="@ColumnTitle(col.Tactic)"
                      role="@(TacticPickable ? "button" : null)" tabindex="@(TacticPickable ? "0" : null)"
                      @onclick="() => PickTacticHeader(col.Tactic)" @onkeydown="async e => { if (TacticPickable && IsActivate(e)) await PickTacticHeader(col.Tactic); }">
                     <span class="bi @Ui.TacticGlyph(col.Tactic)" aria-hidden="true"></span>
                     <span class="atkm-colname">@Ui.Label(col.Tactic)</span>
-                    @{ var selN = rows.Count(r => IsSel(r.Parent.Id, col.Tactic) || r.Subs.Any(s => IsSel(s.Id, col.Tactic))); }
-                    @if (selN > 0) { <span class="atkm-colcount">@selN</span> }
+                    @if (selN > 0) { <span class="atkm-colcount" aria-label="@selN selected">@selN</span> }
                 </div>
                 <div class="atkm-cells">
-                    @foreach (var row in rows)
+                    @foreach (var shown in rows)
                     {
+                        var row = shown.Row;
                         var pid = row.Parent.Id;
-                        var expanded = _expanded.Contains(pid) || (_filter.Length > 0 && row.Subs.Any(s => Matches(s)));
+                        var expanded = _expanded.Contains(pid) || shown.OpenForMatch;
                         <div class="atkm-row">
+                            @* A parent listed only for its sub-techniques is a heading: it opens them, so it's expanded or
+                               not, never pressed. *@
                             <div class="atkm-cell @CellClass(pid, col.Tactic, row.ParentInTactic)"
-                                 role="button" tabindex="0" aria-pressed="@(IsSel(pid, col.Tactic) ? "true" : "false")"
+                                 role="button" tabindex="0"
+                                 aria-pressed="@(row.ParentInTactic ? (IsSel(pid, col.Tactic) ? "true" : "false") : null)"
+                                 aria-expanded="@(row.ParentInTactic || row.Subs.Count == 0 ? null : (expanded ? "true" : "false"))"
                                  aria-label="@($"{pid} {row.Parent.Name}, {Ui.Label(col.Tactic)}")"
                                  @onclick="() => ToggleParent(row, col.Tactic)" @onkeydown="async e => { if (IsActivate(e)) await ToggleParent(row, col.Tactic); }">
                                 @if (row.Subs.Count > 0)
                                 {
                                     <button type="button" class="atkm-exp" @onclick="() => ToggleExpand(pid)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"
-                                            aria-label="@(expanded ? "Collapse" : "Expand") sub-techniques">
+                                            aria-label="@(expanded ? "Collapse" : "Expand") the sub-techniques of @pid" aria-expanded="@(expanded ? "true" : "false")">
                                         <span class="bi @(expanded ? "bi-caret-down-fill" : "bi-caret-right-fill")" aria-hidden="true"></span>
                                     </button>
                                 }
@@ -64,21 +84,21 @@
                                     <span class="atkm-exp-spacer"></span>
                                 }
                                 <span class="atkm-tid"><code>@pid</code></span>
-                                <span class="atkm-tname">@row.Parent.Name</span>
-                                @if (row.Subs.Count > 0) { <span class="atkm-subn">@row.Subs.Count</span> }
+                                <span class="atkm-tname" title="@row.Parent.Name">@row.Parent.Name</span>
+                                @if (row.Subs.Count > 0) { <span class="atkm-subn" title="@row.Subs.Count sub-techniques">@row.Subs.Count</span> }
                                 @if (IsSel(pid, col.Tactic)) { <span class="bi bi-check2 atkm-tick" aria-hidden="true"></span> }
                                 else if (IsSelElsewhere(pid, col.Tactic)) { <span class="atkm-elsew" title="Tagged under @Ui.Label(_selected[pid])">•</span> }
                             </div>
                             @if (expanded)
                             {
-                                @foreach (var sub in row.Subs)
+                                @foreach (var sub in shown.ShownSubs)
                                 {
                                     <div class="atkm-cell atkm-subcell @CellClass(sub.Id, col.Tactic, true)"
                                          role="button" tabindex="0" aria-pressed="@(IsSel(sub.Id, col.Tactic) ? "true" : "false")"
                                          aria-label="@($"{sub.Id} {sub.Name}, {Ui.Label(col.Tactic)}")"
                                          @onclick="() => ToggleTechnique(sub.Id, col.Tactic)" @onkeydown="async e => { if (IsActivate(e)) await ToggleTechnique(sub.Id, col.Tactic); }">
                                         <span class="atkm-tid"><code>@sub.Id</code></span>
-                                        <span class="atkm-tname">@sub.Name</span>
+                                        <span class="atkm-tname" title="@sub.Name">@sub.Name</span>
                                         @if (IsSel(sub.Id, col.Tactic)) { <span class="bi bi-check2 atkm-tick" aria-hidden="true"></span> }
                                         else if (IsSelElsewhere(sub.Id, col.Tactic)) { <span class="atkm-elsew" title="Tagged under @Ui.Label(_selected[sub.Id])">•</span> }
                                     </div>
@@ -86,7 +106,6 @@
                             }
                         </div>
                     }
-                    @if (rows.Count == 0) { <div class="atkm-empty">—</div> }
                 </div>
             </div>
         }
@@ -106,7 +125,7 @@
             {
                 <input class="form-control form-control-sm atkm-custom-in" placeholder="T1234[.001]" aria-label="Technique ID" @bind:get="_customId" @bind:set="v => _customId = v ?? string.Empty" @bind:event="oninput" />
                 <select class="form-select form-select-sm atkm-custom-in" aria-label="Tactic" @bind="_customTactic">
-                    @foreach (var t in Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
+                    @foreach (var t in AttackMatrixView.Tactics)
                     {
                         <option value="@t">@Ui.Label(t)</option>
                     }
@@ -129,7 +148,7 @@
         }
         else
         {
-            <div class="atkm-summary small text-muted">
+            <div class="atkm-summary small text-muted" role="status">
                 @Delta() selected@(ChangeCount() > 0 ? $" · +{AddedCount()} / −{RemovedCount()}{(RetaggedCount() > 0 ? $" / ~{RetaggedCount()}" : "")} on apply" : "")
             </div>
             @if (!_customOpen && _customTags.Count == 0)
@@ -168,9 +187,9 @@
 
     private bool TacticPickable => SingleSelect && AllowTacticOnly;
 
+    private readonly string _titleId = "atkm-" + Guid.NewGuid().ToString("N")[..8];
     private readonly Dictionary<string, MitreTactic> _selected = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
-    private string _filter = "";
     private bool _initialized;
 
     private bool _customOpen;
@@ -192,60 +211,65 @@
         _initialized = true;
     }
 
-    // --- matrix structure (catalogue-derived, built once) ---
-    private sealed record Row(AttackTechnique Parent, bool ParentInTactic, IReadOnlyList<AttackTechnique> Subs);
-    private sealed record Col(MitreTactic Tactic, IReadOnlyList<Row> Rows);
-    private static IReadOnlyList<Col>? _matrix;
-    private static IReadOnlyList<Col> Matrix => _matrix ??= Build();
-
-    private static IReadOnlyList<Col> Build()
+    // The column head's tooltip: the tactic's id and what it is, and in tactic-only mode that a click records it.
+    private string ColumnTitle(MitreTactic tac)
     {
-        var all = AttackCatalog.All;
-        var parents = all.Where(t => !t.IsSubtechnique).ToDictionary(t => t.Id, StringComparer.OrdinalIgnoreCase);
-        var subsByParent = all.Where(t => t.IsSubtechnique)
-            .GroupBy(t => t.ParentId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.OrdinalIgnoreCase);
-
-        var cols = new List<Col>();
-        foreach (var tac in Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
-        {
-            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var p in parents.Values) if (p.Tactics.Contains(tac)) ids.Add(p.Id);
-            foreach (var kv in subsByParent) if (kv.Value.Any(s => s.Tactics.Contains(tac))) ids.Add(kv.Key);
-
-            var rows = ids.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-                .Where(parents.ContainsKey)
-                .Select(pid =>
-                {
-                    var parent = parents[pid];
-                    var subs = subsByParent.TryGetValue(pid, out var sl)
-                        ? sl.Where(s => s.Tactics.Contains(tac)).ToList()
-                        : new List<AttackTechnique>();
-                    return new Row(parent, parent.Tactics.Contains(tac), subs);
-                })
-                .ToList();
-            cols.Add(new Col(tac, rows));
-        }
-        return cols;
+        var what = $"{Ui.TacticId(tac)}: {Ui.TacticDescription(tac)}";
+        return TacticPickable ? $"{what} Click to pick {Ui.Label(tac)} as a tactic-only step." : what;
     }
 
-    // --- filtering ---
-    private bool Matches(AttackTechnique t) =>
-        _filter.Length == 0
-        || t.Id.Contains(_filter, StringComparison.OrdinalIgnoreCase)
-        || t.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase);
+    // --- filtering: the columns are worked out once per change of the filter (AttackMatrixView), not on every render ---
+    // The box shows each keystroke; the filter, the counts line and the columns' fold wait for typing to pause, so a word
+    // typed is one change, not one a letter, and a later keystroke supersedes an earlier one. Until then only the box has
+    // changed, and the browser already shows it, so the render Blazor makes as the handler first waits is skipped (unless
+    // the Clear button comes or goes): a keystroke doesn't re-render the matrix. The box is bound with @bind:get/@bind:set,
+    // so Blazor's copy of its value keeps step with the browser: a later render sends nothing, and only a clear changes it.
+    private string _text = "";   // what's in the box, every keystroke; the matrix is filtered by _view.Filter once typing pauses
+    private readonly TypingPause _pause = new();
+    private bool _quiet;
+    private AttackMatrixView _view = AttackMatrixView.Unfiltered;
+    private bool _moved;
 
-    private List<Row> VisibleRows(Col col)
+    internal async Task OnFilter(string? text)
     {
-        if (_filter.Length == 0) return col.Rows.ToList();
-        return col.Rows.Where(r => Matches(r.Parent) || r.Subs.Any(Matches)).ToList();
+        var had = _text.Length > 0;
+        _text = text ?? "";
+        _quiet = had == (_text.Length > 0);
+        if (await _pause.Settled()) SetFilter(_text);
+        else _quiet = true; // superseded: nothing new to draw
     }
 
-    private void OnFilter(string? value) => _filter = value ?? "";
+    // Enter applies what's typed at once (a held key, once).
+    private void OnFilterKey(KeyboardEventArgs e)
+    {
+        if (e is not { Key: "Enter", Repeat: false }) return;
+        _pause.Now();
+        SetFilter(_text);
+    }
+
+    // A keystroke waiting out, or superseded in, its pause changes nothing on screen, so it doesn't re-render the matrix.
+    protected override bool ShouldRender()
+    {
+        if (!_quiet) return true;
+        _quiet = false;
+        return false;
+    }
+
     private async Task ClearFilter()
     {
-        _filter = "";
+        _pause.Now();
+        _text = "";
+        SetFilter("");
+        // The Clear button goes with the filter: focus goes back to the box rather than dropping to the page.
         try { await _filterBox.FocusAsync(); } catch (Exception) { /* element gone */ }
+    }
+
+    private void SetFilter(string? value)
+    {
+        var next = AttackMatrixView.For(value, _view);
+        _moved |= next.Layout != _view.Layout;
+        _view = next;
+        _quiet = false;
     }
 
     // --- selection ---
@@ -260,7 +284,7 @@
         return "";
     }
 
-    private async Task ToggleParent(Row row, MitreTactic tac)
+    private async Task ToggleParent(AttackMatrixRow row, MitreTactic tac)
     {
         if (!row.ParentInTactic) { ToggleExpand(row.Parent.Id); return; } // header-only row: click expands
         await ToggleTechnique(row.Parent.Id, tac);
@@ -327,30 +351,39 @@
     // inside the panel, and closing gives focus back to what opened it (imModal). The panel takes focus itself on a
     // click on its text (tabindex="-1"), so Escape still reaches it.
     private ElementReference _filterBox;
+    private ElementReference _grid;
     private bool _armed;
     private async Task OnPanelKey(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape") await Cancel();
+        if (e.Key != "Escape") return;
+        _pause.Now(); // a pending filter doesn't land after the picker closes
+        await Cancel();
     }
 
+    // When a filter change moves the columns, the grid goes back to its left edge (smoothly, unless motion is reduced),
+    // and focus left in a column that just folded away goes back to the box.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        try { await JS.InvokeVoidAsync("imModal.arm", ".atkm-panel"); _armed = true; }
-        catch (JSException) { /* the trap is a progressive enhancement */ }
+        try
+        {
+            if (firstRender) { await JS.InvokeVoidAsync("imModal.arm", ".atkm-panel"); _armed = true; }
+            else if (_moved)
+            {
+                _moved = false;
+                await JS.InvokeVoidAsync("imModal.toStart", _grid, _filterBox);
+            }
+        }
+        catch (JSException) { /* the trap and the scroll are progressive enhancements */ }
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { } // prerendering: no JS yet
     }
 
-    // The picker leaves when it applies, cancels or picks. A teardown call to script that fails (the circuit gone, the
-    // call cancelled) mustn't throw out of disposal.
+    // The picker leaves when it applies, cancels or picks.
     public async ValueTask DisposeAsync()
     {
+        _pause.Now();
         if (!_armed) return;
         _armed = false;
-        try { await JS.InvokeVoidAsync("imModal.release"); }
-        catch (JSException) { }
-        catch (JSDisconnectedException) { }
-        catch (OperationCanceledException) { }
+        await JS.StopAsync("imModal.release");
     }
 }

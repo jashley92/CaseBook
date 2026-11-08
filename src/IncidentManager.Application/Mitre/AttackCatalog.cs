@@ -66,6 +66,13 @@ public static class AttackCatalog
         return int.MaxValue;
     }
 
+    /// <summary>Whether a technique matches <paramref name="filter"/>: its id or name contains it, ignoring case.
+    /// Everything matches an empty one. <see cref="Search"/> ranks matches; the matrix picker (AttackMatrixView) shows them.</summary>
+    public static bool Matches(AttackTechnique t, string filter) =>
+        filter.Length == 0
+        || t.Id.Contains(filter, StringComparison.OrdinalIgnoreCase)
+        || t.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
     private static ImmutableArray<AttackTechnique> Load()
     {
         var asm = typeof(AttackCatalog).Assembly;

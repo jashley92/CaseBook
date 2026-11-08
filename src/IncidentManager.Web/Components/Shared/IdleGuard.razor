@@ -113,9 +113,7 @@
     {
         if (_countdownCts is not null) await _countdownCts.CancelAsync();   // S6966
         _countdownCts?.Dispose();
-        try { await JS.InvokeVoidAsync("imIdle.stop"); }
-        catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { /* prerender: no JS */ }
+        await JS.StopAsync("imIdle.stop");
         _ref?.Dispose();
     }
 }

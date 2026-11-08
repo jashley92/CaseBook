@@ -573,12 +573,21 @@ h1:focus {
 }
 .atkm-panel:focus { outline: none; }   /* it takes focus only so Escape works after a click on its text */
 .atkm-head { display: flex; align-items: center; gap: 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--bs-border-color); }
-.atkm-title { font-weight: 600; flex: 0 0 auto; }
+.atkm-title { font-weight: 600; flex: 0 0 auto; font-size: inherit; line-height: inherit; margin: 0; }
 .atkm-search { display: flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--bs-secondary-color); }
 .atkm-search input { min-width: 16rem; }
 
-.atkm-grid { flex: 1 1 auto; display: flex; gap: .5rem; overflow: auto; padding: .75rem; align-items: flex-start; }
-.atkm-col { flex: 0 0 15rem; display: flex; flex-direction: column; border: 1px solid var(--bs-border-color); border-radius: var(--im-radius); overflow: hidden; background: var(--bs-body-bg); }
+.atkm-filterline { padding: .35rem 1rem; border-bottom: 1px solid var(--bs-border-color); }
+/* Columns are spaced by margin, not gap, so a folded one takes no space at all. */
+.atkm-grid { flex: 1 1 auto; display: flex; overflow: auto; padding: .75rem .25rem .75rem .75rem; align-items: flex-start; scroll-behavior: smooth; }
+.atkm-col { flex: 0 0 15rem; margin-right: .5rem; display: flex; flex-direction: column; border: 1px solid var(--bs-border-color); border-radius: var(--im-radius); overflow: hidden; background: var(--bs-body-bg);
+    transition: flex-basis 180ms ease-out, margin-right 180ms ease-out, border-width 180ms ease-out, opacity 180ms ease-out; }
+/* A tactic with no match while filtering fades and folds its width to nothing; its content keeps its width meanwhile,
+   clipped rather than squeezed. */
+.atkm-col-hidden { flex-basis: 0; margin-right: 0; border-width: 0; opacity: 0; pointer-events: none; }
+.atkm-col > .atkm-colhead, .atkm-col > .atkm-cells { min-width: calc(15rem - 2px); }
+.atkm-nomatch { flex: 1 0 100%; margin-right: .5rem; padding: 2rem 1rem; text-align: center; color: var(--bs-secondary-color); }
+@media (prefers-reduced-motion: reduce) { .atkm-col { transition: none; } .atkm-grid { scroll-behavior: auto; } }
 .atkm-colhead {
     position: sticky; top: 0; z-index: 2;
     display: flex; align-items: center; gap: .4rem;
@@ -592,7 +601,6 @@ h1:focus {
 .atk-group { padding: .25rem .5rem 0; font-size: var(--im-label-size); font-weight: var(--im-label-weight); text-transform: uppercase; letter-spacing: var(--im-label-tracking); color: var(--bs-secondary-color); }
 .atkm-colcount { margin-left: auto; font-size: var(--im-text-xs); background: var(--tac); color: #fff; border-radius: 999px; padding: 0 .4rem; }
 .atkm-cells { display: flex; flex-direction: column; padding: .25rem; gap: .15rem; }
-.atkm-empty { color: var(--bs-secondary-color); text-align: center; padding: .5rem; }
 
 .atkm-cell {
     display: flex; align-items: center; gap: .3rem;

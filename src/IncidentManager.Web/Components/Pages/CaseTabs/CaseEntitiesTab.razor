@@ -1631,12 +1631,9 @@ else
             await check.CancelAsync();
             check.Dispose();
         }
-        try
-        {
-            if (_assessTrapArmed) await JS.InvokeVoidAsync("imModal.release");   // CAP-02: the dialog went with the tab
-            await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); await JS.InvokeVoidAsync("entityGraph.destroy", CrossGraphId);
-        }
-        catch { /* circuit may already be gone during teardown */ }
+        if (_assessTrapArmed) await JS.StopAsync("imModal.release");   // CAP-02: the dialog went with the tab
+        await JS.StopAsync("entityGraph.destroy", GraphContainerId);
+        await JS.StopAsync("entityGraph.destroy", CrossGraphId);
         _graphRef?.Dispose();
     }
 }
