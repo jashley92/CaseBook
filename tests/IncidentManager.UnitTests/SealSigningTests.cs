@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using Xunit;

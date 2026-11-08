@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Web.Security;
 using Xunit;
 

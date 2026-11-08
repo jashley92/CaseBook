@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Security;
 using IncidentManager.Infrastructure.Storage;

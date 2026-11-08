@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Common;
 using Xunit;
 

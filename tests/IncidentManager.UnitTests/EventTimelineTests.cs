@@ -1,5 +1,5 @@
 using System.Globalization;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Xunit;

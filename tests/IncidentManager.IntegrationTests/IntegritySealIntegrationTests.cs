@@ -1,6 +1,6 @@
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Infrastructure.Persistence;

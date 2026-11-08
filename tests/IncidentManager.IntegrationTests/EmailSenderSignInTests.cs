@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Notifications;

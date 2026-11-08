@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 using System.Text.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Search;

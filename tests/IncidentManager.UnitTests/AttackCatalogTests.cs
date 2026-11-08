@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Mitre;
 using IncidentManager.Domain.Enums;
 using Xunit;

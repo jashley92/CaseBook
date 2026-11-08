@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Web.Components.Shared;
 using IncidentManager.Web.Services;
 using Microsoft.JSInterop;

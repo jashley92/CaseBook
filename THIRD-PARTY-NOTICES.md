@@ -52,4 +52,4 @@ repositories.
 | xunit, xunit.runner.visualstudio | 2.9.3, 2.8.2 | Apache-2.0 |
 | Microsoft.NET.Test.Sdk, Microsoft.AspNetCore.Mvc.Testing | 17.14.1, 10.x | MIT |
 | coverlet.collector | 6.0.4 | MIT |
-| FluentAssertions | 8.10.0 | Xceed Community License (free for non-commercial use; commercial use requires a paid license) |
+| [AwesomeAssertions](https://github.com/AwesomeAssertions/AwesomeAssertions) | 9.6.0 | Apache-2.0 |

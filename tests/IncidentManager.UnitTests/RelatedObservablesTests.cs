@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
 using Xunit;

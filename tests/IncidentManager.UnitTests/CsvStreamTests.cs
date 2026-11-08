@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Common;
 using Xunit;
 

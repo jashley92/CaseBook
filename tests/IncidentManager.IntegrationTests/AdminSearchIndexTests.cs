@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Admin;
 using IncidentManager.Web.Services;
 using Xunit;

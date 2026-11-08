@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Config;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;

@@ -9,9 +9,10 @@ What's tested, how to run it, what isn't covered, and what to check by hand befo
 | `tests/IncidentManager.UnitTests` | ~490 test methods (plus ~160 `InlineData` rows) | Domain, Application, Infrastructure | Plain objects |
 | `tests/IncidentManager.IntegrationTests` | ~495 test methods | Application, Infrastructure, Web | In-memory SQLite per test class; some also on SQL Server; `HostStartupSmokeTests` and `ApiEndpointTests` boot the real host |
 
-Packages: xUnit 2.9, FluentAssertions 8, coverlet (coverage isn't collected in CI), and
-`Microsoft.AspNetCore.Mvc.Testing` for the host test. There's no mocking library; fakes are hand-written. There
-are **no** browser end-to-end tests and **no** Razor component (bUnit) tests.
+Packages: xUnit 2.9, AwesomeAssertions 9 (the Apache-2.0 fork of FluentAssertions, same `.Should()` API),
+coverlet (coverage isn't collected in CI), and `Microsoft.AspNetCore.Mvc.Testing` for the host test. There's no
+mocking library; fakes are hand-written. There are **no** browser end-to-end tests and **no** Razor component
+(bUnit) tests.
 
 ### Helpers (`tests/IncidentManager.IntegrationTests/TestDoubles.cs` and nearby)
 

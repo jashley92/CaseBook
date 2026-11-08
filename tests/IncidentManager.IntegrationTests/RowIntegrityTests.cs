@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;

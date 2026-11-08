@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Import;
 using IncidentManager.Application.Views;
 using IncidentManager.Domain.Entities;

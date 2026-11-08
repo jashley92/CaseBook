@@ -1,6 +1,6 @@
 using System.IO.Compression;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Domain.Entities;
