@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Infrastructure.Realtime;
 using Xunit;
 

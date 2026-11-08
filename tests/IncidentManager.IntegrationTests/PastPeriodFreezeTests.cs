@@ -1,5 +1,5 @@
 using System.Reflection;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Admin;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Dashboards;

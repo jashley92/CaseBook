@@ -1,5 +1,5 @@
 using System.Linq.Expressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Search;
 using IncidentManager.Domain.Entities;

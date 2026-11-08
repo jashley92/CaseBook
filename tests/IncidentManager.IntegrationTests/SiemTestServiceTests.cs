@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Security;
 using IncidentManager.Infrastructure.Siem;
 using IncidentManager.Web.Siem;

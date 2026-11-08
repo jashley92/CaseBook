@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Web.Components.Shared;

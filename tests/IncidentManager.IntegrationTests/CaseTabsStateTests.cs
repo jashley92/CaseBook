@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Web.Components.Pages.Workspace;
 using IncidentManager.Web.Services;

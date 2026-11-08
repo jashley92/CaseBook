@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Web.Updates;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

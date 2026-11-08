@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Access;
 using IncidentManager.Application.Common;

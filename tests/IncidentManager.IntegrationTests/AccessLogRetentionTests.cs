@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Access;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;

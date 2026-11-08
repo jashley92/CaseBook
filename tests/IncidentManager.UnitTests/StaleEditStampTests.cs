@@ -1,5 +1,5 @@
 using System.Reflection;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Cases;
 using Xunit;
 

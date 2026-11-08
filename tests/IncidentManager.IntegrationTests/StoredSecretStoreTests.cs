@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Config;
 using IncidentManager.Application.Security;

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Export;
 using IncidentManager.Application.Reporting;
 using IncidentManager.Domain.Entities;

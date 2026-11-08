@@ -1,6 +1,6 @@
 using System.Collections;
 using System.Reflection;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
 using Xunit;

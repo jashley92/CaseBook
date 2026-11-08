@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Content;
 using IncidentManager.Web.Components.Pages.CaseTabs;
 using Xunit;

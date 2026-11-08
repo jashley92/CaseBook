@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Storage;
 using IncidentManager.Web.HealthChecks;

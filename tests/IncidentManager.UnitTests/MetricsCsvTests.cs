@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Dashboards;
 using IncidentManager.Domain.Enums;
 using Xunit;

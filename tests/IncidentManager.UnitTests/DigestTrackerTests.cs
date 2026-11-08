@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Notifications;
 using IncidentManager.Domain.Enums;
 using Xunit;

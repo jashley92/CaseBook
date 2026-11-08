@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Web.Ops;
 using IncidentManager.Web.Services;
 using Microsoft.Extensions.Configuration;

@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Admin;
 using IncidentManager.Infrastructure.Secrets;
 using IncidentManager.Infrastructure.Security;

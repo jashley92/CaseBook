@@ -230,7 +230,7 @@ integrity seal. Details are in [backend.md](backend.md#background-jobs).
 | MITRE ATT&CK Enterprise v19.1 (embedded JSON) | Technique catalog | MITRE terms |
 
 All browser assets are served from `wwwroot/lib` under a strict content-security policy (`script-src 'self'`);
-nothing loads from a CDN. Test-only: xUnit, FluentAssertions 8 (commercial license for commercial use),
+nothing loads from a CDN. Test-only: xUnit, AwesomeAssertions (Apache-2.0),
 coverlet. Licenses are listed in `THIRD-PARTY-NOTICES.md`.
 
 ## Key design choices

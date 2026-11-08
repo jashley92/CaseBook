@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Evidence;
 using IncidentManager.Domain.Entities;
 using Xunit;

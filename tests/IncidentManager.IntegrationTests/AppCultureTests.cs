@@ -1,5 +1,5 @@
 using System.Globalization;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Web.Services;
 
 namespace IncidentManager.IntegrationTests;

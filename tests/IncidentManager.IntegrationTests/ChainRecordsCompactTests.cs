@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
