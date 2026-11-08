@@ -17,8 +17,9 @@ window.imModal = (function () {
 
     function focusables(el) {
         return Array.prototype.filter.call(el.querySelectorAll(FOCUSABLE), function (n) {
-            // visible only: offsetParent is null for display:none / detached nodes
-            return n.offsetParent !== null || n === document.activeElement;
+            // visible only: offsetParent is null for display:none / detached nodes. A folded-away matrix column is
+            // inert, so its cells can't take focus: they're not in the cycle either.
+            return (n.offsetParent !== null || n === document.activeElement) && !n.closest('[inert]');
         });
     }
 
@@ -71,6 +72,17 @@ window.imModal = (function () {
             var body = el.querySelector('.modal-body');
             var target = (body && focusables(body)[0]) || focusables(el)[0] || el;
             try { target.focus(); } catch (_) {}
+        },
+        // The ATT&CK matrix's columns moved (its filter changed): the grid goes back to its left edge (smoothly where the
+        // CSS allows), and focus left in a column that just folded away (made inert), or dropped to the page, goes back
+        // to the filter box.
+        toStart: function (grid, box) {
+            if (!grid) return;
+            if (grid.scrollLeft > 0) { try { grid.scrollTo({ left: 0 }); } catch (_) { grid.scrollLeft = 0; } }
+            var active = document.activeElement;
+            if (box && box.focus && (!active || active === document.body || (active.closest && active.closest('[inert]')))) {
+                try { box.focus(); } catch (_) {}
+            }
         },
         // Stop trapping and return focus: prefer the declared return target, else whatever was focused
         // before the modal opened (if it's still in the DOM).

@@ -152,12 +152,7 @@ public abstract class DateFieldBase<TValue> : ComponentBase, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_attached)
-        {
-            try { await JS.InvokeVoidAsync("imDateField.detach", Element); }
-            catch (JSDisconnectedException) { }
-            catch (JSException) { }
-        }
+        if (_attached) await JS.StopAsync("imDateField.detach", Element);
         _self?.Dispose();
         GC.SuppressFinalize(this);
     }

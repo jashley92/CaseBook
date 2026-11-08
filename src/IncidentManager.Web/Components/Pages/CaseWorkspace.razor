@@ -922,12 +922,10 @@ else
         PaletteActions.Clear(this); // PROD-19: stop offering this case's actions (only if we're still the owner)
         if (_relativeTimeTicker is not null) await _relativeTimeTicker.DisposeAsync();
         // EasyMDE editors and the entity graph are torn down by their own tab components (UX-13).
-        try { await JS.InvokeVoidAsync("imKeymap.unregisterCase", _instance); }   // U-14: stop forwarding keys to this circuit
-        catch { /* circuit may already be gone during teardown */ }
+        await JS.StopAsync("imKeymap.unregisterCase", _instance);   // U-14: stop forwarding keys to this circuit
         foreach (var id in _mediaWatches.Where(id => id > 0))   // BUG-37: the viewport listeners go with the page
         {
-            try { await JS.InvokeVoidAsync("imMedia.unwatch", id); }
-            catch { /* circuit may already be gone during teardown */ }
+            await JS.StopAsync("imMedia.unwatch", id);
         }
         _dotNetRef?.Dispose();
     }

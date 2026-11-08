@@ -154,7 +154,7 @@ Use these rather than writing new ones. All are in `Components/Shared/`.
 | `DateTimeInput`, `DateInput`, `TimeInput` | Every date, time and date-time field. `DateTimeInput` binds a `DateTime` or `DateTime?` to the minute; `DateInput` a `DateTime` or `DateOnly` (or a nullable one); `TimeInput` a `TimeOnly` or `TimeOnly?` to the minute. All use `@bind-Value` (with `:after`) and pass id, min, max and other attributes through. Don't `@bind` a `date`, `time` or `datetime-local` input directly: Blazor's write-back resets the segment being typed (BUG-408, BUG-426). Dates run from 1970: set `Past="true"` on a field for when something happened (or a filter over past records) to stop at today; otherwise it reaches 20 years ahead (due dates, targets, expiries). A min or max the page sets wins (BUG-606) |
 | `TagBoxSource` | Feeds the case's entities to `[[` autocomplete in plain boxes; mark a box with `data-tag-box` (and `data-list-box` for Markdown lists); a box that reopens saved links also gets `data-tag-refs` (`TagText.RefLabels` of its refs), so a pick with one of those names goes in as its link (BUG-450) |
 | `ComposerHint`, `WhyThisMatters` | One-line purpose hint under a composer; collapsed explainer on compliance screens |
-| `AttackMatrixPicker`, `AttackStepPicker` | MITRE ATT&CK selection |
+| `AttackMatrixPicker`, `AttackStepPicker` | MITRE ATT&CK selection. While filtering, the matrix shows only the tactics with a match, under a counts line; the columns are worked out once per filter change (`Application/Mitre/AttackMatrixView`), after a 200 ms typing pause (`TypingPause`), and a keystroke alone doesn't re-render the matrix |
 | `ReportPreview`, `RichBlocksView`, `StoredReportTable`, `ReportTemplateLibrary`, `ReportProfilesEditor` | Report preview, stored reports, admin report setup |
 | `RegulatoryDeadlineRules`, `TeamWorkloadPanel` | Admin deadline rules; workload panel |
 | `AccessDenied`, `AccessSummary` | 403 content; "what my roles allow" |
@@ -216,13 +216,15 @@ Scripts are plain files in `wwwroot/js` (the content-security policy forbids inl
 | `text-box.js` | Plain text boxes: `[[` entity autocomplete on `data-tag-box`, and list editing (Enter continues, Tab/Shift+Tab nest) on `data-list-box` | `TagBoxSource` (case workspace); timeline, brief, tasks, close-out boxes |
 | `entity-graph.js` | vis-network relationship graph; reports dragged positions | Entities tab |
 | `keymap.js` | The one keyboard dispatcher (RD-24): the user's keymap from `Application/Preferences/Keymap.cs` (`imKeymap.configure`), global commands to `CommandPalette`, case commands to `CaseWorkspace` (`registerCase`). Single keys never fire while typing and can all be switched off; `Ctrl+K`, `Esc` and `Ctrl+Enter` are fixed | `CommandPalette`, `CaseWorkspace` |
-| `modal-a11y.js` | Focus trap and focus return for dialogs | Workspace and admin dialogs |
+| `modal-a11y.js` | Focus trap and focus return for dialogs; `toStart` scrolls the ATT&CK matrix back to its left edge when its columns change | Workspace and admin dialogs, ATT&CK matrix picker |
 | `paste-drop.js` | Paste a screenshot, drag and drop files | Evidence and timeline tabs |
 | `idle-timeout.js` | Inactivity detection for the idle lock | `IdleGuard` |
 | `motion.js` | Smooth scroll, sticky header, reveal the active tab | Workspace |
 | `activity.js` | Per-browser "last seen" for the bell | `NotificationBell` |
 | `docx-view.js` | Renders a filled Word template in the browser (docx-preview) | Report preview |
 | `brand.js` | Applies a brand-color change live | Admin branding |
+
+A component that calls script from `DisposeAsync` does it through `JS.StopAsync` (`Components/Shared/JsTeardown.cs`): a disposal that throws ends the whole circuit, so a call that can't happen (the tab gone, the call cancelled, a prerender, the script's element already gone) is skipped. `JsTeardownTests` checks every disposal.
 
 Vendored libraries are in `wwwroot/lib` (EasyMDE, vis-network, docx-preview with JSZip, Bootstrap Icons) and
 `wwwroot/bootstrap`.

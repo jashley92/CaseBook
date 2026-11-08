@@ -36,7 +36,7 @@ public partial class TypingBoxTests
     {
         // The scan has to see these, or it proves nothing: each binds on input.
         var picker = Sources().Single(s => s.File == "Shared/AttackMatrixPicker.razor");
-        Assert.Contains(Boxes(Markup(picker)), m => m.Value.Contains("@bind:get=\"_filter\"", StringComparison.Ordinal));
+        Assert.Contains(Boxes(Markup(picker)), m => m.Value.Contains("@bind:get=\"_text\"", StringComparison.Ordinal));
         Assert.True(Sources().Sum(s => Boxes(Markup(s)).Count()) > 50);
     }
 
