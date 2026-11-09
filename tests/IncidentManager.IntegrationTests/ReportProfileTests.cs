@@ -322,9 +322,10 @@ public sealed class ReportProfileTests : IDisposable
         Task update, create;
         using (await ReportTemplateService.EnterFileGateAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             update = Task.Run(() => svc.UpdateAsync(id, new ReportProfileInput("Executive summary", null, true, 1, ExecLayout, templateId), opened.Stamp));
             create = Task.Run(() => svc.CreateAsync(new ReportProfileInput("Full pack", null, true, 2, ExecLayout, templateId)));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.TemplateFiles) >= 2, what: "the calls to reach the gate");
             update.IsCompleted.Should().BeFalse("the template check and the save wait for the library gate");
             create.IsCompleted.Should().BeFalse();
             using var db = NewContext();
@@ -413,8 +414,9 @@ public sealed class ReportProfileTests : IDisposable
         Task edit;
         using (await ReportTemplateService.EnterFileGateAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             edit = Task.Run(() => svc.UpdateAsync(id, new ReportProfileInput("Executive summary", "mine", true, 1, ExecLayout), opened.Stamp));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.TemplateFiles) >= 1, what: "the calls to reach the gate");
             edit.IsCompleted.Should().BeFalse("the stamp check waits for the library gate");
             await using var db = NewContext();
             (await db.ReportProfiles.SingleAsync(p => p.Id == id)).Description = "imported";

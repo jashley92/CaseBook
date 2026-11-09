@@ -225,7 +225,7 @@ public sealed class CaseLinkTests : IDisposable
     // Runs the second link while the first is held; it must wait for the first instead of looking past it.
     private static async Task<T> SecondWhileFirstHeldAsync<T>(HoldLinkSave hold, Task first, Func<Task<T>> second)
     {
-        await hold.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await hold.Reached.Task.WaitAsync(Waits.Hang);
         var run = Task.Run(second);
         (await Task.WhenAny(run, Task.Delay(400))).Should().NotBe(run, "the second link waits while the first is saving");
         hold.Release.SetResult();
@@ -282,7 +282,7 @@ public sealed class CaseLinkTests : IDisposable
         var hold = new HoldLinkSave();
 
         var first = HeldService(db, hold).LinkCaseAsync(alpha, beta, CaseLinkType.RelatedTo, null);
-        await hold.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await hold.Reached.Task.WaitAsync(Waits.Hang);
         // The same link, written past the gate (another server, say) while the first is between its look and its insert.
         await using (var other = NewContext())
         {

@@ -13,7 +13,9 @@ namespace IncidentManager.IntegrationTests;
 /// </summary>
 public sealed class BoundedDirectoryCallTests
 {
-    private static readonly TimeSpan Short = TimeSpan.FromMilliseconds(150);
+    // How long a lookup is given before it counts as hung, and so how quickly a call that doesn't wait must return. A hung
+    // lookup waits for release (30 s), so 1 s tells the two apart even on a busy machine, where 150 ms didn't.
+    private static readonly TimeSpan Short = TimeSpan.FromSeconds(1);
 
     [Fact]
     public void A_hung_lookup_gives_the_bare_username_within_the_time_limit_and_its_late_answer_is_kept()
@@ -37,7 +39,7 @@ public sealed class BoundedDirectoryCallTests
             clock.Restart();
             names.Resolve("CORP\\jdoe").Should().Be("jdoe", "the lookup hasn't landed");
             clock.Elapsed.Should().BeLessThan(Short, "a name whose lookup is still blocked isn't waited on again");
-            entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();   // C17: the lookup's thread may start late
+            entered.Wait(Waits.Hang).Should().BeTrue();   // C17: the lookup's thread may start late
             asked.Should().Be(1, "nor is a second lookup started");
         }
         finally { release.Set(); }
@@ -64,7 +66,7 @@ public sealed class BoundedDirectoryCallTests
         var callers = Enumerable.Range(0, 8)
             .Select(i => i % 2 == 0 ? Task.Run(() => names.Resolve("CORP\\jdoe")) : names.ResolveAsync("corp\\JDOE"))
             .ToList();
-        entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        entered.Wait(Waits.Hang).Should().BeTrue();
         await Task.Delay(100);   // let the rest join (any that come after it lands read the kept name)
         release.Set();
 
@@ -91,7 +93,7 @@ public sealed class BoundedDirectoryCallTests
             for (var i = 0; i < WindowsNames.MaxHung + 3; i++)
                 names.Resolve($"CORP\\u{i}").Should().Be($"u{i}");
             // C17: counted once each started lookup has entered (its thread may start after its caller gave up).
-            for (var i = 0; i < WindowsNames.MaxHung; i++) entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+            for (var i = 0; i < WindowsNames.MaxHung; i++) entered.Wait(Waits.Hang).Should().BeTrue();
             corp.Should().Be(WindowsNames.MaxHung, "a domain whose lookups are still blocked isn't given more threads");
 
             var clock = Stopwatch.StartNew();
@@ -154,7 +156,7 @@ public sealed class BoundedDirectoryCallTests
             var clock = Stopwatch.StartNew();
             sids.Resolve(["S-1-5-21-1-1", "S-1-5-21-1-2", "SOC-AppAdmins"]).Names.Should().BeEmpty("nothing was named in time");
             clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
-            entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();   // C17
+            entered.Wait(Waits.Hang).Should().BeTrue();   // C17
             lock (batches) batches.Should().ContainSingle().Which.Should().Equal("S-1-5-21-1-1", "S-1-5-21-1-2");
 
             clock.Restart();
@@ -162,7 +164,7 @@ public sealed class BoundedDirectoryCallTests
             clock.Elapsed.Should().BeLessThan(Short, "a SID whose translation is still blocked isn't waited on again");
 
             for (var i = 0; i < SidNames.MaxHung + 2; i++) sids.Resolve([$"S-1-5-21-2-{i}"]);
-            for (var i = 1; i < SidNames.MaxHung; i++) entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();   // C17
+            for (var i = 1; i < SidNames.MaxHung; i++) entered.Wait(Waits.Hang).Should().BeTrue();   // C17
             lock (batches) batches.Should().HaveCount(SidNames.MaxHung, "past the hung limit no translation starts");
         }
         finally { release.Set(); }
@@ -186,7 +188,7 @@ public sealed class BoundedDirectoryCallTests
         }, timeout: TimeSpan.FromSeconds(20));
 
         var first = Task.Run(() => sids.Resolve(["S-1-5-21-9-1"]));
-        entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        entered.Wait(Waits.Hang).Should().BeTrue();
         var rest = Enumerable.Range(0, 6).Select(_ => Task.Run(() => sids.Resolve(["S-1-5-21-9-1"]))).ToList();
         await Task.Delay(100);
         release.Set();
@@ -259,7 +261,7 @@ public sealed class BoundedDirectoryCallTests
 
     private static bool Eventually(Func<bool> condition)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow + Waits.Hang;   // a hang guard: a late answer can wait for a thread on a busy machine
         while (DateTime.UtcNow < deadline)
         {
             if (condition()) return true;

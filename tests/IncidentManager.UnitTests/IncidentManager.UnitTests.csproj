@@ -27,4 +27,9 @@
     <ProjectReference Include="..\..\src\IncidentManager.Infrastructure\IncidentManager.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- How tests wait (Waits.Until, Waits.Hang), shared by both test projects. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

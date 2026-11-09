@@ -661,12 +661,12 @@ public sealed class StoredSecretStoreTests : IDisposable
 
     private WebhookTransport Transport(CapturingHandler handler, StoredSecretStore? store = null, IDeliveryHealth? health = null,
         ISecretProvider? secrets = null) =>
-        new(new StubFactory(handler), new TestOptionsMonitor<SiemWebhookOptions>(_webhook),
+        new(new HandlerClientFactory(handler), new TestOptionsMonitor<SiemWebhookOptions>(_webhook),
             secrets ?? new PassthroughSecretProvider(NullLogger<PassthroughSecretProvider>.Instance), NullLogger<WebhookTransport>.Instance,
             health, store ?? _store);
 
     private ChatWebhookNotifier Notifier(CapturingHandler handler, StoredSecretStore? store = null, IDeliveryHealth? health = null) =>
-        new(new StubFactory(handler), new TestOptionsMonitor<ChatOptions>(_chat),
+        new(new HandlerClientFactory(handler), new TestOptionsMonitor<ChatOptions>(_chat),
             new PassthroughSecretProvider(NullLogger<PassthroughSecretProvider>.Instance), NullLogger<ChatWebhookNotifier>.Instance,
             health: health, stored: store ?? _store);
 
@@ -711,11 +711,6 @@ public sealed class StoredSecretStoreTests : IDisposable
             Requests.Add(request);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
-    }
-
-    private sealed class StubFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
     private static string RepoRoot()

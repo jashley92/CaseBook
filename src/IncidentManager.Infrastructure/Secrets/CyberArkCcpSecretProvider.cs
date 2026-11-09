@@ -27,6 +27,7 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
     private readonly SemaphoreSlim _fetchLock = new(1, 1);
     // BUG-292: when each reference last failed. For a short while after, callers get the fail policy's answer without a
     // fetch, so an outage doesn't make every caller (one at a time, under the lock) wait out its own timeout.
+    private readonly TimeProvider _time;
     private readonly ConcurrentDictionary<string, DateTimeOffset> _failedAt = new(StringComparer.Ordinal);
     internal static readonly TimeSpan RetryAfterFailure = TimeSpan.FromSeconds(30);
 
@@ -48,8 +49,9 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
 
     // Test seam: inject the transport handler so the CCP HTTP path is exercisable without a live CCP.
     internal CyberArkCcpSecretProvider(HttpMessageHandler handler, IOptions<CyberArkOptions> options,
-        ILogger<CyberArkCcpSecretProvider> logger, ISecretResolutionHealth health)
+        ILogger<CyberArkCcpSecretProvider> logger, ISecretResolutionHealth health, TimeProvider? time = null)
     {
+        _time = time ?? TimeProvider.System;   // a test's own clock, so its cache can expire without a wait
         _options = options.Value;
         _logger = logger;
         _health = health;
@@ -75,7 +77,7 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
         var key = reference.ToString();
         var ttl = TimeSpan.FromSeconds(Math.Max(1, _options.CacheTtlSeconds));
 
-        if (_cache.TryGetValue(key, out var cached) && DateTimeOffset.UtcNow - cached.FetchedUtc < ttl)
+        if (_cache.TryGetValue(key, out var cached) && _time.GetUtcNow() - cached.FetchedUtc < ttl)
             return cached.Value;
         if (RecentlyFailed(key)) return OnFetchFailed(key, cached);
 
@@ -83,7 +85,7 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
         try
         {
             // Re-check: another caller may have refreshed (or failed) while we waited.
-            if (_cache.TryGetValue(key, out cached) && DateTimeOffset.UtcNow - cached.FetchedUtc < ttl)
+            if (_cache.TryGetValue(key, out cached) && _time.GetUtcNow() - cached.FetchedUtc < ttl)
                 return cached.Value;
             if (RecentlyFailed(key)) return OnFetchFailed(key, cached);
 
@@ -102,11 +104,11 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
                 _logger.LogWarning(expected ? null : ex, "CyberArk CCP fetch failed for {Reference}: {Reason}",
                     key, reason);
                 _health.RecordFailure(key, reason);
-                _failedAt[key] = DateTimeOffset.UtcNow;
+                _failedAt[key] = _time.GetUtcNow();
                 return OnFetchFailed(key, cached);              // apply fail policy; the failure holds for RetryAfterFailure
             }
 
-            _cache[key] = new CacheEntry(value, DateTimeOffset.UtcNow);
+            _cache[key] = new CacheEntry(value, _time.GetUtcNow());
             _failedAt.TryRemove(key, out _);
             _health.RecordSuccess(key);
             return value;
@@ -118,7 +120,7 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
     }
 
     private bool RecentlyFailed(string key) =>
-        _failedAt.TryGetValue(key, out var at) && DateTimeOffset.UtcNow - at < RetryAfterFailure;
+        _failedAt.TryGetValue(key, out var at) && _time.GetUtcNow() - at < RetryAfterFailure;
 
     /// <summary>Fail policy for a failed fetch: last-known-good when not fail-closed, else null.</summary>
     private string? OnFetchFailed(string key, CacheEntry? cached)

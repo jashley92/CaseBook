@@ -197,7 +197,7 @@ public sealed class SavedViewTests : IDisposable
             .Options), _user, _dir, _clock);
 
         var a = held.ToggleDefaultAsync(first);
-        await hold.Reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await hold.Reached.Task.WaitAsync(Waits.Hang);
         var b = Task.Run(() => NewService().ToggleDefaultAsync(second));
         (await Task.WhenAny(b, Task.Delay(400))).Should().NotBe(b, "the second toggle waits while the first is saving");
         hold.Release.SetResult();

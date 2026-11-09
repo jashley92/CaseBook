@@ -775,6 +775,9 @@ public sealed class EmailSender : IEmailSender, IDisposable
         _ => ex is IOException or System.Net.Sockets.SocketException or System.Security.Authentication.AuthenticationException,
     };
 
-    // CAP-05: the send's time limit is Email:SmtpTimeoutSeconds (5 to 300); a test sets a shorter one here.
-    internal static TimeSpan? SendTimeoutOverride { get; set; }
+    // CAP-05: the send's time limit is Email:SmtpTimeoutSeconds (5 to 300); a test sets a shorter one here. It applies to
+    // the flow that set it (an AsyncLocal), not the process: as a plain static it gave every email test running
+    // alongside a 1 s limit, and on a busy machine their sends timed out.
+    private static readonly AsyncLocal<TimeSpan?> TimeoutOverride = new();
+    internal static TimeSpan? SendTimeoutOverride { get => TimeoutOverride.Value; set => TimeoutOverride.Value = value; }
 }

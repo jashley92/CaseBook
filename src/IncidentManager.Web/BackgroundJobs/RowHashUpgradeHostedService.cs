@@ -26,7 +26,7 @@ public sealed class RowHashUpgradeOptions
 /// </summary>
 public sealed class RowHashUpgradeHostedService(
     IServiceScopeFactory scopes, IHostApplicationLifetime lifetime, IOptions<RowHashUpgradeOptions> options,
-    ILogger<RowHashUpgradeHostedService> logger, IJobStatus? jobs = null) : BackgroundService
+    ILogger<RowHashUpgradeHostedService> logger, IJobStatus? jobs = null, TimeProvider? time = null) : BackgroundService
 {
     /// <summary>CAP-29: this job's row on Diagnostics: off once the upgrade's marker is written.</summary>
     public static readonly JobDefinition Job = new("integrity-upgrade", "Integrity upgrade (one time)",
@@ -45,10 +45,11 @@ public sealed class RowHashUpgradeHostedService(
                 return;
             }
             var delay = TimeSpan.FromMinutes(Math.Max(0, options.Value.DelayMinutes));
-            jobs?.Scheduled(Job, true, DateTimeOffset.UtcNow + delay);
+            var clock = time ?? TimeProvider.System;   // a test's own clock, so it needn't wait the delay out
+            jobs?.Scheduled(Job, true, clock.GetUtcNow() + delay);
             logger.LogInformation("The integrity upgrade starts in {Minutes:0.#} minute(s); until it finishes the record check is as before.",
                 delay.TotalMinutes);
-            await Task.Delay(delay, stoppingToken);
+            await Task.Delay(delay, clock, stoppingToken);
             run = jobs.Begin(Job);
             var recorded = await RunAsync(stoppingToken);
             run?.Succeeded(recorded);

@@ -197,7 +197,7 @@ public sealed class OrganizationDomainsTests
             var first = await domains.DiscoverAsync();
             first.State.Should().Be(DomainDiscoveryState.TimedOut);
             clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
-            entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();   // C17: the read's thread may start late
+            entered.Wait(Waits.Hang).Should().BeTrue();   // C17: the read's thread may start late
 
             clock.Restart();
             (await domains.DiscoverAsync()).State.Should().Be(DomainDiscoveryState.TimedOut, "the hung look's result stands");
@@ -227,7 +227,7 @@ public sealed class OrganizationDomainsTests
         }), timeLimit: TimeSpan.FromSeconds(20));
 
         var callers = Enumerable.Range(0, 6).Select(_ => domains.DiscoverAsync()).ToList();
-        entered.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        entered.Wait(Waits.Hang).Should().BeTrue();
         release.Set();
 
         (await Task.WhenAll(callers)).Should().AllSatisfy(r => r.State.Should().Be(DomainDiscoveryState.Found));
@@ -256,7 +256,7 @@ public sealed class OrganizationDomainsTests
 
     private static bool Eventually(Func<bool> condition)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow + Waits.Hang;   // a hang guard: a late answer can wait for a thread on a busy machine
         while (DateTime.UtcNow < deadline)
         {
             if (condition()) return true;

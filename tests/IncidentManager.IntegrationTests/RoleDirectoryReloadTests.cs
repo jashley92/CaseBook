@@ -59,8 +59,7 @@ public sealed class RoleDirectoryReloadTests : IDisposable
             directory.IsRole("Reviewers").Should().BeFalse();
 
             Sql("ALTER TABLE RolesOffline RENAME TO Roles");
-            var until = DateTime.UtcNow.AddSeconds(10);
-            while (!directory.IsCurrent && DateTime.UtcNow < until) await Task.Delay(25);
+            await Waits.Until(() => directory.IsCurrent, what: "a retry to reload the roles");
             directory.IsCurrent.Should().BeTrue("a retry reloaded it");
             directory.IsRole("Reviewers").Should().BeTrue();
         }

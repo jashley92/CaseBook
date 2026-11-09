@@ -33,7 +33,7 @@ public sealed class CyberArkCcpSecretProviderTests
         new(code) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     private static CyberArkCcpSecretProvider Provider(StubHandler handler, Action<CyberArkOptions>? cfg = null,
-        ISecretResolutionHealth? health = null)
+        ISecretResolutionHealth? health = null, TimeProvider? time = null)
     {
         var o = new CyberArkOptions
         {
@@ -45,7 +45,7 @@ public sealed class CyberArkCcpSecretProviderTests
         cfg?.Invoke(o);
         return new CyberArkCcpSecretProvider(handler, Options.Create(o),
             NullLogger<CyberArkCcpSecretProvider>.Instance,
-            health ?? new SecretResolutionHealth(new FixedClock(DateTimeOffset.UtcNow)));
+            health ?? new SecretResolutionHealth(new FixedClock(DateTimeOffset.UtcNow)), time);
     }
 
     [Fact]
@@ -144,13 +144,13 @@ public sealed class CyberArkCcpSecretProviderTests
         var handler = new StubHandler(_ => ok
             ? Json(HttpStatusCode.OK, "{\"Content\":\"good\"}")
             : Json(HttpStatusCode.InternalServerError, "{\"ErrorMsg\":\"down\"}"));
-        // TTL 0 → clamped to 1s minimum, but we want an immediate re-fetch: use a fresh provider per call
-        // isn't possible (cache is per-instance), so drive expiry by a tiny TTL and a short wait.
-        var provider = Provider(handler, o => { o.FailClosed = false; o.CacheTtlSeconds = 1; });
+        // The cache's clock is the test's, so the TTL expires when the test moves it on.
+        var clock = new ManualClock();
+        var provider = Provider(handler, o => { o.FailClosed = false; o.CacheTtlSeconds = 1; }, time: clock);
 
         (await provider.ResolveAsync("@cyberark:Safe=A;Object=B")).Should().Be("good"); // caches good
         ok = false;
-        await Task.Delay(1100);                                                          // expire the TTL
+        clock.Advance(TimeSpan.FromSeconds(1.1));                                        // expire the TTL
 
         // CCP now errors; FailClosed=false → serve the stale-but-real cached value, not null.
         (await provider.ResolveAsync("@cyberark:Safe=A;Object=B")).Should().Be("good");

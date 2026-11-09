@@ -18,7 +18,9 @@ public sealed class IncompleteGroupNamesTests
     private const string Managers = "S-1-5-21-7-1101";
     private const string Analysts = "S-1-5-21-7-1102";
     private const string ManagersAgain = "S-1-5-21-7-1103";   // the managers group, recreated
-    private static readonly TimeSpan Short = TimeSpan.FromMilliseconds(150);
+    // How long a lookup is given before it counts as hung. A hung one (Lsa.Hang) waits for Release, so this only has to
+    // be long enough for one that isn't: at 150 ms a busy machine timed out a lookup that answered at once.
+    private static readonly TimeSpan Short = TimeSpan.FromSeconds(1);
 
     private sealed class Clock : IClock { public DateTimeOffset UtcNow { get; set; } = new(2026, 10, 16, 9, 0, 0, TimeSpan.Zero); }
 

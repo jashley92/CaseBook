@@ -477,9 +477,9 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var zeroWindow = live with { NotificationRules = [new ConfigNotificationRule("ny", "New York", 0, true, false)] };
         await ((Func<Task>)(() => svc.PreviewAsync(zeroWindow))).Should().ThrowAsync<ArgumentException>().WithMessage("*window must be 1 to*");
         var noOutcomes = live with { CaseOutcomes = (live.CaseOutcomes ?? []).Select(o => o with { IsActive = false }).ToList() };
-        if (noOutcomes.CaseOutcomes!.Count > 0)
-            await ((Func<Task>)(() => svc.ImportAsync(Signed(noOutcomes)))).Should().ThrowAsync<ArgumentException>()
-                .WithMessage("*no case outcome active*");
+        noOutcomes.CaseOutcomes.Should().NotBeEmpty("the seed has outcomes to switch off, or this checks nothing");
+        await ((Func<Task>)(() => svc.ImportAsync(Signed(noOutcomes)))).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*no case outcome active*");
         // BUG-353: a key longer than its column is named before anything is written.
         var longKey = live with { DataElements = [.. live.DataElements, new ConfigDataElement(new string('K', 101), "Long one", 99, true, false, null)] };
         await ((Func<Task>)(() => svc.PreviewAsync(longKey))).Should().ThrowAsync<ArgumentException>()
@@ -1096,8 +1096,9 @@ public sealed class ConfigBundleServiceTests : IDisposable
         Task import;
         using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             import = svc.ImportAsync(Signed(bundle));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.TemplateFiles) >= 1, what: "the calls to reach the gate");
             import.IsCompleted.Should().BeFalse("an upload or replace holds the template file gate");
         }
         await import;

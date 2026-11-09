@@ -1288,10 +1288,11 @@ public sealed class ReportingIntegrationTests : IDisposable
         Task a, b, rename;
         using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             a = Task.Run(() => templates.UploadAsync("House style", "house.docx", engine.Starter()));
             b = Task.Run(() => templates.UploadAsync("house STYLE", "house.docx", engine.Starter()));
             rename = Task.Run(() => templates.RenameAsync(other, "House Style"));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.TemplateFiles) >= 3, what: "the calls to reach the gate");
             a.IsCompleted.Should().BeFalse("the name check and the save wait for the library gate");
             b.IsCompleted.Should().BeFalse();
             rename.IsCompleted.Should().BeFalse();
@@ -1338,9 +1339,10 @@ public sealed class ReportingIntegrationTests : IDisposable
         Task a, b;
         using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             a = Task.Run(() => templates.SetLessonsDefaultAsync(first, true));
             b = Task.Run(() => templates.SetLessonsDefaultAsync(second, true));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.TemplateFiles) >= 2, what: "the calls to reach the gate");
             a.IsCompleted.Should().BeFalse("the check and the save wait for the library gate");
             b.IsCompleted.Should().BeFalse();
         }
@@ -1364,8 +1366,9 @@ public sealed class ReportingIntegrationTests : IDisposable
         Task archive;
         using (await IncidentManager.Application.Admin.ReportTemplateService.EnterFileGateAsync())
         {
+            using var arrivals = GateArrivals.Watch();   // after the test took the gate, so its own entry isn't counted
             archive = Task.Run(() => templates.SetActiveAsync(defaults[0].Id, false));
-            await Task.Delay(200);
+            await Waits.Until(() => arrivals.At(GateArrivals.TemplateFiles) >= 1, what: "the calls to reach the gate");
             archive.IsCompleted.Should().BeFalse();
         }
         await archive.Invoking(x => x).Should().ThrowAsync<InvalidOperationException>().WithMessage("*lessons-learned*");
