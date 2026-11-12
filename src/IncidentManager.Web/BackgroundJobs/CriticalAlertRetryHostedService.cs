@@ -26,6 +26,7 @@ public sealed class CriticalAlertRetryHostedService(ICriticalAlertOutbox outbox,
             {
                 await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
                 run = jobs.Begin(Job);   // CAP-29
+                if (run is null) continue;   // another process runs the background jobs
                 var sent = await outbox.RetryDueAsync(stoppingToken);
                 run?.Succeeded(sent);
                 if (sent > 0) logger.LogInformation("Delivered {Count} alert email(s) on retry.", sent);

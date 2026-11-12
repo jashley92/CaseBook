@@ -96,8 +96,8 @@ Now in **[operations/keys-and-certificates.md](operations/keys-and-certificates.
   - `GET /health/alarms` — **alarms** (CAP-18), for a monitoring tool rather than the load balancer:
     `200 Healthy`, or `200 Degraded` while any alarm the app otherwise shows only in banners and the SIEM is
     up: the audit chain broken (5001), evidence drift or its store unreachable (5003), the evidence key
-    unavailable, a seal copy whose last attempt failed (5005), or the backup status file stale or missing
-    (§1.3; not configured isn't an alarm). It never answers 503 and isn't part of readiness, so an alarm
+    unavailable, a seal copy whose last attempt failed (5005), the backup status file stale or missing
+    (§1.3; not configured isn't an alarm), or another CaseBook process using the same database. It never answers 503 and isn't part of readiness, so an alarm
     never takes a node out of rotation: none of them is fixed by sending traffic elsewhere. The word is all
     it says; **Administration → Diagnostics** and the Integrity page say which alarm is up. The backup file
     read is time-limited (5 s), so a share that doesn't answer reads as Degraded rather than hanging the

@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Application.Evidence;
 
 namespace IncidentManager.Web.BackgroundJobs;
@@ -35,6 +36,14 @@ public sealed class EvidenceStoreHostedService(IEvidenceStore store, EvidenceUpl
         while (!stoppingToken.IsCancellationRequested)
         {
             var run = jobs.Begin(Job);   // CAP-29: removed parts count as its items
+            if (run is null)
+            {
+                // Another process runs the background jobs: its uploads' parts aren't this one's to sweep. Asked again
+                // shortly, and the start-up restore runs here if this process takes over.
+                try { await Task.Delay(DbProcessLease.RenewEvery, stoppingToken); }
+                catch (OperationCanceledException) { return; }
+                continue;
+            }
             try
             {
                 if (first)

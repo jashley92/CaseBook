@@ -25,6 +25,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         typeof(EntityLayout), // cosmetic graph positions — deliberately outside the tamper-evident chain
         typeof(CaseAccessEvent), // C-05 read/access telemetry — high-volume, out of the tamper-evident chain
         typeof(NotificationMark), // BUG-95 what the scans sent — operational state, not case data
+        typeof(ProcessLease), // which process runs the background jobs, and each process's heartbeat — operational state
         typeof(AlertDelivery), // BUG-101 failed alert emails awaiting retry — operational state, not case data
         typeof(HeldEmail), // BUG-617 user-action emails awaiting the relay — operational state, not case data
         typeof(SavedView), // PROD-09 personal/shared case-queue filter sets — user convenience state, not case data

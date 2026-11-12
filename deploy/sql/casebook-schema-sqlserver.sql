@@ -4920,3 +4920,30 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261112214120_ProcessLeases'
+)
+BEGIN
+    CREATE TABLE [ProcessLeases] (
+        [Name] nvarchar(200) NOT NULL,
+        [Holder] nvarchar(150) NOT NULL,
+        [AcquiredAtUtc] datetimeoffset NOT NULL,
+        [ExpiresAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_ProcessLeases] PRIMARY KEY ([Name])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261112214120_ProcessLeases'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261112214120_ProcessLeases'', N''10.0.14'');');
+END;
+
+COMMIT;
+GO
+

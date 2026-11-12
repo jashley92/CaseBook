@@ -76,9 +76,10 @@ public sealed class EvidenceKeyHostedService(EvidenceKeyring keyring, EvidenceCo
                                                               || (status.Remaining > 0 && now - lastConversion >= retry)
                                                               || now - lastConversion >= TimeSpan.FromDays(1)));
                 long? convertedItems = null;
-                if (keyring.State == EvidenceKeyState.Ready && due)
+                // The key is read on every process (each one serves evidence), but files are converted only by the process
+                // running the background jobs.
+                if (keyring.State == EvidenceKeyState.Ready && due && (run ??= jobs.Begin(Job)) is not null)
                 {
-                    run ??= jobs.Begin(Job);
                     status.NowRequested = false;
                     var converted = 0;
                     int batch;

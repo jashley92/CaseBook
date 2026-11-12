@@ -105,7 +105,7 @@ public partial class CaseAudienceGateTests
         ["StaleCaseScanner.cs:ScanAndNotifyAsync"] = (1, "a background scan of every case; who is told goes through ReminderAudience"),
         ["AgendaService.cs:GetFeedItemsAsync"] = (2, "one user's feed (a calendar feed token's owner, the digest): restricted cases are filtered inline for that user (BUG-401)"),
         ["PendingImportQueue.cs:WaitingForAsync"] = (1, "CAP-01: the digest's count for one reviewer; each restricted target's audience is judged through ReminderAudience, and only a count comes back"),
-        ["CriticalAlertOutbox.cs:RetryDueAsync"] = (1, "the alert outbox retrying its own rows (a background job)"),
+        ["CriticalAlertOutbox.cs:RetryDueAsync"] = (3, "the alert outbox retrying its own rows (a background job): the due list, each claim, and a claim given back"),
         // BUG-654: HeldEmails has a CaseId, so it's a case table; the sender keeps and drains its own rows (BUG-617)
         ["EmailSender.cs:HeldCountAsync"] = (1, "a count of the held mail, for the sender's own tests"),
         ["EmailSender.cs:HoldAsync"] = (1, "the count before holding one more (MaxHeld)"),

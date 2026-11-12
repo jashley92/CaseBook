@@ -998,9 +998,11 @@ if ($rc -ge 8) {
     throw "Upgrade aborted during file copy; the previous build was restored."
 }
 
-# BUG-95/137: as the installer now sets them, for pools installed before it did: no scheduled recycle, no overlap.
+# BUG-95/137: as the installer now sets them, for pools installed before it did: no scheduled recycle, no overlap, and
+# one worker process.
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.periodicRestart.time -Value '00:00:00'
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.disallowOverlappingRotation -Value $true
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.maxProcesses -Value 1
 
 Write-Step "Starting app pool"
 Start-WebAppPool -Name $AppPoolName

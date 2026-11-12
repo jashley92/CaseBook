@@ -32,6 +32,18 @@ public sealed class TestDbContextFactory : IAppDbContextFactory
     public AppDbContext CreateAppDbContext() => new(_options);
 }
 
+/// <summary>An <see cref="IProcessLease"/> a test sets: whether this process runs the jobs, and which others it sees.</summary>
+public sealed class TestProcessLease : IProcessLease
+{
+    public string Holder { get; set; } = "TESTBOX/1/test";
+    public bool RunsJobs { get; set; } = true;
+    public ProcessLeaseStatus Status { get; set; } = ProcessLeaseStatus.NotChecked;
+    public event Action? Changed;
+    public void RaiseChanged() => Changed?.Invoke();
+    public Task<bool> HoldAsync(CancellationToken ct = default) => Task.FromResult(RunsJobs);
+    public Task ReleaseAsync(CancellationToken ct = default) => Task.CompletedTask;
+}
+
 /// <summary>A deterministic clock for tests.</summary>
 public sealed class FixedClock(DateTimeOffset now) : IClock
 {

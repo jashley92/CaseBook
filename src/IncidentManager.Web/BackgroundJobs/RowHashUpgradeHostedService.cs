@@ -50,7 +50,8 @@ public sealed class RowHashUpgradeHostedService(
             logger.LogInformation("The integrity upgrade starts in {Minutes:0.#} minute(s); until it finishes the record check is as before.",
                 delay.TotalMinutes);
             await Task.Delay(delay, clock, stoppingToken);
-            run = jobs.Begin(Job);
+            // It writes rows, so only the process running the background jobs does it; another waits until it does.
+            while ((run = jobs.Begin(Job)) is null) await Task.Delay(DbProcessLease.RenewEvery, clock, stoppingToken);
             var recorded = await RunAsync(stoppingToken);
             run?.Succeeded(recorded);
             jobs?.Scheduled(Job, false, null);

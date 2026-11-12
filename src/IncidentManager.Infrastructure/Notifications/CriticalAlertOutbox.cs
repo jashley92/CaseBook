@@ -19,6 +19,14 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
 {
     private readonly SemaphoreSlim _retrying = new(1, 1);
 
+    /// <summary>
+    /// How long a retry holds an alert it has claimed. Each alert is claimed in the database before it's sent (its next try
+    /// moved on by this much, where it's still what was read), so a second CaseBook process retrying at the same moment
+    /// can't send it too. Only the process holding the background jobs' lease retries, so that's only while the lease
+    /// changes hands. Longer than any one send takes.
+    /// </summary>
+    public static readonly TimeSpan ClaimFor = TimeSpan.FromMinutes(10);
+
     public void Dispose() => _retrying.Dispose();
 
     /// <summary>The <c>AlertDeliveries.Recipients</c> and <c>.Subject</c> columns.</summary>
@@ -95,10 +103,25 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
             var sent = 0;
             foreach (var a in due)
             {
+                var was = a.NextAttemptAtUtc;
+                var claimedUntil = clock.UtcNow + ClaimFor;
+                var id = a.Id;
+                if (await db.AlertDeliveries
+                        .Where(x => x.Id == id && x.NextAttemptAtUtc == was && x.DeliveredAtUtc == null && x.GaveUpAtUtc == null && x.DismissedAtUtc == null)
+                        .ExecuteUpdateAsync(u => u.SetProperty(x => x.NextAttemptAtUtc, claimedUntil), CancellationToken.None) != 1)
+                {
+                    db.Entry(a).State = EntityState.Detached;   // another process claimed it (or it was handled): it sends it
+                    continue;
+                }
                 var (delivered, deferred) = await TryRetryAsync(new EmailMessage(a.RecipientList, a.Subject, a.HtmlBody, a.TextBody), ct);
                 // BUG-608: the relay is backed off, so nothing was tried: it stays due (next minute's pass) and none of its four
-                // retries is spent on a send that never reached the relay.
-                if (deferred) continue;
+                // retries is spent on a send that never reached the relay. The claim is given back.
+                if (deferred)
+                {
+                    await db.AlertDeliveries.Where(x => x.Id == id && x.NextAttemptAtUtc == claimedUntil)
+                        .ExecuteUpdateAsync(u => u.SetProperty(x => x.NextAttemptAtUtc, was), CancellationToken.None);
+                    continue;
+                }
                 a.Retries++;
                 if (delivered)
                 {

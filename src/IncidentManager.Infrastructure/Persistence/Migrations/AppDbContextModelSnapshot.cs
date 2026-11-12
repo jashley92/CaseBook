@@ -15,7 +15,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
             modelBuilder.Entity("IncidentManager.Domain.Entities.AccountDirectorySnapshot", b =>
                 {
@@ -2383,6 +2383,28 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("PostIncidentReviews", (string)null);
+                });
+
+            modelBuilder.Entity("IncidentManager.Domain.Entities.ProcessLease", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AcquiredAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ExpiresAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Holder")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("ProcessLeases", (string)null);
                 });
 
             modelBuilder.Entity("IncidentManager.Domain.Entities.Report", b =>

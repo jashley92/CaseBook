@@ -1,0 +1,32 @@
+@* Another CaseBook process is using this database: a web garden, or a second server pointed at it. CaseBook supports one
+   process. The background jobs are safe (one process holds their lease, the other stands by), but both serve pages, and
+   the audit trail's lock covers one process only. Not dismissible: it goes when the other process stops. Rendered for
+   Administer users from MainLayout, like the integrity banners. *@
+@using IncidentManager.Application.Abstractions
+@inject IProcessLease Lease
+@implements IDisposable
+
+@if (Lease.Status.Others is { Count: > 0 } others)
+{
+    <div class="integrity-alert" role="alert">
+        <span class="bi bi-hdd-network integrity-alert-icon" aria-hidden="true"></span>
+        <div class="integrity-alert-text">
+            <strong>@(others.Count == 1 ? "Another CaseBook process is using this database." : $"{others.Count} other CaseBook processes are using this database.")</strong>
+            @string.Join("; ", others.Select(o => $"{o.Name}, started {TimeDisplay.UtcLabelled(o.StartedAtUtc)}")).
+            CaseBook supports one process: the audit trail's lock covers one process only, so changes saved through both
+            can break the audit chain. Stop the other one: an app pool with more than one worker process, or a second
+            server pointed at this database.
+            @(Lease.RunsJobs ? "This server runs the background jobs." : $"This server ({ProcessLeaseStatus.Describe(Lease.Holder)}) is standing by: it runs no background job.")
+        </div>
+        <a class="btn btn-sm btn-light integrity-alert-cta" href="admin/settings/diagnostics#diag-jobs">Open Diagnostics</a>
+    </div>
+}
+
+@code {
+    // Re-render when another process appears or goes, not only on first render.
+    protected override void OnInitialized() => Lease.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Lease.Changed -= OnChanged;
+}

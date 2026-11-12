@@ -96,6 +96,23 @@ public sealed class AlarmsHealthCheckTests : IDisposable
     }
 
     [Fact]
+    public async Task Another_CaseBook_process_on_the_database_is_degraded_until_it_goes()
+    {
+        _integrity.RecordResult(new ChainVerificationResult(true, null, null), Now);
+        var lease = new TestProcessLease
+        {
+            Status = ProcessLeaseStatus.NotChecked with { Others = [new OtherProcess("WEB02/200/b", Now, Now)] },
+        };
+        var check = new AlarmsHealthCheck(_integrity, _evidence, _keys, _seals, Backup(Now), lease: lease);
+        var two = await Run(check);
+        two.Status.Should().Be(HealthStatus.Degraded);
+        two.Description.Should().Contain("another CaseBook process");
+
+        lease.Status = ProcessLeaseStatus.NotChecked;
+        (await Run(check)).Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
     public async Task Evidence_drift_is_degraded()
     {
         var drift = new EvidenceDrift(Guid.NewGuid(), Guid.NewGuid(), "IRP-1", "a.png", "aa", "bb", EvidenceDriftKind.HashMismatch, "changed");

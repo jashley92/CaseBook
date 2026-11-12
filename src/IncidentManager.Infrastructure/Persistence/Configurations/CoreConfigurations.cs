@@ -805,6 +805,19 @@ public sealed class NotificationMarkConfiguration : IEntityTypeConfiguration<Not
     }
 }
 
+/// <summary>The background jobs' lease and each process's heartbeat. The name is the primary key, so two processes can't
+/// both insert the lease.</summary>
+public sealed class ProcessLeaseConfiguration : IEntityTypeConfiguration<ProcessLease>
+{
+    public void Configure(EntityTypeBuilder<ProcessLease> b)
+    {
+        b.ToTable("ProcessLeases");
+        b.HasKey(x => x.Name);
+        b.Property(x => x.Name).HasMaxLength(ProcessLease.MaxName);
+        b.Property(x => x.Holder).HasMaxLength(ProcessLease.MaxHolder).IsRequired();
+    }
+}
+
 /// <summary>BUG-101: breach-escalation and integrity-alarm emails whose send failed, for retry and notice.</summary>
 public sealed class AlertDeliveryConfiguration : IEntityTypeConfiguration<AlertDelivery>
 {

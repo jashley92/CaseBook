@@ -17,7 +17,7 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -2391,6 +2391,28 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .IsUnique();
 
                     b.ToTable("PostIncidentReviews", (string)null);
+                });
+
+            modelBuilder.Entity("IncidentManager.Domain.Entities.ProcessLease", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("AcquiredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Holder")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("ProcessLeases", (string)null);
                 });
 
             modelBuilder.Entity("IncidentManager.Domain.Entities.Report", b =>

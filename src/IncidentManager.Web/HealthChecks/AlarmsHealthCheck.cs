@@ -11,7 +11,7 @@ namespace IncidentManager.Web.HealthChecks;
 /// Healthy, or Degraded when any of them is up. The sources are the audit-chain verdict (<see cref="IIntegrityMonitor"/>),
 /// evidence drift and store-wide evidence conditions (<see cref="IEvidenceIntegrityMonitor"/>), an evidence key that can't
 /// be opened, a seal copy whose last attempt failed (<see cref="SealCopyStatus"/>) and a stale or missing backup
-/// (<see cref="BackupHealthReader"/>). Tagged "alarms" only, never "ready": an alarm is for a person to look at, and
+/// (<see cref="BackupHealthReader"/>), and another CaseBook process on this database (<see cref="IProcessLease"/>). Tagged "alarms" only, never "ready": an alarm is for a person to look at, and
 /// pulling the node out of the load balancer wouldn't fix any of them. The reasons go in the result's description,
 /// which the endpoint's default writer never sends; the anonymous caller gets the status word only.
 /// CAP-18 review (C10): the backup file is read once for every probe that asks while it's being read, and its answer kept
@@ -24,7 +24,8 @@ public sealed class AlarmsHealthCheck(
     IEvidenceKeyring evidenceKeys,
     SealCopyStatus sealCopies,
     BackupHealthReader backup,
-    SharedRead<BackupHealthReport>? backupRead = null) : IHealthCheck
+    SharedRead<BackupHealthReport>? backupRead = null,
+    IProcessLease? lease = null) : IHealthCheck
 {
     /// <summary>The check's registration tag; the readiness probe's predicate never selects it.</summary>
     public const string Tag = "alarms";
@@ -49,6 +50,7 @@ public sealed class AlarmsHealthCheck(
             if (evidence.Current is { IsClean: false }) raised.Add("evidence drift");
             if (evidenceKeys.State == EvidenceKeyState.Unavailable) raised.Add("evidence key unavailable");
             if (sealCopies.Snapshot().Any(c => !c.Ok)) raised.Add("seal copy failing");
+            if (lease?.Status.Others.Count > 0) raised.Add("another CaseBook process on this database");
 
             var read = ReadBackup ?? backup.Read;
             var report = await _backupRead.Get(read).WaitAsync(TimeLimit, cancellationToken);

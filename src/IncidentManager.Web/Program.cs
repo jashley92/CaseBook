@@ -88,6 +88,14 @@ builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IOrganiza
     sp => sp.GetRequiredService<IncidentManager.Application.Admin.OrganizationDomains>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<IncidentManager.Application.Admin.OrganizationDomains>());
 
+// --- One process runs the background jobs: a lease in the database. A second process on this database (a web garden,
+// a second server) stands by and is shown to administrators. Registered before every job, so it starts first and stops
+// last; JobStatus asks it before each run. ---
+builder.Services.AddSingleton<IncidentManager.Infrastructure.Persistence.DbProcessLease>();
+builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IProcessLease>(
+    sp => sp.GetRequiredService<IncidentManager.Infrastructure.Persistence.DbProcessLease>());
+builder.Services.AddHostedService<ProcessLeaseHostedService>();
+
 // --- Scheduled audit-chain verify/seal job ---
 builder.Services.Configure<AutoSealOptions>(builder.Configuration.GetSection("Integrity:AutoSeal"));
 builder.Services.AddHostedService<IntegritySealHostedService>();

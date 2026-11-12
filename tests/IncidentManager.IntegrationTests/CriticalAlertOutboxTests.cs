@@ -200,17 +200,64 @@ public sealed class CriticalAlertOutboxTests : IDisposable
     }
 
     /// <summary>An email sender that fails like the real one does: it never throws, and reports the failure to a watch.</summary>
+    [Fact]
+    public async Task A_second_process_retrying_while_the_first_sends_doesnt_send_the_alert_again()
+    {
+        // Each process has its own outbox, so the outbox's own lock doesn't keep them apart: an alert is claimed in the
+        // database before it's sent. Only the process holding the background jobs' lease retries, so this is the moment the
+        // lease changes hands.
+        _sender.Failing = true;
+        await Outbox().SendAsync(AlertDelivery.BreachEscalation, Guid.NewGuid(), "2026-04_Vendor", Message());
+        _sender.Failing = false;
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(3);
+
+        _sender.Hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = Outbox().RetryDueAsync();
+        await Waits.Until(() => _sender.Attempts == 2);   // the first process is sending it
+        var second = Outbox().RetryDueAsync();
+        await Waits.Until(() => second.IsCompleted || _sender.Attempts > 2);
+
+        _sender.Attempts.Should().Be(2, "the second process found the alert claimed");
+        (await second).Should().Be(0);
+        _sender.Hold.SetResult();
+        (await first).Should().Be(1);
+
+        _sender.Hold = null;
+        _clock.UtcNow = _clock.UtcNow.AddHours(3);
+        (await Outbox().RetryDueAsync()).Should().Be(0, "delivered, so not sent again");
+        _sender.Attempts.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task An_alert_held_back_by_a_backed_off_relay_stays_due_at_once()
+    {
+        // The claim pushed its next try ten minutes on; held back untried, it's given back, so the next minute's pass tries it.
+        var outbox = Outbox();
+        _sender.Failing = true;
+        await outbox.SendAsync(AlertDelivery.BreachEscalation, Guid.NewGuid(), "2026-04_Vendor", Message());
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(3);
+        _sender.Deferring = true;
+        (await outbox.RetryDueAsync()).Should().Be(0);
+
+        _sender.Deferring = false;
+        _sender.Failing = false;
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(1);
+        (await outbox.RetryDueAsync()).Should().Be(1, "it was still due a minute later");
+    }
+
     private sealed class FlakySender : IEmailSender
     {
         public bool Failing { get; set; }
         public bool Deferring { get; set; }   // BUG-608: the relay is backed off, so the send is held back untried
         public int Attempts { get; private set; }
         public int? ThrowOnAttempt { get; set; }
+        public TaskCompletionSource? Hold { get; set; }   // a send that doesn't finish until the test lets it
 
         public Task SendAsync(EmailMessage message, CancellationToken ct = default)
         {
             Attempts++;
             if (Attempts == ThrowOnAttempt) throw new OperationCanceledException("the app is shutting down");
+            if (Hold is { } hold) return hold.Task;
             if (Deferring) DeliveryWatch.ReportDeferred();
             else if (Failing) DeliveryWatch.ReportFailure();
             return Task.CompletedTask;
