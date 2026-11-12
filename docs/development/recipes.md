@@ -200,4 +200,5 @@ Then update [timeline.md](../architecture/timeline.md) and the timeline screensh
 ## Change styling or a script
 
 Edit `wwwroot/app.css` or `wwwroot/js/*.js`, then bump the matching `?v=` in `Components/App.razor` in the same
-commit. Follow [STYLE-GUIDE.md](../STYLE-GUIDE.md). Recapture affected screenshots.
+commit (a `*.razor.css` change bumps `IncidentManager.Web.styles.css`'s). CI's
+`tools/ci/check-asset-versions.sh` fails a change that misses one. Follow [STYLE-GUIDE.md](../STYLE-GUIDE.md). Recapture affected screenshots.

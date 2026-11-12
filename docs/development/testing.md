@@ -142,6 +142,7 @@ Run it from Git Bash on Windows (`MSYS_NO_PATHCONV=1` may be needed for the dock
 | `build-test` | `dotnet build -c Release`, `dotnet test` | Regressions (SQLite) |
 | | SonarQube Cloud analysis (main and PRs, when `SONAR_TOKEN` is set), waiting for the quality gate | A red quality gate (fails the build) |
 | | `tools/ci/check-migrations-immutable.sh` | Editing, deleting, renaming or squashing a migration that shipped in a `v*` tag |
+| | `tools/ci/check-asset-versions.sh <base>` | A changed script, stylesheet or component stylesheet (`*.razor.css`) whose `?v=` in `App.razor` didn't change, so browsers keep the cached copy; or a line `App.razor` loaded at the base dropped (by a merge, say). Run it locally with no argument to check work in progress against `origin/main` |
 | | `dotnet ef migrations has-pending-model-changes` (SQL Server and SQLite) | A model change without a migration, which would stop the upgraded app from starting |
 | | `dotnet list package --vulnerable --include-transitive` | Known-vulnerable packages (fails the build) |
 | | deprecated package report | Information only |

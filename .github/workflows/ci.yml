@@ -130,6 +130,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash tools/ci/check-migrations-immutable.sh
 
+      # tools/ci/check-asset-versions.sh: a changed script or stylesheet ships with a new ?v= in App.razor, or browsers
+      # keep serving their cached copy. Compared with the PR's base, or the commit before a push. A release (tag) run
+      # has neither, and main's run already checked it.
+      - name: Every changed script and stylesheet has a new ?v=
+        if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/') }}
+        run: bash tools/ci/check-asset-versions.sh "${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
+
       - name: No un-migrated model changes (SQL Server + SQLite)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
