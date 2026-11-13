@@ -12,5 +12,6 @@
 #
 # Dot-source this file. ASCII only.
 $CaseBookReleaseKeys = @(
+    @{ Id = '2a25b163af9a17df'; Added = '2026-11-13'; Xml = '<RSAKeyValue><Modulus>o0MTNdkvnPbWbm8l2hh+MYl2Hp4VMzI044XE5OqCOBktkRKibQb0iBVdVZLaAAaXWioTMBKPDmdLGVrfU7/wEvACuK7zzwnLQ6XGwu6GuZRWr7RSpYFjXrWdgNLQSBQMw8hfP434b1wUcz7Xu99h2lIEeBQOp1pjFJxXBmbrg4IBxsg9ujvgmNN4kxUJMtxtamfJ6QDmuo06dsgEMB1k9CqcxQrZEnYWsdyQas+CRLC6mhn6TKoG2VG42prc5dWSi1joJZ95QQI96D375KzcWmr2X4/Ak+YKbl9VEmYjTZtHMl9bITrvD8f7NIauKxtKgRlkVtC5GQfgy3D+qXqWDnejLyWnWa+kCwdpGHPrSo4obQoJdXwolPv2UpA7c/O+28RB8dVFjKdxNcXKbV3xncXsXeAVs6Cu0rdCMFmA+d6wdE09oJUQvhatd9Lmet5r6pTASbb3gIdJZTU0MDOqdP9RxVTMc3zBHiv6YsHZcwocO8M8I3y4GTq1U5jRgFFp</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>' }
     # --- New-ReleaseSigningKey.ps1 adds each key above this line ---
 )
