@@ -25,6 +25,7 @@ Start with the question you have.
 | How to get it running on my machine | [development/getting-started.md](development/getting-started.md) |
 | How to add a field, page, entity, permission, setting… | [development/recipes.md](development/recipes.md) |
 | How tests and CI work, and what isn't covered | [development/testing.md](development/testing.md) |
+| How a release is signed, and the signing key | [development/releasing.md](development/releasing.md) |
 | UI styling and copy rules | [STYLE-GUIDE.md](STYLE-GUIDE.md) |
 | How to install a production instance | [INSTALL.md](INSTALL.md) |
 | How to upgrade one | [UPGRADE.md](UPGRADE.md) |

@@ -38,14 +38,19 @@
 .PARAMETER BundleZip
     A release bundle produced by the Release workflow (casebook-<version>.zip: contains app/,
     migrations-sqlserver.txt, VERSION.txt). The recommended source -- no SDK needed on the server.
-    When this host can reach github.com (or -Proxy), the script fetches the .sha256 of the release the bundle's
-    VERSION.txt names from -Repository and refuses a bundle whose hash doesn't match, before expanding it. When it
-    can't (no outbound HTTPS, or the bundle isn't a release of -Repository), it warns and carries on.
+    Before anything in it is expanded or run, this script (the installed one, not the bundle's) checks:
+      - its signature, casebook-<version>.zip.sig beside it, against the release keys this script pins
+        (lib\CaseBookReleaseKeys.ps1). One that doesn't verify is refused. While a key is pinned, a bundle with no .sig
+        is refused unless -AllowUnsigned;
+      - its SHA-256: -ExpectedSha256, else casebook-<version>.zip.sha256 beside it (sha256sum's format, or the hash
+        alone). With neither, and no valid signature, the .sha256 of the release its VERSION.txt names is fetched from
+        -Repository; a host that can't reach github.com warns and carries on.
+    On a host that can't reach github.com, copy the zip's .sig and .sha256 from the release page next to it.
 
 .PARAMETER Version
     A release to download from GitHub and upgrade to, e.g. v1.6.0, or 'latest' (PROD-50). The script downloads
-    casebook-<version>.zip and its .sha256 from the repository's release, checks the hash, and continues as with
-    -BundleZip. Needs outbound HTTPS to github.com (or -Proxy); a host without it downloads the bundle elsewhere and
+    casebook-<version>.zip, its .sha256 and its .sig from the repository's release, checks them as for -BundleZip, and
+    continues as with -BundleZip. Needs outbound HTTPS to github.com (or -Proxy); a host without it downloads the bundle elsewhere and
     uses -BundleZip. Administration > Updates shows this command with the newest version filled in.
 
 .PARAMETER Repository
@@ -55,6 +60,14 @@
 .PARAMETER Proxy
     An outbound proxy for -Version and the -BundleZip hash check (e.g. http://proxy.contoso.local:8080), used with
     your Windows credentials.
+
+.PARAMETER ExpectedSha256
+    The bundle's SHA-256 from the release page, for -BundleZip on a host that can't reach github.com. Used in place of
+    a .sha256 beside the zip.
+
+.PARAMETER AllowUnsigned
+    Accept a bundle with no .sig (a release from before signing: v1.21.0 and earlier) although this script pins a
+    release key. It's then checked by its SHA-256 only, with a warning. A .sig that doesn't verify is still refused.
 
 .PARAMETER AppSource
     A folder that already contains the published app (an extracted bundle's app\, or a build
@@ -93,6 +106,9 @@
     .\Upgrade-CaseBook.ps1 -BundleZip .\casebook-v2.4.0.zip
 
 .EXAMPLE
+    .\Upgrade-CaseBook.ps1 -BundleZip D:\drop\casebook-v2.4.0.zip -ExpectedSha256 <the SHA-256 from the release page>
+
+.EXAMPLE
     .\Upgrade-CaseBook.ps1 -Build -SiteName CaseBook
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
@@ -117,8 +133,13 @@ param(
     [int]    $WarmupTimeoutSec = 660,   # WF-73: past the app's 600 s startupTimeLimit (web.config)
     [switch] $Force,
 
+    [string] $ExpectedSha256,
+    [switch] $AllowUnsigned,
+
     # Set by the handover below: the script that handed over has already checked the bundle against its release.
-    [Parameter(DontShow)] [switch] $ReleaseHashChecked
+    [Parameter(DontShow)] [switch] $ReleaseHashChecked,
+    # For tests only: a CaseBookReleaseKeys.ps1 to trust instead of the lib\CaseBookReleaseKeys.ps1 beside this script.
+    [Parameter(DontShow)] [string] $TrustedKeysPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -148,6 +169,7 @@ if ($sourceCount -ne 1) { throw "Specify exactly one source: -Version <vX.Y.Z>, 
 $deployDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot  = Split-Path -Parent $deployDir
 . (Join-Path $deployDir 'lib\CaseBookStamp.ps1')   # BUG-600: Get-CaseBookStamp
+. (Join-Path $deployDir 'lib\CaseBookRelease.ps1')   # the bundle's signature and SHA-256
 $stamp     = Get-CaseBookStamp   # local time, invariant culture: backup folders and .bak names sort on any server
 
 # --- 1. Resolve the live deployment from IIS + appsettings.Production.json -----
@@ -330,6 +352,7 @@ $staging = Join-Path $env:TEMP "casebook-upgrade-$stamp"
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
 $appSrc = $null; $manifest = $null; $targetVersion = $null
 $hashChecked = [bool]$ReleaseHashChecked
+$tag = $null
 
 if ($Version -or $BundleZip) {
     if ($Repository -notmatch '^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$') { throw "-Repository must be owner/name, not '$Repository'." }
@@ -338,15 +361,15 @@ if ($Version -or $BundleZip) {
     $ProgressPreference = 'SilentlyContinue'   # Windows PowerShell's progress bar slows a download many times over
 }
 
-# PROD-50: -Version downloads the release bundle and its .sha256 itself, as you, on this host, and refuses a bundle whose
-# hash doesn't match. Nothing the web app wrote is used.
+# PROD-50: -Version downloads the release bundle, its .sha256 and its .sig itself, as you, on this host. They're checked
+# below as a -BundleZip's are. Nothing the web app wrote is used.
 if ($Version) {
     if ($Version -ieq 'latest') {
         Write-Step "Finding the latest release of $Repository"
         $latest = Invoke-RestMethod @web -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ 'User-Agent' = 'CaseBook-Upgrade' }
         $Version = [string]$latest.tag_name
     }
-    if ($Version -notmatch '^v\d{1,4}\.\d{1,4}\.\d{1,4}$') { throw "-Version must be a release tag like v1.6.0 (or 'latest'), not '$Version'." }
+    if (-not (Test-CaseBookReleaseTag $Version)) { throw "-Version must be a release tag like v1.6.0 (or 'latest'), not '$Version'." }
 
     $download = Join-Path $env:TEMP "casebook-download-$stamp"
     New-Item -ItemType Directory -Force -Path $download | Out-Null
@@ -354,71 +377,37 @@ if ($Version) {
     $base = "https://github.com/$Repository/releases/download/$Version"
     Write-Step "Downloading $zipName from $Repository"
     $BundleZip = Join-Path $download $zipName
-    $shaFile = "$BundleZip.sha256"
     try {
-        Invoke-WebRequest @web -Uri "$base/$zipName.sha256" -OutFile $shaFile
+        Invoke-WebRequest @web -Uri "$base/$zipName.sha256" -OutFile "$BundleZip.sha256"
         Invoke-WebRequest @web -Uri "$base/$zipName" -OutFile $BundleZip
     } catch {
         throw ("Couldn't download $Version from github.com/$Repository ($($_.Exception.Message)). Check the version exists " +
                "and this host can reach github.com (or pass -Proxy); otherwise download the bundle elsewhere and use -BundleZip.")
     }
-    $expected = ((Get-Content $shaFile -Raw).Trim() -split '\s+')[0]
-    $actual = (Get-FileHash -Path $BundleZip -Algorithm SHA256).Hash
-    if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) {
-        throw "The downloaded bundle's SHA-256 ($actual) doesn't match the release's ($expected). Nothing was changed."
+    # And its signature. A release from before signing has none (404); the check below decides what that means.
+    try { Invoke-WebRequest @web -Uri "$base/$zipName.sig" -OutFile "$BundleZip.sig" }
+    catch {
+        Remove-Item -LiteralPath "$BundleZip.sig" -ErrorAction SilentlyContinue
+        Write-Info "No $zipName.sig downloaded ($($_.Exception.Message))."
     }
-    Write-Info "SHA-256 matches the release: $actual"
-    $hashChecked = $true
+    $tag = $Version
 }
-elseif ($BundleZip -and -not $hashChecked) {
-    # A -BundleZip copied onto the host is checked against the release it says it is (its VERSION.txt), when this host
-    # can reach github.com: a bundle whose hash doesn't match the release's .sha256 is refused before it's expanded. A
-    # host that can't reach it, or a bundle that isn't a release of -Repository, gets a warning and carries on as before.
+if ($BundleZip -and -not $hashChecked) {
+    # This script, the installed one, checks the bundle before it's expanded or its own script is handed over to, since a
+    # bundle's script can't vouch for itself: its signature against the release keys this script pins, and its SHA-256
+    # against -ExpectedSha256, a .sha256 beside it, or (unsigned, with neither) its release's on github.com
+    # (lib\CaseBookRelease.ps1, Invoke-CaseBookBundleCheck). A bundle that fails is refused here, with nothing changed.
     if (-not (Test-Path $BundleZip -PathType Leaf)) { throw "Bundle not found: $BundleZip" }
-    $tag = $null
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $BundleZip).Path)
-        try {
-            $entry = $zip.Entries | Where-Object { $_.FullName -match '^[^/\\]+[/\\]VERSION\.txt$' -and $_.Length -lt 4096 } |
-                Select-Object -First 1
-            if ($entry) {
-                $reader = New-Object System.IO.StreamReader($entry.Open())
-                try { if ($reader.ReadToEnd() -match '(?m)^Version:\s*(v\d{1,4}\.\d{1,4}\.\d{1,4})\s*$') { $tag = $Matches[1] } }
-                finally { $reader.Dispose() }
-            }
-        } finally { $zip.Dispose() }
-    } catch { Write-Warn2 "Couldn't read VERSION.txt from the bundle ($($_.Exception.Message))." }
-
-    if (-not $tag) {
-        Write-Warn2 "The bundle doesn't name a release version, so its SHA-256 can't be checked against a release."
-    } else {
-        Write-Step "Checking the bundle's SHA-256 against the $tag release of $Repository"
-        $shaFile = Join-Path $staging "casebook-$tag.zip.sha256"
-        $shaWeb = $web.Clone(); $shaWeb.TimeoutSec = 30   # a host without github.com shouldn't wait long to find out
-        $expected = $null; $why = $null
-        try {
-            Invoke-WebRequest @shaWeb -Uri "https://github.com/$Repository/releases/download/$tag/casebook-$tag.zip.sha256" -OutFile $shaFile
-            $expected = ((Get-Content $shaFile -Raw).Trim() -split '\s+')[0]
-            if ($expected -notmatch '^[0-9a-fA-F]{64}$') { $expected = $null; $why = "the answer wasn't a .sha256" }
-        } catch {
-            $status = 0
-            try { $status = [int]$_.Exception.Response.StatusCode } catch { }
-            $why = if ($status -eq 404) { "github.com/$Repository has no $tag release with a .sha256" } else { "couldn't fetch it: $($_.Exception.Message)" }
-        }
-        if ($expected) {
-            $actual = (Get-FileHash -Path $BundleZip -Algorithm SHA256).Hash
-            if ($actual -ine $expected) {
-                throw ("The bundle's SHA-256 ($actual) doesn't match the $tag release's ($expected) on github.com/$Repository. " +
-                       "Nothing was changed. Download the bundle from the release again.")
-            }
-            Write-Info "SHA-256 matches the release: $actual"
-        } else {
-            Write-Warn2 ("Not checked against the release ($why). Carrying on; to check it yourself, compare " +
-                         "Get-FileHash <zip> -Algorithm SHA256 with the release's casebook-$tag.zip.sha256.")
-        }
-        $hashChecked = $true   # tried: the bundle's own script, handed over to below, doesn't fetch it again
-    }
+    if ($TrustedKeysPath -and -not (Test-Path -LiteralPath $TrustedKeysPath -PathType Leaf)) { throw "-TrustedKeysPath not found: $TrustedKeysPath" }
+    $keysFile = if ($TrustedKeysPath) { $TrustedKeysPath } else { Join-Path $deployDir 'lib\CaseBookReleaseKeys.ps1' }
+    $trustedKeys = @(Get-CaseBookTrustedKeys $keysFile)
+    Write-Step "Checking the bundle's signature and SHA-256"
+    $check = Invoke-CaseBookBundleCheck -ZipPath $BundleZip -Keys $trustedKeys -AllowUnsigned:$AllowUnsigned -ExpectedSha256 $ExpectedSha256 `
+        -Tag $tag -Repository $Repository -Web $web -WorkDir $staging
+    foreach ($n in $check.Notes) { Write-Info $n }
+    foreach ($w in $check.Warnings) { Write-Warn2 $w }
+    $tag = $check.Tag
+    $hashChecked = $true   # the bundle's own script, handed over to below, doesn't check it again
 }
 
 if ($BundleZip) {

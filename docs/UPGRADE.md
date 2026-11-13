@@ -11,7 +11,7 @@ How to move a running production instance to a newer build. For a first install 
 
 Each version tag (`vX.Y.Z`) builds a **release bundle** attached to the matching
 [GitHub Release](https://github.com/jashley92/CaseBook/releases): `casebook-<version>.zip` plus a
-`.sha256`. The bundle contains the published app (`app/`), the deploy scripts (`deploy/`), a
+`.sha256` and, from v1.22.0, a `.sig` signed by CaseBook's release key. The bundle contains the published app (`app/`), the deploy scripts (`deploy/`), a
 migration manifest, and a `VERSION.txt`. The release's description is the version's section of [Notes](#notes) below, and
 from v1.6.0 the version is stamped into the app (Administration › Diagnostics shows it). Deploying from the bundle means **the server needs no .NET
 SDK and no NuGet access**. The release workflow rebuilds the app from the tagged commit; it doesn't rerun the
@@ -35,20 +35,23 @@ first and set only when it differs.
 On the web host, **elevated**:
 
 ```powershell
-# From v1.6.0: one command. The script downloads the release bundle and its .sha256 from GitHub itself, refuses a
-# bundle whose hash doesn't match, and hands over to the upgrade script inside that bundle (from v1.6.3), so the
+# From v1.6.0: one command. The script downloads the release bundle, its .sha256 and its .sig from GitHub itself,
+# refuses a bundle whose signature or hash doesn't match, and hands over to the upgrade script inside that bundle (from v1.6.3), so the
 # upgrade always runs with the new release's own logic. Start it from the copy of the deploy scripts each upgrade keeps
 # beside the site (<site parent>\<site folder>-deploy, e.g. C:\inetpub\CaseBook-deploy); Administration › Updates shows
 # the exact line, with -SiteName when it knows the site.
 & 'C:\inetpub\CaseBook-deploy\Upgrade-CaseBook.ps1' -Version v1.6.3      # or -Version latest; -Proxy <url> if needed
 
-# Without outbound internet, or the first time (before v1.6.0 there's no kept copy):
-# 1. Download casebook-<version>.zip from the GitHub Release and verify it:
-#    Get-FileHash .\casebook-<version>.zip -Algorithm SHA256   # compare to the .sha256
-# 2. Run the upgrade from the version-matched script inside the bundle:
+# Without outbound internet: download casebook-<version>.zip, its .sha256 and its .sig from the GitHub Release, put
+# them side by side on the server, and run the kept copy with -BundleZip. It checks the signature and the hash before
+# expanding anything (deploy/README.md, "Checking a bundle"), then hands over as above:
+& 'C:\inetpub\CaseBook-deploy\Upgrade-CaseBook.ps1' -BundleZip D:\drop\casebook-<version>.zip
+# Or give the hash from the release page instead of the .sha256 file: -ExpectedSha256 <hex>.
+
+# The first time (before v1.6.0 there's no kept copy): check the bundle on a workstation with an earlier release's
+# Test-CaseBookBundle.ps1, or Get-FileHash .\casebook-<version>.zip -Algorithm SHA256 against the release page, then
+# run the version-matched script inside the bundle:
 .\Upgrade-CaseBook.ps1 -BundleZip .\casebook-<version>.zip
-# When the host can reach github.com (or -Proxy), -BundleZip fetches the .sha256 of the release its VERSION.txt names
-# and refuses a bundle that doesn't match it, before expanding it. Offline, it warns and carries on, so step 1 matters.
 ```
 
 It auto-detects the site (default name `CaseBook`), database, and health URL (the site root at its first
@@ -66,8 +69,11 @@ Alternatives to `-Version` and `-BundleZip`:
 - `-AppSource <folder>` — a folder that already holds the published app.
 - `-Build` — publish from this repo (needs the .NET 10 SDK on the host).
 
-The hash check proves the bundle is the one published on the release, not who published it: the zip and its `.sha256`
-come from the same GitHub release. Upgrade from the repository you trust, and read the release's notes first.
+The signature proves who published the bundle: the kept scripts trust only the release keys they pin
+([ADR 0019](decisions/0019-releases-are-signed-with-a-pinned-key.md)), so a bundle swapped on the release page, or
+changed on the way to the server, is refused. A hash alone proves only that the zip matches the `.sha256` beside it on
+the same release. A site on v1.21.0 or earlier pins no key, so its upgrade to v1.22.0 is checked by the hash only;
+signatures protect every upgrade after that.
 
 After an upgrade the site's `VERSION.txt` records the version, the version it replaced, when and by whom; Administration
 › Updates shows that line. The kept scripts folder (`<site folder>-deploy`, holding the scripts and `site.txt` with the
@@ -213,6 +219,17 @@ first with `casebook-keytool export`.
 ---
 
 ## Notes
+
+### Unreleased
+
+- **Releases are signed.** From this release each bundle has a `.sig` beside the `.zip` and `.sha256`: a signature by
+  CaseBook's release key. The upgrade checks it, with the keys the installed scripts pin, before expanding the bundle or
+  running anything in it, and refuses a bundle whose signature doesn't verify. Upgrading **to** this release is checked
+  by the hash as before (v1.21.0's scripts pin no key); every upgrade **from** it checks the signature.
+- **A bundle can be checked offline.** On a server without github.com, put the release's `.sha256` and `.sig` beside the
+  zip, or pass `-ExpectedSha256 <hex>`. Before, an offline upgrade checked nothing.
+- **`Test-CaseBookBundle.ps1`** checks a bundle without upgrading, for a workstation or a first install.
+- `-AllowUnsigned` takes a bundle with no `.sig` (a release from before signing, for a downgrade), checked by its hash.
 
 ### v1.21.0
 

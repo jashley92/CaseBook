@@ -164,7 +164,10 @@ the newest code commit before a release-notes tag, and a docs commit pushed afte
 none of these is refused: one that isn't on `main`, or one whose CI on `main` failed before Sonar or was cancelled by
 a newer push. Tag a commit whose CI on `main` passed, with the release notes already in. Without `SONAR_TOKEN` (a fork) the check warns and is skipped. The job then
 re-checks migration immutability, publishes the app and builds `casebook-<tag>.zip` (`app/`, `deploy/`,
-`migrations-sqlserver.txt`, `VERSION.txt`) with a `.sha256`, then creates the GitHub release.
+`migrations-sqlserver.txt`, `VERSION.txt`) with a `.sha256`, signs it with the `RELEASE_SIGNING_KEY` secret (failing
+without it, or when the key isn't pinned in `deploy/lib/CaseBookReleaseKeys.ps1`), checks the signed bundle with
+`deploy/Test-CaseBookBundle.ps1 -Offline`, then creates the GitHub release with the zip, `.sha256` and `.sig`
+([releasing.md](releasing.md)).
 
 To check a commit by hand: `SONAR_TOKEN=... SONAR_WAIT_SECONDS=0 bash tools/ci/check-sonar-quality-gate.sh <sha>`.
 
