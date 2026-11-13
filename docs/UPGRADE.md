@@ -216,7 +216,23 @@ first with `casebook-keytool export`.
 
 ### Unreleased
 
-No migration and no setting changes. **Check that WebSockets reach CaseBook.** Each open tab's connection (its Blazor
+**One migration**, `ProcessLeases`: a new table, nothing existing changes. No setting changes. The DBA schema script
+carries the same change.
+
+- **One process runs the background jobs.** CaseBook supports one process per database. A second one, such as an app
+  pool with more than one worker process or a second server pointed at the same database, used to run every background
+  job too. The two processes now share a lease in the database. One runs the jobs and the other stands by, so nothing is
+  sent, sealed or swept twice. A lease that isn't renewed lapses after 3 minutes and is taken over. One let go at
+  shutdown, or held by a process on the same machine that has ended, is taken over at once.
+- **A second process is an alarm.** It still serves pages, and the audit trail's lock covers one process only.
+  Administrators see a banner naming the other process, Administration → Diagnostics → *Scheduled jobs* says which
+  process runs the jobs, and `/health/alarms` answers `Degraded`. Run now and Convert now are refused on the process
+  that's standing by, naming the one to use.
+- **`Install-CaseBook.ps1` and `Upgrade-CaseBook.ps1` set the app pool to one worker process**
+  (`processModel.maxProcesses = 1`), and `Verify-Install.ps1` warns when it's more.
+- **An undelivered alert email is claimed before each retry**, so two processes can't both resend it.
+
+**Check that WebSockets reach CaseBook.** Each open tab's connection (its Blazor
 circuit) is meant to run over a WebSocket; without the IIS **WebSocket Protocol** feature, or behind a proxy that drops
 the `Upgrade` header, the browser falls back to long polling, a request for every keystroke. CaseBook works either way,
 so nothing here stops an upgrade.

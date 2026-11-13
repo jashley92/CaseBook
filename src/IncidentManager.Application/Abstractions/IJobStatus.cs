@@ -61,7 +61,8 @@ public interface IJobStatus
     void Scheduled(JobDefinition job, bool enabled, DateTimeOffset? nextDueUtc);
 
     /// <summary>
-    /// Starts a run: null while a run of the same job is under way (the caller skips its pass, or refuses the Run now).
+    /// Starts a run: null while a run of the same job is under way, or while this process doesn't run the background jobs
+    /// (<see cref="IProcessLease"/>: another process holds the lease). The caller skips its pass, or refuses the Run now.
     /// <paramref name="manual"/> marks a Run now from Diagnostics.
     /// </summary>
     JobRun? TryStart(JobDefinition job, bool manual = false);
@@ -113,7 +114,9 @@ public static class JobStatusExtensions
 }
 
 /// <inheritdoc />
-public sealed class JobStatus(IClock clock) : IJobStatus
+/// <remarks>Built with <paramref name="lease"/>, a run starts only on the process holding the background jobs' lease. Without
+/// one (a test's host), every run starts.</remarks>
+public sealed class JobStatus(IClock clock, IProcessLease? lease = null) : IJobStatus
 {
     private readonly object _gate = new();
     private readonly List<string> _order = [];
@@ -144,6 +147,7 @@ public sealed class JobStatus(IClock clock) : IJobStatus
 
     public JobRun? TryStart(JobDefinition job, bool manual = false)
     {
+        if (lease is { RunsJobs: false }) return null;   // another process runs the jobs, or this one can't yet tell
         lock (_gate)
         {
             var row = Ensure(job);

@@ -675,6 +675,8 @@ Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.idleTimeout -Va
 # audit-chain gate is per process, and an overlapped recycle briefly runs two.
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.periodicRestart.time -Value '00:00:00'
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.disallowOverlappingRotation -Value $true
+# One worker process (no web garden): a second one would run beside the first all the time, not only during a recycle.
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.maxProcesses -Value 1
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.identityType -Value SpecificUser
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.userName -Value $AppPoolIdentity
 if ($AppPoolCredential) {

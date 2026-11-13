@@ -293,6 +293,9 @@ if ($Url) {
         $recycling = (Get-Item "IIS:\AppPools\$pool").recycling
         if ($recycling.disallowOverlappingRotation) { Ok "App pool '$pool' never runs two processes at once" }
         else { Warn "App pool '$pool' allows overlapped recycling: two CaseBook processes run side by side during a recycle. Set recycling.disallowOverlappingRotation (Upgrade-CaseBook.ps1 does)." }
+        $workers = (Get-Item "IIS:\AppPools\$pool").processModel.maxProcesses
+        if ($workers -eq 1) { Ok "App pool '$pool' runs one worker process" }
+        else { Warn "App pool '$pool' runs $(if ($workers -eq 0) { 'one worker process per NUMA node' } else { "up to $workers worker processes" }) (a web garden): CaseBook supports one. Set processModel.maxProcesses to 1 (Upgrade-CaseBook.ps1 does)." }
         if ($recycling.periodicRestart.time -eq [TimeSpan]::Zero) { Ok "App pool '$pool' has no scheduled recycle" }
         else { Warn "App pool '$pool' recycles every $($recycling.periodicRestart.time). Set recycling.periodicRestart.time to 00:00:00 (Upgrade-CaseBook.ps1 does)." }
     } catch { Bad "Could not read app pool '$pool': $($_.Exception.Message)" }

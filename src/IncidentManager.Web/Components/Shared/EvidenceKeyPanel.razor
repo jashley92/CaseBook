@@ -6,6 +6,7 @@
 @using IncidentManager.Infrastructure.Storage
 @inject EvidenceKeyring Keyring
 @inject EvidenceConversionStatus Conversion
+@inject IProcessLease Lease
 
 <table class="table table-sm">
     <tbody>
@@ -86,12 +87,20 @@
                         <span class="text-muted"> · last run @TimeDisplay.UtcLabelled(Conversion.LastRunUtc.Value)</span>
                     }
                     @if (Conversion.LastProblem is { } p) { <div class="text-danger">@p</div> }
-                    <div class="mt-1">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ConvertNow" disabled="@(Conversion.NowRequested || Conversion.Running)">
-                            @(Conversion.Running ? "Converting…" : Conversion.NowRequested ? "Starting within a minute…" : "Convert now")
-                        </button>
-                        <span class="text-muted ms-2">Shortens the time plain samples sit where antivirus can see them.</span>
-                    </div>
+                    @if (!Lease.RunsJobs)
+                    {
+                        @* Files are converted only by the process running the background jobs: a Convert now here would wait forever. *@
+                        <div class="mt-1 text-muted">@StandingByException.For(Lease.Status).Message</div>
+                    }
+                    else
+                    {
+                        <div class="mt-1">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ConvertNow" disabled="@(Conversion.NowRequested || Conversion.Running)">
+                                @(Conversion.Running ? "Converting…" : Conversion.NowRequested ? "Starting within a minute…" : "Convert now")
+                            </button>
+                            <span class="text-muted ms-2">Shortens the time plain samples sit where antivirus can see them.</span>
+                        </div>
+                    }
                 </td>
             </tr>
         }

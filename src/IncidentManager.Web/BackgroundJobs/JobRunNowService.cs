@@ -17,7 +17,8 @@ public sealed class JobRunNowService(
     IAuditWriter audit,
     IHostApplicationLifetime lifetime,
     ILogger<JobRunNowService> logger,
-    ISecurityEventSink? siem = null)
+    ISecurityEventSink? siem = null,
+    IProcessLease? lease = null)
 {
     /// <summary>The audit trail's entity type for a Run now.</summary>
     public const string AuditEntity = "ScheduledJob";
@@ -37,6 +38,7 @@ public sealed class JobRunNowService(
         var pass = job.RunNow ? jobs.RunNowPass(job.Key) : null;
         if (pass is null)
             throw new InvalidOperationException($"{job.Name} can't be run from here: only the read-only scans can.");
+        lease.RequireRunsJobs();   // standing by: the process holding the lease runs it
         var run = jobs.TryStart(job, manual: true)
                   ?? throw new InvalidOperationException($"{job.Name} is running now. Wait for it to finish, then try again.");
         try

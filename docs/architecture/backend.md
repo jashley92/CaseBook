@@ -193,6 +193,19 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 
 **No job changes case state** (verified: no scanner saves; the only scheduled writes are the integrity seal, the nightly retention (the access-log prune and, CAP-31, clearing decided imports' stored documents, neither a case record) and, with evidence encryption on, the evidence key's envelope and the one-time encryption of files stored before, which leaves every record as it was). `ReportJobs` writes only the report a person asked for, as that person; generating never approves.
 
+**One process runs them.** CaseBook supports one process per database, but a second one (a web garden, or a second
+server pointed at the same database) would otherwise run every job too. `DbProcessLease` (`IProcessLease`) keeps a lease
+in `ProcessLeases`, taken before the jobs start by `ProcessLeaseHostedService` (registered first, so it starts first and
+stops last), renewed every 30 s and let go at shutdown. `JobStatus.TryStart` refuses every run on a process that doesn't
+hold it, so each job's pass is skipped there. The four jobs that ran without a run (the alert retry, the evidence store's
+sweep, the evidence key's conversion and the one-time integrity upgrade) check it themselves. The evidence key is still
+read on every process. A holder that can't reach the database keeps running until 30 s before the expiry it last wrote,
+and a lease that lapses (3 minutes) is taken over. Each process also keeps a heartbeat row, so each sees the others:
+`ProcessLeaseBanner` (Administer), the *Scheduled jobs* panel and `/health/alarms` say when there's more than one.
+Run now and Convert now are refused on a process that's standing by (`StandingByException`). The alert outbox also
+claims each alert in the database before retrying it (`CriticalAlertOutbox.ClaimFor`), for the moment the lease
+changes hands.
+
 Caveats:
 
 - "Already reminded" marks are kept in the `NotificationMarks` table (BUG-95), outside the audit chain, so a restart

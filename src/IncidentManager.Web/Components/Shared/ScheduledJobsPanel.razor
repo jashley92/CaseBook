@@ -10,12 +10,36 @@
 @inject IJobStatus Jobs
 @inject JobRunNowService Runner
 @inject IClock Clock
+@inject IProcessLease Lease
 @inject ILogger<ScheduledJobsPanel> Logger
 
 <p class="small text-muted mb-2">
     When each background job last ran, how it ended and when it's next due. Errors show their type only; the server's log
     has the detail. The figures are held in memory and reset when CaseBook restarts (since @Time(Jobs.SinceUtc)). Run now
     is offered only for the scans that read and change nothing.
+</p>
+@* Which process runs the jobs: this one, or another one holding the lease (this one then skips every pass). *@
+@{ var lease = Lease.Status; }
+<p class="small mb-2 @(lease.State == LeaseState.Held && lease.Others.Count == 0 ? "text-muted" : "text-danger")" role="status">
+    @switch (lease.State)
+    {
+        case LeaseState.Held:
+            @($"This server ({ProcessLeaseStatus.Describe(Lease.Holder)}) runs the background jobs, since {Time(lease.HeldSinceUtc)}.")
+            break;
+        case LeaseState.StandingBy:
+            @($"This server ({ProcessLeaseStatus.Describe(Lease.Holder)}) is standing by: {lease.HolderName ?? "another CaseBook process"} runs the background jobs, so none runs here.")
+            break;
+        case LeaseState.Unreachable:
+            @($"No background job runs here: the database didn't answer when the jobs' lease was last renewed ({lease.Problem}).")
+            break;
+        default:
+            @("The background jobs' lease hasn't been taken yet; the jobs wait for it.")
+            break;
+    }
+    @foreach (var o in lease.Others)
+    {
+        <span class="d-block">Another CaseBook process is using this database: @o.Name, started @Time(o.StartedAtUtc), last seen @Time(o.LastSeenUtc).</span>
+    }
 </p>
 <div class="d-flex align-items-center gap-2 mb-2">
     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Reload" aria-label="Refresh the scheduled jobs">

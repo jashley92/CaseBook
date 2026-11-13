@@ -571,10 +571,25 @@ Exercise cases are excluded; closed cases with an unrecorded notification still 
 restricted cases are included only for roles that can see them; SLA clocks use effective times; days and months
 follow `Organization:TimeZone`.
 
+### "Another CaseBook process is using this database"
+
+Two CaseBook processes are using one database: an app pool with more than one worker process (a web garden), or a second
+server pointed at the same database (a standby, a test server with production's connection string). CaseBook supports
+one. The background jobs are safe, because one process runs them and the other stands by. But both serve pages, and the
+audit trail's lock covers one process only, so saves through both can break the audit chain. The banner and
+Administration → Diagnostics → *Scheduled jobs* name the other process (machine and process id).
+
+- **A web garden:** set the app pool's `processModel.maxProcesses` to 1 (`Upgrade-CaseBook.ps1` does;
+  `Verify-Install.ps1` warns), then recycle it.
+- **A second server:** stop its app pool, or point it at its own database.
+
+The banner goes within about two minutes of the other process stopping. After a crash, the restarted process takes the
+jobs over at once on the same machine. Another machine's lease lapses within 3 minutes.
+
 ### A reminder email was sent twice
 
 "Already sent" marks are kept in the database, so a restart shouldn't resend. Check the app pool: `Verify-Install.ps1`
-warns when it allows overlapped recycling or recycles on a schedule. A reminder whose send failed is sent again on the
+warns when it allows overlapped recycling, recycles on a schedule or runs more than one worker process. A reminder whose send failed is sent again on the
 next scan, by design. A reminder still due after 180 days is sent once more when its mark is pruned.
 
 ## Escalation

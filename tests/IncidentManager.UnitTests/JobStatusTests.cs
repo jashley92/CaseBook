@@ -165,4 +165,30 @@ public sealed class JobStatusTests
             row.Failures.Should().Be(failed[j]);
         }
     }
+
+    private sealed class Lease : IProcessLease
+    {
+        public string Holder => "TESTBOX/1/test";
+        public bool RunsJobs { get; set; }
+        public ProcessLeaseStatus Status => ProcessLeaseStatus.NotChecked;
+        public event Action? Changed { add { } remove { } }
+        public Task<bool> HoldAsync(CancellationToken ct = default) => Task.FromResult(RunsJobs);
+        public Task ReleaseAsync(CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public void No_run_starts_on_a_process_that_doesnt_hold_the_background_jobs_lease()
+    {
+        // Another CaseBook process on the database holds it: every scheduled pass and Run now here is refused.
+        var lease = new Lease { RunsJobs = false };
+        var jobs = new JobStatus(new Clock(), lease);
+        jobs.Register(Scan);
+        jobs.TryStart(Scan).Should().BeNull();
+        jobs.TryStart(Scan, manual: true).Should().BeNull();
+        jobs.Snapshot()[0].Running.Should().BeFalse();
+
+        lease.RunsJobs = true;
+        using var run = jobs.TryStart(Scan);
+        run.Should().NotBeNull("it holds the lease now");
+    }
 }
