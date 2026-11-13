@@ -214,10 +214,10 @@ first with `casebook-keytool export`.
 
 ## Notes
 
-### Unreleased
+### v1.21.0
 
 **One migration**, `ProcessLeases`: a new table, nothing existing changes. No setting changes. The DBA schema script
-carries the same change.
+carries the same change. The upgrade also sets the app pool to one worker process (below).
 
 - **One process runs the background jobs.** CaseBook supports one process per database. A second one, such as an app
   pool with more than one worker process or a second server pointed at the same database, used to run every background
@@ -231,6 +231,25 @@ carries the same change.
 - **`Install-CaseBook.ps1` and `Upgrade-CaseBook.ps1` set the app pool to one worker process**
   (`processModel.maxProcesses = 1`), and `Verify-Install.ps1` warns when it's more.
 - **An undelivered alert email is claimed before each retry**, so two processes can't both resend it.
+
+**The ATT&CK picker:**
+
+- **Filtering the matrix shows only the tactics with a match**, packed to the left under a counts line ("Showing 3 of 15
+  tactics with matches · 11 techniques"). The filter applies after a short pause in typing, so a long filter no longer
+  redraws the whole matrix on every keystroke. Enter and Clear apply at once.
+- **A retired technique id says what replaced it.** ATT&CK revokes and deprecates techniques (T1574.002 *DLL
+  Side-Loading* became T1574.001). Typed in the filter, a retired id shows its replacement with *Show T…*. One already on
+  a case shows in a strip with *Replace with T…*, which keeps a tactic the replacement belongs to. The timeline step's
+  ATT&CK search lists the replacement first.
+- **Escape closes the matrix after a click in it**, and Tab stays within the dialog.
+
+**Fixes:**
+
+- **Fast typing no longer loses characters** in 18 boxes, among them the ATT&CK filter, the command palette, the
+  Administration settings search and form, the brief's parts and task comments. A slow round trip to the server could
+  write older text back over what had been typed since.
+- **The browser loads the new copies of three files** changed since v1.20.0 (the stylesheet, the keyboard shortcuts
+  and the dialog focus script). A copy cached from before could otherwise be used after the upgrade.
 
 **Check that WebSockets reach CaseBook.** Each open tab's connection (its Blazor
 circuit) is meant to run over a WebSocket; without the IIS **WebSocket Protocol** feature, or behind a proxy that drops
