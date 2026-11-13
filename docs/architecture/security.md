@@ -215,6 +215,11 @@ return query.Where(c => !c.IsRestricted
 
 Listed in [reference/known-issues.md](../reference/known-issues.md#security). In short:
 
+- A release bundle is signed by CaseBook's release key (RSA-PSS, SHA-256), and the installed upgrade script checks
+  it against the public keys pinned in `deploy/lib/CaseBookReleaseKeys.ps1` before expanding or running anything in
+  it ([ADR 0019](../decisions/0019-releases-are-signed-with-a-pinned-key.md)). Unlike a configuration bundle, the
+  key isn't in the file: origin is the pinned key's. The private key is a repository secret, and its only other copy
+  is the owner's offline backup ([releasing.md](../development/releasing.md)).
 - A configuration bundle's signature is checked against the key inside the file, so it proves integrity, not
   origin. Origin is the key's: this server's own and those in `Config:TrustedBundleKeys` import without asking; any
   other imports only when an administrator types its key id (CAP-16, `ConfigBundleService.ImportAsync`, which also

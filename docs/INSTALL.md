@@ -88,8 +88,11 @@ Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-WebSockets, Web-Mgmt-Co
     `_blazor?id=…`** (one per keystroke) mean long polling.
 
 - [ ] **Where the app comes from** (pick one):
-  - **Recommended: the release bundle.** Download `casebook-<version>.zip` (and its `.sha256`) from the
-    [GitHub releases](https://github.com/jashley92/CaseBook/releases). It contains the published app (`app\`)
+  - **Recommended: the release bundle.** Download `casebook-<version>.zip`, its `.sha256` and its `.sig` from the
+    [GitHub releases](https://github.com/jashley92/CaseBook/releases). The installer inside the bundle can't vouch
+    for the bundle, so check it first with `Test-CaseBookBundle.ps1` from an earlier release (on a workstation), or
+    compare `Get-FileHash -Algorithm SHA256` with the release page
+    ([Checking a bundle](../deploy/README.md#checking-a-bundle)). It contains the published app (`app\`)
     and these scripts (`deploy\`), so the server needs no SDK and no NuGet access. See §3.
   - Build on the server: the **.NET 10 SDK** and a clone of the repository (`Install-CaseBook.ps1` publishes
     `src\IncidentManager.Web`).

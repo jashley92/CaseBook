@@ -16,6 +16,7 @@ the answers file; the usual path is to enter it in Administration after install 
 | `Install-Database.ps1` | Provision the SQL DB + app-pool login (Windows auth). Run first, as SQL sysadmin. |
 | `Install-CaseBook.ps1` | Publish the app (from a repo clone) **or**, with `-SkipPublish`, use an app already copied into the site folder (from the release bundle); create the IIS site and app pool, write prod config, ACL the data dirs, carve `/api`, `/health`, `/branding/logo` and `/agenda/feed.ics` out as anonymous (the app authenticates the API and the feed itself, and the probes give a status word only). Run as local admin. Re-running keeps the existing `appsettings.Production.json` (writing the new one beside it as `.new`; `-ReplaceSettings` overwrites it) and leaves existing bindings alone. Checks the IIS WebSocket Protocol feature and that WebSockets aren't off for the site, and offers to fix either (`-InstallWebSockets` fixes them unasked). |
 | `Upgrade-CaseBook.ps1` | **Upgrade an existing site** to a newer build (from a release bundle, an app folder, or `-Build`). Backs up DB + config + binaries, runs a migration-compatibility preflight, swaps binaries without touching config/data, and rolls back on failure. Checks the anonymous carve-outs (`/api`, `/health`, `/branding/logo`, `/agenda/feed.ics`) and sets any a site installed before CAP-37 lacks, before the new build starts (`-WhatIf` only reports them). Warns, never stops, when the IIS WebSocket Protocol feature is missing or WebSockets are off for the site. See **[../docs/UPGRADE.md](../docs/UPGRADE.md)**. |
+| `Test-CaseBookBundle.ps1` | Check a release bundle's signature and SHA-256 as the upgrade does, without upgrading: on a workstation before copying it to the server, or before a first install. See **[Checking a bundle](#checking-a-bundle)**. |
 | `Verify-Install.ps1` | Readiness + smoke test: `-ConfigFile` validates the answers file resolves (account/groups/cert/paths/SQL) **before** installing; `-Url` is the post-install smoke test (app pool, a signed-in request, and the anonymous `/api`, `/health/live`, `/health/alarms`, `/branding/logo` and `/agenda/feed.ics`, then the IIS WebSocket Protocol feature, WebSockets on for the site (`-SiteName`), and a real WebSocket handshake to `/_blazor`). |
 | `keytool/casebook-keytool.exe` | *(Release bundle)* The evidence key tool (PROD-57): split the key into shares, check a share, run a recovery drill, recover the key onto a new certificate, export evidence as the original files. `verify-restore` checks a restored copy for the restore drill; `new-signing-key`, `signing-key-pfx` and `signing-public-key` make and move seal-signing keys (§2). See **[../docs/OPERATIONS.md](../docs/OPERATIONS.md) §2, Evidence key**. CAP-05: `protect-secret` turns a secret (the SMTP password, a webhook token) into a `@protected:` value encrypted to a certificate, and `check-secret` says whether one opens here; `Install-CaseBook.ps1 -SmtpSignIn Password -SmtpPasswordSource Protected` runs it for you. See **§6** there. |
 | `appsettings.Production.template.json` | Production config template; the installer substitutes `__PLACEHOLDERS__`. |
@@ -28,12 +29,34 @@ the answers file; the usual path is to enter it in Administration after install 
 | `Export-LedgerDigest.ps1` | Save a ledger digest to `LedgerDigestPath` (`-Register` schedules it daily; exit 1 on failure). |
 | `Verify-LedgerDigests.ps1` | Verify the ledger tables against the saved digests (exit 1 = possible tampering; 2 = couldn't run the check; `-Register` schedules it every fourth Sunday). |
 | `lib/CaseBookSql.ps1` | SqlClient helpers the ledger scripts share (no SqlServer module or sqlcmd needed). |
+| `lib/CaseBookRelease.ps1` | The bundle check the upgrade and `Test-CaseBookBundle.ps1` share: the signature against the pinned keys, then the SHA-256. |
+| `lib/CaseBookReleaseKeys.ps1` | The release signing keys this copy of the scripts trusts. Written only by `tools/signing/New-ReleaseSigningKey.ps1`. |
 | `lib/CaseBookStamp.ps1` | Date stamps for file names and records in the invariant culture (`Get-CaseBookStamp`, `ConvertFrom-CaseBookStamp`), so they sort and parse on a server of any culture. |
 | `lib/CaseBookAdGroups.ps1` | Resolves the role groups to `DOMAIN\Group` for the installers (a bare name maps only the web server's domain). |
 | `sql/02-Enable-Ledger.sql` | The DDL `Enable-Ledger.ps1` runs. |
 | `sql/casebook-schema-sqlserver.sql` | Idempotent full-schema script for DBAs who apply the schema by hand (`-SchemaMode DbaApplies`). |
 
-## Simplest path: one answers file for both installers
+## Checking a bundle
+
+From v1.22.0 each release has three files: `casebook-<version>.zip`, its `.sha256`, and its `.sig`, a signature by
+CaseBook's release key ([ADR 0019](../docs/decisions/0019-releases-are-signed-with-a-pinned-key.md)). `Upgrade-CaseBook.ps1`
+checks a bundle before it expands it or runs anything in it, with the scripts already installed (a bundle can't vouch
+for itself):
+
+1. **The signature.** A `.sig` beside the zip must verify against a key `lib\CaseBookReleaseKeys.ps1` pins; one that
+   doesn't is refused. While a key is pinned, a bundle with no `.sig` is refused unless `-AllowUnsigned` (a release from
+   before signing, v1.21.0 and earlier).
+2. **The SHA-256.** `-ExpectedSha256 <hex>`, else the `.sha256` beside the zip, must match. With neither, and no valid
+   signature, it's checked against the release's `.sha256` on github.com; a host that can't reach it warns and carries on.
+
+On a server without github.com, copy the `.sig` and `.sha256` from the release page next to the zip. `-Version`
+downloads all three itself.
+
+`Test-CaseBookBundle.ps1 <zip>` runs the same checks and nothing else (no IIS, SQL or administrator rights). Run it from
+a deploy folder you already trust: an earlier release's, or the kept copy beside the site. A first install has no
+earlier scripts on the server, so check the bundle this way on a workstation first, or compare its hash with the
+release page.
+
 
 Both installers take every setting as **parameters** *or* from a single **`-ConfigFile casebook.config.psd1`**
 answers file (a parameter you also pass wins). Generate the file once, copy it to both hosts, and each step is a one-liner:

@@ -308,13 +308,18 @@ public partial class DeployScriptCultureTests
     [Fact]
     public void The_upgrade_checks_a_bundle_against_its_release_before_expanding_it()
     {
-        // A -BundleZip is checked against the .sha256 of the release its VERSION.txt names, before anything in it is used.
+        // A bundle's signature and SHA-256 are checked by the installed script (lib\CaseBookRelease.ps1), before anything
+        // in it is used: before the handover to the bundle's own script, and before it's expanded.
         var script = File.ReadAllText(Path.Combine(Deploy, "Upgrade-CaseBook.ps1"));
-        var check = script.IndexOf("/releases/download/$tag/casebook-$tag.zip.sha256", StringComparison.Ordinal);
+        var check = script.IndexOf("$check = Invoke-CaseBookBundleCheck", StringComparison.Ordinal);
         check.Should().BeGreaterThan(-1);
+        var handover = script.IndexOf("& $bundleScript @pass", StringComparison.Ordinal);
         var expand = script.IndexOf("ZipFile]::ExtractToDirectory($zipPath, $staging)", StringComparison.Ordinal);
         expand.Should().BeGreaterThan(-1);
-        check.Should().BeLessThan(expand);
+        check.Should().BeLessThan(handover).And.BeLessThan(expand);
+        script.Should().Contain(@"lib\CaseBookRelease.ps1").And.Contain(@"lib\CaseBookReleaseKeys.ps1");
+        File.ReadAllText(Path.Combine(Deploy, "lib", "CaseBookRelease.ps1"))
+            .Should().Contain("/releases/download/$Tag/casebook-$Tag.zip.sha256");
         script.Should().Contain("ReleaseHashChecked", "the handover tells the bundle's script the check already ran");
     }
 

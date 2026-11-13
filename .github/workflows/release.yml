@@ -115,6 +115,43 @@ jobs:
           ( cd bundle && zip -qr "casebook-${version}.zip" "casebook-${version}" \
             && sha256sum "casebook-${version}.zip" > "casebook-${version}.zip.sha256" )
 
+      # Sign the bundle with CaseBook's release key: RSA-PSS, SHA-256, a 32-byte salt, as lib\CaseBookRelease.ps1
+      # (Test-CaseBookReleaseSignature) verifies it. The key is the RELEASE_SIGNING_KEY secret (PEM), made by
+      # tools/signing/New-ReleaseSigningKey.ps1 (docs/development/releasing.md). No release is published unsigned: the
+      # job fails without the secret, and when the secret's public key isn't one deploy/lib/CaseBookReleaseKeys.ps1 pins
+      # (a wrong secret, or a key whose pinning wasn't merged), since installs would refuse the signature.
+      - name: Sign the bundle
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASE_SIGNING_KEY}" ]]; then
+            echo "::error::The RELEASE_SIGNING_KEY secret isn't set, so the bundle can't be signed, and no release is published unsigned. Make the key with tools/signing/New-ReleaseSigningKey.ps1 (docs/development/releasing.md), merge its CaseBookReleaseKeys.ps1, and tag again."
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME}"
+          key="$(mktemp)"   # mode 0600, in the runner's temp folder
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key"
+          # The key id is the first 16 hex characters of the SHA-256 of the public key's SubjectPublicKeyInfo.
+          if ! id="$(openssl pkey -in "$key" -pubout -outform DER | sha256sum | cut -c1-16)" || [[ ! "$id" =~ ^[0-9a-f]{16}$ ]]; then
+            echo "::error::RELEASE_SIGNING_KEY isn't a PEM private key openssl can read."
+            exit 1
+          fi
+          if ! grep -Eq "Id *= *'${id}'" deploy/lib/CaseBookReleaseKeys.ps1; then
+            echo "::error::RELEASE_SIGNING_KEY is key ${id}, which deploy/lib/CaseBookReleaseKeys.ps1 doesn't pin, so installs would refuse its signature. Set the secret to the pinned key, or merge the pinning of this one (docs/development/releasing.md)."
+            exit 1
+          fi
+          openssl dgst -sha256 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 -sign "$key" \
+            -out "bundle/casebook-${version}.zip.sig" "bundle/casebook-${version}.zip"
+          echo "Signed with release key ${id}."
+
+      # The signature and the .sha256 verify as an install checks them, with the pinned keys, before anything is published.
+      - name: The bundle verifies as Upgrade-CaseBook.ps1 checks it
+        shell: pwsh
+        run: ./deploy/Test-CaseBookBundle.ps1 "bundle/casebook-$env:GITHUB_REF_NAME.zip" -Offline
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,5 +161,6 @@ jobs:
           gh release create "$version" \
             "bundle/casebook-${version}.zip" \
             "bundle/casebook-${version}.zip.sha256" \
+            "bundle/casebook-${version}.zip.sig" \
             --title "CaseBook ${version}" \
             --notes-file release-notes.md

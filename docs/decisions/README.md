@@ -24,6 +24,7 @@ later reversed gets a new record that supersedes the old one (the old one stays,
 | [0016](0016-key-custody-and-seal-copies.md) | Integrity keys from a file, the certificate store or CyberArk; seal copies to the SIEM | Accepted |
 | [0017](0017-evidence-encryption-and-key-recovery.md) | Evidence and reports encrypted at rest, with a key that can't be lost | Accepted |
 | [0018](0018-protected-secrets.md) | Secrets without CyberArk: the SMTP sign-in entered in the app (Data Protection), and `@protected:` values encrypted to a certificate | Accepted |
+| [0019](0019-releases-are-signed-with-a-pinned-key.md) | Releases are signed with a pinned key, and a bundle's hash can be checked offline | Accepted |
 
 ## Template
 
